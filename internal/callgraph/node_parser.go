@@ -164,11 +164,15 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 		Imports:     make(map[string]string),
 	}
 	root := tree.RootNode()
-	p.extractImports(root, src, analysis)
+	bindings := make(nodeBindings)
+	extractNodeImports(root, src, bindings)
+	for name, binding := range bindings {
+		analysis.Imports[name] = binding.module
+	}
 	// Identities and same-file call targets are scoped to the module, not the
 	// package: see nodeModulePath. analysis.PackagePath keeps the package so the
 	// import map and the package name are unaffected.
-	p.extractDeclarations(root, src, filePath, nodeModulePath(packagePath, filePath), analysis)
+	p.extractDeclarations(root, src, filePath, nodeModulePath(packagePath, filePath), bindings, analysis)
 	return analysis, nil
 }
 
@@ -185,23 +189,70 @@ func (p *NodeParser) parserForFile(path string) *sitter.Parser {
 	}
 }
 
-func (p *NodeParser) extractImports(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+// nodeBinding is what a module-level name refers to: the module it was
+// imported from and the dotted path of the export it names inside that module.
+// An empty member is the module itself. `const EC = require('elliptic').ec`,
+// `import { ec as EC } from 'elliptic'` and `const { ec: EC } =
+// require('elliptic')` all bind EC to {elliptic, ec}, so `new EC(..)` is
+// elliptic.ec.<init> however the consumer spelled the import.
+type nodeBinding struct {
+	module string
+	member string
+}
+
+type nodeBindings map[string]nodeBinding
+
+// lookup returns the binding of name unless a local declaration shadows it.
+func (b nodeBindings) lookup(locals map[string]bool, name string) (nodeBinding, bool) {
+	if locals[name] {
+		return nodeBinding{}, false
+	}
+	binding, ok := b[name]
+	return binding, ok
+}
+
+// qualify appends a dotted access path to the binding and splits the result
+// into the package path that owns the last segment and that segment. A
+// leading `default` is dropped: the default export of a CommonJS module is the
+// module itself, which is how the contracts spell it, and it is what tsc's
+// __importDefault and an ESM default import both reach.
+func (b nodeBinding) qualify(path ...string) (pkg, last string) {
+	var segments []string
+	for _, part := range append([]string{b.member}, path...) {
+		if part != "" {
+			segments = append(segments, strings.Split(part, ".")...)
+		}
+	}
+	if len(segments) > 0 && segments[0] == "default" {
+		segments = segments[1:]
+	}
+	if len(segments) == 0 {
+		return b.module, ""
+	}
+	pkg = b.module
+	if len(segments) > 1 {
+		pkg += "." + strings.Join(segments[:len(segments)-1], ".")
+	}
+	return pkg, segments[len(segments)-1]
+}
+
+func extractNodeImports(node *sitter.Node, src []byte, bindings nodeBindings) {
 	if node == nil {
 		return
 	}
 	switch node.Type() {
 	case "import_statement":
-		p.extractESImport(node, src, analysis)
+		extractNodeESImport(node, src, bindings)
 		return
 	case nodeVariableDeclarator:
-		p.extractRequireImport(node, src, analysis)
+		extractNodeRequireImport(node, src, bindings)
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.extractImports(node.Child(i), src, analysis)
+		extractNodeImports(node.Child(i), src, bindings)
 	}
 }
 
-func (p *NodeParser) extractESImport(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+func extractNodeESImport(node *sitter.Node, src []byte, bindings nodeBindings) {
 	source := node.ChildByFieldName("source")
 	if source == nil {
 		return
@@ -213,105 +264,150 @@ func (p *NodeParser) extractESImport(node *sitter.Node, src []byte, analysis *Fi
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		if child.Type() == "import_clause" {
-			recordNodeImportAliases(child, src, module, analysis.Imports)
+			recordNodeImportAliases(child, src, module, bindings)
 		}
 	}
 }
 
-func recordNodeImportAliases(node *sitter.Node, src []byte, module string, imports map[string]string) {
+func recordNodeImportAliases(node *sitter.Node, src []byte, module string, bindings nodeBindings) {
 	if node == nil {
 		return
 	}
 	switch node.Type() {
 	case goNodeIdentifier:
-		imports[node.Content(src)] = module
+		bindings[node.Content(src)] = nodeBinding{module: module}
 		return
 	case "import_specifier":
-		name := node.ChildByFieldName("alias")
+		name := node.ChildByFieldName("name")
 		if name == nil {
-			name = node.ChildByFieldName("name")
+			return
 		}
-		if name != nil {
-			imports[name.Content(src)] = module
+		local := name
+		if alias := node.ChildByFieldName("alias"); alias != nil {
+			local = alias
 		}
+		bindings[local.Content(src)] = nodeBinding{module: module, member: unquoteNodeString(name.Content(src))}
 		return
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
-		recordNodeImportAliases(node.Child(i), src, module, imports)
+		recordNodeImportAliases(node.Child(i), src, module, bindings)
 	}
 }
 
-func (p *NodeParser) extractRequireImport(node *sitter.Node, src []byte, analysis *FileAnalysis) {
-	value := node.ChildByFieldName("value")
+func extractNodeRequireImport(node *sitter.Node, src []byte, bindings nodeBindings) {
 	name := node.ChildByFieldName("name")
-	module, ok := nodeRequireModule(value, src)
+	binding, ok := nodeRequireBinding(node.ChildByFieldName("value"), src)
 	if !ok || name == nil {
 		return
 	}
 	switch name.Type() {
 	case goNodeIdentifier:
-		analysis.Imports[name.Content(src)] = module
+		bindings[name.Content(src)] = binding
 	case "object_pattern":
 		for i := 0; i < int(name.NamedChildCount()); i++ {
 			item := name.NamedChild(i)
 			switch item.Type() {
 			case "shorthand_property_identifier_pattern":
-				analysis.Imports[item.Content(src)] = module
+				bindings[item.Content(src)] = nodeBinding{module: binding.module, member: joinNodeMember(binding.member, item.Content(src))}
 			case "pair_pattern":
+				key := item.ChildByFieldName("key")
 				alias := item.ChildByFieldName("value")
-				if alias != nil {
-					analysis.Imports[alias.Content(src)] = module
+				if key != nil && alias != nil && alias.Type() == goNodeIdentifier {
+					bindings[alias.Content(src)] = nodeBinding{module: binding.module, member: joinNodeMember(binding.member, unquoteNodeString(key.Content(src)))}
 				}
 			}
 		}
 	}
 }
 
-func nodeRequireModule(node *sitter.Node, src []byte) (string, bool) {
-	if node == nil || node.Type() != nodeCallExpression {
-		return "", false
+func joinNodeMember(member, name string) string {
+	if member == "" {
+		return name
 	}
-	function := node.ChildByFieldName("function")
-	arguments := node.ChildByFieldName("arguments")
-	if function == nil || function.Type() != goNodeIdentifier || function.Content(src) != "require" || arguments == nil || arguments.NamedChildCount() != 1 {
-		return "", false
+	return member + "." + name
+}
+
+// nodeRequireBinding reads the value of a require-style declarator:
+// `require('m')`, a member of it such as `require('m').a.b`, or either wrapped
+// in the interop helper a compiler emits for an import, as in tsc's
+// `__importStar(require('m'))` and `tslib_1.__importDefault(require('m'))` or
+// Babel's `_interopRequireWildcard(require('m'))`.
+func nodeRequireBinding(node *sitter.Node, src []byte) (nodeBinding, bool) {
+	if node == nil {
+		return nodeBinding{}, false
 	}
-	arg := arguments.NamedChild(0)
-	if arg.Type() != "string" {
-		return "", false
+	switch node.Type() {
+	case nodeMemberExpression:
+		object := node.ChildByFieldName("object")
+		property := node.ChildByFieldName("property")
+		binding, ok := nodeRequireBinding(object, src)
+		if !ok || property == nil {
+			return nodeBinding{}, false
+		}
+		binding.member = joinNodeMember(binding.member, property.Content(src))
+		return binding, true
+	case nodeCallExpression:
+		function := node.ChildByFieldName("function")
+		arguments := node.ChildByFieldName("arguments")
+		if function == nil || arguments == nil || arguments.NamedChildCount() != 1 {
+			return nodeBinding{}, false
+		}
+		arg := arguments.NamedChild(0)
+		if isNodeImportInteropHelper(function, src) {
+			return nodeRequireBinding(arg, src)
+		}
+		if function.Type() != goNodeIdentifier || function.Content(src) != "require" || arg.Type() != "string" {
+			return nodeBinding{}, false
+		}
+		module := unquoteNodeString(arg.Content(src))
+		return nodeBinding{module: module}, module != ""
 	}
-	module := unquoteNodeString(arg.Content(src))
-	return module, module != ""
+	return nodeBinding{}, false
+}
+
+func isNodeImportInteropHelper(function *sitter.Node, src []byte) bool {
+	name := function
+	if function.Type() == nodeMemberExpression {
+		name = function.ChildByFieldName("property")
+	}
+	if name == nil {
+		return false
+	}
+	switch name.Content(src) {
+	case "__importStar", "__importDefault", "_interopRequireWildcard", "_interopRequireDefault":
+		return true
+	}
+	return false
 }
 
 func unquoteNodeString(value string) string {
 	return strings.Trim(strings.TrimSpace(value), "\"'`")
 }
 
-func (p *NodeParser) extractDeclarations(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
+func (p *NodeParser) extractDeclarations(node *sitter.Node, src []byte, filePath, packagePath string, bindings nodeBindings, analysis *FileAnalysis) {
 	if node == nil {
 		return
 	}
 	switch node.Type() {
 	case nodeFunctionDeclaration, nodeGeneratorDeclaration:
-		if decl := p.parseNodeFunction(node, src, filePath, packagePath, "", "", analysis.Imports); decl != nil {
+		if decl := p.parseNodeFunction(node, src, filePath, packagePath, "", "", bindings); decl != nil {
 			analysis.Functions = append(analysis.Functions, *decl)
 		}
-		p.extractDeclarations(node.ChildByFieldName("body"), src, filePath, packagePath, analysis)
+		p.extractDeclarations(node.ChildByFieldName("body"), src, filePath, packagePath, bindings, analysis)
 		return
 	case "lexical_declaration", "variable_declaration":
-		p.extractAssignedFunctions(node, src, filePath, packagePath, analysis)
+		p.extractAssignedFunctions(node, src, filePath, packagePath, bindings, analysis)
 		return
 	case javaNodeClassDeclaration:
-		p.extractClassMethods(node, src, filePath, packagePath, "", analysis)
+		p.extractClassMethods(node, src, filePath, packagePath, "", bindings, analysis)
 		return
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
-		p.extractDeclarations(node.Child(i), src, filePath, packagePath, analysis)
+		p.extractDeclarations(node.Child(i), src, filePath, packagePath, bindings, analysis)
 	}
 }
 
-func (p *NodeParser) extractAssignedFunctions(node *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
+func (p *NodeParser) extractAssignedFunctions(node *sitter.Node, src []byte, filePath, packagePath string, bindings nodeBindings, analysis *FileAnalysis) {
 	for i := 0; i < int(node.NamedChildCount()); i++ {
 		declarator := node.NamedChild(i)
 		if declarator.Type() != nodeVariableDeclarator {
@@ -330,27 +426,27 @@ func (p *NodeParser) extractAssignedFunctions(node *sitter.Node, src []byte, fil
 		// itself does not name.
 		switch value.Type() {
 		case nodeClassExpression, javaNodeClassDeclaration:
-			p.extractClassMethods(value, src, filePath, packagePath, bound, analysis)
+			p.extractClassMethods(value, src, filePath, packagePath, bound, bindings, analysis)
 			continue
 		case nodeObjectLiteral:
-			p.extractObjectMethods(value, src, filePath, packagePath, bound, analysis)
+			p.extractObjectMethods(value, src, filePath, packagePath, bound, bindings, analysis)
 			continue
 		}
 
 		if value.Type() != nodeArrowFunction && value.Type() != nodeFunctionExpression {
 			continue
 		}
-		if decl := p.parseNodeFunction(value, src, filePath, packagePath, bound, "", analysis.Imports); decl != nil {
+		if decl := p.parseNodeFunction(value, src, filePath, packagePath, bound, "", bindings); decl != nil {
 			analysis.Functions = append(analysis.Functions, *decl)
 		}
-		p.extractDeclarations(value.ChildByFieldName("body"), src, filePath, packagePath, analysis)
+		p.extractDeclarations(value.ChildByFieldName("body"), src, filePath, packagePath, bindings, analysis)
 	}
 }
 
 // extractObjectMethods walks the shorthand methods of an object literal bound
 // to a name. tree-sitter gives them the same `method_definition` node a class
 // body uses, and the binding names their owner.
-func (p *NodeParser) extractObjectMethods(node *sitter.Node, src []byte, filePath, packagePath, owner string, analysis *FileAnalysis) {
+func (p *NodeParser) extractObjectMethods(node *sitter.Node, src []byte, filePath, packagePath, owner string, bindings nodeBindings, analysis *FileAnalysis) {
 	if node == nil || owner == "" {
 		return
 	}
@@ -359,7 +455,7 @@ func (p *NodeParser) extractObjectMethods(node *sitter.Node, src []byte, filePat
 		if method.Type() != nodeMethodDefinition {
 			continue
 		}
-		if decl := p.parseNodeFunction(method, src, filePath, packagePath, "", owner, analysis.Imports); decl != nil {
+		if decl := p.parseNodeFunction(method, src, filePath, packagePath, "", owner, bindings); decl != nil {
 			analysis.Functions = append(analysis.Functions, *decl)
 		}
 	}
@@ -369,7 +465,7 @@ func (p *NodeParser) extractObjectMethods(node *sitter.Node, src []byte, filePat
 // no name of its own: `const Hasher = class { ... }` is a class_expression, so
 // the owner comes from the binding, which is what a reader calls the type
 // anyway.
-func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath, packagePath, fallbackOwner string, analysis *FileAnalysis) {
+func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath, packagePath, fallbackOwner string, bindings nodeBindings, analysis *FileAnalysis) {
 	body := node.ChildByFieldName("body")
 	if body == nil {
 		return
@@ -386,7 +482,7 @@ func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath
 		member := body.NamedChild(i)
 		switch member.Type() {
 		case nodeMethodDefinition:
-			if decl := p.parseNodeFunction(member, src, filePath, packagePath, "", owner, analysis.Imports); decl != nil {
+			if decl := p.parseNodeFunction(member, src, filePath, packagePath, "", owner, bindings); decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
 		case nodeFieldDefinition, nodePublicFieldDefinition:
@@ -395,7 +491,7 @@ func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath
 			}
 		}
 	}
-	p.appendClassInit(body, fieldInit, src, filePath, packagePath, owner, analysis)
+	p.appendClassInit(body, fieldInit, src, filePath, packagePath, owner, bindings, analysis)
 }
 
 // appendClassInit emits ONE synthetic `<clinit>` for a class whose body holds a
@@ -409,7 +505,7 @@ func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath
 //
 // Calls are collected from the initialiser expressions ONLY, never from method
 // bodies, which own their own.
-func (p *NodeParser) appendClassInit(body *sitter.Node, inits []*sitter.Node, src []byte, filePath, packagePath, owner string, analysis *FileAnalysis) {
+func (p *NodeParser) appendClassInit(body *sitter.Node, inits []*sitter.Node, src []byte, filePath, packagePath, owner string, bindings nodeBindings, analysis *FileAnalysis) {
 	if len(inits) == 0 {
 		return
 	}
@@ -424,12 +520,12 @@ func (p *NodeParser) appendClassInit(body *sitter.Node, inits []*sitter.Node, sr
 	}
 	for _, init := range inits {
 		locals := collectNodeLocalNames(nil, init, src)
-		decl.Calls = append(decl.Calls, p.extractCalls(init, src, filePath, packagePath, owner, analysis.Imports, locals)...)
+		decl.Calls = append(decl.Calls, p.extractCalls(init, src, filePath, packagePath, owner, bindings, locals)...)
 	}
 	analysis.Functions = append(analysis.Functions, *decl)
 }
 
-func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, packagePath, fallbackName, owner string, imports map[string]string) *FunctionDecl {
+func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, packagePath, fallbackName, owner string, imports nodeBindings) *FunctionDecl {
 	name := fallbackName
 	if nameNode := node.ChildByFieldName("name"); nameNode != nil {
 		name = nameNode.Content(src)
@@ -463,7 +559,7 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 	return decl
 }
 
-func (p *NodeParser) extractReturnSources(body *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool) []SourceNode {
+func (p *NodeParser) extractReturnSources(body *sitter.Node, src []byte, filePath, packagePath, owner string, imports nodeBindings, locals map[string]bool) []SourceNode {
 	if body.Type() != "statement_block" {
 		if source, ok := p.nodeReturnSource(body, src, filePath, packagePath, owner, imports, locals); ok {
 			return []SourceNode{source}
@@ -475,7 +571,7 @@ func (p *NodeParser) extractReturnSources(body *sitter.Node, src []byte, filePat
 	return sources
 }
 
-func (p *NodeParser) walkNodeReturnSources(node *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool, sources *[]SourceNode) {
+func (p *NodeParser) walkNodeReturnSources(node *sitter.Node, src []byte, filePath, packagePath, owner string, imports nodeBindings, locals map[string]bool, sources *[]SourceNode) {
 	if node == nil {
 		return
 	}
@@ -495,7 +591,7 @@ func (p *NodeParser) walkNodeReturnSources(node *sitter.Node, src []byte, filePa
 	}
 }
 
-func (p *NodeParser) nodeReturnSource(expr *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool) (SourceNode, bool) {
+func (p *NodeParser) nodeReturnSource(expr *sitter.Node, src []byte, filePath, packagePath, owner string, imports nodeBindings, locals map[string]bool) (SourceNode, bool) {
 	location := &SourceLocation{FilePath: filePath, Line: int(expr.StartPoint().Row) + 1}
 	switch expr.Type() {
 	case nodeCallExpression:
@@ -507,35 +603,8 @@ func (p *NodeParser) nodeReturnSource(expr *sitter.Node, src []byte, filePath, p
 		callee.Name = fmt.Sprintf("%s#%d", callee.Name, len(call.Arguments))
 		return SourceNode{Type: sourceNodeCallResult, CallTarget: &callee, Location: location}, true
 	case nodeNewExpression:
-		constructor := expr.ChildByFieldName("constructor")
-		if constructor == nil {
-			return SourceNode{}, false
-		}
-		var pkg, typeName string
-		switch constructor.Type() {
-		case goNodeIdentifier:
-			typeName = constructor.Content(src)
-			pkg = packagePath
-			if importedPackage, ok := nodeImportedPackage(imports, locals, typeName); ok {
-				pkg = importedPackage
-			}
-		case nodeMemberExpression:
-			object := constructor.ChildByFieldName("object")
-			property := constructor.ChildByFieldName("property")
-			if object == nil || property == nil {
-				return SourceNode{}, false
-			}
-			first, suffix := splitNodeMemberObject(object.Content(src))
-			var ok bool
-			pkg, ok = nodeImportedPackage(imports, locals, first)
-			if !ok {
-				return SourceNode{}, false
-			}
-			if suffix != "" {
-				pkg += "." + suffix
-			}
-			typeName = property.Content(src)
-		default:
+		pkg, typeName, _, ok := nodeConstructorType(expr.ChildByFieldName("constructor"), src, packagePath, imports, locals)
+		if !ok {
 			return SourceNode{}, false
 		}
 		target := FunctionID{Package: pkg, Type: typeName, Name: fmt.Sprintf("%s#%d", constructorMethodName, len(nodeCallArguments(expr, src)))}
@@ -630,31 +699,36 @@ func isNodeNestedScope(nodeType string) bool {
 	}
 }
 
-func (p *NodeParser) extractCalls(body *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool) []FunctionCall {
+func (p *NodeParser) extractCalls(body *sitter.Node, src []byte, filePath, packagePath, owner string, imports nodeBindings, locals map[string]bool) []FunctionCall {
 	var calls []FunctionCall
 	p.walkNodeCalls(body, src, filePath, packagePath, owner, imports, locals, &calls)
 	return calls
 }
 
-func (p *NodeParser) walkNodeCalls(node *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool, calls *[]FunctionCall) {
+func (p *NodeParser) walkNodeCalls(node *sitter.Node, src []byte, filePath, packagePath, owner string, imports nodeBindings, locals map[string]bool, calls *[]FunctionCall) {
 	if node == nil {
 		return
 	}
 	if isNodeNestedScope(node.Type()) {
 		return
 	}
-	if node.Type() == nodeCallExpression {
-		if call := p.parseNodeCall(node, src, filePath, packagePath, owner, imports, locals); call != nil {
-			setFunctionCallASTAnchor(call, node)
-			*calls = append(*calls, *call)
-		}
+	var call *FunctionCall
+	switch node.Type() {
+	case nodeCallExpression:
+		call = p.parseNodeCall(node, src, filePath, packagePath, owner, imports, locals)
+	case nodeNewExpression:
+		call = parseNodeNew(node, src, filePath, imports, locals)
+	}
+	if call != nil {
+		setFunctionCallASTAnchor(call, node)
+		*calls = append(*calls, *call)
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
 		p.walkNodeCalls(node.Child(i), src, filePath, packagePath, owner, imports, locals, calls)
 	}
 }
 
-func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, packagePath, owner string, imports map[string]string, locals map[string]bool) *FunctionCall {
+func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, packagePath, owner string, imports nodeBindings, locals map[string]bool) *FunctionCall {
 	function := node.ChildByFieldName("function")
 	if function == nil {
 		return nil
@@ -670,6 +744,7 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 	}
 	call.ChainID, call.AssignedVar = nodeCallChainContext(node, src)
 
+	function = unwrapNodeCallee(function)
 	switch function.Type() {
 	case goNodeIdentifier:
 		name := function.Content(src)
@@ -677,8 +752,12 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 			return nil
 		}
 		call.Callee = FunctionID{Package: packagePath, Name: name}
-		if importedPackage, ok := nodeImportedPackage(imports, locals, name); ok {
-			call.Callee.Package = importedPackage
+		if binding, ok := imports.lookup(locals, name); ok {
+			pkg, last := binding.qualify()
+			if last == "" {
+				last = name
+			}
+			call.Callee = FunctionID{Package: pkg, Name: last}
 		}
 		return call
 	case nodeMemberExpression:
@@ -691,13 +770,10 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 		objectText := object.Content(src)
 		call.Callee = FunctionID{Package: packagePath, Name: name}
 		first, suffix := splitNodeMemberObject(objectText)
-		importedPackage, importedObject := nodeImportedPackage(imports, locals, first)
+		binding, importedObject := imports.lookup(locals, first)
 		switch {
 		case object.Type() != nodeCallExpression && importedObject:
-			call.Callee.Package = importedPackage
-			if suffix != "" {
-				call.Callee.Package += "." + suffix
-			}
+			call.Callee.Package, _ = binding.qualify(suffix, name)
 		case object.Type() == "this" && owner != "":
 			call.Callee.Type = owner
 		case object.Type() == goNodeIdentifier && locals[objectText]:
@@ -709,12 +785,81 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 	}
 }
 
-func nodeImportedPackage(imports map[string]string, locals map[string]bool, name string) (string, bool) {
-	if locals[name] {
-		return "", false
+// unwrapNodeCallee sees through the parentheses and comma operator that
+// compiled output wraps around a callee: tsc emits `(0, ns.fn)(..)` for a
+// call to a named import so that `this` is not bound to the namespace.
+func unwrapNodeCallee(function *sitter.Node) *sitter.Node {
+	for {
+		switch function.Type() {
+		case "parenthesized_expression", "sequence_expression":
+			if function.NamedChildCount() == 0 {
+				return function
+			}
+			function = function.NamedChild(int(function.NamedChildCount()) - 1)
+		default:
+			return function
+		}
 	}
-	importedPackage, ok := imports[name]
-	return importedPackage, ok
+}
+
+// parseNodeNew records `new C(..)` as a call to C's constructor when C is
+// reached through an import. That is what lets `const ec = new EC(curve)`
+// type ec from the contract for elliptic.ec.<init>. A class of the module's
+// own is left out: its constructor is a method named `constructor`, which a
+// <init> target would never reach.
+func parseNodeNew(node *sitter.Node, src []byte, filePath string, imports nodeBindings, locals map[string]bool) *FunctionCall {
+	constructor := node.ChildByFieldName("constructor")
+	pkg, typeName, imported, ok := nodeConstructorType(constructor, src, "", imports, locals)
+	if !ok || !imported {
+		return nil
+	}
+	call := &FunctionCall{
+		Callee:    FunctionID{Package: pkg, Type: typeName, Name: constructorMethodName},
+		Raw:       "new " + constructor.Content(src),
+		FilePath:  filePath,
+		Line:      int(node.StartPoint().Row) + 1,
+		StartCol:  int(node.StartPoint().Column) + 1,
+		EndCol:    int(node.EndPoint().Column) + 1,
+		Arguments: nodeCallArguments(node, src),
+	}
+	call.ChainID, call.AssignedVar = nodeCallChainContext(node, src)
+	return call
+}
+
+// nodeConstructorType names the class a `new` expression constructs. A class
+// reached through an import is qualified by its module path. A bare name that
+// no import binds is a class of packagePath, and imported reports false.
+func nodeConstructorType(constructor *sitter.Node, src []byte, packagePath string, imports nodeBindings, locals map[string]bool) (pkg, typeName string, imported, ok bool) {
+	if constructor == nil {
+		return "", "", false, false
+	}
+	switch constructor.Type() {
+	case goNodeIdentifier:
+		name := constructor.Content(src)
+		binding, bound := imports.lookup(locals, name)
+		if !bound {
+			return packagePath, name, false, true
+		}
+		pkg, typeName = binding.qualify()
+		if typeName == "" {
+			typeName = name
+		}
+		return pkg, typeName, true, true
+	case nodeMemberExpression:
+		object := constructor.ChildByFieldName("object")
+		property := constructor.ChildByFieldName("property")
+		if object == nil || property == nil {
+			return "", "", false, false
+		}
+		first, suffix := splitNodeMemberObject(object.Content(src))
+		binding, bound := imports.lookup(locals, first)
+		if !bound {
+			return "", "", false, false
+		}
+		pkg, typeName = binding.qualify(suffix, property.Content(src))
+		return pkg, typeName, true, true
+	}
+	return "", "", false, false
 }
 
 func nodeCallArguments(node *sitter.Node, src []byte) []string {
@@ -722,7 +867,13 @@ func nodeCallArguments(node *sitter.Node, src []byte) []string {
 	if arguments == nil {
 		return nil
 	}
-	return parseArgumentsFromDelimitedContent(arguments.Content(src))
+	args := parseArgumentsFromDelimitedContent(arguments.Content(src))
+	for i, arg := range args {
+		if literal, ok := canonicalNodeStringLiteral(arg); ok {
+			args[i] = literal
+		}
+	}
+	return args
 }
 
 func splitNodeMemberObject(object string) (first, suffix string) {

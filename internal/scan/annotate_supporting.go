@@ -56,7 +56,12 @@ func (e fragEdge) functionName() string {
 }
 
 // fragmentEdgesByCaller indexes a fragment's edges (external + internal) by the
-// caller function key, projecting each to a fragEdge.
+// caller function key, projecting each to a fragEdge. Each caller's edges are
+// put back in source order, the order the parser recorded the calls in: a call
+// starts before the calls nested in it and ends after them. The lifecycle
+// selector reads a variable's calls only after the call that bound it, and the
+// fragment lists edges by target, which would hide `h.update(..)` from the
+// factory call `h = sha256()` whenever update sorts first.
 func fragmentEdgesByCaller(fragment graphfrag.Fragment) map[string][]fragEdge {
 	out := make(map[string][]fragEdge)
 	for i := range fragment.ExternalCalls {
@@ -82,6 +87,18 @@ func fragmentEdgesByCaller(fragment graphfrag.Fragment) map[string][]fragEdge {
 			endCol:    e.EndCol,
 			identity:  objectIdentity{ReceiverVar: e.ReceiverVar, AssignedVar: e.AssignedVar, ChainID: e.ChainID},
 			entryCall: e.EntryCall,
+		})
+	}
+	for _, edges := range out {
+		sort.SliceStable(edges, func(i, j int) bool {
+			a, b := edges[i], edges[j]
+			if a.line != b.line {
+				return a.line < b.line
+			}
+			if a.startCol != b.startCol {
+				return a.startCol < b.startCol
+			}
+			return a.endCol > b.endCol
 		})
 	}
 	return out
