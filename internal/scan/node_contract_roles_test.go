@@ -164,68 +164,76 @@ func TestNodeSupportingCallsCarryTheirContractRole(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, tc.file), []byte(tc.src), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			graph, err := callgraph.NewBuilderForEcosystem("node", callgraph.NewNodeParser()).
-				BuildFromDirectories([]callgraph.PackageDir{{Dir: dir}}, nil)
-			if err != nil {
-				t.Fatalf("BuildFromDirectories: %v", err)
-			}
-			report := &entities.InterimReport{
-				Tool:  entities.ToolInfo{Name: "crypto-finder", Version: "dev"},
-				Rules: entities.RulesInfo{Version: "v-test"},
-				Findings: []entities.Finding{{
-					FilePath:            tc.file,
-					Language:            "javascript",
-					CryptographicAssets: []entities.CryptographicAsset{tc.asset},
-				}},
-			}
-			engine.EnsureFindingSources(report)
-			engine.AssignFindingIDs(report)
-			result := &engine.DepScanResult{Report: report, CallGraph: graph, ProjectRoot: dir, Ecosystem: "node"}
-
-			fragment := buildGraphFragmentExport(result)
-			got := map[string]string{}
-			fragmentIDs := make([]string, 0, len(fragment.SupportingCalls))
-			for i := range fragment.SupportingCalls {
-				s := &fragment.SupportingCalls[i]
-				if s.SupportingCall != nil {
-					got[s.SupportingCall.FunctionName] = s.Category
-				}
-				fragmentIDs = append(fragmentIDs, s.SupportingID)
-			}
-			if !equalStringMaps(got, tc.want) {
-				t.Errorf("graph fragment supporting calls = %v, want %v", got, tc.want)
-			}
-
-			callgraphExport := buildCallGraphExportV2(result)
-			fromCallgraph := map[string]string{}
-			for i := range callgraphExport.SupportingCalls {
-				s := &callgraphExport.SupportingCalls[i]
-				fromCallgraph[s.SupportingCall.FunctionName] = s.Category
-			}
-			if !equalStringMaps(fromCallgraph, got) {
-				t.Errorf("callgraph export supporting calls = %v, graph fragment = %v", fromCallgraph, got)
-			}
-
-			cached := decodeFragmentForTest(t, marshalSorted(t, fragment))
-			annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), cached)
-			annotateIDs := make([]string, 0, len(annotate.SupportingCalls))
-			for i := range annotate.SupportingCalls {
-				annotateIDs = append(annotateIDs, annotate.SupportingCalls[i].SupportingID)
-			}
-			sort.Strings(fragmentIDs)
-			sort.Strings(annotateIDs)
-			if len(annotateIDs) != len(fragmentIDs) {
-				t.Fatalf("annotate supporting ids = %v, full export = %v", annotateIDs, fragmentIDs)
-			}
-			for i := range annotateIDs {
-				if annotateIDs[i] != fragmentIDs[i] {
-					t.Fatalf("annotate supporting ids = %v, full export = %v", annotateIDs, fragmentIDs)
-				}
-			}
+			assertNodeSupportingRoles(t, tc.file, tc.src, tc.asset, tc.want)
 		})
+	}
+}
+
+// assertNodeSupportingRoles scans src as file with one finding and checks that
+// its supporting calls carry the wanted contract roles, identically in the
+// graph fragment, the call graph export and the annotate path.
+func assertNodeSupportingRoles(t *testing.T, file, src string, asset entities.CryptographicAsset, want map[string]string) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	graph, err := callgraph.NewBuilderForEcosystem("node", callgraph.NewNodeParser()).
+		BuildFromDirectories([]callgraph.PackageDir{{Dir: dir}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+	report := &entities.InterimReport{
+		Tool:  entities.ToolInfo{Name: "crypto-finder", Version: "dev"},
+		Rules: entities.RulesInfo{Version: "v-test"},
+		Findings: []entities.Finding{{
+			FilePath:            file,
+			Language:            "javascript",
+			CryptographicAssets: []entities.CryptographicAsset{asset},
+		}},
+	}
+	engine.EnsureFindingSources(report)
+	engine.AssignFindingIDs(report)
+	result := &engine.DepScanResult{Report: report, CallGraph: graph, ProjectRoot: dir, Ecosystem: "node"}
+
+	fragment := buildGraphFragmentExport(result)
+	got := map[string]string{}
+	fragmentIDs := make([]string, 0, len(fragment.SupportingCalls))
+	for i := range fragment.SupportingCalls {
+		s := &fragment.SupportingCalls[i]
+		if s.SupportingCall != nil {
+			got[s.SupportingCall.FunctionName] = s.Category
+		}
+		fragmentIDs = append(fragmentIDs, s.SupportingID)
+	}
+	if !equalStringMaps(got, want) {
+		t.Errorf("graph fragment supporting calls = %v, want %v", got, want)
+	}
+
+	callgraphExport := buildCallGraphExportV2(result)
+	fromCallgraph := map[string]string{}
+	for i := range callgraphExport.SupportingCalls {
+		s := &callgraphExport.SupportingCalls[i]
+		fromCallgraph[s.SupportingCall.FunctionName] = s.Category
+	}
+	if !equalStringMaps(fromCallgraph, got) {
+		t.Errorf("callgraph export supporting calls = %v, graph fragment = %v", fromCallgraph, got)
+	}
+
+	cached := decodeFragmentForTest(t, marshalSorted(t, fragment))
+	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), cached)
+	annotateIDs := make([]string, 0, len(annotate.SupportingCalls))
+	for i := range annotate.SupportingCalls {
+		annotateIDs = append(annotateIDs, annotate.SupportingCalls[i].SupportingID)
+	}
+	sort.Strings(fragmentIDs)
+	sort.Strings(annotateIDs)
+	if len(annotateIDs) != len(fragmentIDs) {
+		t.Fatalf("annotate supporting ids = %v, full export = %v", annotateIDs, fragmentIDs)
+	}
+	for i := range annotateIDs {
+		if annotateIDs[i] != fragmentIDs[i] {
+			t.Fatalf("annotate supporting ids = %v, full export = %v", annotateIDs, fragmentIDs)
+		}
 	}
 }
