@@ -1,0 +1,482 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: monocypher
+  coordinates:
+    - monocypher
+    - LoupVaillant/Monocypher
+  version_range: ">=2.0.0,<5.0.0"
+  description: "Monocypher AEAD, ChaCha20, BLAKE2b, SHA-512, Argon2, X25519 and EdDSA"
+
+# Inventory source: monocypher.h and optional/monocypher-ed25519.h at tags 4.0.2
+# and 3.1.3, deprecated/*.h at 3.1.3, and monocypher.h at 2.0.6, plus every
+# function the Monocypher detection rules select. The crypto_unlock_init,
+# crypto_unlock_auth_* and crypto_key_exchange_public_key macros carry the
+# signature of the function they alias. Where a name keeps its
+# spelling but changes arity between majors (crypto_blake2b gains a hash size in
+# 4.x, crypto_chacha20_djb/_x gain a counter), each arity is its own contract.
+#
+# Monocypher fixes each algorithm in the function name, so few arguments select
+# anything. The 4.x crypto_argon2 config struct chooses Argon2d/i/id and is
+# operation-determining; BLAKE2b hash and key sizes and the 3.x Argon2i block
+# and pass counts are metadata-contributing.
+#
+# Dispositions:
+#   contracted: every function below; it includes every rule-selected function.
+#   skipped-non-crypto: crypto_wipe and crypto_verify16/32/64 (constant-time
+#     compare), which the detection rules keep negative.
+#   skipped-unsupported: the 1.x-3.x crypto_sign/5 and crypto_sign_update/3.
+#     libsodium declares the same names at the same arities with an int return,
+#     and the C knowledge base keys contracts by bare name and arity, so the two
+#     cannot coexist. The libsodium contracts keep those keys; the Monocypher
+#     calls still resolve to them with role operation, which is also their role
+#     here. 4.x renamed them crypto_eddsa_sign, which is contracted.
+#   needs-follow-up: crypto_eddsa_trim_scalar, _reduce, _mul_add, _scalarbase,
+#     _check_equation, crypto_eddsa_to_x25519/crypto_x25519_to_eddsa,
+#     crypto_x25519_dirty_*, crypto_x25519_inverse, crypto_elligator_map/_rev and
+#     crypto_curve_to_hidden/crypto_hidden_to_curve: low-level scalar and point
+#     helpers no rule selects; and 1.x-2.x signatures that differ from the ones
+#     contracted here.
+contracts:
+  - method: crypto_aead_init_djb
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_aead_init_ietf
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_aead_init_x
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_aead_lock
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_aead_read
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_aead_unlock
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_aead_write
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_argon2
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 3
+        name: config
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+  - method: crypto_argon2i
+    arity: 9
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 3
+        name: nb_blocks
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 4
+        name: nb_iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: crypto_argon2i_general
+    arity: 13
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 3
+        name: nb_blocks
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 4
+        name: nb_iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: crypto_blake2b
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_blake2b
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: crypto_blake2b_final
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_blake2b_general
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 3
+        name: key_size
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: crypto_blake2b_general_init
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 3
+        name: key_size
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: crypto_blake2b_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_blake2b_init
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: crypto_blake2b_keyed
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 3
+        name: key_size
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: crypto_blake2b_keyed_init
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 3
+        name: key_size
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: crypto_blake2b_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_chacha20
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_chacha20_ctr
+    arity: 6
+    return: {type: "uint64_t", confidence: high}
+    role: operation
+  - method: crypto_chacha20_djb
+    arity: 6
+    return: {type: "uint64_t", confidence: high}
+    role: operation
+  - method: crypto_chacha20_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_chacha20_ietf
+    arity: 6
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: crypto_chacha20_init
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_chacha20_set_ctr
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_chacha20_stream
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_chacha20_x
+    arity: 6
+    return: {type: "uint64_t", confidence: high}
+    role: operation
+  - method: crypto_chacha20_x_init
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_check
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_check_final
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_check_init
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_check_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ed25519_check
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_ed25519_key_pair
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_ed25519_ph_check
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_ed25519_ph_sign
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ed25519_public_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_ed25519_sign
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ed25519_sign
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_eddsa_check
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_eddsa_key_pair
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_eddsa_sign
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_elligator_key_pair
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_hidden_key_pair
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_hmac_sha512
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_hmac_sha512_final
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_hmac_sha512_init
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_hmac_sha512_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ietf_chacha20
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ietf_chacha20_ctr
+    arity: 6
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: crypto_key_exchange
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_key_exchange_public_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_lock
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_lock_aead
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_lock_auth_ad
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_lock_auth_message
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_lock_final
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_lock_init
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_lock_update
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_poly1305
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_poly1305_final
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_poly1305_init
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_poly1305_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sha512
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sha512_final
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sha512_hkdf
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sha512_hkdf_expand
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sha512_hmac
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sha512_hmac_final
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sha512_hmac_init
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_sha512_hmac_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sha512_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_sha512_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sign_final
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_sign_init_first_pass
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_sign_init_second_pass
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_sign_public_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_unlock
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_unlock_aead
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_unlock_auth_ad
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_unlock_auth_message
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_unlock_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_unlock_init
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: crypto_unlock_update
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_x25519
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_x25519_public_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_xchacha20
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_xchacha20_ctr
+    arity: 6
+    return: {type: "uint64_t", confidence: high}
+    role: operation
+hierarchy: {}
