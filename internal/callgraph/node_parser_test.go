@@ -90,7 +90,8 @@ export const forgeDigest = (data) => {
 		t.Errorf("fluent AssignedVars = create:%q update:%q digest:%q", createLink.AssignedVar, updateLink.AssignedVar, digestLink.AssignedVar)
 	}
 	_ = nodeCall(t, forgeDigest, "crypto-js.AES", "encrypt", "CryptoJS.AES.encrypt")
-	_ = nodeCall(t, forgeDigest, "crypto-js", "hmac", "hmac")
+	// An aliased destructuring calls the export it names, not the alias.
+	_ = nodeCall(t, forgeDigest, "crypto-js", "HmacSHA256", "hmac")
 }
 
 func TestNodeParser_TypeScriptAndRegistryAliases(t *testing.T) {

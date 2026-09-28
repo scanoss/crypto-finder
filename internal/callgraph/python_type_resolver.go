@@ -318,7 +318,7 @@ func propagatePythonAssignedVarTypesForDecl(
 	kb *contracts.KnowledgeBase,
 ) {
 	var varTypes map[string]pythonTrackedAssignedType
-	for _, i := range pythonPropagationOrder(fn.Calls) {
+	for _, i := range assignmentPropagationOrder(fn.Calls) {
 		call := &fn.Calls[i]
 		if call.ReceiverVar != "" && varTypes != nil {
 			if tracked, ok := varTypes[call.ReceiverVar]; ok {
@@ -356,12 +356,12 @@ func propagatePythonAssignedVarTypesForDecl(
 	}
 }
 
-// pythonPropagationOrder is document order, except that a fluent chain's
+// assignmentPropagationOrder is document order, except that a fluent chain's
 // root is visited after the chain's other links. The parser records the root,
 // which carries the statement's AssignedVar, before the links it wraps, so in
 // "builder = builder.a(..).b(..)" the rebinding would otherwise drop builder's
 // type before the innermost link reads it as its receiver.
-func pythonPropagationOrder(calls []FunctionCall) []int {
+func assignmentPropagationOrder(calls []FunctionCall) []int {
 	lastLink := map[string]int{}
 	for i := range calls {
 		if id := calls[i].ChainID; id != "" {
