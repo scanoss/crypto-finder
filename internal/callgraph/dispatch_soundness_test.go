@@ -910,3 +910,30 @@ func TestDispatch_TypeQualifiedCallNeverDispatches(t *testing.T) {
 		t.Fatalf("a type-qualified call must not reach Sub.make, which only hides Root.make in Sub")
 	}
 }
+
+func TestDispatch_UnqualifiedCallInStaticMethodNeverDispatches(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		// Base's static helper calls an unqualified get(..); Sub's get must
+		// not be reached, a static method has no this to dispatch on.
+		"com/acme/Base.java": `package com.acme;
+public class Base extends java.io.InputStream {
+  public static Base get(java.io.File f) { return get(f, "m"); }
+  public static Base get(java.io.File f, String m) { return null; }
+  public static Base get(byte[] b, String m) { return null; }
+  public int read() { return 0; }
+}
+`,
+		"com/acme/Other.java": `package com.acme;
+public class Other {
+  public Object get(long timeout, String unit) { return null; }
+}
+`,
+	})
+	for key := range graph.Functions {
+		if strings.Contains(key, "(Base).get#1") {
+			if hasCaller(graph, "com.acme.(Other).get#2", key) {
+				t.Fatalf("the unqualified get(..) inside static %s must not reach Other.get", key)
+			}
+		}
+	}
+}

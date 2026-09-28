@@ -1049,6 +1049,9 @@ func (p *JavaParser) parseMethodDecl(
 
 	if body != nil {
 		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, ownerName, fieldTypes, fieldAssignments)
+		if decl.Static {
+			markStaticContextCalls(decl.Calls)
+		}
 
 		// Build variable type and origin maps for return-source tracing.
 		varTypes := make(map[string]string, len(fieldTypes))
@@ -1148,6 +1151,17 @@ func parseJavaDeclaredVisibility(node *sitter.Node, src []byte) string {
 		return visibility
 	}
 	return VisibilityPackagePrivate
+}
+
+// markStaticContextCalls marks the unqualified calls of a static method as
+// statically bound: a static method has no this, so `get(file, metadata)`
+// inside one names a static method of the class and cannot dispatch.
+func markStaticContextCalls(calls []FunctionCall) {
+	for i := range calls {
+		if !strings.Contains(calls[i].Raw, ".") && !strings.Contains(calls[i].Raw, "(") {
+			calls[i].StaticReceiver = true
+		}
+	}
 }
 
 // javaTypeQualifiedCall reports whether a method call's receiver is a type
