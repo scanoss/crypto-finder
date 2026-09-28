@@ -941,6 +941,7 @@ func (ds *DependencyScanner) mergeReports(
 	merged := &entities.InterimReport{
 		Version:  userReport.Version,
 		Tool:     userReport.Tool,
+		Rules:    userReport.Rules,
 		Findings: make([]entities.Finding, 0, len(userReport.Findings)),
 	}
 
