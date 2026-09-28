@@ -1,0 +1,36 @@
+rules:
+  - id: java.polyglot-reachability.message-digest
+    message: Detected MessageDigest
+    severity: INFO
+    languages:
+      - java
+    pattern: MessageDigest.getInstance($ALG)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: hash
+        api: java.security.MessageDigest.getInstance
+
+  - id: kotlin.polyglot-reachability.message-digest
+    message: Detected MessageDigest
+    severity: INFO
+    languages:
+      - kotlin
+    pattern: MessageDigest.getInstance($ALG)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: hash
+        api: java.security.MessageDigest.getInstance
+
+  - id: typescript.polyglot-reachability.create-hash
+    message: Detected createHash
+    severity: INFO
+    languages:
+      - typescript
+    pattern: createHash($ALG)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: hash
+        api: crypto.createHash

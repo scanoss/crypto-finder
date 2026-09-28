@@ -110,9 +110,13 @@ func (r *NpmResolver) Ecosystem() string {
 	return ecosystemNode
 }
 
-// CanResolve reports whether targetDir has the root package.json Resolve reads.
+// CanResolve reports whether targetDir has both files Resolve reads: the root
+// package.json and the package-lock.json that records which versions are
+// installed. A package.json alone is first-party source whose dependencies
+// cannot be resolved, so the dependency phase is skipped for it rather than
+// failing the scan (see SkipReasonLockfileAbsent).
 func (r *NpmResolver) CanResolve(targetDir string) bool {
-	return fileExists(filepath.Join(targetDir, npmManifest))
+	return HasRootManifest(targetDir, ecosystemNode)
 }
 
 // Resolve reads package.json and package-lock.json at targetDir and maps every
