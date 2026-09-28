@@ -42,14 +42,19 @@ func TestLoadEmbeddedNodeElliptic(t *testing.T) {
 		{"elliptic.eddsa.<init>", 1, "elliptic.eddsa"},
 		{"elliptic.EdDSA.<init>", 1, "elliptic.eddsa"},
 
-		// TWO TYPES, NOT ONE: the context produces KeyPairs and the operations
-		// live on the KeyPair. Merging them would let `ec.sign(..)` resolve,
-		// which the library does not offer.
+		// TWO TYPES, NOT ONE: the context produces KeyPairs, and both sign and
+		// verify. The context takes the key as an argument (ec.sign(msg, key));
+		// the KeyPair signs with its own (key.sign(msg)).
 		{"elliptic.ec.genKeyPair", 0, "elliptic.KeyPair"},
 		{"elliptic.ec.keyFromPrivate", 2, "elliptic.KeyPair"},
 		{"elliptic.eddsa.keyFromSecret", 1, "elliptic.KeyPair"},
 
+		{"elliptic.ec.sign", 2, "elliptic.Signature"},
+		{"elliptic.ec.sign", 3, "elliptic.Signature"},
+		{"elliptic.ec.verify", 3, "boolean"},
+		{"elliptic.ec.verify", 4, "boolean"},
 		{"elliptic.KeyPair.sign", 1, "elliptic.Signature"},
+		{"elliptic.Signature.toDER", 0, "Array"},
 		{"elliptic.KeyPair.verify", 2, "boolean"},
 
 		// derive() is ECDH and returns a BN, not a key object.
@@ -73,13 +78,27 @@ func TestLoadEmbeddedNodeElliptic(t *testing.T) {
 		}
 	}
 
-	// The operations are NOT on the context. Asserting the absence keeps a
-	// later edit from quietly merging the two types.
-	for _, notOnContext := range []string{"elliptic.ec.sign", "elliptic.ec.verify", "elliptic.ec.derive"} {
+	// ECDH is on the KeyPair only: the curve context has no derive.
+	for _, notOnContext := range []string{"elliptic.ec.derive"} {
 		for arity := 0; arity <= 3; arity++ {
 			if got := kb.ContractsFor(notOnContext, arity); len(got) != 0 {
-				t.Errorf("%q resolved at arity %d; that method is on the KeyPair, not the curve context", notOnContext, arity)
+				t.Errorf("%q resolved at arity %d; derive is on the KeyPair, not the curve context", notOnContext, arity)
 			}
+		}
+	}
+
+	// getPublic(compact, enc) returns a string for 'hex' and a byte array for
+	// any other encoding, so the conditional contract must win for 'hex'.
+	pub := kb.ContractsFor("elliptic.KeyPair.getPublic", 2)
+	if len(pub) != 2 {
+		t.Fatalf("getPublic#2 has %d contracts, want the 'hex' conditional and the array fallback", len(pub))
+	}
+	for _, c := range pub {
+		switch {
+		case c.When != nil && c.Return.Type != "string":
+			t.Errorf("getPublic(compact, 'hex') returns %q, want string", c.Return.Type)
+		case c.When == nil && c.Return.Type != "Array":
+			t.Errorf("getPublic(compact, enc) returns %q, want Array", c.Return.Type)
 		}
 	}
 
@@ -92,7 +111,7 @@ func TestLoadEmbeddedNodeElliptic(t *testing.T) {
 			n++
 		}
 	}
-	if n != 24 {
-		t.Errorf("elliptic contributes %d keys, want 24", n)
+	if n != 31 {
+		t.Errorf("elliptic contributes %d keys, want 31", n)
 	}
 }
