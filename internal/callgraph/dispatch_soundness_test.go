@@ -654,3 +654,42 @@ public class App {
 		})
 	}
 }
+
+func TestDispatch_OverloadInheritedFromFartherAncestorIsLinked(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/A.java": `package com.acme;
+import java.security.MessageDigest;
+public class A {
+  public void m(Object o) throws Exception { MessageDigest.getInstance("SHA-1"); }
+}
+`,
+		// B declares a different overload of m; A.m(Object) is still inherited.
+		"com/acme/B.java": "package com.acme;\npublic class B extends A {\n  public void m(String s) {}\n}\n",
+		"com/acme/C.java": "package com.acme;\npublic class C extends B {\n  public void other() {}\n}\n",
+		"com/acme/App.java": `package com.acme;
+public class App {
+  public void go(Object o) throws Exception { new C().m(o); }
+}
+`,
+	})
+	if !hasCaller(graph, "com.acme.(A).m#1", "com.acme.(App).go#1") {
+		t.Fatalf("C inherits A.m(Object) past B's m(String) overload: javac runs A.m, which must stay linked")
+	}
+}
+
+func TestDispatch_BoxedPrimitiveFitsConstable(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/W2.java": `package com.acme;
+import java.lang.constant.Constable;
+import java.security.MessageDigest;
+public class W2 {
+  public void f(Object o) {}
+  public void f(Constable c) throws Exception { MessageDigest.getInstance("SHA-1"); }
+}
+`,
+		"com/acme/App.java": "package com.acme;\npublic class App {\n  public void go() throws Exception { new W2().f(5); }\n}\n",
+	})
+	if !hasCaller(graph, "com.acme.(W2).f#1$Constable", "com.acme.(App).go#0") {
+		t.Fatalf("5 boxes to Integer, which is a Constable: javac picks f(Constable), which must stay linked")
+	}
+}

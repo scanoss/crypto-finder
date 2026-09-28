@@ -1514,7 +1514,7 @@ func (b *Builder) expandAbstractClassDispatch(
 	sort.Strings(overrides)
 	sort.Strings(heuristic)
 	results := make([]interfaceDispatchAlias, 0, len(overrides)+len(heuristic)+1)
-	for _, k := range nearestInherited(idx.hierarchy, calleeOwner, inheritedByOwner) {
+	for _, k := range inheritedMethods(graph, idx.hierarchy, calleeOwner, inheritedByOwner) {
 		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType, Kind: EdgeKindExact})
 	}
 	for _, k := range overrides {
@@ -1571,34 +1571,57 @@ func abstractCandidateKind(hierarchy *dispatchHierarchy, owner, calleeOwner stri
 	return ""
 }
 
-// nearestInherited returns the declarations of the closest ancestor of owner
-// (breadth-first over its superclasses and interfaces) that declares one.
-func nearestInherited(hierarchy *dispatchHierarchy, owner string, byOwner map[string][]string) []string {
+// notOverridden keeps the keys of one ancestor level whose erased signature
+// no nearer kept declaration already has, returning them and their decls.
+func notOverridden(graph *CallGraph, level []string, nearer []*FunctionDecl) ([]string, []*FunctionDecl) {
+	var keys []string
+	var decls []*FunctionDecl
+	for _, key := range level {
+		fn := graph.Functions[key]
+		if fn != nil && declaresOverride(nearer, fn) {
+			continue
+		}
+		keys = append(keys, key)
+		if fn != nil {
+			decls = append(decls, fn)
+		}
+	}
+	return keys, decls
+}
+
+// inheritedMethods returns the methods owner inherits from its ancestors,
+// walked breadth-first: every ancestor's same-name, same-arity declarations,
+// minus any whose erased signature a nearer class already declares (that one
+// overrides it). An overload declared further up is inherited too, so it is
+// kept even when a nearer class declares a different overload of the name;
+// call-site overload selection then chooses among them.
+func inheritedMethods(graph *CallGraph, hierarchy *dispatchHierarchy, owner string, byOwner map[string][]string) []string {
 	if len(byOwner) == 0 {
 		return nil
 	}
+	var kept []string
+	var keptDecls []*FunctionDecl
 	seen := map[string]bool{owner: true}
 	frontier := []string{owner}
 	for depth := 0; depth < hierarchyMaxDepth && len(frontier) > 0; depth++ {
-		var next []string
-		var found []string
+		var next, level []string
 		for _, current := range frontier {
 			for _, parent := range hierarchy.parents[current] {
 				if seen[parent] {
 					continue
 				}
 				seen[parent] = true
-				found = append(found, byOwner[parent]...)
+				level = append(level, byOwner[parent]...)
 				next = append(next, parent)
 			}
 		}
-		if len(found) > 0 {
-			sort.Strings(found)
-			return found
-		}
+		levelKept, levelDecls := notOverridden(graph, level, keptDecls)
+		kept = append(kept, levelKept...)
+		keptDecls = append(keptDecls, levelDecls...)
 		frontier = next
 	}
-	return nil
+	sort.Strings(kept)
+	return kept
 }
 
 // selectInheritedOverloads applies call-site overload selection to the

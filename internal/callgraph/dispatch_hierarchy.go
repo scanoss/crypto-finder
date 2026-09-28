@@ -534,6 +534,8 @@ const (
 	javaCharType    = "char"
 	javaIntType     = "int"
 	javaLongType    = "long"
+	javaFloatType   = "float"
+	javaDoubleType  = "double"
 	javaLangString  = "java.lang.String"
 	javaLangPrefix  = "java.lang."
 	javaVoidType    = "void"
@@ -811,11 +813,11 @@ var javaStringSupertypes = map[string]bool{
 // without the graph knowing. Its ancestry must also be fully recorded.
 func (s *overloadSelector) argumentAssignable(call *FunctionCall, i int, caller *FunctionDecl, arg, param string) bool {
 	base := strings.TrimRight(arg, "[]")
-	if isJavaPrimitive(base) {
-		return s.assignable(arg, param)
-	}
 	if isJavaTypeVariable(param) || param == "Object" {
 		return true
+	}
+	if isJavaPrimitive(base) {
+		return s.primitiveArgumentAssignable(arg, param)
 	}
 	argFQN := s.qualifiedArgumentType(call, i, caller)
 	switch {
@@ -831,7 +833,28 @@ func (s *overloadSelector) argumentAssignable(call *FunctionCall, i int, caller 
 		// Nothing in the graph is named like the parameter: nothing proves
 		// the argument is not one.
 		return true
-	case !s.knownType(argFQN) || !s.hierarchy.hierarchyComplete(argFQN):
+	}
+	return s.recordedAncestorNamed(argFQN, param)
+}
+
+// primitiveArgumentAssignable decides a primitive (or primitive array)
+// argument. A reference parameter type the graph knows nothing about and that
+// is neither a wrapper, one of the wrappers' supertypes nor another java.lang
+// type is never ruled out: it may be a platform supertype of the wrapper this
+// check does not list.
+func (s *overloadSelector) primitiveArgumentAssignable(arg, param string) bool {
+	paramBase := strings.TrimRight(param, "[]")
+	if !isJavaPrimitive(paramBase) && len(s.typesBySimple[paramBase]) == 0 && !javaBoxingTargets[paramBase] && !javaLangTypes[paramBase] {
+		return true
+	}
+	return s.assignable(arg, param)
+}
+
+// recordedAncestorNamed reports whether argFQN may be passed as a type whose
+// simple name is param: true when its ancestry is not fully recorded (nothing
+// proves otherwise) or some recorded ancestor carries that name.
+func (s *overloadSelector) recordedAncestorNamed(argFQN, param string) bool {
+	if !s.knownType(argFQN) || !s.hierarchy.hierarchyComplete(argFQN) {
 		return true
 	}
 	for ancestor := range s.hierarchy.ancestorSet(argFQN) {
@@ -996,12 +1019,22 @@ func primitiveAssignable(arg, param string) bool {
 		return true
 	}
 	switch param {
-	case "Serializable", "Comparable":
+	case "Serializable", "Comparable", "Constable":
 		return true
 	case "Number":
 		return arg != javaBooleanType && arg != javaCharType
+	case "ConstantDesc":
+		return arg == javaIntType || arg == javaLongType || arg == javaFloatType || arg == javaDoubleType
 	}
 	return false
+}
+
+// javaBoxingTargets are the reference types primitiveAssignable decides for a
+// primitive argument: the wrappers and the interfaces and classes they extend.
+var javaBoxingTargets = map[string]bool{
+	"Boolean": true, "Byte": true, "Short": true, "Character": true, "Integer": true,
+	"Long": true, "Float": true, "Double": true, "Number": true, "Serializable": true,
+	"Comparable": true, "Constable": true, "ConstantDesc": true,
 }
 
 // unboxedAssignable covers unboxing a wrapper, then widening it.
