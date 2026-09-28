@@ -593,3 +593,64 @@ public class Outer extends Base {
 		t.Fatalf("Key inside Outer is Base.Key: init(Object) must stay linked")
 	}
 }
+
+// roundNineSources builds W.run(Object) beside W.run(Base) (the crypto
+// overload) and an unrelated, fully known com.acme.k.Key, plus one caller.
+func roundNineSources(caller string) map[string]string {
+	return map[string]string{
+		"com/acme/k/Key.java": "package com.acme.k;\npublic class Key {}\n",
+		"com/acme/Base.java":  "package com.acme;\npublic class Base {}\n",
+		"com/acme/W.java": `package com.acme;
+import java.security.MessageDigest;
+public class W {
+  public void run(Object o) {}
+  public void run(Base b) throws Exception { MessageDigest.getInstance("SHA-1"); }
+}
+`,
+		"com/acme/app/App.java": caller,
+	}
+}
+
+func TestDispatch_UncertainArgumentTypeCannotRejectOverload(t *testing.T) {
+	cases := map[string]string{
+		"type parameter": `package com.acme.app;
+import com.acme.Base;
+import com.acme.W;
+public class App {
+  public <Key extends Base> void go(Key k) throws Exception { new W().run(k); }
+}
+`,
+		"local class": `package com.acme.app;
+import com.acme.Base;
+import com.acme.W;
+public class App {
+  public void go() throws Exception {
+    class Key extends Base {}
+    Key k = new Key();
+    new W().run(k);
+  }
+}
+`,
+		"import of an unindexed type": `package com.acme.app;
+import com.acme.W;
+import org.lib.Key;
+public class App {
+  public void go(Key k) throws Exception { new W().run(k); }
+}
+`,
+	}
+	for name, caller := range cases {
+		t.Run(name, func(t *testing.T) {
+			graph := buildJavaGraph(t, roundNineSources(caller))
+			callerKey := ""
+			for key, fn := range graph.Functions {
+				if fn.ID.Type == "App" && BaseFunctionName(fn.ID.Name) == "go" {
+					callerKey = key
+				}
+			}
+			if !hasCaller(graph, "com.acme.(W).run#1$Base", callerKey) {
+				t.Fatalf("the argument's Key is not the graph's com.acme.k.Key and may extend Base: run(Base) must stay linked")
+			}
+		})
+	}
+}

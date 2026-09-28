@@ -789,11 +789,57 @@ func (s *overloadSelector) matchArguments(fn *FunctionDecl, call *FunctionCall, 
 		if s.parameterUncertain(fn, i) {
 			continue
 		}
-		if arg != paramType && !s.assignable(arg, paramType) {
+		if arg != paramType && !s.argumentAssignable(call, i, caller, arg, paramType) {
 			accepted = false
 		}
 	}
 	return known, exactPositions, accepted
+}
+
+// javaStringSupertypes are the types a java.lang.String value can be passed as;
+// String is final, so nothing else accepts it.
+var javaStringSupertypes = map[string]bool{
+	javaStringType: true, "Object": true, "CharSequence": true, "Comparable": true,
+	"Serializable": true, "Constable": true, "ConstantDesc": true,
+}
+
+// argumentAssignable reports whether the argument at position i may be passed
+// to a parameter of type param. An argument can rule an overload out only when
+// its own type is certain in the caller's file (certainName, or a primitive or
+// literal): a type parameter, a local class, an import of a type the graph
+// never indexed or an inherited member type may all extend the parameter type
+// without the graph knowing. Its ancestry must also be fully recorded.
+func (s *overloadSelector) argumentAssignable(call *FunctionCall, i int, caller *FunctionDecl, arg, param string) bool {
+	base := strings.TrimRight(arg, "[]")
+	if isJavaPrimitive(base) {
+		return s.assignable(arg, param)
+	}
+	if isJavaTypeVariable(param) || param == "Object" {
+		return true
+	}
+	argFQN := s.qualifiedArgumentType(call, i, caller)
+	switch {
+	case argFQN == "":
+		return true
+	case argFQN == javaLangString:
+		return javaStringSupertypes[strings.TrimRight(param, "[]")] && !strings.HasSuffix(param, "[]")
+	case strings.HasSuffix(arg, "[]") || strings.HasSuffix(param, "[]"):
+		return true
+	case isJavaPrimitive(param):
+		return unboxedAssignable(arg, param)
+	case len(s.typesBySimple[param]) == 0:
+		// Nothing in the graph is named like the parameter: nothing proves
+		// the argument is not one.
+		return true
+	case !s.knownType(argFQN) || !s.hierarchy.hierarchyComplete(argFQN):
+		return true
+	}
+	for ancestor := range s.hierarchy.ancestorSet(argFQN) {
+		if simpleTypeName(ancestor) == param {
+			return true
+		}
+	}
+	return false
 }
 
 // javaLangTypes are the java.lang types a source file uses without importing.
