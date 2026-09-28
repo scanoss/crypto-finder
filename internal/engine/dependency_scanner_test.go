@@ -1410,3 +1410,26 @@ func TestDependencyScanner_ScanWithDependencies_ExcludedDirIsNeverAResolutionRoo
 		t.Errorf("Code = %q, want %q: the only manifest sits in an excluded directory", structured.Code, failure.CodeDependencyBuildToolUnknown)
 	}
 }
+
+// A dependency scan must not strip the ruleset stamp from the report:
+// consumers compare it across runs to decide whether results are reusable.
+func TestMergeReports_KeepsTheUserReportsRulesStamp(t *testing.T) {
+	ds := &DependencyScanner{}
+	stamp := entities.RulesInfo{Source: "local", ChecksumSHA256: "03690ca0"}
+	userReport := &entities.InterimReport{
+		Version: "1.0",
+		Tool:    entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Rules:   stamp,
+	}
+	depResults := []depScanResult{{
+		dep:    dependency.Dependency{Module: "dep1", Version: "1"},
+		status: depScanStatusScanned,
+		report: &entities.InterimReport{Findings: []entities.Finding{{FilePath: "dep/a.go"}}},
+	}}
+
+	merged := ds.mergeReports(userReport, depResults)
+
+	if !reflect.DeepEqual(merged.Rules, stamp) {
+		t.Fatalf("merged rules = %#v, want %#v", merged.Rules, stamp)
+	}
+}
