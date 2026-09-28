@@ -693,3 +693,79 @@ public class W2 {
 		t.Fatalf("5 boxes to Integer, which is a Constable: javac picks f(Constable), which must stay linked")
 	}
 }
+
+func TestDispatch_TypeVariableSignatureDoesNotHideInheritedMethod(t *testing.T) {
+	cases := map[string]map[string]string{
+		// A.m(T) erases to m(Object): B's m(String) does not override it.
+		"generic ancestor": {
+			"com/acme/Key.java": "package com.acme;\npublic class Key {}\n",
+			"com/acme/A.java": `package com.acme;
+import javax.crypto.Cipher;
+public class A<T> {
+  public void m(T t) throws Exception { Cipher.getInstance("AES"); }
+}
+`,
+			"com/acme/B.java":   "package com.acme;\npublic class B extends A<Key> {\n  public void m(String s) {}\n}\n",
+			"com/acme/C.java":   "package com.acme;\npublic class C extends B {\n  public void other() {}\n}\n",
+			"com/acme/App.java": "package com.acme;\npublic class App {\n  public void go(Key key) throws Exception { new C().m(key); }\n}\n",
+		},
+		// B<T>.m(T) erases to m(Object): it does not override A.m(String).
+		"generic middle class": {
+			"com/acme/A.java": `package com.acme;
+import javax.crypto.Cipher;
+public class A {
+  public void m(String s) throws Exception { Cipher.getInstance("AES"); }
+}
+`,
+			"com/acme/B.java":   "package com.acme;\npublic class B<T> extends A {\n  public void m(T t) {}\n}\n",
+			"com/acme/C.java":   "package com.acme;\npublic class C extends B<Integer> {\n  public void other() {}\n}\n",
+			"com/acme/App.java": "package com.acme;\npublic class App {\n  public void go() throws Exception { new C().m(\"x\"); }\n}\n",
+		},
+	}
+	for name, files := range cases {
+		t.Run(name, func(t *testing.T) {
+			graph := buildJavaGraph(t, files)
+			target := ""
+			for key, fn := range graph.Functions {
+				if fn.ID.Type == "A" && BaseFunctionName(fn.ID.Name) == "m" {
+					target = key
+				}
+			}
+			callerKey := ""
+			for key, fn := range graph.Functions {
+				if fn.ID.Type == "App" {
+					callerKey = key
+				}
+			}
+			if !hasCaller(graph, target, callerKey) {
+				t.Fatalf("javac runs A.m, which a type-variable signature does not override: %s must stay linked", target)
+			}
+		})
+	}
+}
+
+func TestDispatch_ArrayArgumentFitsSerializableAndCloneable(t *testing.T) {
+	for _, tc := range []struct{ iface, arg string }{{"java.io.Serializable", "byte[]"}, {"Cloneable", "int[]"}} {
+		simple := tc.iface[strings.LastIndex(tc.iface, ".")+1:]
+		graph := buildJavaGraph(t, map[string]string{
+			"com/acme/M.java": `package com.acme;
+import javax.crypto.Cipher;
+public class M {
+  public void m(` + tc.iface + ` s) throws Exception { Cipher.getInstance("AES"); }
+  public void m(Object o) {}
+  public void m(String s) {}
+}
+`,
+			"com/acme/App.java": "package com.acme;\npublic class App {\n  public void go(M m, " + tc.arg + " k) throws Exception { m.m(k); }\n}\n",
+		})
+		target := ""
+		for key, fn := range graph.Functions {
+			if fn.ID.Type == "M" && strings.HasSuffix(fn.ID.Name, "$"+simple) {
+				target = key
+			}
+		}
+		if !hasCaller(graph, target, "com.acme.(App).go#2") {
+			t.Errorf("a %s argument is a %s: javac picks m(%s), which must stay linked", tc.arg, simple, simple)
+		}
+	}
+}

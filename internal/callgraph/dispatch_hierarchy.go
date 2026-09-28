@@ -264,7 +264,7 @@ func (h *dispatchHierarchy) nearestDeclaring(typeName, method string, ifaceMetho
 					continue
 				}
 				seen[parent] = true
-				if declaresOverride(declares[parent][method], ifaceMethod) {
+				if declaresMatching(declares[parent][method], ifaceMethod) {
 					found = append(found, parent)
 				}
 				next = append(next, parent)
@@ -299,16 +299,65 @@ func (h *dispatchHierarchy) classMethodIndex() map[string]map[string][]*Function
 	return h.declaredMethods
 }
 
-// declaresOverride reports whether one of decls has ifaceMethod's erased
-// parameter types. A same-name, same-arity overload with other parameter
-// types does not override it.
-func declaresOverride(decls []*FunctionDecl, ifaceMethod *FunctionDecl) bool {
+// declaresOverride reports whether one of decls certainly overrides method:
+// the same erasure at every parameter, with a type variable erased to the
+// bound its class declares. A same-name, same-arity overload with other
+// parameter types does not override it, and neither does a signature whose
+// type variable has no known bound, so a declaration is only ever hidden by a
+// proven override.
+func declaresOverride(decls []*FunctionDecl, method *FunctionDecl) bool {
 	for _, decl := range decls {
-		if sameErasedParameters(decl.Parameters, ifaceMethod.Parameters) {
+		if sameStrictErasure(decl, method) {
 			return true
 		}
 	}
 	return false
+}
+
+// declaresMatching reports whether one of decls may implement method: the
+// loose comparison that lets a type variable match anything, used where a
+// false match only adds a target.
+func declaresMatching(decls []*FunctionDecl, method *FunctionDecl) bool {
+	for _, decl := range decls {
+		if sameErasedParameters(decl.Parameters, method.Parameters) {
+			return true
+		}
+	}
+	return false
+}
+
+// sameStrictErasure compares the erased parameter types of a and b exactly.
+func sameStrictErasure(a, b *FunctionDecl) bool {
+	if len(a.Parameters) != len(b.Parameters) {
+		return false
+	}
+	for i := range a.Parameters {
+		left, okLeft := strictParameterErasure(a, i)
+		right, okRight := strictParameterErasure(b, i)
+		if !okLeft || !okRight || left != right {
+			return false
+		}
+	}
+	return true
+}
+
+// strictParameterErasure returns the erased simple type of decl's parameter
+// i, with a class type variable replaced by its declared bound (Object when
+// unbounded). ok is false for a type variable whose bound is not known, such
+// as a method type parameter.
+func strictParameterErasure(decl *FunctionDecl, i int) (string, bool) {
+	t := stripGenericSuffix(normalizeJavaTypeName(decl.Parameters[i].Type))
+	suffix := ""
+	for strings.HasSuffix(t, "[]") {
+		t, suffix = strings.TrimSuffix(t, "[]"), suffix+"[]"
+	}
+	if bound, ok := decl.TypeParamBounds[t]; ok {
+		return stripGenericSuffix(normalizeJavaTypeName(bound)) + suffix, true
+	}
+	if t == "" || isJavaTypeVariable(t) || decl.FileTypeNamesAtRisk[t] {
+		return "", false
+	}
+	return t + suffix, true
 }
 
 // relation classifies whether sub is a subtype of super.
@@ -816,6 +865,9 @@ func (s *overloadSelector) argumentAssignable(call *FunctionCall, i int, caller 
 	if isJavaTypeVariable(param) || param == "Object" {
 		return true
 	}
+	if strings.HasSuffix(arg, "[]") {
+		return arrayArgumentAssignable(arg, param)
+	}
 	if isJavaPrimitive(base) {
 		return s.primitiveArgumentAssignable(arg, param)
 	}
@@ -835,6 +887,33 @@ func (s *overloadSelector) argumentAssignable(call *FunctionCall, i int, caller 
 		return true
 	}
 	return s.recordedAncestorNamed(argFQN, param)
+}
+
+// arrayArgumentAssignable decides an array argument without the boxing table:
+// every array is an Object, Serializable and Cloneable; otherwise the
+// parameter must be an array (or a varargs parameter) whose component the
+// argument's component fits. Reference components are not ruled out.
+func arrayArgumentAssignable(arg, param string) bool {
+	switch param {
+	case javaRootType, "Serializable", "Cloneable":
+		return true
+	}
+	if isJavaTypeVariable(param) {
+		return true
+	}
+	if !strings.HasSuffix(param, "[]") {
+		return false
+	}
+	argComponent, paramComponent := strings.TrimSuffix(arg, "[]"), strings.TrimSuffix(param, "[]")
+	if argComponent == paramComponent {
+		return true
+	}
+	if isJavaPrimitive(argComponent) || isJavaPrimitive(paramComponent) {
+		// A primitive array converts only to the identical array type, but a
+		// varargs parameter of arrays may take it as one element.
+		return isJavaPrimitive(argComponent) && strings.HasSuffix(paramComponent, "[]") && strings.TrimSuffix(paramComponent, "[]") == argComponent
+	}
+	return true
 }
 
 // primitiveArgumentAssignable decides a primitive (or primitive array)
