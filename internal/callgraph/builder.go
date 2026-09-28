@@ -33,6 +33,8 @@ const (
 	// ecosystemRust is the ecosystem identifier for Rust callgraphs. Used to
 	// gate the same-typed-method merge, which is Rust-specific.
 	ecosystemRust = "rust"
+	// ecosystemNode is the ecosystem the Node KBs declare.
+	ecosystemNode = "node"
 )
 
 // Parser extracts function declarations, calls, and imports from source files
@@ -230,6 +232,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 		propagatePythonTypesThroughChains(graph, kb)
 	}
 	resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
+	resolveNodeAssignedVarCallees(graph, kb)
 	respellGoPointerReceivers(graph, b.ecosystem)
 
 	// Resolve single-argument pass-through dispatch: a call site whose
@@ -1554,10 +1557,10 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 	// Seed the receiver type from the root (innermost) link's KB return type.
 	rootCall := &fn.Calls[idxs[0]]
 	rootFQN, rootArity := splitMethodArity(&rootCall.Callee)
-	// C++ and Go callee names carry no arity suffix, so the contract key's
-	// arity has to come from the call site. For Go the argument count is the
-	// arity exactly: the language has no overloading.
-	if (kb.Ecosystem == ecosystemCPP || kb.Ecosystem == ecosystemGo) && rootArity < 0 {
+	// C++, Go and Node callee names carry no arity suffix, so the contract
+	// key's arity has to come from the call site. For Go the argument count is
+	// the arity exactly: the language has no overloading.
+	if calleeNamesCarryNoArity(kb.Ecosystem) && rootArity < 0 {
 		rootArity = len(rootCall.Arguments)
 	}
 	rootContracts := kb.ContractsForTolerant(rootFQN, rootArity)
@@ -1586,9 +1589,9 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 		pkg, typ := splitQualifiedTypeName(currentType)
 		name := fmt.Sprintf("%s#%d", base, arity)
 		switch kb.Ecosystem {
-		case ecosystemGo:
-			// Go declarations carry no arity suffix (the language has no
-			// overloading), so the rewritten identity must not either.
+		case ecosystemGo, ecosystemNode:
+			// Go and Node declarations carry no arity suffix, so the rewritten
+			// identity must not either.
 			name = base
 		case ecosystemRust:
 			// Rust separates module path from type with "::", not ".", so the
@@ -1620,6 +1623,12 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 	return resolved
 }
 
+// calleeNamesCarryNoArity reports whether an ecosystem's parser names a callee
+// without the "#arity" suffix, leaving the arity to the call site.
+func calleeNamesCarryNoArity(ecosystem string) bool {
+	return ecosystem == ecosystemCPP || ecosystem == ecosystemGo || ecosystem == ecosystemNode
+}
+
 // chainLinkContracts looks up the contracts for one fluent-chain link on the
 // propagated receiver type, applying the ecosystem-specific arity rules:
 // C++ falls back to the literal argument count when the callee name carries no
@@ -1631,7 +1640,7 @@ func resolveChainLinkCallees(graph *CallGraph, callerKey string, fn *FunctionDec
 // contract's declared arity when the varargs fallback matched).
 func chainLinkContracts(kb *contracts.KnowledgeBase, currentType string, call *FunctionCall) ([]contracts.Contract, string, int) {
 	base, arity := methodBaseArity(call.Callee.Name)
-	if (kb.Ecosystem == ecosystemCPP || kb.Ecosystem == ecosystemGo) && arity < 0 {
+	if calleeNamesCarryNoArity(kb.Ecosystem) && arity < 0 {
 		arity = len(call.Arguments)
 	}
 	ctrs := kb.ContractsForTolerant(currentType+"."+base, arity)
@@ -1743,13 +1752,13 @@ func resolveGoAssignedVarCalleesInFunction(graph *CallGraph, callerKey string, f
 		recordCallEdgeResolution(graph, callerKey, call.Callee.String(), EdgeKindExact, "", call)
 		resolved++
 	}
-	reconcileGoRewrittenCallers(graph, callerKey, fn, oldKeys)
+	reconcileRewrittenCallers(graph, callerKey, fn, oldKeys)
 	return resolved
 }
 
-// reconcileGoRewrittenCallers drops the caller's edge to each pre-rewrite key
+// reconcileRewrittenCallers drops the caller's edge to each pre-rewrite key
 // that no remaining call in the function still targets.
-func reconcileGoRewrittenCallers(graph *CallGraph, callerKey string, fn *FunctionDecl, oldKeys map[string]bool) {
+func reconcileRewrittenCallers(graph *CallGraph, callerKey string, fn *FunctionDecl, oldKeys map[string]bool) {
 	for oldKey := range oldKeys {
 		still := false
 		for i := range fn.Calls {
