@@ -17,6 +17,7 @@
 package callgraph
 
 import (
+	"sort"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -76,8 +77,8 @@ func javaClauseTypeNames(node *sitter.Node, src []byte) []string {
 
 // resolveJavaSupertype maps a type name written in an extends/implements clause
 // to the fully qualified names it can denote, following Java's lookup order: a
-// single-type import, then a type declared in this file, then the file's own
-// package. When the file also has on-demand (wildcard) imports the name may
+// type declared in this file (a member type shadows an import), then a
+// single-type import, then the file's own package. When the file also has on-demand (wildcard) imports the name may
 // come from one of them instead, so each such package, and java.lang, is
 // returned as a further candidate. The result can therefore over-approximate
 // by names that no type in the graph carries; a candidate that names no known
@@ -89,17 +90,24 @@ func resolveJavaSupertype(typeText string, analysis *FileAnalysis) []string {
 	}
 	pkg := javaAnalysisPackagePath(analysis)
 	head, rest, qualified := strings.Cut(typeText, ".")
-	if analysis != nil {
-		if imported, ok := analysis.Imports[head]; ok && imported != "" {
-			return []string{imported + "." + typeText}
-		}
-	}
 	if qualified && head != "" && !looksLikeJavaTypeName(head) {
 		// Already fully qualified: org.example.Base.
 		return []string{typeText}
 	}
-	if declared := declaredJavaTypeName(typeText, analysis); declared != "" {
-		return []string{joinJavaPackage(pkg, declared)}
+	// A type declared in this file, nested ones included, shadows a
+	// single-type import of the same simple name. Several declarations of
+	// that name (in different enclosing types) are all listed.
+	if declared := declaredJavaTypeNames(typeText, analysis); len(declared) > 0 {
+		out := make([]string, 0, len(declared))
+		for _, name := range declared {
+			out = append(out, joinJavaPackage(pkg, name))
+		}
+		return out
+	}
+	if analysis != nil {
+		if imported, ok := analysis.Imports[head]; ok && imported != "" {
+			return []string{imported + "." + typeText}
+		}
 	}
 	if qualified {
 		// Outer.Inner where Outer is neither imported nor declared here: it
@@ -117,27 +125,23 @@ func resolveJavaSupertype(typeText string, analysis *FileAnalysis) []string {
 	return append(candidates, "java.lang."+typeText)
 }
 
-// declaredJavaTypeName returns the file-local (possibly nested, dotted) name
-// of the type declared in this file that typeText refers to, or "" when none
-// does. An exact key wins; otherwise a nested type whose trailing segments
-// equal typeText.
-func declaredJavaTypeName(typeText string, analysis *FileAnalysis) string {
+// declaredJavaTypeNames returns the file-local (possibly nested, dotted) names
+// of the types declared in this file that typeText can refer to: a top-level
+// type of that name and every nested type whose trailing segments equal it.
+// Which one applies depends on the enclosing scope, which is not tracked, so
+// more than one result means the name is ambiguous here.
+func declaredJavaTypeNames(typeText string, analysis *FileAnalysis) []string {
 	if analysis == nil || len(analysis.ClassBases) == 0 {
-		return ""
+		return nil
 	}
-	if _, ok := analysis.ClassBases[typeText]; ok {
-		return typeText
-	}
-	match := ""
+	var matches []string
 	for declared := range analysis.ClassBases {
-		if !strings.HasSuffix(declared, "."+typeText) {
-			continue
-		}
-		if match == "" || len(declared) < len(match) || (len(declared) == len(match) && declared < match) {
-			match = declared
+		if declared == typeText || strings.HasSuffix(declared, "."+typeText) {
+			matches = append(matches, declared)
 		}
 	}
-	return match
+	sort.Strings(matches)
+	return matches
 }
 
 func joinJavaPackage(pkg, typeName string) string {
@@ -202,6 +206,11 @@ func qualifyJavaType(raw string, analysis *FileAnalysis) string {
 	}
 	if strings.Contains(base, ".") && !looksLikeJavaTypeName(base) {
 		return base
+	}
+	if len(declaredJavaTypeNames(base, analysis)) > 1 {
+		// Several types of this name are declared in the file and the scope
+		// that picks one is not tracked: leave it unresolved.
+		return ""
 	}
 	return strings.Join(resolveJavaSupertype(base, analysis), javaSupertypeAlternatives)
 }

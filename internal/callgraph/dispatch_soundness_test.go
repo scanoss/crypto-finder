@@ -425,3 +425,58 @@ public class App {
 		t.Fatalf("F.mk returns com.acme.sec.Key, so javac picks r(Object), which must stay linked")
 	}
 }
+
+func TestDispatch_NestedTypeShadowsImportInReturnType(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/sec/Key.java": "package com.acme.sec;\npublic interface Key {}\n",
+		"com/other/Svc.java": `package com.other;
+import com.acme.sec.Key;
+import java.security.MessageDigest;
+public class Svc {
+  public void r(Key k) {}
+  public void r(Object o) throws Exception { MessageDigest.getInstance("MD5"); }
+}
+`,
+		// The nested F.Key shadows the imported com.acme.sec.Key inside F.
+		"com/other/F.java": `package com.other;
+import com.acme.sec.Key;
+public class F {
+  public static class Key {}
+  public static Key mk() { return new Key(); }
+}
+`,
+		"com/other/App.java": `package com.other;
+public class App {
+  public void run() throws Exception { new Svc().r(F.mk()); }
+}
+`,
+	})
+	if !hasCaller(graph, "com.other.(Svc).r#1$Object", "com.other.(App).run#0") {
+		t.Fatalf("F.mk returns the nested F.Key, so javac picks r(Object), which must stay linked")
+	}
+}
+
+func TestDispatch_NestedTypeShadowsImportInParameter(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/sec/Key.java": "package com.acme.sec;\npublic interface Key {}\n",
+		// r(Key) takes the nested Svc.Key, not the imported com.acme.sec.Key.
+		"com/other/Svc.java": `package com.other;
+import com.acme.sec.Key;
+import java.security.MessageDigest;
+public class Svc {
+  public static class Key {}
+  public void r(Key k) {}
+  public void r(Object o) throws Exception { MessageDigest.getInstance("MD5"); }
+}
+`,
+		"com/other/App.java": `package com.other;
+import com.acme.sec.Key;
+public class App {
+  public void run(Svc svc, Key k) throws Exception { svc.r(k); }
+}
+`,
+	})
+	if !hasCaller(graph, "com.other.(Svc).r#1$Object", "com.other.(App).run#2") {
+		t.Fatalf("a com.acme.sec.Key argument does not fit Svc.Key: javac picks r(Object), which must stay linked")
+	}
+}
