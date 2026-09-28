@@ -1,0 +1,188 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: s2n-tls
+  coordinates:
+    - s2n-tls
+  version_range: ">=0.10.0,<2.0.0"
+  description: "s2n-tls TLS configuration, connection and certificate APIs"
+
+# Inventory source: s2n-tls 1.5.10 public headers (api/s2n.h, api/unstable/crl.h)
+# from the upstream tag archive; every contracted signature has the same arity in
+# the 0.10.24 header. s2n_cert_chain_and_key_load_public_pem_bytes and the CRL
+# API are newer and apply only where the consumer's version declares them.
+#
+# Scope: every s2n_* symbol the s2n-tls detection rules select, plus the config,
+# connection and certificate lifecycle around them and the negotiated-parameter
+# getters. The security policy string is configuration; the protocol version,
+# cipher suite, curve, KEM group and signature scheme are only known after
+# s2n_negotiate and come from the output-role getters. The two stay distinct.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: s2n_init/s2n_cleanup (library bootstrap), I/O and callback
+#   setters (s2n_connection_set_fd/_read_fd/_write_fd, *_callback), error and
+#   stack-trace helpers, and all *_free / s2n_connection_wipe teardown calls.
+# needs-follow-up: PSK and early-data APIs, OCSP/SCT stapling, client-hello
+#   inspection, session ticket/resumption state, kTLS and renegotiation.
+contracts:
+
+  # Configuration and security policy.
+  - method: s2n_config_new
+    arity: 0
+    return: {type: "struct s2n_config*", confidence: high}
+    role: factory
+  - method: s2n_config_set_cipher_preferences
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: version
+        role: metadata-contributing
+        contributes: {property: securityPolicy, derivation: argument_value}
+  - method: s2n_config_add_dhparams
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_config_add_ticket_crypto_key
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: s2n_config_set_session_tickets_onoff
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_config_disable_x509_verification
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+
+  # Certificates, keys and trust.
+  - method: s2n_cert_chain_and_key_new
+    arity: 0
+    return: {type: "struct s2n_cert_chain_and_key*", confidence: high}
+    role: factory
+  - method: s2n_cert_chain_and_key_load_pem
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_cert_chain_and_key_load_pem_bytes
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_cert_chain_and_key_load_public_pem_bytes
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_config_add_cert_chain_and_key
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_config_add_cert_chain_and_key_to_store
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_config_add_pem_to_trust_store
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_config_set_verification_ca_location
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_crl_new
+    arity: 0
+    return: {type: "struct s2n_crl*", confidence: high}
+    role: factory
+  - method: s2n_crl_load_pem
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+
+  # Connection lifecycle. The mode argument of s2n_connection_new selects the
+  # client or server side of the protocol.
+  - method: s2n_connection_new
+    arity: 1
+    return: {type: "struct s2n_connection*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: mode
+        role: operation-determining
+        contributes: {property: mode, derivation: argument_value}
+  - method: s2n_connection_set_config
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: s2n_connection_set_cipher_preferences
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: version
+        role: metadata-contributing
+        contributes: {property: securityPolicy, derivation: argument_value}
+  - method: s2n_negotiate
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: s2n_send
+    arity: 4
+    return: {type: "ssize_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: size
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: s2n_recv
+    arity: 4
+    return: {type: "ssize_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: size
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: s2n_shutdown
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Negotiated values, read after s2n_negotiate.
+  - method: s2n_connection_get_actual_protocol_version
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: s2n_connection_get_cipher
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: s2n_connection_get_curve
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: s2n_connection_get_kem_name
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: s2n_connection_get_kem_group_name
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: s2n_connection_get_selected_signature_algorithm
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: s2n_connection_get_selected_digest_algorithm
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+
+hierarchy: {}
