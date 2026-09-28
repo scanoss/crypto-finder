@@ -1399,10 +1399,12 @@ func (b *Builder) interfaceImplementationKind(hierarchy *dispatchHierarchy, cand
 }
 
 // overridingCandidates keeps, among one type's same-name, same-arity methods,
-// those whose parameter types match the base method's. A type-variable
-// parameter on either side matches anything, since erasure hides the concrete
-// type. When none matches (the graph spells the types differently) all are
-// kept rather than losing the override.
+// those that may override the base method. It compares with the loose
+// sameErasedParameters (a type variable on either side matches anything),
+// which is safe only because it widens: the real override always matches
+// loosely, so a false match merely keeps an extra target. When none matches
+// (the graph spells the types differently) all are kept rather than losing
+// the override.
 func overridingCandidates(base *FunctionDecl, candidates []*FunctionDecl) []*FunctionDecl {
 	if len(candidates) < 2 {
 		return candidates
@@ -1483,17 +1485,15 @@ func (b *Builder) expandAbstractClassDispatch(
 	baseRoot := namespaceRoot(callee.Package)
 	calleeArity := functionArity(callee.Name)
 	ancestors := idx.hierarchy.ancestorSet(calleeOwner)
+	// When the callee's class declares the method only as overloads, overload
+	// selection links those; this expansion still adds what they may dispatch
+	// to in subtypes (unless all are static) and what the class inherits.
+	virtual := !staticOverloadFamily(graph, callee, idx)
 	calleeComplete := idx.hierarchy.hierarchyComplete(calleeOwner)
 	var overrides, heuristic []string
 	inheritedByOwner := make(map[string][]string)
 	for _, candidate := range targets {
-		if candidate.OwnerType != ownerTypeClass {
-			continue
-		}
-		if candidate.ID.Type == callee.Type && candidate.ID.Package == callee.Package {
-			continue
-		}
-		if functionArity(candidate.ID.Name) != calleeArity {
+		if !abstractCandidateShape(candidate, callee, calleeArity) {
 			continue
 		}
 		owner := declOwnerFQN(candidate.ID)
@@ -1501,7 +1501,7 @@ func (b *Builder) expandAbstractClassDispatch(
 			inheritedByOwner[owner] = append(inheritedByOwner[owner], candidate.ID.String())
 			continue
 		}
-		if namespaceRoot(candidate.ID.Package) != baseRoot {
+		if !virtual || namespaceRoot(candidate.ID.Package) != baseRoot {
 			continue
 		}
 		if kind := abstractCandidateKind(idx.hierarchy, owner, calleeOwner, calleeComplete); kind == EdgeKindInterfaceDispatch {
@@ -1526,6 +1526,18 @@ func (b *Builder) expandAbstractClassDispatch(
 	return results
 }
 
+// abstractCandidateShape reports whether candidate is a class method of the
+// callee's name and arity declared on another class.
+func abstractCandidateShape(candidate *FunctionDecl, callee FunctionID, arity int) bool {
+	if candidate.OwnerType != ownerTypeClass {
+		return false
+	}
+	if candidate.ID.Type == callee.Type && candidate.ID.Package == callee.Package {
+		return false
+	}
+	return functionArity(candidate.ID.Name) == arity
+}
+
 // abstractClassDispatchApplies gates expandAbstractClassDispatch to calls on a
 // known class that declares no method of the callee's name and arity.
 func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispatchIndexes) bool {
@@ -1544,12 +1556,23 @@ func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispa
 	if _, declared := graph.Functions[callee.String()]; declared {
 		return false
 	}
-	if !idx.knownClassTypes[callee.Package+"|"+callee.Type] {
+	return idx.knownClassTypes[callee.Package+"|"+callee.Type]
+}
+
+// staticOverloadFamily reports whether the callee's own class declares
+// same-name, same-arity overloads and all of them are static. A static method
+// is bound at compile time, so such a call never dispatches to a subtype.
+func staticOverloadFamily(graph *CallGraph, callee FunctionID, idx dispatchIndexes) bool {
+	keys := idx.methodsByQualifiedArity[qualifiedMethodArityKey(callee.Package, callee.Type, callee.Name)]
+	if len(keys) == 0 {
 		return false
 	}
-	// Same-arity overloads on the callee's own class are resolved by overload
-	// selection, not by dispatch.
-	return len(idx.methodsByQualifiedArity[qualifiedMethodArityKey(callee.Package, callee.Type, callee.Name)]) == 0
+	for _, key := range keys {
+		if fn := graph.Functions[key]; fn == nil || !fn.Static {
+			return false
+		}
+	}
+	return true
 }
 
 // abstractCandidateKind classifies a same-name candidate of an abstract-class

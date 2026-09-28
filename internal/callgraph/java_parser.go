@@ -1045,6 +1045,7 @@ func (p *JavaParser) parseMethodDecl(
 		Parameters:      params,
 	}
 	decl.QualifiedReturnType = qualifyJavaType(returnRaw, analysis)
+	decl.Static = javaDeclaresModifier(node, src, "static")
 
 	if body != nil {
 		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, ownerName, fieldTypes, fieldAssignments)
@@ -1147,6 +1148,23 @@ func parseJavaDeclaredVisibility(node *sitter.Node, src []byte) string {
 		return visibility
 	}
 	return VisibilityPackagePrivate
+}
+
+// javaDeclaresModifier reports whether a declaration's modifiers include the
+// given keyword.
+func javaDeclaresModifier(node *sitter.Node, src []byte, keyword string) bool {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != javaNodeModifiers {
+			continue
+		}
+		for j := 0; j < int(child.ChildCount()); j++ {
+			if child.Child(j).Content(src) == keyword {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func findJavaVisibilityInNode(node *sitter.Node, src []byte) (string, bool) {

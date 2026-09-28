@@ -219,6 +219,9 @@ type FunctionDecl struct {
 	// through the declaring file's imports, in the FunctionParameter
 	// QualifiedType format. Empty when not resolved (Java methods only).
 	QualifiedReturnType string
+	// Static reports a method declared static, which never dispatches
+	// virtually (Java only).
+	Static bool
 	// FileTypeNamesAtRisk is the declaring file's FileAnalysis.TypeNamesAtRisk,
 	// shared by every declaration of the file (Java only).
 	FileTypeNamesAtRisk map[string]bool

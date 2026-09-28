@@ -769,3 +769,37 @@ public class M {
 		}
 	}
 }
+
+func TestDispatch_OverloadedReceiverStillDispatchesAndInherits(t *testing.T) {
+	t.Run("override in a subtype", func(t *testing.T) {
+		graph := buildJavaGraph(t, map[string]string{
+			"com/acme/A.java": "package com.acme;\npublic class A {\n  public void m(String s) {}\n  public void m(Object o) {}\n}\n",
+			"com/acme/B.java": `package com.acme;
+import javax.crypto.Cipher;
+public class B extends A {
+  public void m(String s) { try { Cipher.getInstance("AES"); } catch (Exception e) {} }
+}
+`,
+			"com/acme/App.java": "package com.acme;\npublic class App {\n  public void run(A a) { a.m(\"x\"); }\n}\n",
+		})
+		if !hasCaller(graph, "com.acme.(B).m#1", "com.acme.(App).run#1") {
+			t.Fatalf("a may be a B, whose m(String) overrides A's: B.m must stay linked")
+		}
+	})
+	t.Run("method inherited past subclass overloads", func(t *testing.T) {
+		graph := buildJavaGraph(t, map[string]string{
+			"com/acme/A.java": `package com.acme;
+import java.io.Serializable;
+import javax.crypto.Cipher;
+public class A {
+  public void m(Serializable s) { try { Cipher.getInstance("AES"); } catch (Exception e) {} }
+}
+`,
+			"com/acme/B.java":   "package com.acme;\npublic class B extends A {\n  public void m(String s) {}\n  public void m(Integer i) {}\n}\n",
+			"com/acme/App.java": "package com.acme;\npublic class App {\n  public void run(byte[] bytes) { new B().m(bytes); }\n}\n",
+		})
+		if !hasCaller(graph, "com.acme.(A).m#1", "com.acme.(App).run#1") {
+			t.Fatalf("B inherits A.m(Serializable), which javac picks for a byte[]: A.m must stay linked")
+		}
+	})
+}
