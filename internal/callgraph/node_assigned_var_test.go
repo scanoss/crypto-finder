@@ -119,10 +119,16 @@ function run(msg) {
 function shadow(ec) {
   return ec.genKeyPair();
 }
+
+function fromOptions(opts) {
+  const ec = opts.ec;
+  return ec.genKeyPair();
+}
 `)
 	for fn, want := range map[string]map[int][]string{
-		"run":    {5: {"elliptic.(ec).genKeyPair"}, 6: {"elliptic.(KeyPair).sign"}},
-		"shadow": {10: {"app.genKeyPair"}},
+		"run":         {5: {"elliptic.(ec).genKeyPair"}, 6: {"elliptic.(KeyPair).sign"}},
+		"shadow":      {10: {"app.genKeyPair"}},
+		"fromOptions": {15: {"app.genKeyPair"}},
 	} {
 		got := nodeCalleesByLine(t, graph, fn)
 		for line, callees := range want {

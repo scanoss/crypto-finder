@@ -42,6 +42,42 @@ const key = ec.genKeyPair();
 console.log(key.getPublic('hex'));
 `
 
+// Functions stored rather than run in place: an object literal's methods and
+// two route handlers. Each is a function of its own, so one method's key calls
+// are never another's supporting calls.
+const nodeObjectLiteralMethods = `const EC = require('elliptic').ec;
+const ec = new EC('secp256k1');
+
+module.exports = {
+  sign: function (msgHash) {
+    const key = ec.genKeyPair();
+    return key.sign(msgHash);
+  },
+  verify: function (msgHash, sig, pub) {
+    const key = ec.keyFromPublic(pub, 'hex');
+    return key.verify(msgHash, sig);
+  }
+};
+`
+
+const nodeRouteHandlers = `const EC = require('elliptic').ec;
+const router = require('express').Router();
+
+router.post('/sign', function (req, res) {
+  const ec = new EC('secp256k1');
+  const key = ec.genKeyPair();
+  res.json(key.sign(req.body.hash));
+});
+
+router.post('/verify', function (req, res) {
+  const ec = new EC('secp256k1');
+  const key = ec.keyFromPublic(req.body.pub, 'hex');
+  res.json(key.verify(req.body.hash, req.body.sig));
+});
+
+module.exports = router;
+`
+
 func TestNodeSupportingCallsReachModuleScopeAndCallbacks(t *testing.T) {
 	t.Parallel()
 
@@ -76,6 +112,22 @@ func TestNodeSupportingCallsReachModuleScopeAndCallbacks(t *testing.T) {
 			match: "const ec = new EC('secp256k1');",
 			rule:  "javascript.elliptic.algorithm.signature.curve-secp256k1", api: "elliptic.ec",
 			want: map[string]string{"elliptic.ec.genKeyPair": "factory", "elliptic.KeyPair.getPublic": "output"},
+		},
+		{
+			name: "object literal methods stay separate",
+			file: "objlit.js", src: nodeObjectLiteralMethods,
+			line: 7, startCol: 12, endCol: 29,
+			match: "return key.sign(msgHash);",
+			rule:  "javascript.elliptic.algorithm.signature.sign", api: "elliptic.KeyPair.sign",
+			want: map[string]string{"elliptic.ec.genKeyPair": "factory"},
+		},
+		{
+			name: "route handlers stay separate",
+			file: "routes.js", src: nodeRouteHandlers,
+			line: 7, startCol: 12, endCol: 35,
+			match: "res.json(key.sign(req.body.hash));",
+			rule:  "javascript.elliptic.algorithm.signature.sign", api: "elliptic.KeyPair.sign",
+			want: map[string]string{"elliptic.ec.<init>": "factory", "elliptic.ec.genKeyPair": "factory"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
