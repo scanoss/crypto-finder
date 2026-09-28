@@ -38,6 +38,10 @@ func TestExportContextSetRoutesFindingsByLanguage(t *testing.T) {
 		{language: "java", wantPrimary: true, wantAnalyzed: true},
 		{language: "typescript", wantPrimary: false, wantAnalyzed: true},
 		{language: "javascript", wantPrimary: false, wantAnalyzed: true},
+		// enry names .tsx files "TSX" and .jsx files "JSX"; the Node parser
+		// reads both.
+		{language: "tsx", wantPrimary: false, wantAnalyzed: true},
+		{language: "jsx", wantPrimary: false, wantAnalyzed: true},
 		// A supported language with no graph in this scan.
 		{language: "python", wantPrimary: true, wantAnalyzed: false},
 		// A language no call graph parser supports.

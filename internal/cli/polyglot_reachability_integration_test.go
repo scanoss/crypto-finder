@@ -74,6 +74,7 @@ type polyglotVerdict struct {
 // on the same fixture: consumers key finding identity on them, so they must
 // not move. The Java verdicts are that release's verdicts too.
 func TestPolyglotScanResolvesEachFindingInItsOwnEcosystem(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("black-box CLI test with a real scanner")
 	}
@@ -228,6 +229,7 @@ func runPolyglotScan(t *testing.T, binary, rules, target, outDir string, extra .
 // Its dependencies cannot be resolved without the lockfile, so that phase is
 // skipped with its own reason, and its first-party code is still analyzed.
 func TestNodePackageWithoutLockfileSkipsDependenciesAndKeepsReachability(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("black-box CLI test with a real scanner")
 	}

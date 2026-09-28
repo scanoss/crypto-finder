@@ -36,7 +36,7 @@ func EcosystemForLanguage(language string) string {
 		return ecosystemCPP
 	case ecosystemGo, ecosystemJava, ecosystemPython, ecosystemRust:
 		return language
-	case ecosystemNode, "javascript", "typescript":
+	case ecosystemNode, "javascript", "typescript", "tsx", "jsx":
 		return ecosystemNode
 	default:
 		return ""
