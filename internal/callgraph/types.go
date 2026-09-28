@@ -286,6 +286,10 @@ type FunctionParameter struct {
 
 // FunctionCall represents a call expression within a function body.
 type FunctionCall struct {
+	// StaticReceiver reports a call qualified by a type name
+	// (TikaInputStream.get(..)), which binds at compile time and never
+	// dispatches to a subtype (Java only).
+	StaticReceiver bool
 	// Callee is the resolved target function
 	Callee FunctionID
 	// ResolvedReceiverType is the concrete type inferred for a field receiver

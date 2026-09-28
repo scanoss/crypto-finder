@@ -1150,6 +1150,35 @@ func parseJavaDeclaredVisibility(node *sitter.Node, src []byte) string {
 	return VisibilityPackagePrivate
 }
 
+// javaTypeQualifiedCall reports whether a method call's receiver is a type
+// name rather than a value: an identifier or qualified name that is no local,
+// parameter or field of this class, spelled like a type (with a lower-case
+// letter, so an upper-case constant inherited from a superclass does not
+// qualify), and that the callee was resolved against.
+func javaTypeQualifiedCall(objectNode *sitter.Node, src []byte, callee FunctionID, varTypes map[string]string) bool {
+	if objectNode == nil {
+		return false
+	}
+	switch objectNode.Type() {
+	case javaNodeIdentifier, javaNodeScopedIdentifier, "field_access":
+	default:
+		return false
+	}
+	text := strings.TrimSpace(objectNode.Content(src))
+	if _, isVar := varTypes[text]; isVar {
+		return false
+	}
+	head, _, _ := strings.Cut(text, ".")
+	if _, isVar := varTypes[head]; isVar {
+		return false
+	}
+	last := text[strings.LastIndex(text, ".")+1:]
+	if !looksLikeJavaTypeName(last) || strings.ToUpper(last) == last {
+		return false
+	}
+	return callee.Type == last || strings.HasSuffix(callee.Type, "."+last)
+}
+
 // javaDeclaresModifier reports whether a declaration's modifiers include the
 // given keyword.
 func javaDeclaresModifier(node *sitter.Node, src []byte, keyword string) bool {
@@ -2392,6 +2421,7 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	chainID, assignedVar := callChainContext(node, src)
 	receiverVar := receiverVarName(receiverText, varTypes, varOrigins)
 	return &FunctionCall{
+		StaticReceiver:       javaTypeQualifiedCall(objectNode, src, callee, varTypes),
 		Callee:               callee,
 		ResolvedReceiverType: fieldResolvedReceiverType(receiverVar, varOrigins),
 		ReceiverVar:          receiverVar,

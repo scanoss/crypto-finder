@@ -99,9 +99,6 @@ public class TikaInputStream extends InputStream {
   public static TikaInputStream get(byte[] data, Metadata md) { return null; }
 }
 `,
-	// The JDK is indexed in a real scan; this stands in for it so the
-	// receiver's ancestry is complete.
-	"java/io/InputStream.java": "package java.io;\npublic abstract class InputStream {}\n",
 	"org/apache/tika/metadata/Metadata.java": `package org.apache.tika.metadata;
 public class Metadata { public Metadata() {} }
 `,

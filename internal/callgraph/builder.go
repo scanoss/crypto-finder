@@ -1032,6 +1032,11 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 	}
 
 	for _, target := range resolvedTargets {
+		if call.StaticReceiver {
+			// A type-qualified call binds statically: no implementation of
+			// an interface or override in a subtype can be its target.
+			break
+		}
 		for _, alias := range idx.expandInterfaceDispatchMemoized(b, target, graph) {
 			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
 			recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, alias.kind(), alias.DeclaredType, call)
@@ -1044,6 +1049,10 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 
 	abstractAliases := idx.expandAbstractClassDispatchMemoized(b, call.Callee, calleeKey, graph)
 	for _, alias := range selectInheritedOverloads(graph, call, graph.Functions[callerKey], abstractAliases, idx.overloads) {
+		if call.StaticReceiver && alias.Kind != EdgeKindExact {
+			// Only the declaration the type-qualified call inherits applies.
+			continue
+		}
 		idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
 		recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, alias.kind(), alias.DeclaredType, call)
 	}
@@ -1488,7 +1497,9 @@ func (b *Builder) expandAbstractClassDispatch(
 
 	own := ownOverloads(graph, callee, idx)
 	inherited := inheritedMethods(graph, idx.hierarchy, calleeOwner, c.inheritedByOwner, own)
-	nonStaticAncestor := c.nonStaticAncestor
+	// java.lang.Object's instance methods are inherited by every class but
+	// never appear among the graph's declarations.
+	nonStaticAncestor := c.nonStaticAncestor || (b.ecosystem == ecosystemJava && javaObjectInstanceMethods[methodArityKey(callee.Name)])
 	// A call on a class whose own overloads of this name are all static,
 	// whose ancestry is fully recorded, and none of whose ancestors (classes
 	// or interfaces) declares an instance method of this name and arity is
@@ -1584,6 +1595,14 @@ func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispa
 		return false
 	}
 	return idx.knownClassTypes[callee.Package+"|"+callee.Type]
+}
+
+// javaObjectInstanceMethods are java.lang.Object's instance methods by
+// "name#arity" key.
+var javaObjectInstanceMethods = map[string]bool{
+	"equals#1": true, "hashCode#0": true, "toString#0": true, "getClass#0": true,
+	"clone#0": true, "finalize#0": true, "notify#0": true, "notifyAll#0": true,
+	"wait#0": true, "wait#1": true, "wait#2": true,
 }
 
 // ownOverloads returns the callee's class's own same-name, same-arity

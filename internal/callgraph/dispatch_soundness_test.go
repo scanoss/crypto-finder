@@ -876,3 +876,37 @@ public class B extends A {
 		}
 	})
 }
+
+func TestDispatch_StaticFamilyShadowingObjectMethodStillDispatches(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/A.java": "package com.acme;\npublic class A {\n  public static boolean equals(String s) { return false; }\n  public static boolean equals(Integer i) { return false; }\n}\n",
+		// B overrides Object.equals, which A inherits outside the graph.
+		"com/acme/B.java": `package com.acme;
+import javax.crypto.Cipher;
+public class B extends A {
+  public boolean equals(Object o) { try { Cipher.getInstance("AES"); } catch (Exception e) {} return false; }
+}
+`,
+		"com/acme/App.java": "package com.acme;\npublic class App {\n  public boolean run(A a, Object o) { return a.equals(o); }\n}\n",
+	})
+	if !hasCaller(graph, "com.acme.(B).equals#1", "com.acme.(App).run#2") {
+		t.Fatalf("a may be a B overriding Object.equals: B.equals must stay linked")
+	}
+}
+
+func TestDispatch_TypeQualifiedCallNeverDispatches(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/Root.java": "package com.acme;\npublic class Root {\n  public static void make(String s) {}\n}\n",
+		// Base declares no make: Base.make(..) resolves to the one it inherits.
+		"com/acme/Base.java": "package com.acme;\npublic class Base extends Root {\n  public void other() {}\n}\n",
+		"com/acme/Sub.java":  "package com.acme;\npublic class Sub extends Base {\n  public static void make(String s) {}\n}\n",
+		"com/acme/App.java":  "package com.acme;\npublic class App extends Base {\n  public void run() { Base.make(\"x\"); }\n}\n",
+	})
+	caller := "com.acme.(App).run#0"
+	if !hasCaller(graph, "com.acme.(Root).make#1", caller) {
+		t.Fatalf("Base.make(..) binds to the inherited Root.make")
+	}
+	if hasCaller(graph, "com.acme.(Sub).make#1", caller) {
+		t.Fatalf("a type-qualified call must not reach Sub.make, which only hides Root.make in Sub")
+	}
+}
