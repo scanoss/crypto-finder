@@ -219,6 +219,9 @@ type FunctionDecl struct {
 	// through the declaring file's imports, in the FunctionParameter
 	// QualifiedType format. Empty when not resolved (Java methods only).
 	QualifiedReturnType string
+	// FileTypeNamesAtRisk is the declaring file's FileAnalysis.TypeNamesAtRisk,
+	// shared by every declaration of the file (Java only).
+	FileTypeNamesAtRisk map[string]bool
 	ReturnTypeRef       TypeRef
 	Visibility          string
 	OwnerVisibility     string
@@ -411,7 +414,14 @@ type FileAnalysis struct {
 	// is listed, so an entry may name a type the graph does not know. Java
 	// only; merged into CallGraph.SourceSupertypes.
 	Supertypes map[string][]string
-	Functions  []FunctionDecl
+	// TypeNamesAtRisk holds every simple type name this file could bind to
+	// something other than an import or a package type: each class,
+	// interface, enum or record it declares (nested and local ones included)
+	// and each type parameter it declares. A type written with one of these
+	// names cannot be resolved with certainty without javac's scoping rules
+	// (Java only).
+	TypeNamesAtRisk map[string]bool
+	Functions       []FunctionDecl
 	// PythonReExports maps a symbol name to the module dotted path it is
 	// re-exported from, recorded ONLY when this file is a Python
 	// `__init__.py` and ONLY from explicit relative `from .mod import Sym

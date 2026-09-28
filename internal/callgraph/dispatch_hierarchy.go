@@ -159,21 +159,33 @@ func (h *dispatchHierarchy) record(owner string, bases []string, known map[strin
 		return
 	}
 	resolved := make([]string, 0, len(bases))
+	certain := true
 	for _, entry := range bases {
 		alternatives := strings.Split(entry, javaSupertypeAlternatives)
-		matched := false
+		matched := 0
 		for _, alt := range alternatives {
+			if alt == javaUnresolvableSupertype {
+				certain = false
+				continue
+			}
 			if known[normalizeHierarchyName(strings.TrimSpace(stripGenericSuffix(alt)))] {
 				resolved = append(resolved, alt)
-				matched = true
+				matched++
 			}
 		}
-		if !matched {
+		switch {
+		case matched == 0 && alternatives[0] != javaUnresolvableSupertype:
 			resolved = append(resolved, alternatives[0])
+		case matched > 1:
+			// Several known types fit the name: each may be the parent, so
+			// all are kept, but none may rule a subtype out.
+			certain = false
 		}
 	}
 	h.addParents(owner, resolved)
-	h.recorded[owner] = true
+	// An uncertain entry leaves the owner unrecorded: relation can then
+	// answer subtypeYes through the candidates, never subtypeNo.
+	h.recorded[owner] = certain
 }
 
 func (h *dispatchHierarchy) indexChildren() {
@@ -512,6 +524,7 @@ const (
 	javaIntType     = "int"
 	javaLongType    = "long"
 	javaLangString  = "java.lang.String"
+	javaLangPrefix  = "java.lang."
 	javaVoidType    = "void"
 )
 
@@ -584,7 +597,7 @@ func newOverloadSelector(graph *CallGraph, hierarchy *dispatchHierarchy) *overlo
 //     kept, as before, rather than dropping the call.
 //
 // An argument whose type the call site does not record constrains nothing.
-func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall, callerPkg string, candidates []string) []string {
+func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall, caller *FunctionDecl, candidates []string) []string {
 	if len(candidates) < 2 || call == nil {
 		return candidates
 	}
@@ -595,7 +608,7 @@ func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall,
 			applicable = append(applicable, key)
 			continue
 		}
-		known, exactPositions, accepted := s.matchArguments(fn, call, callerPkg)
+		known, exactPositions, accepted := s.matchArguments(fn, call, caller)
 		if known > 0 && exactPositions == len(fn.Parameters) {
 			exact = append(exact, key)
 		}
@@ -607,7 +620,7 @@ func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall,
 	case len(exact) > 0:
 		return exact
 	case len(applicable) > 0:
-		return s.pruneDominated(graph, call, callerPkg, applicable)
+		return s.pruneDominated(graph, call, caller, applicable)
 	default:
 		return candidates
 	}
@@ -618,13 +631,13 @@ func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall,
 // the other declares exactly the recorded type at every typed position and the
 // same parameter type as this one at every untyped position. javac would pick
 // the other in every case, so this one is never the target.
-func (s *overloadSelector) pruneDominated(graph *CallGraph, call *FunctionCall, callerPkg string, applicable []string) []string {
+func (s *overloadSelector) pruneDominated(graph *CallGraph, call *FunctionCall, caller *FunctionDecl, applicable []string) []string {
 	if len(applicable) < 2 {
 		return applicable
 	}
 	var typedExact []*FunctionDecl
 	for _, key := range applicable {
-		if fn := graph.Functions[key]; fn != nil && s.typedPositionsExact(fn, call, callerPkg) {
+		if fn := graph.Functions[key]; fn != nil && s.typedPositionsExact(fn, call, caller) {
 			typedExact = append(typedExact, fn)
 		}
 	}
@@ -634,7 +647,7 @@ func (s *overloadSelector) pruneDominated(graph *CallGraph, call *FunctionCall, 
 	kept := make([]string, 0, len(applicable))
 	for _, key := range applicable {
 		fn := graph.Functions[key]
-		if fn == nil || s.typedPositionsExact(fn, call, callerPkg) || !s.dominatedBy(fn, typedExact, call) {
+		if fn == nil || s.typedPositionsExact(fn, call, caller) || !s.dominatedBy(fn, typedExact, call) {
 			kept = append(kept, key)
 		}
 	}
@@ -643,9 +656,9 @@ func (s *overloadSelector) pruneDominated(graph *CallGraph, call *FunctionCall, 
 
 // typedPositionsExact reports whether fn declares exactly the recorded type at
 // every argument position whose type is known.
-func (s *overloadSelector) typedPositionsExact(fn *FunctionDecl, call *FunctionCall, callerPkg string) bool {
+func (s *overloadSelector) typedPositionsExact(fn *FunctionDecl, call *FunctionCall, caller *FunctionDecl) bool {
 	for i := range fn.Parameters {
-		if arg := stripGenericSuffix(s.staticArgumentType(call, i)); arg != "" && !s.exactAt(fn, call, i, callerPkg) {
+		if arg := stripGenericSuffix(s.staticArgumentType(call, i)); arg != "" && !s.exactAt(fn, call, i, caller) {
 			return false
 		}
 	}
@@ -657,7 +670,7 @@ func (s *overloadSelector) typedPositionsExact(fn *FunctionDecl, call *FunctionC
 // both sides must resolve to the same fully qualified type, since
 // com.other.Key is not com.acme.sec.Key. When either side's package cannot be
 // resolved the position is not exact, so the overload does not win outright.
-func (s *overloadSelector) exactAt(fn *FunctionDecl, call *FunctionCall, i int, callerPkg string) bool {
+func (s *overloadSelector) exactAt(fn *FunctionDecl, call *FunctionCall, i int, caller *FunctionDecl) bool {
 	param := fn.Parameters[i]
 	arg := stripGenericSuffix(s.staticArgumentType(call, i))
 	paramType := stripGenericSuffix(normalizeJavaTypeName(param.Type))
@@ -668,9 +681,50 @@ func (s *overloadSelector) exactAt(fn *FunctionDecl, call *FunctionCall, i int, 
 	if isJavaPrimitive(base) {
 		return true
 	}
-	argFQN := s.qualifiedArgumentType(call, i, callerPkg)
-	paramFQN := s.resolveQualified(param.QualifiedType, base, fn.ID.Package)
+	argFQN := s.qualifiedArgumentType(call, i, caller)
+	paramFQN := s.certainParameterType(fn, i)
 	return argFQN != "" && argFQN == paramFQN
+}
+
+// certainParameterType returns the fully qualified type of fn's parameter i
+// when it is certain, or "". It is certain when the source wrote it fully
+// qualified, or when nothing can shadow the name: the declaring file declares
+// no type or type parameter of that name (QualifiedType is empty otherwise)
+// and no supertype of the declaring class in the graph has a member type of
+// that name.
+func (s *overloadSelector) certainParameterType(fn *FunctionDecl, i int) string {
+	param := fn.Parameters[i]
+	base := javaParameterBaseType(normalizeJavaTypeName(param.Type))
+	if param.QualifiedType == "" || s.inheritsMemberType(fn.ID, base) {
+		return ""
+	}
+	return s.resolveQualified(param.QualifiedType, base, fn.ID.Package)
+}
+
+// parameterUncertain reports whether fn's parameter i is a reference type
+// whose meaning is not certain; such a parameter accepts any argument.
+func (s *overloadSelector) parameterUncertain(fn *FunctionDecl, i int) bool {
+	param := fn.Parameters[i]
+	base := javaParameterBaseType(normalizeJavaTypeName(param.Type))
+	if base == "" || isJavaPrimitive(base) || fn.FileTypeNamesAtRisk == nil {
+		return false
+	}
+	return param.QualifiedType == "" || s.inheritsMemberType(fn.ID, base)
+}
+
+// inheritsMemberType reports whether a supertype of owner's class known to the
+// graph declares a member type named simple, which would shadow an import or
+// package type of that name inside the class.
+func (s *overloadSelector) inheritsMemberType(owner FunctionID, simple string) bool {
+	if owner.Type == "" || simple == "" {
+		return false
+	}
+	for ancestor := range s.hierarchy.ancestorSet(declOwnerFQN(owner)) {
+		if s.knownType(ancestor + "." + simple) {
+			return true
+		}
+	}
+	return false
 }
 
 // dominatedBy reports whether some overload in others has fn's parameter type
@@ -701,7 +755,7 @@ func (s *overloadSelector) dominatedBy(fn *FunctionDecl, others []*FunctionDecl,
 // types: known counts arguments with a recorded type; exactPositions counts
 // typed arguments equal to their parameter type; accepted is false when some
 // recorded type cannot be passed to its parameter.
-func (s *overloadSelector) matchArguments(fn *FunctionDecl, call *FunctionCall, callerPkg string) (known, exactPositions int, accepted bool) {
+func (s *overloadSelector) matchArguments(fn *FunctionDecl, call *FunctionCall, caller *FunctionDecl) (known, exactPositions int, accepted bool) {
 	accepted = true
 	for i, param := range fn.Parameters {
 		arg := stripGenericSuffix(s.staticArgumentType(call, i))
@@ -710,8 +764,11 @@ func (s *overloadSelector) matchArguments(fn *FunctionDecl, call *FunctionCall, 
 			continue
 		}
 		known++
-		if s.exactAt(fn, call, i, callerPkg) {
+		if s.exactAt(fn, call, i, caller) {
 			exactPositions++
+			continue
+		}
+		if s.parameterUncertain(fn, i) {
 			continue
 		}
 		if arg != paramType && !s.assignable(arg, paramType) {
@@ -743,13 +800,15 @@ func (s *overloadSelector) resolveQualified(qualified, simple, pkg string) strin
 		if len(alternatives) == 1 {
 			return normalizeHierarchyName(alternatives[0])
 		}
-		for _, alt := range alternatives {
-			if s.knownType(normalizeHierarchyName(alt)) {
-				return normalizeHierarchyName(alt)
-			}
+		// Alternatives are this package, then any on-demand imports, then
+		// java.lang. A known type of this package wins; otherwise only a
+		// java.lang type with no on-demand import that could supply the
+		// name instead is certain.
+		if first := normalizeHierarchyName(alternatives[0]); s.knownType(first) {
+			return first
 		}
-		if javaLangTypes[simple] {
-			return "java.lang." + simple
+		if len(alternatives) == 2 && javaLangTypes[simple] {
+			return javaLangPrefix + simple
 		}
 		return ""
 	}
@@ -757,7 +816,7 @@ func (s *overloadSelector) resolveQualified(qualified, simple, pkg string) strin
 		return pkg + "." + simple
 	}
 	if javaLangTypes[simple] {
-		return "java.lang." + simple
+		return javaLangPrefix + simple
 	}
 	return ""
 }
@@ -771,12 +830,53 @@ func (s *overloadSelector) knownType(fqn string) bool {
 	return false
 }
 
+// qualifiedCallResultType resolves the fully qualified type a call produces:
+// the class a constructor creates, or the callee's recorded return type. Only
+// the callee file's imports tell which type a simple return type names;
+// without that record, or when the callee's class inherits a member type of
+// that name, the package stays unknown.
+func (s *overloadSelector) qualifiedCallResultType(target FunctionID, caller *FunctionDecl) string {
+	if BaseFunctionName(target.Name) == constructorMethodName {
+		if s.shadowable(caller, simpleTypeName(target.Type)) {
+			return ""
+		}
+		return declOwnerFQN(FunctionID{Package: target.Package, Type: target.Type})
+	}
+	fn := s.graph.Functions[target.String()]
+	if fn == nil || fn.QualifiedReturnType == "" {
+		return ""
+	}
+	base := javaParameterBaseType(normalizeJavaTypeName(fn.ReturnType))
+	if s.inheritsMemberType(fn.ID, base) {
+		return ""
+	}
+	return s.resolveQualified(fn.QualifiedReturnType, base, fn.ID.Package)
+}
+
+// shadowable reports whether, in the calling function's file and class, the
+// simple name could denote something the caller's import resolution did not
+// see: a type or type parameter the file declares, or a member type the
+// caller's class inherits.
+func (s *overloadSelector) shadowable(caller *FunctionDecl, simple string) bool {
+	if caller == nil {
+		return false
+	}
+	return caller.FileTypeNamesAtRisk[simple] || s.inheritsMemberType(caller.ID, simple)
+}
+
+func callerPackageOf(caller *FunctionDecl) string {
+	if caller == nil {
+		return ""
+	}
+	return caller.ID.Package
+}
+
 // qualifiedArgumentType resolves the fully qualified static type of the
 // argument at idx, or "" when its package cannot be told. A type name the
 // caller's source left simple resolves against the caller's package.
-func (s *overloadSelector) qualifiedArgumentType(call *FunctionCall, idx int, callerPkg string) string {
+func (s *overloadSelector) qualifiedArgumentType(call *FunctionCall, idx int, caller *FunctionDecl) string {
 	if idx < len(call.ArgumentSources) && len(call.ArgumentSources[idx]) == 1 {
-		return s.qualifiedSourceNodeType(call.ArgumentSources[idx][0], callerPkg, 0)
+		return s.qualifiedSourceNodeType(call.ArgumentSources[idx][0], caller, 0)
 	}
 	if idx < len(call.Arguments) && javaLiteralType(call.Arguments[idx]) == javaStringType {
 		return javaLangString
@@ -784,34 +884,30 @@ func (s *overloadSelector) qualifiedArgumentType(call *FunctionCall, idx int, ca
 	return ""
 }
 
-func (s *overloadSelector) qualifiedSourceNodeType(node SourceNode, callerPkg string, depth int) string {
+func (s *overloadSelector) qualifiedSourceNodeType(node SourceNode, caller *FunctionDecl, depth int) string {
 	if node.DeclaredType != "" {
 		base := javaParameterBaseType(node.DeclaredType)
+		if s.shadowable(caller, simpleTypeName(base)) {
+			return ""
+		}
 		if strings.Contains(base, ".") {
 			return normalizeHierarchyName(base)
 		}
-		return s.resolveQualified("", base, callerPkg)
+		return s.resolveQualified("", base, callerPackageOf(caller))
 	}
 	switch node.Type {
 	case sourceNodeCallResult:
 		if node.CallTarget == nil {
 			return ""
 		}
-		if BaseFunctionName(node.CallTarget.Name) == constructorMethodName {
-			return declOwnerFQN(FunctionID{Package: node.CallTarget.Package, Type: node.CallTarget.Type})
-		}
-		// Only the declaring file's imports tell which type a simple return
-		// type names; without that record the package stays unknown.
-		if fn := s.graph.Functions[node.CallTarget.String()]; fn != nil && fn.QualifiedReturnType != "" {
-			return s.resolveQualified(fn.QualifiedReturnType, javaParameterBaseType(normalizeJavaTypeName(fn.ReturnType)), fn.ID.Package)
-		}
+		return s.qualifiedCallResultType(*node.CallTarget, caller)
 	case sourceNodeValue, sourceNodeExpression:
 		if s.staticSourceNodeType(node, depth) == javaStringType {
 			return javaLangString
 		}
 	case sourceNodeVariable:
 		if depth < hierarchyMaxDepth && len(node.SourceNodes) == 1 {
-			return s.qualifiedSourceNodeType(node.SourceNodes[0], callerPkg, depth+1)
+			return s.qualifiedSourceNodeType(node.SourceNodes[0], caller, depth+1)
 		}
 	}
 	return ""

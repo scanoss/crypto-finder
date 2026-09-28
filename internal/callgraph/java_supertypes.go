@@ -75,14 +75,18 @@ func javaClauseTypeNames(node *sitter.Node, src []byte) []string {
 	return names
 }
 
+// javaUnresolvableSupertype stands in, among a supertype entry's
+// alternatives, for a type this file may declare where the resolver cannot
+// see it (a local class). An entry carrying it is never certain.
+const javaUnresolvableSupertype = "?"
+
 // resolveJavaSupertype maps a type name written in an extends/implements clause
-// to the fully qualified names it can denote, following Java's lookup order: a
-// type declared in this file (a member type shadows an import), then a
-// single-type import, then the file's own package. When the file also has on-demand (wildcard) imports the name may
-// come from one of them instead, so each such package, and java.lang, is
-// returned as a further candidate. The result can therefore over-approximate
-// by names that no type in the graph carries; a candidate that names no known
-// type contributes nothing to a subtype check.
+// to every fully qualified name it can plausibly denote. Java's scoping (which
+// member, inherited or local type shadows an import) is not modeled, so all
+// candidates are listed: each type of that name declared in this file, a
+// single-type import, and otherwise the file's own package, any on-demand
+// import and java.lang. The hierarchy treats an entry with more than one
+// known candidate as uncertain: it may prove a subtype but never rule one out.
 func resolveJavaSupertype(typeText string, analysis *FileAnalysis) []string {
 	typeText = strings.TrimSpace(typeText)
 	if typeText == "" {
@@ -94,27 +98,16 @@ func resolveJavaSupertype(typeText string, analysis *FileAnalysis) []string {
 		// Already fully qualified: org.example.Base.
 		return []string{typeText}
 	}
-	// A type declared in this file, nested ones included, shadows a
-	// single-type import of the same simple name. Several declarations of
-	// that name (in different enclosing types) are all listed.
-	if declared := declaredJavaTypeNames(typeText, analysis); len(declared) > 0 {
-		out := make([]string, 0, len(declared))
-		for _, name := range declared {
-			out = append(out, joinJavaPackage(pkg, name))
-		}
-		return out
-	}
-	if analysis != nil {
-		if imported, ok := analysis.Imports[head]; ok && imported != "" {
-			return []string{imported + "." + typeText}
-		}
+	candidates := javaFileSupertypeCandidates(typeText, head, analysis)
+	if len(candidates) > 0 {
+		return candidates
 	}
 	if qualified {
 		// Outer.Inner where Outer is neither imported nor declared here: it
 		// can only be a type of this package.
 		return []string{joinJavaPackage(pkg, head+"."+rest)}
 	}
-	candidates := []string{joinJavaPackage(pkg, typeText)}
+	candidates = []string{joinJavaPackage(pkg, typeText)}
 	if analysis != nil {
 		for _, wildcard := range analysis.WildcardImports {
 			if wildcard != "" {
@@ -207,10 +200,61 @@ func qualifyJavaType(raw string, analysis *FileAnalysis) string {
 	if strings.Contains(base, ".") && !looksLikeJavaTypeName(base) {
 		return base
 	}
-	if len(declaredJavaTypeNames(base, analysis)) > 1 {
-		// Several types of this name are declared in the file and the scope
-		// that picks one is not tracked: leave it unresolved.
+	if analysis != nil && analysis.TypeNamesAtRisk[simpleTypeName(base)] {
+		// The file declares a type or type parameter of this name somewhere;
+		// without javac's scoping the reference is not certain.
 		return ""
 	}
 	return strings.Join(resolveJavaSupertype(base, analysis), javaSupertypeAlternatives)
+}
+
+// javaFileSupertypeCandidates lists the candidates the file itself supplies for
+// a supertype name: every type of that name it declares (or the unresolvable
+// marker for one the resolver cannot see, such as a local class), plus a
+// single-type import of it. Empty when the file supplies none.
+func javaFileSupertypeCandidates(typeText, head string, analysis *FileAnalysis) []string {
+	if analysis == nil {
+		return nil
+	}
+	pkg := javaAnalysisPackagePath(analysis)
+	var candidates []string
+	for _, name := range declaredJavaTypeNames(typeText, analysis) {
+		candidates = append(candidates, joinJavaPackage(pkg, name))
+	}
+	if analysis.TypeNamesAtRisk[simpleTypeName(typeText)] && len(candidates) == 0 {
+		candidates = append(candidates, javaUnresolvableSupertype)
+	}
+	if imported, ok := analysis.Imports[head]; ok && imported != "" {
+		candidates = append(candidates, imported+"."+typeText)
+	}
+	return candidates
+}
+
+// collectJavaTypeNamesAtRisk gathers the simple names of every type
+// declaration (member, nested and local) and every type parameter in a
+// compilation unit.
+func collectJavaTypeNamesAtRisk(root *sitter.Node, src []byte) map[string]bool {
+	names := make(map[string]bool)
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		switch n.Type() {
+		case javaNodeClassDeclaration, javaNodeInterfaceDeclaration, javaNodeEnumDeclaration,
+			javaNodeRecordDeclaration, javaNodeAnnotationTypeDecl:
+			if name := n.ChildByFieldName(javaFieldName); name != nil {
+				names[name.Content(src)] = true
+			}
+		case "type_parameter":
+			for i := 0; i < int(n.NamedChildCount()); i++ {
+				if c := n.NamedChild(i); c.Type() == javaNodeTypeIdentifier || c.Type() == javaNodeIdentifier {
+					names[c.Content(src)] = true
+					break
+				}
+			}
+		}
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			walk(n.NamedChild(i))
+		}
+	}
+	walk(root)
+	return names
 }

@@ -480,3 +480,88 @@ public class App {
 		t.Fatalf("a com.acme.sec.Key argument does not fit Svc.Key: javac picks r(Object), which must stay linked")
 	}
 }
+
+func TestDispatch_OutOfScopeNestedTypeDoesNotHideImportedSupertype(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/sec/Key.java": "package com.acme.sec;\npublic interface Key { byte[] enc(byte[] d); }\n",
+		// MyKey implements the imported Key; Unrelated.Key is not in scope.
+		"com/acme/impl/MyKey.java": `package com.acme.impl;
+import com.acme.sec.Key;
+import java.security.MessageDigest;
+public class MyKey implements Key {
+  public byte[] enc(byte[] d) { try { return MessageDigest.getInstance("MD5").digest(d); } catch (Exception e) { return null; } }
+}
+class Unrelated { static class Key {} }
+`,
+		"com/acme/app/App.java": `package com.acme.app;
+import com.acme.sec.Key;
+public class App {
+  public byte[] run(Key k, byte[] d) { return k.enc(d); }
+}
+`,
+	})
+	if !hasCaller(graph, "com.acme.impl.(MyKey).enc#1", "com.acme.app.(App).run#2") {
+		t.Fatalf("MyKey implements com.acme.sec.Key, so the interface call must reach MyKey.enc")
+	}
+}
+
+func TestDispatch_InheritedMemberTypeShadowsImport(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/acme/sec/Key.java": "package com.acme.sec;\npublic interface Key {}\n",
+		"com/other/Base.java": `package com.other;
+public class Base { public static class Key {} }
+`,
+		// r(Key) takes the inherited Base.Key, not the imported com.acme.sec.Key.
+		"com/other/Svc.java": `package com.other;
+import com.acme.sec.Key;
+import java.security.MessageDigest;
+public class Svc extends Base {
+  public void r(Key k) {}
+  public void r(Object o) throws Exception { MessageDigest.getInstance("MD5"); }
+}
+`,
+		"com/other/App.java": `package com.other;
+import com.acme.sec.Key;
+public class App {
+  public void run(Svc svc, Key k) throws Exception { svc.r(k); }
+}
+`,
+	})
+	if !hasCaller(graph, "com.other.(Svc).r#1$Object", "com.other.(App).run#2") {
+		t.Fatalf("a com.acme.sec.Key argument does not fit Base.Key: javac picks r(Object), which must stay linked")
+	}
+}
+
+func TestDispatch_TypeParameterAndLocalClassAreNotPackageTypes(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/other/Key.java": "package com.other;\npublic class Key {}\n",
+		"com/other/Svc.java": `package com.other;
+import java.security.MessageDigest;
+public class Svc {
+  public void r(Key k) {}
+  public void r(Object o) throws Exception { MessageDigest.getInstance("MD5"); }
+}
+`,
+		// Key here is App's type parameter, not com.other.Key.
+		"com/other/App.java": `package com.other;
+public class App<Key> {
+  public void run(Svc svc, Key k) throws Exception { svc.r(k); }
+}
+`,
+		// Key here is a local class, not com.other.Key.
+		"com/other/Local.java": `package com.other;
+public class Local {
+  public void run(Svc svc) throws Exception {
+    class Key {}
+    Key k = new Key();
+    svc.r(k);
+  }
+}
+`,
+	})
+	for _, caller := range []string{"com.other.(App).run#2", "com.other.(Local).run#1"} {
+		if !hasCaller(graph, "com.other.(Svc).r#1$Object", caller) {
+			t.Errorf("%s: the argument is not com.other.Key, so r(Object) must stay linked", caller)
+		}
+	}
+}

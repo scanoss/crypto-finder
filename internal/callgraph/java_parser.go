@@ -185,9 +185,13 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// file. Bases are filled in properly as each declaration is processed.
 	p.registerDeclaredJavaTypes(root, src, analysis, "")
 	collectJavaStringConstants(javaChildNodes(root), src, analysis, "")
+	analysis.TypeNamesAtRisk = collectJavaTypeNamesAtRisk(root, src)
 
 	// Extract class declarations with their methods
 	p.extractClasses(root, src, filePath, analysis)
+	for i := range analysis.Functions {
+		analysis.Functions[i].FileTypeNamesAtRisk = analysis.TypeNamesAtRisk
+	}
 
 	return analysis, nil
 }
