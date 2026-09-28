@@ -94,6 +94,43 @@ func TestFilterRulesByLanguages(t *testing.T) {
 	}
 }
 
+// The detector names C++ and C# "c++" and "c#"; rule files say cpp and csharp.
+// A tree holding both C and C++ sources used to keep only the C rules: they
+// matched "c", so the empty-result fallback never ran and every C++-only rule
+// was silently skipped.
+func TestFilterRulesByLanguages_DetectorNamesMatchRuleIDs(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cRule := writeRuleFile(t, dir, "c.yaml", `rules:
+  - id: c-rule
+    languages: [c, cpp]
+`)
+	cppRule := writeRuleFile(t, dir, "cpp.yaml", `rules:
+  - id: cpp-rule
+    languages: [cpp]
+`)
+	csharpRule := writeRuleFile(t, dir, "csharp.yaml", `rules:
+  - id: csharp-rule
+    languages: [csharp]
+`)
+	goRule := writeRuleFile(t, dir, "go.yaml", `rules:
+  - id: go-rule
+    languages: [go]
+`)
+	all := []string{cRule, cppRule, csharpRule, goRule}
+
+	mixed := filterRulesByLanguages(all, []string{"c", "c++"})
+	if len(mixed) != 2 || mixed[0] != cRule || mixed[1] != cppRule {
+		t.Fatalf("mixed C/C++ tree: want the c and cpp rules, got %#v", mixed)
+	}
+
+	csharp := filterRulesByLanguages(all, []string{"C#"})
+	if len(csharp) != 1 || csharp[0] != csharpRule {
+		t.Fatalf("C# tree: want only the csharp rule, got %#v", csharp)
+	}
+}
+
 // A rule file with zero rules (`rules: []`) must never survive language
 // filtering. When it was the sole survivor, opengrep received a config with
 // no rules and failed the whole scan with exit code 7.
