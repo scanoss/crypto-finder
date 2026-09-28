@@ -26,17 +26,26 @@ const javaNodeExtendsInterfaces = "extends_interfaces"
 
 // extractJavaSupertypes returns the fully qualified direct supertypes a Java
 // class, enum, record or interface declaration names in its extends and
-// implements clauses. Unlike extractJavaClassBases it takes only the named
+// implements clauses, one entry per named type. An entry whose simple name an
+// on-demand import leaves ambiguous lists its possible names separated by
+// javaSupertypeAlternatives. Unlike extractJavaClassBases it takes only the named
 // type of each clause entry, never its generic arguments, so
 // `implements Future<T>` yields Future and not T.
 func extractJavaSupertypes(node *sitter.Node, src []byte, analysis *FileAnalysis) []string {
-	var out []string
+	out := []string{}
+	// Enums and records have an implicit superclass besides Object.
+	switch node.Type() {
+	case javaNodeEnumDeclaration:
+		out = append(out, "java.lang.Enum")
+	case javaNodeRecordDeclaration:
+		out = append(out, "java.lang.Record")
+	}
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		switch child.Type() {
 		case javaNodeSuperclass, javaNodeSuperInterfaces, javaNodeExtendsInterfaces:
 			for _, typeText := range javaClauseTypeNames(child, src) {
-				out = append(out, resolveJavaSupertype(typeText, analysis)...)
+				out = append(out, strings.Join(resolveJavaSupertype(typeText, analysis), javaSupertypeAlternatives))
 			}
 		}
 	}
@@ -136,14 +145,21 @@ func joinJavaPackage(pkg, typeName string) string {
 }
 
 // recordJavaSupertypes stores the resolved supertypes of the file-local type
-// typeName under its fully qualified name.
+// typeName under its fully qualified name. Every declared type is recorded,
+// with an empty list when it names no supertype.
 func recordJavaSupertypes(analysis *FileAnalysis, typeName string, supertypes []string) {
-	if analysis == nil || typeName == "" || len(supertypes) == 0 {
+	if analysis == nil || typeName == "" {
 		return
 	}
 	if analysis.Supertypes == nil {
 		analysis.Supertypes = make(map[string][]string)
 	}
 	owner := joinJavaPackage(javaAnalysisPackagePath(analysis), typeName)
-	analysis.Supertypes[owner] = append(analysis.Supertypes[owner], supertypes...)
+	// The key is stored even with no supertypes: its presence records that the
+	// type extends only Object.
+	existing := analysis.Supertypes[owner]
+	if existing == nil {
+		existing = []string{}
+	}
+	analysis.Supertypes[owner] = append(existing, supertypes...)
 }

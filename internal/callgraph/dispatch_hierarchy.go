@@ -25,28 +25,54 @@ import (
 // shallower; the cap only guards against a malformed or cyclic hierarchy.
 const hierarchyMaxDepth = 32
 
+// javaSupertypeAlternatives separates the possible fully qualified names of one
+// extends/implements entry whose simple name an on-demand import leaves
+// ambiguous (see resolveJavaSupertype).
+const javaSupertypeAlternatives = "|"
+
+// javaObjectType is the implicit root of every Java class hierarchy.
+const javaObjectType = "java.lang.Object"
+
+// subtypeRelation is the answer to "is A a subtype of B" when the hierarchy may
+// be only partly known.
+type subtypeRelation int
+
+const (
+	// subtypeUnknown: A's known ancestors do not include B, but some ancestor's
+	// own supertypes are not recorded, so B may still be one of them.
+	subtypeUnknown subtypeRelation = iota
+	// subtypeYes: B is A or one of A's recorded ancestors.
+	subtypeYes
+	// subtypeNo: A's whole ancestry is recorded and B is not in it.
+	subtypeNo
+)
+
 // dispatchHierarchy answers "is type A a subtype of type B" for the dispatch
 // expansions, from every hierarchy the graph knows:
 //
 //   - graph.TypeHierarchy, the fully qualified parents indexed from bytecode
 //     (Java) or dependency metadata (Python);
 //   - graph.SourceSupertypes, the parser-resolved extends/implements clauses
-//     of source-declared Java types;
-//   - FunctionDecl.OwnerBases, simple base names, used only for a type that
-//     has no other recorded supertypes and resolved the same way the fragment export
-//     recovers source hierarchy: a same-package type wins, otherwise a name
-//     unique across the graph; an ambiguous or unknown name resolves to
-//     nothing.
+//     of source-declared Java types, one entry per declared type even when it
+//     names no supertype;
+//   - FunctionDecl.OwnerBases, simple base names (Python, Node, and hand-built
+//     graphs), used only for a type with no other record and resolved the way
+//     the fragment export recovers source hierarchy: a same-package type wins,
+//     otherwise a name unique across the graph.
 //
-// A type the hierarchy says nothing about is a subtype of nothing but itself.
-// That is the deliberate, sound fallback: without evidence the expansions add
-// no edge rather than guessing by method name.
+// A type is "recorded" when one of these sources vouches for its complete list
+// of direct supertypes. The expansions drop an edge only when the relation is
+// subtypeNo, that is, when the candidate's whole ancestry is recorded and
+// excludes the declared type. When it is subtypeUnknown they keep the edge,
+// as name-and-arity matching did before, and mark it name_only.
 //
 // Go interfaces are satisfied structurally, so for the Go ecosystem
 // implementsStructurally stands in for the nominal check.
 type dispatchHierarchy struct {
 	parents   map[string][]string
+	recorded  map[string]bool
 	ancestors map[string]map[string]bool
+	complete  map[string]bool
 
 	// Go method sets, built on first use: owner key -> "name#arity" set.
 	goMethodSets map[string]map[string]bool
@@ -56,24 +82,56 @@ type dispatchHierarchy struct {
 func newDispatchHierarchy(graph *CallGraph) *dispatchHierarchy {
 	h := &dispatchHierarchy{
 		parents:   make(map[string][]string),
+		recorded:  make(map[string]bool),
 		ancestors: make(map[string]map[string]bool),
+		complete:  make(map[string]bool),
 		graph:     graph,
 	}
-	for owner, bases := range graph.TypeHierarchy {
-		h.addParents(normalizeHierarchyName(owner), bases)
+
+	typesBySimple, pkgByOwner, simpleBases, known := indexDeclaredOwners(graph)
+	for owner := range graph.TypeHierarchy {
+		known[normalizeHierarchyName(owner)] = true
 	}
-	for owner, bases := range graph.SourceSupertypes {
-		h.addParents(normalizeHierarchyName(owner), bases)
+	for owner := range graph.SourceSupertypes {
+		known[normalizeHierarchyName(owner)] = true
 	}
 
-	typesBySimple := make(map[string][]string)
-	pkgByOwner := make(map[string]string)
-	simpleBases := make(map[string][]string)
+	for owner, bases := range graph.TypeHierarchy {
+		h.record(normalizeHierarchyName(owner), bases, known)
+	}
+	for owner, bases := range graph.SourceSupertypes {
+		h.record(normalizeHierarchyName(owner), bases, known)
+	}
+	for owner, bases := range simpleBases {
+		if h.recorded[owner] {
+			continue
+		}
+		resolved := make([]string, 0, len(bases))
+		for _, base := range bases {
+			if r := resolveSimpleBase(base, pkgByOwner[owner], typesBySimple); r != "" {
+				resolved = append(resolved, r)
+			}
+		}
+		h.addParents(owner, resolved)
+		// Only a fully resolved base list vouches for the whole ancestry level.
+		h.recorded[owner] = len(resolved) == len(bases)
+	}
+	return h
+}
+
+// indexDeclaredOwners indexes the types that own a declaration: by simple
+// name, their package, the OwnerBases they declare, and the set of all of them.
+func indexDeclaredOwners(graph *CallGraph) (typesBySimple map[string][]string, pkgByOwner map[string]string, simpleBases map[string][]string, known map[string]bool) {
+	typesBySimple = make(map[string][]string)
+	pkgByOwner = make(map[string]string)
+	simpleBases = make(map[string][]string)
+	known = make(map[string]bool)
 	for _, decl := range graph.Functions {
 		if decl == nil || decl.ID.Type == "" {
 			continue
 		}
 		owner := declOwnerFQN(decl.ID)
+		known[owner] = true
 		if _, seen := pkgByOwner[owner]; !seen {
 			pkgByOwner[owner] = decl.ID.Package
 			simple := simpleTypeName(owner)
@@ -83,17 +141,67 @@ func newDispatchHierarchy(graph *CallGraph) *dispatchHierarchy {
 			simpleBases[owner] = decl.OwnerBases
 		}
 	}
-	for owner, bases := range simpleBases {
-		if len(h.parents[owner]) > 0 {
-			continue
+	return typesBySimple, pkgByOwner, simpleBases, known
+}
+
+// record stores the supertypes a source vouches for. An entry listing
+// alternatives keeps those naming a known type; when none does it keeps the
+// first (Java's same-package default), which then reads as an unrecorded type.
+func (h *dispatchHierarchy) record(owner string, bases []string, known map[string]bool) {
+	if owner == "" {
+		return
+	}
+	resolved := make([]string, 0, len(bases))
+	for _, entry := range bases {
+		alternatives := strings.Split(entry, javaSupertypeAlternatives)
+		matched := false
+		for _, alt := range alternatives {
+			if known[normalizeHierarchyName(strings.TrimSpace(stripGenericSuffix(alt)))] {
+				resolved = append(resolved, alt)
+				matched = true
+			}
 		}
-		for _, base := range bases {
-			if resolved := resolveSimpleBase(base, pkgByOwner[owner], typesBySimple); resolved != "" {
-				h.addParents(owner, []string{resolved})
+		if !matched {
+			resolved = append(resolved, alternatives[0])
+		}
+	}
+	h.addParents(owner, resolved)
+	h.recorded[owner] = true
+}
+
+// relation classifies whether sub is a subtype of super.
+func (h *dispatchHierarchy) relation(sub, super string) subtypeRelation {
+	if h.isSubtype(sub, super) {
+		return subtypeYes
+	}
+	if h.hierarchyComplete(normalizeHierarchyName(sub)) {
+		return subtypeNo
+	}
+	return subtypeUnknown
+}
+
+// hierarchyComplete reports whether typeName and every one of its ancestors
+// has a recorded list of direct supertypes.
+func (h *dispatchHierarchy) hierarchyComplete(typeName string) bool {
+	if done, ok := h.complete[typeName]; ok {
+		return done
+	}
+	if typeName == javaObjectType {
+		return true
+	}
+	// Provisionally complete, so a cyclic hierarchy terminates.
+	h.complete[typeName] = true
+	result := h.recorded[typeName]
+	if result {
+		for _, parent := range h.parents[typeName] {
+			if !h.hierarchyComplete(parent) {
+				result = false
+				break
 			}
 		}
 	}
-	return h
+	h.complete[typeName] = result
+	return result
 }
 
 // mergeSourceSupertypes folds one file's resolved supertypes into the graph.
@@ -105,6 +213,9 @@ func mergeSourceSupertypes(graph *CallGraph, supertypes map[string][]string) {
 		graph.SourceSupertypes = make(map[string][]string)
 	}
 	for owner, bases := range supertypes {
+		if graph.SourceSupertypes[owner] == nil {
+			graph.SourceSupertypes[owner] = []string{}
+		}
 		for _, base := range bases {
 			if !stringSliceContains(graph.SourceSupertypes[owner], base) {
 				graph.SourceSupertypes[owner] = append(graph.SourceSupertypes[owner], base)
@@ -118,6 +229,9 @@ func (h *dispatchHierarchy) addParents(owner string, bases []string) {
 		return
 	}
 	existing := h.parents[owner]
+	if existing == nil {
+		existing = []string{}
+	}
 	for _, base := range bases {
 		base = normalizeHierarchyName(strings.TrimSpace(stripGenericSuffix(base)))
 		if base == "" || base == owner || stringSliceContains(existing, base) {
@@ -185,11 +299,20 @@ func (h *dispatchHierarchy) ancestorSet(typeName string) map[string]bool {
 	return set
 }
 
-// hasAncestorNamed reports whether some type whose simple name is sub has an
-// ancestor whose simple name is super. Used for overload applicability, where
-// the call site only knows erased simple type names.
-func (h *dispatchHierarchy) hasAncestorNamed(sub, super string, typesBySimple map[string][]string) bool {
-	for _, owner := range typesBySimple[sub] {
+// mayHaveAncestorNamed reports whether a type whose simple name is sub can be
+// passed where a type whose simple name is super is expected: some type named
+// sub has an ancestor named super, or its ancestry is not fully recorded (or
+// no type named sub is known at all), so nothing proves it cannot. The call
+// site only knows erased simple names.
+func (h *dispatchHierarchy) mayHaveAncestorNamed(sub, super string, typesBySimple map[string][]string) bool {
+	owners := typesBySimple[sub]
+	if len(owners) == 0 {
+		return true
+	}
+	for _, owner := range owners {
+		if !h.hierarchyComplete(owner) {
+			return true
+		}
 		for ancestor := range h.ancestorSet(owner) {
 			if simpleTypeName(ancestor) == super {
 				return true
@@ -408,10 +531,10 @@ func (s *overloadSelector) assignable(arg, param string) bool {
 	if isJavaPrimitive(param) {
 		return unboxedAssignable(arg, param)
 	}
-	if isJavaTypeVariable(param) || len(s.typesBySimple[param]) == 0 {
+	if isJavaTypeVariable(param) || isJavaTypeVariable(arg) || len(s.typesBySimple[param]) == 0 {
 		return true
 	}
-	return s.hierarchy.hasAncestorNamed(arg, param, s.typesBySimple)
+	return s.hierarchy.mayHaveAncestorNamed(arg, param, s.typesBySimple)
 }
 
 // primitiveAssignable covers widening (JLS 5.1.2) and boxing to the wrapper

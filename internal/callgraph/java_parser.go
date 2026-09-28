@@ -470,7 +470,7 @@ func (p *JavaParser) processAnonymousClass(
 	stampOwnerBases(constructorDecls, bases)
 	stampOwnerBases(methodDecls, bases)
 	if len(bases) == 1 {
-		recordJavaSupertypes(analysis, fullClassName, resolveJavaSupertype(bases[0], analysis))
+		recordJavaSupertypes(analysis, fullClassName, []string{strings.Join(resolveJavaSupertype(bases[0], analysis), javaSupertypeAlternatives)})
 	}
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)

@@ -30,7 +30,10 @@ func applyChainEdgeResolution(ctx *exportBuildContext, node *callGraphChainNode,
 	if ctx == nil || node == nil {
 		return
 	}
-	variants := resolveFragmentEdges(ctx, caller.Function.String(), callee.Function.String())
+	// Read only what the builder recorded: an edge it did not classify (added
+	// by a later resolution pass) is left without entry_resolution rather
+	// than claimed exact.
+	variants := ctx.fragmentEdgeResolutions[fragmentEdgePairKey(caller.Function.String(), callee.Function.String())]
 	if len(variants) == 0 {
 		return
 	}

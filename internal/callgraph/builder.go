@@ -1034,7 +1034,7 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 	for _, target := range resolvedTargets {
 		for _, alias := range idx.expandInterfaceDispatchMemoized(b, target, graph) {
 			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
-			recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, EdgeKindInterfaceDispatch, alias.DeclaredType, call)
+			recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, alias.kind(), alias.DeclaredType, call)
 		}
 		for _, alias := range b.expandPythonSubclassDispatch(target, graph, idx.subclassByTypeName) {
 			idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
@@ -1045,11 +1045,7 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 	abstractAliases := idx.expandAbstractClassDispatchMemoized(b, call.Callee, calleeKey, graph)
 	for _, alias := range selectInheritedOverloads(graph, call, abstractAliases, idx.overloads) {
 		idx.addCallerIndexed(graph.Callers, alias.CalleeKey, callerKey)
-		kind := EdgeKindInterfaceDispatch
-		if alias.Inherited {
-			kind = EdgeKindExact
-		}
-		recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, kind, alias.DeclaredType, call)
+		recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, alias.kind(), alias.DeclaredType, call)
 	}
 
 	for _, alias := range b.expandFluentFallback(call, graph, idx.methodsByName) {
@@ -1297,10 +1293,19 @@ func (b *Builder) expandOverloadCandidates(callee FunctionID, methodsByQualified
 type interfaceDispatchAlias struct {
 	CalleeKey    string
 	DeclaredType string
-	// Inherited marks the method a type inherits from its nearest declaring
+	// Kind classifies the edge; empty means EdgeKindInterfaceDispatch.
+	// EdgeKindExact marks the method a type inherits from its nearest declaring
 	// superclass, which a call on that type invokes unless a subtype overrides
-	// it. It is resolved statically, so it is an exact edge, not a dispatch.
-	Inherited bool
+	// it. EdgeKindNameOnly marks a candidate whose hierarchy is not fully
+	// recorded, kept because nothing proves it is not a subtype.
+	Kind EdgeKind
+}
+
+func (a interfaceDispatchAlias) kind() EdgeKind {
+	if a.Kind == "" {
+		return EdgeKindInterfaceDispatch
+	}
+	return a.Kind
 }
 
 // expandInterfaceDispatch links an interface method call site to the
@@ -1308,8 +1313,10 @@ type interfaceDispatchAlias struct {
 // namespace root, declared by a type that really implements the interface.
 // For Java that is a class whose known extends/implements hierarchy reaches the
 // interface (dispatchHierarchy.isSubtype); for Go, a type that declares every
-// method of the interface. A class whose hierarchy is unknown is not linked:
-// name and arity alone are not evidence. Among one implementing type's
+// method of the interface. A class whose recorded ancestry excludes the
+// interface is not linked; one whose ancestry is only partly recorded stays
+// linked as a name_only edge, since nothing proves it is not an
+// implementation. Among one implementing type's
 // same-arity overloads, those whose parameter types match the interface
 // method's are the override and the others are dropped.
 func (b *Builder) expandInterfaceDispatch(
@@ -1331,6 +1338,7 @@ func (b *Builder) expandInterfaceDispatch(
 	declaredType := interfaceDeclaredType(calleeDecl.ID)
 	baseRoot := namespaceRoot(calleeDecl.ID.Package)
 	byOwner := make(map[string][]*FunctionDecl)
+	kindByOwner := make(map[string]EdgeKind)
 	for _, candidate := range targets {
 		if candidate.OwnerType == ownerTypeInterface {
 			continue
@@ -1341,37 +1349,47 @@ func (b *Builder) expandInterfaceDispatch(
 		if namespaceRoot(candidate.ID.Package) != baseRoot {
 			continue
 		}
-		if !b.implementsInterface(hierarchy, candidate.ID, calleeDecl.ID) {
+		kind, ok := b.interfaceImplementationKind(hierarchy, candidate.ID, calleeDecl.ID)
+		if !ok {
 			continue
 		}
 		owner := declOwnerFQN(candidate.ID)
 		byOwner[owner] = append(byOwner[owner], candidate)
+		kindByOwner[owner] = kind
 	}
 
-	keys := make([]string, 0, len(byOwner))
-	for _, candidates := range byOwner {
+	var results []interfaceDispatchAlias
+	for owner, candidates := range byOwner {
 		for _, candidate := range overridingCandidates(calleeDecl, candidates) {
-			keys = append(keys, candidate.ID.String())
+			results = append(results, interfaceDispatchAlias{CalleeKey: candidate.ID.String(), DeclaredType: declaredType, Kind: kindByOwner[owner]})
 		}
 	}
-	sort.Strings(keys)
-	results := make([]interfaceDispatchAlias, 0, len(keys))
-	for _, k := range keys {
-		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType})
-	}
+	sort.Slice(results, func(i, j int) bool { return results[i].CalleeKey < results[j].CalleeKey })
 	return results
 }
 
-// implementsInterface reports whether the type owning candidate implements the
-// interface owning iface.
-func (b *Builder) implementsInterface(hierarchy *dispatchHierarchy, candidate, iface FunctionID) bool {
+// interfaceImplementationKind classifies the type owning candidate against the
+// interface owning iface: an implementation (interface_dispatch), possibly one
+// (name_only, when its ancestry is not fully recorded), or not one (ok false).
+func (b *Builder) interfaceImplementationKind(hierarchy *dispatchHierarchy, candidate, iface FunctionID) (EdgeKind, bool) {
 	if hierarchy == nil {
-		return false
+		return EdgeKindNameOnly, true
 	}
-	if hierarchy.isSubtype(declOwnerFQN(candidate), declOwnerFQN(iface)) {
-		return true
+	if b.ecosystem == ecosystemGo {
+		if hierarchy.implementsStructurally(candidate, iface) {
+			return EdgeKindInterfaceDispatch, true
+		}
+		return "", false
 	}
-	return b.ecosystem == ecosystemGo && hierarchy.implementsStructurally(candidate, iface)
+	switch hierarchy.relation(declOwnerFQN(candidate), declOwnerFQN(iface)) {
+	case subtypeYes:
+		return EdgeKindInterfaceDispatch, true
+	case subtypeNo:
+		return "", false
+	case subtypeUnknown:
+		return EdgeKindNameOnly, true
+	}
+	return EdgeKindNameOnly, true
 }
 
 // overridingCandidates keeps, among one type's same-name, same-arity methods,
@@ -1432,9 +1450,11 @@ func interfaceDeclaredType(id FunctionID) string {
 //   - the overrides declared by real subclasses of the callee's class, found
 //     through the known type hierarchy (dispatchHierarchy.isSubtype).
 //
-// A class with the same method name and arity that is not a subtype of the
-// callee's class is never a target: that is what linked unrelated libraries
-// sharing a namespace root. It does not fire when the callee's class declares
+// A class with the same method name and arity whose recorded ancestry
+// excludes the callee's class, while the callee's own ancestry excludes it, is
+// never a target: that is what linked unrelated libraries sharing a namespace
+// root. When either ancestry is only partly recorded the candidate stays, as a
+// name_only edge. It does not fire when the callee's class declares
 // same-arity overloads of the method (overload selection resolves those) or
 // when the class is unknown to the graph, so it stays a narrow "missing
 // override" inference instead of a generic name+arity fallback.
@@ -1457,7 +1477,8 @@ func (b *Builder) expandAbstractClassDispatch(
 	baseRoot := namespaceRoot(callee.Package)
 	calleeArity := functionArity(callee.Name)
 	ancestors := idx.hierarchy.ancestorSet(calleeOwner)
-	var overrides []string
+	calleeComplete := idx.hierarchy.hierarchyComplete(calleeOwner)
+	var overrides, heuristic []string
 	inheritedByOwner := make(map[string][]string)
 	for _, candidate := range targets {
 		if candidate.OwnerType != ownerTypeClass {
@@ -1470,21 +1491,31 @@ func (b *Builder) expandAbstractClassDispatch(
 			continue
 		}
 		owner := declOwnerFQN(candidate.ID)
-		switch {
-		case ancestors[owner]:
+		if ancestors[owner] {
 			inheritedByOwner[owner] = append(inheritedByOwner[owner], candidate.ID.String())
-		case namespaceRoot(candidate.ID.Package) == baseRoot && idx.hierarchy.isSubtype(owner, calleeOwner):
+			continue
+		}
+		if namespaceRoot(candidate.ID.Package) != baseRoot {
+			continue
+		}
+		if kind := abstractCandidateKind(idx.hierarchy, owner, calleeOwner, calleeComplete); kind == EdgeKindInterfaceDispatch {
 			overrides = append(overrides, candidate.ID.String())
+		} else if kind == EdgeKindNameOnly {
+			heuristic = append(heuristic, candidate.ID.String())
 		}
 	}
 
 	sort.Strings(overrides)
-	results := make([]interfaceDispatchAlias, 0, len(overrides)+1)
+	sort.Strings(heuristic)
+	results := make([]interfaceDispatchAlias, 0, len(overrides)+len(heuristic)+1)
 	for _, k := range nearestInherited(idx.hierarchy, calleeOwner, inheritedByOwner) {
-		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType, Inherited: true})
+		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType, Kind: EdgeKindExact})
 	}
 	for _, k := range overrides {
 		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType})
+	}
+	for _, k := range heuristic {
+		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType, Kind: EdgeKindNameOnly})
 	}
 	return results
 }
@@ -1513,6 +1544,25 @@ func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispa
 	// Same-arity overloads on the callee's own class are resolved by overload
 	// selection, not by dispatch.
 	return len(idx.methodsByQualifiedArity[qualifiedMethodArityKey(callee.Package, callee.Type, callee.Name)]) == 0
+}
+
+// abstractCandidateKind classifies a same-name candidate of an abstract-class
+// call that is not one of the callee's recorded ancestors: an override in a
+// subtype, a name_only candidate when either ancestry is only partly recorded
+// (it may be a subtype, or an ancestor the callee's record misses), or ""
+// when both ancestries are recorded and exclude it.
+func abstractCandidateKind(hierarchy *dispatchHierarchy, owner, calleeOwner string, calleeComplete bool) EdgeKind {
+	switch hierarchy.relation(owner, calleeOwner) {
+	case subtypeYes:
+		return EdgeKindInterfaceDispatch
+	case subtypeUnknown:
+		return EdgeKindNameOnly
+	case subtypeNo:
+		if !calleeComplete {
+			return EdgeKindNameOnly
+		}
+	}
+	return ""
 }
 
 // nearestInherited returns the declarations of the closest ancestor of owner
@@ -1550,7 +1600,7 @@ func nearestInherited(hierarchy *dispatchHierarchy, owner string, byOwner map[st
 func selectInheritedOverloads(graph *CallGraph, call *FunctionCall, aliases []interfaceDispatchAlias, selector *overloadSelector) []interfaceDispatchAlias {
 	var inherited []string
 	for _, alias := range aliases {
-		if alias.Inherited {
+		if alias.Kind == EdgeKindExact {
 			inherited = append(inherited, alias.CalleeKey)
 		}
 	}
@@ -1563,7 +1613,7 @@ func selectInheritedOverloads(graph *CallGraph, call *FunctionCall, aliases []in
 	}
 	out := make([]interfaceDispatchAlias, 0, len(aliases))
 	for _, alias := range aliases {
-		if !alias.Inherited || keep[alias.CalleeKey] {
+		if alias.Kind != EdgeKindExact || keep[alias.CalleeKey] {
 			out = append(out, alias)
 		}
 	}

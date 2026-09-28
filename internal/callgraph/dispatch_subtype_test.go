@@ -319,14 +319,14 @@ public class Main {
 	}
 }
 
-func TestDispatch_UnknownHierarchyAddsNoEdge(t *testing.T) {
+func TestDispatch_UnrecordedHierarchyKeepsNameOnlyEdge(t *testing.T) {
 	root := t.TempDir()
 	caller := FunctionDecl{
 		ID: FunctionID{Package: "app", Type: "Controller", Name: "handle#0"}, OwnerType: ownerTypeClass,
 		Calls: []FunctionCall{{Callee: FunctionID{Package: "com.dep", Type: "Sink", Name: "run#0"}, Line: 3}},
 	}
 	iface := FunctionDecl{ID: FunctionID{Package: "com.dep", Type: "Sink", Name: "run#0"}, OwnerType: ownerTypeInterface}
-	// Same name, arity and namespace root, but nothing says it implements Sink.
+	// Same name, arity and namespace root; nothing records its supertypes.
 	stranger := FunctionDecl{ID: FunctionID{Package: "com.dep.other", Type: "Runner", Name: "run#0"}, OwnerType: ownerTypeClass}
 	parser := &stubParser{sep: ".", analyses: map[string][]*FileAnalysis{root: {{Functions: []FunctionDecl{caller, iface, stranger}}}}}
 
@@ -334,8 +334,11 @@ func TestDispatch_UnknownHierarchyAddsNoEdge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hasCaller(graph, stranger.ID.String(), caller.ID.String()) {
-		t.Fatalf("a class with no known relation to Sink must not be linked by name and arity")
+	if !hasCaller(graph, stranger.ID.String(), caller.ID.String()) {
+		t.Fatalf("a class whose hierarchy is not recorded may implement Sink: the edge must stay")
+	}
+	if kind := edgeKindOf(graph, caller.ID.String(), stranger.ID.String()); kind != EdgeKindNameOnly {
+		t.Fatalf("edge kind = %q, want %q", kind, EdgeKindNameOnly)
 	}
 }
 
