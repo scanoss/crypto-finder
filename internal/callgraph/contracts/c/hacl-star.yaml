@@ -1,0 +1,1062 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: hacl-star
+  coordinates:
+    - hacl-star
+    - project-everest/hacl-star
+    - evercrypt
+  version_range: ">=0.3.0,<0.5.0"
+  description: "HACL* and EverCrypt verified C: agile AEAD and hash, ChaCha20-Poly1305, NaCl, HPKE, SHA-2/SHA-3/BLAKE2, HMAC, HKDF, DRBG, X25519, P-256 and Ed25519"
+
+# Inventory source: the generated dist/gcc-compatible headers at tags v0.3.0 and
+# ocaml-v0.4.5 and the legacy Hacl_SHA2_256.h at tag last-secure-api, plus every
+# function the HACL* detection rules select. Where a
+# function changed arity between those releases, each arity is its own contract.
+#
+# The Spec_Agile_AEAD_* and Spec_Hash_Definitions_* argument of the EverCrypt
+# agile entry points (EverCrypt_AEAD_create_in, EverCrypt_Hash_create_in,
+# EverCrypt_Hash_hash, EverCrypt_HMAC_compute, EverCrypt_HKDF_*,
+# EverCrypt_DRBG_create) selects the algorithm and is operation-determining. The
+# other Hacl_ and EverCrypt_ functions fix the algorithm in their name.
+#
+# Dispositions:
+#   contracted: every function below; it includes every rule-selected function.
+#   skipped-non-crypto: Hacl_Impl_* verified internals, LowStar and KaRaMeL
+#     runtime helpers, EverCrypt_AutoConfig2 CPU detection, *_free and
+#     *_uninstantiate teardown, and length and algorithm-name queries.
+#   needs-follow-up: HACL* entry points no detection rule selects yet (FFDHE,
+#     RSAPSS, K256, Bignum, the SIMD Poly1305/BLAKE2 streaming variants).
+contracts:
+  - method: EverCrypt_AEAD_create_in
+    arity: 3
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: a
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EverCrypt_AEAD_decrypt
+    arity: 9
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: operation
+  - method: EverCrypt_AEAD_decrypt_expand_aes128_gcm
+    arity: 9
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: operation
+  - method: EverCrypt_AEAD_decrypt_expand_aes256_gcm
+    arity: 9
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: operation
+  - method: EverCrypt_AEAD_decrypt_expand_chacha20_poly1305
+    arity: 9
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: operation
+  - method: EverCrypt_AEAD_encrypt
+    arity: 9
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: operation
+  - method: EverCrypt_AEAD_encrypt_expand_aes128_gcm
+    arity: 9
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: operation
+  - method: EverCrypt_AEAD_encrypt_expand_aes256_gcm
+    arity: 9
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: operation
+  - method: EverCrypt_AEAD_encrypt_expand_chacha20_poly1305
+    arity: 9
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: operation
+  - method: EverCrypt_CTR_create_in
+    arity: 6
+    return: {type: "EverCrypt_Error_error_code", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: a
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EverCrypt_CTR_init
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: config
+  - method: EverCrypt_CTR_update_block
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Chacha20Poly1305_aead_decrypt
+    arity: 8
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: EverCrypt_Chacha20Poly1305_aead_encrypt
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Cipher_chacha20
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Curve25519_ecdh
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: EverCrypt_Curve25519_scalarmult
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Curve25519_secret_to_public
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: EverCrypt_DRBG_create
+    arity: 1
+    return: {type: "EverCrypt_DRBG_state_s*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: a
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EverCrypt_DRBG_generate
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: EverCrypt_DRBG_generate_sha1
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: EverCrypt_DRBG_generate_sha2_256
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: EverCrypt_DRBG_generate_sha2_384
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: EverCrypt_DRBG_generate_sha2_512
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: EverCrypt_DRBG_instantiate
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_DRBG_instantiate_sha1
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_DRBG_instantiate_sha2_256
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_DRBG_instantiate_sha2_384
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_DRBG_instantiate_sha2_512
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_DRBG_reseed
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_DRBG_reseed_sha1
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_DRBG_reseed_sha2_256
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_DRBG_reseed_sha2_384
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_DRBG_reseed_sha2_512
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: config
+  - method: EverCrypt_Ed25519_expand_keys
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: EverCrypt_Ed25519_secret_to_public
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: EverCrypt_Ed25519_sign
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Ed25519_sign_expanded
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Ed25519_verify
+    arity: 4
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_expand_blake2b
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_expand_blake2s
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_expand_sha1
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_expand_sha2_256
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_expand_sha2_384
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_expand_sha2_512
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_extract_blake2b
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_extract_blake2s
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_extract_sha1
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_extract_sha2_256
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_extract_sha2_384
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HKDF_extract_sha2_512
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_HMAC_compute_blake2b
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: EverCrypt_HMAC_compute_blake2s
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: EverCrypt_HMAC_compute_sha1
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: EverCrypt_HMAC_compute_sha2_256
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: EverCrypt_HMAC_compute_sha2_384
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: EverCrypt_HMAC_compute_sha2_512
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: EverCrypt_Hash_Incremental_create_in
+    arity: 1
+    return: {type: "Hacl_Streaming_Functor_state_s___EverCrypt_Hash_state_s____*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: a
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EverCrypt_Hash_Incremental_finish
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_Incremental_finish_blake2b
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_Incremental_finish_blake2s
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_Incremental_finish_md5
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_Incremental_finish_sha1
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_Incremental_finish_sha224
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_Incremental_finish_sha256
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_Incremental_finish_sha384
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_Incremental_finish_sha512
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_Incremental_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: EverCrypt_Hash_Incremental_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_create_in
+    arity: 1
+    return: {type: "EverCrypt_Hash_state_s*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: a
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EverCrypt_Hash_hash_224
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_hash_256
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Hash_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: EverCrypt_Hash_update
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: EverCrypt_Poly1305_poly1305
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Blake2b_256_blake2b
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Blake2b_32_blake2b
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Blake2s_128_blake2s
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Blake2s_32_blake2s
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20Poly1305_128_aead_decrypt
+    arity: 8
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20Poly1305_128_aead_encrypt
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20Poly1305_256_aead_decrypt
+    arity: 8
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20Poly1305_256_aead_encrypt
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20Poly1305_32_aead_decrypt
+    arity: 8
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20Poly1305_32_aead_encrypt
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20_Vec128_chacha20_decrypt_128
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20_Vec128_chacha20_encrypt_128
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20_Vec256_chacha20_decrypt_256
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20_Vec256_chacha20_encrypt_256
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20_Vec32_chacha20_decrypt_32
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20_Vec32_chacha20_encrypt_32
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20_chacha20_decrypt
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Chacha20_chacha20_encrypt
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Curve25519_51_ecdh
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_Curve25519_51_scalarmult
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Curve25519_51_secret_to_public
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: Hacl_Curve25519_64_Slow_ecdh
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_Curve25519_64_Slow_scalarmult
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Curve25519_64_Slow_secret_to_public
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: Hacl_Curve25519_64_ecdh
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_Curve25519_64_scalarmult
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Curve25519_64_secret_to_public
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: Hacl_Ed25519_expand_keys
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: Hacl_Ed25519_secret_to_public
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: Hacl_Ed25519_sign
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Ed25519_sign_expanded
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Ed25519_verify
+    arity: 4
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_Frodo1344_crypto_kem_dec
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo1344_crypto_kem_enc
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo1344_crypto_kem_keypair
+    arity: 2
+    return: {type: "uint32_t", confidence: high}
+    role: factory
+  - method: Hacl_Frodo640_crypto_kem_dec
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo640_crypto_kem_enc
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo640_crypto_kem_keypair
+    arity: 2
+    return: {type: "uint32_t", confidence: high}
+    role: factory
+  - method: Hacl_Frodo64_crypto_kem_dec
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo64_crypto_kem_enc
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo64_crypto_kem_keypair
+    arity: 2
+    return: {type: "uint32_t", confidence: high}
+    role: factory
+  - method: Hacl_Frodo976_crypto_kem_dec
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo976_crypto_kem_enc
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo976_crypto_kem_keypair
+    arity: 2
+    return: {type: "uint32_t", confidence: high}
+    role: factory
+  - method: Hacl_Frodo_KEM_crypto_kem_dec
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo_KEM_crypto_kem_enc
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Frodo_KEM_crypto_kem_keypair
+    arity: 2
+    return: {type: "uint32_t", confidence: high}
+    role: factory
+  - method: Hacl_HKDF_Blake2b_256_expand_blake2b_256
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_Blake2b_256_extract_blake2b_256
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_Blake2s_128_expand_blake2s_128
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_Blake2s_128_extract_blake2s_128
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_expand_blake2b_32
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_expand_blake2s_32
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_expand_sha2_256
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_expand_sha2_512
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_extract_blake2b_32
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_extract_blake2s_32
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_extract_sha2_256
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HKDF_extract_sha2_512
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_HMAC_Blake2b_256_compute_blake2b_256
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: Hacl_HMAC_Blake2s_128_compute_blake2s_128
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: Hacl_HMAC_DRBG_create_in
+    arity: 1
+    return: {type: "Hacl_HMAC_DRBG_state", confidence: high}
+    role: factory
+  - method: Hacl_HMAC_DRBG_generate
+    arity: 6
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_HMAC_DRBG_instantiate
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Hacl_HMAC_DRBG_reseed
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Hacl_HMAC_compute_blake2b_32
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: Hacl_HMAC_compute_blake2s_32
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: Hacl_HMAC_compute_sha2_256
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: Hacl_HMAC_compute_sha2_384
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: Hacl_HMAC_compute_sha2_512
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: Hacl_HMAC_legacy_compute_sha1
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: Hacl_HPKE_Curve51_CP128_SHA256_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP128_SHA256_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP128_SHA512_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP128_SHA512_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP256_SHA256_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP256_SHA256_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP256_SHA512_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP256_SHA512_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP32_SHA256_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP32_SHA256_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP32_SHA512_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve51_CP32_SHA512_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP128_SHA256_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP128_SHA256_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP128_SHA512_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP128_SHA512_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP256_SHA256_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP256_SHA256_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP256_SHA512_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP256_SHA512_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP32_SHA256_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP32_SHA256_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP32_SHA512_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_Curve64_CP32_SHA512_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_P256_CP128_SHA256_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_P256_CP128_SHA256_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_P256_CP256_SHA256_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_P256_CP256_SHA256_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_P256_CP32_SHA256_openBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_HPKE_P256_CP32_SHA256_sealBase
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_Hash_Blake2_hash_blake2b_32
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Hash_Blake2_hash_blake2s_32
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Hash_MD5_legacy_hash
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Hash_SHA1_legacy_hash
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Hash_SHA2_hash_224
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Hash_SHA2_hash_256
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Hash_SHA2_hash_384
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Hash_SHA2_hash_512
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_box_detached
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_box_detached_afternm
+    arity: 6
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_box_easy
+    arity: 6
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_box_easy_afternm
+    arity: 5
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_box_open_detached
+    arity: 7
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_box_open_detached_afternm
+    arity: 6
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_box_open_easy
+    arity: 6
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_box_open_easy_afternm
+    arity: 5
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_secretbox_detached
+    arity: 6
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_secretbox_easy
+    arity: 5
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_secretbox_open_detached
+    arity: 6
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_NaCl_crypto_secretbox_open_easy
+    arity: 5
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: Hacl_P256_ecdsa_sign_p256_sha2
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_P256_ecdsa_sign_p256_sha384
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_P256_ecdsa_sign_p256_sha512
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_P256_ecdsa_sign_p256_without_hash
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_P256_ecdsa_verif_p256_sha2
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_P256_ecdsa_verif_p256_sha384
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_P256_ecdsa_verif_p256_sha512
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_P256_ecdsa_verif_without_hash
+    arity: 5
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_P256_ecp256dh_i
+    arity: 2
+    return: {type: "bool", confidence: high}
+    role: factory
+  - method: Hacl_P256_ecp256dh_r
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: Hacl_Poly1305_128_poly1305_mac
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Poly1305_256_poly1305_mac
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Poly1305_32_poly1305_mac
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_SHA2_256_hash
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_SHA3_sha3_224
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_SHA3_sha3_256
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_SHA3_sha3_384
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_SHA3_sha3_512
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_SHA3_shake128_hacl
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_SHA3_shake256_hacl
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Salsa20_salsa20_decrypt
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Salsa20_salsa20_encrypt
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Streaming_SHA2_create_in_224
+    arity: 0
+    return: {type: "Hacl_Streaming_SHA2_state_sha2_224*", confidence: high}
+    role: factory
+  - method: Hacl_Streaming_SHA2_create_in_256
+    arity: 0
+    return: {type: "Hacl_Streaming_SHA2_state_sha2_224*", confidence: high}
+    role: factory
+  - method: Hacl_Streaming_SHA2_create_in_384
+    arity: 0
+    return: {type: "Hacl_Streaming_SHA2_state_sha2_384*", confidence: high}
+    role: factory
+  - method: Hacl_Streaming_SHA2_create_in_512
+    arity: 0
+    return: {type: "Hacl_Streaming_SHA2_state_sha2_384*", confidence: high}
+    role: factory
+  - method: Hacl_Streaming_SHA2_finish_224
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Streaming_SHA2_finish_256
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Streaming_SHA2_finish_384
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Streaming_SHA2_finish_512
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Streaming_SHA2_init_224
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Hacl_Streaming_SHA2_init_256
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Hacl_Streaming_SHA2_init_384
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Hacl_Streaming_SHA2_init_512
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Hacl_Streaming_SHA2_update_224
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Streaming_SHA2_update_256
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Streaming_SHA2_update_384
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Hacl_Streaming_SHA2_update_512
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+hierarchy: {}
