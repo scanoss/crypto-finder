@@ -237,7 +237,7 @@ func (h *dispatchHierarchy) inheritedProviders(iface string, ifaceMethod *Functi
 				}
 				seen[implementor] = true
 				next = append(next, implementor)
-				if declaresOverride(declares[implementor][method], ifaceMethod) {
+				if h.declaresOverride(declares[implementor][method], ifaceMethod) {
 					continue
 				}
 				for _, provider := range h.nearestDeclaring(implementor, method, ifaceMethod, declares) {
@@ -305,9 +305,9 @@ func (h *dispatchHierarchy) classMethodIndex() map[string]map[string][]*Function
 // parameter types does not override it, and neither does a signature whose
 // type variable has no known bound, so a declaration is only ever hidden by a
 // proven override.
-func declaresOverride(decls []*FunctionDecl, method *FunctionDecl) bool {
+func (h *dispatchHierarchy) declaresOverride(decls []*FunctionDecl, method *FunctionDecl) bool {
 	for _, decl := range decls {
-		if sameStrictErasure(decl, method) {
+		if sameStrictErasure(decl, method, h.simpleNameCount) {
 			return true
 		}
 	}
@@ -327,14 +327,18 @@ func declaresMatching(decls []*FunctionDecl, method *FunctionDecl) bool {
 }
 
 // sameStrictErasure compares the erased parameter types of a and b exactly.
-func sameStrictErasure(a, b *FunctionDecl) bool {
+// It compares simple names, so a parameter type whose simple name several
+// known types share (counted by shared) is never taken as equal: two
+// different types of that name would otherwise make a declaration look
+// overridden when it is not.
+func sameStrictErasure(a, b *FunctionDecl, shared map[string]int) bool {
 	if len(a.Parameters) != len(b.Parameters) {
 		return false
 	}
 	for i := range a.Parameters {
 		left, okLeft := strictParameterErasure(a, i)
 		right, okRight := strictParameterErasure(b, i)
-		if !okLeft || !okRight || left != right {
+		if !okLeft || !okRight || left != right || shared[strings.TrimRight(left, "[]")] > 1 {
 			return false
 		}
 	}

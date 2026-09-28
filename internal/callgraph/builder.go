@@ -1482,38 +1482,20 @@ func (b *Builder) expandAbstractClassDispatch(
 
 	declaredType := interfaceDeclaredType(callee)
 	calleeOwner := declOwnerFQN(callee)
-	baseRoot := namespaceRoot(callee.Package)
-	calleeArity := functionArity(callee.Name)
-	ancestors := idx.hierarchy.ancestorSet(calleeOwner)
 	calleeComplete := idx.hierarchy.hierarchyComplete(calleeOwner)
-	var overrides, heuristic []string
-	inheritedByOwner := make(map[string][]string)
-	for _, candidate := range targets {
-		if !abstractCandidateShape(candidate, callee, calleeArity) {
-			continue
-		}
-		owner := declOwnerFQN(candidate.ID)
-		if ancestors[owner] {
-			inheritedByOwner[owner] = append(inheritedByOwner[owner], candidate.ID.String())
-			continue
-		}
-		if namespaceRoot(candidate.ID.Package) != baseRoot {
-			continue
-		}
-		if kind := abstractCandidateKind(idx.hierarchy, owner, calleeOwner, calleeComplete); kind == EdgeKindInterfaceDispatch {
-			overrides = append(overrides, candidate.ID.String())
-		} else if kind == EdgeKindNameOnly {
-			heuristic = append(heuristic, candidate.ID.String())
-		}
-	}
+	c := classifyAbstractCandidates(targets, callee, idx.hierarchy, calleeComplete)
+	overrides, heuristic := c.overrides, c.heuristic
 
 	own := ownOverloads(graph, callee, idx)
-	inherited := inheritedMethods(graph, idx.hierarchy, calleeOwner, inheritedByOwner, own)
-	// A call on a class whose own overloads and inherited methods of this
-	// name are all static is bound at compile time: no subtype override can
-	// be the target. One non-static method, own or inherited, reopens
-	// dispatch.
-	if allStatic(own) && allStatic(declsOf(graph, inherited)) && len(own) > 0 {
+	inherited := inheritedMethods(graph, idx.hierarchy, calleeOwner, c.inheritedByOwner, own)
+	nonStaticAncestor := c.nonStaticAncestor
+	// A call on a class whose own overloads of this name are all static,
+	// whose ancestry is fully recorded, and none of whose ancestors (classes
+	// or interfaces) declares an instance method of this name and arity is
+	// bound at compile time: no subtype override can be the target. An
+	// incomplete ancestry may hide an inherited instance method (a JDK or
+	// library base class), so dispatch then proceeds as usual.
+	if len(own) > 0 && allStatic(own) && calleeComplete && !nonStaticAncestor {
 		overrides, heuristic = nil, nil
 	}
 	sort.Strings(overrides)
@@ -1529,6 +1511,46 @@ func (b *Builder) expandAbstractClassDispatch(
 		results = append(results, interfaceDispatchAlias{CalleeKey: k, DeclaredType: declaredType, Kind: EdgeKindNameOnly})
 	}
 	return results
+}
+
+// abstractCandidates sorts an abstract-class expansion's same-name candidates.
+type abstractCandidates struct {
+	inheritedByOwner  map[string][]string
+	overrides         []string
+	heuristic         []string
+	nonStaticAncestor bool
+}
+
+// classifyAbstractCandidates splits the same-name, same-arity methods into
+// those the callee's class inherits (from classes and interfaces alike, an
+// interface's default or abstract method included), proven subtype overrides
+// and name_only candidates, noting whether any inherited one is an instance
+// method.
+func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hierarchy *dispatchHierarchy, calleeComplete bool) abstractCandidates {
+	calleeOwner := declOwnerFQN(callee)
+	baseRoot := namespaceRoot(callee.Package)
+	arity := functionArity(callee.Name)
+	ancestors := hierarchy.ancestorSet(calleeOwner)
+	c := abstractCandidates{inheritedByOwner: make(map[string][]string)}
+	for _, candidate := range targets {
+		owner := declOwnerFQN(candidate.ID)
+		if ancestors[owner] && functionArity(candidate.ID.Name) == arity {
+			c.inheritedByOwner[owner] = append(c.inheritedByOwner[owner], candidate.ID.String())
+			c.nonStaticAncestor = c.nonStaticAncestor || !candidate.Static
+			continue
+		}
+		if !abstractCandidateShape(candidate, callee, arity) || namespaceRoot(candidate.ID.Package) != baseRoot {
+			continue
+		}
+		switch abstractCandidateKind(hierarchy, owner, calleeOwner, calleeComplete) {
+		case EdgeKindInterfaceDispatch:
+			c.overrides = append(c.overrides, candidate.ID.String())
+		case EdgeKindNameOnly:
+			c.heuristic = append(c.heuristic, candidate.ID.String())
+		case EdgeKindExact, EdgeKindPythonSubclassDispatch:
+		}
+	}
+	return c
 }
 
 // abstractCandidateShape reports whether candidate is a class method of the
@@ -1611,12 +1633,12 @@ func abstractCandidateKind(hierarchy *dispatchHierarchy, owner, calleeOwner stri
 
 // notOverridden keeps the keys of one ancestor level whose erased signature
 // no nearer kept declaration already has, returning them and their decls.
-func notOverridden(graph *CallGraph, level []string, nearer []*FunctionDecl) ([]string, []*FunctionDecl) {
+func notOverridden(graph *CallGraph, hierarchy *dispatchHierarchy, level []string, nearer []*FunctionDecl) ([]string, []*FunctionDecl) {
 	var keys []string
 	var decls []*FunctionDecl
 	for _, key := range level {
 		fn := graph.Functions[key]
-		if fn != nil && declaresOverride(nearer, fn) {
+		if fn != nil && hierarchy.declaresOverride(nearer, fn) {
 			continue
 		}
 		keys = append(keys, key)
@@ -1655,7 +1677,7 @@ func inheritedMethods(graph *CallGraph, hierarchy *dispatchHierarchy, owner stri
 				next = append(next, parent)
 			}
 		}
-		levelKept, levelDecls := notOverridden(graph, level, keptDecls)
+		levelKept, levelDecls := notOverridden(graph, hierarchy, level, keptDecls)
 		kept = append(kept, levelKept...)
 		keptDecls = append(keptDecls, levelDecls...)
 		frontier = next

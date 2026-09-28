@@ -836,3 +836,43 @@ func TestDispatch_OwnStaticRedeclarationHidesInheritedStatic(t *testing.T) {
 		t.Fatalf("B's static m(String) hides A's: A.m(String) is not a target")
 	}
 }
+
+func TestDispatch_StaticFamilyStillDispatchesWhenInstanceMethodMayBeInherited(t *testing.T) {
+	t.Run("interface default method", func(t *testing.T) {
+		graph := buildJavaGraph(t, map[string]string{
+			"com/acme/I.java": "package com.acme;\npublic interface I {\n  default void m(Object o) {}\n}\n",
+			"com/acme/A.java": "package com.acme;\npublic class A implements I {\n  public static void m(String s) {}\n  public static void m(Integer i) {}\n}\n",
+			"com/acme/B.java": `package com.acme;
+import javax.crypto.Cipher;
+public class B extends A {
+  public void m(Object o) { try { Cipher.getInstance("AES"); } catch (Exception e) {} }
+}
+`,
+			"com/acme/App.java": "package com.acme;\npublic class App {\n  public void run(A a) { a.m(new Object()); }\n}\n",
+		})
+		if !hasCaller(graph, "com.acme.(B).m#1", "com.acme.(App).run#1") {
+			t.Fatalf("B overrides the default m(Object) A inherits from I: B.m must stay linked")
+		}
+	})
+	t.Run("unindexed base class", func(t *testing.T) {
+		graph := buildJavaGraph(t, map[string]string{
+			"com/acme/A.java": `package com.acme;
+import java.io.OutputStream;
+public abstract class A extends OutputStream {
+  public static void write(String s) {}
+  public static void write(Long l) {}
+}
+`,
+			"com/acme/B.java": `package com.acme;
+import javax.crypto.Cipher;
+public class B extends A {
+  public void write(int b) { try { Cipher.getInstance("AES"); } catch (Exception e) {} }
+}
+`,
+			"com/acme/App.java": "package com.acme;\npublic class App {\n  public void run(A a) throws Exception { a.write(5); }\n}\n",
+		})
+		if !hasCaller(graph, "com.acme.(B).write#1", "com.acme.(App).run#1") {
+			t.Fatalf("A inherits OutputStream's instance write(int), which B overrides: B.write must stay linked")
+		}
+	})
+}
