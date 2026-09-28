@@ -1,0 +1,37 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "node-ssh"
+  coordinates:
+    - "node-ssh"
+  version_range: ">=1.0.0"
+  description: "node-ssh: a promise wrapper over the ssh2 client"
+
+# A consumer builds a client and connects:
+#
+#     const { NodeSSH } = require('node-ssh');
+#     const ssh = new NodeSSH();                         // factory
+#     await ssh.connect({ host, username, privateKey }); // operation: SSH-2 transport
+#
+# The class is the named export `NodeSSH` from 10.0 and the default export
+# before it. The parser keys a constructor called on a directly required module
+# by the local name, and consumers of the default export name it `NodeSSH`
+# (dpy, node-ssh-modify-nginx) or `node_ssh` (the pre-10 README), so both are
+# declared. connect resolves to the same client.
+#
+# Deliberately NOT contracted: execCommand, exec, putFile, getFile, the
+# directory and SFTP helpers, requestShell and dispose. They move data over the
+# connection connect established and add no cryptographic step.
+contracts:
+  - method: "node-ssh.NodeSSH.<init>"
+    arity: 0
+    return: { type: "node-ssh.NodeSSH", confidence: high }
+    role: factory
+  - method: "node-ssh.node_ssh.<init>"
+    arity: 0
+    return: { type: "node-ssh.NodeSSH", confidence: high }
+    role: factory
+  - method: "node-ssh.NodeSSH.connect"
+    arity: 1
+    return: { type: "node-ssh.NodeSSH", confidence: high }
+    role: operation
