@@ -1385,6 +1385,11 @@ func (b *Builder) interfaceImplementationKind(hierarchy *dispatchHierarchy, cand
 	case subtypeYes:
 		return EdgeKindInterfaceDispatch, true
 	case subtypeNo:
+		// Not an implementor itself, but an implementor may inherit the
+		// method from it.
+		if hierarchy.implementorAncestors(declOwnerFQN(iface))[declOwnerFQN(candidate)] {
+			return EdgeKindInterfaceDispatch, true
+		}
 		return "", false
 	case subtypeUnknown:
 		return EdgeKindNameOnly, true

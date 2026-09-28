@@ -62,6 +62,9 @@ func javaClauseTypeNames(node *sitter.Node, src []byte) []string {
 		switch child.Type() {
 		case javaNodeTypeList:
 			names = append(names, javaClauseTypeNames(child, src)...)
+		case "annotated_type":
+			// `implements @Ann Foo`: the annotation is not a supertype.
+			names = append(names, javaClauseTypeNames(child, src)...)
 		case javaNodeTypeIdentifier, javaNodeScopedTypeIdentifier, javaNodeGenericType:
 			if name := strings.TrimSpace(stripGenericSuffix(child.Content(src))); name != "" {
 				names = append(names, name)

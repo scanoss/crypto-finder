@@ -19,6 +19,7 @@ package callgraph
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -150,5 +151,81 @@ func TestNodeClassBasesRecordsExtendsClause(t *testing.T) {
 				t.Fatalf("Sub.%s OwnerBases = %v, want [Base]", fn.ID.Name, fn.OwnerBases)
 			}
 		}
+	}
+}
+
+func TestDispatch_InterfaceMethodInheritedFromNonImplementingBaseIsLinked(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/lib/Hasher.java": `package com.lib;
+public interface Hasher { byte[] hash(byte[] d); }
+`,
+		// Base does not implement Hasher; Impl does, and inherits hash from Base.
+		"com/lib/Base.java": `package com.lib;
+import java.security.MessageDigest;
+public class Base {
+  public byte[] hash(byte[] d) throws Exception { return MessageDigest.getInstance("SHA-256").digest(d); }
+}
+`,
+		"com/lib/Impl.java": `package com.lib;
+public class Impl extends Base implements Hasher {}
+`,
+		"com/lib/Unrelated.java": `package com.lib;
+public class Unrelated {
+  public byte[] hash(byte[] d) { return d; }
+}
+`,
+		"com/app/App.java": `package com.app;
+import com.lib.Hasher;
+public class App {
+  public byte[] main(Hasher h, byte[] x) { return h.hash(x); }
+}
+`,
+	})
+	caller := "com.app.(App).main#2"
+	if !hasCaller(graph, "com.lib.(Base).hash#1", caller) {
+		t.Fatalf("Impl implements Hasher with the hash it inherits from Base: Base.hash must stay linked")
+	}
+	if hasCaller(graph, "com.lib.(Unrelated).hash#1", caller) {
+		t.Fatalf("no implementor of Hasher inherits from Unrelated, so it must not be linked")
+	}
+}
+
+func TestDispatch_UntypedArgumentDoesNotLetPartialExactOverloadWin(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/lib/Key.java": `package com.lib;
+public interface Key {}
+`,
+		"com/lib/Engine.java": `package com.lib;
+import java.security.MessageDigest;
+public class Engine {
+  public void run(String s, Integer n) {}
+  public void run(Object o, Key k) throws Exception { MessageDigest.getInstance("SHA-256"); }
+}
+`,
+		"com/app/Use.java": `package com.app;
+import com.lib.Engine;
+import com.vendor.Keys;
+public class Use {
+  public void go(Engine e) throws Exception { e.run("x", Keys.make()); }
+}
+`,
+	})
+	caller := "com.app.(Use).go#1"
+	for _, overload := range []string{"run#2$String,Integer", "run#2$Object,Key"} {
+		if key := "com.lib.(Engine)." + overload; !hasCaller(graph, key, caller) {
+			t.Errorf("the second argument's type is unknown, so overload %s must be kept", key)
+		}
+	}
+}
+
+func TestJavaSupertypesSkipTypeAnnotations(t *testing.T) {
+	graph := buildJavaGraph(t, map[string]string{
+		"com/lib/Hasher.java": "package com.lib;\npublic interface Hasher { byte[] hash(byte[] d); }\n",
+		"com/lib/Ann.java":    "package com.lib;\npublic @interface Ann {}\n",
+		"com/lib/Impl.java":   "package com.lib;\npublic class Impl implements @Ann Hasher {\n  public byte[] hash(byte[] d) { return d; }\n}\n",
+	})
+	parents := graph.SourceSupertypes["com.lib.Impl"]
+	if len(parents) != 1 || strings.Split(parents[0], javaSupertypeAlternatives)[0] != "com.lib.Hasher" {
+		t.Fatalf("SourceSupertypes[com.lib.Impl] = %v, want one entry naming com.lib.Hasher", parents)
 	}
 }

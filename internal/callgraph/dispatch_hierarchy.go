@@ -69,10 +69,14 @@ const (
 // Go interfaces are satisfied structurally, so for the Go ecosystem
 // implementsStructurally stands in for the nominal check.
 type dispatchHierarchy struct {
-	parents   map[string][]string
-	recorded  map[string]bool
-	ancestors map[string]map[string]bool
-	complete  map[string]bool
+	parents  map[string][]string
+	children map[string][]string
+	// inheritedBy memoizes, per interface, the ancestors of its recorded
+	// implementors (see implementorAncestors).
+	inheritedBy map[string]map[string]bool
+	recorded    map[string]bool
+	ancestors   map[string]map[string]bool
+	complete    map[string]bool
 
 	// Go method sets, built on first use: owner key -> "name#arity" set.
 	goMethodSets map[string]map[string]bool
@@ -86,6 +90,8 @@ func newDispatchHierarchy(graph *CallGraph) *dispatchHierarchy {
 		ancestors: make(map[string]map[string]bool),
 		complete:  make(map[string]bool),
 		graph:     graph,
+
+		inheritedBy: make(map[string]map[string]bool),
 	}
 
 	typesBySimple, pkgByOwner, simpleBases, known := indexDeclaredOwners(graph)
@@ -116,6 +122,7 @@ func newDispatchHierarchy(graph *CallGraph) *dispatchHierarchy {
 		// Only a fully resolved base list vouches for the whole ancestry level.
 		h.recorded[owner] = len(resolved) == len(bases)
 	}
+	h.indexChildren()
 	return h
 }
 
@@ -167,6 +174,47 @@ func (h *dispatchHierarchy) record(owner string, bases []string, known map[strin
 	}
 	h.addParents(owner, resolved)
 	h.recorded[owner] = true
+}
+
+func (h *dispatchHierarchy) indexChildren() {
+	h.children = make(map[string][]string, len(h.parents))
+	for owner, parents := range h.parents {
+		for _, parent := range parents {
+			h.children[parent] = append(h.children[parent], owner)
+		}
+	}
+}
+
+// implementorAncestors returns the types some recorded subtype of iface
+// extends: a class there can supply an interface method to an implementor
+// that inherits it without overriding (class Impl extends Base implements
+// Hasher, with hash declared only on Base).
+func (h *dispatchHierarchy) implementorAncestors(iface string) map[string]bool {
+	iface = normalizeHierarchyName(iface)
+	if set, ok := h.inheritedBy[iface]; ok {
+		return set
+	}
+	set := make(map[string]bool)
+	seen := map[string]bool{iface: true}
+	frontier := []string{iface}
+	for depth := 0; depth < hierarchyMaxDepth && len(frontier) > 0; depth++ {
+		var next []string
+		for _, current := range frontier {
+			for _, child := range h.children[current] {
+				if seen[child] {
+					continue
+				}
+				seen[child] = true
+				next = append(next, child)
+				for ancestor := range h.ancestorSet(child) {
+					set[ancestor] = true
+				}
+			}
+		}
+		frontier = next
+	}
+	h.inheritedBy[iface] = set
+	return set
 }
 
 // relation classifies whether sub is a subtype of super.
@@ -443,9 +491,13 @@ func newOverloadSelector(graph *CallGraph, hierarchy *dispatchHierarchy) *overlo
 // one type) to the overloads the call site can invoke given the static
 // argument types it records:
 //
-//  1. When some overloads declare exactly the recorded type at every argument
-//     whose type is known, those are the most specific applicable methods and
-//     javac picks among them, so only they are kept.
+//  1. When some overloads match every argument position exactly (the recorded
+//     type at a typed position, a parameter that accepts anything, Object or a
+//     type variable, at an untyped one), those are the most specific
+//     applicable methods and javac picks among them, so only they are kept.
+//     An untyped argument never lets an overload win by matching the typed
+//     ones alone: its real type may make a different overload the one javac
+//     picks.
 //  2. Otherwise every overload whose parameters accept the recorded types is
 //     kept (see assignable).
 //  3. When none is applicable the call site carries type information the graph
@@ -464,8 +516,8 @@ func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall,
 			applicable = append(applicable, key)
 			continue
 		}
-		known, matched, accepted := s.matchArguments(fn, call)
-		if known > 0 && matched == known {
+		known, exactPositions, accepted := s.matchArguments(fn, call)
+		if known > 0 && exactPositions == len(fn.Parameters) {
 			exact = append(exact, key)
 		}
 		if accepted {
@@ -483,27 +535,31 @@ func (s *overloadSelector) selectOverloads(graph *CallGraph, call *FunctionCall,
 }
 
 // matchArguments compares fn's parameters with the call's recorded argument
-// types: known counts arguments with a recorded type, matched those whose type
-// equals the parameter type, and accepted is false when some recorded type
-// cannot be passed to its parameter.
-func (s *overloadSelector) matchArguments(fn *FunctionDecl, call *FunctionCall) (known, matched int, accepted bool) {
+// types: known counts arguments with a recorded type; exactPositions counts
+// positions that match exactly, a typed argument equal to its parameter type
+// or an untyped one whose parameter accepts anything; accepted is false when
+// some recorded type cannot be passed to its parameter.
+func (s *overloadSelector) matchArguments(fn *FunctionDecl, call *FunctionCall) (known, exactPositions int, accepted bool) {
 	accepted = true
 	for i, param := range fn.Parameters {
 		arg := stripGenericSuffix(staticArgumentType(call, i))
+		paramType := stripGenericSuffix(normalizeJavaTypeName(param.Type))
 		if arg == "" {
+			if paramType == "Object" || isJavaTypeVariable(paramType) {
+				exactPositions++
+			}
 			continue
 		}
 		known++
-		paramType := stripGenericSuffix(normalizeJavaTypeName(param.Type))
 		if arg == paramType {
-			matched++
+			exactPositions++
 			continue
 		}
 		if !s.assignable(arg, paramType) {
 			accepted = false
 		}
 	}
-	return known, matched, accepted
+	return known, exactPositions, accepted
 }
 
 // assignable reports whether a value of static type arg can be passed to a
