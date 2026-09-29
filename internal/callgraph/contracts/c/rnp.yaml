@@ -1,0 +1,390 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: rnp
+  coordinates:
+    - rnpgp/rnp
+  version_range: ">=0.9.1,<0.19.0"
+  description: "RNP OpenPGP library FFI: encryption, signing, verification, key generation and protection"
+
+# Inventory sources: include/rnp/rnp.h from the upstream tag archives v0.13.1,
+# v0.16.0 and v0.18.1, and include/rnp/rnp2.h, where v0.9.1 to v0.12.0 declare
+# the same FFI. Every contracted function keeps its arity across the releases
+# that declare it; set_flags, the used-recipient/symenc getters and
+# rnp_signature_is_valid arrived later, and an older consumer never calls them.
+#
+# RNP drives every operation through an op handle: rnp_op_*_create is the
+# factory, the rnp_op_*_set_*/add_* calls configure the handle, and
+# rnp_op_*_execute performs the encryption, signing, verification or key
+# generation. The cipher, hash, AEAD mode, public-key algorithm and curve names
+# are operation-determining; key and AEAD chunk sizes are metadata-contributing.
+# The op handle is the first argument, so the C receiver binding groups these
+# calls around the handle.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: ffi, input/output and key-store plumbing (rnp_ffi_*,
+#   rnp_input_*, rnp_output_* other than armoring, rnp_load_keys, rnp_save_keys,
+#   rnp_import_*), key and uid getters, JSON dumps, file name/mtime and time
+#   setters, compression setters, every *_destroy and rnp_buffer_* call.
+# skipped-informative-return: rnp_op_verify_get_* counters and rnp_signature_get_*
+#   accessors other than the ones contracted as outputs.
+# needs-follow-up: key signature editing (rnp_key_signature_*), revocation and
+#   Autocrypt export, rnp_generate_key_json (algorithms live in a JSON string).
+contracts:
+
+  # Encryption.
+  - method: rnp_op_encrypt_create
+    arity: 4
+    return: {type: "rnp_result_t", confidence: high}
+    role: factory
+  - method: rnp_op_encrypt_add_recipient
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_encrypt_add_password
+    arity: 5
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: s2k_hash
+        role: metadata-contributing
+        contributes: {property: hash, derivation: argument_value}
+      - index: 3
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 4
+        name: s2k_cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_encrypt_add_signature
+    arity: 3
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_encrypt_set_cipher
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_encrypt_set_aead
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_encrypt_set_aead_bits
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_encrypt_set_hash
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_encrypt_set_armor
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_encrypt_set_flags
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_encrypt_execute
+    arity: 1
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+
+  # Signing.
+  - method: rnp_op_sign_create
+    arity: 4
+    return: {type: "rnp_result_t", confidence: high}
+    role: factory
+  - method: rnp_op_sign_cleartext_create
+    arity: 4
+    return: {type: "rnp_result_t", confidence: high}
+    role: factory
+  - method: rnp_op_sign_detached_create
+    arity: 4
+    return: {type: "rnp_result_t", confidence: high}
+    role: factory
+  - method: rnp_op_sign_add_signature
+    arity: 3
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_sign_set_hash
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_sign_signature_set_hash
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_sign_set_armor
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_sign_execute
+    arity: 1
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+
+  # Verification and decryption.
+  - method: rnp_op_verify_create
+    arity: 4
+    return: {type: "rnp_result_t", confidence: high}
+    role: factory
+  - method: rnp_op_verify_detached_create
+    arity: 4
+    return: {type: "rnp_result_t", confidence: high}
+    role: factory
+  - method: rnp_op_verify_set_flags
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_verify_execute
+    arity: 1
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+  - method: rnp_op_verify_get_signature_at
+    arity: 3
+    return: {type: "rnp_result_t", confidence: high}
+    role: output
+  - method: rnp_op_verify_signature_get_status
+    arity: 1
+    return: {type: "rnp_result_t", confidence: high}
+    role: output
+  - method: rnp_op_verify_signature_get_hash
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: output
+  - method: rnp_op_verify_signature_get_key
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: output
+  - method: rnp_op_verify_get_used_recipient
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: output
+  - method: rnp_op_verify_get_used_symenc
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: output
+  - method: rnp_decrypt
+    arity: 3
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+  - method: rnp_signature_is_valid
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+
+  # Key generation.
+  - method: rnp_op_generate_create
+    arity: 3
+    return: {type: "rnp_result_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_generate_subkey_create
+    arity: 4
+    return: {type: "rnp_result_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 3
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_generate_set_bits
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: rnp_op_generate_set_curve
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: curve
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: rnp_op_generate_set_hash
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_generate_set_dsa_qbits
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_generate_set_protection_cipher
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_generate_set_protection_hash
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: hash
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: rnp_op_generate_set_protection_mode
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_generate_set_protection_iterations
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: rnp_op_generate_set_protection_password
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_generate_set_userid
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_generate_set_expiration
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_generate_add_usage
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_generate_add_pref_hash
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_generate_add_pref_cipher
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: config
+  - method: rnp_op_generate_execute
+    arity: 1
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+  - method: rnp_op_generate_get_key
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: output
+  - method: rnp_generate_key_rsa
+    arity: 6
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: rnp_generate_key_dsa_eg
+    arity: 6
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: rnp_generate_key_ec
+    arity: 5
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: curve
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: rnp_generate_key_25519
+    arity: 4
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+  - method: rnp_generate_key_sm2
+    arity: 4
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+  - method: rnp_generate_key_ex
+    arity: 10
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: key_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: sub_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: key_bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+
+  # Secret-key protection.
+  - method: rnp_key_protect
+    arity: 6
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: cipher
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: hash
+        role: metadata-contributing
+        contributes: {property: hash, derivation: argument_value}
+      - index: 5
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: rnp_key_unprotect
+    arity: 2
+    return: {type: "rnp_result_t", confidence: high}
+    role: operation
