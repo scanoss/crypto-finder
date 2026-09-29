@@ -1,0 +1,312 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: phc-winner-argon2
+  coordinates:
+    - phc-winner-argon2
+    - P-H-C/phc-winner-argon2
+    - libargon2
+  version_range: ">=20151206,<=20190702"
+  description: "Reference Argon2 password hashing: raw, encoded and context hashing and verification"
+
+# Inventory source: include/argon2.h at tag 20190702 and src/argon2.h at tag
+# 20151206, plus every function the Argon2 detection rules select. Where a name
+# changed arity between those releases, each arity is its own contract.
+#
+# The Argon2 type argument (Argon2_d, Argon2_i, Argon2_id) of argon2_hash,
+# argon2_verify, argon2_ctx and argon2_verify_ctx is operation-determining with
+# property variant. t_cost, m_cost (KiB), parallelism, the output and salt
+# lengths and the version are metadata-contributing. Verification reads the
+# cost parameters from the encoded hash, so the verify contracts carry none.
+#
+# Dispositions:
+#   contracted: every function below; it includes every rule-selected function.
+#   skipped-informative-return: argon2_error_message, argon2_encodedlen and
+#     argon2_type2string, which the detection rules keep negative.
+#   needs-follow-up: the core.h and encoding.h internals, which are not part of
+#     the public header.
+contracts:
+  - method: argon2_ctx
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+  - method: argon2_hash
+    arity: 12
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 1
+        name: m_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 6
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 8
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 11
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+  - method: argon2_hash
+    arity: 13
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 1
+        name: m_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 6
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 8
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 11
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+      - index: 12
+        name: version
+        role: metadata-contributing
+        contributes: {property: version, derivation: argument_value}
+  - method: argon2_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+  - method: argon2_verify_ctx
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: type
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+  - method: argon2d
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2d_ctx
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2d_hash_encoded
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 1
+        name: m_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 6
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 7
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: argon2d_hash_raw
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 1
+        name: m_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 6
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 8
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: argon2d_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2d_verify_ctx
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2i
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2i_ctx
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2i_hash_encoded
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 1
+        name: m_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 6
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 7
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: argon2i_hash_raw
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 1
+        name: m_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 6
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 8
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: argon2i_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2i_verify_ctx
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2id_ctx
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2id_hash_encoded
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 1
+        name: m_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 6
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 7
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: argon2id_hash_raw
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 1
+        name: m_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 2
+        name: parallelism
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 6
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 8
+        name: hashlen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: argon2id_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: argon2id_verify_ctx
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+hierarchy: {}
