@@ -1,0 +1,82 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: libscrypt
+  coordinates:
+    - libscrypt
+    - technion/libscrypt
+  version_range: ">=1.1,<2.0"
+  description: "libscrypt scrypt key derivation, MCF password hashing and verification, and salt generation"
+
+# Inventory source: libscrypt.h at tag v1.22, checked against v1.1 and v1.13,
+# where every function below has the same arity (libscrypt_salt_gen returned
+# void before it returned int), plus every function the libscrypt detection
+# rules select.
+#
+# scrypt fixes the algorithm in every call, so no argument is
+# operation-determining. N (cost), r (blockSize), p (parallelism), the salt and
+# output lengths are metadata-contributing. libscrypt_check reads N, r and p from
+# the MCF string, so it carries none.
+#
+# Dispositions:
+#   contracted: every function below; it includes every rule-selected function.
+#   skipped-non-crypto: libscrypt_mcf (formats an already derived hash),
+#     libscrypt_b64_encode/_decode and libscrypt_hexconvert, which the detection
+#     rules keep negative.
+contracts:
+  - method: libscrypt_check
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libscrypt_hash
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: N
+        role: metadata-contributing
+        contributes: {property: cost, derivation: argument_value}
+      - index: 3
+        name: r
+        role: metadata-contributing
+        contributes: {property: blockSize, derivation: argument_value}
+      - index: 4
+        name: p
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+  - method: libscrypt_salt_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: len
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+  - method: libscrypt_scrypt
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: saltlen
+        role: metadata-contributing
+        contributes: {property: saltLength, derivation: argument_value}
+      - index: 4
+        name: N
+        role: metadata-contributing
+        contributes: {property: cost, derivation: argument_value}
+      - index: 5
+        name: r
+        role: metadata-contributing
+        contributes: {property: blockSize, derivation: argument_value}
+      - index: 6
+        name: p
+        role: metadata-contributing
+        contributes: {property: parallelism, derivation: argument_value}
+      - index: 8
+        name: buflen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+hierarchy: {}
