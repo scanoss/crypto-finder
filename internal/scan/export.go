@@ -1824,7 +1824,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	chainsFilteredAway, chainsNarrowed := false, false
 	if len(asset.ParameterConditions) > 0 {
 		sampled := len(fg.CallChains)
-		fg.CallChains, chainsFilteredAway = filterChainsByCondition(fg.CallChains, asset)
+		fg.CallChains, chainsFilteredAway = filterChainsByCondition(ctx, containingFn, cryptoCall, asset, fg.CallChains)
 		chainsNarrowed = len(fg.CallChains) < sampled
 	}
 	truncated, depthLimited, guessed := liveTraceFlags(ctx, containingFn, traced)
@@ -1875,9 +1875,20 @@ func markValueEnumerationCut(fg *callGraphExportFinding, asset entities.Cryptogr
 }
 
 // filterChainsByCondition drops the chains a rule's parameterCondition
-// refutes. filteredAway reports that the sample held chains and none survived.
-func filterChainsByCondition(chains [][]callGraphChainNode, asset entities.CryptographicAsset) (kept [][]callGraphChainNode, filteredAway bool) {
-	kept = filterConditionedCallChains(chains, asset.ParameterConditions)
+// refutes, reading the condition against the call the rule matched.
+// filteredAway reports that the sample held chains and none survived.
+func filterChainsByCondition(
+	ctx *exportBuildContext,
+	containingFn *callgraph.FunctionDecl,
+	cryptoCall *callGraphCalledFunction,
+	asset entities.CryptographicAsset,
+	chains [][]callGraphChainNode,
+) (kept [][]callGraphChainNode, filteredAway bool) {
+	var matchedCall *callGraphCalledFunction
+	if cryptoCall != nil {
+		matchedCall = ruleMatchedCall(ctx, containingFn, asset)
+	}
+	kept = filterConditionedCallChains(chains, asset.ParameterConditions, matchedCall)
 	return kept, len(chains) > 0 && len(kept) == 0
 }
 
@@ -1944,8 +1955,9 @@ func applyLiveReachabilityState(
 	}
 }
 
-// filterConditionedCallChains keeps only the chains whose terminal crypto call
-// satisfies the asset's parameter conditions.
+// filterConditionedCallChains keeps only the chains whose rule-matched call
+// satisfies the asset's parameter conditions. That call is matchedCall when it
+// is set (see ruleMatchedCall) and each chain's terminal crypto call otherwise.
 //
 // Each chain gets a three-valued verdict (see evaluateParameterConditions), and
 // the outcome depends on the finding's whole chain set rather than on each chain
@@ -1966,7 +1978,11 @@ func applyLiveReachabilityState(
 //
 // A chain whose terminal crypto call did not resolve at all has no arguments to
 // bind against and is therefore unknown, never refuted.
-func filterConditionedCallChains(chains [][]callGraphChainNode, conditions []paramcondition.Condition) [][]callGraphChainNode {
+func filterConditionedCallChains(
+	chains [][]callGraphChainNode,
+	conditions []paramcondition.Condition,
+	matchedCall *callGraphCalledFunction,
+) [][]callGraphChainNode {
 	if len(conditions) == 0 {
 		return chains
 	}
@@ -1978,11 +1994,15 @@ func filterConditionedCallChains(chains [][]callGraphChainNode, conditions []par
 			continue
 		}
 		terminal := chain[len(chain)-1]
-		if terminal.CryptoCall == nil {
+		call := terminal.CryptoCall
+		if matchedCall != nil {
+			call = chainCalledFunction(terminal.EntryCall, matchedCall)
+		}
+		if call == nil {
 			verdicts[i] = conditionUnknown
 			continue
 		}
-		verdicts[i] = evaluateParameterConditions(conditions, terminal.CryptoCall.Parameters)
+		verdicts[i] = evaluateParameterConditions(conditions, call.Parameters)
 		anyMatched = anyMatched || verdicts[i] == conditionMatched
 	}
 
@@ -2641,6 +2661,30 @@ func findCryptoCallNode(
 
 	// Step 3: tie-break.
 	return pickBestCandidate(graph, candidates)
+}
+
+// ruleMatchedCall is the call the detection rule matched, when it is not the
+// terminal findCryptoCallNode picks: the tightest call on the finding's lines
+// whose span holds the asset's. On a fluent chain the terminal is the
+// outermost link, so createHash('md5').update(x).digest('hex') ends at
+// digest('hex') while the rule matched createHash('md5'), the link that holds
+// the argument its parameterCondition names. Nil when the two are the same call
+// or the spans cannot tell them apart.
+func ruleMatchedCall(ctx *exportBuildContext, containingFn *callgraph.FunctionDecl, asset entities.CryptographicAsset) *callGraphCalledFunction {
+	terminal := findCryptoCallNode(ctx.graph, containingFn, asset, asset.StartLine, asset.EndLine)
+	if terminal == nil {
+		return nil
+	}
+	if asset.TerminalStartCol > 0 && asset.TerminalEndCol > 0 {
+		asset.StartCol = asset.TerminalStartCol
+		asset.EndCol = asset.TerminalEndCol
+	}
+	candidates := cryptoCallLineCandidates(containingFn, asset.StartLine, asset.EndLine)
+	i := tightestContainingIndexAmong(callCandidateViews(candidates), asset.StartCol, asset.EndCol)
+	if i < 0 || candidates[i] == terminal {
+		return nil
+	}
+	return buildCryptoCall(ctx, ctx.graph, containingFn, candidates[i])
 }
 
 func cryptoCallLineCandidates(containingFn *callgraph.FunctionDecl, startLine, endLine int) []*callgraph.FunctionCall {
@@ -3875,17 +3919,18 @@ func attachCryptoCall(chains [][]callGraphChainNode, cryptoCall *callGraphCalled
 			continue
 		}
 		last := &chains[i][len(chains[i])-1]
-		cloned := cloneCalledFunction(cryptoCall)
-		last.CryptoCall = cloned
-		if last.EntryCall != nil {
-			propagateParameterProvenance(
-				last.CryptoCall.Parameters,
-				last.EntryCall.Parameters,
-				last.EntryCall.FilePath,
-				last.EntryCall.Line,
-			)
-		}
+		last.CryptoCall = chainCalledFunction(last.EntryCall, cryptoCall)
 	}
+}
+
+// chainCalledFunction is call as one chain sees it: a copy whose argument
+// sources continue into entry, the call that entered the chain's last frame.
+func chainCalledFunction(entry *callGraphEntryCall, call *callGraphCalledFunction) *callGraphCalledFunction {
+	cloned := cloneCalledFunction(call)
+	if entry != nil {
+		propagateParameterProvenance(cloned.Parameters, entry.Parameters, entry.FilePath, entry.Line)
+	}
+	return cloned
 }
 
 func cloneCallGraphChains(chains [][]callGraphChainNode) [][]callGraphChainNode {

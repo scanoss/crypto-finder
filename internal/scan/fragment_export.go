@@ -1504,7 +1504,11 @@ func fragmentEntryPointChains(
 		chains = materializeCallChainNodes(ctx, expanded)
 	}
 	attachCryptoCall(chains, cryptoCall)
-	return filterConditionedCallChains(chains, asset.ParameterConditions)
+	var matchedCall *callGraphCalledFunction
+	if cryptoCall != nil {
+		matchedCall = ruleMatchedCall(ctx, containingFn, asset)
+	}
+	return filterConditionedCallChains(chains, asset.ParameterConditions, matchedCall)
 }
 
 // fragmentSupportingFromInternal maps an internal call-graph supporting-call

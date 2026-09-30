@@ -168,7 +168,11 @@ func oracleFragmentEntryPointChains(
 		chains = materializeCallChainNodes(ctx, expanded)
 	}
 	attachCryptoCall(chains, cryptoCall)
-	return filterConditionedCallChains(chains, asset.ParameterConditions)
+	var matchedCall *callGraphCalledFunction
+	if cryptoCall != nil {
+		matchedCall = ruleMatchedCall(ctx, containingFn, asset)
+	}
+	return filterConditionedCallChains(chains, asset.ParameterConditions, matchedCall)
 }
 
 func assertCryptoAnnotationsEqual(t *testing.T, got, want []graphfrag.GraphFragmentCryptoOp) {
