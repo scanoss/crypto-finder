@@ -168,6 +168,7 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	root := tree.RootNode()
 	bindings := make(nodeBindings)
 	extractNodeImports(root, src, bindings)
+	resolveNodeRelativeImports(bindings, filePath, packagePath)
 	for name, binding := range bindings {
 		analysis.Imports[name] = binding.module
 	}
@@ -1046,7 +1047,21 @@ func nodeCallChainContext(node *sitter.Node, src []byte) (chainID, assignedVar s
 			chainID = fmt.Sprintf("%d", root.StartByte())
 		}
 	}
-	return chainID, assignedVarFromParent(root, src)
+	return chainID, assignedVarFromParent(nodeResolvedValue(root), src)
+}
+
+// nodeResolvedValue climbs from a call to the expression whose value the
+// surrounding declarator or assignment binds. `await` and parentheses do not
+// change which object a variable holds: `const key = await ec.genKeyPair()`
+// binds the resolved KeyPair, so the call stays the variable's producer.
+func nodeResolvedValue(node *sitter.Node) *sitter.Node {
+	for {
+		parent := node.Parent()
+		if parent == nil || (parent.Type() != "await_expression" && parent.Type() != javaNodeParenthesizedExpr) {
+			return node
+		}
+		node = parent
+	}
 }
 
 func nodeChainRoot(node *sitter.Node) *sitter.Node {

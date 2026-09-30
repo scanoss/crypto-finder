@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -198,7 +199,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanExportEntryPoints, "export-callgraph-entry-points", false,
 		"Include the optional full crypto_entry_points reverse-reachability index (default false)")
 	scanCmd.Flags().BoolVar(&scanExportInternedFrames, "export-callgraph-interned-frames", true,
-		"Emit schema 6.15: hydrate frame identity from functions[] via call_chain_indexes (default true). Set false for legacy schema 6.14 inlined frames.")
+		"Emit schema 6.16: hydrate frame identity from functions[] via call_chain_indexes (default true). Set false for legacy schema 6.14 inlined frames.")
 	scanCmd.Flags().BoolVar(&scanExportProjectReach, "export-callgraph-project-reachability", false,
 		"When no dependency set was resolved, classify reachability against the scan target's own source packages, as a --scan-dependencies run does for first-party findings (default false). Leave it off when scanning a library on its own.")
 	scanCmd.Flags().StringVar(&scanExportGraphFragment, "export-graph-fragment", "", "Export a reusable structural graph fragment to a file")
@@ -523,6 +524,36 @@ func buildStandaloneCallGraphResultForEcosystem(target string, report *entities.
 		Ecosystem:   ecosystem,
 		ProjectRoot: targetDir,
 	}, nil
+}
+
+// attachAdditionalEcosystemGraphs builds a call graph for every other
+// supported ecosystem the report has first-party findings in, so each of those
+// findings resolves against the graph of its own language instead of the
+// primary one. A graph that fails to build is left out with a warning: its
+// findings are then exported as not analyzed, and the scan still completes.
+func attachAdditionalEcosystemGraphs(target string, report *entities.InterimReport, result *engine.DepScanResult, javaRuntime javaruntime.Config, includeTests bool, skipMatcher skip.SkipMatcher) {
+	if result == nil || result.CallGraph == nil {
+		return
+	}
+	for _, ecosystem := range scanutil.AdditionalCallGraphEcosystems(report, result.Ecosystem) {
+		extra, err := buildStandaloneCallGraphResultForEcosystem(target, report, ecosystem, javaRuntime, includeTests, "", skipMatcher, true)
+		if err != nil {
+			log.Warn().Err(err).Str("ecosystem", ecosystem).Msg("Failed to build call graph for additional ecosystem; its findings are exported as not analyzed")
+			continue
+		}
+		log.Info().
+			Str("ecosystem", ecosystem).
+			Int("functions", len(extra.CallGraph.Functions)).
+			Msg("Built call graph for additional ecosystem")
+		result.AdditionalEcosystems = append(result.AdditionalEcosystems, extra)
+	}
+}
+
+func primaryCallGraphEcosystem(result *engine.DepScanResult) string {
+	if result == nil {
+		return ""
+	}
+	return result.Ecosystem
 }
 
 // prepareScanOIDProjection returns the only report used by OID projections.
@@ -1032,8 +1063,13 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			// resolves each of those, so the phase only skips when that search
 			// comes back empty too.
 			case !resolver.CanResolve(target) && len(dependency.ResolutionRoots(target, ecosystem, skipPatterns).Roots) == 0:
-				log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("No dependency manifest at or below scan target, skipping dependency scan")
-				if err := skipDependencies("manifest_absent"); err != nil {
+				reason := dependency.UnresolvableSkipReason(target, ecosystem)
+				if reason == dependency.SkipReasonLockfileAbsent {
+					log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("package.json has no package-lock.json, skipping dependency scan; first-party code is still analyzed")
+				} else {
+					log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("No dependency manifest at or below scan target, skipping dependency scan")
+				}
+				if err := skipDependencies(reason); err != nil {
 					return err
 				}
 			default:
@@ -1219,6 +1255,12 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	}
 
 	if scanExportCallgraph != "" {
+		if slices.Contains(scanutil.AdditionalCallGraphEcosystems(report, primaryCallGraphEcosystem(callGraphResult)), ecosystemJava) {
+			if err := ensureJavaRuntime(); err != nil {
+				return err
+			}
+		}
+		attachAdditionalEcosystemGraphs(target, report, callGraphResult, javaRuntime, scanIncludeTests, skipMatcher)
 		exportStart := time.Now()
 		log.Info().
 			Str("file", scanExportCallgraph).

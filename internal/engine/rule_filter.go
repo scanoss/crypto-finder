@@ -49,7 +49,7 @@ func ruleLanguages(path string) ([]string, bool) {
 	var langs []string
 	for _, r := range rf.Rules {
 		for _, l := range r.Languages {
-			lower := strings.ToLower(l)
+			lower := canonicalLanguage(l)
 			if !seen[lower] {
 				seen[lower] = true
 				langs = append(langs, lower)
@@ -57,6 +57,21 @@ func ruleLanguages(path string) ([]string, bool) {
 		}
 	}
 	return langs, false
+}
+
+// canonicalLanguage maps a language name to the id rule files use. The
+// detector reports linguist names ("c++", "c#") while rules use opengrep ids
+// ("cpp", "csharp"); without this, C++-only rules were dropped whenever the tree
+// also held C, because the C rules kept the filtered set non-empty.
+func canonicalLanguage(lang string) string {
+	switch lower := strings.ToLower(lang); lower {
+	case "c++":
+		return "cpp"
+	case "c#":
+		return "csharp"
+	default:
+		return lower
+	}
 }
 
 // filterRulesByLanguages filters rule paths to only include rules whose YAML
@@ -72,7 +87,7 @@ func filterRulesByLanguages(allRules, languages []string) []string {
 	// Build lookup set from detected languages (normalized to lowercase)
 	wanted := make(map[string]bool, len(languages))
 	for _, lang := range languages {
-		wanted[strings.ToLower(lang)] = true
+		wanted[canonicalLanguage(lang)] = true
 	}
 
 	filtered := make([]string, 0, len(candidateRules))

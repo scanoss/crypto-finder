@@ -25,11 +25,15 @@ target source tree
 3. Call graph             tree-sitter parsers per ecosystem build function nodes and
    construction            call edges; type inference resolves receivers/returns using
    (internal/callgraph)    the contracts KB (internal/callgraph/contracts) and, for
-                           Java, bytecode/JDK platform signatures (internal/javaruntime)
+                           Java, bytecode/JDK platform signatures (internal/javaruntime);
+                           a target with first-party findings in several supported
+                           ecosystems gets one graph per ecosystem, while dependencies
+                           resolve for the primary (dominant) one only
    │
    ▼
-4. Reachability           each finding is matched to its call graph node by POSITION
-   analysis                (match columns ∩ call-node columns), then call chains from
+4. Reachability           each finding is matched, in the graph of its own language,
+   analysis                to its call graph node by POSITION
+                           (match columns ∩ call-node columns), then call chains from
    (internal/scan)         API entry points to the terminal crypto call are computed;
                            dependency scans (internal/dependency, internal/engine)
                            repeat 2–3 per resolved dependency with a findings cache;
@@ -44,7 +48,7 @@ target source tree
    ▼
 6. Enrichment + export    Exact OID preparation (internal/oid); writers (internal/output,
    (internal/enricher,     internal/converter) emit interim JSON or CycloneDX CBOM;
-                            internal/scan,         --export-callgraph defaults to the schema-6.15 interned export;
+                            internal/scan,         --export-callgraph defaults to the schema-6.16 interned export;
                             pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.13 fragment
 ```
 
@@ -157,10 +161,10 @@ Four independent version numbers ship in the outputs — do not conflate them:
 | Version | Constant | Current | Bumps when |
 |---------|----------|---------|------------|
 | Interim report format | `schema.InterimFormatVersion` | `1.6` | The findings.json envelope changes |
-| Callgraph export schema | `graphfrag.CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | SDK `6.14`; CLI `6.15` | The partner-facing reachability contract changes |
+| Callgraph export schema | `graphfrag.CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | SDK `6.14`; CLI `6.16` | The partner-facing reachability contract changes |
 | Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.13` | The fragment wire format changes |
 | Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-3` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
 
-Schema `6.15` is the local CLI default and an opt-in SDK interned render (`ScanMeta.InternedFrames`). Explicit `--export-callgraph-interned-frames=false` restores CLI `6.14`. Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
+Schema `6.16` (interned frames, introduced in `6.15`, plus the optional `scan_metadata.ecosystems` list) is the local CLI default and an opt-in SDK interned render (`ScanMeta.InternedFrames`). Explicit `--export-callgraph-interned-frames=false` restores CLI `6.14`. Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
 
 Every schema bump is recorded in [CHANGELOG.md](../CHANGELOG.md) (a hard repo requirement) and the format details live in [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md).
