@@ -244,8 +244,9 @@ func TestTraceBackCondensed_CollapsesCycleInsteadOfEnumeratingIt(t *testing.T) {
 
 // TestTraceBackCondensed_HighFanInStaysBounded runs the shape that motivated the
 // O(V+E) frontier — a dense library with very high fan-in — and asserts the
-// #292 path-count ceiling skips materialization, the exact total is still
-// reported, and it finishes fast.
+// budget still applies: the exact total is reported, the budget of chains is
+// built, and it finishes fast. It once skipped every chain above 100,000 paths
+// (#292), which left a finding user code provably reaches without any route.
 func TestTraceBackCondensed_HighFanInStaysBounded(t *testing.T) {
 	t.Parallel()
 	graph, target := buildHighFanInGraph(8, 8)
@@ -254,14 +255,14 @@ func TestTraceBackCondensed_HighFanInStaysBounded(t *testing.T) {
 	chains, total, truncated := traceCondensed(NewTracer(graph, "/"), target, nil)
 	elapsed := time.Since(start)
 
-	if len(chains) != 0 {
-		t.Fatalf("chains = %d, want 0 once total exceeds PathCountSkipThreshold", len(chains))
+	if len(chains) != 128 {
+		t.Fatalf("chains = %d, want the 128 budget", len(chains))
 	}
 	if !truncated {
-		t.Fatalf("truncated = false with total %d over the path-count ceiling, want true", total)
+		t.Fatalf("truncated = false with total %d over the budget, want true", total)
 	}
-	if total <= PathCountSkipThreshold {
-		t.Fatalf("total = %d, want more than PathCountSkipThreshold=%d on a high-fan-in graph", total, PathCountSkipThreshold)
+	if total != 8*8*8*8*8*8*8*8 {
+		t.Fatalf("total = %d, want 8^8", total)
 	}
 	if elapsed > 10*time.Second {
 		t.Fatalf("condensed traceback took %s, want well under 10s", elapsed)
@@ -467,48 +468,47 @@ func TestTraceBackCondensed_UnreachableFindingHasNoChains(t *testing.T) {
 	}
 }
 
-// TestTraceBackCondensed_SkipsRoutesWhenPathCountExceedsCeiling is the #292
-// defensive cap: when Count reports more condensed routes than the safety
-// ceiling, TraceBackCondensed must not materialize any of them. Emitting the
-// maxChains budget after counting hundreds of thousands of paths is what the
-// field OOM observed — the warning fired with emitted=128 / total≈473k, then
-// the process was killed. Skipping Routes entirely keeps peak memory on the
-// Reach/Condense structure and still reports total + truncated so callers can
-// downgrade reachability.
-func TestTraceBackCondensed_SkipsRoutesWhenPathCountExceedsCeiling(t *testing.T) {
+// TestTraceBackCondensed_BudgetBoundsWorkNotTheGraph is why no path-count
+// ceiling is needed: a branch that leads to no root is never entered, so
+// building chains costs what is built, however many routes lead nowhere.
+// Here a dense library lattice with 12^8 routes calls the crypto, but nothing
+// in the application calls the lattice; one application function calls the
+// crypto directly. Walking the lattice's routes to find that out does not
+// finish in any useful time.
+func TestTraceBackCondensed_BudgetBoundsWorkNotTheGraph(t *testing.T) {
 	t.Parallel()
-	// 8^6 = 262144 paths, above PathCountSkipThreshold (100000) and well above
-	// the emit budget. Before the fix this returned 128 chains.
-	graph, target := buildHighFanInGraph(8, 6)
-
-	chains, total, truncated := traceCondensed(NewTracer(graph, "/"), target, nil)
-
-	if total <= PathCountSkipThreshold {
-		t.Fatalf("total = %d, want more than PathCountSkipThreshold=%d so the ceiling fires", total, PathCountSkipThreshold)
+	graph, target := buildHighFanInGraph(12, 8)
+	app := FunctionID{Package: "app", Name: "Main"}
+	graph.Functions[app.String()] = &FunctionDecl{
+		ID: app, FilePath: "/app/main.go", StartLine: 1, EndLine: 3,
+		Calls: []FunctionCall{{Callee: target, Line: 2}},
 	}
-	if len(chains) != 0 {
-		t.Fatalf("chains = %d, want 0: Routes must be skipped when Count exceeds the ceiling", len(chains))
+	graph.Callers[target.String()] = append(graph.Callers[target.String()], app.String())
+
+	start := time.Now()
+	trace := NewTracer(graph, "/").TraceBackCondensed(target, map[string]bool{"app": true}, 0, 4)
+	chains, total, truncated := trace.Chains, trace.Total, trace.Truncated
+	elapsed := time.Since(start)
+
+	if len(chains) != 1 || total != 1 || truncated {
+		t.Fatalf("chains=%d total=%d truncated=%v, want the one route from app.Main", len(chains), total, truncated)
 	}
-	if !truncated {
-		t.Fatal("truncated = false, want true when the path-count ceiling skips emission")
+	if elapsed > 5*time.Second {
+		t.Fatalf("condensed traceback took %s, want well under 5s", elapsed)
 	}
 }
 
-// TestTraceBackCondensed_EmitsBudgetWhenOverMaxChainsButUnderCeiling keeps the
-// pre-#292 truncation contract for the common case: Count between maxChains and
-// the safety ceiling still materializes up to maxChains routes.
-func TestTraceBackCondensed_EmitsBudgetWhenOverMaxChainsButUnderCeiling(t *testing.T) {
+// TestTraceBackCondensed_EmitsBudgetWhenOverMaxChains keeps the truncation
+// contract: a total above maxChains materializes exactly maxChains routes.
+func TestTraceBackCondensed_EmitsBudgetWhenOverMaxChains(t *testing.T) {
 	t.Parallel()
-	// 6^4 = 1296 paths: above the 128 emit budget, under the 100000 ceiling.
+	// 6^4 = 1296 paths: above the 128 emit budget.
 	graph, target := buildHighFanInGraph(6, 4)
 
 	chains, total, truncated := traceCondensed(NewTracer(graph, "/"), target, nil)
 
 	if total <= 128 {
 		t.Fatalf("total = %d, want more than the emit budget", total)
-	}
-	if total > PathCountSkipThreshold {
-		t.Fatalf("total = %d, want at most PathCountSkipThreshold=%d so Routes still runs", total, PathCountSkipThreshold)
 	}
 	if len(chains) != 128 {
 		t.Fatalf("chains = %d, want the 128 emit budget", len(chains))

@@ -16,6 +16,11 @@ import (
 // contribute to specialization. Hitting it is logged, never silent.
 const maxConditionedSelectorValues = 256
 
+// maxConditionedWalkDepth bounds how many callers deep the value enumeration
+// follows a parameter. It is independent of the chain export, which has no
+// depth cap: the walk is exponential in fan-in, so it needs its own bound.
+const maxConditionedWalkDepth = 32
+
 // conditionedValueEnumerator finds every distinct value that reaches a
 // selector argument by following its PARAMETER provenance through all callers,
 // independent of the sampled call chains. Each step reuses the chain step
@@ -50,7 +55,7 @@ type conditionedUpstreamCall struct {
 func newConditionedValueEnumerator(ctx *exportBuildContext) *conditionedValueEnumerator {
 	return &conditionedValueEnumerator{
 		ctx:      ctx,
-		maxDepth: callGraphExportMaxDepth,
+		maxDepth: maxConditionedWalkDepth,
 		maxValue: maxConditionedSelectorValues,
 		memo:     make(map[string][]conditionedUpstreamCall),
 		onStack:  make(map[string]bool),

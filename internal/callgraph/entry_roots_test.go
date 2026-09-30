@@ -130,3 +130,31 @@ func TestTraceBackCondensed_SelfRecursionDoesNotHideTheRoot(t *testing.T) {
 		t.Fatalf("chains = %+v, want retry -> Sum", trace.Chains)
 	}
 }
+
+// TestTraceBackCondensed_DepthLimitIsReported: a limit that stops the walk
+// inside the library leaves the question open; one that stops it inside the
+// application makes that frame a depth_limit root.
+func TestTraceBackCondensed_DepthLimitIsReported(t *testing.T) {
+	t.Parallel()
+	crypto := fn("lib", "Sum")
+	libCut := edgeGraph(
+		[2]FunctionID{fn("app", "main"), fn("lib", "A")},
+		[2]FunctionID{fn("lib", "A"), fn("lib", "B")},
+		[2]FunctionID{fn("lib", "B"), crypto},
+	)
+	trace := NewTracer(libCut, ".").TraceBackCondensed(crypto, appPackages, 2, 0)
+	if len(trace.Chains) != 0 || !trace.DepthLimited || !trace.Truncated {
+		t.Fatalf("library cut: chains=%d depthLimited=%v truncated=%v, want 0/true/true",
+			len(trace.Chains), trace.DepthLimited, trace.Truncated)
+	}
+
+	appCut := edgeGraph(
+		[2]FunctionID{fn("app", "main"), fn("app", "A")},
+		[2]FunctionID{fn("app", "A"), fn("app", "B")},
+		[2]FunctionID{fn("app", "B"), crypto},
+	)
+	trace = NewTracer(appCut, ".").TraceBackCondensed(crypto, appPackages, 2, 0)
+	if len(trace.Chains) != 1 || trace.Chains[0].RootKind != RootKindDepthLimit || trace.DepthLimited || !trace.Truncated {
+		t.Fatalf("application cut: %+v, want one depth_limit chain, truncated but not depth-limited", trace)
+	}
+}

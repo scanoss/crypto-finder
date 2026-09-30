@@ -36,6 +36,10 @@ const (
 	// user code (a library scanned alone) it is a graph root: the library's
 	// public surface.
 	RootKindNoCallers RootKind = "no_callers"
+	// RootKindDepthLimit is an application frame where the walk stopped
+	// because of the depth limit, with callers it did not follow. The chain is
+	// real but may not start at an entry point.
+	RootKindDepthLimit RootKind = "depth_limit"
 )
 
 // frameworkEntryAnnotations are the Java method annotations whose methods a

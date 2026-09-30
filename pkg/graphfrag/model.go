@@ -668,9 +668,10 @@ type FindingChain struct {
 	// fragments.
 	CryptoOp *CryptoOperation
 
-	// PathCountTruncated is set when condensed route enumeration skipped
-	// materialization because Count exceeded graphwalk.PathCountSkipThreshold
-	// (#292). The chain then carries the op node only as a finding carrier;
+	// PathCountTruncated is set when condensed route enumeration built no
+	// chain although Count proved routes exist (it once skipped enumeration
+	// above a path-count ceiling, #292). The chain then carries the op node
+	// only as a finding carrier;
 	// ToCallgraphExport emits empty call_chains and reachability=unknown.
 	PathCountTruncated bool
 

@@ -107,19 +107,28 @@ func (t *Tracer) isUserType(typeName string, userPackages map[string]bool) bool 
 	return isUserPackage(pkg, userPackages, t.pkgSep)
 }
 
-// reverseWalk is one finding function's backward walk: who reaches it, and
-// where each chain starts and why.
+// reverseWalk is one finding function's backward walk: who reaches it, where
+// each chain starts and why, and whether a limit cut any route.
 type reverseWalk struct {
 	reach     graphwalk.Reachable[string]
 	condensed graphwalk.Condensed[string]
 	rootKinds map[string]RootKind
+	// truncated reports that the depth limit stopped the walk at a function
+	// that is not a chain root, so routes through it were never seen.
+	truncated bool
+	// appCut reports that the depth limit made an application frame a root
+	// (RootKindDepthLimit): the chain is real but shorter than the program.
+	appCut bool
 }
 
 // walk runs the backward traversal from target and classifies its terminals.
 //
-// Two adjustments turn graphwalk's terminals into chain roots when user
+// Three adjustments turn graphwalk's terminals into chain roots when user
 // packages are known:
 //
+//   - an application frame the depth limit stopped is a root (depth_limit):
+//     application code reaches the crypto, the chain is just shorter than the
+//     program. A library frame the limit stopped makes the walk truncated.
 //   - the target itself is a root when it is a recognized entry point that no
 //     application code calls: a handler doing crypto inline. A target that is
 //     not an entry and that nothing calls is dead code and stays unreachable.
@@ -131,6 +140,15 @@ func (t *Tracer) walk(target FunctionID, userPackages map[string]bool, maxDepth 
 	reach := graphwalk.Reach(targetKey, t.walkOptions(targetKey, userPackages, maxDepth))
 	out := reverseWalk{reach: reach, rootKinds: map[string]RootKind{}}
 
+	for key := range reach.Capped {
+		if userPackages != nil && t.isUserFunction(key, userPackages) {
+			reach.Terminal[key] = true
+			out.rootKinds[key] = RootKindDepthLimit
+			out.appCut = true
+			continue
+		}
+		out.truncated = true
+	}
 	isUserType := func(typeName string) bool { return t.isUserType(typeName, userPackages) }
 	if userPackages != nil && t.isUserFunction(targetKey, userPackages) &&
 		len(t.knownCallers(targetKey, "", userPackages)) == 0 {
@@ -168,7 +186,7 @@ func (t *Tracer) rootUncalledCycles(w *reverseWalk, targetKey string, userPackag
 		}
 		rooted := false
 		for _, member := range members {
-			if w.reach.Terminal[member] {
+			if w.reach.Terminal[member] || w.reach.Capped[member] {
 				rooted = true
 				break
 			}
@@ -219,25 +237,20 @@ type CondensedTrace struct {
 	// with its RootKind.
 	Chains []CallChain
 	// Total is the number of (route, root) pairs the graph holds, counted
-	// before any chain is built, so it is accurate even when maxChains
-	// truncates Chains.
+	// before any chain is built. It saturates at math.MaxInt.
 	Total int
-	// Truncated reports that fewer chains than Total were kept.
+	// Truncated reports that the answer is incomplete: fewer chains than
+	// Total were kept, or the depth limit stopped the walk somewhere, so some
+	// routes were never seen or start at a depth_limit root.
 	Truncated bool
+	// DepthLimited reports the second cause alone. With no chain found it
+	// means the verdict is unknown, not unreachable.
+	DepthLimited bool
 }
-
-// PathCountSkipThreshold re-exports graphwalk.PathCountSkipThreshold so callgraph
-// callers and tests can name the #292 ceiling without importing graphwalk for a
-// single constant. Keep this alias equal to the graphwalk value.
-const PathCountSkipThreshold = graphwalk.PathCountSkipThreshold
 
 // TraceBackCondensed walks callers of target over the cycle-collapsed reverse
 // graph and returns up to maxChains chains, ordered entry -> target like
 // TraceBackLimited. A maxChains of 0 means unlimited.
-//
-// When Total exceeds PathCountSkipThreshold, Routes is not called: Chains is
-// empty and Truncated is true. That is the #292 stop-the-bleeding cap — prefer
-// a partial answer over process death on pathological fan-in.
 func (t *Tracer) TraceBackCondensed(
 	target FunctionID,
 	userPackages map[string]bool,
@@ -250,7 +263,7 @@ func (t *Tracer) TraceBackCondensed(
 	}
 
 	w := t.walk(target, userPackages, maxDepth)
-	var out CondensedTrace
+	out := CondensedTrace{DepthLimited: w.truncated, Truncated: w.truncated || w.appCut}
 	if len(w.reach.Terminal) == 0 {
 		// Nothing user code (or no graph root) reaches this function: the same
 		// answer TraceBackLimited gives by returning no chains.
@@ -258,21 +271,14 @@ func (t *Tracer) TraceBackCondensed(
 	}
 
 	out.Total = graphwalk.Count(w.reach, w.condensed)
-	if out.Total > PathCountSkipThreshold {
-		log.Warn().
-			Str("function", targetKey).
-			Int("total_condensed_paths", out.Total).
-			Int("path_count_skip_threshold", PathCountSkipThreshold).
-			Msg("Skipping condensed call chain materialization: path count exceeds safety ceiling")
-		out.Truncated = true
-		return out
-	}
 	for _, route := range graphwalk.Routes(w.reach, w.condensed, maxChains) {
 		chain := t.materializeRoute(route)
 		chain.RootKind = w.rootKinds[route[len(route)-1]]
 		out.Chains = append(out.Chains, chain)
 	}
-	out.Truncated = len(out.Chains) < out.Total
+	if len(out.Chains) < out.Total {
+		out.Truncated = true
+	}
 	return out
 }
 

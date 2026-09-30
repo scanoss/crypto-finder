@@ -39,11 +39,15 @@ const (
 	sourceNodeTypeCallResult       = "CALL_RESULT"
 	sourceNodeTypeField            = "FIELD"
 	callGraphExportProgress        = 100
-	callGraphExportMaxDepth        = 32
-	callGraphExportMaxChains       = graphfrag.DefaultMaxChainsPerOp // emit budget; graphwalk.PathCountSkipThreshold skips materialization above 100000 paths
+	callGraphExportMaxChains       = graphfrag.DefaultMaxChainsPerOp // emit budget
 	maxExportSourceResolutionDepth = 8
 	constructorMethodName          = "<init>"
 )
+
+// callGraphExportMaxDepth bounds a chain's frames; 0 means unbounded. The
+// backward walk visits each function once, so the bound buys no time, and the
+// 32 it once was cut real routes short.
+const callGraphExportMaxDepth = 0
 
 // --- v4 JSON schema types (simplified) ---
 
@@ -107,9 +111,18 @@ type exportBuildContext struct {
 	combinedHierarchy map[string][]string
 	// callChainTruncated records, per containing-function key, whether the
 	// bounded reverse trace hit a cap (max depth / max chains). Surfaced as
-	// reachability=unknown and analysis.call_chains=partial (6.8+); before
-	// that the truncation fact was internal (a log line only).
+	// analysis.call_chains=partial (6.8+).
 	callChainTruncated map[string]bool
+	// callChainDepthLimited records, per containing-function key, that the
+	// depth limit stopped the walk at a library frame. With no chain found the
+	// verdict is then unknown (traversal_truncated), never unreachable.
+	callChainDepthLimited map[string]bool
+	// callChainPathsTotal records, per containing-function key, how many
+	// routes the graph holds (analysis.paths_total).
+	callChainPathsTotal map[string]int
+	// maxDepth bounds the frames of a chain; 0 is unbounded. Always
+	// callGraphExportMaxDepth outside tests.
+	maxDepth int
 }
 
 type cachedContainingFunction struct {
@@ -1056,16 +1069,17 @@ func liveFrameIdentity(n *callGraphChainNode) graphfrag.FrameIdentity {
 }
 
 // liveReachability classifies one finding graph's reachability state (6.8+,
-// issue #242). traced means TraceBackLimited found at least one genuine chain
-// — the one-node self-chain fallback does not count. Truncation downgrades a
-// would-be unreachable to unknown, never to reachable.
-func liveReachability(containingFn *callgraph.FunctionDecl, userPackages map[string]bool, traced, truncated bool) string {
+// issue #242). traced means the trace found at least one genuine chain — the
+// one-node self-chain fallback does not count. A walk the depth limit cut
+// downgrades a would-be unreachable to unknown, never to reachable; a route
+// budget never does, since a route was found.
+func liveReachability(containingFn *callgraph.FunctionDecl, userPackages map[string]bool, traced, depthLimited bool) string {
 	switch {
 	case containingFn == nil || userPackages == nil:
 		return graphfrag.ReachabilityNotApplicable
 	case traced:
 		return graphfrag.ReachabilityReachable
-	case truncated:
+	case depthLimited:
 		return graphfrag.ReachabilityUnknown
 	default:
 		return graphfrag.ReachabilityUnreachable
@@ -1657,6 +1671,7 @@ func newExportBuildContextWithUserPackages(result *engine.DepScanResult, finding
 		userPackages:            userPackages,
 		packageSeparator:        exportPackageSeparator(result.Ecosystem),
 		maxChainsBudget:         graphfrag.ResolveMaxChains(maxChains),
+		maxDepth:                callGraphExportMaxDepth,
 	}
 	for _, dep := range result.Dependencies {
 		if dep.Dir == "" {
@@ -1791,12 +1806,19 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	fg.CallChains, traced = buildCallChains(ctx, containingFn, cryptoCall)
 	chainsFilteredAway := false
 	if len(asset.ParameterConditions) > 0 {
-		sampled := len(fg.CallChains)
-		fg.CallChains = filterConditionedCallChains(fg.CallChains, asset.ParameterConditions)
-		chainsFilteredAway = sampled > 0 && len(fg.CallChains) == 0
+		fg.CallChains, chainsFilteredAway = filterChainsByCondition(fg.CallChains, asset)
 	}
-	truncated := containingFn != nil && ctx.callChainTruncated[containingFn.ID.String()]
-	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated)
+	truncated, depthLimited := false, false
+	if containingFn != nil {
+		key := containingFn.ID.String()
+		truncated = ctx.callChainTruncated[key]
+		depthLimited = ctx.callChainDepthLimited[key]
+	}
+	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated, depthLimited)
+	if fg.Reachability == graphfrag.ReachabilityUnknown && unresolvedReason == "" {
+		unresolvedReason = unresolvedTraversalTruncated
+	}
+	recordRouteCounts(ctx, &fg, containingFn, traced)
 	// A specialized asset whose value came from a caller outside the chain
 	// sample has none of the sampled chains left: they all carried other
 	// values. Its chains are then incomplete, not complete and empty.
@@ -1804,7 +1826,10 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 		fg.Analysis.CallChains = graphfrag.AnalysisPartial
 	}
 
-	if unresolvedReason != "" {
+	if unresolvedReason == unresolvedTraversalTruncated {
+		// The finding is attributed; only its reachability is open.
+		fg.UnresolvedReason = unresolvedReason
+	} else if unresolvedReason != "" {
 		fg.UnresolvedReason = unresolvedReason
 		fg.FindingLocation = buildFindingLocation(ctx, finding, asset)
 	}
@@ -1825,22 +1850,39 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	return fg
 }
 
+// filterChainsByCondition drops the chains a rule's parameterCondition
+// refutes. filteredAway reports that the sample held chains and none survived.
+func filterChainsByCondition(chains [][]callGraphChainNode, asset entities.CryptographicAsset) (kept [][]callGraphChainNode, filteredAway bool) {
+	kept = filterConditionedCallChains(chains, asset.ParameterConditions)
+	return kept, len(chains) > 0 && len(kept) == 0
+}
+
+// recordRouteCounts copies how many routes the containing function's trace
+// found and how many the chains show onto a traced finding's analysis.
+func recordRouteCounts(ctx *exportBuildContext, fg *callGraphExportFinding, containingFn *callgraph.FunctionDecl, traced bool) {
+	if fg.Analysis == nil || !traced {
+		return
+	}
+	fg.Analysis.PathsTotal = ctx.callChainPathsTotal[containingFn.ID.String()]
+	fg.Analysis.PathsKept = distinctChainRoutes(fg.CallChains)
+}
+
 // applyLiveReachabilityState stamps Reachable, Reachability, and Analysis for one
-// finding graph after chain materialization. When the path-count ceiling skips
-// emission (truncated && !traced), Count already proved routes exist — leave
-// Reachable unset so entry-point indexing still runs, and keep analysis partial
-// even on the mine path (#292).
+// finding graph after chain materialization. When the depth limit cut the walk
+// and no chain was found (depthLimited && !traced), nothing is proved either
+// way — leave Reachable unset so entry-point indexing still runs, and keep
+// analysis partial even on the mine path.
 func applyLiveReachabilityState(
 	fg *callGraphExportFinding,
 	containingFn *callgraph.FunctionDecl,
 	ctx *exportBuildContext,
-	traced, truncated bool,
+	traced, truncated, depthLimited bool,
 ) {
-	if containingFn != nil && ctx.userPackages != nil && (!truncated || traced) {
+	if containingFn != nil && ctx.userPackages != nil && (!depthLimited || traced) {
 		reachable := traced
 		fg.Reachable = &reachable
 	}
-	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, truncated)
+	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, depthLimited)
 	if fg.Reachability != graphfrag.ReachabilityNotApplicable || truncated {
 		fg.Analysis = liveFindingAnalysis(fg.CallChains, truncated)
 	}
@@ -3347,15 +3389,14 @@ func buildCallChains(
 	_ = structuralCallChains(ctx, containingFn)
 	var chains [][]callGraphChainNode
 	traced = len(raw) > 0
-	truncated := ctx.callChainTruncated[cacheKey]
 	switch {
 	case traced:
 		expanded := expandCallChainCallSites(ctx.graph, raw, ctx.emitMaxChains())
 		chains = materializeCallChainNodes(ctx, expanded)
-	case truncated:
-		// Path-count ceiling (#292): Count proved routes exist but Routes was
-		// skipped. Emit zero chains — do not synthesize the self-chain fallback,
-		// which would look like a caller-less crypto call.
+	case ctx.callChainDepthLimited[cacheKey]:
+		// The depth limit cut every route before a root. Emit zero chains — do
+		// not synthesize the self-chain fallback, which would look like a
+		// caller-less crypto call.
 		chains = nil
 	default:
 		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
@@ -3382,6 +3423,12 @@ func ensureCallChainCaches(ctx *exportBuildContext) {
 	if ctx.callChainTruncated == nil {
 		ctx.callChainTruncated = make(map[string]bool)
 	}
+	if ctx.callChainDepthLimited == nil {
+		ctx.callChainDepthLimited = make(map[string]bool)
+	}
+	if ctx.callChainPathsTotal == nil {
+		ctx.callChainPathsTotal = make(map[string]int)
+	}
 }
 
 // structuralCallChains returns traceback paths as chain nodes without call-site
@@ -3402,12 +3449,11 @@ func structuralCallChains(
 	}
 	raw := structuralTracebackChains(ctx, containingFn)
 	var result [][]callGraphChainNode
-	truncated := ctx.callChainTruncated[cacheKey]
 	switch {
 	case len(raw) > 0:
 		result = materializeStructuralChainNodes(ctx, raw)
-	case truncated:
-		// Mirror buildCallChains: a ceiling skip must not become a self-chain.
+	case ctx.callChainDepthLimited[cacheKey]:
+		// Mirror buildCallChains: a cut walk must not become a self-chain.
 		result = nil
 	default:
 		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
@@ -3433,28 +3479,29 @@ func structuralTracebackChains(
 	}
 	tracer := callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
 	maxChains := ctx.emitMaxChains()
-	trace := tracer.TraceBackCondensed(
-		containingFn.ID,
-		ctx.userPackages,
-		callGraphExportMaxDepth,
-		maxChains,
-	)
-	chains, total, truncated := trace.Chains, trace.Total, trace.Truncated
+	trace := tracer.TraceBackCondensed(containingFn.ID, ctx.userPackages, ctx.maxDepth, maxChains)
 	// Feed the signal the 6.8 contract reads (analysis.call_chains partial,
-	// reachability downgraded to unknown) rather than tracking truncation
-	// separately. paths_total then adds what that contract cannot express: how
-	// much was left out.
-	ctx.callChainTruncated[cacheKey] = truncated
-	if truncated {
+	// reachability unknown when the depth limit cut every route), and
+	// paths_total, which says how much was left out.
+	ctx.callChainTruncated[cacheKey] = trace.Truncated
+	ctx.callChainDepthLimited[cacheKey] = trace.DepthLimited
+	ctx.callChainPathsTotal[cacheKey] = trace.Total
+	if trace.DepthLimited {
 		log.Warn().
 			Str("function", containingFn.ID.String()).
-			Int("emitted", len(chains)).
-			Int("total_condensed_paths", total).
+			Int("max_depth", ctx.maxDepth).
+			Msg("Depth limit cut call chain routes for finding function")
+	}
+	if trace.Truncated {
+		log.Debug().
+			Str("function", containingFn.ID.String()).
+			Int("emitted", len(trace.Chains)).
+			Int("total_condensed_paths", trace.Total).
 			Int("max_chains", maxChains).
 			Msg("Truncated condensed call chain export for finding function")
 	}
-	ctx.callChainRawCache[cacheKey] = chains
-	return chains
+	ctx.callChainRawCache[cacheKey] = trace.Chains
+	return trace.Chains
 }
 
 // materializeStructuralChainNodes builds function-identity chain nodes only.
@@ -3521,6 +3568,23 @@ func expandCallChainCallSites(graph *callgraph.CallGraph, chains []callgraph.Cal
 		}
 	}
 	return expanded
+}
+
+// distinctChainRoutes counts the chains that differ in their function
+// sequence; chains that differ only in a call-site line count once.
+func distinctChainRoutes(chains [][]callGraphChainNode) int {
+	seen := make(map[string]bool, len(chains))
+	for _, chain := range chains {
+		var key strings.Builder
+		for i := range chain {
+			key.WriteString(chain[i].FunctionKey)
+			key.WriteByte(' ')
+			key.WriteString(chain[i].FunctionName)
+			key.WriteByte('\n')
+		}
+		seen[key.String()] = true
+	}
+	return len(seen)
 }
 
 //nolint:gocognit // Bounded call-site cross-product is kept together so every cap check remains auditable.

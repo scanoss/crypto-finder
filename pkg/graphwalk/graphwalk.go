@@ -31,7 +31,10 @@
 // much it left out instead of dropping the remainder silently.
 package graphwalk
 
-import "sort"
+import (
+	"math"
+	"sort"
+)
 
 // Options describes the graph and where a walk should stop.
 type Options[T comparable] struct {
@@ -92,6 +95,11 @@ type Reachable[T comparable] struct {
 	// this is not the route set and cannot be used to enumerate it. Naming the
 	// route the recorded Depth already measures is the whole purpose.
 	Step map[T]T
+	// Capped marks the nodes MaxDepth stopped: they have callers the walk never
+	// looked at, so a route may continue past them. Empty when the cap never
+	// bit. A caller that must not lose routes silently reads this: a capped node
+	// is neither a terminal nor a dead end, it is unknown.
+	Capped map[T]bool
 }
 
 // Route returns one minimum-length route from `from` to the target, in
@@ -133,6 +141,7 @@ func Reach[T comparable](target T, opts Options[T]) Reachable[T] {
 		Terminal: map[T]bool{},
 		Callers:  map[T][]T{},
 		Step:     map[T]T{},
+		Capped:   map[T]bool{},
 	}
 
 	queue := []T{target}
@@ -169,6 +178,7 @@ func (r *Reachable[T]) visit(current, target T, queue []T, opts Options[T]) []T 
 	// depth counts calls; a route's frame count is depth+1. Do not grow past
 	// MaxDepth frames.
 	if opts.MaxDepth > 0 && depth+2 > opts.MaxDepth {
+		r.Capped[current] = true
 		return queue
 	}
 	return r.enqueueCallers(current, callers, depth, queue, opts.Less)
@@ -391,21 +401,22 @@ func (s *tarjanState[T]) liftParent(parent, child T) {
 	}
 }
 
-// PathCountSkipThreshold is the defensive ceiling for condensed route
-// materialization (issue #292). Count itself is O(V) and cheap; Routes still
-// expands concrete paths up to a budget after the full path count is known.
-// When that count is combinatorially large, materializing even a capped route
-// set has exhausted process memory in the field. Callers should skip Routes
-// above this ceiling, emit no chains, and report truncated so reachability can
-// stay on the existing partial / unknown contract.
-const PathCountSkipThreshold = 100_000
-
 // Count returns how many (component route, terminal) pairs lead from the target
 // to a terminal, without building any of them.
 //
-// One pass in reverse topological order, so a caller always knows the exact total
-// before deciding how many to build.
+// One pass in reverse topological order, so a caller always knows the total
+// before deciding how many to build. The sum saturates at math.MaxInt: past
+// that the value is a lower bound, which is all a reader can use anyway.
 func Count[T comparable](r Reachable[T], c Condensed[T]) int {
+	return componentRoutes(r, c)[c.Comp[r.Target]]
+}
+
+// componentRoutes counts, per component reachable from the target's, the
+// routes from it to a terminal. Routes reads it to never descend into a
+// component that leads to no terminal: without that, a budgeted walk over a
+// high fan-in graph spends unbounded time in branches that can only dead-end,
+// and a budget stops nothing because nothing is ever emitted.
+func componentRoutes[T comparable](r Reachable[T], c Condensed[T]) map[int]int {
 	order := topoFromTarget(r, c)
 	routes := make(map[int]int, len(order))
 	for i := len(order) - 1; i >= 0; i-- {
@@ -413,15 +424,22 @@ func Count[T comparable](r Reachable[T], c Condensed[T]) int {
 		n := 0
 		for _, member := range c.Members[comp] {
 			if r.Terminal[member] {
-				n++
+				n = saturatingAdd(n, 1)
 			}
 		}
 		for _, next := range c.DAG[comp] {
-			n += routes[next]
+			n = saturatingAdd(n, routes[next])
 		}
 		routes[comp] = n
 	}
-	return routes[c.Comp[r.Target]]
+	return routes
+}
+
+func saturatingAdd(a, b int) int {
+	if a > math.MaxInt-b {
+		return math.MaxInt
+	}
+	return a + b
 }
 
 // Routes builds up to budget concrete routes, each ordered from the target
@@ -431,10 +449,22 @@ func Count[T comparable](r Reachable[T], c Condensed[T]) int {
 // so every internal order describes the same trip through it, and the shortest is
 // the readable representative. Condensed.Members keeps the full membership for a
 // caller that wants to show what was collapsed.
+//
+// Every component the walk enters leads to at least one terminal, so the work
+// is bounded by the routes it emits, however many the graph holds.
 func Routes[T comparable](r Reachable[T], c Condensed[T], budget int) [][]T {
 	var out [][]T
-	start := c.Comp[r.Target]
+	walkRoutes(r, c, componentRoutes(r, c), func(route []T) bool {
+		out = append(out, route)
+		return budget <= 0 || len(out) < budget
+	})
+	return out
+}
 
+// walkRoutes enumerates routes depth-first from the target's component and
+// hands each one to yield until yield returns false. counts prunes every
+// component that leads to no terminal.
+func walkRoutes[T comparable](r Reachable[T], c Condensed[T], counts map[int]int, yield func([]T) bool) {
 	var walk func(route []int) bool
 	walk = func(route []int) bool {
 		current := route[len(route)-1]
@@ -444,14 +474,16 @@ func Routes[T comparable](r Reachable[T], c Condensed[T], budget int) [][]T {
 				continue
 			}
 			if concrete, ok := expandRoute(r, c, route, member); ok {
-				out = append(out, concrete)
-				if budget > 0 && len(out) >= budget {
+				if !yield(concrete) {
 					return false
 				}
 			}
 		}
 
 		for _, next := range c.DAG[current] {
+			if counts[next] == 0 {
+				continue
+			}
 			// Copy: sibling branches must not share a backing array with the
 			// route handed to a deeper call.
 			extended := make([]int, len(route)+1)
@@ -463,8 +495,7 @@ func Routes[T comparable](r Reachable[T], c Condensed[T], budget int) [][]T {
 		}
 		return true
 	}
-	walk([]int{start})
-	return out
+	walk([]int{c.Comp[r.Target]})
 }
 
 // expandRoute turns a component route into concrete nodes, target first.
