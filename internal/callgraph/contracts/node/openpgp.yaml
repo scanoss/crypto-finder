@@ -1,0 +1,331 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "openpgp"
+  coordinates:
+    - "openpgp"
+  version_range: ">=5.0.0"
+  description: "OpenPGP.js: the OpenPGP protocol behind top-level async functions"
+
+# EVERY TOP-LEVEL FUNCTION TAKES ONE OPTIONS OBJECT, so each is arity 1:
+#
+#     const publicKey = await openpgp.readKey({ armoredKey });           // factory
+#     const message = await openpgp.createMessage({ text: 'hello' });    // factory
+#     const armored = await openpgp.encrypt({ message, encryptionKeys: publicKey }); // operation
+#
+# Declared for 5.x and 6.x, whose functions return the armored string by
+# default and whose parsers return Key, Message, Signature and CleartextMessage
+# objects. 4.x returned result objects from encrypt and sign and is not covered.
+# The `openpgp/lightweight` entry point (5.x+) exposes the same functions and is
+# declared under both specifiers. These calls are all awaited, so typing their
+# results needs the await-aware assigned-variable typing in the Node parser.
+#
+# The parsers and constructors (readKey, readPrivateKey, readMessage,
+# readSignature, readCleartextMessage, createMessage, createCleartextMessage)
+# are factories: they decode or wrap data and verify nothing. encrypt, decrypt,
+# sign, verify, generateKey, the key passphrase pair and the session-key
+# functions are operations. The key accessors (armor, toPublic, getFingerprint,
+# getKeyID, getUserIDs, ...) hand out what the key already holds and are
+# outputs.
+contracts:
+
+  # Top-level functions under `openpgp`.
+  - method: "openpgp.generateKey"
+    arity: 1
+    return: { type: "openpgp.GeneratedKeys", confidence: high }
+    role: operation
+  - method: "openpgp.encrypt"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "openpgp.decrypt"
+    arity: 1
+    return: { type: "openpgp.DecryptResult", confidence: high }
+    role: operation
+  - method: "openpgp.sign"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "openpgp.verify"
+    arity: 1
+    return: { type: "openpgp.VerifyResult", confidence: high }
+    role: operation
+  - method: "openpgp.encryptKey"
+    arity: 1
+    return: { type: "openpgp.PrivateKey", confidence: high }
+    role: operation
+  - method: "openpgp.decryptKey"
+    arity: 1
+    return: { type: "openpgp.PrivateKey", confidence: high }
+    role: operation
+  - method: "openpgp.generateSessionKey"
+    arity: 1
+    return: { type: "openpgp.SessionKey", confidence: high }
+    role: operation
+  - method: "openpgp.encryptSessionKey"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "openpgp.decryptSessionKeys"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "openpgp.readKey"
+    arity: 1
+    return: { type: "openpgp.Key", confidence: high }
+    role: factory
+  - method: "openpgp.readKeys"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: factory
+  - method: "openpgp.readPrivateKey"
+    arity: 1
+    return: { type: "openpgp.PrivateKey", confidence: high }
+    role: factory
+  - method: "openpgp.readPrivateKeys"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: factory
+  - method: "openpgp.readMessage"
+    arity: 1
+    return: { type: "openpgp.Message", confidence: high }
+    role: factory
+  - method: "openpgp.createMessage"
+    arity: 1
+    return: { type: "openpgp.Message", confidence: high }
+    role: factory
+  - method: "openpgp.readSignature"
+    arity: 1
+    return: { type: "openpgp.Signature", confidence: high }
+    role: factory
+  - method: "openpgp.readCleartextMessage"
+    arity: 1
+    return: { type: "openpgp.CleartextMessage", confidence: high }
+    role: factory
+  - method: "openpgp.createCleartextMessage"
+    arity: 1
+    return: { type: "openpgp.CleartextMessage", confidence: high }
+    role: factory
+
+  # Top-level functions under `openpgp/lightweight`.
+  - method: "openpgp/lightweight.generateKey"
+    arity: 1
+    return: { type: "openpgp.GeneratedKeys", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.encrypt"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.decrypt"
+    arity: 1
+    return: { type: "openpgp.DecryptResult", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.sign"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.verify"
+    arity: 1
+    return: { type: "openpgp.VerifyResult", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.encryptKey"
+    arity: 1
+    return: { type: "openpgp.PrivateKey", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.decryptKey"
+    arity: 1
+    return: { type: "openpgp.PrivateKey", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.generateSessionKey"
+    arity: 1
+    return: { type: "openpgp.SessionKey", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.encryptSessionKey"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.decryptSessionKeys"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "openpgp/lightweight.readKey"
+    arity: 1
+    return: { type: "openpgp.Key", confidence: high }
+    role: factory
+  - method: "openpgp/lightweight.readKeys"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: factory
+  - method: "openpgp/lightweight.readPrivateKey"
+    arity: 1
+    return: { type: "openpgp.PrivateKey", confidence: high }
+    role: factory
+  - method: "openpgp/lightweight.readPrivateKeys"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: factory
+  - method: "openpgp/lightweight.readMessage"
+    arity: 1
+    return: { type: "openpgp.Message", confidence: high }
+    role: factory
+  - method: "openpgp/lightweight.createMessage"
+    arity: 1
+    return: { type: "openpgp.Message", confidence: high }
+    role: factory
+  - method: "openpgp/lightweight.readSignature"
+    arity: 1
+    return: { type: "openpgp.Signature", confidence: high }
+    role: factory
+  - method: "openpgp/lightweight.readCleartextMessage"
+    arity: 1
+    return: { type: "openpgp.CleartextMessage", confidence: high }
+    role: factory
+  - method: "openpgp/lightweight.createCleartextMessage"
+    arity: 1
+    return: { type: "openpgp.CleartextMessage", confidence: high }
+    role: factory
+
+  # Accessors on a parsed or decrypted key report what the key already holds.
+  # PrivateKey extends PublicKey extends Key, and the Node resolver does not walk
+  # that hierarchy, so each accessor is declared on both key types the functions
+  # above return.
+  - method: "openpgp.Key.armor"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "openpgp.Key.armor"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "openpgp.Key.toPublic"
+    arity: 0
+    return: { type: "openpgp.Key", confidence: high }
+    role: output
+  - method: "openpgp.Key.getFingerprint"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "openpgp.Key.getKeyID"
+    arity: 0
+    return: { type: "openpgp.KeyID", confidence: high }
+    role: output
+  - method: "openpgp.Key.getKeyIDs"
+    arity: 0
+    return: { type: "Array", confidence: high }
+    role: output
+  - method: "openpgp.Key.getUserIDs"
+    arity: 0
+    return: { type: "Array", confidence: high }
+    role: output
+  - method: "openpgp.Key.getAlgorithmInfo"
+    arity: 0
+    return: { type: "openpgp.AlgorithmInfo", confidence: high }
+    role: output
+  - method: "openpgp.Key.getCreationTime"
+    arity: 0
+    return: { type: "Date", confidence: high }
+    role: output
+  - method: "openpgp.Key.getExpirationTime"
+    arity: 0
+    return: { type: "Date", confidence: high }
+    role: output
+  - method: "openpgp.Key.getExpirationTime"
+    arity: 1
+    return: { type: "Date", confidence: high }
+    role: output
+  - method: "openpgp.Key.getExpirationTime"
+    arity: 2
+    return: { type: "Date", confidence: high }
+    role: output
+  - method: "openpgp.Key.getPrimaryUser"
+    arity: 0
+    return: { type: "openpgp.PrimaryUser", confidence: high }
+    role: output
+  - method: "openpgp.Key.getPrimaryUser"
+    arity: 1
+    return: { type: "openpgp.PrimaryUser", confidence: high }
+    role: output
+  - method: "openpgp.Key.getPrimaryUser"
+    arity: 2
+    return: { type: "openpgp.PrimaryUser", confidence: high }
+    role: output
+  - method: "openpgp.Key.getPrimaryUser"
+    arity: 3
+    return: { type: "openpgp.PrimaryUser", confidence: high }
+    role: output
+  - method: "openpgp.Key.isPrivate"
+    arity: 0
+    return: { type: "boolean", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.armor"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.armor"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.toPublic"
+    arity: 0
+    return: { type: "openpgp.Key", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getFingerprint"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getKeyID"
+    arity: 0
+    return: { type: "openpgp.KeyID", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getKeyIDs"
+    arity: 0
+    return: { type: "Array", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getUserIDs"
+    arity: 0
+    return: { type: "Array", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getAlgorithmInfo"
+    arity: 0
+    return: { type: "openpgp.AlgorithmInfo", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getCreationTime"
+    arity: 0
+    return: { type: "Date", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getExpirationTime"
+    arity: 0
+    return: { type: "Date", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getExpirationTime"
+    arity: 1
+    return: { type: "Date", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getExpirationTime"
+    arity: 2
+    return: { type: "Date", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getPrimaryUser"
+    arity: 0
+    return: { type: "openpgp.PrimaryUser", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getPrimaryUser"
+    arity: 1
+    return: { type: "openpgp.PrimaryUser", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getPrimaryUser"
+    arity: 2
+    return: { type: "openpgp.PrimaryUser", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.getPrimaryUser"
+    arity: 3
+    return: { type: "openpgp.PrimaryUser", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.isPrivate"
+    arity: 0
+    return: { type: "boolean", confidence: high }
+    role: output
+  - method: "openpgp.PrivateKey.isDecrypted"
+    arity: 0
+    return: { type: "boolean", confidence: high }
+    role: output
