@@ -225,3 +225,28 @@ func TestExportCallGraph_UncalledNonEntryStaysUnreachable(t *testing.T) {
 		}
 	}
 }
+
+// TestExportCallGraph_ChainBudgetCoversDistinctRoutesFirst: with room for two
+// chains, the budget shows both entry points into hash instead of one route
+// at its two call-site lines in TransferService.submit.
+func TestExportCallGraph_ChainBudgetCoversDistinctRoutesFirst(t *testing.T) {
+	t.Parallel()
+	hash := exportEntryRoots(t, newEntryRootsFixture(t), 2)["hash"]
+
+	chains := shortChains(hash)
+	if len(chains) != 2 {
+		t.Fatalf("hash chains = %+v, want 2", chains)
+	}
+	if chains[0].frames[0] == chains[1].frames[0] {
+		t.Fatalf("hash chains = %+v, want two different roots", chains)
+	}
+	if hash.Analysis == nil || hash.Analysis.PathsTotal != 2 || hash.Analysis.PathsKept != 2 {
+		t.Fatalf("analysis = %+v, want paths_total 2 and paths_kept 2", hash.Analysis)
+	}
+
+	// With room for one, it is the recognized entry point.
+	one := shortChains(exportEntryRoots(t, newEntryRootsFixture(t), 1)["hash"])
+	if len(one) != 1 || one[0].rootKind != string(callgraph.RootKindFrameworkEntry) {
+		t.Fatalf("single chain = %+v, want the framework entry TransferHandler.handle", one)
+	}
+}

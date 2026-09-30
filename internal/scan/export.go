@@ -3558,16 +3558,39 @@ func materializeCallChainNodes(
 // values. The tracer intentionally deduplicates functions for O(V+E)
 // reachability; export expands only the bounded completed chains so per-call
 // applicability is not lost.
+//
+// The budget goes to distinct routes first: every chain's first call-site
+// variant, then every chain's second, and so on. Spending it chain by chain
+// filled it with one route repeated at different call-site lines, while other
+// routes to the same crypto went unshown.
 func expandCallChainCallSites(graph *callgraph.CallGraph, chains []callgraph.CallChain, maxChains int) []callgraph.CallChain {
+	// Every chain keeps its first variant, so one chain can contribute at most
+	// what the others leave.
+	perChainLimit := 0
+	if maxChains > 0 {
+		perChainLimit = max(1, maxChains-len(chains)+1)
+	}
+	perChain := make([][]callgraph.CallChain, len(chains))
+	for i, chain := range chains {
+		perChain[i] = expandOneCallChain(graph, chain, perChainLimit)
+	}
 	var expanded []callgraph.CallChain
-	for _, chain := range chains {
-		variants := expandOneCallChain(graph, chain, maxChains-len(expanded))
-		expanded = append(expanded, variants...)
-		if maxChains > 0 && len(expanded) >= maxChains {
-			return expanded[:maxChains]
+	for round := 0; ; round++ {
+		added := false
+		for _, variants := range perChain {
+			if round >= len(variants) {
+				continue
+			}
+			expanded = append(expanded, variants[round])
+			added = true
+			if maxChains > 0 && len(expanded) >= maxChains {
+				return expanded
+			}
+		}
+		if !added {
+			return expanded
 		}
 	}
-	return expanded
 }
 
 // distinctChainRoutes counts the chains that differ in their function

@@ -158,3 +158,22 @@ func TestTraceBackCondensed_DepthLimitIsReported(t *testing.T) {
 		t.Fatalf("application cut: %+v, want one depth_limit chain, truncated but not depth-limited", trace)
 	}
 }
+
+// TestTraceBackCondensed_BudgetPrefersEntryPoints: with room for one chain it
+// comes from the recognized entry point, even when another root sorts first
+// and is closer.
+func TestTraceBackCondensed_BudgetPrefersEntryPoints(t *testing.T) {
+	t.Parallel()
+	crypto := fn("lib", "Sum")
+	graph := edgeGraph(
+		[2]FunctionID{fn("app", "main"), fn("app", "serve")},
+		[2]FunctionID{fn("app", "serve"), crypto},
+		[2]FunctionID{fn("app", "aaTool"), crypto},
+	)
+
+	trace := NewTracer(graph, ".").TraceBackCondensed(crypto, appPackages, 0, 1)
+
+	if len(trace.Chains) != 1 || trace.Chains[0].RootKind != RootKindMain || trace.Total != 2 || !trace.Truncated {
+		t.Fatalf("trace = %+v, want the main chain of 2", trace)
+	}
+}

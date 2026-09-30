@@ -42,6 +42,22 @@ const (
 	RootKindDepthLimit RootKind = "depth_limit"
 )
 
+// rootKindRank orders root kinds for chain selection: a chain from a
+// recognized entry point tells a reader more than one from a function nothing
+// calls, which tells more than one the depth limit cut.
+func rootKindRank(kind RootKind) int {
+	switch kind {
+	case RootKindMain, RootKindFrameworkEntry:
+		return 0
+	case RootKindNoCallers:
+		return 1
+	case RootKindDepthLimit:
+		return 2
+	default:
+		return 3
+	}
+}
+
 // frameworkEntryAnnotations are the Java method annotations whose methods a
 // framework invokes by reflection, so no call edge leads to them: web request
 // mappings (Spring MVC, JAX-RS), scheduled jobs, and message or event

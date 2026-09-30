@@ -1,0 +1,1 @@
+- The chain budget is spent on distinct routes first: one shortest route per root, recognized entry points before other roots, then further routes, and only then the same route at another call-site line. Before, a budget of 4 was often filled by one route repeated at different lines of the same caller.

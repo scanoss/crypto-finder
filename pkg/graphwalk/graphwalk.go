@@ -20,12 +20,13 @@
 // stays identical — visit order, depth accounting, component collapsing, route
 // counting — is written once.
 //
-// The four operations, in the order they are used:
+// The operations, in the order they are used:
 //
 //	Reach     which nodes reach the target, and how far away each one is
 //	Condense  collapse cycles so the route set is finite (Tarjan)
 //	Count     how many routes there are, without building any
 //	Routes    build up to a budget of them
+//	Select    the same, one route per terminal first
 //
 // Counting before building is the point: a caller that truncates can then say how
 // much it left out instead of dropping the remainder silently.
@@ -33,7 +34,10 @@ package graphwalk
 
 import (
 	"math"
+	"slices"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // Options describes the graph and where a walk should stop.
@@ -459,6 +463,85 @@ func Routes[T comparable](r Reachable[T], c Condensed[T], budget int) [][]T {
 		return budget <= 0 || len(out) < budget
 	})
 	return out
+}
+
+// Select builds up to budget routes like Routes, but spends the budget on
+// distinct terminals first: one shortest route to each terminal, in
+// terminalLess order, before any second route to a terminal already shown.
+//
+// Routes enumerates depth-first from the target, so its first routes share
+// everything but their last frames and can all end at one entry point. A reader
+// given a handful of chains learns more from one per entry point. The remainder
+// of the budget is then filled in Routes order, skipping routes already taken.
+// A budget of 0 means unbounded.
+func Select[T comparable](r Reachable[T], c Condensed[T], budget int, terminalLess func(a, b T) bool) [][]T {
+	full := func(out [][]T) bool { return budget > 0 && len(out) >= budget }
+
+	terminals := make([]T, 0, len(r.Terminal))
+	for node, terminal := range r.Terminal {
+		if _, reached := r.Depth[node]; terminal && reached {
+			terminals = append(terminals, node)
+		}
+	}
+	sortNodes(terminals, terminalLess)
+
+	var out [][]T
+	taken := map[string]bool{}
+	for _, terminal := range terminals {
+		if full(out) {
+			return out
+		}
+		route := r.Route(terminal)
+		if route == nil {
+			continue
+		}
+		slices.Reverse(route)
+		key := routeKey(c, route)
+		if taken[key] {
+			continue
+		}
+		taken[key] = true
+		out = append(out, route)
+	}
+	if full(out) {
+		return out
+	}
+	walkRoutes(r, c, componentRoutes(r, c), func(route []T) bool {
+		if key := routeKey(c, route); !taken[key] {
+			taken[key] = true
+			out = append(out, route)
+		}
+		return !full(out)
+	})
+	return out
+}
+
+// routeKey identifies a route the way Count counts it: the components it
+// passes through, target first, and the terminal it ends at. Two concrete
+// routes with the same key describe the same trip.
+func routeKey[T comparable](c Condensed[T], route []T) string {
+	var b strings.Builder
+	last := -1
+	for _, node := range route {
+		comp := c.Comp[node]
+		if comp == last {
+			continue
+		}
+		last = comp
+		b.WriteString(strconv.Itoa(comp))
+		b.WriteByte(',')
+	}
+	// The terminal is the route's last node; its position within its
+	// component tells two terminals of one component apart.
+	terminal := route[len(route)-1]
+	for i, member := range c.Members[c.Comp[terminal]] {
+		if member == terminal {
+			b.WriteByte('#')
+			b.WriteString(strconv.Itoa(i))
+			break
+		}
+	}
+	return b.String()
 }
 
 // walkRoutes enumerates routes depth-first from the target's component and

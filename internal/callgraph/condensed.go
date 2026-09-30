@@ -251,6 +251,10 @@ type CondensedTrace struct {
 // TraceBackCondensed walks callers of target over the cycle-collapsed reverse
 // graph and returns up to maxChains chains, ordered entry -> target like
 // TraceBackLimited. A maxChains of 0 means unlimited.
+//
+// Chains are selected one per root first, recognized entry points before other
+// roots (graphwalk.Select), so a small budget shows the distinct places the
+// crypto is reached from rather than variations of one route.
 func (t *Tracer) TraceBackCondensed(
 	target FunctionID,
 	userPackages map[string]bool,
@@ -271,7 +275,17 @@ func (t *Tracer) TraceBackCondensed(
 	}
 
 	out.Total = graphwalk.Count(w.reach, w.condensed)
-	for _, route := range graphwalk.Routes(w.reach, w.condensed, maxChains) {
+	rootLess := func(a, b string) bool {
+		ra, rb := rootKindRank(w.rootKinds[a]), rootKindRank(w.rootKinds[b])
+		if ra != rb {
+			return ra < rb
+		}
+		if da, db := w.reach.Depth[a], w.reach.Depth[b]; da != db {
+			return da < db
+		}
+		return a < b
+	}
+	for _, route := range graphwalk.Select(w.reach, w.condensed, maxChains, rootLess) {
 		chain := t.materializeRoute(route)
 		chain.RootKind = w.rootKinds[route[len(route)-1]]
 		out.Chains = append(out.Chains, chain)
