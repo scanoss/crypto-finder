@@ -1,0 +1,286 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: libssh
+  coordinates:
+    - libssh
+  version_range: ">=0.5.0,<1.0.0"
+  description: "libssh SSH session, authentication, key and channel APIs"
+
+# Inventory sources: libssh public headers (include/libssh/libssh.h, server.h,
+# legacy.h) from the upstream tag archives libssh-0.5.1, libssh-0.8.4 and
+# libssh-0.10.6. No contracted function changes arity across the releases that
+# declare it. The ssh_pki_* key API, ssh_userauth_publickey* and
+# ssh_userauth_agent are 0.6.0 and later, the certificate API 0.8.0 and later;
+# the legacy key API (privatekey_from_file, publickey_from_file,
+# ssh_userauth_pubkey, ssh_userauth_autopubkey) spans every release.
+#
+# A client session groups around its ssh_session: ssh_new is the factory,
+# ssh_options_set its configuration, ssh_connect performs the handshake and the
+# ssh_get_cipher_*/hmac_*/kex_algo getters report what was negotiated. The
+# server side does the same around ssh_bind. The key type of ssh_pki_generate is
+# operation-determining and its size parameter is the key size in bits (RSA,
+# DSA) or the curve size (legacy SSH_KEYTYPE_ECDSA).
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: ssh_free, ssh_key_free, ssh_channel_free, ssh_bind_free
+#   and other teardown, logging, error and version helpers, polling and event
+#   loops, SFTP/SCP file transfer, and port forwarding.
+# needs-follow-up: keyboard-interactive and GSSAPI authentication details,
+#   known-hosts management, the callback-based server authentication API, and
+#   channel requests other than exec.
+contracts:
+
+  # Client session.
+  - method: ssh_new
+    arity: 0
+    return: {type: "ssh_session", confidence: high}
+    role: factory
+  - method: ssh_options_set
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: metadata-contributing
+        contributes: {property: option, derivation: argument_value}
+  - method: ssh_options_parse_config
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ssh_connect
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_disconnect
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ssh_is_server_known
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_session_is_known_server
+    arity: 1
+    return: {type: "enum ssh_known_hosts_e", confidence: high}
+    role: operation
+  - method: ssh_get_server_publickey
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ssh_get_publickey_hash
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # Negotiated values, read after the key exchange.
+  - method: ssh_get_cipher_in
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: ssh_get_cipher_out
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: ssh_get_hmac_in
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: ssh_get_hmac_out
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: ssh_get_kex_algo
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+
+  # User authentication. Public-key authentication signs the session
+  # identifier (RFC 4252 section 7).
+  - method: ssh_userauth_publickey
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_userauth_publickey_auto
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_userauth_try_publickey
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_userauth_agent
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_userauth_pubkey
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_userauth_autopubkey
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_userauth_password
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Keys (0.6.0 and later) and certificates (0.8.0 and later).
+  - method: ssh_key_new
+    arity: 0
+    return: {type: "ssh_key", confidence: high}
+    role: factory
+  - method: ssh_pki_generate
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 1
+        name: parameter
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: ssh_pki_import_privkey_file
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: ssh_pki_import_privkey_base64
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: ssh_pki_import_pubkey_file
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: ssh_pki_import_pubkey_base64
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: ssh_pki_import_cert_file
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: ssh_pki_import_cert_base64
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: ssh_pki_export_privkey_file
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ssh_pki_export_privkey_base64
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ssh_pki_export_privkey_to_pubkey
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ssh_pki_export_pubkey_file
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ssh_pki_export_pubkey_base64
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: ssh_pki_copy_cert_to_privkey
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ssh_key_type
+    arity: 1
+    return: {type: "enum ssh_keytypes_e", confidence: high}
+    role: output
+
+  # Legacy key API.
+  - method: privatekey_from_file
+    arity: 4
+    return: {type: "ssh_private_key", confidence: high}
+    role: factory
+  - method: publickey_from_file
+    arity: 3
+    return: {type: "ssh_string", confidence: high}
+    role: factory
+  - method: publickey_from_privatekey
+    arity: 1
+    return: {type: "ssh_public_key", confidence: high}
+    role: factory
+
+  # Channels over an authenticated session.
+  - method: ssh_channel_new
+    arity: 1
+    return: {type: "ssh_channel", confidence: high}
+    role: factory
+  - method: ssh_channel_open_session
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_channel_request_exec
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_channel_read
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_channel_write
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_channel_send_eof
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_channel_close
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Server side.
+  - method: ssh_bind_new
+    arity: 0
+    return: {type: "ssh_bind", confidence: high}
+    role: factory
+  - method: ssh_bind_options_set
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: metadata-contributing
+        contributes: {property: option, derivation: argument_value}
+  - method: ssh_bind_listen
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_bind_accept
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_bind_accept_fd
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ssh_handle_key_exchange
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+
+hierarchy: {}
