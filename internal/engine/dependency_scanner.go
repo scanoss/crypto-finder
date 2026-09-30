@@ -399,6 +399,7 @@ func (ds *DependencyScanner) buildDependencyCallGraph(
 	depResults []depScanResult,
 ) (*callgraph.CallGraph, error) {
 	sets := ds.collectPackageSets(userTarget, resolved, depResults)
+	ds.cgBuilder.SetArtifactDependencies(resolved.Graph)
 	return ds.cgBuilder.BuildFromDirectories(sets.graphPackages, sets.typeOnlyPackages)
 }
 

@@ -1,0 +1,1 @@
+- `graphfrag.GraphAlgoVersion` is now `graph-algo-5` (was `graph-algo-4`). A `name_only` dispatch edge no longer links a class of one dependency to an unrelated dependency under the same namespace root (see Fixed), so structural graphs cached under `scan_metadata.graph_algo_version` must be re-mined. The wire schemas are unchanged.
