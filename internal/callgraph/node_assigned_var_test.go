@@ -138,3 +138,44 @@ function fromOptions(opts) {
 		}
 	}
 }
+
+// An awaited producer binds its resolved value: `const key = await
+// ec.genKeyPair()` types key exactly as the unawaited call does. Async
+// factories are the norm in Node crypto libraries (`await SEAL()`,
+// `await bls.PointG2.hashToCurve(m)`), so without this every call on their
+// result stays keyed to the consumer.
+func TestNodeAssignedVarTypesThroughAwait(t *testing.T) {
+	t.Parallel()
+
+	graph := buildNodeGraph(t, `const EC = require('elliptic').ec;
+
+async function run(msg) {
+  const ec = await new EC('secp256k1');
+  const key = await ec.genKeyPair();
+  let other;
+  other = await (ec.keyFromPrivate(msg));
+  key.sign(msg);
+  return other.sign(msg);
+}
+`)
+	got := nodeCalleesByLine(t, graph, "run")
+	want := map[int][]string{
+		4: {"elliptic.(ec).<init>"},
+		5: {"elliptic.(ec).genKeyPair"},
+		7: {"elliptic.(ec).keyFromPrivate"},
+		8: {"elliptic.(KeyPair).sign"},
+		9: {"elliptic.(KeyPair).sign"},
+	}
+	for line, callees := range want {
+		if len(got[line]) != len(callees) {
+			t.Errorf("line %d: callees %v, want %v", line, got[line], callees)
+			continue
+		}
+		for i := range callees {
+			if got[line][i] != callees[i] {
+				t.Errorf("line %d: callees %v, want %v", line, got[line], callees)
+				break
+			}
+		}
+	}
+}
