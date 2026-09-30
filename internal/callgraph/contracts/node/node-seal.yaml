@@ -1,0 +1,637 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "node-seal"
+  coordinates:
+    - "node-seal"
+  version_range: ">=4.0.0"
+  description: "node-seal: Microsoft SEAL homomorphic encryption compiled to WebAssembly"
+
+# EVERYTHING IS A MEMBER OF THE RUNTIME THE FACTORY RESOLVES TO:
+#
+#     const SEAL = require('node-seal');
+#     const seal = await SEAL();                         // factory -> node-seal.Seal
+#     const parms = seal.EncryptionParameters(seal.SchemeType.bfv);
+#     const context = seal.Context(parms, true, seal.SecurityLevel.tc128);
+#     const keyGenerator = seal.KeyGenerator(context);   // factory
+#     const publicKey = keyGenerator.createPublicKey();  // operation
+#     const encryptor = seal.Encryptor(context, publicKey);
+#     const cipherText = encryptor.encrypt(plainText);   // operation
+#
+# THE FACTORY IS KEYED `node-seal.SEAL`. The parser keys a directly called
+# module binding by its local name, and every consumer and the README name it
+# `SEAL`; a binding with another name does not reach this entry. Typing `seal`
+# through `await SEAL()` needs the await-aware assigned-variable typing in the
+# Node parser.
+#
+# The declarations follow the 4.x to 6.x runtime, whose constructors are plain
+# calls (`seal.KeyGenerator(context)`). 7.x turned them into classes called
+# with `new` (`new seal.KeyGenerator(context)`, `new seal.SEALContext(..)`);
+# the object methods are the same and are declared once.
+#
+# Deliberately NOT contracted: the encoders (BatchEncoder, CKKSEncoder),
+# PlainText/CipherText containers, CoeffModulus/PlainModulus helpers, and the
+# Evaluator's homomorphic arithmetic, which computes on ciphertexts without a
+# key-bearing cryptographic step.
+contracts:
+
+  # The factory, under every specifier a build is published at: the package,
+  # the 7.x `throws`/`allows` subpaths, and the 4.x to 6.x
+  # `{throws,allows}_{wasm,js}_{env}_{umd,es}` files, with and without `.js`.
+  # The Cloudflare Worker builds take the wasm module as an argument.
+  - method: "node-seal.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_node_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_node_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_node_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_node_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_web_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_web_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_web_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_web_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_worker_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_worker_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_worker_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_worker_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_cf_worker_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_cf_worker_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_cf_worker_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_cf_worker_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_node_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_node_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_node_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_node_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_web_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_web_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_web_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_web_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_worker_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_worker_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_worker_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_worker_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_node_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_node_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_node_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_node_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_web_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_web_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_web_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_web_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_worker_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_worker_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_worker_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_worker_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_cf_worker_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_cf_worker_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_cf_worker_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_cf_worker_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_node_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_node_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_node_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_node_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_web_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_web_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_web_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_web_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_worker_umd.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_worker_umd.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_worker_es.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_worker_es.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_node_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_node_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_node_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_node_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_web_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_web_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_web_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_web_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_worker_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_worker_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_worker_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_worker_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_cf_worker_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_cf_worker_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_cf_worker_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_wasm_cf_worker_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_node_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_node_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_node_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_node_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_web_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_web_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_web_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_web_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_worker_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_worker_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_worker_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/throws_js_worker_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_node_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_node_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_node_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_node_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_web_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_web_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_web_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_web_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_worker_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_worker_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_worker_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_worker_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_cf_worker_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_cf_worker_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_cf_worker_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_wasm_cf_worker_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_node_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_node_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_node_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_node_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_web_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_web_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_web_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_web_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_worker_umd.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_worker_umd.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_worker_es.js.SEAL"
+    arity: 0
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+  - method: "node-seal/allows_js_worker_es.js.SEAL"
+    arity: 1
+    return: { type: "node-seal.Seal", confidence: high }
+    role: factory
+
+  # Runtime constructors (4.x to 6.x call form).
+  - method: "node-seal.Seal.EncryptionParameters"
+    arity: 1
+    return: { type: "node-seal.EncryptionParameters", confidence: high }
+    role: factory
+  - method: "node-seal.Seal.Context"
+    arity: 1
+    return: { type: "node-seal.Context", confidence: high }
+    role: factory
+  - method: "node-seal.Seal.Context"
+    arity: 2
+    return: { type: "node-seal.Context", confidence: high }
+    role: factory
+  - method: "node-seal.Seal.Context"
+    arity: 3
+    return: { type: "node-seal.Context", confidence: high }
+    role: factory
+  - method: "node-seal.Seal.KeyGenerator"
+    arity: 1
+    return: { type: "node-seal.KeyGenerator", confidence: high }
+    role: factory
+  - method: "node-seal.Seal.KeyGenerator"
+    arity: 2
+    return: { type: "node-seal.KeyGenerator", confidence: high }
+    role: factory
+  - method: "node-seal.Seal.Encryptor"
+    arity: 2
+    return: { type: "node-seal.Encryptor", confidence: high }
+    role: factory
+  - method: "node-seal.Seal.Encryptor"
+    arity: 3
+    return: { type: "node-seal.Encryptor", confidence: high }
+    role: factory
+  - method: "node-seal.Seal.Decryptor"
+    arity: 2
+    return: { type: "node-seal.Decryptor", confidence: high }
+    role: factory
+
+  # Parameter configuration.
+  - method: "node-seal.EncryptionParameters.setPolyModulusDegree"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "node-seal.EncryptionParameters.setCoeffModulus"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "node-seal.EncryptionParameters.setPlainModulus"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: config
+
+  # Keys: the secret key already exists in the generator; the others are generated.
+  - method: "node-seal.KeyGenerator.secretKey"
+    arity: 0
+    return: { type: "node-seal.SecretKey", confidence: high }
+    role: output
+  - method: "node-seal.KeyGenerator.createPublicKey"
+    arity: 0
+    return: { type: "node-seal.PublicKey", confidence: high }
+    role: operation
+  - method: "node-seal.KeyGenerator.createRelinKeys"
+    arity: 0
+    return: { type: "node-seal.RelinKeys", confidence: high }
+    role: operation
+  - method: "node-seal.KeyGenerator.createGaloisKeys"
+    arity: 0
+    return: { type: "node-seal.GaloisKeys", confidence: high }
+    role: operation
+  - method: "node-seal.KeyGenerator.createGaloisKeys"
+    arity: 1
+    return: { type: "node-seal.GaloisKeys", confidence: high }
+    role: operation
+
+  # encrypt(plainText, cipherText?, pool?) and decrypt(cipherText, plainText?).
+  - method: "node-seal.Encryptor.encrypt"
+    arity: 1
+    return: { type: "node-seal.CipherText", confidence: high }
+    role: operation
+  - method: "node-seal.Encryptor.encrypt"
+    arity: 2
+    return: { type: "node-seal.CipherText", confidence: high }
+    role: operation
+  - method: "node-seal.Encryptor.encrypt"
+    arity: 3
+    return: { type: "node-seal.CipherText", confidence: high }
+    role: operation
+  - method: "node-seal.Encryptor.encryptSymmetric"
+    arity: 1
+    return: { type: "node-seal.CipherText", confidence: high }
+    role: operation
+  - method: "node-seal.Encryptor.encryptSymmetric"
+    arity: 2
+    return: { type: "node-seal.CipherText", confidence: high }
+    role: operation
+  - method: "node-seal.Encryptor.encryptSymmetric"
+    arity: 3
+    return: { type: "node-seal.CipherText", confidence: high }
+    role: operation
+  - method: "node-seal.Encryptor.encryptSerializable"
+    arity: 1
+    return: { type: "node-seal.Serializable", confidence: high }
+    role: operation
+  - method: "node-seal.Encryptor.encryptSerializable"
+    arity: 2
+    return: { type: "node-seal.Serializable", confidence: high }
+    role: operation
+  - method: "node-seal.Encryptor.encryptSymmetricSerializable"
+    arity: 1
+    return: { type: "node-seal.Serializable", confidence: high }
+    role: operation
+  - method: "node-seal.Encryptor.encryptSymmetricSerializable"
+    arity: 2
+    return: { type: "node-seal.Serializable", confidence: high }
+    role: operation
+  - method: "node-seal.Decryptor.decrypt"
+    arity: 1
+    return: { type: "node-seal.PlainText", confidence: high }
+    role: operation
+  - method: "node-seal.Decryptor.decrypt"
+    arity: 2
+    return: { type: "node-seal.PlainText", confidence: high }
+    role: operation
