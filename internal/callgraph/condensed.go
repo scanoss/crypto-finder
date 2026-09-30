@@ -56,25 +56,26 @@ func nodeLess(a, b string) bool { return a < b }
 // With no user packages known — the mine path, scanning a library alone — a
 // graph root is where a chain ends, since for a library that is its public API.
 //
-// typedOnly drops every edge whose only resolution is name_only, leaving the
-// routes that hold without guessing a subtype.
-func (t *Tracer) walkOptions(targetKey string, userPackages map[string]bool, maxDepth int, typedOnly bool) graphwalk.Options[string] {
+// admit is the weakest edge evidence the walk follows: RouteEvidenceNameOnly
+// follows every edge, RouteEvidenceDispatch drops name_only edges, and
+// RouteEvidenceDirect drops dispatch edges too, leaving the routes that hold
+// with every call statically resolved.
+func (t *Tracer) walkOptions(targetKey string, userPackages map[string]bool, maxDepth int, admit RouteEvidence) graphwalk.Options[string] {
 	callers := func(key string) []string { return t.knownCallers(key, targetKey, userPackages) }
-	if typedOnly {
-		untyped := t.untypedEdges()
+	if admit != RouteEvidenceNameOnly {
+		idx := t.edges()
 		callers = func(key string) []string {
 			known := t.knownCallers(key, targetKey, userPackages)
-			guessed := untyped[key]
-			if len(guessed) == 0 {
+			if len(idx.pairs[key]) == 0 {
 				return known
 			}
-			typed := known[:0]
+			kept := known[:0]
 			for _, caller := range known {
-				if !guessed[caller] {
-					typed = append(typed, caller)
+				if idx.admits(key, caller, admit) {
+					kept = append(kept, caller)
 				}
 			}
-			return typed
+			return kept
 		}
 	}
 	opts := graphwalk.Options[string]{
@@ -88,38 +89,6 @@ func (t *Tracer) walkOptions(targetKey string, userPackages map[string]bool, max
 	}
 	opts.RootTerminal = func(key string) bool { return t.isUserFunction(key, userPackages) }
 	return opts
-}
-
-// untypedEdges indexes the edges resolved only by name: every recorded
-// resolution of the caller->callee pair is name_only. An edge with no
-// resolution is an exact source call.
-func (t *Tracer) untypedEdges() map[string]map[string]bool {
-	if t.untyped != nil {
-		return t.untyped
-	}
-	best := make(map[[2]string]EdgeKind)
-	for key := range t.graph.EdgeResolutions {
-		res := t.graph.EdgeResolutions[key]
-		caller, callee, ok := EdgeResolutionEndpoints(key, res)
-		if !ok {
-			continue
-		}
-		pair := [2]string{callee, caller}
-		if current, seen := best[pair]; !seen || edgeKindRank(res.Kind) > edgeKindRank(current) {
-			best[pair] = res.Kind
-		}
-	}
-	t.untyped = make(map[string]map[string]bool)
-	for pair, kind := range best {
-		if kind != EdgeKindNameOnly {
-			continue
-		}
-		if t.untyped[pair[0]] == nil {
-			t.untyped[pair[0]] = make(map[string]bool)
-		}
-		t.untyped[pair[0]][pair[1]] = true
-	}
-	return t.untyped
 }
 
 // knownCallers returns the declared callers of key; an application function
@@ -188,9 +157,9 @@ type reverseWalk struct {
 //   - a cycle of application functions that nothing outside it calls has no
 //     member without callers, so one member is made its root. Otherwise
 //     mutual recursion would read as unreachable.
-func (t *Tracer) walk(target FunctionID, userPackages map[string]bool, maxDepth int, typedOnly bool) reverseWalk {
+func (t *Tracer) walk(target FunctionID, userPackages map[string]bool, maxDepth int, admit RouteEvidence) reverseWalk {
 	targetKey := target.String()
-	reach := graphwalk.Reach(targetKey, t.walkOptions(targetKey, userPackages, maxDepth, typedOnly))
+	reach := graphwalk.Reach(targetKey, t.walkOptions(targetKey, userPackages, maxDepth, admit))
 	out := reverseWalk{reach: reach, rootKinds: map[string]RootKind{}}
 
 	for key := range reach.Capped {
@@ -280,7 +249,7 @@ func (t *Tracer) ReachingFunctions(
 	if _, exists := t.graph.Functions[target.String()]; !exists {
 		return nil, nil
 	}
-	w := t.walk(target, userPackages, maxDepth, false)
+	w := t.walk(target, userPackages, maxDepth, RouteEvidenceNameOnly)
 	return w.reach.Depth, w.reach.Terminal
 }
 
@@ -304,15 +273,28 @@ type CondensedTrace struct {
 	// proven to be a subtype of the receiver's type. Chains exist, but none
 	// proves the target runs, so the verdict is unknown.
 	UnresolvedDispatch bool
+	// Evidence is the evidence of the strongest route found: direct when one
+	// route resolves every call statically, dispatch when the best route needs
+	// a dispatch edge, name_only (UnresolvedDispatch) when every route needs a
+	// name_only edge. Chains holds the strongest routes first.
+	Evidence RouteEvidence
+	// NoCallersOnly reports that every root of the routes supporting the
+	// verdict is an application function nothing calls (RootKindNoCallers):
+	// the crypto is reached only from code with no known callers. The
+	// supporting routes are those free of name_only edges, or every route when
+	// none is.
+	NoCallersOnly bool
 }
 
 // TraceBackCondensed walks callers of target over the cycle-collapsed reverse
 // graph and returns up to maxChains chains, ordered entry -> target like
 // TraceBackLimited. A maxChains of 0 means unlimited.
 //
-// Chains are selected one per root first, recognized entry points before other
-// roots (graphwalk.Select), so a small budget shows the distinct places the
-// crypto is reached from rather than variations of one route.
+// Chains are selected strongest evidence first (selectTiered), and within one
+// evidence tier one per root first, recognized entry points before other
+// roots (graphwalk.Select), so a small budget shows the route that justifies
+// the verdict and the distinct places the crypto is reached from rather than
+// variations of one route.
 func (t *Tracer) TraceBackCondensed(
 	target FunctionID,
 	userPackages map[string]bool,
@@ -324,7 +306,7 @@ func (t *Tracer) TraceBackCondensed(
 		return CondensedTrace{}
 	}
 
-	w := t.walk(target, userPackages, maxDepth, false)
+	w := t.walk(target, userPackages, maxDepth, RouteEvidenceNameOnly)
 	out := CondensedTrace{DepthLimited: w.truncated, Truncated: w.truncated || w.appCut}
 	if len(w.reach.Terminal) == 0 {
 		// Nothing user code (or no graph root) reaches this function: the same
@@ -333,44 +315,15 @@ func (t *Tracer) TraceBackCondensed(
 	}
 
 	out.Total = graphwalk.Count(w.reach, w.condensed)
-	out.UnresolvedDispatch = !t.reachedWithoutGuessing(target, userPackages, maxDepth)
-	rootLess := func(a, b string) bool {
-		ra, rb := rootKindRank(w.rootKinds[a]), rootKindRank(w.rootKinds[b])
-		if ra != rb {
-			return ra < rb
-		}
-		if da, db := w.reach.Depth[a], w.reach.Depth[b]; da != db {
-			return da < db
-		}
-		return a < b
-	}
-	for _, route := range graphwalk.Select(w.reach, w.condensed, maxChains, rootLess) {
-		chain := t.materializeRoute(route)
-		chain.RootKind = w.rootKinds[route[len(route)-1]]
-		out.Chains = append(out.Chains, chain)
-	}
+	walks := t.tierWalks(target, userPackages, maxDepth, &w)
+	out.Evidence = strongestEvidence(walks)
+	out.UnresolvedDispatch = out.Evidence == RouteEvidenceNameOnly
+	out.NoCallersOnly = noCallersOnly(walks)
+	out.Chains = t.selectTiered(walks, maxChains)
 	if len(out.Chains) < out.Total {
 		out.Truncated = true
 	}
 	return out
-}
-
-// reachedWithoutGuessing reports whether a route to target holds with every
-// name_only edge removed. A second walk costs as much as the first, so it
-// runs only for a target the first walk reached, and is skipped when the
-// graph holds no name_only edge.
-//
-// A guess-free walk the depth limit cut counts as reached. The cut hides
-// routes this walk never saw, so it cannot prove that only guessed routes
-// exist, and reading the finding unknown on that basis would flip it
-// arbitrarily with the depth limit. Only a walk that ran to completion and
-// found no root marks the finding unresolved.
-func (t *Tracer) reachedWithoutGuessing(target FunctionID, userPackages map[string]bool, maxDepth int) bool {
-	if len(t.untypedEdges()) == 0 {
-		return true
-	}
-	w := t.walk(target, userPackages, maxDepth, true)
-	return len(w.reach.Terminal) > 0 || w.truncated
 }
 
 // materializeRoute turns a route — target first, terminal last — into a CallChain
@@ -398,6 +351,13 @@ func (t *Tracer) buildStep(route []string, i int) CallChainStep {
 	step.FilePath = decl.FilePath
 	if i == 0 {
 		step.Line = decl.StartLine
+		return step
+	}
+	// A classified pair names the call site of its strongest resolution, so
+	// the frame's entry_resolution matches the evidence the route was chosen
+	// by. Otherwise the first call to the callee is the site.
+	if res, ok := t.edges().pairs[route[i-1]][key]; ok && res.line > 0 {
+		step.Line, step.StartCol, step.EndCol = res.line, res.startCol, res.endCol
 		return step
 	}
 	step.Line = findCallLine(decl, route[i-1])
