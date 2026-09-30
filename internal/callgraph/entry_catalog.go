@@ -25,8 +25,9 @@ import (
 
 // Catalog languages, as the entry-point catalog directories name them.
 const (
-	entryLanguageJava = "java"
-	entryLanguageNode = "node"
+	entryLanguageJava   = "java"
+	entryLanguageNode   = "node"
+	entryLanguagePython = "python"
 )
 
 // entryCatalog is the framework entry-point catalog built into the binary

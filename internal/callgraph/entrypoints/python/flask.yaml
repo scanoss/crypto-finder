@@ -1,0 +1,15 @@
+schema_version: "1"
+language: python
+framework:
+  name: flask
+  description: "Flask views and request hooks on an application or blueprint (@app.route, @bp.get, @app.before_request), and the methods of a class-based MethodView."
+entries:
+  - shape: decorator
+    from: [flask]
+    names: [route, get, post, put, delete, patch, errorhandler, before_request, after_request,
+            teardown_request, before_app_request, after_app_request, app_errorhandler]
+    root_kind: framework_entry
+  - shape: supertype
+    from: [flask.views]
+    names: [get, post, put, patch, delete, head, options, dispatch_request]
+    root_kind: framework_entry

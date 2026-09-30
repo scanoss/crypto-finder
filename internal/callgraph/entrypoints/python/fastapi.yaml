@@ -1,0 +1,11 @@
+schema_version: "1"
+language: python
+framework:
+  name: fastapi
+  description: "FastAPI path operations and hooks on an application or APIRouter (@app.get, @router.post, @app.middleware)."
+entries:
+  - shape: decorator
+    from: [fastapi]
+    names: [get, post, put, delete, patch, head, options, trace, api_route, websocket,
+            on_event, exception_handler, middleware]
+    root_kind: framework_entry

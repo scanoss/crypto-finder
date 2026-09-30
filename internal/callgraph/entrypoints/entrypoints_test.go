@@ -56,6 +56,10 @@ func TestLoadEmbedded(t *testing.T) {
 		{"node", ShapeRegistrationCall, "express", "", "get", true},
 		{"node", ShapeRegistrationCall, "memo-store", "", "get", false},
 		{"node", ShapeDecorator, "@nestjs/common", "", "Post", true},
+		{"python", ShapeDecorator, "click", "", "command", true},
+		{"python", ShapeDecorator, "flask.Flask", "", "route", true},
+		{"python", ShapeDecorator, "shop.registry", "", "command", false},
+		{"python", ShapeSupertype, "django.views.generic", "ListView", "get", true},
 	} {
 		if _, got := catalog.Match(tc.language, tc.shape, tc.pkg, tc.typeName, tc.name); got != tc.want {
 			t.Errorf("Match(%s, %s, %q, %q, %q) = %v, want %v", tc.language, tc.shape, tc.pkg, tc.typeName, tc.name, got, tc.want)

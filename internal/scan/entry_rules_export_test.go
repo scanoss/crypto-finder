@@ -185,3 +185,30 @@ func TestExportCallGraph_NodeEntryPoints(t *testing.T) {
 	}
 	checkEntryRules(t, entryRulesFixture(t, "node", "node", "typescript", callgraph.NewNodeParser(), cases), cases)
 }
+
+// TestExportCallGraph_PythonEntryPoints: Flask and FastAPI routes, Celery
+// tasks, click commands, Django views wired in urls.py and class-based view
+// methods, a __main__ guard and the project's console scripts are entry
+// points, so crypto written directly in them is reachable. A command
+// decorator from neither click nor typer is not an entry point.
+func TestExportCallGraph_PythonEntryPoints(t *testing.T) {
+	t.Parallel()
+	reachable := graphfrag.ReachabilityReachable
+	framework := callgraph.RootKindFrameworkEntry
+	cases := []entryRuleCase{
+		{id: "flask", file: "src/shop/app.py", needle: "hashlib.sha1(", reachability: reachable, rootKind: framework, first: "digest"},
+		{id: "fastapi", file: "src/shop/api/routes.py", needle: "hashlib.md5(", reachability: reachable, rootKind: framework, first: "health"},
+		{id: "apirouter", file: "src/shop/api/routes.py", needle: "hashlib.sha224(", reachability: reachable, rootKind: framework, first: "create_order"},
+		{id: "celery", file: "src/shop/tasks.py", needle: "hashlib.sha384(", reachability: reachable, rootKind: framework, first: "reconcile"},
+		{id: "orphan", file: "src/shop/tasks.py", needle: "hashlib.sha3_256(", reachability: graphfrag.ReachabilityUnreachable},
+		{id: "click", file: "src/shop/commands.py", needle: "hashlib.blake2b(", reachability: reachable, rootKind: framework, first: "export"},
+		// @commands.command() where commands comes from the application, not
+		// from click or typer.
+		{id: "not-click", file: "src/shop/plugins.py", needle: "hashlib.sha3_512(", reachability: graphfrag.ReachabilityUnreachable},
+		{id: "django-urls", file: "src/shop/web/views.py", needle: "hashlib.sha256(", reachability: reachable, rootKind: framework, first: "receipt"},
+		{id: "django-cbv", file: "src/shop/web/views.py", needle: "hashlib.blake2s(", reachability: reachable, rootKind: framework, first: "RefundView"},
+		{id: "main-guard", file: "src/shop/batch.py", needle: "hashlib.shake_128(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "batch.<module>"},
+		{id: "console-script", file: "src/shop/cli.py", needle: "hashlib.sha512(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "rotate_keys"},
+	}
+	checkEntryRules(t, entryRulesFixture(t, "python", "python", "python", callgraph.NewPythonParser(), cases), cases)
+}
