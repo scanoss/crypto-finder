@@ -212,6 +212,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	if b.ecosystem == ecosystemPython {
 		b.finishPythonBuild(graph)
 	}
+	if b.ecosystem == ecosystemJava {
+		reanchorGuessedJavaOwners(graph)
+	}
 	if provider, ok := b.parser.(publicTypePathProvider); ok {
 		graph.PublicTypePaths = provider.PublicTypePaths()
 	}
@@ -1622,7 +1625,12 @@ func abstractCandidateShape(candidate *FunctionDecl, callee FunctionID, arity in
 }
 
 // abstractClassDispatchApplies gates expandAbstractClassDispatch to calls on a
-// known class that declares no method of the callee's name and arity.
+// known type that declares no method of the callee's name and arity: a class
+// with a declared method, or any type the Java source declares. The second
+// admits an interface, whose inherited method is a superinterface's and whose
+// implementations are its implementing classes', and a type declaring no
+// method at all: oauth2-oidc-sdk calls process on nimbus-jose-jwt's
+// ConfigurableJWTProcessor, an empty interface extending JWTProcessor.
 func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispatchIndexes) bool {
 	if callee.Type == "" {
 		return false
@@ -1639,7 +1647,11 @@ func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispa
 	if _, declared := graph.Functions[callee.String()]; declared {
 		return false
 	}
-	return idx.knownClassTypes[callee.Package+"|"+callee.Type]
+	if idx.knownClassTypes[callee.Package+"|"+callee.Type] {
+		return true
+	}
+	_, declared := graph.SourceSupertypes[declOwnerFQN(callee)]
+	return declared
 }
 
 // javaObjectInstanceMethods are java.lang.Object's instance methods by

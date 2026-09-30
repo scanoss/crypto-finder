@@ -300,6 +300,12 @@ type FunctionCall struct {
 	// when its declaring class has one unambiguous constructor assignment.
 	// Empty means the receiver type is declared, unknown, or ambiguous.
 	ResolvedReceiverType string
+	// OwnerAlternatives lists every fully qualified type Callee's owner can
+	// denote when the parser had to guess it: an unqualified name the file
+	// neither imports by name nor declares, in a file with on-demand imports.
+	// The file's own package comes first, then each on-demand import in source
+	// order. Nil when the owner is certain (Java only).
+	OwnerAlternatives []string
 	// ReceiverVar preserves the original receiver variable name for selector calls
 	// like `cipher.Encrypt()` when static type information is incomplete. For a
 	// C free-function call it is the handle variable passed first, as in
