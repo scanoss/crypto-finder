@@ -100,7 +100,7 @@ func TestExportCallGraphWithOptions_InternedFrames(t *testing.T) {
 			wantFrameName: true,
 		},
 		{
-			name:          "opt-in interned 6.15",
+			name:          "interned 6.16",
 			interned:      true,
 			wantVersion:   graphfrag.CallgraphInternedSchemaVersion,
 			wantFrameName: false,
@@ -129,7 +129,7 @@ func TestExportCallGraphWithOptions_InternedFrames(t *testing.T) {
 			if !tc.interned {
 				assertJSONMatchesSchema(t, filepath.Join("..", "..", "schemas", "callgraph-schema.json"), outputPath)
 			} else {
-				assertJSONMatchesSchema(t, filepath.Join("..", "..", "schemas", "callgraph-schema-6.15.json"), outputPath)
+				assertJSONMatchesSchema(t, filepath.Join("..", "..", "schemas", "callgraph-schema-6.16.json"), outputPath)
 			}
 
 			data, err := os.ReadFile(outputPath)
