@@ -1,0 +1,16 @@
+schema_version: "1"
+language: node
+framework:
+  name: koa
+  description: "Koa applications and the @koa/router and koa-router routers."
+entries:
+  - shape: registration_call
+    from: ["@koa/router", koa-router]
+    names: [get, post, put, delete, del, patch, head, options, all]
+    path: required
+    root_kind: framework_entry
+  - shape: registration_call
+    from: [koa, "@koa/router", koa-router]
+    names: [use]
+    path: optional
+    root_kind: framework_entry

@@ -185,6 +185,7 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	if decl := p.moduleInitDecl(root, src, filePath, modulePath, bindings); decl != nil {
 		analysis.Functions = append(analysis.Functions, *decl)
 	}
+	analysis.EntryRefs = nodeEntryRefs(root, src, filePath, modulePath, bindings)
 	return analysis, nil
 }
 
@@ -516,18 +517,20 @@ func nodeAssignmentTarget(left *sitter.Node, src []byte) (name, owner string) {
 func (p *NodeParser) moduleInitDecl(root *sitter.Node, src []byte, filePath, modulePath string, bindings nodeBindings) *FunctionDecl {
 	locals := bindings.withModuleVariables(nil)
 	calls := p.extractCalls(root, src, filePath, modulePath, "", bindings, locals)
-	if len(calls) == 0 {
+	implicit := nodeImplicitCalls(root, src, filePath, modulePath, bindings, locals)
+	if len(calls) == 0 && len(implicit) == 0 {
 		return nil
 	}
 	return &FunctionDecl{
-		ID:           FunctionID{Package: modulePath, Name: moduleInitMethodName},
-		FilePath:     filePath,
-		StartLine:    int(root.StartPoint().Row) + 1,
-		EndLine:      int(root.EndPoint().Row) + 1,
-		OwnerType:    "module",
-		OwnerName:    modulePath,
-		FunctionType: functionTypeModuleInit,
-		Calls:        calls,
+		ID:            FunctionID{Package: modulePath, Name: moduleInitMethodName},
+		FilePath:      filePath,
+		StartLine:     int(root.StartPoint().Row) + 1,
+		EndLine:       int(root.EndPoint().Row) + 1,
+		OwnerType:     "module",
+		OwnerName:     modulePath,
+		FunctionType:  functionTypeModuleInit,
+		Calls:         calls,
+		ImplicitCalls: implicit,
 	}
 }
 
@@ -708,6 +711,7 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 	own := collectNodeLocalNames(params, body, src)
 	locals := imports.withModuleVariables(own)
 	decl.Calls = p.extractCalls(body, src, filePath, packagePath, owner, imports, locals)
+	decl.ImplicitCalls = nodeImplicitCalls(body, src, filePath, packagePath, imports, locals)
 	decl.ModuleVars = imports.moduleReceivers(decl.Calls, own)
 	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, owner, imports, locals)
 	return decl

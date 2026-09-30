@@ -1,0 +1,30 @@
+schema_version: "1"
+language: node
+framework:
+  name: nestjs
+  description: "NestJS method decorators: HTTP routes, microservice message and event handlers, schedules, event emitter and WebSocket handlers, queue processors."
+entries:
+  - shape: decorator
+    from: ["@nestjs/common"]
+    names: [Get, Post, Put, Delete, Patch, Head, Options, All]
+    root_kind: framework_entry
+  - shape: decorator
+    from: ["@nestjs/microservices"]
+    names: [MessagePattern, EventPattern]
+    root_kind: framework_entry
+  - shape: decorator
+    from: ["@nestjs/schedule"]
+    names: [Cron, Interval, Timeout]
+    root_kind: framework_entry
+  - shape: decorator
+    from: ["@nestjs/event-emitter"]
+    names: [OnEvent]
+    root_kind: framework_entry
+  - shape: decorator
+    from: ["@nestjs/websockets"]
+    names: [SubscribeMessage]
+    root_kind: framework_entry
+  - shape: decorator
+    from: ["@nestjs/bull", "@nestjs/bullmq"]
+    names: [Process]
+    root_kind: framework_entry

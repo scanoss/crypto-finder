@@ -53,6 +53,9 @@ func TestLoadEmbedded(t *testing.T) {
 		{"java", ShapeDecorator, "com.acme.web", "", "GetMapping", false},
 		{"java", ShapeSupertype, "jakarta.servlet.http", "HttpServlet", "doPost", true},
 		{"java", ShapeSupertype, "com.acme.http", "HttpServlet", "doPost", false},
+		{"node", ShapeRegistrationCall, "express", "", "get", true},
+		{"node", ShapeRegistrationCall, "memo-store", "", "get", false},
+		{"node", ShapeDecorator, "@nestjs/common", "", "Post", true},
 	} {
 		if _, got := catalog.Match(tc.language, tc.shape, tc.pkg, tc.typeName, tc.name); got != tc.want {
 			t.Errorf("Match(%s, %s, %q, %q, %q) = %v, want %v", tc.language, tc.shape, tc.pkg, tc.typeName, tc.name, got, tc.want)

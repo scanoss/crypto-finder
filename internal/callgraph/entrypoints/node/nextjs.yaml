@@ -1,0 +1,36 @@
+schema_version: "1"
+language: node
+framework:
+  name: nextjs
+  description: "Next.js file conventions. A file counts only when the nearest package.json declares next as a dependency. names lists the exports Next.js calls; default is the default export, and a default export that wraps a function (export default withAuth(Page)) names the wrapped one."
+entries:
+  # app router route handlers: app/**/route.ts, one export per HTTP method.
+  - shape: file_convention
+    from: [next]
+    directory: app
+    files: [route]
+    names: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+    root_kind: framework_entry
+  # app router files Next.js renders.
+  - shape: file_convention
+    from: [next]
+    directory: app
+    files: [page, layout, template, loading, error, not-found, default, global-error]
+    names: [default, generateMetadata, generateStaticParams]
+    root_kind: framework_entry
+  # pages router pages and pages/api routes.
+  - shape: file_convention
+    from: [next]
+    directory: pages
+    names: [default, getServerSideProps, getStaticProps, getStaticPaths]
+    root_kind: framework_entry
+  - shape: file_convention
+    from: [next]
+    files: [middleware]
+    names: [middleware, default]
+    root_kind: framework_entry
+  - shape: file_convention
+    from: [next]
+    files: [instrumentation]
+    names: [register]
+    root_kind: framework_entry

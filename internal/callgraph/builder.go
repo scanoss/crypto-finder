@@ -215,6 +215,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	if b.ecosystem == ecosystemJava {
 		reanchorGuessedJavaOwners(graph)
 	}
+	resolveEntryRefs(graph)
 	if provider, ok := b.parser.(publicTypePathProvider); ok {
 		graph.PublicTypePaths = provider.PublicTypePaths()
 	}
@@ -496,6 +497,7 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 		mergeSourceSupertypes(graph, analysis.Supertypes)
 		b.mergeAnalysisFunctions(graph, analysis)
 		mergeJavaStringConstants(graph, analysis)
+		graph.entryRefs = append(graph.entryRefs, analysis.EntryRefs...)
 	}
 }
 
@@ -978,6 +980,9 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 	for callerKey, fn := range graph.Functions {
 		for i := range fn.Calls {
 			b.indexCallDispatch(graph, callerKey, &fn.Calls[i], idx)
+		}
+		for i := range fn.ImplicitCalls {
+			b.indexCallDispatch(graph, callerKey, &fn.ImplicitCalls[i], idx)
 		}
 	}
 }

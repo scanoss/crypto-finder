@@ -1,0 +1,11 @@
+schema_version: "1"
+language: node
+framework:
+  name: fastify
+  description: "Fastify route shorthands: fastify.get('/x', handler)."
+entries:
+  - shape: registration_call
+    from: [fastify]
+    names: [get, post, put, delete, patch, head, options, all]
+    path: required
+    root_kind: framework_entry

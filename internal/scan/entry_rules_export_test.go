@@ -151,3 +151,37 @@ func TestExportCallGraph_JavaContainerEntryPoints(t *testing.T) {
 	}
 	checkEntryRules(t, entryRulesFixture(t, "java", "java", "java", callgraph.NewJavaParser(), cases), cases)
 }
+
+// TestExportCallGraph_NodeEntryPoints: route handlers, Next.js and NestJS
+// handlers, React components reached through JSX, the package entry and
+// require.main === module are where JavaScript and TypeScript chains start. A
+// function written inline as an argument runs when the call it is passed to
+// runs, so crypto in a Promise executor is reached through the function that
+// creates the promise. A .get(path, fn) on a receiver no router package
+// provides is not a route.
+func TestExportCallGraph_NodeEntryPoints(t *testing.T) {
+	t.Parallel()
+	reachable := graphfrag.ReachabilityReachable
+	cases := []entryRuleCase{
+		// app.post('/sessions', (req, res) => signSession(..))
+		{id: "route-inline", file: "src/security/tokens.ts", needle: `createHash('sha256')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "server.<anonymous>@8:"},
+		// crypto directly in the route's arrow
+		{id: "route-own", file: "src/server.ts", needle: `createHash('sha1')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "server.<anonymous>@12:"},
+		// app.get('/export', exportHandler), exportHandler imported
+		{id: "route-ref", file: "src/routes/export.ts", needle: `createHash('md5')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "export.exportHandler"},
+		// app.listen(8080, () => warmCache()) at the top of the package entry
+		{id: "listen-callback", file: "src/security/tokens.ts", needle: `createHash('sha384')`, reachability: reachable, rootKind: callgraph.RootKindMain, first: "server.<module>"},
+		{id: "exported-uncalled", file: "src/security/tokens.ts", needle: `createHash('md4')`, reachability: graphfrag.ReachabilityUnreachable},
+		{id: "promise-executor", file: "src/security/tokens.ts", needle: `createHash('ripemd160')`, reachability: reachable, rootKind: callgraph.RootKindNoCallers, first: "tokens.fetchLegacy"},
+		// AccountPage renders <Statements/>, which calls avatarUrl
+		{id: "jsx", file: "src/lib/avatar.ts", needle: `createHash('md5')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "AccountPage.AccountPage"},
+		{id: "next-route", file: "src/app/api/keys/route.ts", needle: `createHash('sha224')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "route.POST"},
+		{id: "nest", file: "src/keys.controller.ts", needle: `createHash('sha512')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "KeysController.rotate"},
+		{id: "require-main", file: "src/cli.js", needle: `createHash('sha512-256')`, reachability: reachable, rootKind: callgraph.RootKindMain, first: "cli.<module>"},
+		{id: "library-export", file: "packages/hashlib/lib/index.js", needle: `createHash('sha3-256')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "fingerprint"},
+		// memo.get('/session', () => ..): memo comes from no router package,
+		// so the callback is called by the module that passes it, not a route.
+		{id: "not-a-router", file: "src/cache/warm.ts", needle: `createHash('sha512-224')`, reachability: reachable, rootKind: callgraph.RootKindNoCallers, first: "warm.<module>"},
+	}
+	checkEntryRules(t, entryRulesFixture(t, "node", "node", "typescript", callgraph.NewNodeParser(), cases), cases)
+}
