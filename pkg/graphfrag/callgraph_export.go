@@ -149,6 +149,10 @@ type ExportFindingGraph struct {
 	// Reachability is the explicit reachability state (6.8+): one of the
 	// Reachability* constants. Supersedes the implicit chain-presence signal.
 	Reachability string `json:"reachability,omitempty"`
+	// UnresolvedReason says why an unknown verdict is unknown. The stitch sets
+	// only unresolved_dispatch: the root reaches the finding through a
+	// name_only edge and through nothing else.
+	UnresolvedReason string `json:"unresolved_reason,omitempty"`
 	// Analysis reports call-chain and parameter completeness (6.8+).
 	Analysis *ExportFindingAnalysis `json:"analysis,omitempty"`
 }
@@ -598,7 +602,8 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		}
 		stampStitchedFindingGraph(&fg, r, grp.pathCountTruncated, grp.chainsTruncated, grp.unattributed)
 		r.markComposedRouteAnalysis(&fg, grp.anchorNode)
-		r.upgradeComposedReachability(&fg)
+		r.upgradeComposedReachability(&fg, grp.anchorNode)
+		r.markUnresolvedDispatch(&fg, grp.anchorNode)
 		out.FindingGraphs = append(out.FindingGraphs, fg)
 	}
 
@@ -792,8 +797,10 @@ func (r *Result) markComposedRouteAnalysis(fg *ExportFindingGraph, anchor graphN
 // upgradeComposedReachability marks a finding proven through a composed
 // dependency entry point as reachable. The chain itself is summarized (depth
 // only), not materialized frame by frame, so call-chain analysis is partial.
-func (r *Result) upgradeComposedReachability(fg *ExportFindingGraph) {
-	if fg.Reachability == ReachabilityReachable {
+// The mine-time index counts routes over name_only edges too, so it proves
+// nothing for a finding the root reaches only through one.
+func (r *Result) upgradeComposedReachability(fg *ExportFindingGraph, anchor graphNode) {
+	if fg.Reachability == ReachabilityReachable || r.unresolvedDispatchOps[anchor] {
 		return
 	}
 	if _, ok := r.composedFindingDepths[composedFindingKey(fg.FindingID)]; !ok {
