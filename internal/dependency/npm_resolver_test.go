@@ -607,14 +607,32 @@ func TestNpmResolver_CanResolve(t *testing.T) {
 
 	resolver := NewNpmResolver()
 
-	t.Run("package-json-at-root", func(t *testing.T) {
+	t.Run("package-json-and-lockfile-at-root", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		for _, name := range []string{"package.json", "package-lock.json"} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(`{"name":"use"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = false, want true with package.json and package-lock.json at the root")
+		}
+	})
+
+	// Resolve fails without a lockfile, so claiming the target made a Node
+	// package with no lockfile fail the whole scan under --scan-dependencies.
+	t.Run("package-json-without-lockfile", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"use"}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if !resolver.CanResolve(dir) {
-			t.Fatal("CanResolve() = false, want true with package.json at the root")
+		if resolver.CanResolve(dir) {
+			t.Fatal("CanResolve() = true, want false for a package.json with no package-lock.json")
+		}
+		if got := UnresolvableSkipReason(dir, "node"); got != SkipReasonLockfileAbsent {
+			t.Fatalf("UnresolvableSkipReason() = %q, want %q", got, SkipReasonLockfileAbsent)
 		}
 	})
 

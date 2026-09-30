@@ -25,14 +25,16 @@ import (
 )
 
 // CallgraphSchemaVersion is the inlined callgraph contract and the zero-value
-// SDK/stitch default. Local CLI exports default to the interned 6.15 contract;
+// SDK/stitch default. Local CLI exports default to the interned 6.16 contract;
 // --export-callgraph-interned-frames=false selects this compatibility render.
 // Both paths use CallgraphExportSchemaVersion to stamp the selected render.
 const CallgraphSchemaVersion = "6.14"
 
 // CallgraphInternedSchemaVersion is the interned contract: call_chains frames
 // omit catalog identity and join through functions[] plus call_chain_indexes.
-const CallgraphInternedSchemaVersion = "6.15"
+// 6.16 adds the optional scan_metadata.ecosystems list; 6.15 artifacts remain
+// valid against their own published schema.
+const CallgraphInternedSchemaVersion = "6.16"
 
 // CallgraphExportSchemaVersion returns the stamped schema_version for a render.
 func CallgraphExportSchemaVersion(internedFrames bool) string {
@@ -77,7 +79,7 @@ type ScanMeta struct {
 	// ToCallgraphExport stamps CallgraphExportSchemaVersion(InternedFrames).
 	// Set this only to force a non-canonical value (tests/migration).
 	SchemaVersion string
-	// InternedFrames selects schema 6.15: catalog identity is omitted from
+	// InternedFrames selects the interned schema (6.15+): catalog identity is omitted from
 	// call_chains frames. The zero value keeps the 6.14 inlined default.
 	InternedFrames bool
 	// RootModule is the Maven/npm/etc. module string for the root component.
@@ -101,6 +103,19 @@ type CallgraphExport struct {
 type ExportScanMeta struct {
 	Ecosystem  string `json:"ecosystem,omitempty"`
 	RootModule string `json:"root_module,omitempty"`
+	// Ecosystems (6.16+) lists every call graph a live export analyzed, the
+	// primary Ecosystem first, when the scan target held first-party findings
+	// in more than one supported ecosystem. Absent for a single-ecosystem
+	// export and for stitched exports.
+	Ecosystems []ExportEcosystem `json:"ecosystems,omitempty"`
+}
+
+// ExportEcosystem describes one call graph a live export analyzed.
+type ExportEcosystem struct {
+	Ecosystem     string `json:"ecosystem"`
+	RootModule    string `json:"root_module"`
+	FunctionCount int    `json:"function_count"`
+	EdgeCount     int    `json:"edge_count"`
 }
 
 // ExportFindingGraph groups all surviving chains for one crypto finding occurrence.
@@ -124,7 +139,7 @@ type ExportFindingGraph struct {
 	// CallChainIndexes is the interned form of CallChains: each route is a
 	// list of indexes into the top-level functions[] catalog. Same order and
 	// length as CallChains. Schema 6.14 also inlines identity on CallChains
-	// frames; schema 6.15 joins identity through this list alone.
+	// frames; schema 6.15+ joins identity through this list alone.
 	CallChainIndexes [][]int `json:"call_chain_indexes,omitempty"`
 	// ForwardCalls is the finding anchor's forward call closure (6.3+): what the
 	// matched method transitively calls, with per-call-site argument data-flow.

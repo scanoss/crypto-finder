@@ -9,7 +9,7 @@ import (
 )
 
 // ExportInternedFunction is one identity record in the functions[] catalog.
-// Schema 6.15 keeps this as the join surface for call-chain frames; hop-specific
+// Schema 6.15+ keeps this as the join surface for call-chain frames; hop-specific
 // fields (entry_call, crypto_call, entry_resolution) stay on the frames.
 type ExportInternedFunction struct {
 	FunctionKey        string                `json:"function_key,omitempty"`

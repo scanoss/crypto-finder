@@ -148,6 +148,27 @@ func HasRootManifest(dir, ecosystem string) bool {
 	return false
 }
 
+// Dependency-phase skip reasons reported when a resolver has nothing it can
+// read at or below the scan target. They are values of the --progress
+// dependencies skip reason; see docs/adr/0001-opt-in-structured-progress.md.
+const (
+	// SkipReasonManifestAbsent: no manifest the ecosystem's resolver reads.
+	SkipReasonManifestAbsent = "manifest_absent"
+	// SkipReasonLockfileAbsent: a Node package.json without the
+	// package-lock.json the npm resolver needs to know what is installed.
+	SkipReasonLockfileAbsent = "lockfile_absent"
+)
+
+// UnresolvableSkipReason names why the dependency phase is skipped for a
+// target whose resolver cannot run on it and below which no resolution root
+// was discovered.
+func UnresolvableSkipReason(target, ecosystem string) string {
+	if ecosystem == ecosystemNode && fileExists(filepath.Join(target, npmManifest)) && !fileExists(filepath.Join(target, npmLockfile)) {
+		return SkipReasonLockfileAbsent
+	}
+	return SkipReasonManifestAbsent
+}
+
 // hasRootManifestAbove reports whether a strict ancestor of dir carries a root
 // manifest for ecosystem. It stops at the filesystem root.
 func hasRootManifestAbove(dir, ecosystem string) bool {
