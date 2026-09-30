@@ -1200,11 +1200,21 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 	}
 
 	fg := payload.FindingGraphs[0]
-	if len(fg.CallChains) != 1 || len(fg.CallChains[0]) != 2 {
-		t.Fatalf("expected one nearest-user-to-dependency call chain of length 2, got %#v", fg.CallChains)
+	// The chain walks back through application code to TokenController.issue,
+	// which nothing calls, then crosses into the dependency.
+	if len(fg.CallChains) != 1 || len(fg.CallChains[0]) != 3 {
+		t.Fatalf("expected one call chain of length 3 from the application root into the dependency, got %#v", fg.CallChains)
 	}
-	chain := fg.CallChains[0]
+	root := fg.CallChains[0][0]
+	if root.EntryCall != nil || root.RootKind != string(callgraph.RootKindNoCallers) {
+		t.Fatalf("root frame = %#v, want no entry_call and root_kind no_callers", root)
+	}
+	chain := fg.CallChains[0][1:]
 	identities := catalogChains(t, &payload, fg)[0]
+	if identities[0].FunctionName != "example.app.TokenController.issue" {
+		t.Fatalf("unexpected chain root: %#v", identities[0])
+	}
+	identities = identities[1:]
 	if identities[0].FunctionName != "example.app.JWTCsrfTokenRepository.generateToken" || identities[1].FunctionName != "io.jsonwebtoken.impl.DefaultJwtBuilder.signWith" {
 		t.Fatalf("unexpected call chain: %#v", identities)
 	}
@@ -1219,9 +1229,6 @@ func TestExportCallGraph_OverloadedDependencyPathAndResolvedValues(t *testing.T)
 	}
 	if identities[0].StartLine != 30 || identities[1].StartLine != 261 {
 		t.Fatalf("unexpected chain start lines: %#v", identities)
-	}
-	if chain[0].EntryCall != nil {
-		t.Fatalf("first chain node should not have entry_call, got %#v", chain[0].EntryCall)
 	}
 	dependencyHop := chain[1].EntryCall
 	if dependencyHop == nil || dependencyHop.Line != 37 || dependencyHop.FilePath != "src/main/java/example/app/JWTCsrfTokenRepository.java" {
@@ -1436,11 +1443,14 @@ func TestExportCallGraph_PropagatesProvenanceAcrossDirectChain(t *testing.T) {
 		t.Fatalf("finding_graphs count = %d, want 1", len(payload.FindingGraphs))
 	}
 
+	// SecretsController.traceToken, which nothing calls, is the chain's root;
+	// the provenance under test lives on the two frames after it.
 	chain := payload.FindingGraphs[0].CallChains[0]
-	if len(chain) != 2 {
-		t.Fatalf("expected 2-node direct chain from nearest user boundary, got %#v", chain)
+	if len(chain) != 3 || chain[0].RootKind != string(callgraph.RootKindNoCallers) {
+		t.Fatalf("expected a 3-node chain from the application root, got %#v", chain)
 	}
-	identities := catalogChains(t, &payload, payload.FindingGraphs[0])[0]
+	chain = chain[1:]
+	identities := catalogChains(t, &payload, payload.FindingGraphs[0])[0][1:]
 	if identities[1].StartLine != 35 {
 		t.Fatalf("unexpected repo start_line: %#v", identities[1])
 	}

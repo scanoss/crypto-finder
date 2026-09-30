@@ -336,6 +336,9 @@ type callGraphChainNode struct {
 	EntryDeclaredType string                   `json:"entry_declared_type,omitempty"`
 	CryptoCall        *callGraphCalledFunction `json:"crypto_call,omitempty"`
 	InferredReturn    *exportInferredReturn    `json:"inferred_return,omitempty"`
+	// RootKind, on a chain's first frame only, says what that frame is; see
+	// graphfrag.ExportChainNode.RootKind.
+	RootKind string `json:"root_kind,omitempty"`
 }
 
 type callGraphCryptoEntryPoint struct {
@@ -3430,12 +3433,13 @@ func structuralTracebackChains(
 	}
 	tracer := callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
 	maxChains := ctx.emitMaxChains()
-	chains, total, truncated := tracer.TraceBackCondensed(
+	trace := tracer.TraceBackCondensed(
 		containingFn.ID,
 		ctx.userPackages,
 		callGraphExportMaxDepth,
 		maxChains,
 	)
+	chains, total, truncated := trace.Chains, trace.Total, trace.Truncated
 	// Feed the signal the 6.8 contract reads (analysis.call_chains partial,
 	// reachability downgraded to unknown) rather than tracking truncation
 	// separately. paths_total then adds what that contract cannot express: how
@@ -3493,6 +3497,9 @@ func materializeCallChainNodes(
 				applyChainEdgeResolution(ctx, &path[j], chain.Steps[j-1], step)
 			}
 		}
+		if len(path) > 0 {
+			path[0].RootKind = string(chain.RootKind)
+		}
 		enrichCallChain(path)
 		result[i] = path
 	}
@@ -3518,7 +3525,7 @@ func expandCallChainCallSites(graph *callgraph.CallGraph, chains []callgraph.Cal
 
 //nolint:gocognit // Bounded call-site cross-product is kept together so every cap check remains auditable.
 func expandOneCallChain(graph *callgraph.CallGraph, chain callgraph.CallChain, remaining int) []callgraph.CallChain {
-	variants := []callgraph.CallChain{{Steps: append([]callgraph.CallChainStep(nil), chain.Steps...)}}
+	variants := []callgraph.CallChain{{Steps: append([]callgraph.CallChainStep(nil), chain.Steps...), RootKind: chain.RootKind}}
 	for stepIndex := 1; stepIndex < len(chain.Steps); stepIndex++ {
 		caller := graph.Functions[chain.Steps[stepIndex-1].Function.String()]
 		matches := matchingInvocations(caller, chain.Steps[stepIndex].Function.String())
@@ -3528,7 +3535,7 @@ func expandOneCallChain(graph *callgraph.CallGraph, chain callgraph.CallChain, r
 		var next []callgraph.CallChain
 		for _, variant := range variants {
 			for _, call := range matches {
-				cloned := callgraph.CallChain{Steps: append([]callgraph.CallChainStep(nil), variant.Steps...)}
+				cloned := callgraph.CallChain{Steps: append([]callgraph.CallChainStep(nil), variant.Steps...), RootKind: variant.RootKind}
 				cloned.Steps[stepIndex-1].Line = call.Line
 				cloned.Steps[stepIndex-1].StartCol = call.StartCol
 				cloned.Steps[stepIndex-1].EndCol = call.EndCol

@@ -55,9 +55,23 @@ type Options[T comparable] struct {
 	// consumer code means nothing consumer-side reaches the target.
 	RootIsTerminal bool
 
+	// RootTerminal, when set, decides per node whether a node with no callers
+	// is a terminal, and RootIsTerminal is ignored. A scan that knows which
+	// code is the consumer's wants this: a consumer function nothing calls is
+	// where the consumer's program starts, while a library function nothing
+	// calls is a dead end. The target is never a terminal this way.
+	RootTerminal func(n T) bool
+
 	// MaxDepth bounds the number of frames a route may have (the target counts
 	// as one). Zero means unbounded.
 	MaxDepth int
+}
+
+func (o Options[T]) rootIsTerminal(n T) bool {
+	if o.RootTerminal != nil {
+		return o.RootTerminal(n)
+	}
+	return o.RootIsTerminal
 }
 
 // Reachable is the set of nodes that reach a target.
@@ -145,7 +159,7 @@ func (r *Reachable[T]) visit(current, target T, queue []T, opts Options[T]) []T 
 		// A node with no callers. On the mine path that is the library's public
 		// API and so a terminal; with consumer code known it means nothing
 		// consumer-side reaches the target, and the branch is simply dropped.
-		if opts.RootIsTerminal && current != target {
+		if current != target && opts.rootIsTerminal(current) {
 			r.Terminal[current] = true
 		}
 		return queue

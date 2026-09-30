@@ -429,6 +429,13 @@ type ExportChainNode struct {
 	// EntryCall is the call-site data-flow for the edge that led to this frame.
 	// Nil on the root frame and on frames derived from legacy 1.0/1.1 fragments.
 	EntryCall *ExportEntryCall `json:"entry_call,omitempty"`
+	// RootKind, on the first frame of a chain only, says what that frame is:
+	// `main`, `framework_entry` (a method a framework invokes: an override of a
+	// type outside the application, or a request-mapping, scheduling or
+	// listener annotation) or `no_callers` (application code nothing in the
+	// application calls; on a library scanned alone, a graph root). Written by
+	// the live callgraph export; absent on the stitched export.
+	RootKind string `json:"root_kind,omitempty"`
 	// CryptoCall is the matched crypto invocation, present only on the terminal frame.
 	CryptoCall *ExportCryptoCall `json:"crypto_call,omitempty"`
 }

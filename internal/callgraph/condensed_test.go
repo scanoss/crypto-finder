@@ -158,7 +158,7 @@ func TestTraceBackCondensed_KeepsBothUserCalls(t *testing.T) {
 	t.Parallel()
 	graph, target, userPackages := buildJedisShapeGraph()
 
-	chains, total, truncated := NewTracer(graph, ".").TraceBackCondensed(target, userPackages, 32, 128)
+	chains, total, truncated := traceCondensed(NewTracer(graph, "."), target, userPackages)
 
 	if total != 2 {
 		t.Fatalf("total condensed paths = %d, want 2", total)
@@ -196,7 +196,7 @@ func TestTraceBackCondensed_ReportsUserCallLines(t *testing.T) {
 	t.Parallel()
 	graph, target, userPackages := buildJedisShapeGraph()
 
-	chains, _, _ := NewTracer(graph, ".").TraceBackCondensed(target, userPackages, 32, 128)
+	chains, _, _ := traceCondensed(NewTracer(graph, "."), target, userPackages)
 
 	lines := map[string]int{}
 	for _, chain := range chains {
@@ -225,7 +225,7 @@ func TestTraceBackCondensed_CollapsesCycleInsteadOfEnumeratingIt(t *testing.T) {
 	t.Parallel()
 	graph, target, userPackages := buildJedisShapeGraph()
 
-	chains, total, _ := NewTracer(graph, ".").TraceBackCondensed(target, userPackages, 32, 128)
+	chains, total, _ := traceCondensed(NewTracer(graph, "."), target, userPackages)
 
 	if total != 2 {
 		t.Fatalf("total = %d, want 2: the retry cycle must not multiply routes", total)
@@ -251,7 +251,7 @@ func TestTraceBackCondensed_HighFanInStaysBounded(t *testing.T) {
 	graph, target := buildHighFanInGraph(8, 8)
 
 	start := time.Now()
-	chains, total, truncated := NewTracer(graph, "/").TraceBackCondensed(target, nil, 32, 128)
+	chains, total, truncated := traceCondensed(NewTracer(graph, "/"), target, nil)
 	elapsed := time.Since(start)
 
 	if len(chains) != 0 {
@@ -279,7 +279,7 @@ func TestTraceBackCondensed_MinePathUsesGraphRoots(t *testing.T) {
 	t.Parallel()
 	graph, target, _ := buildJedisShapeGraph()
 
-	chains, total, _ := NewTracer(graph, ".").TraceBackCondensed(target, nil, 32, 128)
+	chains, total, _ := traceCondensed(NewTracer(graph, "."), target, nil)
 
 	if total != 2 {
 		t.Fatalf("total = %d, want 2: one route per API from the single graph root", total)
@@ -309,7 +309,7 @@ func TestReachingFunctions_IncludesCycleMembersChainsSkip(t *testing.T) {
 	graph, target, userPackages := buildJedisShapeGraph()
 	tracer := NewTracer(graph, ".")
 
-	chains, _, _ := tracer.TraceBackCondensed(target, userPackages, 32, 128)
+	chains, _, _ := traceCondensed(tracer, target, userPackages)
 	inChains := map[string]bool{}
 	for _, chain := range chains {
 		for _, step := range chain.Steps {
@@ -439,7 +439,7 @@ func TestPostgresShape_LossIsNotTheChainCap(t *testing.T) {
 	}
 
 	// And the condensed traceback emits a chain for each route.
-	condensed, total, _ := tracer.TraceBackCondensed(target, nil, 32, 128)
+	condensed, total, _ := traceCondensed(tracer, target, nil)
 	if total != 2 {
 		t.Fatalf("total condensed routes = %d, want 2", total)
 	}
@@ -459,8 +459,8 @@ func TestTraceBackCondensed_UnreachableFindingHasNoChains(t *testing.T) {
 	graph, target, _ := buildJedisShapeGraph()
 
 	// No user package matches the graph, so nothing reaches the crypto.
-	chains, total, truncated := NewTracer(graph, ".").TraceBackCondensed(
-		target, map[string]bool{"com.other": true}, 32, 128)
+	chains, total, truncated := traceCondensed(NewTracer(graph, "."),
+		target, map[string]bool{"com.other": true})
 
 	if len(chains) != 0 || total != 0 || truncated {
 		t.Fatalf("chains=%d total=%d truncated=%v, want 0/0/false", len(chains), total, truncated)
@@ -481,7 +481,7 @@ func TestTraceBackCondensed_SkipsRoutesWhenPathCountExceedsCeiling(t *testing.T)
 	// the emit budget. Before the fix this returned 128 chains.
 	graph, target := buildHighFanInGraph(8, 6)
 
-	chains, total, truncated := NewTracer(graph, "/").TraceBackCondensed(target, nil, 32, 128)
+	chains, total, truncated := traceCondensed(NewTracer(graph, "/"), target, nil)
 
 	if total <= PathCountSkipThreshold {
 		t.Fatalf("total = %d, want more than PathCountSkipThreshold=%d so the ceiling fires", total, PathCountSkipThreshold)
@@ -502,7 +502,7 @@ func TestTraceBackCondensed_EmitsBudgetWhenOverMaxChainsButUnderCeiling(t *testi
 	// 6^4 = 1296 paths: above the 128 emit budget, under the 100000 ceiling.
 	graph, target := buildHighFanInGraph(6, 4)
 
-	chains, total, truncated := NewTracer(graph, "/").TraceBackCondensed(target, nil, 32, 128)
+	chains, total, truncated := traceCondensed(NewTracer(graph, "/"), target, nil)
 
 	if total <= 128 {
 		t.Fatalf("total = %d, want more than the emit budget", total)
@@ -516,4 +516,12 @@ func TestTraceBackCondensed_EmitsBudgetWhenOverMaxChainsButUnderCeiling(t *testi
 	if !truncated {
 		t.Fatal("truncated = false, want true when total exceeds the emit budget")
 	}
+}
+
+// traceCondensed unpacks TraceBackCondensed, at the 32-frame depth and
+// 128-chain budget these tests were written against, for tests that read its
+// three headline values.
+func traceCondensed(tracer *Tracer, target FunctionID, userPackages map[string]bool) ([]CallChain, int, bool) {
+	trace := tracer.TraceBackCondensed(target, userPackages, 32, 128)
+	return trace.Chains, trace.Total, trace.Truncated
 }

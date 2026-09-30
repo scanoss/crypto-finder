@@ -100,7 +100,7 @@ func TestPolyglotScanResolvesEachFindingInItsOwnEcosystem(t *testing.T) {
 	want := map[string]polyglotVerdict{
 		"ledger/src/main/java/com/example/ledger/DigestService.java:8": {
 			occurrenceKey: "v1:6b67f0518b5ac6be", reachability: graphfrag.ReachabilityReachable,
-			chains: [][]string{{"com.example.ledger.LedgerController.postEntry", "com.example.ledger.DigestService.fingerprint"}},
+			chains: [][]string{{"com.example.ledger.Application.main", "com.example.ledger.LedgerController.postEntry", "com.example.ledger.DigestService.fingerprint"}},
 		},
 		"ledger/src/main/java/com/example/ledger/LegacyChecksum.java:7": {
 			occurrenceKey: "v1:befe6a26b8f65d5b", reachability: graphfrag.ReachabilityUnreachable,
@@ -108,7 +108,7 @@ func TestPolyglotScanResolvesEachFindingInItsOwnEcosystem(t *testing.T) {
 		},
 		"web/src/lib/avatarHash.ts:4": {
 			occurrenceKey: "v1:45e95fa50f2c1176", reachability: graphfrag.ReachabilityReachable,
-			chains: [][]string{{"web/src/lib/avatarHash.avatarUrl", "web/src/lib/avatarHash.avatarCacheKey"}},
+			chains: [][]string{{"web/src/routes/profile.renderProfile", "web/src/lib/avatarHash.avatarUrl", "web/src/lib/avatarHash.avatarCacheKey"}},
 		},
 		"web/src/lib/avatarHash.ts:12": {
 			occurrenceKey: "v1:b0567cb3b88cfb8f", reachability: graphfrag.ReachabilityUnreachable,
