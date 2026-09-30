@@ -218,3 +218,38 @@ void flows(lbcrypto::CryptoContext<lbcrypto::DCRTPoly>& cc, lbcrypto::BinFHECont
 		}
 	}
 }
+
+// GenerateBinFHEContext takes the parameter set first in the overloads a call
+// site reaches with one to six arguments; the 8-11 argument overload takes raw
+// lattice parameters and attributes nothing.
+func TestOpenFHEBinFHEParameterSetIsOperationDetermining(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded(ecosystemCPP)
+	if err != nil {
+		t.Fatalf("LoadEmbedded(cpp): %v", err)
+	}
+
+	const method = "lbcrypto::BinFHEContext.GenerateBinFHEContext"
+	for arity := 1; arity <= 11; arity++ {
+		if arity == 7 {
+			continue
+		}
+		got := kb.ContractsFor(method, arity)
+		if len(got) != 1 {
+			t.Fatalf("ContractsFor(%q, %d) = %d, want exactly one", method, arity, len(got))
+		}
+		params := got[0].Parameters
+		if arity >= 8 {
+			if len(params) != 0 {
+				t.Errorf("arity %d: %d parameter entries, want none", arity, len(params))
+			}
+			continue
+		}
+		if len(params) != 1 || params[0].Index == nil || *params[0].Index != 0 ||
+			params[0].Role != "operation-determining" || params[0].Contributes == nil ||
+			params[0].Contributes.Property != "parameterSet" {
+			t.Errorf("arity %d: parameters = %+v, want index 0 operation-determining parameterSet", arity, params)
+		}
+	}
+}
