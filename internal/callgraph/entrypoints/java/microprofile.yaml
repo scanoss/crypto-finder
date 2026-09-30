@@ -1,0 +1,10 @@
+schema_version: "1"
+language: java
+framework:
+  name: microprofile
+  description: "MicroProfile Reactive Messaging channel methods."
+entries:
+  - shape: decorator
+    from: [org.eclipse.microprofile.reactive.messaging]
+    names: [Incoming, Outgoing]
+    root_kind: framework_entry

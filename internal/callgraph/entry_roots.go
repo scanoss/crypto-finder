@@ -58,32 +58,20 @@ func rootKindRank(kind RootKind) int {
 	}
 }
 
-// frameworkEntryAnnotations are the Java method annotations whose methods a
-// framework invokes by reflection, so no call edge leads to them: web request
-// mappings (Spring MVC, JAX-RS), scheduled jobs, and message or event
-// listeners.
-var frameworkEntryAnnotations = map[string]bool{
-	"RequestMapping": true, "GetMapping": true, "PostMapping": true, "PutMapping": true,
-	"DeleteMapping": true, "PatchMapping": true,
-	"GET": true, "POST": true, "PUT": true, "DELETE": true, "PATCH": true, "HEAD": true, "OPTIONS": true,
-	"Scheduled": true, "EventListener": true,
-	"KafkaListener": true, "RabbitListener": true, "JmsListener": true, "SqsListener": true,
-}
-
 // entryRootKind reports whether decl is a recognized entry point, and which
 // kind. isUserType tells whether a fully qualified type belongs to the
 // application.
 func (t *Tracer) entryRootKind(decl *FunctionDecl, isUserType func(string) bool) (RootKind, bool) {
-	if decl == nil {
+	if decl == nil || isTestDeclaration(decl) {
 		return "", false
+	}
+	if decl.EntryKind != "" {
+		return decl.EntryKind, true
 	}
 	if isMainFunction(decl) {
 		return RootKindMain, true
 	}
-	if t.isFrameworkEntry(decl, isUserType) {
-		return RootKindFrameworkEntry, true
-	}
-	return "", false
+	return t.javaCallbackEntryKind(decl, isUserType)
 }
 
 func isMainFunction(decl *FunctionDecl) bool {
@@ -97,24 +85,28 @@ func isMainFunction(decl *FunctionDecl) bool {
 	return decl.Static && len(decl.Parameters) == 1
 }
 
-func (t *Tracer) isFrameworkEntry(decl *FunctionDecl, isUserType func(string) bool) bool {
-	overrides := false
-	for _, annotation := range decl.Annotations {
-		if frameworkEntryAnnotations[annotation] {
-			return true
-		}
-		if annotation == "Override" {
-			overrides = true
-		}
-	}
-	if !overrides || decl.Static || decl.ID.Type == "" {
-		return false
+// javaCallbackEntryKind recognizes a Java method that code outside the
+// application calls: an @Override of a method of an external type
+// (HttpHandler.handle, Runnable.run), or a container callback the catalog
+// names on a subtype of a container type, which is often written without
+// @Override (HttpServlet.doPost).
+func (t *Tracer) javaCallbackEntryKind(decl *FunctionDecl, isUserType func(string) bool) (RootKind, bool) {
+	if decl.Static || decl.ID.Type == "" {
+		return "", false
 	}
 	owner := decl.ID.Type
 	if decl.ID.Package != "" {
 		owner = decl.ID.Package + "." + decl.ID.Type
 	}
-	return t.hasExternalSupertype(owner, isUserType, map[string]bool{})
+	for _, annotation := range decl.Annotations {
+		if annotation == "Override" {
+			if t.hasExternalSupertype(owner, isUserType, map[string]bool{}) {
+				return RootKindFrameworkEntry, true
+			}
+			break
+		}
+	}
+	return t.javaSupertypeEntryKind(decl, owner, isUserType)
 }
 
 // hasExternalSupertype reports whether typeName extends or implements, directly

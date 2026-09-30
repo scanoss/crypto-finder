@@ -1,0 +1,10 @@
+schema_version: "1"
+language: java
+framework:
+  name: ejb
+  description: "Jakarta Enterprise Beans timer callbacks, javax and jakarta namespaces."
+entries:
+  - shape: decorator
+    from: [javax.ejb, jakarta.ejb]
+    names: [Schedule, Schedules, Timeout]
+    root_kind: framework_entry

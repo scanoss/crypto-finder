@@ -226,6 +226,10 @@ type FunctionDecl struct {
 	// carries, as "Override" (Java methods only). Read to recognize functions
 	// a framework calls, which no call edge in the graph leads to.
 	Annotations []string
+	// EntryKind is set when a parser recognizes the declaration as an entry
+	// point that a framework or the runtime calls, which no call edge in the
+	// graph leads to. entryRootKind reads it first.
+	EntryKind RootKind
 	// FileTypeNamesAtRisk is the declaring file's FileAnalysis.TypeNamesAtRisk,
 	// shared by every declaration of the file (Java only).
 	FileTypeNamesAtRisk map[string]bool

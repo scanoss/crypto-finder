@@ -1,0 +1,22 @@
+schema_version: "1"
+language: java
+framework:
+  name: micronaut
+  description: "Micronaut HTTP routes, @Bean factories, schedules and event listeners."
+entries:
+  - shape: decorator
+    from: [io.micronaut.http.annotation]
+    names: [Get, Post, Put, Delete, Patch, Head, Options, Trace, Error]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [io.micronaut.context.annotation]
+    names: [Bean]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [io.micronaut.scheduling.annotation]
+    names: [Scheduled]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [io.micronaut.runtime.event.annotation]
+    names: [EventListener]
+    root_kind: framework_entry
