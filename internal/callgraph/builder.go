@@ -198,6 +198,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	sourceParseStart := time.Now()
 	b.resetPythonBuildState()
 	b.artifacts = newArtifactScope(b.artifactGraph)
+	graph.artifacts = b.artifacts
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
 	for _, pkg := range packages {
 		if err := b.analyzePackage(pkg, graph); err != nil {
@@ -1397,7 +1398,7 @@ func (b *Builder) expandInterfaceDispatch(
 		if !ok {
 			continue
 		}
-		if kind == EdgeKindNameOnly && !b.artifacts.mayExtend(declOwnerFQN(candidate.ID), declOwnerFQN(calleeDecl.ID)) {
+		if kind == EdgeKindNameOnly && !b.artifacts.compilesAgainst(declOwnerFQN(candidate.ID), declOwnerFQN(calleeDecl.ID)) {
 			continue
 		}
 		owner := declOwnerFQN(candidate.ID)

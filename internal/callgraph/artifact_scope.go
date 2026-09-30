@@ -71,28 +71,28 @@ func (s *artifactScope) record(fn *FunctionDecl, artifact string) {
 	}
 }
 
-// mayExtend reports whether a type declared by sub's artifact can be a
-// subtype of super. Unknown artifacts allow it, which keeps a graph built
-// without artifact information as it was.
-func (s *artifactScope) mayExtend(sub, super string) bool {
+// compilesAgainst reports whether code of user's artifact can name used:
+// the type user can extend, or call. Unknown artifacts allow it, which keeps
+// a graph built without artifact information as it was.
+func (s *artifactScope) compilesAgainst(user, used string) bool {
 	if s == nil {
 		return true
 	}
-	subArtifact, superArtifact := s.typeArtifact[sub], s.typeArtifact[super]
+	userArtifact, usedArtifact := s.typeArtifact[user], s.typeArtifact[used]
 	switch {
-	case subArtifact == "" || superArtifact == "":
+	case userArtifact == "" || usedArtifact == "":
 		return true
-	case subArtifact == superArtifact, subArtifact == projectArtifact:
+	case userArtifact == usedArtifact, userArtifact == projectArtifact:
 		return true
-	case superArtifact == projectArtifact:
+	case usedArtifact == projectArtifact:
 		return false
 	}
-	return s.dependsOn(subArtifact)[superArtifact]
+	return s.dependsOn(userArtifact)[usedArtifact]
 }
 
 // related reports whether either type can be the other's subtype.
 func (s *artifactScope) related(a, b string) bool {
-	return s.mayExtend(a, b) || s.mayExtend(b, a)
+	return s.compilesAgainst(a, b) || s.compilesAgainst(b, a)
 }
 
 // dependsOn returns artifact's transitive dependencies.

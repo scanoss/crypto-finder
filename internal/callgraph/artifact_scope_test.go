@@ -206,7 +206,7 @@ public class RSASSAVerifier extends Provider implements JWSVerifier {
 	}
 }
 
-func TestArtifactScope_MayExtend(t *testing.T) {
+func TestArtifactScope_CompilesAgainst(t *testing.T) {
 	scope := newArtifactScope(map[string][]string{"b": {"c"}, "c": {"d"}})
 	scope.typeArtifact = map[string]string{
 		"p.Project": projectArtifact, "a.A": "a", "b.B": "b", "d.D": "d", "x.Shared": "",
@@ -224,8 +224,57 @@ func TestArtifactScope_MayExtend(t *testing.T) {
 		{"q.Unrecorded", "a.A", true}, // not a graph type: unknown
 	}
 	for _, tc := range cases {
-		if got := scope.mayExtend(tc.sub, tc.super); got != tc.want {
-			t.Errorf("mayExtend(%s, %s) = %v, want %v", tc.sub, tc.super, got, tc.want)
+		if got := scope.compilesAgainst(tc.sub, tc.super); got != tc.want {
+			t.Errorf("compilesAgainst(%s, %s) = %v, want %v", tc.sub, tc.super, got, tc.want)
 		}
+	}
+}
+
+// TestArtifactScope_SimpleNameBytecodeRewriteStaysInCompilingArtifacts: the
+// parser keys `new Holder(queue)` on a private nested class as a same-package
+// Holder no graph declares, and the bytecode index repairs such a call by the
+// type's simple name. BouncyCastle's x509 Holder is the only Holder the index
+// has, but ehcache does not compile against BouncyCastle, so the call must not
+// be rewritten to it: that link chained ehcache into bcprov findings.
+func TestArtifactScope_SimpleNameBytecodeRewriteStaysInCompilingArtifacts(t *testing.T) {
+	ehcache := artifactFixture{module: "net.sf.ehcache:ehcache-core", version: "2.6.2", files: map[string]string{
+		"net/sf/ehcache/util/lang/VicariousThreadLocal.java": `package net.sf.ehcache.util.lang;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
+public class VicariousThreadLocal {
+  private final ReferenceQueue<Object> queue = new ReferenceQueue<Object>();
+  private Holder createHolder() { return new Holder(queue); }
+  private static class Holder extends WeakReference<Object> {
+    Holder(ReferenceQueue<Object> queue) { super(null, queue); }
+  }
+}
+`,
+	}}
+	bcprov := artifactFixture{module: "org.bouncycastle:bcprov-jdk15on", version: "1.70", files: map[string]string{
+		"org/bouncycastle/asn1/x509/Holder.java": `package org.bouncycastle.asn1.x509;
+public class Holder {
+  public Holder(Object o) {}
+}
+`,
+	}}
+	index := map[string][]methodSignature{
+		"org.bouncycastle.asn1.x509.Holder.<init>": {{
+			className: "Holder", methodName: "<init>", fullClass: "org.bouncycastle.asn1.x509.Holder", paramTypes: []string{"Object"},
+		}},
+	}
+	caller := "net.sf.ehcache.util.lang.(VicariousThreadLocal).createHolder#0"
+	bcHolder := "org.bouncycastle.asn1.x509.(Holder).<init>#1"
+
+	graph := buildArtifactGraph(t, nil, ehcache, bcprov)
+	rewriteJavaCallsFromIndex(graph, buildJavaMethodLookup(index))
+	if hasCaller(graph, bcHolder, caller) {
+		t.Fatalf("Callers[%s] = %v: ehcache does not compile against bcprov", bcHolder, graph.Callers[bcHolder])
+	}
+
+	// The same repair across a real dependency still applies.
+	graph = buildArtifactGraph(t, map[string][]string{"net.sf.ehcache:ehcache-core": {"org.bouncycastle:bcprov-jdk15on"}}, ehcache, bcprov)
+	rewriteJavaCallsFromIndex(graph, buildJavaMethodLookup(index))
+	if !hasCaller(graph, bcHolder, caller) {
+		t.Fatalf("Callers[%s] = %v, want %s when ehcache depends on bcprov", bcHolder, graph.Callers[bcHolder], caller)
 	}
 }

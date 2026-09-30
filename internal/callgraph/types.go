@@ -498,6 +498,10 @@ type CallGraph struct {
 	// (EdgeResolutionEndpoints), so per-pair views are one O(E) pass away —
 	// see internal/scan's indexFragmentEdgeResolutions.
 	EdgeResolutions map[string]EdgeResolution
+	// artifacts records which artifact declares each source type, so a pass
+	// that links a call by a type's simple name keeps it within artifacts
+	// the caller compiles against. Nil for a graph not built by a Builder.
+	artifacts *artifactScope
 	// PublicTypePaths maps a type's declaring path to the public paths a
 	// `pub use` re-exports it under ("rsa::pkcs1v15::signing_key::SigningKey"
 	// -> ["rsa::pkcs1v15::SigningKey"]). Contracts name the public path, the
