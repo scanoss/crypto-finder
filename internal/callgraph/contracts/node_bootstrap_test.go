@@ -32,7 +32,7 @@ func TestLoadEmbeddedNode(t *testing.T) {
 	// that entry point returns. The pair is what makes the second half of a
 	// fluent call sequence resolvable at all.
 	for _, want := range []string{
-		"forge.pki.certificateFromPem#1",
+		"node-forge.pki.certificateFromPem#1",
 		"node-forge.Certificate.setSubject#1",
 	} {
 		if _, ok := kb.Contracts[want]; !ok {
