@@ -239,3 +239,23 @@ func TestExportCallGraph_GoEntryPoints(t *testing.T) {
 	}
 	checkEntryRules(t, entryRulesFixture(t, "golang", "go", "go", callgraph.NewGoParser(), cases), cases)
 }
+
+// TestExportCallGraph_MainInOtherLanguages: a C, C++ or Rust main is a
+// program entry point, so crypto written directly in it is reachable.
+func TestExportCallGraph_MainInOtherLanguages(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		dir, ecosystem, language, file, needle string
+		parser                                 callgraph.Parser
+	}{
+		{"c", "c", "c", "main.c", "EVP_md5()", callgraph.NewCParser()},
+		{"cpp", "cpp", "cpp", "main.cpp", "EVP_sha1()", callgraph.NewCPPParser()},
+		{"rust", "rust", "rust", "src/main.rs", "Sha256::digest(", callgraph.NewRustParser()},
+	} {
+		cases := []entryRuleCase{{
+			id: tc.dir, file: tc.file, needle: tc.needle,
+			reachability: graphfrag.ReachabilityReachable, rootKind: callgraph.RootKindMain, first: "main",
+		}}
+		checkEntryRules(t, entryRulesFixture(t, tc.dir, tc.ecosystem, tc.language, tc.parser, cases), cases)
+	}
+}
