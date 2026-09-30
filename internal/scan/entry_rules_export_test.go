@@ -212,3 +212,30 @@ func TestExportCallGraph_PythonEntryPoints(t *testing.T) {
 	}
 	checkEntryRules(t, entryRulesFixture(t, "python", "python", "python", callgraph.NewPythonParser(), cases), cases)
 }
+
+// TestExportCallGraph_GoEntryPoints: init functions and package variable
+// initializers, net/http handlers registered by name, through
+// http.HandlerFunc or as a method value, ServeHTTP methods, gRPC service
+// methods and cobra command functions are entry points, so crypto written
+// directly in them is reachable. A method value is matched on its receiver's
+// type, so a method of the same name on another type is not an entry point.
+func TestExportCallGraph_GoEntryPoints(t *testing.T) {
+	t.Parallel()
+	reachable := graphfrag.ReachabilityReachable
+	framework := callgraph.RootKindFrameworkEntry
+	cases := []entryRuleCase{
+		{id: "init", file: "main.go", needle: "sha256.Sum256(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "<init:"},
+		{id: "varinit", file: "main.go", needle: "sha256.Sum224(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "<varinit:"},
+		{id: "handlefunc", file: "handlers.go", needle: "md5.Sum(", reachability: reachable, rootKind: framework, first: "digest"},
+		{id: "handlerfunc", file: "handlers.go", needle: "sha1.Sum(", reachability: reachable, rootKind: framework, first: "legacy"},
+		{id: "method-value", file: "handlers.go", needle: "sha512.Sum512(", reachability: reachable, rootKind: framework, first: "sign"},
+		// audit.sign has the name of the registered api.sign, but nothing
+		// registers an audit.
+		{id: "same-name-method", file: "handlers.go", needle: "md5.New()", reachability: graphfrag.ReachabilityUnreachable},
+		{id: "servehttp", file: "handlers.go", needle: "hmac.New(", reachability: reachable, rootKind: framework, first: "ServeHTTP"},
+		{id: "orphan", file: "handlers.go", needle: "sha512.Sum384(", reachability: graphfrag.ReachabilityUnreachable},
+		{id: "grpc", file: "grpc.go", needle: "sha512.Sum512_256(", reachability: reachable, rootKind: framework, first: "Rotate"},
+		{id: "cobra", file: "cmd.go", needle: "sha512.Sum512_224(", reachability: reachable, rootKind: framework, first: "runExport"},
+	}
+	checkEntryRules(t, entryRulesFixture(t, "golang", "go", "go", callgraph.NewGoParser(), cases), cases)
+}

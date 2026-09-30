@@ -60,6 +60,11 @@ func TestLoadEmbedded(t *testing.T) {
 		{"python", ShapeDecorator, "flask.Flask", "", "route", true},
 		{"python", ShapeDecorator, "shop.registry", "", "command", false},
 		{"python", ShapeSupertype, "django.views.generic", "ListView", "get", true},
+		{"go", ShapeRegistrationCall, "net/http", "", "HandleFunc", true},
+		{"go", ShapeRegistrationCall, "github.com/go-chi/chi/v5", "", "Get", true},
+		{"go", ShapeRegistrationCall, "example.com/cache", "", "Get", false},
+		{"go", ShapeSupertype, "example.com/shop/gen/keys", "UnimplementedKeysServer", "Rotate", true},
+		{"go", ShapeSupertype, "", "UnimplementedKeysServer", "Rotate", false},
 	} {
 		if _, got := catalog.Match(tc.language, tc.shape, tc.pkg, tc.typeName, tc.name); got != tc.want {
 			t.Errorf("Match(%s, %s, %q, %q, %q) = %v, want %v", tc.language, tc.shape, tc.pkg, tc.typeName, tc.name, got, tc.want)

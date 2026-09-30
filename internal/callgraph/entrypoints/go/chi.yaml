@@ -1,0 +1,17 @@
+schema_version: "1"
+language: go
+framework:
+  name: chi
+  description: "go-chi routers: r.Get(\"/x\", h), r.Method(\"GET\", \"/x\", h), r.Use(mw)."
+entries:
+  - shape: registration_call
+    from: [github.com/go-chi/chi]
+    names: [Get, Post, Put, Delete, Patch, Head, Options, Connect, Trace,
+            Handle, HandleFunc, Method, MethodFunc]
+    path: required
+    root_kind: framework_entry
+  - shape: registration_call
+    from: [github.com/go-chi/chi]
+    names: [Use]
+    path: optional
+    root_kind: framework_entry

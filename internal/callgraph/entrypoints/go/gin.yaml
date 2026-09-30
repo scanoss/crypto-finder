@@ -1,0 +1,16 @@
+schema_version: "1"
+language: go
+framework:
+  name: gin
+  description: "gin engines and router groups: r.GET(\"/x\", h), r.Any(\"/x\", h), r.Use(mw)."
+entries:
+  - shape: registration_call
+    from: [github.com/gin-gonic/gin]
+    names: [GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, Any, Handle, Match]
+    path: required
+    root_kind: framework_entry
+  - shape: registration_call
+    from: [github.com/gin-gonic/gin]
+    names: [Use]
+    path: optional
+    root_kind: framework_entry

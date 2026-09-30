@@ -23,10 +23,15 @@ import (
 
 // EntryRef names a function that source code hands to a framework instead of
 // calling it: the handler of app.get('/x', handler), the view of a Django
-// path('x/', views.index).
+// path('x/', views.index), a Go http.HandleFunc("/", handle).
 type EntryRef struct {
 	// Function is the handler's identity as the registering file spells it.
+	// A Go method matches with a pointer or a value receiver: the method
+	// value s.handleLogin does not say which.
 	Function FunctionID
+	// AllExported matches every exported method of Function.Type, whose Name
+	// is empty: a gRPC service implementation.
+	AllExported bool
 	// Module says Function.Package is a Python module path, as an import
 	// spells it (shop.web.views). The graph keys a Python function by its
 	// defining module, so it also matches that module under the root module
@@ -48,11 +53,11 @@ func resolveEntryRefs(graph *CallGraph) {
 	}
 	var byPackage map[string][]*FunctionDecl
 	for _, ref := range refs {
-		if decl := graph.Functions[ref.Function.String()]; decl != nil {
+		if decl := lookupEntryRef(graph, ref.Function); decl != nil && !ref.AllExported {
 			markEntry(decl, ref.Kind)
 			continue
 		}
-		if !ref.Module {
+		if !ref.AllExported && !ref.Module {
 			continue
 		}
 		if byPackage == nil {
@@ -61,7 +66,15 @@ func resolveEntryRefs(graph *CallGraph) {
 				byPackage[decl.ID.Package] = append(byPackage[decl.ID.Package], decl)
 			}
 		}
-		markPythonModuleFunction(byPackage, ref)
+		if ref.Module {
+			markPythonModuleFunction(byPackage, ref)
+			continue
+		}
+		for _, decl := range byPackage[ref.Function.Package] {
+			if ref.matchesMethod(decl) {
+				markEntry(decl, ref.Kind)
+			}
+		}
 	}
 }
 
@@ -85,6 +98,28 @@ func markPythonModuleFunction(byPackage map[string][]*FunctionDecl, ref EntryRef
 			}
 		}
 	}
+}
+
+// lookupEntryRef returns the declaration id names, with either receiver form
+// for a method.
+func lookupEntryRef(graph *CallGraph, id FunctionID) *FunctionDecl {
+	if decl := graph.Functions[id.String()]; decl != nil || id.Type == "" {
+		return decl
+	}
+	if strings.HasPrefix(id.Type, "*") {
+		id.Type = strings.TrimPrefix(id.Type, "*")
+	} else {
+		id.Type = "*" + id.Type
+	}
+	return graph.Functions[id.String()]
+}
+
+func (ref EntryRef) matchesMethod(decl *FunctionDecl) bool {
+	if decl.ID.Type == "" {
+		return false
+	}
+	return strings.TrimPrefix(decl.ID.Type, "*") == strings.TrimPrefix(ref.Function.Type, "*") &&
+		isExportedName(decl.ID.Name)
 }
 
 func markEntry(decl *FunctionDecl, kind RootKind) {

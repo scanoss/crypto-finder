@@ -1,0 +1,12 @@
+schema_version: "1"
+language: go
+framework:
+  name: cobra
+  description: "cobra commands: the functions a cobra.Command literal runs."
+entries:
+  - shape: handler_field
+    from: [github.com/spf13/cobra]
+    types: [Command]
+    names: [Run, RunE, PreRun, PreRunE, PostRun, PostRunE,
+            PersistentPreRun, PersistentPreRunE, PersistentPostRun, PersistentPostRunE]
+    root_kind: framework_entry

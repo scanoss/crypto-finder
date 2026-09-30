@@ -99,6 +99,7 @@ func (p *GoParser) ParseFile(filePath, packagePath string) (*FileAnalysis, error
 
 	// Extract function and method declarations with their calls
 	p.extractFunctions(root, src, filePath, packagePath, analysis)
+	applyGoEntryRules(root, src, packagePath, analysis)
 
 	return analysis, nil
 }
