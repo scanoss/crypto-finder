@@ -1,0 +1,73 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "noise-protocol"
+  coordinates:
+    - "noise-protocol"
+  version_range: ">=3.0.0"
+  description: "noise-protocol: the Noise_*_25519_ChaChaPoly_BLAKE2b handshake"
+
+# SEVEN FREE FUNCTIONS ON A FROZEN EXPORT OBJECT. There are no classes here: the
+# handshake state is a plain object the caller threads through writeMessage and
+# readMessage, so this KB is flat and initialize is a factory for that state
+# rather than a constructor.
+#
+# THE CIPHER SUITE IS NOT IN ANY ARGUMENT AND SO IT IS NOT IN THIS KB EITHER.
+# The package implements one suite -- X25519, ChaChaPoly, BLAKE2b -- with no
+# negotiation and no parameter that could change it. The rules publish it
+# unconditionally; there is nothing here for a contract to type.
+#
+# WHAT IS IN AN ARGUMENT is the handshake pattern, `initialize("KK", ..)`, and
+# the KB keeps the arities apart so the rules can read it: initialize takes
+# three to six arguments depending on which static and remote keys the pattern
+# needs, and `NN` genuinely takes three while `KK` takes six.
+#
+# keygen AND seedKeygen ARE DECLARED SEPARATELY rather than as one entry at two
+# arities. They differ in more than shape: seedKeygen derives the key
+# DETERMINISTICALLY from its argument, so the key is only as secret as that
+# seed. Collapsing them would put a reproducible key and a random one under the
+# same coordinate.
+#
+# Deliberately NOT contracted: destroy, SKLEN and PKLEN. One zeroes a buffer and
+# the others are integers.
+contracts:
+  - method: "noise-protocol.initialize"
+    arity: 3
+    return: { type: "noise-protocol.HandshakeState", confidence: high }
+    role: factory
+  - method: "noise-protocol.initialize"
+    arity: 4
+    return: { type: "noise-protocol.HandshakeState", confidence: high }
+    role: factory
+  - method: "noise-protocol.initialize"
+    arity: 5
+    return: { type: "noise-protocol.HandshakeState", confidence: high }
+    role: factory
+  - method: "noise-protocol.initialize"
+    arity: 6
+    return: { type: "noise-protocol.HandshakeState", confidence: high }
+    role: factory
+  - method: "noise-protocol.writeMessage"
+    arity: 3
+    return: { type: "noise-protocol.SplitKeys", confidence: high }
+    role: operation
+  - method: "noise-protocol.readMessage"
+    arity: 3
+    return: { type: "noise-protocol.SplitKeys", confidence: high }
+    role: operation
+  - method: "noise-protocol.keygen"
+    arity: 0
+    return: { type: "noise-protocol.KeyPair", confidence: high }
+    role: operation
+  - method: "noise-protocol.keygen"
+    arity: 1
+    return: { type: "noise-protocol.KeyPair", confidence: high }
+    role: operation
+  - method: "noise-protocol.seedKeygen"
+    arity: 1
+    return: { type: "noise-protocol.KeyPair", confidence: high }
+    role: operation
+  - method: "noise-protocol.seedKeygen"
+    arity: 2
+    return: { type: "noise-protocol.KeyPair", confidence: high }
+    role: operation
