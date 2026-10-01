@@ -1,0 +1,1 @@
+- A parameter condition now matches a string literal written with single quotes or a plain backtick template. `hashlib.new('sha1')` and `createHash('sha1')` satisfy `param[0]==sha1`; before, only double-quoted literals had their quotes stripped, so the quoted text never equalled the rule's value and the value also reached asset names with its quotes.

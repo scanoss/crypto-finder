@@ -3235,10 +3235,22 @@ func resolveSimpleCallgraphSourceValue(nodes []callgraph.SourceNode) (string, bo
 	return resolved, resolved != ""
 }
 
+// normalizeSelectorValue strips the quotes around a string literal: double
+// quotes (Java, Go, C), single quotes (Python, JavaScript, Ruby) and a backtick
+// template without interpolation. A template with ${...} is not a constant and
+// stays as written.
 func normalizeSelectorValue(value string) string {
 	value = strings.TrimSpace(value)
-	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+	if len(value) < 2 || value[0] != value[len(value)-1] {
+		return value
+	}
+	switch value[0] {
+	case '"', '\'':
 		return value[1 : len(value)-1]
+	case '`':
+		if !strings.Contains(value, "${") {
+			return value[1 : len(value)-1]
+		}
 	}
 	return value
 }

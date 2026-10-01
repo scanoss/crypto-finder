@@ -390,6 +390,55 @@ func TestMaterializeConditionedFindings_KeepsNamedAnchor(t *testing.T) {
 	}
 }
 
+func TestNormalizeSelectorValue(t *testing.T) {
+	t.Parallel()
+
+	for in, want := range map[string]string{
+		`"SHA-1"`:         "SHA-1",
+		`'sha1'`:          "sha1",
+		"`sha1`":          "sha1",
+		"  'sha1'  ":      "sha1",
+		"`sha${bits}`":    "`sha${bits}`",
+		`'mixed"`:         `'mixed"`,
+		`'`:               `'`,
+		`sha1`:            "sha1",
+		`"a" + suffix`:    `"a" + suffix`,
+		`''`:              "",
+		`consts.HASH_SHA`: "consts.HASH_SHA",
+	} {
+		if got := normalizeSelectorValue(in); got != want {
+			t.Errorf("normalizeSelectorValue(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A Python or JavaScript call spells its literal with single quotes, and the
+// exact condition a rule carries is written without any.
+func TestConditionedRule_MatchesSingleQuotedLiteral(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, `rules:
+  - id: python.hashlib.sha1
+    message: SHA-1
+    severity: INFO
+    pattern: hashlib.new($A)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: SHA-1
+        parameterCondition: param[0]==sha1
+        api: hashlib.new
+`)
+	rule := engine.LoadRuleCryptoMetadata([]string{rules})["hashlib.new"][0]
+	for _, literal := range []string{`'sha1'`, `"sha1"`, "`sha1`"} {
+		finding := &entities.Finding{FilePath: "app.py"}
+		anchor := entities.CryptographicAsset{StartLine: 3, Metadata: map[string]string{"api": "hashlib.new"}}
+		if !appendConditionedAsset(finding, anchor, rule, []callGraphParameter{{ResolvedValue: literal}}, map[string]struct{}{}, map[string]struct{}{}) {
+			t.Errorf("literal %s did not match param[0]==sha1", literal)
+		}
+	}
+}
+
 func TestMaterializeConditionedFindings_DoesNotAttachNestedBuilderToOuterAnchor(t *testing.T) {
 	t.Parallel()
 
