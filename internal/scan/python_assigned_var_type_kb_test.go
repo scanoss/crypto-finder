@@ -72,9 +72,9 @@ def run(algorithm, mode):
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
 
-	run := graph.Functions["app.run"]
+	run := graph.Functions["app.app.run"]
 	if run == nil {
-		t.Fatalf("missing app.run; functions=%v", sortedGraphFunctionKeys(graph))
+		t.Fatalf("missing app.app.run; functions=%v", sortedGraphFunctionKeys(graph))
 	}
 	var call *callgraph.FunctionCall
 	for i := range run.Calls {

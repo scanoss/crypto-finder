@@ -98,6 +98,25 @@ type Builder struct {
 	// Python-only; consumed once by applyPythonReExports at the end of
 	// Phase 1.
 	pythonReExports map[string]map[string]string
+	// packageImportPath is the current package's ImportPath, held for the
+	// same per-package duration as packageRoot.
+	packageImportPath string
+	// pythonModules is the dotted path of every Python module parsed in this
+	// build, and pythonRootedAnalyses the project-local analyses under each
+	// non-empty root module. Python-only; consumed once by
+	// qualifyPythonProjectImports at the end of Phase 1.
+	pythonModules        map[string]bool
+	pythonRootedAnalyses map[string][]*FileAnalysis
+	// pythonInitImports are the names every parsed `__init__.py` imports,
+	// resolved into graph.PythonPublicPaths at the end of Phase 1.
+	pythonInitImports []pythonInitImport
+}
+
+// pythonInitImport is one name a package's `__init__.py` binds with
+// `from module import original [as local]`. root is the project root module
+// the file was parsed under, empty for a dependency.
+type pythonInitImport struct {
+	pkg, local, module, original, root string
 }
 
 // NewBuilder creates a new call graph builder with the given parser.
@@ -160,6 +179,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// Phase 1: Parse source files only for packages that need full analysis
 	sourceParseStart := time.Now()
 	b.pythonReExports = nil
+	b.pythonModules = nil
+	b.pythonRootedAnalyses = nil
+	b.pythonInitImports = nil
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
 	for _, pkg := range packages {
 		if err := b.analyzePackage(pkg, graph); err != nil {
@@ -171,6 +193,8 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 		markCPPProjectLocalCalls(graph)
 	}
 	if b.ecosystem == ecosystemPython {
+		qualifyPythonProjectImports(b.pythonModules, b.pythonRootedAnalyses)
+		graph.PythonPublicPaths = resolvePythonPublicPaths(b.pythonInitImports, b.pythonModules)
 		applyPythonReExports(graph, b.pythonReExports)
 	}
 	if provider, ok := b.parser.(publicTypePathProvider); ok {
@@ -273,6 +297,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 // collision handling in addAnalyses behaves identically either way.
 func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
 	b.packageRoot = filepath.Clean(pkg.Dir)
+	b.packageImportPath = pkg.ImportPath
 	b.excludeDirs = nil
 	if len(pkg.ExcludeDirs) > 0 {
 		b.excludeDirs = make(map[string]struct{}, len(pkg.ExcludeDirs))
@@ -486,20 +511,156 @@ func (b *Builder) applyEcosystemAnalysisHooks(graph *CallGraph, analysis *FileAn
 	if b.ecosystem == ecosystemPython && projectLocal && len(analysis.PythonReExports) > 0 {
 		b.recordPythonReExports(analysis.PackagePath, analysis.PythonReExports)
 	}
+	if b.ecosystem == ecosystemPython {
+		b.recordPythonModule(analysis, projectLocal)
+	}
+}
+
+func (b *Builder) recordPythonModule(analysis *FileAnalysis, projectLocal bool) {
+	if b.pythonModules == nil {
+		b.pythonModules = make(map[string]bool)
+	}
+	b.pythonModules[analysis.PackagePath] = true
+	root := ""
+	if projectLocal {
+		root = b.packageImportPath
+	}
+	if root != "" {
+		if b.pythonRootedAnalyses == nil {
+			b.pythonRootedAnalyses = make(map[string][]*FileAnalysis)
+		}
+		b.pythonRootedAnalyses[root] = append(b.pythonRootedAnalyses[root], analysis)
+	}
+	if pythonModuleDottedPathStem(analysis.FilePath) != "" {
+		return
+	}
+	for local := range analysis.FromImports {
+		b.pythonInitImports = append(b.pythonInitImports, pythonInitImport{
+			pkg:      analysis.PackagePath,
+			local:    local,
+			module:   analysis.Imports[local],
+			original: pythonImportedName(analysis, local),
+			root:     root,
+		})
+	}
+}
+
+// resolvePythonPublicPaths maps each name an `__init__.py` imports, spelled
+// as its package's attribute, to the module that declares it. A chain of
+// re-exports (`pkg` from `pkg.sub`, `pkg.sub` from `pkg.sub.mod`) resolves to
+// its end, and a name imported from its own path maps to nothing.
+func resolvePythonPublicPaths(imports []pythonInitImport, modules map[string]bool) map[string]string {
+	next := make(map[string]string, len(imports))
+	for _, imp := range imports {
+		if imp.pkg == "" || imp.module == "" {
+			continue
+		}
+		module := imp.module
+		if imp.root != "" {
+			module = qualifyPythonProjectModule(module, imp.root, modules)
+		}
+		next[imp.pkg+"."+imp.local] = module + "." + imp.original
+	}
+	public := make(map[string]string, len(next))
+	for path, target := range next {
+		seen := map[string]bool{path: true}
+		for {
+			further, ok := next[target]
+			if !ok || seen[target] {
+				break
+			}
+			seen[target] = true
+			target = further
+		}
+		if target != path {
+			public[path] = target
+		}
+	}
+	return public
+}
+
+// pythonPublicPathDeclaration returns the declaration a call names through a
+// package's re-export, when the callee, keyed calleeKey, names no declaration
+// itself: a call to `jwt.encode` reaches `jwt.api_jwt.encode`. The callee
+// keeps its own spelling, which is the one contracts key on.
+func pythonPublicPathDeclaration(graph *CallGraph, callee FunctionID, calleeKey string) (string, bool) {
+	if len(graph.PythonPublicPaths) == 0 || callee.Package == "" {
+		return "", false
+	}
+	if _, ok := graph.Functions[calleeKey]; ok {
+		return "", false
+	}
+	symbol := callee.Name
+	if callee.Type != "" {
+		symbol = callee.Type
+	}
+	target, ok := graph.PythonPublicPaths[callee.Package+"."+symbol]
+	if !ok {
+		return "", false
+	}
+	sep := strings.LastIndex(target, ".")
+	if sep <= 0 {
+		return "", false
+	}
+	declared := FunctionID{Package: target[:sep], Name: target[sep+1:]}
+	if callee.Type != "" {
+		declared.Type, declared.Name = target[sep+1:], callee.Name
+	}
+	key := declared.String()
+	if _, ok := graph.Functions[key]; !ok {
+		return "", false
+	}
+	return key, true
+}
+
+// qualifyPythonProjectImports prefixes a project's root module onto each
+// absolute import of one of the project's own modules. A manifest-named
+// project keys its modules under that name (`probe.app.digest` for
+// `app/digest.py` in project `probe`), but no import statement spells the
+// name: `from app.digest import digest` names `app.digest`, and the call
+// linked to nothing. rooted maps each root module to the project-local
+// analyses parsed under it.
+//
+// The callee is requalified only when its module is not one the build parsed
+// under its own spelling and the qualified module is, so a call into a
+// dependency or the standard library keeps the spelling the contracts key on.
+// Relative imports already resolve against the qualified package and need no
+// rewrite.
+func qualifyPythonProjectImports(modules map[string]bool, rooted map[string][]*FileAnalysis) {
+	for root, analyses := range rooted {
+		for _, analysis := range analyses {
+			for i := range analysis.Functions {
+				calls := analysis.Functions[i].Calls
+				for j := range calls {
+					qualifyPythonProjectCallee(&calls[j].Callee, root, modules)
+				}
+			}
+		}
+	}
+}
+
+func qualifyPythonProjectCallee(callee *FunctionID, root string, modules map[string]bool) {
+	callee.Package = qualifyPythonProjectModule(callee.Package, root, modules)
+}
+
+func qualifyPythonProjectModule(module, root string, modules map[string]bool) string {
+	if module == "" || modules[module] {
+		return module
+	}
+	if qualified := root + "." + module; modules[qualified] {
+		return qualified
+	}
+	return module
 }
 
 // mergeAnalysisFunctions merges one analysis's declarations into the graph,
-// applying the stub-preference and Python sibling-module-collision rules on
-// a key collision.
+// applying the stub-preference rule on a key collision.
 func (b *Builder) mergeAnalysisFunctions(graph *CallGraph, analysis *FileAnalysis) {
 	for i := range analysis.Functions {
 		fn := &analysis.Functions[i]
 		key := fn.ID.String()
 		if existing, ok := graph.Functions[key]; ok {
 			if keepExistingDecl(existing, fn) {
-				continue
-			}
-			if b.preservePythonModuleCollision(graph, existing, fn) {
 				continue
 			}
 			if b.mergeRustTypedMethodCollision(graph, key, existing, fn) {
@@ -534,8 +695,6 @@ func (b *Builder) mergeAnalysisFunctions(graph *CallGraph, analysis *FileAnalysi
 //
 // Unioning over-approximates reachability BETWEEN two same-named methods of one
 // type, which is a far smaller error than deleting a 58-edge decryption path.
-// preservePythonModuleCollision is the precedent: it keeps both sides of the
-// analogous Python collision rather than picking a winner.
 //
 // The earlier declaration's own position and signature are kept, so the caller
 // key points at the substantive body rather than at the forwarder.
@@ -687,41 +846,6 @@ func isPythonStubPath(path string) bool {
 	return strings.HasSuffix(path, ".pyi")
 }
 
-func (b *Builder) preservePythonModuleCollision(graph *CallGraph, existing, candidate *FunctionDecl) bool {
-	if b.ecosystem != ecosystemPython {
-		return false
-	}
-	if isPythonStubPath(existing.FilePath) || isPythonStubPath(candidate.FilePath) {
-		return false
-	}
-
-	existingStem := pythonModuleFileStem(existing.FilePath)
-	candidateStem := pythonModuleFileStem(candidate.FilePath)
-	if existingStem == "" || candidateStem == "" || existingStem == candidateStem {
-		return false
-	}
-
-	addPythonModuleAlias(graph, existing, existingStem)
-	addPythonModuleAlias(graph, candidate, candidateStem)
-	return true
-}
-
-// addPythonModuleAlias keys fn a second time under its module's own dotted
-// path, `<package>.<stem>`, so that two sibling modules defining the same
-// name keep both declarations. At an unnamed root the package is empty and
-// the module path is the bare stem, as pythonModuleDottedPath spells it:
-// `a.f`, never `.a.f`.
-func addPythonModuleAlias(graph *CallGraph, fn *FunctionDecl, stem string) {
-	alias := *fn
-	switch {
-	case alias.ID.Package == "":
-		alias.ID.Package = stem
-	case !strings.HasSuffix(alias.ID.Package, "."+stem):
-		alias.ID.Package = alias.ID.Package + "." + stem
-	}
-	graph.Functions[alias.ID.String()] = &alias
-}
-
 // recordPythonReExports merges one file's __init__.py re-exports into the
 // builder's per-package accumulator, keyed by the owning package's dotted
 // path (first binding per symbol wins, matching the parser's own
@@ -795,18 +919,6 @@ func rewritePythonReExportedCallee(graph *CallGraph, callee *FunctionID, table m
 		return
 	}
 	callee.Package = origin
-}
-
-func pythonModuleFileStem(path string) string {
-	ext := filepath.Ext(path)
-	if ext != ".py" {
-		return ""
-	}
-	stem := strings.TrimSuffix(filepath.Base(path), ext)
-	if stem == "" || stem == pythonInitMethodName {
-		return ""
-	}
-	return stem
 }
 
 // buildCallerIndex builds the reverse index: for each callee, which functions call it.
@@ -894,6 +1006,12 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 	calleeKey := call.Callee.String()
 	idx.addCallerIndexed(graph.Callers, calleeKey, callerKey)
 	recordCallEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call)
+	if b.ecosystem == ecosystemPython {
+		if declared, ok := pythonPublicPathDeclaration(graph, call.Callee, calleeKey); ok {
+			idx.addCallerIndexed(graph.Callers, declared, callerKey)
+			recordCallEdgeResolution(graph, callerKey, declared, EdgeKindExact, "", call)
+		}
+	}
 
 	overloadTargets := b.expandOverloadCandidates(call.Callee, idx.methodsByQualifiedArity)
 	resolvedTargets := make([]string, 1, 1+len(overloadTargets))
