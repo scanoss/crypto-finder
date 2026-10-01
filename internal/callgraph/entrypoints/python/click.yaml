@@ -1,0 +1,10 @@
+schema_version: "1"
+language: python
+framework:
+  name: click
+  description: "click commands and groups: @click.command(), and @cli.command() on a group click made."
+entries:
+  - shape: decorator
+    from: [click]
+    names: [command, group, result_callback]
+    root_kind: framework_entry

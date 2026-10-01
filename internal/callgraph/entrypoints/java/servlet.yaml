@@ -1,0 +1,15 @@
+schema_version: "1"
+language: java
+framework:
+  name: servlet
+  description: "Jakarta Servlet: the callbacks a servlet container calls on a servlet, filter or listener, often written without @Override. javax and jakarta namespaces."
+entries:
+  - shape: supertype
+    from: [javax.servlet, jakarta.servlet]
+    types: [Servlet, GenericServlet, HttpServlet, Filter, GenericFilter, HttpFilter,
+            ServletContextListener, HttpSessionListener, ServletRequestListener]
+    names: [init, service, destroy, doFilter,
+            doGet, doPost, doPut, doDelete, doHead, doOptions, doTrace, doPatch,
+            contextInitialized, contextDestroyed, sessionCreated, sessionDestroyed,
+            requestInitialized, requestDestroyed]
+    root_kind: framework_entry

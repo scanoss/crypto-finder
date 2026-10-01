@@ -1,0 +1,10 @@
+schema_version: "1"
+language: java
+framework:
+  name: jakarta-annotation
+  description: "Jakarta Annotations lifecycle callbacks a container (Spring, CDI, EJB) calls, javax and jakarta namespaces."
+entries:
+  - shape: decorator
+    from: [javax.annotation, jakarta.annotation]
+    names: [PostConstruct, PreDestroy]
+    root_kind: framework_entry

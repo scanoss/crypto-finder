@@ -1,0 +1,10 @@
+schema_version: "1"
+language: java
+framework:
+  name: spring-amqp
+  description: "Spring AMQP (RabbitMQ) listener methods."
+entries:
+  - shape: decorator
+    from: [org.springframework.amqp.rabbit.annotation]
+    names: [RabbitListener, RabbitHandler]
+    root_kind: framework_entry

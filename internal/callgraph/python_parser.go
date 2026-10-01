@@ -513,6 +513,7 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 	// Extract function and class declarations, resolving each scope's
 	// pending calls (fw) against its now-complete binding layer.
 	p.extractDeclarations(root, src, filePath, modulePath, analysis, fw)
+	applyPythonEntryRules(root, src, filePath, packagePath, analysis)
 
 	return analysis, nil
 }

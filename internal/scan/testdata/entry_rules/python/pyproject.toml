@@ -1,0 +1,6 @@
+[project]
+name = "shop"
+version = "1.0.0"
+
+[project.scripts]
+shop-rotate = "shop.cli:rotate_keys"

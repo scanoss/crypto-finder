@@ -1,0 +1,10 @@
+schema_version: "1"
+language: java
+framework:
+  name: jaxrs
+  description: "Jakarta RESTful Web Services (JAX-RS) resource methods and sub-resource locators, javax and jakarta namespaces."
+entries:
+  - shape: decorator
+    from: [javax.ws.rs, jakarta.ws.rs]
+    names: [GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, Path]
+    root_kind: framework_entry

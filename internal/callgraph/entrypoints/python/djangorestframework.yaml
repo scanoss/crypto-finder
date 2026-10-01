@@ -1,0 +1,15 @@
+schema_version: "1"
+language: python
+framework:
+  name: djangorestframework
+  description: "Django REST framework function views (@api_view) and the HTTP and action methods of APIView, generic views and viewsets."
+entries:
+  - shape: decorator
+    from: [rest_framework.decorators]
+    names: [api_view, action]
+    root_kind: framework_entry
+  - shape: supertype
+    from: [rest_framework]
+    names: [get, post, put, patch, delete, head, options, dispatch,
+            list, retrieve, create, update, partial_update, destroy]
+    root_kind: framework_entry

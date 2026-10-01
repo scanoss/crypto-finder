@@ -1,0 +1,11 @@
+schema_version: "1"
+language: python
+framework:
+  name: sanic
+  description: "Sanic application and blueprint routes and listeners."
+entries:
+  - shape: decorator
+    from: [sanic]
+    names: [route, get, post, put, delete, patch, head, options, websocket, listener,
+            middleware, exception, on_request, on_response]
+    root_kind: framework_entry

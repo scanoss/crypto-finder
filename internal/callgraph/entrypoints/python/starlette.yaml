@@ -1,0 +1,15 @@
+schema_version: "1"
+language: python
+framework:
+  name: starlette
+  description: "Starlette application routes and hooks, and HTTPEndpoint methods."
+entries:
+  - shape: decorator
+    from: [starlette]
+    names: [route, websocket_route, on_event, exception_handler, middleware]
+    root_kind: framework_entry
+  - shape: supertype
+    from: [starlette.endpoints]
+    types: [HTTPEndpoint]
+    names: [get, post, put, patch, delete, head, options]
+    root_kind: framework_entry

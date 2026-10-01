@@ -1,0 +1,16 @@
+schema_version: "1"
+language: go
+framework:
+  name: nethttp
+  description: "net/http: handlers registered with http.HandleFunc and http.Handle or on a ServeMux, and ServeHTTP methods, which implement http.Handler."
+entries:
+  - shape: registration_call
+    from: [net/http]
+    names: [HandleFunc, Handle]
+    path: required
+    root_kind: framework_entry
+  - shape: interface_method
+    from: [net/http]
+    names: [ServeHTTP]
+    parameter_types: [ResponseWriter, "*Request"]
+    root_kind: framework_entry

@@ -1,0 +1,14 @@
+schema_version: "1"
+language: java
+framework:
+  name: spring-cloud
+  description: "Spring Cloud Stream listeners and Spring Cloud AWS SQS listeners."
+entries:
+  - shape: decorator
+    from: [org.springframework.cloud.stream.annotation]
+    names: [StreamListener]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [io.awspring.cloud.sqs.annotation, io.awspring.cloud.messaging.listener.annotation]
+    names: [SqsListener]
+    root_kind: framework_entry

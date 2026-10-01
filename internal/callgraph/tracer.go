@@ -216,8 +216,12 @@ func chainReachesUserCode(chain []CallChainStep, userPackages map[string]bool, s
 // findCallLine finds the line number where callerFn calls the function identified by calleeKey.
 func findCallLine(callerFn *FunctionDecl, calleeKey string) int {
 	calleeID, err := ParseFunctionID(calleeKey)
-	for i := range callerFn.Calls {
-		call := callerFn.Calls[i]
+	calls := callerFn.Calls
+	if len(callerFn.ImplicitCalls) > 0 {
+		calls = append(calls[:len(calls):len(calls)], callerFn.ImplicitCalls...)
+	}
+	for i := range calls {
+		call := calls[i]
 		if call.Callee.String() == calleeKey {
 			return call.Line
 		}

@@ -1,0 +1,18 @@
+schema_version: "1"
+language: java
+framework:
+  name: quarkus
+  description: "Quarkus reactive routes, event-bus consumers and schedules."
+entries:
+  - shape: decorator
+    from: [io.quarkus.vertx.web]
+    names: [Route]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [io.quarkus.vertx]
+    names: [ConsumeEvent]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [io.quarkus.scheduler]
+    names: [Scheduled]
+    root_kind: framework_entry

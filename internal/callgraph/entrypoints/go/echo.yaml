@@ -1,0 +1,16 @@
+schema_version: "1"
+language: go
+framework:
+  name: echo
+  description: "echo instances and groups: e.GET(\"/x\", h), e.Match(methods, \"/x\", h), e.Use(mw)."
+entries:
+  - shape: registration_call
+    from: [github.com/labstack/echo]
+    names: [GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, CONNECT, TRACE, Any, Match, Add]
+    path: required
+    root_kind: framework_entry
+  - shape: registration_call
+    from: [github.com/labstack/echo]
+    names: [Use, Pre]
+    path: optional
+    root_kind: framework_entry

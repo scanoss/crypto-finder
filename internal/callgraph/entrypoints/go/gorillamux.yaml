@@ -1,0 +1,16 @@
+schema_version: "1"
+language: go
+framework:
+  name: gorillamux
+  description: "gorilla/mux routers: r.HandleFunc(\"/x\", h), r.Handle(\"/x\", h), r.Use(mw)."
+entries:
+  - shape: registration_call
+    from: [github.com/gorilla/mux]
+    names: [HandleFunc, Handle]
+    path: required
+    root_kind: framework_entry
+  - shape: registration_call
+    from: [github.com/gorilla/mux]
+    names: [Use]
+    path: optional
+    root_kind: framework_entry

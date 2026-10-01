@@ -1,0 +1,10 @@
+schema_version: "1"
+language: python
+framework:
+  name: dramatiq
+  description: "Dramatiq actors."
+entries:
+  - shape: decorator
+    from: [dramatiq]
+    names: [actor]
+    root_kind: framework_entry

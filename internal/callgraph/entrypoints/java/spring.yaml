@@ -1,0 +1,51 @@
+schema_version: "1"
+language: java
+framework:
+  name: spring
+  description: "Spring Framework: MVC and WebFlux handler methods, @Bean factories, schedules, application events, STOMP and JMS listeners, and the servlet and filter base classes Spring ships."
+entries:
+  - shape: decorator
+    from: [org.springframework.web.bind.annotation]
+    names: [RequestMapping, GetMapping, PostMapping, PutMapping, DeleteMapping, PatchMapping,
+            ExceptionHandler, ModelAttribute, InitBinder]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [org.springframework.context.annotation]
+    names: [Bean]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [org.springframework.scheduling.annotation]
+    names: [Scheduled, Schedules]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [org.springframework.context.event]
+    names: [EventListener]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [org.springframework.transaction.event]
+    names: [TransactionalEventListener]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [org.springframework.messaging.handler.annotation]
+    names: [MessageMapping]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [org.springframework.messaging.simp.annotation]
+    names: [SubscribeMapping]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [org.springframework.jms.annotation]
+    names: [JmsListener]
+    root_kind: framework_entry
+  # Callbacks a servlet container calls on Spring's own servlet and filter
+  # bases, often written without @Override.
+  - shape: supertype
+    from: [org.springframework.web.filter]
+    types: [OncePerRequestFilter, GenericFilterBean]
+    names: [doFilterInternal, doFilter, init, destroy]
+    root_kind: framework_entry
+  - shape: supertype
+    from: [org.springframework.web.servlet]
+    types: [HttpServletBean, FrameworkServlet, DispatcherServlet]
+    names: [init, service, destroy, doGet, doPost, doPut, doDelete, doHead, doOptions, doTrace, doPatch]
+    root_kind: framework_entry

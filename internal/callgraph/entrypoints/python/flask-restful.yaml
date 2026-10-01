@@ -1,0 +1,11 @@
+schema_version: "1"
+language: python
+framework:
+  name: flask-restful
+  description: "Flask-RESTful resources: the HTTP methods of a Resource subclass."
+entries:
+  - shape: supertype
+    from: [flask_restful]
+    types: [Resource]
+    names: [get, post, put, patch, delete, head, options]
+    root_kind: framework_entry

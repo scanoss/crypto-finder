@@ -1048,6 +1048,9 @@ func (p *JavaParser) parseMethodDecl(
 	decl.QualifiedReturnType = qualifyJavaType(returnRaw, analysis)
 	decl.Static = javaDeclaresModifier(node, src, "static")
 	decl.Annotations = javaDeclaredAnnotations(node, src)
+	if kind, ok := javaAnnotationEntryKind(node, src, analysis); ok {
+		decl.EntryKind = kind
+	}
 
 	if body != nil {
 		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, ownerName, fieldTypes, fieldAssignments)
@@ -1260,6 +1263,16 @@ func javaDeclaresModifier(node *sitter.Node, src []byte, keyword string) bool {
 // declaration's modifiers, in source order: "Override" for @Override and
 // "GetMapping" for @org.springframework.web.bind.annotation.GetMapping("/x").
 func javaDeclaredAnnotations(node *sitter.Node, src []byte) []string {
+	written := javaWrittenAnnotations(node, src)
+	for i, name := range written {
+		written[i] = name[strings.LastIndex(name, ".")+1:]
+	}
+	return written
+}
+
+// javaWrittenAnnotations returns the names of the annotations among a
+// declaration's modifiers as the source writes them, qualified or not.
+func javaWrittenAnnotations(node *sitter.Node, src []byte) []string {
 	var names []string
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
@@ -1275,11 +1288,7 @@ func javaDeclaredAnnotations(node *sitter.Node, src []byte) []string {
 			if name == nil {
 				continue
 			}
-			text := strings.TrimSpace(name.Content(src))
-			if dot := strings.LastIndex(text, "."); dot >= 0 {
-				text = text[dot+1:]
-			}
-			if text != "" {
+			if text := strings.Join(strings.Fields(name.Content(src)), ""); text != "" {
 				names = append(names, text)
 			}
 		}

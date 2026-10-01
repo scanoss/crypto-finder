@@ -226,6 +226,17 @@ type FunctionDecl struct {
 	// carries, as "Override" (Java methods only). Read to recognize functions
 	// a framework calls, which no call edge in the graph leads to.
 	Annotations []string
+	// EntryKind is set when a parser recognizes the declaration as an entry
+	// point that a framework or the runtime calls, which no call edge in the
+	// graph leads to. entryRootKind reads it first.
+	EntryKind RootKind
+	// ImplicitCalls are calls the source makes without a call expression: a
+	// JSX element renders its component, and a function written inline as an
+	// argument runs when the call it is passed to runs (Node only). They
+	// become call edges like Calls, but are kept apart so that finding
+	// attribution, which matches a crypto call by its position, never picks
+	// one.
+	ImplicitCalls []FunctionCall
 	// FileTypeNamesAtRisk is the declaring file's FileAnalysis.TypeNamesAtRisk,
 	// shared by every declaration of the file (Java only).
 	FileTypeNamesAtRisk map[string]bool
@@ -449,6 +460,11 @@ type FileAnalysis struct {
 	// (applyPythonReExports, Python-only). Python only; always nil for
 	// other ecosystems.
 	PythonReExports map[string]string
+	// EntryRefs name the functions this file hands to a framework by
+	// reference, as the handler in app.get('/x', handler). The function may be
+	// declared in another file, so the builder resolves them once every file
+	// is parsed (resolveEntryRefs).
+	EntryRefs []EntryRef
 	// rustFacts holds the declared-type facts collected from a Rust file:
 	// struct and enum-variant field types, function return types, and the
 	// set of types the file declares. The receiver-typing layer resolves
@@ -522,6 +538,9 @@ type CallGraph struct {
 	// JavaStringConstants merges every parsed file's String constants, keyed
 	// by owner FQN + ".NAME". Java only.
 	JavaStringConstants map[string]JavaStringConstant
+	// entryRefs collects FileAnalysis.EntryRefs while files are merged;
+	// resolveEntryRefs consumes it.
+	entryRefs []EntryRef
 }
 
 // EdgeKind classifies how confidently a caller->callee edge was resolved.

@@ -218,7 +218,7 @@ func TestBuildFindingGraph_NoCallersOnly(t *testing.T) {
 	t.Run("a scheduled job on a dispatch route clears it", func(t *testing.T) {
 		t.Parallel()
 		g := newEvidenceGraph()
-		g.dispatchRoute().Annotations = []string{"Scheduled"}
+		g.dispatchRoute().EntryKind = callgraph.RootKindFrameworkEntry // an imported @Scheduled
 		g.directRoute()
 		fg := buildDepthFindingGraph(g.context(4), g.target)
 		if fg.Analysis == nil || fg.Analysis.NoCallersOnly {
@@ -229,7 +229,7 @@ func TestBuildFindingGraph_NoCallersOnly(t *testing.T) {
 	t.Run("an entry reaching it only by a guess does not count", func(t *testing.T) {
 		t.Parallel()
 		g := newEvidenceGraph()
-		g.guessedRoute().Annotations = []string{"Scheduled"}
+		g.guessedRoute().EntryKind = callgraph.RootKindFrameworkEntry // an imported @Scheduled
 		g.directRoute()
 		fg := buildDepthFindingGraph(g.context(4), g.target)
 		if fg.Analysis == nil || !fg.Analysis.NoCallersOnly {

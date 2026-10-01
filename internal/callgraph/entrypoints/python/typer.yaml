@@ -1,0 +1,10 @@
+schema_version: "1"
+language: python
+framework:
+  name: typer
+  description: "Typer commands and callbacks on a Typer application."
+entries:
+  - shape: decorator
+    from: [typer]
+    names: [command, callback]
+    root_kind: framework_entry
