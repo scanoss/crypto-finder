@@ -576,29 +576,40 @@ type ruleFileCryptoYAML struct {
 }
 
 type ruleCryptoYAML struct {
-	ID             string                  `yaml:"id"`
-	Message        string                  `yaml:"message"`
-	Severity       string                  `yaml:"severity"`
-	Pattern        string                  `yaml:"pattern"`
-	Patterns       []rulePatternYAML       `yaml:"patterns"`
-	PatternSources []rulePatternSourceYAML `yaml:"pattern-sources"`
-	PatternSinks   []rulePatternSourceYAML `yaml:"pattern-sinks"`
+	ID             string            `yaml:"id"`
+	Message        string            `yaml:"message"`
+	Severity       string            `yaml:"severity"`
+	Pattern        string            `yaml:"pattern"`
+	Patterns       []rulePatternYAML `yaml:"patterns"`
+	PatternEither  []rulePatternYAML `yaml:"pattern-either"`
+	PatternSources []rulePatternYAML `yaml:"pattern-sources"`
+	PatternSinks   []rulePatternYAML `yaml:"pattern-sinks"`
 	Metadata       struct {
 		PURL   string         `yaml:"purl"`
 		Crypto map[string]any `yaml:"crypto"`
 	} `yaml:"metadata"`
 }
 
-type rulePatternSourceYAML struct {
-	Patterns []rulePatternYAML `yaml:"patterns"`
+// rulePatternYAML is one semgrep pattern operator. Only the operators that
+// name a match or constrain a metavariable are decoded; pattern-inside and the
+// pattern-not family have no field, so they never contribute catalog keys.
+type rulePatternYAML struct {
+	Pattern             string                       `yaml:"pattern"`
+	PatternEither       []rulePatternYAML            `yaml:"pattern-either"`
+	Patterns            []rulePatternYAML            `yaml:"patterns"`
+	MetavariableRegex   *ruleMetavariableRegexYAML   `yaml:"metavariable-regex"`
+	MetavariablePattern *ruleMetavariablePatternYAML `yaml:"metavariable-pattern"`
 }
 
-type rulePatternYAML struct {
-	Pattern           string            `yaml:"pattern"`
-	PatternEither     []rulePatternYAML `yaml:"pattern-either"`
-	MetavariableRegex *struct {
-		Regex string `yaml:"regex"`
-	} `yaml:"metavariable-regex"`
+type ruleMetavariableRegexYAML struct {
+	Metavariable string `yaml:"metavariable"`
+	Regex        string `yaml:"regex"`
+}
+
+type ruleMetavariablePatternYAML struct {
+	Metavariable  string            `yaml:"metavariable"`
+	Pattern       string            `yaml:"pattern"`
+	PatternEither []rulePatternYAML `yaml:"pattern-either"`
 }
 
 // RuleCryptoMetadata is the rule-owned semantic payload used when a generic
@@ -667,62 +678,7 @@ func appendRuleCryptoMetadata(out map[string][]RuleCryptoMetadata, rule *ruleCry
 	}
 }
 
-func ruleCryptoEntrypoints(rule *ruleCryptoYAML) []string {
-	var patterns []string
-	if len(rule.PatternSinks) > 0 {
-		for _, sink := range rule.PatternSinks {
-			patterns = appendRulePatternStrings(patterns, sink.Patterns)
-		}
-	} else {
-		patterns = append(patterns, rule.Pattern)
-		patterns = appendRulePatternStrings(patterns, rule.Patterns)
-	}
-
-	var entrypoints []string
-	seen := make(map[string]struct{})
-	for _, pattern := range patterns {
-		entrypoint := rulePatternEntrypoint(pattern)
-		if entrypoint == "" {
-			continue
-		}
-		if _, ok := seen[entrypoint]; ok {
-			continue
-		}
-		seen[entrypoint] = struct{}{}
-		entrypoints = append(entrypoints, entrypoint)
-	}
-	return entrypoints
-}
-
-func appendRulePatternStrings(dst []string, patterns []rulePatternYAML) []string {
-	for _, pattern := range patterns {
-		dst = append(dst, pattern.Pattern)
-		dst = appendRulePatternStrings(dst, pattern.PatternEither)
-	}
-	return dst
-}
-
-func rulePatternEntrypoint(pattern string) string {
-	pattern = strings.TrimSpace(pattern)
-	constructor := strings.HasPrefix(pattern, "new ")
-	if constructor {
-		pattern = strings.TrimSpace(strings.TrimPrefix(pattern, "new "))
-	}
-	open := strings.IndexByte(pattern, '(')
-	if open <= 0 {
-		return ""
-	}
-	symbol := strings.TrimSpace(pattern[:open])
-	if strings.ContainsAny(symbol, " $<>") {
-		return ""
-	}
-	if constructor {
-		return symbol + ".<init>"
-	}
-	return symbol
-}
-
-func ruleCaptureNames(sources []rulePatternSourceYAML) []string {
+func ruleCaptureNames(sources []rulePatternYAML) []string {
 	var names []string
 	seen := make(map[string]struct{})
 	for _, source := range sources {
