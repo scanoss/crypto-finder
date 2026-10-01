@@ -14,7 +14,20 @@
       "const": "1"
     },
     "phase": {
-      "enum": ["scan", "rules", "detection", "dependencies", "callgraph", "export"]
+      "enum": [
+        "scan",
+        "rules",
+        "detection",
+        "dependencies",
+        "callgraph",
+        "entry_points",
+        "conditioned_findings",
+        "finding_ids",
+        "occurrence_keys",
+        "oid_projection",
+        "export",
+        "output"
+      ]
     },
     "status": {
       "enum": ["started", "completed", "failed", "canceled", "skipped"]
@@ -220,7 +233,7 @@
         "required": ["phase"],
         "properties": {
           "phase": {
-            "enum": ["rules", "detection", "dependencies", "export"]
+            "enum": ["rules", "detection", "dependencies", "export", "output"]
           }
         }
       },
@@ -229,6 +242,24 @@
         "properties": {
           "parent_phase": {
             "const": "scan"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["phase"],
+        "properties": {
+          "phase": {
+            "enum": ["entry_points", "conditioned_findings", "finding_ids", "occurrence_keys", "oid_projection"]
+          }
+        }
+      },
+      "then": {
+        "required": ["parent_phase"],
+        "properties": {
+          "parent_phase": {
+            "enum": ["scan", "export"]
           }
         }
       }

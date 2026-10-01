@@ -143,6 +143,86 @@ func TestScanProgressSchema(t *testing.T) {
 			wantValid: true,
 		},
 		{
+			name: "completed-pass-under-scan",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "occurrence_keys",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1
+			}`,
+			wantValid: true,
+		},
+		{
+			name: "completed-pass-under-export",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "entry_points",
+				"status": "completed",
+				"parent_phase": "export",
+				"duration_ms": 1
+			}`,
+			wantValid: true,
+		},
+		{
+			name: "pass-under-dependencies",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "conditioned_findings",
+				"status": "started",
+				"parent_phase": "dependencies"
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "pass-without-parent",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "oid_projection",
+				"status": "started"
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "skipped-pass-with-reason",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "finding_ids",
+				"status": "skipped",
+				"parent_phase": "scan",
+				"details": {"reason": "not_requested"}
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "failed-output-under-scan",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "output",
+				"status": "failed",
+				"parent_phase": "scan",
+				"duration_ms": 1
+			}`,
+			wantValid: true,
+		},
+		{
+			name: "output-under-export",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "output",
+				"status": "started",
+				"parent_phase": "export"
+			}`,
+			wantValid: false,
+		},
+		{
 			name: "reason-on-non-skipped-event",
 			document: `{
 				"event": "scan_progress",

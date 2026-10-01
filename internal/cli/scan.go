@@ -115,6 +115,8 @@ var (
 	scanJavaCompiledArtifact     string
 	scanFindingsCache            string
 	scanProgress                 bool
+	scanCPUProfile               string
+	scanMemProfile               string
 )
 
 var scanCmd = &cobra.Command{
@@ -208,6 +210,13 @@ func init() {
 	scanCmd.Flags().StringArrayVar(&scanJavaJDKHomes, "java-jdk-home", []string{}, "Java JDK home mapping in the form <major>=<path> (repeatable)")
 	scanCmd.Flags().StringVar(&scanJavaCompiledArtifact, "java-compiled-artifact", "", "Compiled Java artifact path used for standalone callgraph/type enrichment")
 	scanCmd.Flags().BoolVar(&scanProgress, "progress", false, "Write structured scan progress JSONL to stderr")
+	scanCmd.Flags().StringVar(&scanCPUProfile, "cpuprofile", "", "Write a pprof CPU profile of the whole scan to this file")
+	scanCmd.Flags().StringVar(&scanMemProfile, "memprofile", "", "Write a pprof heap profile, taken after a GC at the end of the scan, to this file")
+	for _, name := range []string{"cpuprofile", "memprofile"} {
+		if err := scanCmd.Flags().MarkHidden(name); err != nil {
+			panic(err)
+		}
+	}
 }
 
 func callGraphTargetDir(target string) (string, error) {
@@ -752,6 +761,21 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		)
 	}
 
+	stopProfiles, err := startScanProfiles(scanCPUProfile, scanMemProfile)
+	if err != nil {
+		return err
+	}
+	finishProfiles := func() {
+		if profileErr := stopProfiles(); profileErr != nil {
+			if runErr == nil {
+				runErr = profileErr
+				return
+			}
+			log.Warn().Err(profileErr).Msg("Failed to write scan profile")
+		}
+	}
+	defer finishProfiles()
+
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 	defer cancel()
@@ -926,6 +950,9 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			}
 		}()
 	}
+	// Deferred again so the profiles are written before the scan's terminal
+	// progress event, which must report a profile write failure as failed.
+	defer finishProfiles()
 
 	// Pre-detect source languages at the CLI layer when the user did not pass
 	// --languages. This makes the detected languages available to ancillary
@@ -1213,26 +1240,16 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		}
 	}
 
-	// Type 2 libraries (fluent/builder/DSL, e.g. Password4J) carry their crypto
-	// semantic on the public API boundary, not in a detectable primitive call
-	// inside their own source. When such a library is itself being scanned,
-	// surface those API methods as crypto entry points using the ruleset's
-	// metadata.crypto (the single source of truth) joined on api↔definition.
-	// Gated structurally (method definition present, no in-body finding), so it
-	// is a no-op when scanning a consumer of the library or a Type 1 library.
+	// An export that built its own graph is still open here, so the passes below
+	// run inside it and report as its children rather than as the scan's.
+	passParent := "scan"
+	if exportStarted {
+		passParent = "export"
+	}
+
 	if callGraphResult != nil && callGraphResult.CallGraph != nil {
-		if rulePaths, rerr := rulesManager.Load(); rerr == nil {
-			engine.SynthesizeRuleCryptoEntryPointsForResult(callGraphResult, rulePaths)
-			scanutil.MaterializeConditionedFindings(report, callGraphResult.CallGraph, rulePaths, callGraphResult.Ecosystem)
-		} else {
-			log.Debug().
-				Err(rerr).
-				Str("call_graph", fmt.Sprintf("%p", callGraphResult.CallGraph)).
-				Str("report", fmt.Sprintf("%p", report)).
-				Int("function_count", len(callGraphResult.CallGraph.Functions)).
-				Int("finding_count", len(report.Findings)).
-				Strs("rule_paths", rulePaths).
-				Msg("failed to load rules for synthesis")
+		if err := runRuleGraphPasses(progress, passParent, rulesManager, report, callGraphResult); err != nil {
+			return err
 		}
 	}
 
@@ -1240,12 +1257,29 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	// object below is the sole report passed to OID-consuming projections.
 	needsFindingIDs := scanExportCallgraph != "" || scanExportGraphFragment != ""
 	if needsFindingIDs {
-		engine.AssignFindingIDs(report)
+		if err := runScanPhase(progress, "finding_ids", passParent, func() error {
+			engine.AssignFindingIDs(report)
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
-	callGraphResult = prepareReportOccurrenceKeys(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, skipMatcher, callGraphResult)
-	resolved, err := prepareScanOIDProjection(report, false)
-	if err != nil {
-		return failure.WrapUnknown(err, failure.CodeUnknown, failure.StageScan, "prepare exact OID report")
+	if err := runScanPhase(progress, "occurrence_keys", passParent, func() error {
+		callGraphResult = prepareReportOccurrenceKeys(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, skipMatcher, callGraphResult)
+		return nil
+	}); err != nil {
+		return err
+	}
+	var resolved *oid.ResolvedReport
+	if err := runScanPhase(progress, "oid_projection", passParent, func() error {
+		var prepareErr error
+		resolved, prepareErr = prepareScanOIDProjection(report, false)
+		if prepareErr != nil {
+			return failure.WrapUnknown(prepareErr, failure.CodeUnknown, failure.StageScan, "prepare exact OID report")
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if scanExportCallgraph != "" || scanExportGraphFragment != "" {
@@ -1318,31 +1352,11 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		}
 	}
 
-	factory := output.NewWriterFactory()
-	writer, err := factory.GetWriter(scanFormat)
-	if err != nil {
-		return failure.WrapUnknown(
-			err,
-			failure.CodeOutputWriterUnavailable,
-			failure.StageOutput,
-			"failed to get output writer",
-		)
+	if err := runScanPhase(progress, "output", "scan", func() error {
+		return writeScanOutput(resolved)
+	}); err != nil {
+		return err
 	}
-
-	// Write output (to stdout or file)
-	writeStart := time.Now()
-	log.Info().
-		Str("destination", scanOutput).
-		Str("format", scanFormat).
-		Msg("Writing scan output")
-	writeErr := writer.WriteResolved(resolved, scanOutput)
-	if writeErr != nil {
-		return failure.WrapUnknown(writeErr, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write output")
-	}
-	log.Info().
-		Str("destination", scanOutput).
-		Dur("duration", time.Since(writeStart)).
-		Msg("Scan output write complete")
 
 	findingsCount := 0
 	for _, finding := range resolved.Findings {
@@ -1368,6 +1382,90 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	}
 
 	return nil
+}
+
+// runRuleGraphPasses runs the two passes that join the ruleset onto the call
+// graph. Type 2 libraries (fluent/builder/DSL, e.g. Password4J) carry their
+// crypto semantic on the public API boundary, not in a detectable primitive
+// call inside their own source. When such a library is itself being scanned,
+// surface those API methods as crypto entry points using the ruleset's
+// metadata.crypto (the single source of truth) joined on api↔definition.
+// Gated structurally (method definition present, no in-body finding), so it is
+// a no-op when scanning a consumer of the library or a Type 1 library.
+func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesManager *rules.Manager, report *entities.InterimReport, result *engine.DepScanResult) error {
+	rulePaths, loadErr := rulesManager.Load()
+	if loadErr != nil {
+		log.Debug().
+			Err(loadErr).
+			Str("call_graph", fmt.Sprintf("%p", result.CallGraph)).
+			Str("report", fmt.Sprintf("%p", report)).
+			Int("function_count", len(result.CallGraph.Functions)).
+			Int("finding_count", len(report.Findings)).
+			Strs("rule_paths", rulePaths).
+			Msg("failed to load rules for synthesis")
+		return nil
+	}
+	if err := runScanPhase(progress, "entry_points", parent, func() error {
+		engine.SynthesizeRuleCryptoEntryPointsForResult(result, rulePaths)
+		return nil
+	}); err != nil {
+		return err
+	}
+	return runScanPhase(progress, "conditioned_findings", parent, func() error {
+		scanutil.MaterializeConditionedFindings(report, result.CallGraph, rulePaths, result.Ecosystem)
+		return nil
+	})
+}
+
+func writeScanOutput(resolved *oid.ResolvedReport) error {
+	writer, err := output.NewWriterFactory().GetWriter(scanFormat)
+	if err != nil {
+		return failure.WrapUnknown(
+			err,
+			failure.CodeOutputWriterUnavailable,
+			failure.StageOutput,
+			"failed to get output writer",
+		)
+	}
+
+	writeStart := time.Now()
+	log.Info().
+		Str("destination", scanOutput).
+		Str("format", scanFormat).
+		Msg("Writing scan output")
+	if err := writer.WriteResolved(resolved, scanOutput); err != nil {
+		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write output")
+	}
+	log.Info().
+		Str("destination", scanOutput).
+		Dur("duration", time.Since(writeStart)).
+		Msg("Scan output write complete")
+	return nil
+}
+
+// runScanPhase reports run as one progress phase under parent. A failure of run
+// closes the phase as failed or canceled and is returned unchanged.
+func runScanPhase(progress *scanutil.ProgressWriter, phase, parent string, run func() error) error {
+	if progress == nil {
+		return run()
+	}
+	if err := progress.Start(phase, parent); err != nil {
+		return progressWriteFailure(err)
+	}
+	runErr := run()
+	var progressErr error
+	switch {
+	case runErr == nil:
+		progressErr = progress.Complete(phase, parent, nil)
+	case isScanCanceled(runErr):
+		progressErr = progress.Cancel(phase, parent, nil)
+	default:
+		progressErr = progress.Fail(phase, parent, nil)
+	}
+	if progressErr != nil {
+		return progressWriteFailure(progressErr)
+	}
+	return runErr
 }
 
 func newProgressReporter(progress *scanutil.ProgressWriter, callgraphParent string) engine.ProgressReporter {
