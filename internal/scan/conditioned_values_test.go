@@ -219,3 +219,96 @@ func TestConditionedValueEnumerator_StopsAtValueBound(t *testing.T) {
 		t.Fatalf("resolveVariants() = %d variants, complete %v; want all 10, complete", len(variants), complete)
 	}
 }
+
+// A recursion above a stack of diamonds: the walk below the recursion is only
+// partial from each entry, so before the per-walk memo every path through the
+// diamonds was re-walked, doubling the work per layer. Each (function,
+// parameter) must now be walked once, and every value must still arrive.
+func TestConditionedValueEnumerator_WalksOnceBelowARecursion(t *testing.T) {
+	t.Parallel()
+
+	const layers = 16
+	g := newSelectorGraph()
+	forwarder := func(name string, callees ...callgraph.FunctionID) callgraph.FunctionID {
+		id := callgraph.FunctionID{Package: "example", Type: "Layers", Name: name + "#1"}
+		fn := &callgraph.FunctionDecl{
+			ID: id, FilePath: "Digests.java", StartLine: 20, EndLine: 30,
+			Parameters: []callgraph.FunctionParameter{{Name: "algorithm", Type: "String"}},
+		}
+		for i, callee := range callees {
+			fn.Calls = append(fn.Calls, forwardCall(callee, "algorithm", 21+i))
+		}
+		g.addFunction(fn)
+		return id
+	}
+	below := []callgraph.FunctionID{selectorHelperID}
+	for layer := range layers {
+		below = []callgraph.FunctionID{
+			forwarder(fmt.Sprintf("l%02da", layer), below...),
+			forwarder(fmt.Sprintf("l%02db", layer), below...),
+		}
+	}
+	// The top layer calls itself, which is what made every result below it
+	// partial.
+	top := g.graph.Functions[below[0].String()]
+	top.Calls = append(top.Calls, forwardCall(below[0], "algorithm", 29))
+	g.graph.Callers[below[0].String()] = append(g.graph.Callers[below[0].String()], below[0].String())
+	const values = 3
+	for i := range values {
+		g.addLiteralCaller(fmt.Sprintf("caller%03d", i), below[i%2], i)
+	}
+
+	report := g.report()
+	ctx := newExportBuildContext(&engine.DepScanResult{Report: report, CallGraph: g.graph, Ecosystem: "java"})
+	helper := g.graph.Functions[selectorHelperID.String()]
+	terminal := buildCryptoCall(ctx, g.graph, helper, &helper.Calls[0])
+
+	enumerator := newConditionedValueEnumerator(ctx)
+	variants := enumerator.terminalVariants(helper.ID, terminal.Parameters)
+	distinct := make(map[string]struct{})
+	for _, params := range variants {
+		distinct[params[0].ResolvedValue] = struct{}{}
+	}
+	if len(distinct) != values {
+		t.Fatalf("terminalVariants() = %d distinct values %v, want %d", len(distinct), distinct, values)
+	}
+	// One walk per forwarding function and per literal caller, plus the helper.
+	if limit := 2*layers + values + 1; enumerator.walks > limit {
+		t.Fatalf("walked %d times, want at most %d: a partial result below the recursion was re-walked per path", enumerator.walks, limit)
+	}
+}
+
+// A value that only the enumeration found, from a caller outside the chain
+// sample, has no sampled chain left after per-asset filtering. Its chain set
+// is then incomplete: the export must not call an empty set complete.
+func TestBuildCallGraphExport_OutOfSampleValueReportsPartialChains(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, selectorValueRules)
+	values := graphfrag.DefaultMaxChainsPerOp + 12
+	g := newSelectorGraph()
+	for i := range values {
+		g.addLiteralCaller(fmt.Sprintf("caller%03d", i), selectorHelperID, i)
+	}
+	report := g.report()
+	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != values {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want %d", got, values)
+	}
+
+	payload := buildCallGraphExportV2(&engine.DepScanResult{Report: report, CallGraph: g.graph, Ecosystem: "java"})
+	emptied := 0
+	for i := range payload.FindingGraphs {
+		fg := &payload.FindingGraphs[i]
+		if len(fg.CallChains) != 0 || fg.Analysis == nil {
+			continue
+		}
+		emptied++
+		if fg.Analysis.CallChains != graphfrag.AnalysisPartial {
+			t.Errorf("finding graph %s has no call chains but analysis.call_chains = %q, want %q",
+				fg.FindingID, fg.Analysis.CallChains, graphfrag.AnalysisPartial)
+		}
+	}
+	if emptied == 0 {
+		t.Fatal("no specialized finding lost all its sampled chains; the test needs more callers than the chain budget")
+	}
+}

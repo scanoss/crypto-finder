@@ -27,6 +27,16 @@ type conditionedValueEnumerator struct {
 	maxValue int
 	memo     map[string][]conditionedUpstreamCall
 	onStack  map[string]bool
+	// walkMemo holds every (function, parameter) result of the current
+	// top-level walk, partial ones included. A cycle or the depth cap makes a
+	// result partial from that entry, and memo keeps only complete ones, so
+	// without this every function below a recursion was re-walked once per
+	// path: exponential in the fan-in depth. Reusing a partial result within
+	// one walk loses nothing at its root, because a value cut at an ancestor
+	// still on the stack reaches the root through that ancestor's own walk.
+	walkMemo map[string][]conditionedUpstreamCall
+	// walks counts collectCallerArguments calls, for tests of the walk's cost.
+	walks int
 }
 
 // conditionedUpstreamCall is the argument list of one call into a function,
@@ -55,6 +65,7 @@ func (e *conditionedValueEnumerator) terminalVariants(owner callgraph.FunctionID
 		if params[index].ResolvedValue != "" {
 			continue
 		}
+		e.walkMemo = make(map[string][]conditionedUpstreamCall)
 		resolved, _ := e.resolveVariants(owner, params, index, 0)
 		variants = append(variants, resolved...)
 	}
@@ -100,6 +111,9 @@ func (e *conditionedValueEnumerator) callerArguments(fn callgraph.FunctionID, in
 	if cached, ok := e.memo[key]; ok {
 		return cached, true
 	}
+	if cached, ok := e.walkMemo[key]; ok {
+		return cached, false
+	}
 	if e.onStack[key] {
 		return nil, false
 	}
@@ -115,11 +129,14 @@ func (e *conditionedValueEnumerator) callerArguments(fn callgraph.FunctionID, in
 	// from the next one instead of caching the partial set.
 	if complete {
 		e.memo[key] = calls
+	} else if e.walkMemo != nil {
+		e.walkMemo[key] = calls
 	}
 	return calls, complete
 }
 
 func (e *conditionedValueEnumerator) collectCallerArguments(fn callgraph.FunctionID, index, depth int) ([]conditionedUpstreamCall, bool) {
+	e.walks++
 	complete := true
 	seen := make(map[string]struct{})
 	var calls []conditionedUpstreamCall
