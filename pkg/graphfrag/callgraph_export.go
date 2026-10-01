@@ -25,16 +25,20 @@ import (
 )
 
 // CallgraphSchemaVersion is the inlined callgraph contract and the zero-value
-// SDK/stitch default. Local CLI exports default to the interned 6.16 contract;
+// SDK/stitch default. Local CLI exports default to the interned 6.17 contract;
 // --export-callgraph-interned-frames=false selects this compatibility render.
 // Both paths use CallgraphExportSchemaVersion to stamp the selected render.
 const CallgraphSchemaVersion = "6.14"
 
 // CallgraphInternedSchemaVersion is the interned contract: call_chains frames
 // omit catalog identity and join through functions[] plus call_chain_indexes.
-// 6.16 adds the optional scan_metadata.ecosystems list; 6.15 artifacts remain
-// valid against their own published schema.
-const CallgraphInternedSchemaVersion = "6.16"
+// 6.16 adds the optional scan_metadata.ecosystems list. 6.17 adds the
+// optional finding_graphs[].dependency block, analysis.paths_total,
+// paths_kept, route_evidence and no_callers_only, root_kind on a chain's first
+// frame, the stitched unresolved_reason, and the unresolved_reason values
+// traversal_truncated, unresolved_dispatch and dependency_without_source.
+// 6.15 and 6.16 artifacts remain valid against their own published schemas.
+const CallgraphInternedSchemaVersion = "6.17"
 
 // CallgraphExportSchemaVersion returns the stamped schema_version for a render.
 func CallgraphExportSchemaVersion(internedFrames bool) string {
@@ -124,6 +128,9 @@ type ExportFindingGraph struct {
 	FindingID string `json:"finding_id"`
 	// PURL is the optional package URL promoted from a direct rule finding.
 	PURL string `json:"purl,omitempty"`
+	// Dependency (6.17+) names the dependency a dependency finding sits in and
+	// how the application depends on it. Absent on first-party findings.
+	Dependency *ExportFindingDependency `json:"dependency,omitempty"`
 	// OccurrenceKey is the optional AST-anchored structural finding identity.
 	OccurrenceKey string `json:"occurrence_key,omitempty"`
 	// MatchedOperation carries the kind/symbol/expression of the matched crypto op.
@@ -149,7 +156,7 @@ type ExportFindingGraph struct {
 	// Reachability is the explicit reachability state (6.8+): one of the
 	// Reachability* constants. Supersedes the implicit chain-presence signal.
 	Reachability string `json:"reachability,omitempty"`
-	// UnresolvedReason says why an unknown verdict is unknown. The stitch sets
+	// UnresolvedReason (6.17+) says why an unknown verdict is unknown. The stitch sets
 	// only unresolved_dispatch: the root reaches the finding through a
 	// name_only edge and through nothing else.
 	UnresolvedReason string `json:"unresolved_reason,omitempty"`
@@ -165,7 +172,7 @@ type ExportFindingGraph struct {
 type ExportFindingAnalysis struct {
 	CallChains string `json:"call_chains,omitempty"`
 	Parameters string `json:"parameters,omitempty"`
-	// PathsTotal is how many distinct routes, from a chain root to the
+	// PathsTotal (6.17+) is how many distinct routes, from a chain root to the
 	// finding, the call graph holds; PathsKept is how many of them the
 	// finding's call_chains show. A route is a function sequence, so chains
 	// that differ only in a call-site line count once. PathsTotal saturates at
@@ -173,13 +180,13 @@ type ExportFindingAnalysis struct {
 	// finding has no route, and on the stitched export.
 	PathsTotal int `json:"paths_total,omitempty"`
 	PathsKept  int `json:"paths_kept,omitempty"`
-	// RouteEvidence is how strongly the finding's strongest route was
+	// RouteEvidence (6.17+) is how strongly the finding's strongest route was
 	// resolved, by its weakest call: RouteEvidenceDirect, RouteEvidenceDispatch
 	// or RouteEvidenceNameOnly (the verdict is then unknown with
 	// unresolved_dispatch). call_chains lists the strongest routes first.
 	// Present with a route, on the live and stitched exports.
 	RouteEvidence string `json:"route_evidence,omitempty"`
-	// NoCallersOnly reports that every root of the routes supporting the
+	// NoCallersOnly (6.17+) reports that every root of the routes supporting the
 	// verdict (those free of name_only edges, or all when none is) is an
 	// application function nothing in the application calls (root_kind
 	// no_callers): the crypto is reached only from code with no known callers.
@@ -303,6 +310,52 @@ type ExportDependencyInfo struct {
 	Module  string `json:"module"`
 	Version string `json:"version,omitempty"`
 	PURL    string `json:"purl,omitempty"`
+}
+
+// Relationships on finding_graphs[].dependency.relationship.
+const (
+	// DependencyDirect is a dependency the application declares itself.
+	DependencyDirect = "direct"
+	// DependencyTransitive is a dependency the application reaches only
+	// through another dependency.
+	DependencyTransitive = "transitive"
+)
+
+// UnresolvedReasonDependencyWithoutSource says why a dependency finding is
+// unknown rather than unreachable: no call chain reaches it, and every route
+// from the application to its dependency in the dependency graph crosses a
+// dependency that joined the call graph without source code, whose calls are
+// not in the graph. Live export only: a stitch with a fragment missing fails.
+const UnresolvedReasonDependencyWithoutSource = "dependency_without_source"
+
+// ExportFindingDependency is finding_graphs[].dependency: the dependency a
+// finding sits in, with its package URL, and how the application reaches it
+// in the resolved dependency graph (not in the call graph).
+type ExportFindingDependency struct {
+	Module  string `json:"module"`
+	Version string `json:"version,omitempty"`
+	PURL    string `json:"purl,omitempty"`
+	// Relationship is DependencyDirect or DependencyTransitive. Absent when
+	// the dependency graph was not resolved or does not connect the
+	// dependency to the application.
+	Relationship string `json:"relationship,omitempty"`
+	// Path is the shortest route from the application to this dependency,
+	// from a direct dependency to this one, both included; the application
+	// (scan_metadata.root_module) is not listed. A route through dependencies
+	// parsed with source is preferred over a shorter one that is not. Absent
+	// with Relationship.
+	Path []ExportDependencyPathStep `json:"path,omitempty"`
+}
+
+// ExportDependencyPathStep is one dependency on a finding's dependency path.
+type ExportDependencyPathStep struct {
+	Module  string `json:"module"`
+	Version string `json:"version,omitempty"`
+	PURL    string `json:"purl,omitempty"`
+	// WithoutSource marks a dependency that joined the call graph without
+	// source code: types only for Java, not at all elsewhere. No call chain
+	// crosses it. Live export only.
+	WithoutSource bool `json:"without_source,omitempty"`
 }
 
 // ExportEntryCall is the schema-6.0 entry_call shape on a chain node. It
@@ -464,7 +517,7 @@ type ExportChainNode struct {
 	// EntryCall is the call-site data-flow for the edge that led to this frame.
 	// Nil on the root frame and on frames derived from legacy 1.0/1.1 fragments.
 	EntryCall *ExportEntryCall `json:"entry_call,omitempty"`
-	// RootKind, on the first frame of a chain only, says what that frame is:
+	// RootKind (6.17+), on the first frame of a chain only, says what that frame is:
 	// `main`, `framework_entry` (a method a framework invokes: an override of a
 	// type outside the application, or a request-mapping, scheduling or
 	// listener annotation), `no_callers` (application code nothing in the
@@ -616,6 +669,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 			CallChains:        grp.callChains,
 		}
 		anchorByFinding[grp.findingID] = grp.anchorNode
+		fg.Dependency = r.findingDependency(root, grp.anchorNode.Component, meta)
 		// An unattributed op keeps its frame so its component-derived identity
 		// survives, which also makes its anchor resolvable — but live has no
 		// containing function to walk forward from and emits nothing, so
@@ -907,6 +961,35 @@ func simpleMethodName(functionName string) string {
 		return functionName[dot+1:]
 	}
 	return functionName
+}
+
+// findingDependency describes the dependency component a stitched finding
+// sits in, and its route from the root in the dependency graph. It is nil for
+// a finding of the root component.
+func (r *Result) findingDependency(root, component ComponentKey, meta ScanMeta) *ExportFindingDependency {
+	if component == root || component == (ComponentKey{}) {
+		return nil
+	}
+	info := r.componentDependencyInfo(component, meta)
+	out := &ExportFindingDependency{Module: info.Module, Version: info.Version, PURL: info.PURL}
+	route := r.dependencyRoutes[component]
+	if len(route) == 0 {
+		return out
+	}
+	out.Relationship = DependencyTransitive
+	if len(route) == 1 {
+		out.Relationship = DependencyDirect
+	}
+	out.Path = make([]ExportDependencyPathStep, len(route))
+	for i, key := range route {
+		step := r.componentDependencyInfo(key, meta)
+		out.Path[i] = ExportDependencyPathStep{Module: step.Module, Version: step.Version, PURL: step.PURL}
+	}
+	return out
+}
+
+func (r *Result) componentDependencyInfo(key ComponentKey, meta ScanMeta) *ExportDependencyInfo {
+	return buildDependencyInfo(meta, Fragment{Module: r.dependencyModules[key]}, key)
 }
 
 // stitchedReachability classifies one finding graph's reachability state.

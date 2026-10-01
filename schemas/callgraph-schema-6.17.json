@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://scanoss.com/schemas/callgraph.json",
-  "title": "SCANOSS Crypto-Finder Callgraph Export",
-  "description": "Finding-centric reachability export written by --export-callgraph.",
+  "$id": "https://scanoss.com/schemas/callgraph-6.17.json",
+  "title": "SCANOSS Crypto-Finder Callgraph Export (interned frames)",
+  "description": "Interned callgraph export, the local CLI default of --export-callgraph. Chain frames omit catalog identity; join through functions[] plus finding_graphs[].call_chain_indexes. scan_metadata.ecosystems lists every call graph analyzed when first-party findings span more than one supported ecosystem. 6.17 adds finding_graphs[].dependency, the analysis route counts and evidence, root_kind on a chain's first frame, and three unresolved_reason values.",
   "type": "object",
   "required": [
     "schema_version",
@@ -12,9 +12,9 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "6.14",
+      "const": "6.17",
       "type": "string",
-      "description": "Version of the customer-facing callgraph contract."
+      "description": "Interned callgraph contract, the local CLI default. The inlined compatibility render remains 6.14."
     },
     "scan_metadata": {
       "$ref": "#/definitions/ScanMetadata"
@@ -35,7 +35,7 @@
     },
     "functions": {
       "type": "array",
-      "description": "Interned callable identity catalog. finding_graphs[].call_chain_indexes are 0-based positions into this array, beside the inlined call_chains objects.",
+      "description": "Interned callable identity catalog. finding_graphs[].call_chain_indexes are 0-based positions into this array. Schema 6.15 keeps catalog identity here instead of on call_chains frames.",
       "items": {
         "type": "object",
         "required": [
@@ -83,6 +83,21 @@
         "dependency": {
           "$ref": "#/definitions/FindingDependency"
         },
+        "unresolved_reason": {
+          "type": "string",
+          "enum": [
+            "no_containing_function",
+            "no_crypto_call_match",
+            "language_not_analyzed",
+            "traversal_truncated",
+            "unresolved_dispatch",
+            "dependency_without_source"
+          ],
+          "description": "Why the finding could not be attributed (no_containing_function, no_crypto_call_match, language_not_analyzed, with finding_location), or why an attributed finding's reachability is unknown: a depth limit cut every route (traversal_truncated), every route crosses a name_only edge (unresolved_dispatch), or every route from the application to the finding's dependency crosses a dependency without source (dependency_without_source). Stitched exports carry unresolved_dispatch only."
+        },
+        "analysis": {
+          "$ref": "#/definitions/FindingAnalysis"
+        },
         "call_chains": {
           "type": "array",
           "items": {
@@ -111,10 +126,6 @@
     },
     "CallChainNode": {
       "type": "object",
-      "required": [
-        "function_name",
-        "file_path"
-      ],
       "properties": {
         "function_name": {
           "type": "string"
@@ -124,6 +135,16 @@
         },
         "crypto_call": {
           "$ref": "#/definitions/TerminalCryptoCall"
+        },
+        "root_kind": {
+          "type": "string",
+          "enum": [
+            "main",
+            "framework_entry",
+            "no_callers",
+            "depth_limit"
+          ],
+          "description": "On a chain's first frame only, what that frame is: a program entry point (main), a method a framework calls (framework_entry), an application function no application code calls (no_callers; a graph root on a library scanned alone), or the frame where a depth limit stopped the walk (depth_limit). Live export only."
         }
       },
       "additionalProperties": true
@@ -298,6 +319,37 @@
         },
         "java_platform_signature_unavailable_reason": {
           "type": "string"
+        },
+        "ecosystems": {
+          "type": "array",
+          "description": "Every call graph the export analyzed, the primary ecosystem first. Present only when first-party findings span more than one supported ecosystem; ecosystem, root_module, function_count and edge_count above stay those of the primary graph.",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ecosystem",
+              "root_module",
+              "function_count",
+              "edge_count"
+            ],
+            "properties": {
+              "ecosystem": {
+                "type": "string"
+              },
+              "root_module": {
+                "type": "string"
+              },
+              "function_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "edge_count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
         }
       }
     },
@@ -356,6 +408,52 @@
         "without_source": {
           "type": "boolean",
           "description": "The dependency joined the call graph without source code (types only for Java, not at all elsewhere), so no call chain crosses it. Live export only."
+        }
+      }
+    },
+    "FindingAnalysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Completeness of the finding's call_chains and parameters, and how many routes support the verdict and how strongly they were resolved.",
+      "properties": {
+        "call_chains": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "parameters": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "paths_total": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Distinct routes from a chain root to the finding the call graph holds; chains that differ only in a call-site line count once. Saturates at the largest int64 and is then a lower bound. Live export only, with a route."
+        },
+        "paths_kept": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many of those routes call_chains shows. Live export only, with a route."
+        },
+        "route_evidence": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "dispatch",
+            "name_only"
+          ],
+          "description": "Strength of the finding's strongest route, rated by its weakest call: every call resolved statically (direct), at least one interface or subclass dispatch and no name_only call (dispatch), or every route needs a name_only call (name_only, with unresolved_reason unresolved_dispatch)."
+        },
+        "no_callers_only": {
+          "type": "boolean",
+          "description": "Every root of the routes supporting the verdict has root_kind no_callers. Omitted when false. Live export only."
         }
       }
     }

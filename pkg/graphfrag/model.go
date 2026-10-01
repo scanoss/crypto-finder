@@ -594,6 +594,13 @@ type Result struct {
 	Chains          []FindingChain
 	SupportingCalls []SupportingCall
 
+	// dependencyRoutes is, per dependency component of the closure, its
+	// shortest route from the stitch root in the dependency graph, root
+	// excluded; dependencyModules names each component's module. They give a
+	// dependency finding its finding_graphs[].dependency block.
+	dependencyRoutes  map[ComponentKey][]ComponentKey
+	dependencyModules map[ComponentKey]string
+
 	// Suppressed records call edges the policy refused to traverse. It is the
 	// audit trail for fail-closed decisions and the data source for a future
 	// opt-in "show me the uncertain paths too" mode. It never affects Chains.

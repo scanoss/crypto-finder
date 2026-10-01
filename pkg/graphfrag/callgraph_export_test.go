@@ -629,15 +629,15 @@ func TestToCallgraphExport_SeparatesTruncatedFindingIDByOccurrenceKey(t *testing
 	}
 }
 
-// TestCallgraphSchemaVersion_DefaultIs614InternedIs616 pins the served
-// callgraph schema at 6.14 and the interned contract at 6.16.
-func TestCallgraphSchemaVersion_DefaultIs614InternedIs616(t *testing.T) {
+// TestCallgraphSchemaVersion_DefaultIs614InternedIs617 pins the served
+// callgraph schema at 6.14 and the interned contract at 6.17.
+func TestCallgraphSchemaVersion_DefaultIs614InternedIs617(t *testing.T) {
 	t.Parallel()
 
 	if CallgraphSchemaVersion != "6.14" {
 		t.Fatalf("CallgraphSchemaVersion = %q, want %q", CallgraphSchemaVersion, "6.14")
 	}
-	if CallgraphInternedSchemaVersion != "6.16" {
-		t.Fatalf("CallgraphInternedSchemaVersion = %q, want 6.16", CallgraphInternedSchemaVersion)
+	if CallgraphInternedSchemaVersion != "6.17" {
+		t.Fatalf("CallgraphInternedSchemaVersion = %q, want 6.17", CallgraphInternedSchemaVersion)
 	}
 }

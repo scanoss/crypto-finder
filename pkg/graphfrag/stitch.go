@@ -164,6 +164,8 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 	roots := rootNodes(root, rootFragment, adjacency, opts.EntryRootedOnly)
 
 	out := Result{
+		dependencyRoutes:     dependencyRoutes(root, deps, fragments),
+		dependencyModules:    componentModules(closure, fragments),
 		Suppressed:           suppressed,
 		operationEntryPoints: indexOperationEntryPoints(closure, fragments),
 		erasedByFunctionKey:  indexErasedSignatures(closure, fragments),
@@ -376,6 +378,52 @@ func dependencyClosure(root ComponentKey, deps DependencyGraph) []ComponentKey {
 		}
 	}
 	return out
+}
+
+// dependencyRoutes is a breadth-first walk of the dependency graph from root:
+// each component's shortest route, root excluded and the component included.
+// Children are visited in module order, the order the live export's resolved
+// dependency graph walk uses, so both name the same route.
+func dependencyRoutes(root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]Fragment) map[ComponentKey][]ComponentKey {
+	routes := make(map[ComponentKey][]ComponentKey)
+	queue := []ComponentKey{root}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		children := append([]ComponentKey(nil), deps[current]...)
+		sort.Slice(children, func(i, j int) bool {
+			left, right := componentSortKey(children[i], fragments), componentSortKey(children[j], fragments)
+			if left != right {
+				return left < right
+			}
+			return children[i].String() < children[j].String()
+		})
+		for _, child := range children {
+			if _, seen := routes[child]; seen || child == root {
+				continue
+			}
+			route := make([]ComponentKey, 0, len(routes[current])+1)
+			route = append(route, routes[current]...)
+			routes[child] = append(route, child)
+			queue = append(queue, child)
+		}
+	}
+	return routes
+}
+
+func componentSortKey(key ComponentKey, fragments map[ComponentKey]Fragment) string {
+	if module := fragments[key].Module; module != "" {
+		return module
+	}
+	return key.String()
+}
+
+func componentModules(closure []ComponentKey, fragments map[ComponentKey]Fragment) map[ComponentKey]string {
+	modules := make(map[ComponentKey]string, len(closure))
+	for _, key := range closure {
+		modules[key] = fragments[key].Module
+	}
+	return modules
 }
 
 func missingFragments(closure []ComponentKey, fragments map[ComponentKey]Fragment) []ComponentKey {

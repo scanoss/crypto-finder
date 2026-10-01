@@ -18,6 +18,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
@@ -140,6 +141,11 @@ type exportBuildContext struct {
 	// maxDepth bounds the frames of a chain; 0 is unbounded. Always
 	// callGraphExportMaxDepth outside tests.
 	maxDepth int
+	// dependencyPaths is, per dependency module, its route from the
+	// application in the resolved dependency graph (engine.DepScanResult).
+	dependencyPaths map[string]dependency.Path
+	// dependencyVersions is the resolved version of each dependency module.
+	dependencyVersions map[string]string
 }
 
 type cachedContainingFunction struct {
@@ -177,15 +183,18 @@ type callGraphExportScanMeta struct {
 }
 
 type callGraphExportFinding struct {
-	FindingID         string                     `json:"finding_id"`
-	PURL              string                     `json:"purl,omitempty"`
-	OccurrenceKey     string                     `json:"occurrence_key,omitempty"`
-	MatchedOperation  *callGraphMatchedOperation `json:"matched_operation,omitempty"`
-	FindingLocation   *callGraphFindingLocation  `json:"finding_location,omitempty"`
-	UnresolvedReason  string                     `json:"unresolved_reason,omitempty"`
-	SupportingCallIDs []string                   `json:"supporting_call_ids,omitempty"`
-	CallChains        [][]callGraphChainNode     `json:"call_chains,omitempty"`
-	CallChainIndexes  [][]int                    `json:"call_chain_indexes,omitempty"`
+	FindingID string `json:"finding_id"`
+	PURL      string `json:"purl,omitempty"`
+	// Dependency names the dependency a dependency finding sits in, with its
+	// package URL and its route from the application.
+	Dependency        *graphfrag.ExportFindingDependency `json:"dependency,omitempty"`
+	OccurrenceKey     string                             `json:"occurrence_key,omitempty"`
+	MatchedOperation  *callGraphMatchedOperation         `json:"matched_operation,omitempty"`
+	FindingLocation   *callGraphFindingLocation          `json:"finding_location,omitempty"`
+	UnresolvedReason  string                             `json:"unresolved_reason,omitempty"`
+	SupportingCallIDs []string                           `json:"supporting_call_ids,omitempty"`
+	CallChains        [][]callGraphChainNode             `json:"call_chains,omitempty"`
+	CallChainIndexes  [][]int                            `json:"call_chain_indexes,omitempty"`
 	// Reachable answers "does user code reach this crypto", which is a different
 	// question from UnresolvedReason's "which function contains it". A finding can
 	// be perfectly attributed and still unreachable.
@@ -1694,6 +1703,8 @@ func newExportBuildContextWithUserPackages(result *engine.DepScanResult, finding
 		maxChainsBudget:         graphfrag.ResolveMaxChains(maxChains),
 		maxDepth:                callGraphExportMaxDepth,
 	}
+	ctx.dependencyPaths = result.DependencyPaths
+	ctx.dependencyVersions = dependencyVersions(result.Dependencies)
 	for _, dep := range result.Dependencies {
 		if dep.Dir == "" {
 			continue
@@ -1853,6 +1864,11 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	markValueEnumerationCut(&fg, asset)
 
 	recordUnresolvedReason(ctx, &fg, finding, asset, unresolvedReason, guessed)
+	var behindUnparsed bool
+	fg.Dependency, behindUnparsed = ctx.findingDependency(asset.DependencyInfo)
+	if behindUnparsed {
+		markDependencyWithoutSource(&fg)
+	}
 
 	if duration := time.Since(start); duration > time.Second {
 		functionName := ""
@@ -1947,6 +1963,82 @@ func liveTraceFlags(ctx *exportBuildContext, containingFn *callgraph.FunctionDec
 	}
 	key := containingFn.ID.String()
 	return ctx.callChainTruncated[key], ctx.callChainDepthLimited[key], traced && ctx.callChainUnresolvedDispatch[key]
+}
+
+// dependencyVersions maps each dependency module to its resolved version,
+// the first listed when a module appears more than once.
+func dependencyVersions(deps []dependency.Dependency) map[string]string {
+	versions := make(map[string]string, len(deps))
+	for _, dep := range deps {
+		if _, ok := versions[dep.Module]; !ok {
+			versions[dep.Module] = dep.Version
+		}
+	}
+	return versions
+}
+
+// findingDependency describes the dependency a finding sits in, and reports
+// whether every route from the application to it in the dependency graph
+// crosses a dependency parsed without source. It is nil for a first-party
+// finding.
+func (ctx *exportBuildContext) findingDependency(info *entities.DependencyInfo) (*graphfrag.ExportFindingDependency, bool) {
+	if info == nil || info.Module == "" {
+		return nil, false
+	}
+	out := &graphfrag.ExportFindingDependency{
+		Module:  info.Module,
+		Version: info.Version,
+		PURL:    purl.Dependency(ctx.ecosystem, info.Module, info.Version),
+	}
+	// Paths are keyed by module@version when the module resolves at several
+	// versions, and by module otherwise. A module with several versions and no
+	// versioned graph has no entry under either key, so its finding carries no
+	// relationship or path rather than one that may belong to another copy.
+	path, ok := ctx.dependencyPaths[dependency.Ref{Module: info.Module, Version: info.Version}.Key()]
+	if !ok {
+		path, ok = ctx.dependencyPaths[info.Module]
+	}
+	if !ok || len(path.Steps) == 0 {
+		return out, false
+	}
+	out.Relationship = graphfrag.DependencyTransitive
+	if len(path.Steps) == 1 {
+		out.Relationship = graphfrag.DependencyDirect
+	}
+	out.Path = make([]graphfrag.ExportDependencyPathStep, len(path.Steps))
+	for i, step := range path.Steps {
+		version := step.Version
+		if version == "" {
+			version = ctx.dependencyVersions[step.Module]
+		}
+		if step.Module == info.Module && (step.Version == "" || step.Version == info.Version) {
+			version = info.Version
+		}
+		out.Path[i] = graphfrag.ExportDependencyPathStep{
+			Module:        step.Module,
+			Version:       version,
+			PURL:          purl.Dependency(ctx.ecosystem, step.Module, version),
+			WithoutSource: step.WithoutSource,
+		}
+	}
+	return out, path.WithoutSource
+}
+
+// markDependencyWithoutSource downgrades the unreachable verdict of a
+// dependency finding whose dependency the application reaches only through
+// dependencies parsed without source. Their calls are not in the graph, so a
+// chain that runs through one cannot be found, and finding none proves
+// nothing: the verdict is unknown (dependency_without_source).
+func markDependencyWithoutSource(fg *callGraphExportFinding) {
+	if fg.Reachability != graphfrag.ReachabilityUnreachable {
+		return
+	}
+	fg.Reachable = nil
+	fg.Reachability = graphfrag.ReachabilityUnknown
+	fg.UnresolvedReason = graphfrag.UnresolvedReasonDependencyWithoutSource
+	if fg.Analysis != nil {
+		fg.Analysis.CallChains = graphfrag.AnalysisPartial
+	}
 }
 
 // refutedTraceFlags restates the trace of a finding whose rule condition

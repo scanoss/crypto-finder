@@ -78,8 +78,8 @@ func TestToCallgraphExport_ContractsFrameIdentityIntoCatalog(t *testing.T) {
 	if out.SchemaVersion != CallgraphInternedSchemaVersion {
 		t.Fatalf("schema_version = %q, want %q", out.SchemaVersion, CallgraphInternedSchemaVersion)
 	}
-	if CallgraphInternedSchemaVersion != "6.16" {
-		t.Fatalf("CallgraphInternedSchemaVersion = %q, want 6.16", CallgraphInternedSchemaVersion)
+	if CallgraphInternedSchemaVersion != "6.17" {
+		t.Fatalf("CallgraphInternedSchemaVersion = %q, want 6.17", CallgraphInternedSchemaVersion)
 	}
 	if len(out.FindingGraphs) != 1 {
 		t.Fatalf("FindingGraphs len = %d, want 1", len(out.FindingGraphs))
