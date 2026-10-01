@@ -149,7 +149,7 @@ func TestFindOccurrenceContainingFunction_MatchesPathSegments(t *testing.T) {
 		{name: "partial basename", path: "NotCrypto.java", want: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got := findOccurrenceContainingFunction(functions, tt.path, 5)
+			got := findOccurrenceContainingFunction(newFunctionFileIndex(functions), tt.path, 5)
 			if (got != nil) != tt.want {
 				t.Fatalf("findOccurrenceContainingFunction(%q) = %v, want found=%t", tt.path, got != nil, tt.want)
 			}

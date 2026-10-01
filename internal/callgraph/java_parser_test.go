@@ -1637,8 +1637,8 @@ func checkNoMalformedArrayType(t *testing.T, sn SourceNode) {
 				sn.Type, sn.DeclaredType, sn.CallTarget)
 		}
 	}
-	for _, child := range sn.SourceNodes {
-		checkNoMalformedArrayType(t, child)
+	for i := range sn.SourceNodes {
+		checkNoMalformedArrayType(t, sn.SourceNodes[i])
 	}
 }
 
