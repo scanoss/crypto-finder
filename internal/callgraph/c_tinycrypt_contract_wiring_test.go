@@ -165,8 +165,13 @@ void not_contracted(void *a0, void *a1, void *a2, void *a3) {
 				if got[0].Role != expect.role {
 					t.Fatalf("%s: role = %q, want %q", key, got[0].Role, expect.role)
 				}
-				if got[0].SourceLibrary != "tinycrypt" {
-					t.Fatalf("%s: library = %q, want tinycrypt", bare, got[0].SourceLibrary)
+				wantLib := "tinycrypt"
+				if key == "ecdsa_verify/4" {
+					// Same symbol, arity and role as the Nettle contract, which owns it.
+					wantLib = "nettle"
+				}
+				if got[0].SourceLibrary != wantLib {
+					t.Fatalf("%s: library = %q, want %s", bare, got[0].SourceLibrary, wantLib)
 				}
 				seen[key] = true
 			}
