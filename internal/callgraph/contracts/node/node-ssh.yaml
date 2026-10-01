@@ -4,7 +4,7 @@ library:
   name: "node-ssh"
   coordinates:
     - "node-ssh"
-  version_range: ">=1.0.0"
+  version_range: ">=2.0.0"
   description: "node-ssh: a promise wrapper over the ssh2 client"
 
 # A consumer builds a client and connects:
@@ -17,7 +17,9 @@ library:
 # before it. The parser keys a constructor called on a directly required module
 # by the local name, and consumers of the default export name it `NodeSSH`
 # (dpy, node-ssh-modify-nginx) or `node_ssh` (the pre-10 README), so both are
-# declared. connect resolves to the same client.
+# declared. The constructor-then-connect(config) shape starts at 2.0.0 (1.x took
+# the config in the constructor); connect resolves the client itself from 3.0.0
+# (2.x resolved nothing).
 #
 # Deliberately NOT contracted: execCommand, exec, putFile, getFile, the
 # directory and SFTP helpers, requestShell and dispose. They move data over the
