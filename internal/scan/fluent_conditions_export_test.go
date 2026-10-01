@@ -78,7 +78,7 @@ func TestExportCallGraph_FluentChainConditionReadsTheMatchedLink(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.dir, func(t *testing.T) {
 			t.Parallel()
-			graphs := exportEntryRoots(t, fluentConditionFixture(t, tt.dir, tt.ecosystem, tt.language, tt.parser(), tt.cases), 0)
+			graphs := exportEntryRoots(t, fluentConditionFixture(t, filepath.Join("fluent_conditions", tt.dir), tt.ecosystem, tt.language, tt.parser(), tt.cases), 0)
 			for _, c := range tt.cases {
 				fg, ok := graphs[c.id]
 				if !ok {
@@ -94,7 +94,7 @@ func TestExportCallGraph_FluentChainConditionReadsTheMatchedLink(t *testing.T) {
 	}
 }
 
-// fluentConditionFixture builds testdata/fluent_conditions/<dir> and plants
+// fluentConditionFixture builds testdata/<dir> and plants
 // each case at its span, with columns as a rule match reports them (1-based,
 // end exclusive).
 func fluentConditionFixture(t *testing.T, dir, ecosystem, language string, parser callgraph.Parser, cases []fluentConditionCase) entryRootsFixture {
@@ -103,7 +103,7 @@ func fluentConditionFixture(t *testing.T, dir, ecosystem, language string, parse
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	root := filepath.Join(filepath.Dir(testFile), "testdata", "fluent_conditions", dir)
+	root := filepath.Join(filepath.Dir(testFile), "testdata", dir)
 	graph, err := callgraph.NewBuilderForEcosystem(ecosystem, parser).BuildFromDirectories([]callgraph.PackageDir{{Dir: root}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)

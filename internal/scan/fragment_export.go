@@ -1500,7 +1500,7 @@ func fragmentEntryPointChains(
 		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
 		chains = [][]callGraphChainNode{{node}}
 	} else {
-		expanded := expandCallChainCallSites(ctx, raw, callGraphExportMaxChains)
+		expanded, _ := expandCallChainCallSites(ctx, raw, callGraphExportMaxChains)
 		chains = materializeCallChainNodes(ctx, expanded)
 	}
 	attachCryptoCall(chains, cryptoCall)
