@@ -92,6 +92,40 @@ contracts:
     return: { type: "boolean", confidence: high }
     role: operation
 
+  # THE CONTEXT SIGNS AND VERIFIES TOO. EC.prototype.sign(msg, key, enc, options)
+  # and EC.prototype.verify(msg, signature, key, enc) take the key as an argument
+  # (6.5.7 lib/elliptic/ec/index.js:91,156), and the secp256k1 and eccrypto
+  # packages call them that way: `ec.sign(msg, privateKey, { canonical: true })`.
+  # The optional trailing enc and options arguments make three arities for sign
+  # and two for verify.
+  - method: "elliptic.ec.sign"
+    arity: 2
+    return: { type: "elliptic.Signature", confidence: high }
+    role: operation
+  - method: "elliptic.ec.sign"
+    arity: 3
+    return: { type: "elliptic.Signature", confidence: high }
+    role: operation
+  - method: "elliptic.ec.sign"
+    arity: 4
+    return: { type: "elliptic.Signature", confidence: high }
+    role: operation
+  - method: "elliptic.ec.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "elliptic.ec.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  # toDER() serialises a signature to DER bytes as a plain array; toDER('hex')
+  # returns a string and is left undeclared rather than guessed by arity.
+  - method: "elliptic.Signature.toDER"
+    arity: 0
+    return: { type: "Array", confidence: high }
+    role: output
+
   # derive() IS ECDH: a private key times a peer's public point. Neither a
   # signature nor an encryption, and it returns a BN rather than a key object.
   - method: "elliptic.KeyPair.derive"
@@ -106,6 +140,19 @@ contracts:
   - method: "elliptic.KeyPair.getPublic"
     arity: 1
     return: { type: "string", confidence: high }
+    role: output
+  # getPublic(compact, enc) with both arguments encodes the point: `hex` gives a
+  # string, `array` (or any other encoding) a byte array
+  # (6.5.7 lib/elliptic/ec/key.js:53-67). eccrypto calls
+  # getPublic(compressed, "arr").
+  - method: "elliptic.KeyPair.getPublic"
+    arity: 2
+    when: { arg_index: 1, arg_value_in: ["hex", "'hex'", "\"hex\""] }
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "elliptic.KeyPair.getPublic"
+    arity: 2
+    return: { type: "Array", confidence: high }
     role: output
   - method: "elliptic.KeyPair.getPrivate"
     arity: 0
