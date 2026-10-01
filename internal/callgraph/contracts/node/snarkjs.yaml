@@ -1,0 +1,290 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "snarkjs"
+  coordinates:
+    - "snarkjs"
+  version_range: ">=0.2.0"
+  description: "snarkjs: zero-knowledge proof systems (Groth16, PLONK, FFLONK) and their trusted setup"
+
+# THE PROOF SYSTEM IS IN THE NAMESPACE. Every function lives under groth16,
+# plonk, fflonk, zKey or powersOfTau, and a consumer calls it through the module:
+#
+#     const snarkjs = require('snarkjs');
+#     const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, wasm, zkey); // operation
+#     const ok = await snarkjs.groth16.verify(vKey, publicSignals, proof);                 // operation
+#     await snarkjs.zKey.newZKey('circuit.r1cs', 'pot.ptau', 'circuit.zkey');             // operation
+#
+# Two API generations are declared. 0.3 and later export groth16 (0.3), plonk
+# (0.4), fflonk (0.7), zKey and powersOfTau; 0.2 exports original, groth and
+# kimleeoh, each with setup, genProof and isValid. 0.1 exported the same three
+# functions flat and is not covered.
+#
+# EVERY FUNCTION TAKES OPTIONAL TRAILING ARGUMENTS (a logger, the witness
+# calculator options, the prover options), so each is declared at every arity it
+# accepts. The results are plain objects, strings or buffers with no methods, so
+# no method is declared on them; the types are what a function that returns one
+# of these calls reports as its inferred return.
+#
+# Declared from snarkjs 0.7.6 (src/*.js: the exported functions, their parameter
+# lists and what each returns), 0.2.0 (index.js and src/setup_*, prover_*,
+# verifier_*) and checked against 0.7.0, 0.6.0 and 0.4.0.
+#
+# Deliberately NOT contracted: exportSolidityCallData, exportSolidityVerifier,
+# exportJson, exportBellman, importBellman, bellmanContribute, the r1cs and wtns
+# helpers and the powersOfTau challenge and file-conversion functions. They
+# serialize or convert proofs, keys, circuits and witnesses, and the operations
+# that produce what they serialize are already declared.
+contracts:
+
+  # 0.3 and later.
+  - method: "snarkjs.groth16.fullProve"
+    arity: 3
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.groth16.fullProve"
+    arity: 4
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.groth16.fullProve"
+    arity: 5
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.groth16.fullProve"
+    arity: 6
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.groth16.prove"
+    arity: 2
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.groth16.prove"
+    arity: 3
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.groth16.prove"
+    arity: 4
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.groth16.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.groth16.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.fullProve"
+    arity: 3
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.fullProve"
+    arity: 4
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.fullProve"
+    arity: 5
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.fullProve"
+    arity: 6
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.prove"
+    arity: 2
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.prove"
+    arity: 3
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.prove"
+    arity: 4
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.fullProve"
+    arity: 3
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.fullProve"
+    arity: 4
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.fullProve"
+    arity: 5
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.fullProve"
+    arity: 6
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.prove"
+    arity: 2
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.prove"
+    arity: 3
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.prove"
+    arity: 4
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.setup"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "snarkjs.plonk.setup"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.setup"
+    arity: 3
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "snarkjs.fflonk.setup"
+    arity: 4
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.newZKey"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.newZKey"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.contribute"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.contribute"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.beacon"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.beacon"
+    arity: 6
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.exportVerificationKey"
+    arity: 1
+    return: { type: "snarkjs.VerificationKey", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.exportVerificationKey"
+    arity: 2
+    return: { type: "snarkjs.VerificationKey", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.verifyFromInit"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.verifyFromInit"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.verifyFromR1cs"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.zKey.verifyFromR1cs"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.newAccumulator"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.newAccumulator"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.contribute"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.contribute"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.beacon"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.beacon"
+    arity: 6
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.preparePhase2"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.preparePhase2"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.powersOfTau.verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  # 0.2: the three protocols under their own namespaces.
+  - method: "snarkjs.original.setup"
+    arity: 1
+    return: { type: "snarkjs.SetupResult", confidence: high }
+    role: operation
+  - method: "snarkjs.original.genProof"
+    arity: 2
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.original.isValid"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.groth.setup"
+    arity: 1
+    return: { type: "snarkjs.SetupResult", confidence: high }
+    role: operation
+  - method: "snarkjs.groth.genProof"
+    arity: 2
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.groth.isValid"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "snarkjs.kimleeoh.setup"
+    arity: 1
+    return: { type: "snarkjs.SetupResult", confidence: high }
+    role: operation
+  - method: "snarkjs.kimleeoh.genProof"
+    arity: 2
+    return: { type: "snarkjs.ProofResult", confidence: high }
+    role: operation
+  - method: "snarkjs.kimleeoh.isValid"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
