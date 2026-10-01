@@ -99,8 +99,29 @@ func materializeConditionedAnchor(
 	}
 	// The chains are a bounded sample: one caller's routes can fill the budget
 	// and hide every other caller's value. Specialize from all of them.
-	candidates = append(candidates, values.terminalVariants(containingFn.ID, terminal.Parameters)...)
+	variants, truncated := values.terminalVariants(containingFn.ID, terminal.Parameters)
+	candidates = append(candidates, variants...)
+	if truncated {
+		// A caller value may be missing, so this anchor's specialization and
+		// the chains of what it yields are incomplete. The export reads the
+		// flag; the generic anchor in the report carries it too, for the case
+		// where no value survived the cut.
+		anchor.ConditionedValuesIncomplete = true
+		markAnchorValuesIncomplete(finding, anchor)
+	}
 	return appendConditionedAssets(finding, anchor, rules, candidates, existing)
+}
+
+// markAnchorValuesIncomplete flags the generic anchor asset of finding that
+// anchor was copied from.
+func markAnchorValuesIncomplete(finding *entities.Finding, anchor entities.CryptographicAsset) {
+	for i := range finding.CryptographicAssets {
+		asset := &finding.CryptographicAssets[i]
+		if asset.StartLine == anchor.StartLine && asset.StartCol == anchor.StartCol &&
+			asset.EndLine == anchor.EndLine && asset.EndCol == anchor.EndCol && len(asset.ParameterConditions) == 0 {
+			asset.ConditionedValuesIncomplete = true
+		}
+	}
 }
 
 func conditionedTerminalCall(

@@ -119,6 +119,12 @@ type CryptographicAsset struct {
 	TerminalStartCol int `json:"-"`
 	TerminalEndCol   int `json:"-"`
 
+	// ConditionedValuesIncomplete records that the enumeration of the values
+	// reaching this asset's selector parameter hit its depth cap or value bound,
+	// so a caller value may be missing. The callgraph export reads it to mark
+	// the finding's call chains partial. In-process state, not public schema.
+	ConditionedValuesIncomplete bool `json:"-"`
+
 	// Match is the actual code snippet that was matched
 	Match string `json:"match"`
 

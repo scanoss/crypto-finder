@@ -13,7 +13,8 @@ import (
 )
 
 // maxConditionedSelectorValues bounds the distinct values one parameter may
-// contribute to specialization. Hitting it is logged, never silent.
+// contribute to specialization. Hitting it is logged and reported: the
+// specialized findings and their anchor read analysis.call_chains as partial.
 const maxConditionedSelectorValues = 256
 
 // maxConditionedWalkDepth bounds how many callers deep the value enumeration
@@ -42,6 +43,11 @@ type conditionedValueEnumerator struct {
 	walkMemo map[string][]conditionedUpstreamCall
 	// walks counts collectCallerArguments calls, for tests of the walk's cost.
 	walks int
+	// truncated records that the depth cap or the value bound cut an
+	// enumeration, so a caller value may be missing. A cycle does not set it:
+	// a value cut at an ancestor still on the stack reaches the root through
+	// that ancestor's own walk. terminalVariants resets it per call.
+	truncated bool
 }
 
 // conditionedUpstreamCall is the argument list of one call into a function,
@@ -63,9 +69,11 @@ func newConditionedValueEnumerator(ctx *exportBuildContext) *conditionedValueEnu
 }
 
 // terminalVariants returns copies of the terminal call's parameters, one per
-// distinct caller value of each unresolved parameter.
-func (e *conditionedValueEnumerator) terminalVariants(owner callgraph.FunctionID, params []callGraphParameter) [][]callGraphParameter {
-	var variants [][]callGraphParameter
+// distinct caller value of each unresolved parameter. truncated reports that
+// the depth cap or the value bound cut an enumeration, so some caller value
+// may be missing from the result.
+func (e *conditionedValueEnumerator) terminalVariants(owner callgraph.FunctionID, params []callGraphParameter) (variants [][]callGraphParameter, truncated bool) {
+	e.truncated = false
 	for index := range params {
 		if params[index].ResolvedValue != "" {
 			continue
@@ -74,7 +82,7 @@ func (e *conditionedValueEnumerator) terminalVariants(owner callgraph.FunctionID
 		resolved, _ := e.resolveVariants(owner, params, index, 0)
 		variants = append(variants, resolved...)
 	}
-	return variants
+	return variants, e.truncated
 }
 
 // resolveVariants returns copies of params, a call made inside owner, in which
@@ -123,8 +131,9 @@ func (e *conditionedValueEnumerator) callerArguments(fn callgraph.FunctionID, in
 		return nil, false
 	}
 	if depth >= e.maxDepth {
-		log.Debug().Str("function", fn.String()).Int("parameter_index", index).Int("max_depth", e.maxDepth).
-			Msg("Stopped selector value enumeration at the depth cap")
+		e.truncated = true
+		log.Warn().Str("function", fn.String()).Int("parameter_index", index).Int("max_depth", e.maxDepth).
+			Msg("Selector value enumeration hit the depth cap; remaining caller values are not specialized")
 		return nil, false
 	}
 	e.onStack[key] = true
@@ -206,6 +215,7 @@ func (e *conditionedValueEnumerator) admit(seen map[string]struct{}, value strin
 }
 
 func (e *conditionedValueEnumerator) logValueBound(fn callgraph.FunctionID, index int) {
+	e.truncated = true
 	log.Warn().Str("function", fn.String()).Int("parameter_index", index).Int("max_values", e.maxValue).
 		Msg("Selector value enumeration hit its bound; remaining caller values are not specialized")
 }

@@ -264,7 +264,7 @@ func TestConditionedValueEnumerator_WalksOnceBelowARecursion(t *testing.T) {
 	terminal := buildCryptoCall(ctx, g.graph, helper, &helper.Calls[0])
 
 	enumerator := newConditionedValueEnumerator(ctx)
-	variants := enumerator.terminalVariants(helper.ID, terminal.Parameters)
+	variants, _ := enumerator.terminalVariants(helper.ID, terminal.Parameters)
 	distinct := make(map[string]struct{})
 	for _, params := range variants {
 		distinct[params[0].ResolvedValue] = struct{}{}
@@ -310,5 +310,84 @@ func TestBuildCallGraphExport_OutOfSampleValueReportsPartialChains(t *testing.T)
 	}
 	if emptied == 0 {
 		t.Fatal("no specialized finding lost all its sampled chains; the test needs more callers than the chain budget")
+	}
+}
+
+// addForwarderChain stacks depth functions that each forward their parameter to
+// the one below, ending at the helper, and returns the topmost one. A literal
+// caller beside each hop keeps its parameter multi-sourced, so the export does
+// not inline the chain ahead of the walk.
+func (g selectorGraph) addForwarderChain(depth int) callgraph.FunctionID {
+	below := selectorHelperID
+	for i := range depth {
+		id := callgraph.FunctionID{Package: "example", Type: "Chain", Name: fmt.Sprintf("hop%03d#1", i)}
+		g.addFunction(&callgraph.FunctionDecl{
+			ID: id, FilePath: "Digests.java", StartLine: 20, EndLine: 30,
+			Parameters: []callgraph.FunctionParameter{{Name: "algorithm", Type: "String"}},
+			Calls:      []callgraph.FunctionCall{forwardCall(below, "algorithm", 21)},
+		})
+		g.addLiteralCaller(fmt.Sprintf("side%03d", i), id, 0)
+		below = id
+	}
+	g.addLiteralCaller("direct", selectorHelperID, 0)
+	return below
+}
+
+func partialChainFindings(payload *callGraphExportV2) (partial, total int) {
+	for i := range payload.FindingGraphs {
+		total++
+		if a := payload.FindingGraphs[i].Analysis; a != nil && a.CallChains == graphfrag.AnalysisPartial {
+			partial++
+		}
+	}
+	return partial, total
+}
+
+// A caller value beyond the depth cap, or past the value bound, is not
+// enumerated. That must reach the export: the finding's call chains read
+// partial, where a walk that completed leaves them complete.
+func TestConditionedValueEnumeration_TruncationReportsPartialChains(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, selectorValueRules)
+	cases := []struct {
+		name        string
+		depth       int
+		callers     int
+		maxValue    int
+		wantPartial bool
+	}{
+		{name: "shallow chain completes", depth: 3, callers: 1, wantPartial: false},
+		{name: "chain at the depth cap", depth: maxConditionedWalkDepth - 1, callers: 1, wantPartial: false},
+		{name: "chain deeper than the depth cap", depth: maxConditionedWalkDepth + 2, callers: 1, wantPartial: true},
+		{name: "values past the bound", depth: 1, callers: maxConditionedSelectorValues + 5, wantPartial: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := newSelectorGraph()
+			top := g.addForwarderChain(tc.depth)
+			for i := range tc.callers {
+				g.addLiteralCaller(fmt.Sprintf("top%03d", i), top, i+1)
+			}
+			report := g.report()
+			MaterializeConditionedFindings(report, g.graph, []string{rules}, "java")
+
+			anchor := report.Findings[0].CryptographicAssets[0]
+			if anchor.ConditionedValuesIncomplete != tc.wantPartial {
+				t.Errorf("anchor ConditionedValuesIncomplete = %v, want %v", anchor.ConditionedValuesIncomplete, tc.wantPartial)
+			}
+			payload := buildCallGraphExportV2(&engine.DepScanResult{Report: report, CallGraph: g.graph, Ecosystem: "java"})
+			partial, total := partialChainFindings(&payload)
+			if total == 0 {
+				t.Fatal("export holds no finding graph")
+			}
+			if tc.wantPartial && partial != total {
+				t.Errorf("%d of %d finding graphs read analysis.call_chains partial, want all", partial, total)
+			}
+			if !tc.wantPartial && partial != 0 {
+				t.Errorf("%d finding graphs read analysis.call_chains partial, want none", partial)
+			}
+		})
 	}
 }

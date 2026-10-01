@@ -1825,6 +1825,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	if chainsFilteredAway && fg.Analysis != nil {
 		fg.Analysis.CallChains = graphfrag.AnalysisPartial
 	}
+	markValueEnumerationCut(&fg, asset)
 
 	if unresolvedReason == unresolvedTraversalTruncated {
 		// The finding is attributed; only its reachability is open.
@@ -1848,6 +1849,20 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	}
 
 	return fg
+}
+
+// markValueEnumerationCut reads call_chains as partial for a finding whose
+// selector value enumeration was cut by the depth cap or the value bound: a
+// caller value may be missing, and with it a specialized finding and its
+// chains.
+func markValueEnumerationCut(fg *callGraphExportFinding, asset entities.CryptographicAsset) {
+	if !asset.ConditionedValuesIncomplete {
+		return
+	}
+	if fg.Analysis == nil {
+		fg.Analysis = liveFindingAnalysis(fg.CallChains, true)
+	}
+	fg.Analysis.CallChains = graphfrag.AnalysisPartial
 }
 
 // filterChainsByCondition drops the chains a rule's parameterCondition
