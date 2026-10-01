@@ -505,7 +505,7 @@ func assertForwardContract(t *testing.T, tc acceptanceCase, result *acceptanceRe
 		assertSuppressedAmbiguity(t, result.stitch)
 		assertSerializedAmbiguity(t, result.stitched)
 	case "python":
-		assert.Equal(t, "helper(bytes, bytes, int): bytes", helper.EntryCall.CanonicalSignature)
+		assert.Equal(t, "acceptance.helper(bytes, bytes, int): bytes", helper.EntryCall.CanonicalSignature)
 		assert.Equal(t, "bytes", helper.EntryCall.ReturnType)
 		assert.Equal(t, []string{"bytes", "bytes", "int"}, helper.EntryCall.ParameterTypes)
 	}
@@ -622,8 +622,8 @@ func assertPythonCallableIdentities(t *testing.T, payload *graphfrag.GraphFragme
 		}
 	}
 	assert.ElementsMatch(t, []string{
-		"BaseRunner.run(bytes, bytes, str): bytes",
-		"Runner.run(bytes, bytes, str): bytes",
+		"acceptance.BaseRunner.run(bytes, bytes, str): bytes",
+		"acceptance.Runner.run(bytes, bytes, str): bytes",
 	}, signatures, "base/override identities include declaring type, parameter types, and return type")
 }
 

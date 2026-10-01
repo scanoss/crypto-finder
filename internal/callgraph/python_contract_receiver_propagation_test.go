@@ -58,7 +58,7 @@ func pythonEmbeddedKB(t *testing.T) *contracts.KnowledgeBase {
 // its rewritten Callee and ResolvedReceiverType.
 func assertPythonCallee(t *testing.T, graph *CallGraph, funcName, methodName string, want FunctionID, wantReceiver string) {
 	t.Helper()
-	fn := graph.Functions[FunctionID{Package: "mypkg", Name: funcName}.String()]
+	fn := graph.Functions[FunctionID{Package: "mypkg.src", Name: funcName}.String()]
 	if fn == nil {
 		t.Fatalf("%s not found in graph", funcName)
 	}
@@ -233,7 +233,7 @@ def run():
 		{"embedded KB", pythonEmbeddedKB(t)},
 	} {
 		graph := pythonPropagationGraph(t, src, tc.kb)
-		fn := graph.Functions[FunctionID{Package: "mypkg", Name: "run"}.String()]
+		fn := graph.Functions[FunctionID{Package: "mypkg.src", Name: "run"}.String()]
 		if fn == nil {
 			t.Fatalf("%s: run not found", tc.name)
 		}
@@ -241,7 +241,7 @@ def run():
 		if call == nil {
 			t.Fatalf("%s: key.sign call not found", tc.name)
 		}
-		want := FunctionID{Package: "mypkg", Type: "Wrapper", Name: "sign"}
+		want := FunctionID{Package: "mypkg.src", Type: "Wrapper", Name: "sign"}
 		if call.Callee != want {
 			t.Errorf("%s: Callee = %+v, want %+v (the in-graph declaration must win)",
 				tc.name, call.Callee, want)
@@ -273,7 +273,7 @@ def mixed():
     return a, b
 `
 	graph := pythonPropagationGraph(t, src, pythonEmbeddedKB(t))
-	fn := graph.Functions[FunctionID{Package: "mypkg", Name: "mixed"}.String()]
+	fn := graph.Functions[FunctionID{Package: "mypkg.src", Name: "mixed"}.String()]
 	if fn == nil {
 		t.Fatal("mixed not found")
 	}
@@ -312,7 +312,7 @@ def mixed():
 	// unchanged is the precise statement that the fallback invented nothing —
 	// asserting an empty Type would be asserting a shape the parser never
 	// produces.
-	if want := (FunctionID{Package: "mypkg", Type: "widget", Name: "sign"}); widgetCall.Callee != want {
+	if want := (FunctionID{Package: "mypkg.src", Type: "widget", Name: "sign"}); widgetCall.Callee != want {
 		t.Errorf("widget.sign Callee = %+v, want the untouched placeholder %+v",
 			widgetCall.Callee, want)
 	}
@@ -343,7 +343,7 @@ def other(key):
 	assertPythonCallee(t, graph, "binds", "sign",
 		FunctionID{Package: "coincurve", Type: "PrivateKey", Name: "sign"}, "PrivateKey")
 
-	fn := graph.Functions[FunctionID{Package: "mypkg", Name: "other"}.String()]
+	fn := graph.Functions[FunctionID{Package: "mypkg.src", Name: "other"}.String()]
 	if fn == nil {
 		t.Fatal("other not found")
 	}
@@ -411,7 +411,7 @@ def run(m):
 		},
 	} {
 		graph := pythonPropagationGraph(t, tc.src, pythonEmbeddedKB(t))
-		fn := graph.Functions[FunctionID{Package: "mypkg", Name: "run"}.String()]
+		fn := graph.Functions[FunctionID{Package: "mypkg.src", Name: "run"}.String()]
 		if fn == nil {
 			t.Fatalf("%s: run not found", tc.name)
 		}
@@ -424,7 +424,7 @@ def run(m):
 				"earlier assignment is stale once the name is rebound to an "+
 				"unknowable callee", tc.name, call.ResolvedReceiverType)
 		}
-		if got, want := call.Callee, (FunctionID{Package: "mypkg", Type: "key", Name: "sign"}); got != want {
+		if got, want := call.Callee, (FunctionID{Package: "mypkg.src", Type: "key", Name: "sign"}); got != want {
 			t.Errorf("%s: Callee = %+v, want the untouched placeholder %+v", tc.name, got, want)
 		}
 	}
@@ -503,7 +503,7 @@ def run(m):
 		},
 	} {
 		graph := pythonPropagationGraph(t, tc.src, pythonEmbeddedKB(t))
-		fn := graph.Functions[FunctionID{Package: "mypkg", Name: "run"}.String()]
+		fn := graph.Functions[FunctionID{Package: "mypkg.src", Name: "run"}.String()]
 		if fn == nil {
 			t.Fatalf("%s: run not found", tc.name)
 		}
