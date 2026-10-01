@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -603,6 +604,43 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	}
 	if cache.putCalls != 2 || cache.putLastKey == "" {
 		t.Fatalf("expected cache put call after successful scan, puts=%d key=%q", cache.putCalls, cache.putLastKey)
+	}
+}
+
+func TestDependencyScanner_LoadFilteredRules_NodeKeepsJavaScriptAndTypeScriptRules(t *testing.T) {
+	ruleDir := t.TempDir()
+	for name, languages := range map[string]string{
+		"web.yaml":    "[javascript, typescript]",
+		"ts.yaml":     "[typescript]",
+		"python.yaml": "[python]",
+	} {
+		if err := os.WriteFile(filepath.Join(ruleDir, name), []byte("rules:\n  - languages: "+languages+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ruleSource := &mockRuleSource{loadFunc: func() ([]string, error) { return []string{ruleDir}, nil }}
+	ds := &DependencyScanner{orchestrator: NewOrchestrator(&mockDetector{}, rules.NewManager(ruleSource), scanner.NewRegistry())}
+
+	rulePaths, cleanup, err := ds.loadFilteredRules(npmEcosystem, nil)
+	if err != nil {
+		t.Fatalf("loadFilteredRules: %v", err)
+	}
+	defer cleanup()
+	var got []string
+	for _, rulePath := range rulePaths {
+		walkErr := filepath.WalkDir(rulePath, func(_ string, entry os.DirEntry, err error) error {
+			if err == nil && !entry.IsDir() {
+				got = append(got, entry.Name())
+			}
+			return err
+		})
+		if walkErr != nil {
+			t.Fatal(walkErr)
+		}
+	}
+	sort.Strings(got)
+	if want := []string{"ts.yaml", "web.yaml"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Node dependency rule files = %v, want %v", got, want)
 	}
 }
 

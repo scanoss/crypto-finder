@@ -1199,6 +1199,8 @@ func ecosystemToLanguages(ecosystem string) []string {
 		return []string{"rust"}
 	case "c":
 		return []string{"c"}
+	case npmEcosystem:
+		return []string{"javascript", "typescript"}
 	default:
 		return nil
 	}
