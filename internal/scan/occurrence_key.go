@@ -40,7 +40,7 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 
 func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandidate {
 	ctx := newExportBuildContext(result)
-	functions := occurrenceAnchorFunctions(result)
+	functions := newFunctionFileIndex(occurrenceAnchorFunctions(result))
 	var candidates []occurrenceKeyCandidate
 
 	for i := range result.Report.Findings {
@@ -128,14 +128,14 @@ func occurrenceAnchorFunctions(result *engine.DepScanResult) map[string]*callgra
 	return functions
 }
 
-func findOccurrenceContainingFunction(functions map[string]*callgraph.FunctionDecl, findingPath string, line int) *callgraph.FunctionDecl {
+func findOccurrenceContainingFunction(functions *functionFileIndex, findingPath string, line int) *callgraph.FunctionDecl {
 	normalized := filepath.ToSlash(dependencyRelativePath(findingPath))
 	if normalized == "" {
 		normalized = filepath.ToSlash(findingPath)
 	}
 
 	var best *callgraph.FunctionDecl
-	for _, fn := range functions {
+	for _, fn := range functions.segmentSuffixCandidates(normalized) {
 		if !hasPathSegmentSuffix(fn.FilePath, normalized) || line < fn.StartLine || line > fn.EndLine {
 			continue
 		}
