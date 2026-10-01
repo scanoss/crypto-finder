@@ -51,7 +51,9 @@ contracts:
     role: factory
 
   # Key generation: the options object carries bits, cipher, passphrase and
-  # rounds; the callback form returns nothing.
+  # rounds; the callback form returns nothing. The callback is optional in
+  # every version that has the function (keygen.js defaults it to a no-op), so
+  # the one-argument form is a real call.
   - method: "ssh2.utils.generateKeyPairSync"
     arity: 1
     return: { type: "ssh2.GeneratedKeyPair", confidence: high }
@@ -106,7 +108,9 @@ contracts:
     arity: 0
     return: { type: "string", confidence: high }
     role: output
+  # The README documents a string; the source returns the Buffer built by the
+  # key parser (genOpenSSHRSAPub and its siblings allocate a Buffer).
   - method: "ssh2.ParsedKey.getPublicSSH"
     arity: 0
-    return: { type: "string", confidence: high }
+    return: { type: "Buffer", confidence: high }
     role: output

@@ -31,6 +31,7 @@ func TestLoadEmbeddedNodeSSH2(t *testing.T) {
 		{"ssh2.Server.<init>", 2, "ssh2.Server", "factory"},
 		{"ssh2.utils.generateKeyPairSync", 1, "ssh2.GeneratedKeyPair", "operation"},
 		{"ssh2.utils.generateKeyPairSync", 2, "ssh2.GeneratedKeyPair", "operation"},
+		{"ssh2.utils.generateKeyPair", 1, "void", "operation"},
 		{"ssh2.utils.generateKeyPair", 3, "void", "operation"},
 		{"ssh2.utils.parseKey", 1, "ssh2.ParsedKey", "factory"},
 		{"ssh2.utils.parseKey", 2, "ssh2.ParsedKey", "factory"},
@@ -39,7 +40,7 @@ func TestLoadEmbeddedNodeSSH2(t *testing.T) {
 		{"ssh2.ParsedKey.sign", 2, "Buffer", "operation"},
 		{"ssh2.ParsedKey.verify", 2, "boolean", "operation"},
 		{"ssh2.ParsedKey.verify", 3, "boolean", "operation"},
-		{"ssh2.ParsedKey.getPublicSSH", 0, "string", "output"},
+		{"ssh2.ParsedKey.getPublicSSH", 0, "Buffer", "output"},
 	} {
 		got := kb.ContractsFor(w.method, w.arity)
 		if len(got) == 0 {
