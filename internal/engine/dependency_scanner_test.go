@@ -28,6 +28,16 @@ import (
 	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
+// scanSingleDep looks one dependency up and scans it alone, the way the
+// cache identity tests drive a dependency.
+func (ds *DependencyScanner) scanSingleDep(ctx context.Context, dep dependency.Dependency, key string, rulePaths []string, opts DepScanOptions) depScanResult {
+	item := depWork{key: key, dep: dep}
+	if result, hit := ds.lookupDependency(ctx, &item, rulePaths, "hash", opts); hit {
+		return result
+	}
+	return ds.scanDepAlone(ctx, &item, nil)
+}
+
 type fakeResolver struct {
 	ecosystem string
 	resolveFn func(ctx context.Context, targetDir string) (*dependency.ResolveResult, error)
@@ -582,20 +592,20 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	cachedReport := &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}}
 	cache.getMap[cacheKey] = cachedReport
 
-	res := ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
+	res := ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
 	if res.err != nil || res.report == nil || res.report == cachedReport || scanCalls != 1 {
 		t.Fatalf("legacy entry must miss and scan, result=%#v calls=%d", res, scanCalls)
 	}
 	cacheKey = cache.putLastKey
 	cachedReport = res.report
 	cache.getMap[cacheKey] = cachedReport
-	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
+	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
 	if res.err != nil || res.report != cachedReport || scanCalls != 1 {
 		t.Fatalf("new entry must reuse report without scanning, result=%#v calls=%d", res, scanCalls)
 	}
 
 	delete(cache.getMap, cacheKey)
-	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
+	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
 	if res.err != nil {
 		t.Fatalf("scanSingleDep cache miss error: %v", res.err)
 	}
@@ -680,9 +690,9 @@ func TestDependencyScanner_ScanSingleDep_DropsNoFindingReportsFromMemory(t *test
 	}
 
 	dep := dependency.Dependency{Module: "github.com/acme/no-crypto", Version: "v1", Dir: t.TempDir()}
-	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/go.yaml"}, "hash", DepScanOptions{
+	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/go.yaml"}, DepScanOptions{
 		ScanOptions: ScanOptions{ScannerName: "test-scanner"},
-	}, nil)
+	})
 	if res.err != nil {
 		t.Fatalf("scanSingleDep: %v", res.err)
 	}
@@ -816,7 +826,7 @@ func TestDependencyScanner_FindingsCacheKeyIgnoresJobs(t *testing.T) {
 	dep := dependency.Dependency{Module: "a", Version: "1", Dir: t.TempDir()}
 	keyFor := func(jobs int32) string {
 		opts := DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner", ScannerConfig: scanner.Config{Jobs: jobs}}}
-		if res := ds.scanSingleDep(context.Background(), dep, "a@1", []string{"/rules/go.yaml"}, "hash", opts, nil); res.err != nil {
+		if res := ds.scanSingleDep(context.Background(), dep, "a@1", []string{"/rules/go.yaml"}, opts); res.err != nil {
 			t.Fatal(res.err)
 		}
 		return cache.putLastKey
@@ -1046,12 +1056,12 @@ func TestDependencyScanner_ScanSingleDep_JavaRuntimePartitionsCacheKey(t *testin
 	}
 
 	dep := dependency.Dependency{Module: "org.example:lib", Version: "1.2.3", Dir: t.TempDir()}
-	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/java.yaml"}, "hash", DepScanOptions{
+	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/java.yaml"}, DepScanOptions{
 		ScanOptions: ScanOptions{
 			ScannerName:           "test-scanner",
 			JavaRuntimeCacheToken: "jdk-21",
 		},
-	}, nil)
+	})
 	if res.err != nil {
 		t.Fatalf("scanSingleDep: %v", res.err)
 	}

@@ -67,14 +67,25 @@ The kept rules are then written to one merged YAML file, which every dependency 
 
 ```mermaid
 flowchart TB
-    Work["Deduplicated Deps"] --> Pool["Worker Pool<br/><i>default: 4 goroutines</i>"]
-    Pool --> W1["Worker 1"] --> R1["Report A"]
-    Pool --> W2["Worker 2"] --> R2["Report B"]
-    Pool --> W3["Worker 3"] --> R3["Report C"]
-    Pool --> W4["Worker 4"] --> R4["Report D"]
+    Work["Deduplicated Deps"] --> Cache{"Findings cache<br/><i>per dependency</i>"}
+    Cache -->|hit| R0["Cached report"]
+    Cache -->|miss| Shape["Batches<br/><i>balanced by source bytes,<br/>at most 16 roots each</i>"]
+    Shape --> Pool["Worker Pool<br/><i>default: half the cores, max 8</i>"]
+    Pool --> W1["Worker 1: one scanner process<br/>over roots A, B, C"] --> R1["Reports A, B, C"]
+    Pool --> W2["Worker 2: one scanner process<br/>over roots D, E"] --> R2["Reports D, E"]
 ```
 
-Each dependency is scanned independently using the same `Orchestrator.Scan()` pipeline as user code (Semgrep/OpenGrep rules → deduplication → enrichment). Dependencies are deduplicated by `module@version` and processed in a stable order (`module`, `version`, `dir`) so repeated scans produce deterministic report and call graph inputs.
+Dependencies are deduplicated by `module@version` and processed in a stable order (`module`, `version`, `dir`) so repeated scans produce deterministic report and call graph inputs. The findings cache is consulted per dependency; the misses are then grouped into batches and each worker runs **one scanner process per batch**, over every root in it, instead of one process per dependency. OpenGrep loads the rules once per process, and that load is the dominant cost of scanning a small dependency (about 20 s for the JavaScript and TypeScript rules), so a 50-package npm project pays it a handful of times instead of 50. Each process gets `--jobs` sized to its share of the cores (see the `scannerJobs` log field).
+
+Each root's report is what a scan of that root alone produces. The OpenGrep adapter (`ScanRoots`, `internal/scanner/opengrep/batch.go`) attributes every result and error to the root holding its file (longest prefix) and runs the same transformation per root, with that root as the target, so paths, deduplication, rule IDs and finding IDs are unchanged. An error without a file, such as a memory limit reported for the whole process, marks every root in the batch incomplete. The dependency scanner then stamps the ruleset and enriches each report as it does for a single scan, and writes each dependency to the findings cache under its own key, still skipping a dependency whose scan stopped at a limit.
+
+Batch shaping (`internal/engine/dependency_batches.go`):
+
+- **Nested roots never share a process.** An npm dependency's scan excludes its own `node_modules/`, where another dependency may be installed, and an exclusion applies to the whole process. Roots are assigned a nesting level (0 when no other root holds them, otherwise one more than the root that does; a repeated directory counts as nested) and only roots of the same level are batched together.
+- **Balanced by weight.** Each dependency is weighed by the bytes of its source files for the ecosystem's languages (a cheap walk that skips nested `node_modules`). Within a level, the misses are split into `max(ceil(n / 16), min(workers, n))` batches: heaviest dependency first, each into the lightest batch, so the workers finish together and a very large dependency keeps a process to itself. Batches are queued heaviest first.
+- **Process timeout.** A batch gets the single-scan `--timeout` once per `ceil(roots / jobs)`: OpenGrep analyzes `jobs` files at a time, so the roots consume about that many single-scan budgets of wall time. With the default 10 minutes and 4 jobs, a 16-root batch may run for 40 minutes before it is treated as failed.
+- **Failure isolation.** When a batch's process fails (exit status above 1, unreadable output, timeout), every dependency in it is scanned alone, as before batching, so one faulty dependency fails only itself and the others keep their findings and their cache entries. A canceled scan fails the batch's dependencies and rescans nothing.
+- A batch of one root, which includes every dependency when the scanner cannot batch (the Semgrep adapter), goes through the single-scan path unchanged.
 
 Dependencies without a usable local source directory are **not** sent to the scanner. They are logged as `Skipping dependency source scan: no local source directory` instead of triggering empty-path scanner failures. For Java, those dependencies still proceed to step 4 as **type-only** inputs as long as `module@version` can be resolved to a compiled JAR.
 
@@ -953,13 +964,13 @@ Dependency scanning is dominated by opengrep execution time (~93% of pipeline ti
 
 ### How It Works
 
-The cache sits between Step 2 (rule loading) and Step 3 (parallel scanning) in the pipeline. Before scanning each dependency, `scanSingleDep` checks for a cached result. On a cache miss, the scan runs normally and the result is stored.
+The cache sits between Step 2 (rule loading) and Step 3 (parallel scanning) in the pipeline. Before scanning, `lookupDependency` checks each dependency for a cached result. The misses are scanned in batches (Step 3) and each dependency's report is stored under its own key, unless its scan stopped at a time or memory limit.
 
 ```mermaid
 flowchart LR
     Dep["module@version"] --> Check{"Cache hit?"}
     Check -->|Yes| Report["Cached InterimReport"]
-    Check -->|No| Scan["orchestrator.Scan()"]
+    Check -->|No| Scan["batched scanner process"]
     Scan --> Store["Store in cache"]
     Store --> Report
 ```
@@ -1246,7 +1257,7 @@ The pipeline has three main time consumers:
 
 1. **Source parsing for graph packages** (~23s on warm `eladmin`): Parses `.java` files from 32 packages (user code + 27 deps with findings) to build 168K function declarations with call sites.
 
-2. **Dependency scanning with opengrep**: Still dominates cold scans. On warm scans most dependencies hit the findings cache; on first scans the cost depends on dependency source size and worker count (`--dep-workers`).
+2. **Dependency scanning with opengrep**: Still dominates cold scans. On warm scans most dependencies hit the findings cache; on first scans the cost depends on dependency source size and worker count (`--dep-workers`). Batching removed the per-dependency rule load, so the remaining cost is the analysis itself.
 
 3. **Call graph post-processing** (~2-3s): Caller index construction, bytecode merge/rewrite, and fluent-chain resolution are no longer dominant but still scale with graph size.
 
@@ -1264,7 +1275,7 @@ The bytecode resolution bottleneck has largely been removed. Remaining performan
 #### Opengrep scanning
 
 - **Result caching**: The existing `DiskFindingsCache` caches dependency scan results by `module@version:rulesHash`. On repeated scans of the same project, most dependencies hit the cache.
-- **Cold-scan throughput**: First-scan performance still depends heavily on opengrep throughput over large dependency sources.
+- **Cold-scan throughput**: First-scan performance still depends heavily on opengrep throughput over large dependency sources. Scanning only the directories a Go module actually imports, rather than the whole module, is the next lever there.
 
 #### Call graph export
 

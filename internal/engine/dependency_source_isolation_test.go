@@ -223,7 +223,7 @@ func TestDependencyScanner_SourceScopeCache(t *testing.T) {
 	opts := DepScanOptions{ScanOptions: ScanOptions{ScannerName: "fixture"}}
 	scan := func(ecosystem string) depScanResult {
 		ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: ecosystem}, findingsCache: cache, orchestrator: orchestrator}
-		return ds.scanSingleDep(context.Background(), dep, key, []string{"fixture.yaml"}, "hash", opts, nil)
+		return ds.scanSingleDep(context.Background(), dep, key, []string{"fixture.yaml"}, opts)
 	}
 
 	goRes := scan("go")

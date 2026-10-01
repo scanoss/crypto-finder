@@ -198,6 +198,10 @@ func TestDependencyRulesProofTracksCurrentBytes(t *testing.T) {
 	}
 }
 
+// The rules are validated afresh for every dependency scan: a rule file that
+// turns malformed after one dependency's scan fails the later ones in the
+// same invocation, and the repaired file is picked up by the next invocation
+// without the failed dependencies inheriting a cached verdict.
 func TestDependencyRulesRepairDoesNotReuseFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "rule.yaml")
@@ -210,18 +214,11 @@ func TestDependencyRulesRepairDoesNotReuseFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	initialized, scanned := 0, 0
+	scanned := 0
 	registry := scanner.NewRegistry()
 	registry.RegisterFactory("fixture", func() scanner.Scanner {
 		return &mockScanner{
 			getInfoFunc: func() scanner.Info { return scanner.Info{Name: "fixture", Version: "1"} },
-			initializeFunc: func(context.Context, scanner.Config) error {
-				initialized++
-				if initialized == 3 {
-					return write(strings.ReplaceAll(original, "param[0]", "param[1]"))
-				}
-				return nil
-			},
 			scanFunc: func(context.Context, string, []string, entities.ToolInfo) (*entities.InterimReport, error) {
 				scanned++
 				if scanned == 1 {
@@ -238,9 +235,17 @@ func TestDependencyRulesRepairDoesNotReuseFailure(t *testing.T) {
 		return &dependency.ResolveResult{Dependencies: []dependency.Dependency{{Module: "a", Dir: dir}, {Module: "b", Dir: dir}, {Module: "c", Dir: dir}}}, nil
 	}}
 	consumer := NewDependencyScanner(orchestrator, resolver, callgraph.NewBuilder(noopCallgraphParser{}), cache)
-	result, err := consumer.ScanWithDependencies(t.Context(), &entities.InterimReport{}, DepScanOptions{Workers: 1, ScanOptions: ScanOptions{Target: dir, ScannerName: "fixture"}})
-	if err != nil || scanned != 2 || result.ProgressDetails()["deps_failed"] != 1 {
-		t.Fatalf("repair within invocation: scans=%d error=%v result=%v", scanned, err, result)
+	opts := DepScanOptions{Workers: 1, ScanOptions: ScanOptions{Target: dir, ScannerName: "fixture"}}
+	result, err := consumer.ScanWithDependencies(t.Context(), &entities.InterimReport{}, opts)
+	if err != nil || scanned != 1 || result.ProgressDetails()["deps_failed"] != 2 {
+		t.Fatalf("malformed within invocation: scans=%d error=%v details=%v", scanned, err, result.ProgressDetails())
+	}
+	if err := write(original); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := consumer.ScanWithDependencies(t.Context(), &entities.InterimReport{}, opts)
+	if err != nil || scanned != 3 || repaired.ProgressDetails()["deps_failed"] != 0 {
+		t.Fatalf("repair inherited a cached failure: scans=%d error=%v details=%v", scanned, err, repaired.ProgressDetails())
 	}
 }
 

@@ -496,11 +496,6 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 ) ([]depScanResult, error) {
 	orderedDeps := canonicalDependencies(deps)
 
-	type depWork struct {
-		index int
-		key   string
-		dep   dependency.Dependency
-	}
 	outcomes := make([]depScanResult, len(orderedDeps))
 	work := make([]depWork, 0, len(orderedDeps))
 	for i, dep := range orderedDeps {
@@ -545,49 +540,53 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	//
 	// The detached context still propagates explicit cancellation (user Ctrl-C,
 	// errgroup cancel) so the user can still abort the run. Each individual
-	// opengrep invocation inside scanSingleDep gets its own fresh per-call
+	// opengrep invocation inside scanDepAlone or scanBatch gets its own per-call
 	// timeout downstream, which is now unaffected by parent deadline pressure.
 	depCtx, depCancel := detachDeadlineKeepCancel(ctx)
 	defer depCancel()
 
-	// Worker pool
-	workCh := make(chan depWork, len(work))
-	resultCh := make(chan depScanResult, len(work))
-
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for item := range workCh {
-				result := ds.scanSingleDep(depCtx, item.dep, item.key, rulePaths, rulesHash, opts, validator)
-				result.index = item.index
-				resultCh <- result
-			}
-		}()
-	}
-
-	// Send work
-	for _, w := range work {
-		workCh <- w
-	}
-	close(workCh)
-
-	// Wait for all workers to finish, then close results
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
-
-	// Collect results
-	for result := range resultCh {
-		if result.err != nil {
-			log.Warn().Err(result.err).Str("module", result.dep.Module).Msg("Failed to scan dependency source")
+	// Cache lookups stay per dependency; only the misses go to the scanner,
+	// batched so a process loads the rules once for several dependencies.
+	var mu sync.Mutex
+	var misses []depWork
+	batchable := false
+	forEachParallel(workers, work, func(item depWork) {
+		result, hit := ds.lookupDependency(depCtx, &item, rulePaths, rulesHash, opts)
+		if hit {
+			outcomes[item.index] = result
+			return
 		}
-		outcomes[result.index] = result
+		_, canBatch := item.scanner.(scanner.BatchScanner)
+		if canBatch {
+			item.weight = sourceWeight(item.dep.Dir, item.opts.LanguageHint)
+		}
+		mu.Lock()
+		misses = append(misses, item)
+		batchable = batchable || canBatch
+		mu.Unlock()
+	})
+	sort.Slice(misses, func(i, j int) bool { return misses[i].index < misses[j].index })
+
+	var batches []scanBatch
+	if batchable {
+		batches = shapeBatches(misses, workers)
+	} else {
+		for i := range misses {
+			batches = append(batches, scanBatch{items: misses[i : i+1]})
+		}
 	}
+	log.Info().Int("cacheMisses", len(misses)).Int("batches", len(batches)).Msg("Scanning dependencies the findings cache does not hold")
+	forEachParallel(workers, batches, func(batch scanBatch) {
+		results := ds.scanBatch(depCtx, batch, validator)
+		for i := range results {
+			outcomes[results[i].index] = results[i]
+		}
+	})
 
 	for i := range outcomes {
+		if outcomes[i].err != nil {
+			log.Warn().Err(outcomes[i].err).Str("module", outcomes[i].dep.Module).Msg("Failed to scan dependency source")
+		}
 		structured, ok := failure.As(outcomes[i].err)
 		if ok && structured.Code == failure.CodeScannerCancelled {
 			return outcomes, outcomes[i].err
@@ -597,32 +596,50 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	return outcomes, nil
 }
 
-// scanSingleDep scans a single dependency using the orchestrator.
-// If a findings cache is configured and rulesHash is non-empty, it checks the cache
-// before scanning and stores the result after a successful scan.
-func (ds *DependencyScanner) scanSingleDep(
+// forEachParallel runs fn over items on up to workers goroutines and waits.
+func forEachParallel[T any](workers int, items []T, fn func(T)) {
+	queue := make(chan T)
+	var wg sync.WaitGroup
+	for range min(workers, len(items)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range queue {
+				fn(item)
+			}
+		}()
+	}
+	for _, item := range items {
+		queue <- item
+	}
+	close(queue)
+	wg.Wait()
+}
+
+// lookupDependency gives item its scan options, its initialized scanner and,
+// when a findings cache is configured and rulesHash is non-empty, its cache
+// key, and answers from the cache when it holds the dependency. The result
+// is final when hit is true, or when the scanner could not be initialized.
+func (ds *DependencyScanner) lookupDependency(
 	ctx context.Context,
-	dep dependency.Dependency,
-	key string,
+	item *depWork,
 	rulePaths []string,
 	rulesHash string,
 	opts DepScanOptions,
-	validator *rules.ParameterConditionValidator,
-) depScanResult {
-	depOpts := ds.buildDepScanOptions(&dep, rulePaths, opts)
-	cacheKey := ""
-	var initializedScanner scanner.Scanner
+) (result depScanResult, hit bool) {
+	dep := &item.dep
+	item.opts = ds.buildDepScanOptions(dep, rulePaths, opts)
+	initializedScanner, err := ds.orchestrator.initializeScanner(ctx, item.opts)
+	if err != nil {
+		return depScanResult{index: item.index, key: item.key, dep: item.dep, status: depScanStatusFailed, err: err}, true
+	}
+	item.scanner = initializedScanner
 	if ds.findingsCache != nil && rulesHash != "" {
-		var err error
-		initializedScanner, err = ds.orchestrator.initializeScanner(ctx, depOpts)
-		if err != nil {
-			return depScanResult{key: key, dep: dep, status: depScanStatusFailed, err: err}
-		}
 		env := os.Environ()
 		sort.Strings(env)
 		cwd, cwdErr := os.Getwd()
 		info := initializedScanner.GetInfo()
-		config := depOpts.ScannerConfig
+		config := item.opts.ScannerConfig
 		// The job count tunes the host, not the scan. Keying on it would split
 		// the cache by core count and by how many dependencies run at once.
 		config.Jobs = 0
@@ -637,29 +654,37 @@ func (ds *DependencyScanner) scanSingleDep(
 			Languages     []string
 			Environment   []string
 			CWD           string
-		}{key, rulesHash, depOpts.JavaRuntimeCacheToken, depOpts.ScannerName, info, version.Version, config, depOpts.LanguageHint, env, cwd})
+		}{item.key, rulesHash, item.opts.JavaRuntimeCacheToken, item.opts.ScannerName, info, version.Version, config, item.opts.LanguageHint, env, cwd})
 		// Unavailable context/identity disables caching, never scanner validation.
 		if encodeErr == nil && cwdErr == nil && info.Version != "" && info.Version != "unknown" {
-			cacheKey = fmt.Sprintf("dependency-findings-v2:%x", sha256.Sum256(identity))
+			item.cacheKey = fmt.Sprintf("dependency-findings-v2:%x", sha256.Sum256(identity))
 		}
 	}
 
-	// Check cache
-	if cacheKey != "" {
-		if report, ok, err := ds.findingsCache.Get(ctx, cacheKey); err == nil && ok {
-			log.Info().
-				Str("module", dep.Module).
-				Str("version", dep.Version).
-				Msg("Cache hit for dependency scan")
-			return depScanResult{key: key, dep: dep, report: dependencyReportWithFindings(report), status: depScanStatusScanned}
-		} else if err != nil {
-			log.Warn().Err(err).Str("module", dep.Module).Msg("Cache read error, scanning normally")
-		}
+	if item.cacheKey == "" {
+		return depScanResult{}, false
 	}
+	report, ok, err := ds.findingsCache.Get(ctx, item.cacheKey)
+	if err != nil {
+		log.Warn().Err(err).Str("module", dep.Module).Msg("Cache read error, scanning normally")
+		return depScanResult{}, false
+	}
+	if !ok {
+		return depScanResult{}, false
+	}
+	log.Info().
+		Str("module", dep.Module).
+		Str("version", dep.Version).
+		Msg("Cache hit for dependency scan")
+	return depScanResult{index: item.index, key: item.key, dep: item.dep, report: dependencyReportWithFindings(report), status: depScanStatusScanned}, true
+}
 
+// scanDepAlone scans one looked-up dependency in its own scanner process.
+func (ds *DependencyScanner) scanDepAlone(ctx context.Context, item *depWork, validator *rules.ParameterConditionValidator) depScanResult {
+	dep := &item.dep
 	log.Info().Str("module", dep.Module).Str("version", dep.Version).Msg("Scanning dependency")
 
-	report, err := ds.orchestrator.scan(ctx, depOpts, nil, initializedScanner, validator)
+	report, err := ds.orchestrator.scan(ctx, item.opts, nil, item.scanner, validator)
 	log.Info().
 		Str("module", dep.Module).
 		Str("version", dep.Version).
@@ -667,17 +692,74 @@ func (ds *DependencyScanner) scanSingleDep(
 
 	incomplete := false
 	if err == nil {
-		incomplete = !ds.cacheIfComplete(ctx, &dep, cacheKey, report)
+		incomplete = !ds.cacheIfComplete(ctx, dep, item.cacheKey, report)
 	}
 
 	return depScanResult{
-		key:        key,
-		dep:        dep,
+		index:      item.index,
+		key:        item.key,
+		dep:        item.dep,
 		report:     dependencyReportWithFindings(report),
 		status:     scanStatusForError(err),
 		incomplete: incomplete,
 		err:        err,
 	}
+}
+
+// scanBatch scans the batch's dependencies in one scanner process, or alone
+// when the batch holds one. When the process fails, every dependency is
+// scanned alone instead, so one faulty dependency fails only itself, as
+// before batching; a canceled scan fails them all and rescans nothing.
+func (ds *DependencyScanner) scanBatch(ctx context.Context, batch scanBatch, validator *rules.ParameterConditionValidator) []depScanResult {
+	if len(batch.items) == 1 {
+		return []depScanResult{ds.scanDepAlone(ctx, &batch.items[0], validator)}
+	}
+	members := make([]ScanOptions, 0, len(batch.items))
+	roots := make([]string, 0, len(batch.items))
+	modules := make([]string, 0, len(batch.items))
+	for i := range batch.items {
+		members = append(members, batch.items[i].opts)
+		roots = append(roots, batch.items[i].dep.Dir)
+		modules = append(modules, batch.items[i].key)
+	}
+	batchOpts := batchScanOptions(members)
+	log.Info().Int("deps", len(roots)).Int64("sourceBytes", batch.weight).Dur("timeout", batchOpts.ScannerConfig.Timeout).Strs("modules", modules).Msg("Scanning dependency batch")
+	started := time.Now()
+
+	results := make([]depScanResult, len(batch.items))
+	batchScanner, err := ds.orchestrator.initializeScanner(ctx, batchOpts)
+	var reports []*entities.InterimReport
+	if err == nil {
+		reports, err = ds.orchestrator.scanRoots(ctx, batchOpts, roots, batchScanner, validator)
+	}
+	if err != nil {
+		if structured, ok := failure.As(err); ok && structured.Code == failure.CodeScannerCancelled {
+			for i := range batch.items {
+				item := &batch.items[i]
+				results[i] = depScanResult{index: item.index, key: item.key, dep: item.dep, status: depScanStatusFailed, err: err}
+			}
+			return results
+		}
+		log.Warn().Err(err).Int("deps", len(roots)).Msg("Dependency batch scan failed; scanning its dependencies one by one")
+		for i := range batch.items {
+			results[i] = ds.scanDepAlone(ctx, &batch.items[i], validator)
+		}
+		return results
+	}
+	for i := range batch.items {
+		item := &batch.items[i]
+		incomplete := !ds.cacheIfComplete(ctx, &item.dep, item.cacheKey, reports[i])
+		results[i] = depScanResult{
+			index:      item.index,
+			key:        item.key,
+			dep:        item.dep,
+			report:     dependencyReportWithFindings(reports[i]),
+			status:     depScanStatusScanned,
+			incomplete: incomplete,
+		}
+	}
+	log.Info().Int("deps", len(roots)).Str("duration", utils.HumanDuration(time.Since(started))).Msg("Scanned dependency batch")
+	return results
 }
 
 // cacheIfComplete stores a dependency's report under cacheKey, when caching
