@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -69,6 +70,7 @@ func buildPythonLibraryFragment(
 	importPath, file, src string,
 	report *entities.InterimReport,
 	syntheticRules []syntheticRuleEntry,
+	initSrc ...string,
 ) graphfrag.Fragment {
 	t.Helper()
 
@@ -76,6 +78,13 @@ func buildPythonLibraryFragment(
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, file), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	// initSrc is the package's own __init__.py, for a library that
+	// re-exports the name a rule api spells.
+	if len(initSrc) > 0 {
+		if err := os.WriteFile(filepath.Join(dir, "__init__.py"), []byte(strings.Join(initSrc, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
 	b.SetTypeResolver(resolver)
@@ -554,7 +563,7 @@ class VerifyKey:
 	}}
 
 	frag := buildPythonLibraryFragment(t,
-		"nacl.signing", "signing.py", src, nil, synthRules)
+		"nacl", "signing.py", src, nil, synthRules)
 
 	// PyNaCl is rule-only (no contract): supporting_calls = 0 is expected.
 	// Synthesis fires because SigningKey is defined as a class in scanned source.
@@ -603,7 +612,8 @@ class PasswordHasher:
 	}}
 
 	frag := buildPythonLibraryFragment(t,
-		"argon2", "password_hasher.py", src, nil, synthRules)
+		"argon2", "password_hasher.py", src, nil, synthRules,
+		"from .password_hasher import PasswordHasher")
 
 	// argon2-cffi is rule-only: supporting_calls = 0 is expected.
 	assertGoldenShape(t, "argon2-cffi", frag, false /* wantSupportingCalls: rule-only */)
@@ -677,7 +687,8 @@ def decode(jwt_token, key, algorithms=None, options=None,
 	}}
 
 	frag := buildPythonLibraryFragment(t,
-		"jwt", "api.py", src, nil, synthRules)
+		"jwt", "api.py", src, nil, synthRules,
+		"from .api import decode, encode")
 
 	// PyJWT is rule-only: supporting_calls = 0 is expected.
 	assertGoldenShape(t, "PyJWT", frag, false /* wantSupportingCalls: rule-only */)

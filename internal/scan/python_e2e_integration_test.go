@@ -175,10 +175,12 @@ def encrypt(key, iv, data):
 func TestPythonE2E_SynthesizeRuleCryptoEntryPoints_Python(t *testing.T) {
 	t.Parallel()
 
-	// The Python parser emits:
-	//   FunctionID{Package:"cryptography.hazmat.primitives.ciphers", Type:"Cipher", Name:"<init>"}
+	// The library's layout: Cipher is declared in ciphers/base.py, and
+	// ciphers/__init__.py re-exports it with an absolute import. The Python
+	// parser emits:
+	//   FunctionID{Package:"cryptography.hazmat.primitives.ciphers.base", Type:"Cipher", Name:"<init>"}
 	// The synthesis join matches api = "cryptography.hazmat.primitives.ciphers.Cipher.<init>"
-	// against the FunctionDecl's dotted FQN.
+	// through the re-export's public path.
 	src := `from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 class Cipher:
@@ -187,7 +189,11 @@ class Cipher:
         self.mode = mode
 `
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "cipher.py"), []byte(src), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "base.py"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	initSrc := "from cryptography.hazmat.primitives.ciphers.base import Cipher\n"
+	if err := os.WriteFile(filepath.Join(dir, "__init__.py"), []byte(initSrc), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,7 +239,7 @@ class Cipher:
 //
 // The paramiko KB declares `paramiko.rsakey.RSAKey.generate` → RSAKey. When mining
 // paramiko's own source, the Python parser emits a FunctionDecl for `generate` with
-// Package="paramiko.rsakey" and Type="RSAKey". The synthesis join matches the rule api
+// Package="paramiko.rsakey" and Type="RSAKey" for paramiko/rsakey.py. The synthesis join matches the rule api
 // "paramiko.rsakey.RSAKey.generate" and emits a crypto entry point.
 func TestPythonE2E_Paramiko_RSAKey_Generate_Synthesis(t *testing.T) {
 	t.Parallel()
@@ -260,7 +266,7 @@ class RSAKey:
 	}
 
 	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
-	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "paramiko.rsakey"}}, nil)
+	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "paramiko"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -308,12 +314,12 @@ def new(key, mode, **kwargs):
     pass
 `
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "aes.py"), []byte(src), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "AES.py"), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
-	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "Cryptodome.Cipher.AES"}}, nil)
+	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "Cryptodome.Cipher"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -365,12 +371,12 @@ def new(key, mode, **kwargs):
     pass
 `
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "aes.py"), []byte(src), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "AES.py"), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
-	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "Crypto.Cipher.AES"}}, nil)
+	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "Crypto.Cipher"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -483,9 +489,11 @@ def gensalt(rounds=12, prefix=b"2b"):
 func TestPythonE2E_PyJWT_Encode_Synthesis(t *testing.T) {
 	t.Parallel()
 
-	// Stub: mining jwt/api.py — encode is a module-level function in the jwt package.
-	// The Python parser emits: FunctionDecl{ID: {Package:"jwt", Name:"encode"}}
-	// functionFQN → "jwt.encode" (1 dot; passes new >= 1-dot Python gate).
+	// Stub: mining jwt/api.py — encode is a module-level function that
+	// jwt/__init__.py re-exports. The Python parser emits:
+	// FunctionDecl{ID: {Package:"jwt.api", Name:"encode"}}, and the rule api
+	// "jwt.encode" (1 dot; passes new >= 1-dot Python gate) names the
+	// re-export's public path.
 	src := `"""PyJWT stub for synthesis test."""
 
 def encode(payload, key, algorithm="HS256", headers=None, json_encoder=None):
@@ -498,6 +506,9 @@ def decode(jwt_token, key, algorithms=None, options=None, audience=None, issuer=
 `
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "api.py"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "__init__.py"), []byte("from .api import decode, encode\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -566,7 +577,7 @@ class JWK:
 	}
 
 	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
-	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "jwcrypto.jwk"}}, nil)
+	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "jwcrypto"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -623,7 +634,7 @@ class JWS:
 	}
 
 	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
-	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "jwcrypto.jws"}}, nil)
+	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "jwcrypto"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -680,7 +691,7 @@ class JWE:
 	}
 
 	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
-	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "jwcrypto.jwe"}}, nil)
+	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "jwcrypto"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
