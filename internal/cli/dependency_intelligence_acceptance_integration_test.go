@@ -492,15 +492,13 @@ func assertForwardContract(t *testing.T, tc acceptanceCase, result *acceptanceRe
 		assert.Equal(t, "byte[]", helper.EntryCall.ReturnType)
 		assert.Equal(t, []string{"byte[]", "byte[]", "int"}, helper.EntryCall.ParameterTypes)
 		assert.NotEmpty(t, parameters[0].SourceNodes, "Java parameter provenance")
-		require.Len(t, overloads, 2, "ambiguous same-call-site overload candidates")
-		assert.Equal(t, overloads[0].EntryCall.Line, overloads[1].EntryCall.Line, "overload candidates share one call site")
-		assert.ElementsMatch(t,
-			[]string{
-				"org.bouncycastle.crypto.engines.AESEngine.processBlock(String, int, String, int): int",
-				"org.bouncycastle.crypto.engines.AESEngine.processBlock(byte[], int, byte[], int): int",
-			},
-			[]string{overloads[0].EntryCall.CanonicalSignature, overloads[1].EntryCall.CanonicalSignature},
-			"ambiguity remains candidate identities with parameter-type evidence",
+		// engine.processBlock(data, 0, data, 0) passes byte[] arguments, so the
+		// String overload of the same arity is not applicable and never linked.
+		require.Len(t, overloads, 1, "overload selected by argument types")
+		assert.Equal(t,
+			"org.bouncycastle.crypto.engines.AESEngine.processBlock(byte[], int, byte[], int): int",
+			overloads[0].EntryCall.CanonicalSignature,
+			"the byte[] overload is the one the call site invokes",
 		)
 		assertSuppressedAmbiguity(t, result.stitch)
 		assertSerializedAmbiguity(t, result.stitched)

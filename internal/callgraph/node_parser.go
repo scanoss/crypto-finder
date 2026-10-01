@@ -622,6 +622,8 @@ func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath
 	if owner == "" {
 		return
 	}
+	first := len(analysis.Functions)
+	defer stampNodeClassBases(analysis, first, owner, nodeClassBases(node, src))
 	var fieldInit []*sitter.Node
 	for i := 0; i < int(body.NamedChildCount()); i++ {
 		member := body.NamedChild(i)
@@ -1082,4 +1084,52 @@ func nodeChainRoot(node *sitter.Node) *sitter.Node {
 
 func sameSyntaxNode(a, b *sitter.Node) bool {
 	return a != nil && b != nil && a.Type() == b.Type() && a.StartByte() == b.StartByte() && a.EndByte() == b.EndByte()
+}
+
+// stampNodeClassBases gives every declaration of the class, appended from
+// index first on, its extends clause, so dispatch can resolve a this-call to an
+// inherited method.
+func stampNodeClassBases(analysis *FileAnalysis, first int, owner string, bases []string) {
+	if len(bases) == 0 {
+		return
+	}
+	for i := first; i < len(analysis.Functions); i++ {
+		if analysis.Functions[i].ID.Type == owner {
+			analysis.Functions[i].OwnerBases = bases
+		}
+	}
+}
+
+// nodeClassBases returns the simple names a class's heritage clause names:
+// the JavaScript `extends Base` expression, and TypeScript's extends and
+// implements clauses. A qualified `mod.Base` contributes its last segment.
+func nodeClassBases(class *sitter.Node, src []byte) []string {
+	var bases []string
+	var collect func(n *sitter.Node)
+	collect = func(n *sitter.Node) {
+		switch n.Type() {
+		case "identifier", "type_identifier", "member_expression", "nested_type_identifier":
+			name := strings.TrimSpace(stripGenericSuffix(n.Content(src)))
+			if dot := strings.LastIndex(name, "."); dot >= 0 {
+				name = name[dot+1:]
+			}
+			if name != "" {
+				bases = append(bases, name)
+			}
+		case "generic_type":
+			if n.NamedChildCount() > 0 {
+				collect(n.NamedChild(0))
+			}
+		case "class_heritage", "extends_clause", "implements_clause":
+			for i := 0; i < int(n.NamedChildCount()); i++ {
+				collect(n.NamedChild(i))
+			}
+		}
+	}
+	for i := 0; i < int(class.NamedChildCount()); i++ {
+		if child := class.NamedChild(i); child.Type() == "class_heritage" {
+			collect(child)
+		}
+	}
+	return bases
 }

@@ -185,9 +185,13 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// file. Bases are filled in properly as each declaration is processed.
 	p.registerDeclaredJavaTypes(root, src, analysis, "")
 	collectJavaStringConstants(javaChildNodes(root), src, analysis, "")
+	analysis.TypeNamesAtRisk = collectJavaTypeNamesAtRisk(root, src)
 
 	// Extract class declarations with their methods
 	p.extractClasses(root, src, filePath, analysis)
+	for i := range analysis.Functions {
+		analysis.Functions[i].FileTypeNamesAtRisk = analysis.TypeNamesAtRisk
+	}
 
 	return analysis, nil
 }
@@ -325,6 +329,7 @@ func (p *JavaParser) processClass(
 	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, fullClassName, ownerVisibility, fieldTypes, fieldAssignments)
 	stampOwnerBases(constructorDecls, bases)
 	stampOwnerBases(methodDecls, bases)
+	recordJavaSupertypes(analysis, fullClassName, extractJavaSupertypes(node, src, analysis))
 	stampTypeParamBounds(constructorDecls, typeParamBounds)
 	stampTypeParamBounds(methodDecls, typeParamBounds)
 	applyJavaTypeParamErasure(constructorDecls, typeParamBounds, analysis)
@@ -368,6 +373,8 @@ func (p *JavaParser) processEnumConstantBody(
 	fieldTypes := p.collectJavaFieldTypes(body, src)
 	fieldAssignments := p.collectClassFieldAssignments(body, src, filePath, fieldTypes)
 	methodDecls, constructorDecls := p.collectJavaClassDecls(body, src, filePath, analysis, constantClass, ownerVisibility, fieldTypes, fieldAssignments)
+	// javac compiles the constant body to a subclass of the enum itself.
+	recordJavaSupertypes(analysis, constantClass, []string{joinJavaPackage(javaAnalysisPackagePath(analysis), ownerClass)})
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
 	p.processJavaAnonymousClasses(body, src, filePath, analysis, constantClass, ownerVisibility)
@@ -466,6 +473,9 @@ func (p *JavaParser) processAnonymousClass(
 	}
 	stampOwnerBases(constructorDecls, bases)
 	stampOwnerBases(methodDecls, bases)
+	if len(bases) == 1 {
+		recordJavaSupertypes(analysis, fullClassName, []string{strings.Join(resolveJavaSupertype(bases[0], analysis), javaSupertypeAlternatives)})
+	}
 	appendJavaDecls(analysis, constructorDecls)
 	appendJavaDecls(analysis, methodDecls)
 
@@ -954,6 +964,7 @@ func (p *JavaParser) processInterface(
 	if outerType != "" {
 		fullInterfaceName = outerType + "." + interfaceName
 	}
+	recordJavaSupertypes(analysis, fullInterfaceName, extractJavaSupertypes(node, src, analysis))
 	ownerVisibility := combineJavaOwnerVisibility(outerVisibility, parseJavaDeclaredVisibility(node, src))
 
 	var methodDecls []*FunctionDecl
@@ -1012,6 +1023,7 @@ func (p *JavaParser) parseMethodDecl(
 	}
 
 	params := p.extractJavaParameterTypes(node, src)
+	qualifyJavaParameters(params, analysis)
 	returnRaw, returnRef := p.extractMethodReturnTypeRef(node, src)
 
 	decl := &FunctionDecl{
@@ -1032,9 +1044,14 @@ func (p *JavaParser) parseMethodDecl(
 		OwnerVisibility: ownerVisibility,
 		Parameters:      params,
 	}
+	decl.QualifiedReturnType = qualifyJavaType(returnRaw, analysis)
+	decl.Static = javaDeclaresModifier(node, src, "static")
 
 	if body != nil {
 		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, ownerName, fieldTypes, fieldAssignments)
+		if decl.Static {
+			markStaticContextCalls(decl.Calls, javaNestedClassBodySpans(body))
+		}
 
 		// Build variable type and origin maps for return-source tracing.
 		varTypes := make(map[string]string, len(fieldTypes))
@@ -1078,6 +1095,7 @@ func (p *JavaParser) parseConstructorDecl(
 	}
 
 	params := p.extractJavaParameterTypes(node, src)
+	qualifyJavaParameters(params, analysis)
 
 	decl := &FunctionDecl{
 		ID: FunctionID{
@@ -1133,6 +1151,107 @@ func parseJavaDeclaredVisibility(node *sitter.Node, src []byte) string {
 		return visibility
 	}
 	return VisibilityPackagePrivate
+}
+
+// markStaticContextCalls marks the unqualified calls of a static method as
+// statically bound: a static method has no this, so `get(file, metadata)`
+// inside one can only name a static method of the class or an ancestor, and
+// cannot dispatch. A call inside an anonymous or local class body declared in
+// the method (spans) runs with that class's own this and is left alone.
+func markStaticContextCalls(calls []FunctionCall, spans [][2]sitter.Point) {
+	for i := range calls {
+		if strings.Contains(calls[i].Raw, ".") || strings.Contains(calls[i].Raw, "(") {
+			continue
+		}
+		if withinSpans(calls[i].Line, calls[i].StartCol, spans) {
+			continue
+		}
+		calls[i].StaticReceiver = true
+	}
+}
+
+// javaNestedClassBodySpans returns the start/end points of every class body
+// nested in a method body: anonymous class creations and local classes.
+func javaNestedClassBodySpans(body *sitter.Node) [][2]sitter.Point {
+	var spans [][2]sitter.Point
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n.Type() == javaNodeClassBody {
+			spans = append(spans, [2]sitter.Point{n.StartPoint(), n.EndPoint()})
+			return
+		}
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			walk(n.NamedChild(i))
+		}
+	}
+	walk(body)
+	return spans
+}
+
+// withinSpans reports whether the 1-based line and column fall inside one of
+// the 0-based tree-sitter spans. A call without a line is treated as inside,
+// so it is never marked.
+func withinSpans(line, col int, spans [][2]sitter.Point) bool {
+	if line == 0 {
+		return len(spans) > 0
+	}
+	row, column := line-1, max(col-1, 0)
+	for _, span := range spans {
+		startRow, startCol := int(span[0].Row), int(span[0].Column)
+		endRow, endCol := int(span[1].Row), int(span[1].Column)
+		afterStart := row > startRow || (row == startRow && column >= startCol)
+		beforeEnd := row < endRow || (row == endRow && column < endCol)
+		if afterStart && beforeEnd {
+			return true
+		}
+	}
+	return false
+}
+
+// javaTypeQualifiedCall reports whether a method call's receiver is a type
+// name rather than a value: an identifier or qualified name that is no local,
+// parameter or field of this class, spelled like a type (with a lower-case
+// letter, so an upper-case constant inherited from a superclass does not
+// qualify), and that the callee was resolved against.
+func javaTypeQualifiedCall(objectNode *sitter.Node, src []byte, callee FunctionID, varTypes map[string]string) bool {
+	if objectNode == nil {
+		return false
+	}
+	switch objectNode.Type() {
+	case javaNodeIdentifier, javaNodeScopedIdentifier, "field_access":
+	default:
+		return false
+	}
+	text := strings.TrimSpace(objectNode.Content(src))
+	if _, isVar := varTypes[text]; isVar {
+		return false
+	}
+	head, _, _ := strings.Cut(text, ".")
+	if _, isVar := varTypes[head]; isVar {
+		return false
+	}
+	last := text[strings.LastIndex(text, ".")+1:]
+	if !looksLikeJavaTypeName(last) || strings.ToUpper(last) == last {
+		return false
+	}
+	return callee.Type == last || strings.HasSuffix(callee.Type, "."+last)
+}
+
+// javaDeclaresModifier reports whether a declaration's modifiers include the
+// given keyword.
+func javaDeclaresModifier(node *sitter.Node, src []byte, keyword string) bool {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != javaNodeModifiers {
+			continue
+		}
+		for j := 0; j < int(child.ChildCount()); j++ {
+			if child.Child(j).Content(src) == keyword {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func findJavaVisibilityInNode(node *sitter.Node, src []byte) (string, bool) {
@@ -2360,6 +2479,7 @@ func (p *JavaParser) parseMethodInvocation(node *sitter.Node, src []byte, filePa
 	chainID, assignedVar := callChainContext(node, src)
 	receiverVar := receiverVarName(receiverText, varTypes, varOrigins)
 	return &FunctionCall{
+		StaticReceiver:       javaTypeQualifiedCall(objectNode, src, callee, varTypes),
 		Callee:               callee,
 		ResolvedReceiverType: fieldResolvedReceiverType(receiverVar, varOrigins),
 		ReceiverVar:          receiverVar,
@@ -2780,11 +2900,17 @@ func parseJavaParameterTypesFromList(listContent string) []FunctionParameter {
 	params := make([]FunctionParameter, 0, len(specs))
 	for _, spec := range specs {
 		ref := parseSourceTypeRef(spec.RawType)
-		params = append(params, FunctionParameter{
+		param := FunctionParameter{
 			Type:    erasedTypeName(spec.RawType, ref),
 			TypeRef: ref,
 			Name:    spec.Name,
-		})
+		}
+		if base := javaParameterBaseType(spec.RawType); strings.Contains(base, ".") {
+			param.QualifiedType = base
+			head, _, _ := strings.Cut(base, ".")
+			param.QualifiedInSource = !looksLikeJavaTypeName(head)
+		}
+		params = append(params, param)
 	}
 	return params
 }

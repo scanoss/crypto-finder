@@ -328,8 +328,14 @@ type callGraphChainNode struct {
 	StartLine          int                         `json:"start_line,omitempty"`
 	DependencyInfo     *callGraphDependencyContext `json:"dependency_info,omitempty"`
 	EntryCall          *callGraphEntryCall         `json:"entry_call,omitempty"`
-	CryptoCall         *callGraphCalledFunction    `json:"crypto_call,omitempty"`
-	InferredReturn     *exportInferredReturn       `json:"inferred_return,omitempty"`
+	// EntryResolution and EntryDeclaredType carry the same meaning as the
+	// stitched export's frame fields (graphfrag.ExportFrame): how the call
+	// arriving at this frame was resolved, and the static type a dispatch
+	// expanded. Both absent on a chain's first frame.
+	EntryResolution   string                   `json:"entry_resolution,omitempty"`
+	EntryDeclaredType string                   `json:"entry_declared_type,omitempty"`
+	CryptoCall        *callGraphCalledFunction `json:"crypto_call,omitempty"`
+	InferredReturn    *exportInferredReturn    `json:"inferred_return,omitempty"`
 }
 
 type callGraphCryptoEntryPoint struct {
@@ -991,7 +997,7 @@ func internLiveFindingGraph(intern *graphfrag.FunctionInterner, fg *callGraphExp
 	for i, chain := range fg.CallChains {
 		idx := make([]int, len(chain))
 		for j := range chain {
-			idx[j] = intern.Intern(liveFrameIdentity(chain[j]))
+			idx[j] = intern.Intern(liveFrameIdentity(&chain[j]))
 		}
 		indexes[i] = idx
 	}
@@ -1022,7 +1028,7 @@ func contractLiveChainIdentities(chains [][]callGraphChainNode) {
 	}
 }
 
-func liveFrameIdentity(n callGraphChainNode) graphfrag.FrameIdentity {
+func liveFrameIdentity(n *callGraphChainNode) graphfrag.FrameIdentity {
 	id := graphfrag.FrameIdentity{
 		FunctionKey:        n.FunctionKey,
 		FunctionName:       n.FunctionName,
@@ -3484,6 +3490,7 @@ func materializeCallChainNodes(
 					chain.Steps[j-1].EndCol,
 					step.Function,
 				)
+				applyChainEdgeResolution(ctx, &path[j], chain.Steps[j-1], step)
 			}
 		}
 		enrichCallChain(path)

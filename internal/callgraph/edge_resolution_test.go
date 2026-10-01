@@ -48,6 +48,8 @@ func TestBuildCallerIndex_ClassifiesEdgeResolution(t *testing.T) {
 		OwnerType:  "class",
 		OwnerName:  "SinkImpl",
 		Parameters: []FunctionParameter{},
+		// class SinkImpl implements com.dep.Sink
+		OwnerBases: []string{"Sink"},
 	}
 
 	parser := &stubParser{
@@ -115,6 +117,7 @@ func TestBuildCallerIndex_PreservesSameLineCallColumns(t *testing.T) {
 	}
 	impl := FunctionDecl{
 		ID: FunctionID{Package: "com.dep.impl", Type: "SinkImpl", Name: "run#0"}, OwnerType: "class", OwnerName: "SinkImpl",
+		OwnerBases: []string{"Sink"},
 	}
 	parser := &stubParser{sep: ".", analyses: map[string][]*FileAnalysis{root: {{Functions: []FunctionDecl{caller, iface, impl}}}}}
 

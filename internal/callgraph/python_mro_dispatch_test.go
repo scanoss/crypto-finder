@@ -209,6 +209,8 @@ func TestExpandPythonSubclassDispatch_JavaInterfaceDispatchUnchanged(t *testing.
 		OwnerType:  "class",
 		OwnerName:  "SinkImpl",
 		Parameters: []FunctionParameter{},
+		// class SinkImpl implements com.dep.Sink
+		OwnerBases: []string{"Sink"},
 	}
 
 	parser := &stubParser{

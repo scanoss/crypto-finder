@@ -207,17 +207,27 @@ type InferredReturn struct {
 
 // FunctionDecl represents a function or method declaration with its location and outgoing calls.
 type FunctionDecl struct {
-	ID              FunctionID
-	FilePath        string
-	StartLine       int
-	EndLine         int
-	OwnerType       string
-	OwnerName       string
-	FunctionType    string
-	ReturnType      string
-	ReturnTypeRef   TypeRef
-	Visibility      string
-	OwnerVisibility string
+	ID           FunctionID
+	FilePath     string
+	StartLine    int
+	EndLine      int
+	OwnerType    string
+	OwnerName    string
+	FunctionType string
+	ReturnType   string
+	// QualifiedReturnType is ReturnType resolved to fully qualified names
+	// through the declaring file's imports, in the FunctionParameter
+	// QualifiedType format. Empty when not resolved (Java methods only).
+	QualifiedReturnType string
+	// Static reports a method declared static, which never dispatches
+	// virtually (Java only).
+	Static bool
+	// FileTypeNamesAtRisk is the declaring file's FileAnalysis.TypeNamesAtRisk,
+	// shared by every declaration of the file (Java only).
+	FileTypeNamesAtRisk map[string]bool
+	ReturnTypeRef       TypeRef
+	Visibility          string
+	OwnerVisibility     string
 	// TypeParamBounds maps the declaring class's generic type-parameter names
 	// to their erased first bound ("Object" when unbounded). Used to build the
 	// erased signature consumers join on (Java only).
@@ -257,6 +267,15 @@ type FunctionDecl struct {
 type FunctionParameter struct {
 	Type    string
 	TypeRef TypeRef
+	// QualifiedType is the fully qualified erased type the parser resolved for
+	// Type through the file's imports and declarations, without array
+	// brackets. Where the file's imports leave it open, the possible names
+	// are listed in Java's lookup order separated by "|". Empty for
+	// primitives and for parsers that do not resolve it (Java only).
+	QualifiedType string
+	// QualifiedInSource reports that the source spelled the type fully
+	// qualified (java.io.File), so QualifiedType is certain.
+	QualifiedInSource bool
 	// Name is the declared parameter name (e.g. "hashingFunction"), when the
 	// parser captures it (1.6+ / Java only as of introduction). Empty for
 	// ecosystems whose parser does not populate it — callers that key off Name
@@ -267,6 +286,10 @@ type FunctionParameter struct {
 
 // FunctionCall represents a call expression within a function body.
 type FunctionCall struct {
+	// StaticReceiver reports a call qualified by a type name
+	// (TikaInputStream.get(..)), which binds at compile time and never
+	// dispatches to a subtype (Java only).
+	StaticReceiver bool
 	// Callee is the resolved target function
 	Callee FunctionID
 	// ResolvedReceiverType is the concrete type inferred for a field receiver
@@ -394,7 +417,19 @@ type FileAnalysis struct {
 	// JavaStringConstants holds the String constants this file declares,
 	// keyed by owner FQN + ".NAME" (Java only).
 	JavaStringConstants map[string]JavaStringConstant
-	Functions           []FunctionDecl
+	// Supertypes maps each type declared in this file, fully qualified, to the
+	// fully qualified direct supertypes its extends/implements clauses name
+	// (generic arguments excluded), resolved through the file's imports. Where
+	// an on-demand import leaves a simple name ambiguous every possible package
+	// is listed, so an entry may name a type the graph does not know. Java
+	// only; merged into CallGraph.SourceSupertypes.
+	Supertypes map[string][]string
+	// TypeNamesAtRisk holds the simple names this file binds in a scope no
+	// graph-wide index sees: each type parameter and each local class it
+	// declares. A type written with one of these names is never certain
+	// (Java only).
+	TypeNamesAtRisk map[string]bool
+	Functions       []FunctionDecl
 	// PythonReExports maps a symbol name to the module dotted path it is
 	// re-exported from, recorded ONLY when this file is a Python
 	// `__init__.py` and ONLY from explicit relative `from .mod import Sym
@@ -432,6 +467,12 @@ type CallGraph struct {
 	// interfaces/superclasses. E.g., "io.jsonwebtoken.JwtBuilder" →
 	// ["io.jsonwebtoken.ClaimsMutator"]. Populated by TypeResolver from bytecode.
 	TypeHierarchy map[string][]string
+	// SourceSupertypes maps a source-declared type to the supertypes its own
+	// extends/implements clauses name (see FileAnalysis.Supertypes). Kept apart
+	// from TypeHierarchy, which holds only resolver-indexed edges; the dispatch
+	// expansions read both to link a call only to real subtypes of its
+	// receiver type.
+	SourceSupertypes map[string][]string
 	// ExternalMethodSignatures stores resolver-derived signatures for methods that
 	// are known to the graph by symbol but do not have a source declaration.
 	// Keyed by fully qualified method + arity via ExternalMethodSignatureKey.
