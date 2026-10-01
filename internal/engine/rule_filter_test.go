@@ -1,13 +1,27 @@
 package engine
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"go.yaml.in/yaml/v3"
+
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 )
 
 func writeRuleFile(t *testing.T, dir, name, content string) string {
@@ -187,48 +201,271 @@ func TestFilterRulesByLanguages_DirectoryInput(t *testing.T) {
 	}
 }
 
-func TestPrepareRulePathsForScanner_MaterializesFilteredFiles(t *testing.T) {
+// OpenGrep compiles every config file it is given, single-threaded, once per
+// invocation; one merged file loads measurably faster than hundreds of small
+// ones. The merged rules carry the directory prefix OpenGrep used to derive
+// from each file's location, so finding rule IDs do not change.
+func TestPrepareRulePathsForScanner_MergesFilteredRulesIntoOneFile(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
 	rulesDir := filepath.Join(root, "semgrep-rules")
-	if err := os.MkdirAll(filepath.Join(rulesDir, "nested"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(rulesDir, "nested", "deeper"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	_ = writeRuleFile(t, rulesDir, "go.yaml", `rules:
   - id: go-rule
     languages: [go]
+    message: "keeps \"quoted\" text"
+    pattern: md5.New()
 `)
-	_ = writeRuleFile(t, filepath.Join(rulesDir, "nested"), "go-extra.yaml", `rules:
+	_ = writeRuleFile(t, filepath.Join(rulesDir, "nested"), "a-kept.yaml", "rules:\n  - id: kept\n    languages: [go]\n    message: |+\n      text\n\n")
+	_ = writeRuleFile(t, filepath.Join(rulesDir, "nested", "deeper"), "go-extra.yaml", `rules:
+  - id: go-rule
+    languages: [go]
+    pattern-either:
+      - pattern: sha1.New()
+      - pattern: |
+          sha256.New()
   - id: go-extra
     languages: [go]
+    pattern: sha512.New()
+`)
+	_ = writeRuleFile(t, rulesDir, "python.yaml", `rules:
+  - id: py-rule
+    languages: [python]
+    pattern: hashlib.md5()
 `)
 
 	paths, cleanup, err := prepareRulePathsForScanner([]string{rulesDir}, []string{"go"})
 	if err != nil {
 		t.Fatalf("prepareRulePathsForScanner() error = %v", err)
 	}
+	defer cleanup()
 	if len(paths) != 1 {
 		t.Fatalf("prepareRulePathsForScanner() paths len = %d, want 1", len(paths))
 	}
+
+	files := collectRuleFiles(paths[0])
+	if len(files) != 1 {
+		t.Fatalf("scanner config holds %d rule files, want one merged file: %v", len(files), files)
+	}
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatalf("read merged rules: %v", err)
+	}
+	var merged map[string][]map[string]any
+	if err := yaml.Unmarshal(data, &merged); err != nil {
+		t.Fatalf("merged rules are not one YAML document with a rules sequence: %v\n%s", err, data)
+	}
+	if len(merged) != 1 {
+		t.Fatalf("merged file top-level keys = %v, want only rules", merged)
+	}
+	want := []map[string]any{
+		{"id": "go-rule", "languages": []any{"go"}, "message": `keeps "quoted" text`, "pattern": "md5.New()"},
+		{"id": "nested.kept", "languages": []any{"go"}, "message": "text\n\n"},
+		{"id": "nested.deeper.go-rule", "languages": []any{"go"}, "pattern-either": []any{
+			map[string]any{"pattern": "sha1.New()"},
+			map[string]any{"pattern": "sha256.New()\n"},
+		}},
+		{"id": "nested.deeper.go-extra", "languages": []any{"go"}, "pattern": "sha512.New()"},
+	}
+	if !reflect.DeepEqual(merged["rules"], want) {
+		t.Fatalf("merged rules:\n got %#v\nwant %#v", merged["rules"], want)
+	}
+}
+
+// Files the merge cannot represent faithfully reach the scanner byte for byte,
+// so OpenGrep keeps judging them as it did when every file was passed alone:
+// it rejects invalid YAML and skips *.test.yaml fixtures inside a rules dir.
+func TestPrepareRulePathsForScanner_PassesUnmergeableFilesThrough(t *testing.T) {
+	t.Parallel()
+
+	rulesDir := filepath.Join(t.TempDir(), "rules")
+	if err := os.MkdirAll(filepath.Join(rulesDir, "sub"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	_ = writeRuleFile(t, rulesDir, "good.yaml", `rules:
+  - id: good
+    languages: [go]
+`)
+	broken := "rules:\n  - id: broken\n    languages: [go\n"
+	fixture := "rules:\n  - id: fixture\n    languages: [go]\n"
+	extraKeys := "rules:\n  - id: extra\n    languages: [go]\nother: true\n"
+	_ = writeRuleFile(t, rulesDir, "broken.yaml", broken)
+	_ = writeRuleFile(t, filepath.Join(rulesDir, "sub"), "fixture.test.yaml", fixture)
+	_ = writeRuleFile(t, filepath.Join(rulesDir, "sub"), "extra.yaml", extraKeys)
+
+	paths, cleanup, err := prepareRulePathsForScanner([]string{rulesDir}, []string{"go"})
+	if err != nil {
+		t.Fatalf("prepareRulePathsForScanner() error = %v", err)
+	}
 	defer cleanup()
 
-	info, err := os.Stat(paths[0])
+	verbatim := map[string]string{
+		"broken.yaml":           broken,
+		"sub/fixture.test.yaml": fixture,
+		"sub/extra.yaml":        extraKeys,
+	}
+	var merged []string
+	for _, file := range collectRuleFiles(paths[0]) {
+		rel, err := filepath.Rel(paths[0], file)
+		if err != nil {
+			t.Fatalf("rel %s: %v", file, err)
+		}
+		content, ok := verbatim[filepath.ToSlash(rel)]
+		if !ok {
+			merged = append(merged, file)
+			continue
+		}
+		if got, err := os.ReadFile(file); err != nil || string(got) != content {
+			t.Fatalf("%s must reach the scanner unchanged: err=%v got %q", rel, err, got)
+		}
+		delete(verbatim, filepath.ToSlash(rel))
+	}
+	if len(verbatim) != 0 {
+		t.Fatalf("missing verbatim copies: %v", verbatim)
+	}
+	if len(merged) != 1 {
+		t.Fatalf("want one merged file beside the verbatim copies, got %v", merged)
+	}
+	var rules map[string][]map[string]any
+	data, err := os.ReadFile(merged[0])
+	if err != nil || yaml.Unmarshal(data, &rules) != nil {
+		t.Fatalf("read merged rules: err=%v\n%s", err, data)
+	}
+	if want := []map[string]any{{"id": "good", "languages": []any{"go"}}}; !reflect.DeepEqual(rules["rules"], want) {
+		t.Fatalf("merged rules = %#v, want only the good rule", rules["rules"])
+	}
+}
+
+// The dependency findings cache keys on the prepared rules; two runs over the
+// same rule content must agree even though each lives in its own temp dir.
+func TestPrepareRulePathsForScanner_RulesHashIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	rulesDir := filepath.Join(t.TempDir(), "rules")
+	if err := os.MkdirAll(filepath.Join(rulesDir, "nested"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	_ = writeRuleFile(t, rulesDir, "a.yaml", "rules:\n  - id: a\n    languages: [go]\n")
+	nested := writeRuleFile(t, filepath.Join(rulesDir, "nested"), "b.yaml", "rules:\n  - id: b\n    languages: [go]\n")
+
+	hash := func() string {
+		t.Helper()
+		paths, cleanup, err := prepareRulePathsForScanner([]string{rulesDir}, []string{"go"})
+		if err != nil {
+			t.Fatalf("prepareRulePathsForScanner() error = %v", err)
+		}
+		defer cleanup()
+		got, err := ComputeRulesHash(paths)
+		if err != nil {
+			t.Fatalf("ComputeRulesHash() error = %v", err)
+		}
+		return got
+	}
+
+	first := hash()
+	if second := hash(); second != first {
+		t.Fatalf("rules hash changed between identical runs: %s then %s", first, second)
+	}
+	if err := os.WriteFile(nested, []byte("rules:\n  - id: b\n    languages: [go]\n    pattern: x\n"), 0o600); err != nil {
+		t.Fatalf("rewrite rule: %v", err)
+	}
+	if changed := hash(); changed == first {
+		t.Fatalf("rules hash %s did not change with rule content", changed)
+	}
+}
+
+// Real OpenGrep run: merged rules must yield exactly the findings and rule IDs
+// of the same filtered files loaded one by one, including rule IDs repeated
+// across directories and within one directory (OpenGrep runs both copies).
+func TestPrepareRulePathsForScanner_MergedRulesKeepFindingsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires a real OpenGrep subprocess")
+	}
+	if _, err := exec.LookPath("opengrep"); err != nil {
+		t.Skip("OpenGrep not installed")
+	}
+
+	root := t.TempDir()
+	rulesDir := filepath.Join(root, "rules")
+	javaDir := filepath.Join(rulesDir, "java")
+	for _, dir := range []string{"java/jca/md5", "java/other", "python"} {
+		if err := os.MkdirAll(filepath.Join(rulesDir, dir), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	rule := func(id, pattern string) string {
+		return "rules:\n  - id: " + id + "\n    languages: [java]\n    severity: INFO\n    message: m\n    pattern: " + pattern + "\n"
+	}
+	_ = writeRuleFile(t, filepath.Join(javaDir, "jca", "md5"), "rules.yaml", rule("dup", `MessageDigest.getInstance("MD5")`))
+	_ = writeRuleFile(t, filepath.Join(javaDir, "jca", "md5"), "extra.yaml", rule("dup", `MessageDigest.getInstance("SHA-256")`))
+	_ = writeRuleFile(t, filepath.Join(javaDir, "other"), "rules.yaml", rule("dup", `MessageDigest.getInstance("MD5")`))
+	_ = writeRuleFile(t, javaDir, "top.yaml", rule("top", `MessageDigest.getInstance("SHA-256")`))
+	_ = writeRuleFile(t, javaDir, "skipped.test.yaml", rule("fixture", `MessageDigest.getInstance(...)`))
+	_ = writeRuleFile(t, filepath.Join(rulesDir, "python"), "rules.yaml", `rules:
+  - id: py
+    languages: [python]
+    severity: INFO
+    message: m
+    pattern: hashlib.md5()
+`)
+
+	src := filepath.Join(root, "src")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatalf("mkdir src: %v", err)
+	}
+	_ = writeRuleFile(t, src, "Hash.java", `import java.security.MessageDigest;
+
+class Hash {
+    byte[] md5(byte[] in) throws Exception {
+        return MessageDigest.getInstance("MD5").digest(in);
+    }
+
+    byte[] sha(byte[] in) throws Exception {
+        return MessageDigest.getInstance("SHA-256").digest(in);
+    }
+}
+`)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	scan := func(rulePaths []string) []string {
+		t.Helper()
+		s := opengrep.NewScanner()
+		if err := s.Initialize(ctx, scanner.Config{Timeout: time.Minute, ExtraArgs: []string{"--jobs", "1"}}); err != nil {
+			t.Fatalf("initialize opengrep: %v", err)
+		}
+		report, err := s.Scan(ctx, src, rulePaths, entities.ToolInfo{Name: "opengrep"})
+		if err != nil {
+			t.Fatalf("scan with %v: %v", rulePaths, err)
+		}
+		var got []string
+		for _, finding := range report.Findings {
+			for _, asset := range finding.CryptographicAssets {
+				for _, r := range asset.Rules {
+					got = append(got, strconv.Itoa(asset.StartLine)+":"+r.ID)
+				}
+			}
+		}
+		sort.Strings(got)
+		return got
+	}
+
+	want := []string{"5:jca.md5.dup", "5:other.dup", "9:jca.md5.dup", "9:top"}
+	if perFile := scan([]string{javaDir}); !reflect.DeepEqual(perFile, want) {
+		t.Fatalf("per-file baseline findings = %v, want %v", perFile, want)
+	}
+
+	paths, cleanup, err := prepareRulePathsForScanner([]string{rulesDir}, []string{"java"})
 	if err != nil {
-		t.Fatalf("stat materialized path: %v", err)
+		t.Fatalf("prepareRulePathsForScanner() error = %v", err)
 	}
-	if !info.IsDir() {
-		t.Fatalf("materialized path must be a directory, got file: %s", paths[0])
-	}
-
-	goCopy := filepath.Join(paths[0], "go.yaml")
-	if _, err := os.Stat(goCopy); err != nil {
-		t.Fatalf("expected copied go rule at %s: %v", goCopy, err)
-	}
-
-	if _, err := os.Stat(filepath.Join(paths[0], "nested", "go-extra.yaml")); err != nil {
-		t.Fatalf("expected copied nested go rule: %v", err)
+	defer cleanup()
+	if got := scan(paths); !reflect.DeepEqual(got, want) {
+		t.Fatalf("merged rules findings = %v, want %v", got, want)
 	}
 }
 
@@ -323,8 +560,8 @@ func TestMaterializeRuleFiles_SurvivesRulesetReplacement(t *testing.T) {
 	if err := os.MkdirAll(versionRoot, 0o755); err != nil {
 		t.Fatalf("mkdir version root: %v", err)
 	}
-	a := writeRuleFile(t, versionRoot, "a.yaml", "rules: []\n")
-	b := writeRuleFile(t, versionRoot, "b.yaml", "rules: []\n")
+	a := writeRuleFile(t, versionRoot, "a.yaml", "rules:\n  - id: a\n    languages: [go]\n")
+	b := writeRuleFile(t, versionRoot, "b.yaml", "rules:\n  - id: b\n    languages: [go]\n")
 
 	paths, cleanup, err := materializeRuleFiles([]string{a, b})
 	if err != nil {
@@ -335,8 +572,60 @@ func TestMaterializeRuleFiles_SurvivesRulesetReplacement(t *testing.T) {
 	if err := os.RemoveAll(versionRoot); err != nil {
 		t.Fatalf("replace ruleset: %v", err)
 	}
-	if _, err := os.ReadFile(filepath.Join(paths[0], "a.yaml")); err != nil {
-		t.Fatalf("in-flight filtered rules must survive cache replacement: %v", err)
+	files := collectRuleFiles(paths[0])
+	survived := make([]string, 0, len(files))
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("in-flight filtered rules must survive cache replacement: %v", err)
+		}
+		survived = append(survived, string(data))
+	}
+	all := strings.Join(survived, "\n")
+	if !strings.Contains(all, "id: a") || !strings.Contains(all, "id: b") {
+		t.Fatalf("in-flight filtered rules lost after cache replacement: %q", all)
+	}
+}
+
+// OpenGrep reports an invalid merged rule as a line of merged-rules.yaml, a
+// file removed after the scan. The debug log must map that line back to the
+// source rule file.
+func TestMaterializeRuleFiles_LogsMergedLineOfEachSourceFile(t *testing.T) {
+	previous := log.Logger
+	t.Cleanup(func() { log.Logger = previous })
+	var output bytes.Buffer
+	log.Logger = zerolog.New(&output).Level(zerolog.DebugLevel)
+
+	dir := t.TempDir()
+	first := writeRuleFile(t, dir, "a.yaml", "rules:\n  - id: a1\n    languages: [go]\n    message: |\n      two\n      lines\n  - id: a2\n    languages: [go]\n")
+	second := writeRuleFile(t, dir, "b.yaml", "rules:\n  - id: b1\n    languages: [go]\n")
+
+	paths, cleanup, err := materializeRuleFiles([]string{first, second})
+	if err != nil {
+		t.Fatalf("materializeRuleFiles: %v", err)
+	}
+	defer cleanup()
+	merged, err := os.ReadFile(filepath.Join(paths[0], mergedRulesFileName))
+	if err != nil {
+		t.Fatalf("read merged rules: %v", err)
+	}
+	lines := strings.Split(string(merged), "\n")
+
+	starts := map[string]int{}
+	for _, line := range strings.Split(output.String(), "\n") {
+		var entry struct {
+			Path string `json:"path"`
+			Line int    `json:"mergedLine"`
+		}
+		if json.Unmarshal([]byte(line), &entry) == nil && entry.Line > 0 {
+			starts[entry.Path] = entry.Line
+		}
+	}
+	for path, wantID := range map[string]string{first: "a1", second: "b1"} {
+		line := starts[path]
+		if line < 1 || line > len(lines) || lines[line-1] != "- id: "+wantID {
+			t.Fatalf("log maps %s to merged line %d, want the line of rule %s:\n%s", path, line, wantID, merged)
+		}
 	}
 }
 

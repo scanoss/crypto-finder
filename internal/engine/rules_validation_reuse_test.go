@@ -106,10 +106,14 @@ func TestDependencyRulesProofTracksCurrentBytes(t *testing.T) {
 				defer mu.Unlock()
 				var selected string
 				if err := filepath.WalkDir(paths[0], func(path string, entry os.DirEntry, err error) error {
-					if err == nil && !entry.IsDir() && entry.Name() == "first.yaml" {
+					if err != nil || entry.IsDir() {
+						return err
+					}
+					data, readErr := os.ReadFile(path)
+					if readErr == nil && strings.Contains(string(data), "id: fixture") {
 						selected = path
 					}
-					return err
+					return readErr
 				}); err != nil {
 					return nil, err
 				}

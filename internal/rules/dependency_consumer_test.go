@@ -70,8 +70,7 @@ func TestDependencyConsumerRetainsValidFindingsAndRejectsMalformedRules(t *testi
 			registry := scanner.NewRegistry()
 			registry.RegisterFactory("fixture", func() scanner.Scanner {
 				return consumerScanner{scan: func(_ context.Context, target string, paths []string, info entities.ToolInfo) (*entities.InterimReport, error) {
-					selected := filepath.Join(paths[0], "first.yaml")
-					data, err := os.ReadFile(selected)
+					selected, data, err := preparedRuleFile(paths[0], "id: fixture")
 					if err != nil {
 						return nil, err
 					}
@@ -104,7 +103,7 @@ func TestDependencyConsumerRetainsValidFindingsAndRejectsMalformedRules(t *testi
 						t.Fatal("asset count changed")
 					}
 					asset := finding.CryptographicAssets[0]
-					if asset.Metadata["observed"] != original || asset.StartLine != 2 || asset.Match != "digest()" || asset.FindingID == "" || asset.Source != "dependency" || asset.DependencyInfo == nil || asset.DependencyInfo.Module != deps[i].Module {
+					if !strings.Contains(asset.Metadata["observed"], "id: fixture") || !strings.Contains(asset.Metadata["observed"], "parameterCondition: 'param[0]==true'") || asset.StartLine != 2 || asset.Match != "digest()" || asset.FindingID == "" || asset.Source != "dependency" || asset.DependencyInfo == nil || asset.DependencyInfo.Module != deps[i].Module {
 						t.Fatalf("finding changed: %+v", asset)
 					}
 				}
@@ -119,4 +118,25 @@ func TestDependencyConsumerRetainsValidFindingsAndRejectsMalformedRules(t *testi
 			}
 		})
 	}
+}
+
+// preparedRuleFile finds the prepared rule file the scanner receives that
+// holds the given rule text, whichever layout the engine prepares.
+func preparedRuleFile(root, text string) (string, []byte, error) {
+	var path string
+	var data []byte
+	err := filepath.WalkDir(root, func(candidate string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		content, readErr := os.ReadFile(candidate)
+		if readErr == nil && strings.Contains(string(content), text) {
+			path, data = candidate, content
+		}
+		return readErr
+	})
+	if err == nil && path == "" {
+		err = os.ErrNotExist
+	}
+	return path, data, err
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
@@ -612,11 +613,11 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 func TestDependencyScanner_LoadFilteredRules_NodeKeepsJavaScriptAndTypeScriptRules(t *testing.T) {
 	ruleDir := t.TempDir()
 	for name, languages := range map[string]string{
-		"web.yaml":    "[javascript, typescript]",
-		"ts.yaml":     "[typescript]",
-		"python.yaml": "[python]",
+		"web":    "[javascript, typescript]",
+		"ts":     "[typescript]",
+		"python": "[python]",
 	} {
-		if err := os.WriteFile(filepath.Join(ruleDir, name), []byte("rules:\n  - languages: "+languages+"\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(ruleDir, name+".yaml"), []byte("rules:\n  - id: "+name+"\n    languages: "+languages+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -630,19 +631,32 @@ func TestDependencyScanner_LoadFilteredRules_NodeKeepsJavaScriptAndTypeScriptRul
 	defer cleanup()
 	var got []string
 	for _, rulePath := range rulePaths {
-		walkErr := filepath.WalkDir(rulePath, func(_ string, entry os.DirEntry, err error) error {
-			if err == nil && !entry.IsDir() {
-				got = append(got, entry.Name())
+		walkErr := filepath.WalkDir(rulePath, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return err
 			}
-			return err
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			var parsed struct {
+				Rules []struct{ ID string } `yaml:"rules"`
+			}
+			if unmarshalErr := yaml.Unmarshal(data, &parsed); unmarshalErr != nil {
+				return unmarshalErr
+			}
+			for _, rule := range parsed.Rules {
+				got = append(got, rule.ID)
+			}
+			return nil
 		})
 		if walkErr != nil {
 			t.Fatal(walkErr)
 		}
 	}
 	sort.Strings(got)
-	if want := []string{"ts.yaml", "web.yaml"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("Node dependency rule files = %v, want %v", got, want)
+	if want := []string{"ts", "web"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Node dependency rules = %v, want %v", got, want)
 	}
 }
 
