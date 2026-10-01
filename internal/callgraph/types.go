@@ -335,6 +335,9 @@ type SourceNode struct {
 	// Flow carries optional branch/call-position semantics without inflating
 	// every SourceNode in the graph.
 	Flow *SourceFlow
+	// javaConstant names the String constants this node's text may denote,
+	// for the post-parse fold. Never exported.
+	javaConstant *javaConstantRef
 }
 
 // SourceFlow carries optional branch and call-position semantics.
@@ -388,7 +391,10 @@ type FileAnalysis struct {
 	// to its extends/implements clause as erased simple names (Java only).
 	// Presence of a key also marks the type as declared in this file.
 	ClassBases map[string][]string
-	Functions  []FunctionDecl
+	// JavaStringConstants holds the String constants this file declares,
+	// keyed by owner FQN + ".NAME" (Java only).
+	JavaStringConstants map[string]JavaStringConstant
+	Functions           []FunctionDecl
 	// PythonReExports maps a symbol name to the module dotted path it is
 	// re-exported from, recorded ONLY when this file is a Python
 	// `__init__.py` and ONLY from explicit relative `from .mod import Sym
@@ -452,6 +458,9 @@ type CallGraph struct {
 	// -> ["rsa::pkcs1v15::SigningKey"]). Contracts name the public path, the
 	// declaration carries the declaring one. Rust only.
 	PublicTypePaths map[string][]string
+	// JavaStringConstants merges every parsed file's String constants, keyed
+	// by owner FQN + ".NAME". Java only.
+	JavaStringConstants map[string]JavaStringConstant
 }
 
 // EdgeKind classifies how confidently a caller->callee edge was resolved.
