@@ -25,6 +25,7 @@ import (
 	"maps"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,6 +69,7 @@ type Scanner struct {
 	extraArgs         []string
 	skipPatterns      []string
 	includeGitIgnored bool
+	jobs              int32
 	disableDedup      bool
 	discovery         *discoveryCache
 	helpDiscovery     *discoveryCache
@@ -150,6 +152,7 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 		s.skipPatterns = slices.Clone(config.SkipPatterns)
 	}
 	s.includeGitIgnored = config.IncludeGitIgnored
+	s.jobs = config.Jobs
 	s.disableDedup = config.DisableDedup
 
 	return nil
@@ -301,6 +304,9 @@ func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string,
 	if s.includeGitIgnored {
 		args = append(args, "--no-git-ignore")
 	}
+	if s.jobs > 0 && !setsJobs(s.extraArgs) {
+		args = append(args, "--jobs", strconv.FormatInt(int64(s.jobs), 10))
+	}
 
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)
@@ -317,6 +323,14 @@ func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string,
 	args = append(args, targets...)
 
 	return args
+}
+
+// setsJobs reports whether args already choose the job count. OpenGrep
+// rejects a repeated --jobs, and the certification profile passes its own.
+func setsJobs(args []string) bool {
+	return slices.ContainsFunc(args, func(arg string) bool {
+		return arg == "--jobs" || strings.HasPrefix(arg, "--jobs=") || strings.HasPrefix(arg, "-j")
+	})
 }
 
 // ignoreControlArgs disables OpenGrep's built-in default ignore file

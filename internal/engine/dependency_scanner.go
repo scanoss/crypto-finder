@@ -461,6 +461,15 @@ func dependencyScanWorkers(configured int, ecosystem string) int {
 	return min(max(runtime.NumCPU()/2, 1), limit)
 }
 
+// dependencyScanJobs sizes each scanner process so concurrent dependency
+// scans share the cores. A lone scan keeps the scanner's own default.
+func dependencyScanJobs(workers int) int32 {
+	if workers <= 1 {
+		return 0
+	}
+	return int32(max(1, runtime.NumCPU()/workers)) //nolint:gosec // A core count fits in int32.
+}
+
 // scanDependenciesParallel scans all dependencies concurrently using a worker pool.
 func (ds *DependencyScanner) scanDependenciesParallel(
 	ctx context.Context,
@@ -470,8 +479,6 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	opts DepScanOptions,
 	validator *rules.ParameterConditionValidator,
 ) ([]depScanResult, error) {
-	workers := dependencyScanWorkers(opts.Workers, ds.resolver.Ecosystem())
-
 	orderedDeps := canonicalDependencies(deps)
 
 	type depWork struct {
@@ -500,10 +507,14 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		work = append(work, depWork{index: i, key: key, dep: dep})
 	}
 
+	workers := min(dependencyScanWorkers(opts.Workers, ds.resolver.Ecosystem()), len(work))
+	opts.ScanOptions.ScannerConfig.Jobs = dependencyScanJobs(workers)
+
 	log.Info().
 		Int("deps", len(orderedDeps)).
 		Int("scannableDeps", len(work)).
 		Int("workers", workers).
+		Int32("scannerJobs", opts.ScanOptions.ScannerConfig.Jobs).
 		Msg("Starting parallel dependency scanning")
 
 	if len(work) == 0 {
@@ -529,7 +540,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	resultCh := make(chan depScanResult, len(work))
 
 	var wg sync.WaitGroup
-	for range min(workers, len(work)) {
+	for range workers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -596,6 +607,10 @@ func (ds *DependencyScanner) scanSingleDep(
 		sort.Strings(env)
 		cwd, cwdErr := os.Getwd()
 		info := initializedScanner.GetInfo()
+		config := depOpts.ScannerConfig
+		// The job count tunes the host, not the scan. Keying on it would split
+		// the cache by core count and by how many dependencies run at once.
+		config.Jobs = 0
 		identity, encodeErr := json.Marshal(struct {
 			Package       string
 			RulesHash     string
@@ -607,7 +622,7 @@ func (ds *DependencyScanner) scanSingleDep(
 			Languages     []string
 			Environment   []string
 			CWD           string
-		}{key, rulesHash, depOpts.JavaRuntimeCacheToken, depOpts.ScannerName, info, version.Version, depOpts.ScannerConfig, depOpts.LanguageHint, env, cwd})
+		}{key, rulesHash, depOpts.JavaRuntimeCacheToken, depOpts.ScannerName, info, version.Version, config, depOpts.LanguageHint, env, cwd})
 		// Unavailable context/identity disables caching, never scanner validation.
 		if encodeErr == nil && cwdErr == nil && info.Version != "" && info.Version != "unknown" {
 			cacheKey = fmt.Sprintf("dependency-findings-v2:%x", sha256.Sum256(identity))

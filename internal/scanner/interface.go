@@ -129,6 +129,14 @@ type Config struct {
 	// When enabled with Semgrep, this adds the --pro flag to enable Semgrep Pro features.
 	// Only supported by the Semgrep scanner.
 	Interfile bool
+
+	// Jobs caps the analysis jobs one scan runs in parallel. Zero keeps the
+	// scanner's own default, which claims every core it detects. Dependency
+	// scans set it so concurrent scans share the cores. Only the OpenGrep
+	// adapter applies it, and a jobs flag in ExtraArgs takes precedence.
+	// An int32 after the flags fits their padding, so scan options stay
+	// under the by-value size limit the linter enforces.
+	Jobs int32
 }
 
 // Info contains metadata about a scanner implementation.

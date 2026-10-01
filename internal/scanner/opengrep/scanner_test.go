@@ -19,6 +19,8 @@ package opengrep
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -462,4 +464,61 @@ func TestBuildCommand_GitIgnoreOverrideOnlyWhenRequested(t *testing.T) {
 			t.Errorf("includeGitIgnored=%v: --no-git-ignore present = %v, args %v", include, got, args)
 		}
 	}
+}
+
+func TestBuildCommand_JobsComposeWithExtraArgs(t *testing.T) {
+	originalLookPath, originalCommandOutput := lookPath, commandOutput
+	defer func() { lookPath, commandOutput = originalLookPath, originalCommandOutput }()
+	lookPath = func(string) (string, error) { return "/usr/local/bin/opengrep", nil }
+	commandOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "--version" {
+			return []byte("1.29.0"), nil
+		}
+		return []byte("--x-ignore-semgrepignore-files"), nil
+	}
+
+	rule, target := "/rules/node.yaml", "/deps/eta"
+	for _, tt := range []struct {
+		name      string
+		jobs      int32
+		extra     []string
+		want      []string
+		certified bool
+	}{
+		{name: "zero keeps the OpenGrep default"},
+		{name: "positive caps parallel jobs", jobs: 4, want: []string{"--jobs", "4"}},
+		// OpenGrep exits 2 on a repeated --jobs, so explicit arguments win.
+		{name: "certification profile keeps its own", jobs: 4, extra: []string{"--quiet", "--jobs", "2"}, want: []string{"--jobs", "2"}, certified: true},
+		{name: "equals form", jobs: 4, extra: []string{"--jobs=2"}, want: []string{"--jobs=2"}},
+		{name: "short form", jobs: 4, extra: []string{"-j", "2"}, want: []string{"-j", "2"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewScanner()
+			if err := s.Initialize(context.Background(), scanner.Config{Jobs: tt.jobs, ExtraArgs: tt.extra}); err != nil {
+				t.Fatal(err)
+			}
+			args := s.buildCommand(context.Background(), []string{target}, []string{rule}, false)
+			if got := jobsArgs(args); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("jobs arguments = %v, want %v in argv %v", got, tt.want, args)
+			}
+			if tt.certified {
+				if _, reason := s.certify(target, []string{rule}, args, nil, ""); reason == "unknown-profile" {
+					t.Fatalf("argv %v no longer matches the certification profile", args)
+				}
+			}
+		})
+	}
+}
+
+func jobsArgs(args []string) []string {
+	var got []string
+	for i, arg := range args {
+		switch {
+		case arg == "--jobs" || arg == "-j":
+			got = append(got, args[i:min(i+2, len(args))]...)
+		case strings.HasPrefix(arg, "--jobs=") || strings.HasPrefix(arg, "-j"):
+			got = append(got, arg)
+		}
+	}
+	return got
 }
