@@ -297,7 +297,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keyLength, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: gnutls_hmac
     arity: 3
     return: {type: int, confidence: high}
@@ -323,7 +323,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keyLength, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
 
   # Key derivation (crypto.h, 3.6.13 and later).
   - method: gnutls_pbkdf2
