@@ -89,8 +89,8 @@ func TestGoImplicitImportName(t *testing.T) {
 		"gopkg.in/yaml.v1":                     "yaml",
 		"gopkg.in/check.v0":                    "check",
 	} {
-		if got := goImplicitImportName(path); got != want {
-			t.Errorf("goImplicitImportName(%q) = %q, want %q", path, got, want)
+		if got := GoImplicitImportName(path); got != want {
+			t.Errorf("GoImplicitImportName(%q) = %q, want %q", path, got, want)
 		}
 	}
 }
