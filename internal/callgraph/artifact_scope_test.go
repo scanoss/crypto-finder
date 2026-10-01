@@ -133,6 +133,31 @@ func TestArtifactScope_NameOnlyAbstractDispatchStaysInCompilingArtifacts(t *test
 	}
 }
 
+// TestArtifactScope_NameOnlyAbstractDispatchKeepsAnArtifactTheCalleeDependsOn:
+// the bound is two-way. The callee's own artifact depending on the candidate's
+// means the candidate can be an ancestor or a subtype the callee's record
+// misses, so the guess stays; one-way compilesAgainst(candidate, callee) drops it.
+func TestArtifactScope_NameOnlyAbstractDispatchKeepsAnArtifactTheCalleeDependsOn(t *testing.T) {
+	tikaExt := artifactFixture{module: "org.apache.tika:tika-ext", version: "1.28.5", files: map[string]string{
+		"org/apache/tika/ext/ExtHandler.java": `package org.apache.tika.ext;
+import org.external.Unindexed;
+public class ExtHandler extends Unindexed {
+  public String describe() { return ""; }
+}
+`,
+	}}
+	requires := map[string][]string{"org.apache.tika:tika-core": {"org.apache.tika:tika-ext"}}
+	graph := buildArtifactGraph(t, requires, tikaCore, commonsMath, tikaExt)
+	caller := "org.apache.tika.(Tika).text#1"
+
+	if !hasCaller(graph, "org.apache.tika.ext.(ExtHandler).describe#0", caller) {
+		t.Errorf("tika-core depends on tika-ext, so ExtHandler may be related to WriteOut and must stay linked")
+	}
+	if hasCaller(graph, "org.apache.commons.math3.(Vector1D).describe#0", caller) {
+		t.Errorf("commons-math3 and tika-core are unrelated, so Vector1D must stay unlinked")
+	}
+}
+
 // TestArtifactScope_NoDependencyGraphKeepsOwnArtifactOnly: without a resolved
 // dependency graph a name_only guess stays inside the declared type's artifact.
 func TestArtifactScope_NoDependencyGraphKeepsOwnArtifactOnly(t *testing.T) {
@@ -276,5 +301,41 @@ public class Holder {
 	rewriteJavaCallsFromIndex(graph, buildJavaMethodLookup(index))
 	if !hasCaller(graph, bcHolder, caller) {
 		t.Fatalf("Callers[%s] = %v, want %s when ehcache depends on bcprov", bcHolder, graph.Callers[bcHolder], caller)
+	}
+}
+
+// pip names a distribution by its metadata spelling (Foo_Bar) while the
+// requirements other packages list use whatever they wrote (foo-bar). Both
+// sides compare in PEP 503 form, so a dependency is found under either.
+func TestArtifactScope_PythonDistributionNamesCompareNormalized(t *testing.T) {
+	cases := map[string]string{
+		"Foo_Bar":     "foo-bar",
+		"foo-bar":     "foo-bar",
+		"Foo.Bar":     "foo-bar",
+		"foo__--bar":  "foo-bar",
+		"PyJWT":       "pyjwt",
+		"zope.i18n_x": "zope-i18n-x",
+	}
+	for name, want := range cases {
+		if got := normalizePythonDistribution(name); got != want {
+			t.Errorf("normalizePythonDistribution(%q) = %q, want %q", name, got, want)
+		}
+	}
+
+	// The package keeps pip's spelling; the graph key and children are as pip wrote them.
+	user := artifactNameFor(ecosystemPython, PackageDir{ImportPath: "foo_bar", DistributionName: "Foo_Bar", Version: "1.0"})
+	dep := artifactNameFor(ecosystemPython, PackageDir{ImportPath: "baz", DistributionName: "baz", Version: "2.0"})
+	scope := newArtifactScopeFor(ecosystemPython, map[string][]string{"Foo_Bar": {"BAZ"}})
+	scope.typeArtifact = map[string]string{"foo_bar.Client": user, "baz.Base": dep}
+	if !scope.compilesAgainst("foo_bar.Client", "baz.Base") {
+		t.Errorf("compilesAgainst(Foo_Bar -> baz) = false, want true: the graph spells the names differently from the package")
+	}
+	if scope.compilesAgainst("baz.Base", "foo_bar.Client") {
+		t.Errorf("compilesAgainst(baz -> Foo_Bar) = true, want false: nothing says baz depends on Foo_Bar")
+	}
+
+	// Other ecosystems keep their coordinates verbatim.
+	if got := artifactNameFor(ecosystemJava, PackageDir{DistributionName: "org.apache:Tika_Core", Version: "1"}); got != "org.apache:Tika_Core" {
+		t.Errorf("artifactNameFor(java) = %q, want the coordinate verbatim", got)
 	}
 }

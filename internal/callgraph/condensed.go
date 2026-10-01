@@ -359,6 +359,12 @@ func (t *Tracer) TraceBackCondensed(
 // name_only edge removed. A second walk costs as much as the first, so it
 // runs only for a target the first walk reached, and is skipped when the
 // graph holds no name_only edge.
+//
+// A guess-free walk the depth limit cut counts as reached. The cut hides
+// routes this walk never saw, so it cannot prove that only guessed routes
+// exist, and reading the finding unknown on that basis would flip it
+// arbitrarily with the depth limit. Only a walk that ran to completion and
+// found no root marks the finding unresolved.
 func (t *Tracer) reachedWithoutGuessing(target FunctionID, userPackages map[string]bool, maxDepth int) bool {
 	if len(t.untypedEdges()) == 0 {
 		return true

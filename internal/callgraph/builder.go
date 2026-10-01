@@ -197,7 +197,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// Phase 1: Parse source files only for packages that need full analysis
 	sourceParseStart := time.Now()
 	b.resetPythonBuildState()
-	b.artifacts = newArtifactScope(b.artifactGraph)
+	b.artifacts = newArtifactScopeFor(b.ecosystem, b.artifactGraph)
 	graph.artifacts = b.artifacts
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
 	for _, pkg := range packages {
@@ -316,7 +316,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
 	b.packageRoot = filepath.Clean(pkg.Dir)
 	b.packageImportPath = pkg.ImportPath
-	b.currentArtifact = artifactOf(pkg)
+	b.currentArtifact = artifactNameFor(b.ecosystem, pkg)
 	b.excludeDirs = nil
 	if len(pkg.ExcludeDirs) > 0 {
 		b.excludeDirs = make(map[string]struct{}, len(pkg.ExcludeDirs))

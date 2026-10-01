@@ -3,6 +3,8 @@
 
 package callgraph
 
+import "strings"
+
 // artifact_scope.go keeps a name_only dispatch guess inside the artifacts
 // that could hold the subtype it guesses.
 //
@@ -113,4 +115,68 @@ func (s *artifactScope) dependsOn(artifact string) map[string]bool {
 	}
 	s.closure[artifact] = deps
 	return deps
+}
+
+// artifactNameFor names pkg's artifact as the ecosystem spells it. Python
+// distribution names compare in PEP 503 form.
+func artifactNameFor(ecosystem string, pkg PackageDir) string {
+	name := artifactOf(pkg)
+	if ecosystem == ecosystemPython && name != projectArtifact {
+		return normalizePythonDistribution(name)
+	}
+	return name
+}
+
+// newArtifactScopeFor builds the scope of a scan from its resolved dependency
+// graph, normalizing Python names on the graph's side the way artifactNameFor
+// does on the packages' side.
+func newArtifactScopeFor(ecosystem string, requires map[string][]string) *artifactScope {
+	if ecosystem == ecosystemPython {
+		requires = normalizePythonRequires(requires)
+	}
+	return newArtifactScope(requires)
+}
+
+// normalizePythonDistribution returns name in its PEP 503 normalized form:
+// lowercase, with each run of "-", "_" and "." collapsed to one "-". pip names
+// a distribution by its metadata name (Foo_Bar) and lists its requirements
+// as the raw strings other packages wrote (foo-bar), so the two sides of the
+// dependency graph only compare equal after this.
+func normalizePythonDistribution(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	separator := false
+	for _, r := range strings.ToLower(name) {
+		if r == '-' || r == '_' || r == '.' {
+			separator = true
+			continue
+		}
+		if separator {
+			b.WriteByte('-')
+			separator = false
+		}
+		b.WriteRune(r)
+	}
+	if separator {
+		b.WriteByte('-')
+	}
+	return b.String()
+}
+
+// normalizePythonRequires returns requires with every key and dependency in
+// PEP 503 form. A nil graph stays nil.
+func normalizePythonRequires(requires map[string][]string) map[string][]string {
+	if requires == nil {
+		return nil
+	}
+	out := make(map[string][]string, len(requires))
+	for name, deps := range requires {
+		key := normalizePythonDistribution(name)
+		normalized := out[key]
+		for _, dep := range deps {
+			normalized = append(normalized, normalizePythonDistribution(dep))
+		}
+		out[key] = normalized
+	}
+	return out
 }
