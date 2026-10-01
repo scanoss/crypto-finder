@@ -19,6 +19,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fail while changelog or user-guide fragments are pending
+        run: |
+          pending=$(find changelog.d docs/user-guide/coverage.d -type f ! -name README.md)
+          if [ -n "$pending" ]; then
+            echo "::error::Fold the pending fragments before releasing: go run ./scripts/relprep changelog -version X.Y.Z && go run ./scripts/relprep guide"
+            echo "$pending"
+            exit 1
+          fi
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:

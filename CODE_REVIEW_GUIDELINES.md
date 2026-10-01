@@ -395,4 +395,4 @@ make coverage-check  # 80% coverage threshold met
 - [ ] GPL-2.0-only header on all new `.go` files.
 - [ ] No secrets in logs or error messages.
 - [ ] `exec.CommandContext` for external processes.
-- [ ] CHANGELOG.md updated under "Unreleased".
+- [ ] Changelog fragment added under `changelog.d/` (or an entry under "Unreleased" in CHANGELOG.md).

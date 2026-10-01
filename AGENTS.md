@@ -11,20 +11,30 @@ taxonomy lives in [docs/ERROR_CODES.md](docs/ERROR_CODES.md).
 ## Changelog (HARD REQUIREMENT)
 
 Every user-facing change — new flag, behavior change, schema bump, bug fix, performance
-work, removal — MUST land with a matching entry under `[Unreleased]` in `CHANGELOG.md`,
-in the same PR as the change. The format is [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
-(`Added` / `Changed` / `Fixed` / `Removed`).
+work, removal — MUST land with a matching changelog **fragment**, in the same PR as the
+change. Do not edit `CHANGELOG.md` for it: add one file under `changelog.d/` named
+`<slug>.<section>.md` (`section` is `added`, `changed`, `deprecated`, `removed`, `fixed`
+or `security`) holding one or more `- ` bullets. See [changelog.d/README.md](changelog.d/README.md).
+The final format is still [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+Fragments exist so that two PRs never conflict on the same lines of `CHANGELOG.md`.
 
 - Write entries for consumers of the tool, not for reviewers: name the flag, the schema
   version, the exported package, the observable behavior — not the internal refactor.
 - Internal-only changes (test refactors, CI tweaks, comment fixes) do not need an entry.
-- When cutting a release, rename `[Unreleased]` to the version + date and start a fresh
-  empty `[Unreleased]` section. Do not let releases ship with the changelog behind —
-  reconstructing history from merged PRs afterwards is expensive and error-prone.
+- When cutting a release, run `go run ./scripts/relprep changelog -version X.Y.Z` and
+  `go run ./scripts/relprep guide` in a release-prep PR before tagging. They fold the
+  fragments into a new `## [X.Y.Z]` section of `CHANGELOG.md` and into the user guide, and
+  delete them. Entries already under `[Unreleased]` are released with the fragments. Do
+  not let releases ship with the changelog behind — reconstructing history from merged
+  PRs afterwards is expensive and error-prone.
 
 ## User guide
 
 Relevant user-facing capability or behavior changes - commands, flags, outputs, supported workflows, deployment behavior, dependency scanning, or limitations - MUST update the sole-source HTML guide `docs/user-guide/user-guide.html` in the same PR. The guide is standalone, inline-CSS/vanilla-JS, and HTML-first. Do not restore DOCX/PDF deliverables, Node build sources, generated review images, package files, or vendored document engines. Keep only necessary public logo assets under `docs/user-guide/assets/`.
+
+Do not edit the contract-coverage paragraphs of the guide directly. A PR that adds or extends
+coverage adds one `<p>` fragment under `docs/user-guide/coverage.d/` (see its README), so two
+PRs never conflict on the same lines. Release prep appends the fragments to the guide.
 
 Verify the guide with an HTML parser, prohibited-term grep, `git diff --check`, and a lightweight local HTTP server/browser check as documented in `docs/user-guide/AGENTS.md`.
 
