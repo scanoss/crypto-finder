@@ -53,6 +53,10 @@ type exportBuildContext struct {
 	ecosystem               string
 	dependencies            []exportDependencyRoot
 	containingFunctionCache map[string]cachedContainingFunction
+	// functionsByFile narrows findContainingFunctionByFinding to one file's
+	// functions. Built on first use, like the cache above, over a graph that
+	// no longer changes.
+	functionsByFile *functionFileIndex
 	// callChainCache holds structural (non-expanded) chain nodes by containing
 	// function id. callChainRawCache holds the tracer steps for the same key so
 	// callgraph export can expand call sites without re-running TraceBackLimited.
@@ -2929,7 +2933,8 @@ func resolveSimpleCallgraphSourceValue(nodes []callgraph.SourceNode) (string, bo
 		return "", false
 	}
 	var resolved string
-	for _, node := range nodes {
+	for i := range nodes {
+		node := &nodes[i]
 		value := strings.TrimSpace(node.Value)
 		ok := node.Type == sourceNodeTypeValue && value != ""
 		if !ok && len(node.SourceNodes) > 0 {
@@ -2989,7 +2994,8 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 		return nil
 	}
 	result := make([]exportSourceNode, len(nodes))
-	for i, n := range nodes {
+	for i := range nodes {
+		n := &nodes[i]
 		result[i] = exportSourceNode{
 			Type:                 n.Type,
 			Name:                 n.Name,
@@ -2997,7 +3003,7 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 			Value:                n.Value,
 			SourceNodes:          convertSourceNodes(ctx, n.SourceNodes, defaultFilePath, defaultLine),
 			returnValue:          n.Flow != nil && n.Flow.ReturnValue,
-			guard:                sourceNodeGuard(&n),
+			guard:                sourceNodeGuard(n),
 			callArgument:         n.Flow != nil && n.Flow.CallArgument,
 			sourceParameterIndex: n.ParameterIndex,
 		}
@@ -4076,7 +4082,8 @@ func convertInferredReturnProvenance(nodes []callgraph.SourceNode) []exportSourc
 		return nil
 	}
 	result := make([]exportSourceNode, len(nodes))
-	for i, n := range nodes {
+	for i := range nodes {
+		n := &nodes[i]
 		result[i] = exportSourceNode{
 			Type:         n.Type,
 			Name:         n.Name,
@@ -4756,8 +4763,11 @@ func (ctx *exportBuildContext) findContainingFunctionByFinding(findingPath strin
 	// <clinit> may cover the whole class around the real method), so pick the
 	// tightest enclosing span instead of the first match; tie-break on the
 	// function key for full determinism.
+	if ctx.functionsByFile == nil {
+		ctx.functionsByFile = newFunctionFileIndex(ctx.graph.Functions)
+	}
 	var best *callgraph.FunctionDecl
-	for _, fn := range ctx.graph.Functions {
+	for _, fn := range ctx.functionsByFile.suffixCandidates(normalizedFindingPath) {
 		fnPath := filepath.ToSlash(fn.FilePath)
 		if !strings.HasSuffix(fnPath, normalizedFindingPath) {
 			continue
