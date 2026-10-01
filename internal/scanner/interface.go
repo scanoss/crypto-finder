@@ -115,6 +115,11 @@ type Config struct {
 	// Example: []string{"node_modules/", "*.min.js", "test/"}
 	SkipPatterns []string
 
+	// IncludeGitIgnored scans files the enclosing Git work tree ignores. Only
+	// resolved dependency roots set it: installed dependencies usually live in
+	// ignored directories such as node_modules. Primary scans leave it false.
+	IncludeGitIgnored bool
+
 	// DisableDedup when true, disables per-line deduplication of cryptographic assets.
 	// By default (false), assets detected at the same location are merged.
 	// Set to true to preserve all individual detections for debugging or compatibility.

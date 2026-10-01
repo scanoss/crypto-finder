@@ -60,16 +60,17 @@ var (
 
 // Scanner implements the scanner.Scanner interface for OpenGrep.
 type Scanner struct {
-	executablePath string
-	version        string
-	timeout        time.Duration
-	workDir        string
-	env            map[string]string
-	extraArgs      []string
-	skipPatterns   []string
-	disableDedup   bool
-	discovery      *discoveryCache
-	helpDiscovery  *discoveryCache
+	executablePath    string
+	version           string
+	timeout           time.Duration
+	workDir           string
+	env               map[string]string
+	extraArgs         []string
+	skipPatterns      []string
+	includeGitIgnored bool
+	disableDedup      bool
+	discovery         *discoveryCache
+	helpDiscovery     *discoveryCache
 }
 
 // NewScanner creates a new OpenGrep adapter with default settings.
@@ -148,6 +149,7 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	if config.SkipPatterns != nil {
 		s.skipPatterns = slices.Clone(config.SkipPatterns)
 	}
+	s.includeGitIgnored = config.IncludeGitIgnored
 	s.disableDedup = config.DisableDedup
 
 	return nil
@@ -296,6 +298,9 @@ func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string,
 		"--taint-intrafile", // Enable taint analysis
 	}
 	args = append(args, s.ignoreControlArgs(ctx, namedFiles)...)
+	if s.includeGitIgnored {
+		args = append(args, "--no-git-ignore")
+	}
 
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)

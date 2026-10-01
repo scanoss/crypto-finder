@@ -678,6 +678,7 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	// Preserve only built-in test exclusions for dependency scans. Other user/project
 	// skip patterns should not hide dependency source files.
 	depOpts.ScannerConfig.SkipPatterns = skip.OnlyDefaultTestPatterns(depOpts.ScannerConfig.SkipPatterns)
+	depOpts.ScannerConfig.IncludeGitIgnored = true
 	if ds.resolver.Ecosystem() == npmEcosystem {
 		// Anchor below this artifact, not every node_modules ancestor: the
 		// dependency target itself usually lives inside node_modules.

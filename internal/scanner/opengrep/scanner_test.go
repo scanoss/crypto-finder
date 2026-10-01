@@ -446,3 +446,20 @@ func TestScan_DetectionScopeRefusedWithoutForceExclude(t *testing.T) {
 		t.Fatalf("expected %s, got %v", failure.CodeScannerUnavailable, err)
 	}
 }
+
+func TestBuildCommand_GitIgnoreOverrideOnlyWhenRequested(t *testing.T) {
+	originalCommandOutput := commandOutput
+	defer func() { commandOutput = originalCommandOutput }()
+	commandOutput = func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte("--x-ignore-semgrepignore-files"), nil
+	}
+
+	for _, include := range []bool{false, true} {
+		s := NewScanner()
+		s.includeGitIgnored = include
+		args := s.buildCommand(context.Background(), []string{"/project/node_modules/eta"}, []string{"/rules/node.yaml"}, false)
+		if got := containsArg(args, "--no-git-ignore"); got != include {
+			t.Errorf("includeGitIgnored=%v: --no-git-ignore present = %v, args %v", include, got, args)
+		}
+	}
+}
