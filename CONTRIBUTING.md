@@ -207,7 +207,7 @@ changes so the integration tests actually execute.
    - Run the linter (`make lint`)
    - Update documentation if needed
    - Add or update tests for your changes
-   - Update CHANGELOG.md with your changes (under "Unreleased" section)
+   - Add a changelog fragment under `changelog.d/` (see its README) instead of editing CHANGELOG.md
 
 2. **PR Title and Description:**
    - Use a clear, descriptive title

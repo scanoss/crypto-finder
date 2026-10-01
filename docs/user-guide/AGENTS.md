@@ -10,7 +10,7 @@ Keep the guide public, product-focused, and evidence-based. Use only claims supp
 
 ## User-facing updates
 
-When a user-facing command, flag, output, supported workflow, deployment behavior, dependency-scanning capability, or limitation changes, update `user-guide.html` in the same PR. Update the root `CHANGELOG.md` under `[Unreleased]` when the change is user-facing.
+When a user-facing command, flag, output, supported workflow, deployment behavior, dependency-scanning capability, or limitation changes, update `user-guide.html` in the same PR. Add a changelog fragment under `changelog.d/` when the change is user-facing. New contract-coverage paragraphs go in `docs/user-guide/coverage.d/` as one fragment file each, not into the guide itself; `go run ./scripts/relprep guide` folds them in at release time.
 
 ## Verification
 
