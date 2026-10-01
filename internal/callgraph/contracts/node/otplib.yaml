@@ -1,0 +1,269 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "otplib"
+  coordinates:
+    - "otplib"
+  version_range: ">=6.0.0"
+  description: "otplib: HOTP, TOTP and Google Authenticator one-time passwords"
+
+# otplib HAS HAD TWO APIS. The contracts follow both, keyed by the specifier a
+# consumer imports.
+#
+# 6.x to 12.x export three configured instances and every operation is a method
+# on one of them:
+#
+#     const { authenticator } = require('otplib');
+#     const secret = authenticator.generateSecret();        // operation
+#     const token = authenticator.generate(secret);         // operation
+#     authenticator.check(token, secret);                   // operation
+#
+# 13.x is functional and class based, and its calls are awaited unless they end
+# in Sync:
+#
+#     import { generateSecret, generate, verify, TOTP } from 'otplib';
+#     const secret = generateSecret();                      // operation
+#     const token = await generate({ secret });             // operation
+#     const totp = new TOTP({ secret });                    // factory
+#     await totp.verify(token);                             // operation
+#
+# The instance contracts are declared under 'otplib' and under the
+# 'otplib/authenticator', 'otplib/totp' and 'otplib/hotp' subpath modules the 6.x
+# to 11.x releases published, since the parser keys each specifier by itself.
+# The 13.x class contracts type the instance that 'new TOTP(..)' builds so its
+# generate and verify calls resolve. The functional 13.x calls need no instance.
+#
+# Declared from otplib 12.0.1 (index.d.ts, preset-default), 13.5.0 (dist/*.d.ts,
+# @otplib/totp, @otplib/hotp), 11.0.1 and 6.0.0 (the instance modules). Methods
+# added later than 6.0.0 (verify, checkDelta) are declared once; a consumer of an
+# older release never calls them.
+#
+# Deliberately NOT contracted: keyuri, generateURI and toURI (provisioning-URI
+# formatting), encode and decode (Base32), the option validators and the
+# plugin and guardrail helpers, which compute no token, and timeRemaining and
+# timeUsed.
+contracts:
+
+  # 6.x to 12.x instances under the package specifier.
+  - method: "otplib.authenticator.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.authenticator.check"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib.authenticator.checkDelta"
+    arity: 2
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "otplib.authenticator.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib.authenticator.generateSecret"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.authenticator.generateSecret"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.totp.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.totp.check"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib.totp.checkDelta"
+    arity: 2
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "otplib.totp.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib.hotp.generate"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.hotp.check"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib.hotp.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  # The 6.x to 11.x subpath modules, each the instance itself.
+  - method: "otplib/authenticator.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib/authenticator.check"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib/authenticator.checkDelta"
+    arity: 2
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "otplib/authenticator.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib/authenticator.generateSecret"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib/authenticator.generateSecret"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib/totp.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib/totp.check"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib/totp.checkDelta"
+    arity: 2
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "otplib/totp.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib/hotp.generate"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib/hotp.check"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "otplib/hotp.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  # 13.x functions. The Sync forms return the value; the others a promise.
+  - method: "otplib.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.generateSync"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.verify"
+    arity: 1
+    return: { type: "VerifyResult", confidence: high }
+    role: operation
+  - method: "otplib.verifySync"
+    arity: 1
+    return: { type: "VerifyResult", confidence: high }
+    role: operation
+  - method: "otplib.generateSecret"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.generateSecret"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+
+  # 13.x classes and the methods of the instance they build.
+  - method: "otplib.TOTP.<init>"
+    arity: 0
+    return: { type: "otplib.TOTP", confidence: high }
+    role: factory
+  - method: "otplib.TOTP.<init>"
+    arity: 1
+    return: { type: "otplib.TOTP", confidence: high }
+    role: factory
+  - method: "otplib.HOTP.<init>"
+    arity: 0
+    return: { type: "otplib.HOTP", confidence: high }
+    role: factory
+  - method: "otplib.HOTP.<init>"
+    arity: 1
+    return: { type: "otplib.HOTP", confidence: high }
+    role: factory
+  - method: "otplib.OTP.<init>"
+    arity: 0
+    return: { type: "otplib.OTP", confidence: high }
+    role: factory
+  - method: "otplib.OTP.<init>"
+    arity: 1
+    return: { type: "otplib.OTP", confidence: high }
+    role: factory
+  - method: "otplib.TOTP.generate"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.TOTP.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.TOTP.verify"
+    arity: 1
+    return: { type: "VerifyResult", confidence: high }
+    role: operation
+  - method: "otplib.TOTP.verify"
+    arity: 2
+    return: { type: "VerifyResult", confidence: high }
+    role: operation
+  - method: "otplib.TOTP.generateSecret"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.HOTP.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.HOTP.generate"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.HOTP.verify"
+    arity: 1
+    return: { type: "VerifyResult", confidence: high }
+    role: operation
+  - method: "otplib.HOTP.verify"
+    arity: 2
+    return: { type: "VerifyResult", confidence: high }
+    role: operation
+  - method: "otplib.HOTP.generateSecret"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.OTP.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.OTP.generateSync"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.OTP.verify"
+    arity: 1
+    return: { type: "VerifyResult", confidence: high }
+    role: operation
+  - method: "otplib.OTP.verifySync"
+    arity: 1
+    return: { type: "VerifyResult", confidence: high }
+    role: operation
+  - method: "otplib.OTP.generateSecret"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "otplib.OTP.generateSecret"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation

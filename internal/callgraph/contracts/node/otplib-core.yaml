@@ -1,0 +1,148 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "otplib-core"
+  coordinates:
+    - "@otplib/core"
+  version_range: ">=12.0.0"
+  description: "@otplib/core: the HOTP, TOTP and Authenticator engines behind otplib"
+
+# @otplib/core IS A SEPARATE COORDINATE FROM otplib. It is the engine the otplib
+# presets wrap, used directly by consumers that bring their own HMAC and random
+# plugins.
+#
+#     const { Authenticator, totpToken } = require('@otplib/core');
+#     const auth = new Authenticator({ createDigest, createRandomBytes });  // factory
+#     const secret = auth.generateSecret();                                 // operation
+#     const token = auth.generate(secret);                                  // operation
+#     const direct = totpToken(secret, options);                            // operation
+#
+# 12.x exports the HOTP, TOTP and Authenticator classes, whose methods take the
+# secret as an argument, and the functional hotpToken, hotpCheck, totpToken,
+# totpCheck, totpCheckWithWindow, authenticatorToken, authenticatorCheckWithWindow
+# and authenticatorGenerateSecret (@otplib/core 12.0.1, hotp.d.ts, totp.d.ts,
+# authenticator.d.ts). 13.x keeps only helpers in this package; its
+# generateSecret takes one options object carrying the crypto plugin
+# (13.5.0, utils.d.ts).
+#
+# Deliberately NOT contracted: keyuri and the option validators, defaults and
+# padding helpers, the counter and truncation helpers, timeRemaining, timeUsed,
+# and encode and decode (Base32).
+contracts:
+
+  # The 12.x engines. A class's methods are declared on that class only; the
+  # inherited ones resolve through the subclass a consumer builds.
+  - method: "@otplib/core.HOTP.<init>"
+    arity: 0
+    return: { type: "@otplib/core.HOTP", confidence: high }
+    role: factory
+  - method: "@otplib/core.HOTP.<init>"
+    arity: 1
+    return: { type: "@otplib/core.HOTP", confidence: high }
+    role: factory
+  - method: "@otplib/core.TOTP.<init>"
+    arity: 0
+    return: { type: "@otplib/core.TOTP", confidence: high }
+    role: factory
+  - method: "@otplib/core.TOTP.<init>"
+    arity: 1
+    return: { type: "@otplib/core.TOTP", confidence: high }
+    role: factory
+  - method: "@otplib/core.Authenticator.<init>"
+    arity: 0
+    return: { type: "@otplib/core.Authenticator", confidence: high }
+    role: factory
+  - method: "@otplib/core.Authenticator.<init>"
+    arity: 1
+    return: { type: "@otplib/core.Authenticator", confidence: high }
+    role: factory
+  - method: "@otplib/core.HOTP.generate"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "@otplib/core.HOTP.check"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@otplib/core.HOTP.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@otplib/core.TOTP.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "@otplib/core.TOTP.check"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@otplib/core.TOTP.checkDelta"
+    arity: 2
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "@otplib/core.TOTP.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@otplib/core.Authenticator.generate"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "@otplib/core.Authenticator.check"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@otplib/core.Authenticator.checkDelta"
+    arity: 2
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "@otplib/core.Authenticator.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@otplib/core.Authenticator.generateSecret"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "@otplib/core.Authenticator.generateSecret"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+
+  # The functional entry points and the 13.x secret generator.
+  - method: "@otplib/core.hotpToken"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "@otplib/core.hotpCheck"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@otplib/core.totpToken"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "@otplib/core.totpCheck"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@otplib/core.totpCheckWithWindow"
+    arity: 3
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "@otplib/core.authenticatorToken"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "@otplib/core.authenticatorCheckWithWindow"
+    arity: 3
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "@otplib/core.authenticatorGenerateSecret"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "@otplib/core.generateSecret"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
