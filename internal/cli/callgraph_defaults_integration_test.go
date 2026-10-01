@@ -73,7 +73,7 @@ func TestCallgraphCLIExportProfiles(t *testing.T) {
 		max    int
 		index  bool
 	}{
-		{"default", nil, "6.16", 8, false},
+		{"default", nil, "6.17", 8, false},
 		{"detailed-legacy", []string{"--export-callgraph-max-chains", "128", "--export-callgraph-entry-points=true", "--export-callgraph-interned-frames=false"}, "6.14", 128, true},
 	} {
 		t.Run(profile.name, func(t *testing.T) {

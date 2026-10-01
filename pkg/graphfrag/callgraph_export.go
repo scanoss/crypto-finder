@@ -25,16 +25,20 @@ import (
 )
 
 // CallgraphSchemaVersion is the inlined callgraph contract and the zero-value
-// SDK/stitch default. Local CLI exports default to the interned 6.16 contract;
+// SDK/stitch default. Local CLI exports default to the interned 6.17 contract;
 // --export-callgraph-interned-frames=false selects this compatibility render.
 // Both paths use CallgraphExportSchemaVersion to stamp the selected render.
 const CallgraphSchemaVersion = "6.14"
 
 // CallgraphInternedSchemaVersion is the interned contract: call_chains frames
 // omit catalog identity and join through functions[] plus call_chain_indexes.
-// 6.16 adds the optional scan_metadata.ecosystems list; 6.15 artifacts remain
-// valid against their own published schema.
-const CallgraphInternedSchemaVersion = "6.16"
+// 6.16 adds the optional scan_metadata.ecosystems list. 6.17 adds the
+// optional finding_graphs[].dependency block, analysis.paths_total,
+// paths_kept, route_evidence and no_callers_only, root_kind on a chain's first
+// frame, the stitched unresolved_reason, and the unresolved_reason values
+// traversal_truncated, unresolved_dispatch and dependency_without_source.
+// 6.15 and 6.16 artifacts remain valid against their own published schemas.
+const CallgraphInternedSchemaVersion = "6.17"
 
 // CallgraphExportSchemaVersion returns the stamped schema_version for a render.
 func CallgraphExportSchemaVersion(internedFrames bool) string {
@@ -124,8 +128,8 @@ type ExportFindingGraph struct {
 	FindingID string `json:"finding_id"`
 	// PURL is the optional package URL promoted from a direct rule finding.
 	PURL string `json:"purl,omitempty"`
-	// Dependency names the dependency a dependency finding sits in and how
-	// the application depends on it. Absent on first-party findings.
+	// Dependency (6.17+) names the dependency a dependency finding sits in and
+	// how the application depends on it. Absent on first-party findings.
 	Dependency *ExportFindingDependency `json:"dependency,omitempty"`
 	// OccurrenceKey is the optional AST-anchored structural finding identity.
 	OccurrenceKey string `json:"occurrence_key,omitempty"`
@@ -152,7 +156,7 @@ type ExportFindingGraph struct {
 	// Reachability is the explicit reachability state (6.8+): one of the
 	// Reachability* constants. Supersedes the implicit chain-presence signal.
 	Reachability string `json:"reachability,omitempty"`
-	// UnresolvedReason says why an unknown verdict is unknown. The stitch sets
+	// UnresolvedReason (6.17+) says why an unknown verdict is unknown. The stitch sets
 	// only unresolved_dispatch: the root reaches the finding through a
 	// name_only edge and through nothing else.
 	UnresolvedReason string `json:"unresolved_reason,omitempty"`
@@ -168,7 +172,7 @@ type ExportFindingGraph struct {
 type ExportFindingAnalysis struct {
 	CallChains string `json:"call_chains,omitempty"`
 	Parameters string `json:"parameters,omitempty"`
-	// PathsTotal is how many distinct routes, from a chain root to the
+	// PathsTotal (6.17+) is how many distinct routes, from a chain root to the
 	// finding, the call graph holds; PathsKept is how many of them the
 	// finding's call_chains show. A route is a function sequence, so chains
 	// that differ only in a call-site line count once. PathsTotal saturates at
@@ -176,13 +180,13 @@ type ExportFindingAnalysis struct {
 	// finding has no route, and on the stitched export.
 	PathsTotal int `json:"paths_total,omitempty"`
 	PathsKept  int `json:"paths_kept,omitempty"`
-	// RouteEvidence is how strongly the finding's strongest route was
+	// RouteEvidence (6.17+) is how strongly the finding's strongest route was
 	// resolved, by its weakest call: RouteEvidenceDirect, RouteEvidenceDispatch
 	// or RouteEvidenceNameOnly (the verdict is then unknown with
 	// unresolved_dispatch). call_chains lists the strongest routes first.
 	// Present with a route, on the live and stitched exports.
 	RouteEvidence string `json:"route_evidence,omitempty"`
-	// NoCallersOnly reports that every root of the routes supporting the
+	// NoCallersOnly (6.17+) reports that every root of the routes supporting the
 	// verdict (those free of name_only edges, or all when none is) is an
 	// application function nothing in the application calls (root_kind
 	// no_callers): the crypto is reached only from code with no known callers.
@@ -513,7 +517,7 @@ type ExportChainNode struct {
 	// EntryCall is the call-site data-flow for the edge that led to this frame.
 	// Nil on the root frame and on frames derived from legacy 1.0/1.1 fragments.
 	EntryCall *ExportEntryCall `json:"entry_call,omitempty"`
-	// RootKind, on the first frame of a chain only, says what that frame is:
+	// RootKind (6.17+), on the first frame of a chain only, says what that frame is:
 	// `main`, `framework_entry` (a method a framework invokes: an override of a
 	// type outside the application, or a request-mapping, scheduling or
 	// listener annotation), `no_callers` (application code nothing in the

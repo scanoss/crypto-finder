@@ -199,7 +199,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanExportEntryPoints, "export-callgraph-entry-points", false,
 		"Include the optional full crypto_entry_points reverse-reachability index (default false)")
 	scanCmd.Flags().BoolVar(&scanExportInternedFrames, "export-callgraph-interned-frames", true,
-		"Emit schema 6.16: hydrate frame identity from functions[] via call_chain_indexes (default true). Set false for legacy schema 6.14 inlined frames.")
+		"Emit schema 6.17: hydrate frame identity from functions[] via call_chain_indexes (default true). Set false for legacy schema 6.14 inlined frames.")
 	scanCmd.Flags().BoolVar(&scanExportProjectReach, "export-callgraph-project-reachability", false,
 		"When no dependency set was resolved, classify reachability against the scan target's own source packages, as a --scan-dependencies run does for first-party findings (default false). Leave it off when scanning a library on its own.")
 	scanCmd.Flags().StringVar(&scanExportGraphFragment, "export-graph-fragment", "", "Export a reusable structural graph fragment to a file")

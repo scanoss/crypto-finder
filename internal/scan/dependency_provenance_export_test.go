@@ -199,7 +199,7 @@ func TestExportCallGraph_DependencyProvenanceMatchesSchemas(t *testing.T) {
 		interned bool
 	}{
 		{schema: "callgraph-schema.json"},
-		{schema: "callgraph-schema-6.16.json", interned: true},
+		{schema: "callgraph-schema-6.17.json", interned: true},
 	} {
 		path := filepath.Join(t.TempDir(), "callgraph.json")
 		if err := exportCallGraphWithOptions(path, "json", newProvenanceFixture(t).result, CallGraphExportOptions{InternedFrames: tc.interned}); err != nil {
