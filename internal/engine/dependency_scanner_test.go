@@ -1433,3 +1433,37 @@ func TestMergeReports_KeepsTheUserReportsRulesStamp(t *testing.T) {
 		t.Fatalf("merged rules = %#v, want %#v", merged.Rules, stamp)
 	}
 }
+
+// TestDependencyScanner_CollectPackageSets_NamesTheParsedDependencies: a Java
+// dependency without a source directory joins the graph for types only, so it
+// is not parsed, and the dependency path of the crypto behind it says so.
+func TestDependencyScanner_CollectPackageSets_NamesTheParsedDependencies(t *testing.T) {
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "java"}}
+	resolved := &dependency.ResolveResult{
+		RootModule: "com.acme:app",
+		Graph: map[string][]string{
+			"com.acme:app":       {"org.example:bridge"},
+			"org.example:bridge": {"org.example:crypto"},
+		},
+	}
+	depResults := []depScanResult{
+		{
+			dep:    dependency.Dependency{Module: "org.example:bridge", Version: "1.0.0"},
+			status: depScanStatusSkippedNoSource,
+		},
+		{
+			dep:    dependency.Dependency{Module: "org.example:crypto", Version: "1.0.0", Dir: "/deps/crypto"},
+			status: depScanStatusScanned,
+			report: reportWithCryptoAsset(),
+		},
+	}
+
+	sets := ds.collectPackageSets("/user/project", resolved, depResults)
+	if !sets.parsedModules["org.example:crypto"] || sets.parsedModules["org.example:bridge"] {
+		t.Fatalf("parsed modules = %v, want only org.example:crypto", sets.parsedModules)
+	}
+	path := dependency.Paths(resolved, sets.parsedModules)["org.example:crypto"]
+	if !path.WithoutSource || len(path.Steps) != 2 || !path.Steps[0].WithoutSource {
+		t.Fatalf("crypto path = %+v, want the bridge step marked without source", path)
+	}
+}

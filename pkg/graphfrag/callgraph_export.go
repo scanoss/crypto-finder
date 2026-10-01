@@ -124,6 +124,9 @@ type ExportFindingGraph struct {
 	FindingID string `json:"finding_id"`
 	// PURL is the optional package URL promoted from a direct rule finding.
 	PURL string `json:"purl,omitempty"`
+	// Dependency names the dependency a dependency finding sits in and how
+	// the application depends on it. Absent on first-party findings.
+	Dependency *ExportFindingDependency `json:"dependency,omitempty"`
 	// OccurrenceKey is the optional AST-anchored structural finding identity.
 	OccurrenceKey string `json:"occurrence_key,omitempty"`
 	// MatchedOperation carries the kind/symbol/expression of the matched crypto op.
@@ -303,6 +306,52 @@ type ExportDependencyInfo struct {
 	Module  string `json:"module"`
 	Version string `json:"version,omitempty"`
 	PURL    string `json:"purl,omitempty"`
+}
+
+// Relationships on finding_graphs[].dependency.relationship.
+const (
+	// DependencyDirect is a dependency the application declares itself.
+	DependencyDirect = "direct"
+	// DependencyTransitive is a dependency the application reaches only
+	// through another dependency.
+	DependencyTransitive = "transitive"
+)
+
+// UnresolvedReasonDependencyWithoutSource says why a dependency finding is
+// unknown rather than unreachable: no call chain reaches it, and every route
+// from the application to its dependency in the dependency graph crosses a
+// dependency that joined the call graph without source code, whose calls are
+// not in the graph. Live export only: a stitch with a fragment missing fails.
+const UnresolvedReasonDependencyWithoutSource = "dependency_without_source"
+
+// ExportFindingDependency is finding_graphs[].dependency: the dependency a
+// finding sits in, with its package URL, and how the application reaches it
+// in the resolved dependency graph (not in the call graph).
+type ExportFindingDependency struct {
+	Module  string `json:"module"`
+	Version string `json:"version,omitempty"`
+	PURL    string `json:"purl,omitempty"`
+	// Relationship is DependencyDirect or DependencyTransitive. Absent when
+	// the dependency graph was not resolved or does not connect the
+	// dependency to the application.
+	Relationship string `json:"relationship,omitempty"`
+	// Path is the shortest route from the application to this dependency,
+	// from a direct dependency to this one, both included; the application
+	// (scan_metadata.root_module) is not listed. A route through dependencies
+	// parsed with source is preferred over a shorter one that is not. Absent
+	// with Relationship.
+	Path []ExportDependencyPathStep `json:"path,omitempty"`
+}
+
+// ExportDependencyPathStep is one dependency on a finding's dependency path.
+type ExportDependencyPathStep struct {
+	Module  string `json:"module"`
+	Version string `json:"version,omitempty"`
+	PURL    string `json:"purl,omitempty"`
+	// WithoutSource marks a dependency that joined the call graph without
+	// source code: types only for Java, not at all elsewhere. No call chain
+	// crosses it. Live export only.
+	WithoutSource bool `json:"without_source,omitempty"`
 }
 
 // ExportEntryCall is the schema-6.0 entry_call shape on a chain node. It
@@ -616,6 +665,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 			CallChains:        grp.callChains,
 		}
 		anchorByFinding[grp.findingID] = grp.anchorNode
+		fg.Dependency = r.findingDependency(root, grp.anchorNode.Component, meta)
 		// An unattributed op keeps its frame so its component-derived identity
 		// survives, which also makes its anchor resolvable — but live has no
 		// containing function to walk forward from and emits nothing, so
@@ -907,6 +957,35 @@ func simpleMethodName(functionName string) string {
 		return functionName[dot+1:]
 	}
 	return functionName
+}
+
+// findingDependency describes the dependency component a stitched finding
+// sits in, and its route from the root in the dependency graph. It is nil for
+// a finding of the root component.
+func (r *Result) findingDependency(root, component ComponentKey, meta ScanMeta) *ExportFindingDependency {
+	if component == root || component == (ComponentKey{}) {
+		return nil
+	}
+	info := r.componentDependencyInfo(component, meta)
+	out := &ExportFindingDependency{Module: info.Module, Version: info.Version, PURL: info.PURL}
+	route := r.dependencyRoutes[component]
+	if len(route) == 0 {
+		return out
+	}
+	out.Relationship = DependencyTransitive
+	if len(route) == 1 {
+		out.Relationship = DependencyDirect
+	}
+	out.Path = make([]ExportDependencyPathStep, len(route))
+	for i, key := range route {
+		step := r.componentDependencyInfo(key, meta)
+		out.Path[i] = ExportDependencyPathStep{Module: step.Module, Version: step.Version, PURL: step.PURL}
+	}
+	return out
+}
+
+func (r *Result) componentDependencyInfo(key ComponentKey, meta ScanMeta) *ExportDependencyInfo {
+	return buildDependencyInfo(meta, Fragment{Module: r.dependencyModules[key]}, key)
 }
 
 // stitchedReachability classifies one finding graph's reachability state.

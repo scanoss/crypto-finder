@@ -87,6 +87,11 @@ type DepScanResult struct {
 	Ecosystem         string
 	ProjectRoot       string
 	Dependencies      []dependency.Dependency
+	// DependencyPaths holds, per dependency module, its shortest route from
+	// the application in the resolved dependency graph and whether every
+	// route crosses a dependency parsed without source. Nil when the resolver
+	// produced no graph.
+	DependencyPaths map[string]dependency.Path
 	// AdditionalEcosystems holds one call graph of the scan target's own
 	// source per other supported ecosystem it contains. The fields above describe
 	// the primary ecosystem, the one dependencies resolve for; a finding
@@ -169,7 +174,7 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return nil, err
 	}
 
-	graph, err := ds.buildDependencyCallGraph(opts.ScanOptions.Target, resolved, depResults)
+	graph, parsed, err := ds.buildDependencyCallGraph(opts.ScanOptions.Target, resolved, depResults)
 	if err != nil {
 		if progressErr := ds.reportProgress(opts, progressStatusFailed, err); progressErr != nil {
 			return nil, progressErr
@@ -197,13 +202,14 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		Msg("Total dependency scan pipeline")
 
 	return &DepScanResult{
-		Report:       result,
-		CallGraph:    graph,
-		RootModule:   resolved.RootModule,
-		Ecosystem:    ds.resolver.Ecosystem(),
-		ProjectRoot:  opts.ScanOptions.Target,
-		Dependencies: canonicalDependencies(resolved.Dependencies),
-		summary:      summary,
+		Report:          result,
+		CallGraph:       graph,
+		RootModule:      resolved.RootModule,
+		Ecosystem:       ds.resolver.Ecosystem(),
+		ProjectRoot:     opts.ScanOptions.Target,
+		Dependencies:    canonicalDependencies(resolved.Dependencies),
+		DependencyPaths: dependency.Paths(resolved, parsed),
+		summary:         summary,
 	}, nil
 }
 
@@ -397,10 +403,11 @@ func (ds *DependencyScanner) buildDependencyCallGraph(
 	userTarget string,
 	resolved *dependency.ResolveResult,
 	depResults []depScanResult,
-) (*callgraph.CallGraph, error) {
+) (*callgraph.CallGraph, map[string]bool, error) {
 	sets := ds.collectPackageSets(userTarget, resolved, depResults)
 	ds.cgBuilder.SetArtifactDependencies(resolved.Graph)
-	return ds.cgBuilder.BuildFromDirectories(sets.graphPackages, sets.typeOnlyPackages)
+	graph, err := ds.cgBuilder.BuildFromDirectories(sets.graphPackages, sets.typeOnlyPackages)
+	return graph, sets.parsedModules, err
 }
 
 func (ds *DependencyScanner) attributeDependencyResults(
@@ -691,6 +698,9 @@ type packageSets struct {
 	// unavailable or whose scan failed, while avoiding duplicate source parsing for
 	// dependencies already listed in graphPackages.
 	typeOnlyPackages []callgraph.PackageDir
+	// parsedModules names the dependencies in graphPackages: the ones whose
+	// code holds call edges.
+	parsedModules map[string]bool
 }
 
 // collectPackageSets builds two lists of PackageDirs for the two-phase callgraph build.
@@ -701,7 +711,7 @@ func (ds *DependencyScanner) collectPackageSets(
 	resolved *dependency.ResolveResult,
 	depResults []depScanResult,
 ) packageSets {
-	sets := packageSets{}
+	sets := packageSets{parsedModules: make(map[string]bool)}
 
 	if len(resolved.WorkspaceMembers) > 0 {
 		// Workspace project: each member is a separate package root
@@ -755,6 +765,7 @@ func (ds *DependencyScanner) collectPackageSets(
 		if result.status == depScanStatusScanned && result.dep.Dir != "" {
 			if graphDeps == nil || graphDeps[result.dep.Module] {
 				sets.graphPackages = append(sets.graphPackages, pkg)
+				sets.parsedModules[result.dep.Module] = true
 			}
 			continue
 		}

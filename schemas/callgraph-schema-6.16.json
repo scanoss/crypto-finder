@@ -80,6 +80,9 @@
         "finding_id": {
           "type": "string"
         },
+        "dependency": {
+          "$ref": "#/definitions/FindingDependency"
+        },
         "call_chains": {
           "type": "array",
           "items": {
@@ -322,6 +325,64 @@
               }
             }
           }
+        }
+      }
+    },
+    "FindingDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module"
+      ],
+      "description": "The dependency a dependency finding sits in and how the application reaches it in the resolved dependency graph, not in the call graph. Absent on first-party findings.",
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "purl": {
+          "type": "string",
+          "description": "Package URL of the dependency, versioned when the version is known."
+        },
+        "relationship": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "transitive"
+          ],
+          "description": "Absent when the dependency graph was not resolved or does not connect the dependency to the application."
+        },
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Shortest route from the application to this dependency: a direct dependency first, this dependency last, the application (scan_metadata.root_module) not listed. A route through dependencies parsed with source is preferred. Absent with relationship.",
+          "items": {
+            "$ref": "#/definitions/DependencyPathStep"
+          }
+        }
+      }
+    },
+    "DependencyPathStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module"
+      ],
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "purl": {
+          "type": "string"
+        },
+        "without_source": {
+          "type": "boolean",
+          "description": "The dependency joined the call graph without source code (types only for Java, not at all elsewhere), so no call chain crosses it. Live export only."
         }
       }
     }
