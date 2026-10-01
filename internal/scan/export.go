@@ -1836,17 +1836,10 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 
 	var traced bool
 	fg.CallChains, traced = buildCallChains(ctx, containingFn, cryptoCall)
-	chainsFilteredAway, chainsNarrowed := false, false
-	if len(asset.ParameterConditions) > 0 {
-		sampled := len(fg.CallChains)
-		fg.CallChains, chainsFilteredAway = filterChainsByCondition(ctx, containingFn, cryptoCall, asset, fg.CallChains)
-		chainsNarrowed = len(fg.CallChains) < sampled
-	}
+	var chainsFilteredAway, chainsNarrowed bool
+	fg.CallChains, chainsFilteredAway, chainsNarrowed = narrowChainsByCondition(ctx, containingFn, cryptoCall, asset, fg.CallChains)
 	refuted := traced && chainsFilteredAway
-	truncated, depthLimited, guessed := liveTraceFlags(ctx, containingFn, traced)
-	if refuted {
-		traced, depthLimited, guessed = refutedTraceFlags(ctx, containingFn, truncated, depthLimited, guessed)
-	}
+	traced, truncated, depthLimited, guessed := findingTraceFlags(ctx, containingFn, fg.CallChains, traced, refuted, chainsNarrowed)
 	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated, depthLimited, guessed)
 	recordRouteCounts(ctx, &fg, containingFn, traced)
 	// The trace behind those counts is cached per containing function and
@@ -1886,6 +1879,37 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	return fg
 }
 
+// findingTraceFlags reads the containing function's trace flags, restated for
+// what the finding's own condition left: refuted when it dropped every route, and
+// guessed when the routes that carry its value all cross a name_only edge.
+func findingTraceFlags(
+	ctx *exportBuildContext,
+	containingFn *callgraph.FunctionDecl,
+	chains [][]callGraphChainNode,
+	traced, refuted, narrowed bool,
+) (tracedOut, truncated, depthLimited, guessed bool) {
+	truncated, depthLimited, guessed = liveTraceFlags(ctx, containingFn, traced)
+	switch {
+	case refuted:
+		traced, depthLimited, guessed = refutedTraceFlags(ctx, containingFn, truncated, depthLimited, guessed)
+	case narrowed && traced:
+		guessed = guessed || valueRoutesGuessed(chains)
+	}
+	return traced, truncated, depthLimited, guessed
+}
+
+// valueRoutesGuessed reports that every route carrying a specialized finding's
+// value crosses a name_only edge. The trace cached per function rates the routes
+// of all values together, so a value that arrives only through a guess escapes
+// its guessed flag whenever another value has an exact route.
+func valueRoutesGuessed(chains [][]callGraphChainNode) bool {
+	if len(chains) == 0 {
+		return false
+	}
+	best, _ := rateRoutes(chains)
+	return best == callgraph.RouteEvidenceNameOnly
+}
+
 // markValueEnumerationCut reads call_chains as partial for a finding whose
 // selector value enumeration was cut by the depth cap or the value bound: a
 // caller value may be missing, and with it a specialized finding and its
@@ -1898,6 +1922,22 @@ func markValueEnumerationCut(fg *callGraphExportFinding, asset entities.Cryptogr
 		fg.Analysis = liveFindingAnalysis(fg.CallChains, true)
 	}
 	fg.Analysis.CallChains = graphfrag.AnalysisPartial
+}
+
+// narrowChainsByCondition applies the asset's parameter conditions to the
+// sampled chains. narrowed reports that the condition dropped some of them.
+func narrowChainsByCondition(
+	ctx *exportBuildContext,
+	containingFn *callgraph.FunctionDecl,
+	cryptoCall *callGraphCalledFunction,
+	asset entities.CryptographicAsset,
+	chains [][]callGraphChainNode,
+) (kept [][]callGraphChainNode, filteredAway, narrowed bool) {
+	if len(asset.ParameterConditions) == 0 {
+		return chains, false, false
+	}
+	kept, filteredAway = filterChainsByCondition(ctx, containingFn, cryptoCall, asset, chains)
+	return kept, filteredAway, len(kept) < len(chains)
 }
 
 // filterChainsByCondition drops the chains a rule's parameterCondition
