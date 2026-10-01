@@ -184,6 +184,7 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// shadowing rule below would apply only to types declared earlier in the
 	// file. Bases are filled in properly as each declaration is processed.
 	p.registerDeclaredJavaTypes(root, src, analysis, "")
+	collectJavaStringConstants(javaChildNodes(root), src, analysis, "")
 
 	// Extract class declarations with their methods
 	p.extractClasses(root, src, filePath, analysis)
@@ -250,11 +251,15 @@ func (p *JavaParser) extractImports(root *sitter.Node, src []byte, analysis *Fil
 // key in ClassBases is what marks a type as source-declared; the extends and
 // implements list is stored later, when the declaration itself is processed.
 func (p *JavaParser) registerDeclaredJavaTypes(node *sitter.Node, src []byte, analysis *FileAnalysis, outerClass string) {
+	p.registerDeclaredJavaTypesIn(javaChildNodes(node), src, analysis, outerClass)
+}
+
+func javaChildNodes(node *sitter.Node) []*sitter.Node {
 	children := make([]*sitter.Node, 0, node.ChildCount())
 	for i := 0; i < int(node.ChildCount()); i++ {
 		children = append(children, node.Child(i))
 	}
-	p.registerDeclaredJavaTypesIn(children, src, analysis, outerClass)
+	return children
 }
 
 // registerDeclaredJavaTypesIn marks each type declaration among nodes, then
@@ -1893,7 +1898,7 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 		return originNodes
 	}
 	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
-		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr}}
+		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr, javaConstant: javaConstantUse(expr, analysis, currentClass, varTypes, origins)}}
 	}
 	if constructorNodes := p.traceConstructorExpression(expr, analysis, currentClass, varTypes, origins, depth); constructorNodes != nil {
 		return constructorNodes
@@ -1901,7 +1906,13 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 	if methodCallNodes := p.traceMethodCallExpression(expr, analysis, currentClass, varTypes, origins, depth); methodCallNodes != nil {
 		return methodCallNodes
 	}
-	return []SourceNode{{Type: "EXPRESSION", Value: expr}}
+	node := SourceNode{Type: "EXPRESSION", Value: expr}
+	if isSimpleJavaIdentifier(expr) {
+		// A bare name no local, parameter or field claims: a static import or
+		// an enclosing type's constant.
+		node.javaConstant = javaConstantUse(expr, analysis, currentClass, varTypes, origins)
+	}
+	return []SourceNode{node}
 }
 
 func traceLiteralExpression(expr string) []SourceNode {
