@@ -1821,13 +1821,19 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 
 	var traced bool
 	fg.CallChains, traced = buildCallChains(ctx, containingFn, cryptoCall)
-	chainsFilteredAway := false
+	chainsFilteredAway, chainsNarrowed := false, false
 	if len(asset.ParameterConditions) > 0 {
+		sampled := len(fg.CallChains)
 		fg.CallChains, chainsFilteredAway = filterChainsByCondition(fg.CallChains, asset)
+		chainsNarrowed = len(fg.CallChains) < sampled
 	}
 	truncated, depthLimited, guessed := liveTraceFlags(ctx, containingFn, traced)
 	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated, depthLimited, guessed)
 	recordRouteCounts(ctx, &fg, containingFn, traced)
+	// The trace behind those counts is cached per containing function and
+	// rates every value's routes together. A condition that dropped chains
+	// leaves only the surviving ones to rate.
+	reviseRouteEvidence(&fg, chainsNarrowed && traced)
 	// A specialized asset whose value came from a caller outside the chain
 	// sample has none of the sampled chains left: they all carried other
 	// values. Its chains are then incomplete, not complete and empty.

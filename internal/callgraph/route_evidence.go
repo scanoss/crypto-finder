@@ -38,6 +38,11 @@ func (e RouteEvidence) weakness() int {
 	}
 }
 
+// StrongerThan reports whether e is better evidence than other.
+func (e RouteEvidence) StrongerThan(other RouteEvidence) bool {
+	return e.weakness() < other.weakness()
+}
+
 // edgeKindEvidence is the evidence one edge lends a route.
 func edgeKindEvidence(kind EdgeKind) RouteEvidence {
 	switch kind {
