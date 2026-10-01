@@ -218,6 +218,11 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	if err != nil {
 		return nil, fmt.Errorf("callgraph: load embedded %s KB: %w", b.ecosystem, err)
 	}
+	// Fold Java String constants named across classes before inference, so
+	// it sees "SHA-1" where the source wrote MessageDigestAlgorithms.SHA_1.
+	if b.ecosystem == ecosystemJava {
+		foldJavaStringConstants(graph)
+	}
 	if err := InferReturnTypes(graph, kb); err != nil {
 		return nil, fmt.Errorf("callgraph: infer return types: %w", err)
 	}
@@ -445,6 +450,7 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 		}
 		b.applyEcosystemAnalysisHooks(graph, analysis, projectLocal)
 		b.mergeAnalysisFunctions(graph, analysis)
+		mergeJavaStringConstants(graph, analysis)
 	}
 }
 
@@ -2811,8 +2817,8 @@ func resolveArgumentConcreteType(graph *CallGraph, call *FunctionCall, argIdx in
 	if argIdx >= len(call.ArgumentSources) {
 		return ""
 	}
-	for _, src := range call.ArgumentSources[argIdx] {
-		if typ := concreteTypeFromSourceNode(graph, src); typ != "" {
+	for i := range call.ArgumentSources[argIdx] {
+		if typ := concreteTypeFromSourceNode(graph, call.ArgumentSources[argIdx][i]); typ != "" {
 			return typ
 		}
 	}
@@ -3198,7 +3204,8 @@ func inferJavaArgumentType(call *FunctionCall, idx int) string {
 }
 
 func inferTypeFromSourceNodes(nodes []SourceNode) string {
-	for _, node := range nodes {
+	for i := range nodes {
+		node := &nodes[i]
 		if node.DeclaredType != "" {
 			return normalizeJavaTypeName(node.DeclaredType)
 		}
