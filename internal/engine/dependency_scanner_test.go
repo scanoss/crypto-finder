@@ -522,7 +522,7 @@ func TestDependencyScanner_MergeReports_DependencyFindingIDUsesCanonicalPath(t *
 
 	merged := ds.mergeReports(userReport, depResults)
 	got := merged.Findings[0].CryptographicAssets[0].FindingID
-	want := generateFindingID("dep/mod@v1.0.0/lib.go", 10, []entities.RuleInfo{{ID: "rule.dep"}})
+	want := generateFindingID("dep/mod@v1.0.0/lib.go", 10, []entities.RuleInfo{{ID: "rule.dep"}}, "")
 	if got != want {
 		t.Fatalf("dependency finding_id = %q, want %q", got, want)
 	}

@@ -543,5 +543,6 @@ func cloneConditionedAsset(anchor entities.CryptographicAsset, rule engine.RuleC
 		conditionRaws[i] = asset.ParameterConditions[i].Raw
 	}
 	asset.Metadata["parameterCondition"] = strings.Join(conditionRaws, ",")
+	asset.ConditionedValue = asset.Metadata["parameterCondition"]
 	return asset
 }

@@ -1155,19 +1155,25 @@ func AssignFindingIDs(report *entities.InterimReport) {
 		finding := &report.Findings[i]
 		for j := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[j]
-			asset.FindingID = generateFindingID(findingIDPath(*finding, *asset), asset.StartLine, asset.Rules)
+			asset.FindingID = generateFindingID(findingIDPath(*finding, *asset), asset.StartLine, asset.Rules, asset.ConditionedValue)
 		}
 	}
 }
 
 // generateFindingID produces a stable short hash for a finding.
 // It hashes file_path + start_line + first_rule_id and returns the first 8 hex chars.
-func generateFindingID(filePath string, startLine int, ruleInfos []entities.RuleInfo) string {
+// A per-value asset also hashes its resolved condition, so two values of one
+// rule at one call do not share an id. Every other asset passes an empty value
+// and keeps the id it always had.
+func generateFindingID(filePath string, startLine int, ruleInfos []entities.RuleInfo, conditionedValue string) string {
 	ruleID := ""
 	if len(ruleInfos) > 0 {
 		ruleID = ruleInfos[0].ID
 	}
 	input := filePath + ":" + strconv.Itoa(startLine) + ":" + ruleID
+	if conditionedValue != "" {
+		input += ":" + conditionedValue
+	}
 	hash := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(hash[:])[:8]
 }

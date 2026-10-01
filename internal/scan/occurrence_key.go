@@ -51,7 +51,7 @@ func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandid
 			containing := findOccurrenceContainingFunction(functions, finding.FilePath, asset.StartLine)
 			if containing == nil {
 				location := normalizeFindingPath(ctx, finding.FilePath, asset.DependencyInfo)
-				hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, "", "", "")
+				hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, "", "", "", asset.ConditionedValue)
 				occurrence := strings.Join([]string{location.FilePath, strconv.Itoa(asset.StartLine), strconv.Itoa(asset.StartCol), strconv.Itoa(asset.EndCol)}, "\n")
 				candidates = append(candidates, occurrenceKeyCandidate{asset: asset, hash: hash, occurrence: occurrence})
 				continue
@@ -62,7 +62,7 @@ func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandid
 			}
 			location := normalizeFindingPath(ctx, finding.FilePath, asset.DependencyInfo)
 			container := buildExportFunctionMetadata(ctx.graph, containing.ID, containing).CanonicalSignature
-			hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, container, terminal.ASTKind, terminal.NamedASTPath)
+			hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, container, terminal.ASTKind, terminal.NamedASTPath, asset.ConditionedValue)
 			occurrence := strings.Join([]string{terminal.FilePath, strconv.Itoa(terminal.Line), strconv.Itoa(terminal.StartCol), strconv.Itoa(terminal.EndCol)}, "\n")
 			candidates = append(candidates, occurrenceKeyCandidate{asset: asset, hash: hash, occurrence: occurrence})
 		}
@@ -162,7 +162,14 @@ func occurrenceSourceSubject(result *engine.DepScanResult, asset *entities.Crypt
 	return result.RootModule
 }
 
-func occurrenceKeyHash(subject, path, container, nodeKind, namedASTPath string) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{subject, path, container, nodeKind, namedASTPath}, "\n")))
+// occurrenceKeyHash hashes the structural identity of one occurrence. A
+// per-value asset adds its resolved condition, so the values of one call get
+// distinct keys; every other asset hashes exactly what it always did.
+func occurrenceKeyHash(subject, path, container, nodeKind, namedASTPath, conditionedValue string) string {
+	parts := []string{subject, path, container, nodeKind, namedASTPath}
+	if conditionedValue != "" {
+		parts = append(parts, conditionedValue)
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	return hex.EncodeToString(sum[:])[:16]
 }

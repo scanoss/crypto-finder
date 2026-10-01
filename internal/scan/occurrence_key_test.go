@@ -101,6 +101,44 @@ func TestAssignOccurrenceKeys_CollisionsAreDeterministic(t *testing.T) {
 	}
 }
 
+// Per-value assets of one rule at one call differ only in the resolved
+// condition, and must not share a key with each other or with a native asset.
+func TestAssignOccurrenceKeys_PerValueAssetsGetDistinctKeys(t *testing.T) {
+	result := &engine.DepScanResult{
+		RootModule:  "com.example:app",
+		ProjectRoot: "/workspace",
+		CallGraph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+			"com.example.Crypto.run#0": {
+				ID: callgraph.FunctionID{Package: "com.example", Type: "Crypto", Name: "run#0"}, FilePath: "/workspace/Crypto.java", StartLine: 1, EndLine: 100,
+				Calls: []callgraph.FunctionCall{
+					{FilePath: "/workspace/Crypto.java", Line: 10, StartCol: 5, EndCol: 25, ASTKind: "method_invocation", NamedASTPath: "block[0]/expression_statement[0]/method_invocation[0]"},
+				},
+			},
+		}},
+		Report: &entities.InterimReport{Findings: []entities.Finding{{
+			FilePath: "/workspace/Crypto.java",
+			CryptographicAssets: []entities.CryptographicAsset{
+				{StartLine: 10, EndLine: 10, StartCol: 5, EndCol: 25},
+				{StartLine: 10, EndLine: 10, StartCol: 5, EndCol: 25, ConditionedValue: "param[0]==SHA-256"},
+				{StartLine: 10, EndLine: 10, StartCol: 5, EndCol: 25, ConditionedValue: "param[0]==SHA-512"},
+			},
+		}}},
+	}
+
+	AssignOccurrenceKeys(result)
+
+	assets := result.Report.Findings[0].CryptographicAssets
+	pattern := regexp.MustCompile(`^v1:[0-9a-f]{16}$`)
+	for i := range assets {
+		if !pattern.MatchString(assets[i].OccurrenceKey) {
+			t.Fatalf("asset %d occurrence_key = %q, want a plain v1 key", i, assets[i].OccurrenceKey)
+		}
+	}
+	if assets[0].OccurrenceKey == assets[1].OccurrenceKey || assets[1].OccurrenceKey == assets[2].OccurrenceKey || assets[0].OccurrenceKey == assets[2].OccurrenceKey {
+		t.Fatalf("occurrence keys = %q, %q, %q; want three distinct keys", assets[0].OccurrenceKey, assets[1].OccurrenceKey, assets[2].OccurrenceKey)
+	}
+}
+
 func TestAssignOccurrenceKeys_TopLevelFallbackPropagatesToExports(t *testing.T) {
 	result := &engine.DepScanResult{
 		RootModule:  "com.example:app",
