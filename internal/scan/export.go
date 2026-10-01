@@ -130,6 +130,10 @@ type exportBuildContext struct {
 	// callChainNoCallersOnly records, per containing-function key, that every
 	// root of the supporting routes is no_callers (analysis.no_callers_only).
 	callChainNoCallersOnly map[string]bool
+	// callChainSitesCut records, per containing-function key, that the chain
+	// budget dropped call-site variants of a traced route, so not every call
+	// into the containing function was exported.
+	callChainSitesCut map[string]bool
 	// tracer is shared by every finding so the index of name_only edges it
 	// builds on first use is built once per export.
 	tracer *callgraph.Tracer
@@ -1092,7 +1096,7 @@ func liveReachability(containingFn *callgraph.FunctionDecl, userPackages map[str
 	switch {
 	case containingFn == nil || userPackages == nil:
 		return graphfrag.ReachabilityNotApplicable
-	case traced && guessed:
+	case guessed:
 		return graphfrag.ReachabilityUnknown
 	case traced:
 		return graphfrag.ReachabilityReachable
@@ -1824,10 +1828,14 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	chainsFilteredAway, chainsNarrowed := false, false
 	if len(asset.ParameterConditions) > 0 {
 		sampled := len(fg.CallChains)
-		fg.CallChains, chainsFilteredAway = filterChainsByCondition(fg.CallChains, asset)
+		fg.CallChains, chainsFilteredAway = filterChainsByCondition(ctx, containingFn, cryptoCall, asset, fg.CallChains)
 		chainsNarrowed = len(fg.CallChains) < sampled
 	}
+	refuted := traced && chainsFilteredAway
 	truncated, depthLimited, guessed := liveTraceFlags(ctx, containingFn, traced)
+	if refuted {
+		traced, depthLimited, guessed = refutedTraceFlags(ctx, containingFn, truncated, depthLimited, guessed)
+	}
 	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated, depthLimited, guessed)
 	recordRouteCounts(ctx, &fg, containingFn, traced)
 	// The trace behind those counts is cached per containing function and
@@ -1836,8 +1844,10 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	reviseRouteEvidence(&fg, chainsNarrowed && traced)
 	// A specialized asset whose value came from a caller outside the chain
 	// sample has none of the sampled chains left: they all carried other
-	// values. Its chains are then incomplete, not complete and empty.
-	if chainsFilteredAway && fg.Analysis != nil {
+	// values. Its chains are then incomplete, not complete and empty. When
+	// the condition refuted every route the graph holds, the empty chains
+	// are the whole answer.
+	if chainsFilteredAway && fg.Analysis != nil && fg.Reachability != graphfrag.ReachabilityUnreachable {
 		fg.Analysis.CallChains = graphfrag.AnalysisPartial
 	}
 	markValueEnumerationCut(&fg, asset)
@@ -1875,9 +1885,20 @@ func markValueEnumerationCut(fg *callGraphExportFinding, asset entities.Cryptogr
 }
 
 // filterChainsByCondition drops the chains a rule's parameterCondition
-// refutes. filteredAway reports that the sample held chains and none survived.
-func filterChainsByCondition(chains [][]callGraphChainNode, asset entities.CryptographicAsset) (kept [][]callGraphChainNode, filteredAway bool) {
-	kept = filterConditionedCallChains(chains, asset.ParameterConditions)
+// refutes, reading the condition against the call the rule matched.
+// filteredAway reports that the sample held chains and none survived.
+func filterChainsByCondition(
+	ctx *exportBuildContext,
+	containingFn *callgraph.FunctionDecl,
+	cryptoCall *callGraphCalledFunction,
+	asset entities.CryptographicAsset,
+	chains [][]callGraphChainNode,
+) (kept [][]callGraphChainNode, filteredAway bool) {
+	var matchedCall *callGraphCalledFunction
+	if cryptoCall != nil {
+		matchedCall = ruleMatchedCall(ctx, containingFn, asset)
+	}
+	kept = filterConditionedCallChains(chains, asset.ParameterConditions, matchedCall)
 	return kept, len(chains) > 0 && len(kept) == 0
 }
 
@@ -1928,6 +1949,27 @@ func liveTraceFlags(ctx *exportBuildContext, containingFn *callgraph.FunctionDec
 	return ctx.callChainTruncated[key], ctx.callChainDepthLimited[key], traced && ctx.callChainUnresolvedDispatch[key]
 }
 
+// refutedTraceFlags restates the trace of a finding whose rule condition
+// refuted every chain found. A refuted chain is a route on which the call the
+// rule matched runs with an argument that contradicts the condition, so the
+// crypto the rule describes does not run there. When every route and every
+// call site into the containing function was examined, no known route runs it:
+// the finding is unreachable, the same answer the fragment's entry-point index
+// gives by leaving it out. When a cap left routes or call sites unexamined, one
+// of them may satisfy the condition, so the verdict is unknown
+// (traversal_truncated), never a confident unreachable. When every route found
+// crosses a name_only edge (guessed), the refuted routes are guesses too: the
+// call that really reaches the function is not among them and may satisfy the
+// condition. The finding then stays unknown (unresolved_dispatch), as it would
+// without the condition, and is never a definite unreachable.
+func refutedTraceFlags(
+	ctx *exportBuildContext,
+	containingFn *callgraph.FunctionDecl,
+	truncated, depthLimited, guessed bool,
+) (traced, unexamined, stillGuessed bool) {
+	return false, depthLimited || truncated || ctx.callChainSitesCut[containingFn.ID.String()], guessed
+}
+
 func applyLiveReachabilityState(
 	fg *callGraphExportFinding,
 	containingFn *callgraph.FunctionDecl,
@@ -1944,8 +1986,9 @@ func applyLiveReachabilityState(
 	}
 }
 
-// filterConditionedCallChains keeps only the chains whose terminal crypto call
-// satisfies the asset's parameter conditions.
+// filterConditionedCallChains keeps only the chains whose rule-matched call
+// satisfies the asset's parameter conditions. That call is matchedCall when it
+// is set (see ruleMatchedCall) and each chain's terminal crypto call otherwise.
 //
 // Each chain gets a three-valued verdict (see evaluateParameterConditions), and
 // the outcome depends on the finding's whole chain set rather than on each chain
@@ -1966,7 +2009,11 @@ func applyLiveReachabilityState(
 //
 // A chain whose terminal crypto call did not resolve at all has no arguments to
 // bind against and is therefore unknown, never refuted.
-func filterConditionedCallChains(chains [][]callGraphChainNode, conditions []paramcondition.Condition) [][]callGraphChainNode {
+func filterConditionedCallChains(
+	chains [][]callGraphChainNode,
+	conditions []paramcondition.Condition,
+	matchedCall *callGraphCalledFunction,
+) [][]callGraphChainNode {
 	if len(conditions) == 0 {
 		return chains
 	}
@@ -1978,11 +2025,15 @@ func filterConditionedCallChains(chains [][]callGraphChainNode, conditions []par
 			continue
 		}
 		terminal := chain[len(chain)-1]
-		if terminal.CryptoCall == nil {
+		call := terminal.CryptoCall
+		if matchedCall != nil {
+			call = chainCalledFunction(terminal.EntryCall, matchedCall)
+		}
+		if call == nil {
 			verdicts[i] = conditionUnknown
 			continue
 		}
-		verdicts[i] = evaluateParameterConditions(conditions, terminal.CryptoCall.Parameters)
+		verdicts[i] = evaluateParameterConditions(conditions, call.Parameters)
 		anyMatched = anyMatched || verdicts[i] == conditionMatched
 	}
 
@@ -2641,6 +2692,30 @@ func findCryptoCallNode(
 
 	// Step 3: tie-break.
 	return pickBestCandidate(graph, candidates)
+}
+
+// ruleMatchedCall is the call the detection rule matched, when it is not the
+// terminal findCryptoCallNode picks: the tightest call on the finding's lines
+// whose span holds the asset's. On a fluent chain the terminal is the
+// outermost link, so createHash('md5').update(x).digest('hex') ends at
+// digest('hex') while the rule matched createHash('md5'), the link that holds
+// the argument its parameterCondition names. Nil when the two are the same call
+// or the spans cannot tell them apart.
+func ruleMatchedCall(ctx *exportBuildContext, containingFn *callgraph.FunctionDecl, asset entities.CryptographicAsset) *callGraphCalledFunction {
+	terminal := findCryptoCallNode(ctx.graph, containingFn, asset, asset.StartLine, asset.EndLine)
+	if terminal == nil {
+		return nil
+	}
+	if asset.TerminalStartCol > 0 && asset.TerminalEndCol > 0 {
+		asset.StartCol = asset.TerminalStartCol
+		asset.EndCol = asset.TerminalEndCol
+	}
+	candidates := cryptoCallLineCandidates(containingFn, asset.StartLine, asset.EndLine)
+	i := tightestContainingIndexAmong(callCandidateViews(candidates), asset.StartCol, asset.EndCol)
+	if i < 0 || candidates[i] == terminal {
+		return nil
+	}
+	return buildCryptoCall(ctx, ctx.graph, containingFn, candidates[i])
 }
 
 func cryptoCallLineCandidates(containingFn *callgraph.FunctionDecl, startLine, endLine int) []*callgraph.FunctionCall {
@@ -3447,7 +3522,8 @@ func buildCallChains(
 	traced = len(raw) > 0
 	switch {
 	case traced:
-		expanded := expandCallChainCallSites(ctx, raw, ctx.emitMaxChains())
+		expanded, cut := expandCallChainCallSites(ctx, raw, ctx.emitMaxChains())
+		ctx.callChainSitesCut[cacheKey] = cut
 		chains = materializeCallChainNodes(ctx, expanded)
 	case ctx.callChainDepthLimited[cacheKey]:
 		// The depth limit cut every route before a root. Emit zero chains — do
@@ -3493,6 +3569,9 @@ func ensureCallChainCaches(ctx *exportBuildContext) {
 	}
 	if ctx.callChainNoCallersOnly == nil {
 		ctx.callChainNoCallersOnly = make(map[string]bool)
+	}
+	if ctx.callChainSitesCut == nil {
+		ctx.callChainSitesCut = make(map[string]bool)
 	}
 }
 
@@ -3638,7 +3717,7 @@ func materializeCallChainNodes(
 // variant, then every chain's second, and so on. Spending it chain by chain
 // filled it with one route repeated at different call-site lines, while other
 // routes to the same crypto went unshown.
-func expandCallChainCallSites(ctx *exportBuildContext, chains []callgraph.CallChain, maxChains int) []callgraph.CallChain {
+func expandCallChainCallSites(ctx *exportBuildContext, chains []callgraph.CallChain, maxChains int) (expanded []callgraph.CallChain, cut bool) {
 	// Every chain keeps its first variant, so one chain can contribute at most
 	// what the others leave.
 	perChainLimit := 0
@@ -3646,10 +3725,14 @@ func expandCallChainCallSites(ctx *exportBuildContext, chains []callgraph.CallCh
 		perChainLimit = max(1, maxChains-len(chains)+1)
 	}
 	perChain := make([][]callgraph.CallChain, len(chains))
+	total := 0
 	for i, chain := range chains {
-		perChain[i] = expandOneCallChain(ctx, chain, perChainLimit)
+		var chainCut bool
+		perChain[i], chainCut = expandOneCallChain(ctx, chain, perChainLimit)
+		cut = cut || chainCut
+		total += len(perChain[i])
 	}
-	var expanded []callgraph.CallChain
+	cut = cut || (maxChains > 0 && total > maxChains)
 	for round := 0; ; round++ {
 		added := false
 		for _, variants := range perChain {
@@ -3659,11 +3742,11 @@ func expandCallChainCallSites(ctx *exportBuildContext, chains []callgraph.CallCh
 			expanded = append(expanded, variants[round])
 			added = true
 			if maxChains > 0 && len(expanded) >= maxChains {
-				return expanded
+				return expanded, cut
 			}
 		}
 		if !added {
-			return expanded
+			return expanded, cut
 		}
 	}
 }
@@ -3685,9 +3768,8 @@ func distinctChainRoutes(chains [][]callGraphChainNode) int {
 	return len(seen)
 }
 
-//nolint:gocognit // Bounded call-site cross-product is kept together so every cap check remains auditable.
-func expandOneCallChain(ctx *exportBuildContext, chain callgraph.CallChain, remaining int) []callgraph.CallChain {
-	variants := []callgraph.CallChain{{Steps: append([]callgraph.CallChainStep(nil), chain.Steps...), RootKind: chain.RootKind}}
+func expandOneCallChain(ctx *exportBuildContext, chain callgraph.CallChain, remaining int) (variants []callgraph.CallChain, cut bool) {
+	variants = []callgraph.CallChain{{Steps: append([]callgraph.CallChainStep(nil), chain.Steps...), RootKind: chain.RootKind}}
 	for stepIndex := 1; stepIndex < len(chain.Steps); stepIndex++ {
 		caller := ctx.graph.Functions[chain.Steps[stepIndex-1].Function.String()]
 		matches := matchingInvocations(caller, chain.Steps[stepIndex].Function.String())
@@ -3696,8 +3778,13 @@ func expandOneCallChain(ctx *exportBuildContext, chain callgraph.CallChain, rema
 		}
 		sortCallSitesByCertainty(ctx, matches, chain.Steps[stepIndex-1], chain.Steps[stepIndex])
 		var next []callgraph.CallChain
+	expand:
 		for _, variant := range variants {
 			for _, call := range matches {
+				if remaining > 0 && len(next) >= remaining {
+					cut = true
+					break expand
+				}
 				cloned := callgraph.CallChain{Steps: append([]callgraph.CallChainStep(nil), variant.Steps...), RootKind: variant.RootKind}
 				cloned.Steps[stepIndex-1].Line = call.Line
 				cloned.Steps[stepIndex-1].StartCol = call.StartCol
@@ -3706,17 +3793,11 @@ func expandOneCallChain(ctx *exportBuildContext, chain callgraph.CallChain, rema
 					cloned.Steps[stepIndex-1].FilePath = call.FilePath
 				}
 				next = append(next, cloned)
-				if remaining > 0 && len(next) >= remaining {
-					break
-				}
-			}
-			if remaining > 0 && len(next) >= remaining {
-				break
 			}
 		}
 		variants = next
 	}
-	return variants
+	return variants, cut
 }
 
 // sortCallSitesByCertainty orders the call sites of one step so the most
@@ -3875,17 +3956,18 @@ func attachCryptoCall(chains [][]callGraphChainNode, cryptoCall *callGraphCalled
 			continue
 		}
 		last := &chains[i][len(chains[i])-1]
-		cloned := cloneCalledFunction(cryptoCall)
-		last.CryptoCall = cloned
-		if last.EntryCall != nil {
-			propagateParameterProvenance(
-				last.CryptoCall.Parameters,
-				last.EntryCall.Parameters,
-				last.EntryCall.FilePath,
-				last.EntryCall.Line,
-			)
-		}
+		last.CryptoCall = chainCalledFunction(last.EntryCall, cryptoCall)
 	}
+}
+
+// chainCalledFunction is call as one chain sees it: a copy whose argument
+// sources continue into entry, the call that entered the chain's last frame.
+func chainCalledFunction(entry *callGraphEntryCall, call *callGraphCalledFunction) *callGraphCalledFunction {
+	cloned := cloneCalledFunction(call)
+	if entry != nil {
+		propagateParameterProvenance(cloned.Parameters, entry.Parameters, entry.FilePath, entry.Line)
+	}
+	return cloned
 }
 
 func cloneCallGraphChains(chains [][]callGraphChainNode) [][]callGraphChainNode {

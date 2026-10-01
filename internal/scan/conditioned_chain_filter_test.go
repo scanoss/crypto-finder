@@ -92,7 +92,7 @@ func TestFilterConditionedCallChains_UndecidableNeverZeroesReachability(t *testi
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := filterConditionedCallChains([][]callGraphChainNode{tt.chain}, conditions)
+			got := filterConditionedCallChains([][]callGraphChainNode{tt.chain}, conditions, nil)
 			if kept := len(got) == 1; kept != tt.wantKept {
 				t.Fatalf("chain kept = %v, want %v (chains=%d)", kept, tt.wantKept, len(got))
 			}
@@ -114,7 +114,7 @@ func TestFilterConditionedCallChains_DecidableEvidenceFiltersStrictly(t *testing
 		chainWith(nil),                 // no crypto call, likewise outweighed
 	}
 
-	got := filterConditionedCallChains(chains, conditions)
+	got := filterConditionedCallChains(chains, conditions, nil)
 	if len(got) != 1 {
 		t.Fatalf("chains kept = %d, want 1 (only the param[0]==128 path)", len(got))
 	}
@@ -145,7 +145,7 @@ func TestFilterConditionedCallChains_OneRefutedConditionBeatsUnknownSiblings(t *
 		},
 	})
 
-	got := filterConditionedCallChains([][]callGraphChainNode{chain}, conditions)
+	got := filterConditionedCallChains([][]callGraphChainNode{chain}, conditions, nil)
 	if len(got) != 0 {
 		t.Fatalf("chains kept = %d, want 0 — a resolved, contradicting argument refutes the predicate", len(got))
 	}
@@ -155,7 +155,7 @@ func TestFilterConditionedCallChains_OneRefutedConditionBeatsUnknownSiblings(t *
 // input: with nothing to evaluate the filter must not touch the chains.
 func TestFilterConditionedCallChains_NoConditionsIsIdentity(t *testing.T) {
 	chains := [][]callGraphChainNode{chainWith(nil), chainWith(resolvedCall("TLSv1.3"))}
-	got := filterConditionedCallChains(chains, nil)
+	got := filterConditionedCallChains(chains, nil, nil)
 	if len(got) != len(chains) {
 		t.Fatalf("chains kept = %d, want %d", len(got), len(chains))
 	}
@@ -165,7 +165,7 @@ func TestFilterConditionedCallChains_NoConditionsIsIdentity(t *testing.T) {
 // case explicit: a zero-node chain carries no terminal and is never emitted.
 func TestFilterConditionedCallChains_EmptyChainAlwaysDropped(t *testing.T) {
 	conditions := []paramcondition.Condition{mustCondition(t, "param[0]==TLSv1.3")}
-	got := filterConditionedCallChains([][]callGraphChainNode{{}}, conditions)
+	got := filterConditionedCallChains([][]callGraphChainNode{{}}, conditions, nil)
 	if len(got) != 0 {
 		t.Fatalf("empty chain kept: got %d chains, want 0", len(got))
 	}

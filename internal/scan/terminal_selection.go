@@ -114,6 +114,26 @@ func exactSpanIndices(views []candidateView, idxs []int, assetStartCol, assetEnd
 	return nil
 }
 
+// tightestContainingIndexAmong returns the index of the call with the smallest
+// span that holds the whole [startCol, endCol) span, the lowest StartCol
+// breaking a tie, or -1 when the span has no columns or no call holds it.
+func tightestContainingIndexAmong(views []candidateView, startCol, endCol int) int {
+	if startCol <= 0 || endCol <= 0 {
+		return -1
+	}
+	best := -1
+	for i, v := range views {
+		if v.StartCol <= 0 || v.EndCol <= 0 || v.StartCol > startCol || v.EndCol < endCol {
+			continue
+		}
+		if best == -1 || v.EndCol-v.StartCol < views[best].EndCol-views[best].StartCol ||
+			v.EndCol-v.StartCol == views[best].EndCol-views[best].StartCol && v.StartCol < views[best].StartCol {
+			best = i
+		}
+	}
+	return best
+}
+
 // chainRootIndexAmong returns the index (drawn from idxs) of the fluent-chain
 // root: a chain candidate (ChainID != "") that binds its result to a variable
 // (AssignedVar != ""), tie-broken by lowest StartCol then slice order. Returns -1
