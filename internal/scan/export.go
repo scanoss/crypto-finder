@@ -1096,7 +1096,7 @@ func liveReachability(containingFn *callgraph.FunctionDecl, userPackages map[str
 	switch {
 	case containingFn == nil || userPackages == nil:
 		return graphfrag.ReachabilityNotApplicable
-	case traced && guessed:
+	case guessed:
 		return graphfrag.ReachabilityUnknown
 	case traced:
 		return graphfrag.ReachabilityReachable
@@ -1834,7 +1834,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	refuted := traced && chainsFilteredAway
 	truncated, depthLimited, guessed := liveTraceFlags(ctx, containingFn, traced)
 	if refuted {
-		traced, depthLimited, guessed = refutedTraceFlags(ctx, containingFn, truncated, depthLimited)
+		traced, depthLimited, guessed = refutedTraceFlags(ctx, containingFn, truncated, depthLimited, guessed)
 	}
 	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated, depthLimited, guessed)
 	recordRouteCounts(ctx, &fg, containingFn, traced)
@@ -1957,10 +1957,17 @@ func liveTraceFlags(ctx *exportBuildContext, containingFn *callgraph.FunctionDec
 // the finding is unreachable, the same answer the fragment's entry-point index
 // gives by leaving it out. When a cap left routes or call sites unexamined, one
 // of them may satisfy the condition, so the verdict is unknown
-// (traversal_truncated), never a confident unreachable. A route that crosses a
-// name_only edge is refuted like any other, so guessed no longer applies.
-func refutedTraceFlags(ctx *exportBuildContext, containingFn *callgraph.FunctionDecl, truncated, depthLimited bool) (traced, unexamined, guessed bool) {
-	return false, depthLimited || truncated || ctx.callChainSitesCut[containingFn.ID.String()], false
+// (traversal_truncated), never a confident unreachable. When every route found
+// crosses a name_only edge (guessed), the refuted routes are guesses too: the
+// call that really reaches the function is not among them and may satisfy the
+// condition. The finding then stays unknown (unresolved_dispatch), as it would
+// without the condition, and is never a definite unreachable.
+func refutedTraceFlags(
+	ctx *exportBuildContext,
+	containingFn *callgraph.FunctionDecl,
+	truncated, depthLimited, guessed bool,
+) (traced, unexamined, stillGuessed bool) {
+	return false, depthLimited || truncated || ctx.callChainSitesCut[containingFn.ID.String()], guessed
 }
 
 func applyLiveReachabilityState(
