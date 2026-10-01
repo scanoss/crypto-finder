@@ -1046,6 +1046,7 @@ func (p *JavaParser) parseMethodDecl(
 	}
 	decl.QualifiedReturnType = qualifyJavaType(returnRaw, analysis)
 	decl.Static = javaDeclaresModifier(node, src, "static")
+	decl.Annotations = javaDeclaredAnnotations(node, src)
 
 	if body != nil {
 		decl.Calls = p.extractCallsWithFieldTypes(node, body, src, filePath, analysis, ownerName, fieldTypes, fieldAssignments)
@@ -1252,6 +1253,37 @@ func javaDeclaresModifier(node *sitter.Node, src []byte, keyword string) bool {
 		}
 	}
 	return false
+}
+
+// javaDeclaredAnnotations returns the simple names of the annotations among a
+// declaration's modifiers, in source order: "Override" for @Override and
+// "GetMapping" for @org.springframework.web.bind.annotation.GetMapping("/x").
+func javaDeclaredAnnotations(node *sitter.Node, src []byte) []string {
+	var names []string
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != javaNodeModifiers {
+			continue
+		}
+		for j := 0; j < int(child.ChildCount()); j++ {
+			annotation := child.Child(j)
+			if annotation.Type() != "marker_annotation" && annotation.Type() != "annotation" {
+				continue
+			}
+			name := annotation.ChildByFieldName("name")
+			if name == nil {
+				continue
+			}
+			text := strings.TrimSpace(name.Content(src))
+			if dot := strings.LastIndex(text, "."); dot >= 0 {
+				text = text[dot+1:]
+			}
+			if text != "" {
+				names = append(names, text)
+			}
+		}
+	}
+	return names
 }
 
 func findJavaVisibilityInNode(node *sitter.Node, src []byte) (string, bool) {

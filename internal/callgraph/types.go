@@ -222,6 +222,10 @@ type FunctionDecl struct {
 	// Static reports a method declared static, which never dispatches
 	// virtually (Java only).
 	Static bool
+	// Annotations holds the simple names of the annotations the declaration
+	// carries, as "Override" (Java methods only). Read to recognize functions
+	// a framework calls, which no call edge in the graph leads to.
+	Annotations []string
 	// FileTypeNamesAtRisk is the declaring file's FileAnalysis.TypeNamesAtRisk,
 	// shared by every declaration of the file (Java only).
 	FileTypeNamesAtRisk map[string]bool
@@ -629,6 +633,8 @@ func ExternalMethodSignatureKey(id FunctionID) string {
 type CallChain struct {
 	// Steps is ordered from user entry point to crypto call site
 	Steps []CallChainStep
+	// RootKind says what the first step is (TraceBackCondensed only).
+	RootKind RootKind
 }
 
 // CallChainStep represents a single step in a call chain.

@@ -97,7 +97,7 @@ func TestToCallgraphExport_ContractsFrameIdentityIntoCatalog(t *testing.T) {
 
 	for i, chain := range fg.CallChains {
 		for j, frame := range chain {
-			if !chainNodeIdentityEmpty(frame) {
+			if !chainNodeIdentityEmpty(&frame) {
 				t.Fatalf("route %d frame %d still carries interned identity: %+v", i, j, IdentityFromChainNode(frame))
 			}
 		}
@@ -197,7 +197,7 @@ func TestToCallgraphExport_DefaultKeepsInlinedIdentity(t *testing.T) {
 	assertEquivalentRenders(t, inlined, contracted)
 }
 
-func chainNodeIdentityEmpty(n ExportChainNode) bool {
+func chainNodeIdentityEmpty(n *ExportChainNode) bool {
 	return n.FunctionKey == "" && n.FunctionName == "" && n.CanonicalSignature == "" &&
 		n.ReturnType == "" && len(n.ParameterTypes) == 0 && n.Visibility == "" &&
 		n.OwnerVisibility == "" && n.DisplaySymbol == "" && len(n.Aliases) == 0 &&

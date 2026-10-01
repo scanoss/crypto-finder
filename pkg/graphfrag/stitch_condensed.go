@@ -102,13 +102,6 @@ func condensedBackwardChainsFast(
 
 	condensed := graphwalk.Condense(reach, nodeLess)
 	total = graphwalk.Count(reach, condensed)
-	// Mirror graphwalk.PathCountSkipThreshold (#292): when the condensed route
-	// count is combinatorially large, skip Routes rather than materializing a
-	// capped subset after counting the full set. Live TraceBackCondensed does
-	// the same so stitch and --export-callgraph stay aligned.
-	if total > graphwalk.PathCountSkipThreshold {
-		return nil, total, true
-	}
 	for _, route := range graphwalk.Routes(reach, condensed, maxChains) {
 		chains = append(chains, materializeBackwardChain(route, inbounds))
 	}

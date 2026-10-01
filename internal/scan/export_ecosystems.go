@@ -24,6 +24,10 @@ const (
 	// graph in this scan: the language has no call graph parser, or its graph
 	// could not be built. Nothing about its reachability was examined.
 	unresolvedLanguageNotAnalyzed = "language_not_analyzed"
+	// unresolvedTraversalTruncated marks an attributed finding whose
+	// reachability is unknown because a traversal limit cut every route
+	// before a chain root.
+	unresolvedTraversalTruncated = "traversal_truncated"
 )
 
 // EcosystemForLanguage maps a finding's detected language to the call graph

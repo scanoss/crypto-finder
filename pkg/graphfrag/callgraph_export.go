@@ -161,6 +161,14 @@ type ExportFindingGraph struct {
 type ExportFindingAnalysis struct {
 	CallChains string `json:"call_chains,omitempty"`
 	Parameters string `json:"parameters,omitempty"`
+	// PathsTotal is how many distinct routes, from a chain root to the
+	// finding, the call graph holds; PathsKept is how many of them the
+	// finding's call_chains show. A route is a function sequence, so chains
+	// that differ only in a call-site line count once. PathsTotal saturates at
+	// the largest int64 and is then a lower bound. Both are absent when the
+	// finding has no route, and on the stitched export.
+	PathsTotal int `json:"paths_total,omitempty"`
+	PathsKept  int `json:"paths_kept,omitempty"`
 }
 
 // ExportForwardClosure is the projected forward call graph from one finding
@@ -429,6 +437,14 @@ type ExportChainNode struct {
 	// EntryCall is the call-site data-flow for the edge that led to this frame.
 	// Nil on the root frame and on frames derived from legacy 1.0/1.1 fragments.
 	EntryCall *ExportEntryCall `json:"entry_call,omitempty"`
+	// RootKind, on the first frame of a chain only, says what that frame is:
+	// `main`, `framework_entry` (a method a framework invokes: an override of a
+	// type outside the application, or a request-mapping, scheduling or
+	// listener annotation), `no_callers` (application code nothing in the
+	// application calls; on a library scanned alone, a graph root) or
+	// `depth_limit` (where a depth limit stopped the walk). Written by the live
+	// callgraph export; absent on the stitched export.
+	RootKind string `json:"root_kind,omitempty"`
 	// CryptoCall is the matched crypto invocation, present only on the terminal frame.
 	CryptoCall *ExportCryptoCall `json:"crypto_call,omitempty"`
 }

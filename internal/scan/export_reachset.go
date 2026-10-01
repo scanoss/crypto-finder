@@ -47,7 +47,7 @@ func reachSetForFunction(ctx *exportBuildContext, containingFn *callgraph.Functi
 		return cached
 	}
 	tracer := callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
-	depths, terminals := tracer.ReachingFunctions(containingFn.ID, ctx.userPackages, callGraphExportMaxDepth)
+	depths, terminals := tracer.ReachingFunctions(containingFn.ID, ctx.userPackages, ctx.maxDepth)
 	entry := reachSetEntry{depths: depths, terminals: terminals}
 	ctx.reachSetCache[key] = entry
 	return entry
@@ -109,8 +109,9 @@ func addFindingGraphReachSetToEntryPointIndex(
 
 // markReachSetRoots records the walk's terminals as chain roots.
 //
-// A terminal is where a chain ends: the first root-module caller when user
-// packages are known, or an in-degree-zero graph root otherwise — which is the
+// A terminal is where a chain ends: an application function no application
+// code calls when user packages are known (callgraph.RootKind), or an
+// in-degree-zero graph root otherwise — which is the
 // `root` flag's definition verbatim (6.8+). Reading it off the walk instead of
 // off the exported chain heads keeps the flag correct when call_chains was
 // capped, and keeps the index itself deliberately broad: the set stays complete

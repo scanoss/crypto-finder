@@ -51,7 +51,7 @@ type FunctionInterner struct {
 }
 
 // IdentityFromChainNode copies interned identity fields from an inlined frame.
-func IdentityFromChainNode(n ExportChainNode) FrameIdentity {
+func IdentityFromChainNode(n ExportChainNode) FrameIdentity { //nolint:gocritic // Public SDK signature; a pointer would break callers.
 	return FrameIdentity{
 		FunctionKey:        n.FunctionKey,
 		FunctionName:       n.FunctionName,

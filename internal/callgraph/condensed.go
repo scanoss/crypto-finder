@@ -1,6 +1,8 @@
 package callgraph
 
 import (
+	"strings"
+
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/pkg/graphwalk"
@@ -40,32 +42,164 @@ func nodeLess(a, b string) bool { return a < b }
 
 // walkOptions describes the live call graph to pkg/graphwalk.
 //
-// A user-package function is where a chain ends: reaching it answers "does the
-// consumer's code get here", and its own callers belong to a different question.
-// With no user packages known — the mine path, scanning a library alone — a graph
-// root plays that role instead, since for a library that is its public API.
-func (t *Tracer) walkOptions(userPackages map[string]bool, maxDepth int) graphwalk.Options[string] {
-	return graphwalk.Options[string]{
-		Callers: func(key string) []string {
-			callers := t.graph.Callers[key]
-			known := make([]string, 0, len(callers))
-			for _, caller := range callers {
-				if _, exists := t.graph.Functions[caller]; exists {
-					known = append(known, caller)
-				}
+// With user packages known, a chain walks back through application code until
+// it reaches a function no application code calls: that is where the program
+// starts (main, a handler a framework invokes), and a chain that stops at the
+// first application frame instead hides which entry point runs the crypto.
+// Application functions therefore follow only their application callers
+// (a library calling back into the application does not make the application
+// function any less of a root), and one with none is a terminal. Library code
+// follows every caller, and a library function nothing calls is a dead end.
+// The target follows every caller either way: crypto in an application
+// callback is reached through the library that calls it back.
+//
+// With no user packages known — the mine path, scanning a library alone — a
+// graph root is where a chain ends, since for a library that is its public API.
+func (t *Tracer) walkOptions(targetKey string, userPackages map[string]bool, maxDepth int) graphwalk.Options[string] {
+	opts := graphwalk.Options[string]{
+		Callers:  func(key string) []string { return t.knownCallers(key, targetKey, userPackages) },
+		Less:     nodeLess,
+		MaxDepth: maxDepth,
+	}
+	if userPackages == nil {
+		opts.RootIsTerminal = true
+		return opts
+	}
+	opts.RootTerminal = func(key string) bool { return t.isUserFunction(key, userPackages) }
+	return opts
+}
+
+// knownCallers returns the declared callers of key; an application function
+// other than the target keeps only its application callers, never itself.
+func (t *Tracer) knownCallers(key, targetKey string, userPackages map[string]bool) []string {
+	callers := t.graph.Callers[key]
+	appOnly := userPackages != nil && key != targetKey && t.isUserFunction(key, userPackages)
+	known := make([]string, 0, len(callers))
+	for _, caller := range callers {
+		if _, exists := t.graph.Functions[caller]; !exists {
+			continue
+		}
+		if appOnly && (caller == key || !t.isUserFunction(caller, userPackages)) {
+			continue
+		}
+		known = append(known, caller)
+	}
+	return known
+}
+
+func (t *Tracer) isUserFunction(key string, userPackages map[string]bool) bool {
+	decl, ok := t.graph.Functions[key]
+	return ok && isUserPackage(decl.ID.Package, userPackages, t.pkgSep)
+}
+
+// isUserType reports whether a fully qualified type belongs to the code whose
+// entry points are being looked for: the user packages when known, otherwise
+// any type the scanned sources declare.
+func (t *Tracer) isUserType(typeName string, userPackages map[string]bool) bool {
+	if userPackages == nil {
+		_, declared := t.graph.SourceSupertypes[typeName]
+		return declared
+	}
+	pkg := ""
+	if dot := strings.LastIndex(typeName, t.pkgSep); dot >= 0 {
+		pkg = typeName[:dot]
+	}
+	return isUserPackage(pkg, userPackages, t.pkgSep)
+}
+
+// reverseWalk is one finding function's backward walk: who reaches it, where
+// each chain starts and why, and whether a limit cut any route.
+type reverseWalk struct {
+	reach     graphwalk.Reachable[string]
+	condensed graphwalk.Condensed[string]
+	rootKinds map[string]RootKind
+	// truncated reports that the depth limit stopped the walk at a function
+	// that is not a chain root, so routes through it were never seen.
+	truncated bool
+	// appCut reports that the depth limit made an application frame a root
+	// (RootKindDepthLimit): the chain is real but shorter than the program.
+	appCut bool
+}
+
+// walk runs the backward traversal from target and classifies its terminals.
+//
+// Three adjustments turn graphwalk's terminals into chain roots when user
+// packages are known:
+//
+//   - an application frame the depth limit stopped is a root (depth_limit):
+//     application code reaches the crypto, the chain is just shorter than the
+//     program. A library frame the limit stopped makes the walk truncated.
+//   - the target itself is a root when it is a recognized entry point that no
+//     application code calls: a handler doing crypto inline. A target that is
+//     not an entry and that nothing calls is dead code and stays unreachable.
+//   - a cycle of application functions that nothing outside it calls has no
+//     member without callers, so one member is made its root. Otherwise
+//     mutual recursion would read as unreachable.
+func (t *Tracer) walk(target FunctionID, userPackages map[string]bool, maxDepth int) reverseWalk {
+	targetKey := target.String()
+	reach := graphwalk.Reach(targetKey, t.walkOptions(targetKey, userPackages, maxDepth))
+	out := reverseWalk{reach: reach, rootKinds: map[string]RootKind{}}
+
+	for key := range reach.Capped {
+		if userPackages != nil && t.isUserFunction(key, userPackages) {
+			reach.Terminal[key] = true
+			out.rootKinds[key] = RootKindDepthLimit
+			out.appCut = true
+			continue
+		}
+		out.truncated = true
+	}
+	isUserType := func(typeName string) bool { return t.isUserType(typeName, userPackages) }
+	if userPackages != nil && t.isUserFunction(targetKey, userPackages) &&
+		len(t.knownCallers(targetKey, "", userPackages)) == 0 {
+		if kind, ok := t.entryRootKind(t.graph.Functions[targetKey], isUserType); ok {
+			reach.Terminal[targetKey] = true
+			out.rootKinds[targetKey] = kind
+		}
+	}
+
+	out.condensed = graphwalk.Condense(reach, nodeLess)
+	if userPackages != nil {
+		t.rootUncalledCycles(&out, targetKey, userPackages)
+	}
+
+	for key := range reach.Terminal {
+		if _, classified := out.rootKinds[key]; classified {
+			continue
+		}
+		kind, ok := t.entryRootKind(t.graph.Functions[key], isUserType)
+		if !ok {
+			kind = RootKindNoCallers
+		}
+		out.rootKinds[key] = kind
+	}
+	return out
+}
+
+// rootUncalledCycles gives a root to every cycle of application functions that
+// no caller outside the cycle reaches: its first application member.
+func (t *Tracer) rootUncalledCycles(w *reverseWalk, targetKey string, userPackages map[string]bool) {
+	targetComp := w.condensed.Comp[targetKey]
+	for comp, members := range w.condensed.Members {
+		if comp == targetComp || len(members) < 2 || len(w.condensed.DAG[comp]) > 0 {
+			continue
+		}
+		rooted := false
+		for _, member := range members {
+			if w.reach.Terminal[member] || w.reach.Capped[member] {
+				rooted = true
+				break
 			}
-			return known
-		},
-		Less: nodeLess,
-		IsBoundary: func(key string) bool {
-			if userPackages == nil {
-				return false
+		}
+		if rooted {
+			continue
+		}
+		for _, member := range members {
+			if t.isUserFunction(member, userPackages) {
+				w.reach.Terminal[member] = true
+				break
 			}
-			decl, ok := t.graph.Functions[key]
-			return ok && isUserPackage(decl.ID.Package, userPackages, t.pkgSep)
-		},
-		RootIsTerminal: userPackages == nil,
-		MaxDepth:       maxDepth,
+		}
 	}
 }
 
@@ -93,58 +227,73 @@ func (t *Tracer) ReachingFunctions(
 	if _, exists := t.graph.Functions[target.String()]; !exists {
 		return nil, nil
 	}
-	reach := graphwalk.Reach(target.String(), t.walkOptions(userPackages, maxDepth))
-	return reach.Depth, reach.Terminal
+	w := t.walk(target, userPackages, maxDepth)
+	return w.reach.Depth, w.reach.Terminal
 }
 
-// PathCountSkipThreshold re-exports graphwalk.PathCountSkipThreshold so callgraph
-// callers and tests can name the #292 ceiling without importing graphwalk for a
-// single constant. Keep this alias equal to the graphwalk value.
-const PathCountSkipThreshold = graphwalk.PathCountSkipThreshold
+// CondensedTrace is TraceBackCondensed's answer for one function.
+type CondensedTrace struct {
+	// Chains holds the selected routes, ordered entry -> target, each stamped
+	// with its RootKind.
+	Chains []CallChain
+	// Total is the number of (route, root) pairs the graph holds, counted
+	// before any chain is built. It saturates at math.MaxInt.
+	Total int
+	// Truncated reports that the answer is incomplete: fewer chains than
+	// Total were kept, or the depth limit stopped the walk somewhere, so some
+	// routes were never seen or start at a depth_limit root.
+	Truncated bool
+	// DepthLimited reports the second cause alone. With no chain found it
+	// means the verdict is unknown, not unreachable.
+	DepthLimited bool
+}
 
 // TraceBackCondensed walks callers of target over the cycle-collapsed reverse
-// graph and returns one chain per (route, terminal) pair, ordered entry -> target
-// like TraceBackLimited.
+// graph and returns up to maxChains chains, ordered entry -> target like
+// TraceBackLimited. A maxChains of 0 means unlimited.
 //
-// total is the exact number of such pairs, counted before any chain is built, so
-// it is accurate even when maxChains truncates the returned slice. truncated
-// reports whether len(chains) < total. A maxChains of 0 means unlimited.
-//
-// When total exceeds PathCountSkipThreshold, Routes is not called: chains is
-// empty and truncated is true. That is the #292 stop-the-bleeding cap — prefer
-// a partial answer over process death on pathological fan-in.
+// Chains are selected one per root first, recognized entry points before other
+// roots (graphwalk.Select), so a small budget shows the distinct places the
+// crypto is reached from rather than variations of one route.
 func (t *Tracer) TraceBackCondensed(
 	target FunctionID,
 	userPackages map[string]bool,
 	maxDepth, maxChains int,
-) (chains []CallChain, total int, truncated bool) {
+) CondensedTrace {
 	targetKey := target.String()
 	if _, exists := t.graph.Functions[targetKey]; !exists {
 		log.Debug().Str("target", targetKey).Msg("Target function not found in call graph")
-		return nil, 0, false
+		return CondensedTrace{}
 	}
 
-	reach := graphwalk.Reach(targetKey, t.walkOptions(userPackages, maxDepth))
-	if len(reach.Terminal) == 0 {
+	w := t.walk(target, userPackages, maxDepth)
+	out := CondensedTrace{DepthLimited: w.truncated, Truncated: w.truncated || w.appCut}
+	if len(w.reach.Terminal) == 0 {
 		// Nothing user code (or no graph root) reaches this function: the same
 		// answer TraceBackLimited gives by returning no chains.
-		return nil, 0, false
+		return out
 	}
-	condensed := graphwalk.Condense(reach, nodeLess)
 
-	total = graphwalk.Count(reach, condensed)
-	if total > PathCountSkipThreshold {
-		log.Warn().
-			Str("function", targetKey).
-			Int("total_condensed_paths", total).
-			Int("path_count_skip_threshold", PathCountSkipThreshold).
-			Msg("Skipping condensed call chain materialization: path count exceeds safety ceiling")
-		return nil, total, true
+	out.Total = graphwalk.Count(w.reach, w.condensed)
+	rootLess := func(a, b string) bool {
+		ra, rb := rootKindRank(w.rootKinds[a]), rootKindRank(w.rootKinds[b])
+		if ra != rb {
+			return ra < rb
+		}
+		if da, db := w.reach.Depth[a], w.reach.Depth[b]; da != db {
+			return da < db
+		}
+		return a < b
 	}
-	for _, route := range graphwalk.Routes(reach, condensed, maxChains) {
-		chains = append(chains, t.materializeRoute(route))
+	for _, route := range graphwalk.Select(w.reach, w.condensed, maxChains, rootLess) {
+		chain := t.materializeRoute(route)
+		chain.RootKind = w.rootKinds[route[len(route)-1]]
+		out.Chains = append(out.Chains, chain)
 	}
-	return chains, total, len(chains) < total
+	if len(out.Chains) < out.Total {
+		out.Truncated = true
+	}
+	return out
 }
 
 // materializeRoute turns a route — target first, terminal last — into a CallChain

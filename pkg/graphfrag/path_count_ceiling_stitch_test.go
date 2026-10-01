@@ -3,8 +3,6 @@ package graphfrag
 import (
 	"fmt"
 	"testing"
-
-	"github.com/scanoss/crypto-finder/pkg/graphwalk"
 )
 
 // TestToCallgraphExport_PathCountTruncatedEmitsEmptyUnknownPartial pins the
@@ -45,16 +43,18 @@ func TestToCallgraphExport_PathCountTruncatedEmitsEmptyUnknownPartial(t *testing
 	}
 }
 
-// TestCondensedBackwardChains_SkipsRoutesAbovePathCountCeiling exercises the
-// stitch-side ceiling against a high-fan-in reverse adjacency.
-func TestCondensedBackwardChains_SkipsRoutesAbovePathCountCeiling(t *testing.T) {
+// TestCondensedBackwardChains_EmitsBudgetOnHighFanIn exercises the stitch side
+// against a high-fan-in reverse adjacency. Routes above 100,000 were once
+// skipped outright (#292); the budget alone now bounds the work, so the budget
+// of chains is built and the exact total reported.
+func TestCondensedBackwardChains_EmitsBudgetOnHighFanIn(t *testing.T) {
 	comp := ComponentKey{Purl: "pkg:maven/org.lib/lib", Version: "1"}
 	op := graphNode{Component: comp, Function: "op"}
 	reverse := map[graphNode][]reverseEdge{}
 	entrySet := map[graphNode]bool{}
 
 	// Build width^depth fan-in ending at entry roots, same shape as the live
-	// high-fan-in fixture. width=8 depth=6 => 262144 > PathCountSkipThreshold.
+	// high-fan-in fixture. width=8 depth=6 => 262144 routes.
 	const width, depth = 8, 6
 	prev := []graphNode{op}
 	for d := 1; d <= depth; d++ {
@@ -77,13 +77,13 @@ func TestCondensedBackwardChains_SkipsRoutesAbovePathCountCeiling(t *testing.T) 
 	}
 
 	chains, total, truncated := condensedBackwardChains(op, reverse, entrySet, 1)
-	if total <= graphwalk.PathCountSkipThreshold {
-		t.Fatalf("total = %d, want above PathCountSkipThreshold=%d", total, graphwalk.PathCountSkipThreshold)
+	if total != 262144 {
+		t.Fatalf("total = %d, want 8^6", total)
 	}
 	if !truncated {
 		t.Fatal("truncated = false, want true")
 	}
-	if len(chains) != 0 {
-		t.Fatalf("chains = %d, want 0 when the ceiling skips Routes", len(chains))
+	if len(chains) != 1 {
+		t.Fatalf("chains = %d, want the budget of 1", len(chains))
 	}
 }
