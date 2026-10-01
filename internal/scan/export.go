@@ -1780,11 +1780,20 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 
 	var traced bool
 	fg.CallChains, traced = buildCallChains(ctx, containingFn, cryptoCall)
+	chainsFilteredAway := false
 	if len(asset.ParameterConditions) > 0 {
+		sampled := len(fg.CallChains)
 		fg.CallChains = filterConditionedCallChains(fg.CallChains, asset.ParameterConditions)
+		chainsFilteredAway = sampled > 0 && len(fg.CallChains) == 0
 	}
 	truncated := containingFn != nil && ctx.callChainTruncated[containingFn.ID.String()]
 	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated)
+	// A specialized asset whose value came from a caller outside the chain
+	// sample has none of the sampled chains left: they all carried other
+	// values. Its chains are then incomplete, not complete and empty.
+	if chainsFilteredAway && fg.Analysis != nil {
+		fg.Analysis.CallChains = graphfrag.AnalysisPartial
+	}
 
 	if unresolvedReason != "" {
 		fg.UnresolvedReason = unresolvedReason

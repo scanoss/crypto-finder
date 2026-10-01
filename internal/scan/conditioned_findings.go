@@ -39,10 +39,11 @@ func MaterializeConditionedFindings(
 	}
 	catalog := conditionedCatalog{rules: rules, keys: newConditionedKeyMatcher(graph, ecosystem), ecosystem: ecosystem}
 	ctx := newExportBuildContext(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: ecosystem})
+	values := newConditionedValueEnumerator(ctx)
 	existing := indexExistingFindingRules(report)
 	added := 0
 	for findingIndex := range report.Findings {
-		added += materializeConditionedFinding(ctx, &report.Findings[findingIndex], graph, catalog, existing)
+		added += materializeConditionedFinding(ctx, values, &report.Findings[findingIndex], graph, catalog, existing)
 	}
 	if added > 0 {
 		log.Info().Int("count", added).Str("ecosystem", ecosystem).Msg("Materialized conditioned crypto findings from selector provenance")
@@ -52,6 +53,7 @@ func MaterializeConditionedFindings(
 
 func materializeConditionedFinding(
 	ctx *exportBuildContext,
+	values *conditionedValueEnumerator,
 	finding *entities.Finding,
 	graph *callgraph.CallGraph,
 	catalog conditionedCatalog,
@@ -60,13 +62,14 @@ func materializeConditionedFinding(
 	added := 0
 	originalCount := len(finding.CryptographicAssets)
 	for assetIndex := 0; assetIndex < originalCount; assetIndex++ {
-		added += materializeConditionedAnchor(ctx, finding, graph, catalog, existing, finding.CryptographicAssets[assetIndex])
+		added += materializeConditionedAnchor(ctx, values, finding, graph, catalog, existing, finding.CryptographicAssets[assetIndex])
 	}
 	return added
 }
 
 func materializeConditionedAnchor(
 	ctx *exportBuildContext,
+	values *conditionedValueEnumerator,
 	finding *entities.Finding,
 	graph *callgraph.CallGraph,
 	catalog conditionedCatalog,
@@ -88,7 +91,16 @@ func materializeConditionedAnchor(
 	anchor.TerminalStartCol = terminalNode.StartCol
 	anchor.TerminalEndCol = terminalNode.EndCol
 	chains, _ := buildCallChains(ctx, containingFn, terminal)
-	return appendConditionedChainAssets(finding, anchor, rules, chains, existing)
+	candidates := make([][]callGraphParameter, 0, len(chains))
+	for _, chain := range chains {
+		if len(chain) > 0 && chain[len(chain)-1].CryptoCall != nil {
+			candidates = append(candidates, chain[len(chain)-1].CryptoCall.Parameters)
+		}
+	}
+	// The chains are a bounded sample: one caller's routes can fill the budget
+	// and hide every other caller's value. Specialize from all of them.
+	candidates = append(candidates, values.terminalVariants(containingFn.ID, terminal.Parameters)...)
+	return appendConditionedAssets(finding, anchor, rules, candidates, existing)
 }
 
 func conditionedTerminalCall(
@@ -118,21 +130,20 @@ func callContainsAnchorSpan(call *callgraph.FunctionCall, anchor entities.Crypto
 	return call.StartCol <= anchor.StartCol && call.EndCol >= anchor.EndCol
 }
 
-func appendConditionedChainAssets(
+// appendConditionedAssets emits one asset per (rule, resolved condition) over
+// every candidate argument list of the terminal call.
+func appendConditionedAssets(
 	finding *entities.Finding,
 	anchor entities.CryptographicAsset,
 	rules []engine.RuleCryptoMetadata,
-	chains [][]callGraphChainNode,
+	candidates [][]callGraphParameter,
 	existing map[string]struct{},
 ) int {
 	seen := make(map[string]struct{})
 	added := 0
-	for _, chain := range chains {
-		if len(chain) == 0 || chain[len(chain)-1].CryptoCall == nil {
-			continue
-		}
+	for _, params := range candidates {
 		for i := range rules {
-			if appendConditionedAsset(finding, anchor, rules[i], chain[len(chain)-1].CryptoCall.Parameters, seen, existing) {
+			if appendConditionedAsset(finding, anchor, rules[i], params, seen, existing) {
 				added++
 			}
 		}
