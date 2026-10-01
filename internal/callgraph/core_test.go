@@ -576,6 +576,74 @@ def run(data):
 	}
 }
 
+// TestBuilder_PythonAssignedVarType_ThroughPackageReExport pins that a
+// variable assigned from a dependency factory keeps the factory's annotated
+// return type when the factory is declared in a submodule and re-exported by
+// the package's __init__.py, the layout most libraries use.
+func TestBuilder_PythonAssignedVarType_ThroughPackageReExport(t *testing.T) {
+	appDir := t.TempDir()
+	depDir := t.TempDir()
+
+	implSrc := `class Cipher:
+    def encrypt(self, data):
+        return data
+
+
+def make_cipher() -> Cipher:
+    return Cipher()
+`
+	appSrc := `from dep import make_cipher
+
+
+def run(data):
+    c = make_cipher()
+    return c.encrypt(data)
+`
+	files := map[string]string{
+		filepath.Join(depDir, "__init__.py"): "from .impl import make_cipher\n",
+		filepath.Join(depDir, "impl.py"):     implSrc,
+		filepath.Join(appDir, "app.py"):      appSrc,
+	}
+	for path, src := range files {
+		if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	builder := NewBuilderForEcosystem("python", NewPythonParser())
+	builder.SetTypeResolver(NewPythonTypeResolverChain())
+	roots := []PackageDir{
+		{Dir: appDir, ImportPath: "app"},
+		{Dir: depDir, ImportPath: "dep", Version: "1.0.0"},
+	}
+	graph, err := builder.BuildFromDirectories(roots, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+
+	run := graph.Functions["app.app.run"]
+	if run == nil {
+		t.Fatalf("missing app.app.run; functions=%v", sortedFunctionKeys(graph.Functions))
+	}
+	var call *FunctionCall
+	for i := range run.Calls {
+		if run.Calls[i].Callee.Name == "encrypt" {
+			call = &run.Calls[i]
+			break
+		}
+	}
+	if call == nil {
+		t.Fatalf("c.encrypt(data) call not found among %#v", run.Calls)
+	}
+	want := FunctionID{Package: "dep.impl", Type: "Cipher", Name: "encrypt"}
+	if call.Callee != want {
+		t.Fatalf("Callee = %+v, want %+v (the re-exported factory's return type)", call.Callee, want)
+	}
+	if _, ok := graph.Functions[want.String()]; !ok {
+		t.Fatalf("typed callee %s is not a declaration; functions=%v", want.String(), sortedFunctionKeys(graph.Functions))
+	}
+}
+
 // TestBuilder_PythonCallReachesIntoDunderCall (G3, PR #310 phase-2 review)
 // pins that parseFunctionDef no longer drops __call__ (only the general
 // dunder-method skip continues to apply to every OTHER dunder): a class
