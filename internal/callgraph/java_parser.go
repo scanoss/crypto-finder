@@ -192,6 +192,7 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	for i := range analysis.Functions {
 		analysis.Functions[i].FileTypeNamesAtRisk = analysis.TypeNamesAtRisk
 	}
+	recordJavaOwnerAlternatives(analysis)
 
 	return analysis, nil
 }

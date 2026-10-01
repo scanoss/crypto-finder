@@ -110,6 +110,15 @@ type Builder struct {
 	// pythonInitImports are the names every parsed `__init__.py` imports,
 	// resolved into graph.PythonPublicPaths at the end of Phase 1.
 	pythonInitImports []pythonInitImport
+	// artifactGraph is the resolved dependency graph (artifact -> direct
+	// dependencies) set by SetArtifactDependencies; nil when unknown.
+	artifactGraph map[string][]string
+	// artifacts records which artifact declares each type, for the build in
+	// progress; currentArtifact is the package being analyzed. Both reset
+	// per BuildFromDirectories, and are safe for the same reason
+	// excludeDirs is: packages are analyzed sequentially.
+	artifacts       *artifactScope
+	currentArtifact string
 }
 
 // pythonInitImport is one name a package's `__init__.py` binds with
@@ -155,6 +164,15 @@ func (b *Builder) SetTypeResolver(resolver TypeResolver) {
 	b.typeResolver = resolver
 }
 
+// SetArtifactDependencies gives the builder the resolved dependency graph,
+// keyed by dependency coordinate (PackageDir.DistributionName, or ImportPath
+// when that is empty). A name_only dispatch guess then links only to a class
+// whose artifact can compile against the receiver's type; without it, only a
+// class of the receiver's own artifact or of the project.
+func (b *Builder) SetArtifactDependencies(graph map[string][]string) {
+	b.artifactGraph = graph
+}
+
 // PackageSeparator exposes the parser's package separator for use by the tracer.
 func (b *Builder) PackageSeparator() string {
 	return b.parser.PackageSeparator()
@@ -178,10 +196,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 
 	// Phase 1: Parse source files only for packages that need full analysis
 	sourceParseStart := time.Now()
-	b.pythonReExports = nil
-	b.pythonModules = nil
-	b.pythonRootedAnalyses = nil
-	b.pythonInitImports = nil
+	b.resetPythonBuildState()
+	b.artifacts = newArtifactScopeFor(b.ecosystem, b.artifactGraph)
+	graph.artifacts = b.artifacts
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
 	for _, pkg := range packages {
 		if err := b.analyzePackage(pkg, graph); err != nil {
@@ -193,9 +210,10 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 		markCPPProjectLocalCalls(graph)
 	}
 	if b.ecosystem == ecosystemPython {
-		qualifyPythonProjectImports(b.pythonModules, b.pythonRootedAnalyses)
-		graph.PythonPublicPaths = resolvePythonPublicPaths(b.pythonInitImports, b.pythonModules)
-		applyPythonReExports(graph, b.pythonReExports)
+		b.finishPythonBuild(graph)
+	}
+	if b.ecosystem == ecosystemJava {
+		reanchorGuessedJavaOwners(graph)
 	}
 	if provider, ok := b.parser.(publicTypePathProvider); ok {
 		graph.PublicTypePaths = provider.PublicTypePaths()
@@ -298,6 +316,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
 	b.packageRoot = filepath.Clean(pkg.Dir)
 	b.packageImportPath = pkg.ImportPath
+	b.currentArtifact = artifactNameFor(b.ecosystem, pkg)
 	b.excludeDirs = nil
 	if len(pkg.ExcludeDirs) > 0 {
 		b.excludeDirs = make(map[string]struct{}, len(pkg.ExcludeDirs))
@@ -614,6 +633,24 @@ func pythonPublicPathDeclaration(graph *CallGraph, callee FunctionID, calleeKey 
 	return key, true
 }
 
+// finishPythonBuild resolves, once every package is parsed, what a Python
+// build could only record per file: project-qualified imports, the public
+// paths `__init__.py` files give names, and re-exported symbols.
+func (b *Builder) finishPythonBuild(graph *CallGraph) {
+	qualifyPythonProjectImports(b.pythonModules, b.pythonRootedAnalyses)
+	graph.PythonPublicPaths = resolvePythonPublicPaths(b.pythonInitImports, b.pythonModules)
+	applyPythonReExports(graph, b.pythonReExports)
+}
+
+// resetPythonBuildState clears what one Python build accumulates across its
+// packages, so a Builder reused for another build starts empty.
+func (b *Builder) resetPythonBuildState() {
+	b.pythonReExports = nil
+	b.pythonModules = nil
+	b.pythonRootedAnalyses = nil
+	b.pythonInitImports = nil
+}
+
 // qualifyPythonProjectImports prefixes a project's root module onto each
 // absolute import of one of the project's own modules. A manifest-named
 // project keys its modules under that name (`probe.app.digest` for
@@ -659,6 +696,7 @@ func qualifyPythonProjectModule(module, root string, modules map[string]bool) st
 func (b *Builder) mergeAnalysisFunctions(graph *CallGraph, analysis *FileAnalysis) {
 	for i := range analysis.Functions {
 		fn := &analysis.Functions[i]
+		b.artifacts.record(fn, b.currentArtifact)
 		key := fn.ID.String()
 		if existing, ok := graph.Functions[key]; ok {
 			if keepExistingDecl(existing, fn) {
@@ -1325,7 +1363,8 @@ func (a interfaceDispatchAlias) kind() EdgeKind {
 // method of the interface. A class whose recorded ancestry excludes the
 // interface is not linked; one whose ancestry is only partly recorded stays
 // linked as a name_only edge, since nothing proves it is not an
-// implementation. Among one implementing type's
+// implementation, but only when its artifact can compile against the
+// interface's (artifact_scope.go). Among one implementing type's
 // same-arity overloads, those whose parameter types match the interface
 // method's are the override and the others are dropped.
 func (b *Builder) expandInterfaceDispatch(
@@ -1360,6 +1399,9 @@ func (b *Builder) expandInterfaceDispatch(
 		}
 		kind, ok := b.interfaceImplementationKind(hierarchy, candidate.ID, calleeDecl)
 		if !ok {
+			continue
+		}
+		if kind == EdgeKindNameOnly && !b.artifacts.compilesAgainst(declOwnerFQN(candidate.ID), declOwnerFQN(calleeDecl.ID)) {
 			continue
 		}
 		owner := declOwnerFQN(candidate.ID)
@@ -1471,7 +1513,8 @@ func interfaceDeclaredType(id FunctionID) string {
 // excludes the callee's class, while the callee's own ancestry excludes it, is
 // never a target: that is what linked unrelated libraries sharing a namespace
 // root. When either ancestry is only partly recorded the candidate stays, as a
-// name_only edge. It does not fire when the callee's class declares
+// name_only edge, if one of the two artifacts can compile against the other's
+// (artifact_scope.go). It does not fire when the callee's class declares
 // same-arity overloads of the method (overload selection resolves those) or
 // when the class is unknown to the graph, so it stays a narrow "missing
 // override" inference instead of a generic name+arity fallback.
@@ -1492,7 +1535,7 @@ func (b *Builder) expandAbstractClassDispatch(
 	declaredType := interfaceDeclaredType(callee)
 	calleeOwner := declOwnerFQN(callee)
 	calleeComplete := idx.hierarchy.hierarchyComplete(calleeOwner)
-	c := classifyAbstractCandidates(targets, callee, idx.hierarchy, calleeComplete)
+	c := classifyAbstractCandidates(targets, callee, idx.hierarchy, b.artifacts, calleeComplete)
 	overrides, heuristic := c.overrides, c.heuristic
 
 	own := ownOverloads(graph, callee, idx)
@@ -1537,7 +1580,7 @@ type abstractCandidates struct {
 // interface's default or abstract method included), proven subtype overrides
 // and name_only candidates, noting whether any inherited one is an instance
 // method.
-func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hierarchy *dispatchHierarchy, calleeComplete bool) abstractCandidates {
+func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hierarchy *dispatchHierarchy, artifacts *artifactScope, calleeComplete bool) abstractCandidates {
 	calleeOwner := declOwnerFQN(callee)
 	baseRoot := namespaceRoot(callee.Package)
 	arity := functionArity(callee.Name)
@@ -1557,7 +1600,12 @@ func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hier
 		case EdgeKindInterfaceDispatch:
 			c.overrides = append(c.overrides, candidate.ID.String())
 		case EdgeKindNameOnly:
-			c.heuristic = append(c.heuristic, candidate.ID.String())
+			// The candidate may be a subtype of the callee's class, or an
+			// ancestor its record misses: either way one artifact must
+			// compile against the other's.
+			if artifacts.related(owner, calleeOwner) {
+				c.heuristic = append(c.heuristic, candidate.ID.String())
+			}
 		case EdgeKindExact, EdgeKindPythonSubclassDispatch:
 		}
 	}
@@ -1577,7 +1625,12 @@ func abstractCandidateShape(candidate *FunctionDecl, callee FunctionID, arity in
 }
 
 // abstractClassDispatchApplies gates expandAbstractClassDispatch to calls on a
-// known class that declares no method of the callee's name and arity.
+// known type that declares no method of the callee's name and arity: a class
+// with a declared method, or any type the Java source declares. The second
+// admits an interface, whose inherited method is a superinterface's and whose
+// implementations are its implementing classes', and a type declaring no
+// method at all: oauth2-oidc-sdk calls process on nimbus-jose-jwt's
+// ConfigurableJWTProcessor, an empty interface extending JWTProcessor.
 func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispatchIndexes) bool {
 	if callee.Type == "" {
 		return false
@@ -1594,7 +1647,11 @@ func abstractClassDispatchApplies(callee FunctionID, graph *CallGraph, idx dispa
 	if _, declared := graph.Functions[callee.String()]; declared {
 		return false
 	}
-	return idx.knownClassTypes[callee.Package+"|"+callee.Type]
+	if idx.knownClassTypes[callee.Package+"|"+callee.Type] {
+		return true
+	}
+	_, declared := graph.SourceSupertypes[declOwnerFQN(callee)]
+	return declared
 }
 
 // javaObjectInstanceMethods are java.lang.Object's instance methods by

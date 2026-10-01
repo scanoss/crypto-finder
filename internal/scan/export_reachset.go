@@ -46,8 +46,7 @@ func reachSetForFunction(ctx *exportBuildContext, containingFn *callgraph.Functi
 	if cached, ok := ctx.reachSetCache[key]; ok {
 		return cached
 	}
-	tracer := callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
-	depths, terminals := tracer.ReachingFunctions(containingFn.ID, ctx.userPackages, ctx.maxDepth)
+	depths, terminals := ctx.sharedTracer().ReachingFunctions(containingFn.ID, ctx.userPackages, ctx.maxDepth)
 	entry := reachSetEntry{depths: depths, terminals: terminals}
 	ctx.reachSetCache[key] = entry
 	return entry

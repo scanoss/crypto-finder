@@ -392,8 +392,14 @@ func rewriteJavaCallFromIndex(
 	if len(signatures) == 0 {
 		return false
 	}
+	named := qualifiedJavaTypeName(call.Callee.Package, typeName)
 	for sigIdx := range signatures {
-		if applyResolvedJavaCall(graph, fn, call, &signatures[sigIdx], methodsByQualifiedArity) {
+		// A signature of another package matched only the simple type name.
+		// That repairs a package the parser guessed, but the class it names
+		// must be one the caller's artifact compiles against: a private
+		// nested Holder in ehcache is not BouncyCastle's x509 Holder.
+		bySimpleName := signatures[sigIdx].fullClass != named
+		if applyResolvedJavaCall(graph, fn, call, &signatures[sigIdx], methodsByQualifiedArity, bySimpleName) {
 			return true
 		}
 	}
@@ -406,6 +412,7 @@ func applyResolvedJavaCall(
 	call *FunctionCall,
 	sig *methodSignature,
 	methodsByQualifiedArity map[string][]string,
+	bySimpleName bool,
 ) bool {
 	pkg := ""
 	if idx := strings.LastIndex(sig.fullClass, "."); idx >= 0 {
@@ -415,6 +422,9 @@ func applyResolvedJavaCall(
 		Package: pkg,
 		Type:    sig.className,
 		Name:    call.Callee.Name,
+	}
+	if bySimpleName && !graph.artifacts.compilesAgainst(declOwnerFQN(fn.ID), declOwnerFQN(newID)) {
+		return false
 	}
 	oldCalleeKey := call.Callee.String()
 	if _, ok := graph.Functions[newID.String()]; ok {

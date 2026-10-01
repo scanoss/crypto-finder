@@ -28,6 +28,10 @@ const (
 	// reachability is unknown because a traversal limit cut every route
 	// before a chain root.
 	unresolvedTraversalTruncated = "traversal_truncated"
+	// unresolvedDispatch marks an attributed finding whose every call chain
+	// crosses a name_only edge: a call linked to a same-named method of a
+	// class not proven to be a subtype of the receiver's type.
+	unresolvedDispatch = "unresolved_dispatch"
 )
 
 // EcosystemForLanguage maps a finding's detected language to the call graph

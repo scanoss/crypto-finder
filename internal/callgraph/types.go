@@ -300,6 +300,12 @@ type FunctionCall struct {
 	// when its declaring class has one unambiguous constructor assignment.
 	// Empty means the receiver type is declared, unknown, or ambiguous.
 	ResolvedReceiverType string
+	// OwnerAlternatives lists every fully qualified type Callee's owner can
+	// denote when the parser had to guess it: an unqualified name the file
+	// neither imports by name nor declares, in a file with on-demand imports.
+	// The file's own package comes first, then each on-demand import in source
+	// order. Nil when the owner is certain (Java only).
+	OwnerAlternatives []string
 	// ReceiverVar preserves the original receiver variable name for selector calls
 	// like `cipher.Encrypt()` when static type information is incomplete. For a
 	// C free-function call it is the handle variable passed first, as in
@@ -498,6 +504,10 @@ type CallGraph struct {
 	// (EdgeResolutionEndpoints), so per-pair views are one O(E) pass away —
 	// see internal/scan's indexFragmentEdgeResolutions.
 	EdgeResolutions map[string]EdgeResolution
+	// artifacts records which artifact declares each source type, so a pass
+	// that links a call by a type's simple name keeps it within artifacts
+	// the caller compiles against. Nil for a graph not built by a Builder.
+	artifacts *artifactScope
 	// PublicTypePaths maps a type's declaring path to the public paths a
 	// `pub use` re-exports it under ("rsa::pkcs1v15::signing_key::SigningKey"
 	// -> ["rsa::pkcs1v15::SigningKey"]). Contracts name the public path, the

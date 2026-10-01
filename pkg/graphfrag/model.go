@@ -649,6 +649,11 @@ type Result struct {
 	// this instead of from the chains that survived the stitch, so a capped or
 	// collapsed traversal can no longer silently shrink the published surface.
 	reachByAnchor map[graphNode][]reachEntry
+
+	// unresolvedDispatchOps are the crypto-op nodes the root reaches only
+	// through a name_only edge. Such a finding reads unknown with
+	// unresolved_dispatch, and the composed index never upgrades it.
+	unresolvedDispatchOps map[graphNode]bool
 }
 
 // FindingChain is one root-to-crypto path.

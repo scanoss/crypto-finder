@@ -156,7 +156,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 
 	functionsBySignature, functionsByCanonicalSignature, dispatchSurfaces, aliasByKey := indexFunctions(closure, fragments)
 	functionsByNode := indexFunctionsByNode(closure, fragments)
-	adjacency, ambiguousCandidates, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature, functionsByCanonicalSignature, functionsByNode, dispatchSurfaces, aliasByKey)
+	adjacency, ambiguousCandidates, nameOnly, suppressed := buildAdjacency(closure, deps, fragments, functionsBySignature, functionsByCanonicalSignature, functionsByNode, dispatchSurfaces, aliasByKey)
 	opsByNode := indexCryptoOperations(closure, fragments)
 	supportingByNode := indexSupportingCalls(closure, fragments)
 
@@ -167,6 +167,8 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		Suppressed:           suppressed,
 		operationEntryPoints: indexOperationEntryPoints(closure, fragments),
 		erasedByFunctionKey:  indexErasedSignatures(closure, fragments),
+		unresolvedDispatchOps: unresolvedDispatchOps(root, rootFragment, opsByNode,
+			adjacency, ambiguousCandidates, nameOnly),
 	}
 	if opts.EntryRootedOnly {
 		// Serving path. Mirror live `--export-callgraph` (TraceBackLimited): a
@@ -504,7 +506,8 @@ type callEdge struct {
 //     present in the current component's direct dependencies for that call
 //     site; >1 is ambiguous and fails closed (recorded). 0 is simply
 //     unreachable.
-//   - name_only          -> never traversed (recorded).
+//   - name_only          -> never traversed (recorded, and returned apart so
+//     the export can tell a finding reached only through one).
 //   - unknown (zero)     -> never traversed (recorded); usually a producer bug.
 func buildAdjacency(
 	closure []ComponentKey,
@@ -515,22 +518,22 @@ func buildAdjacency(
 	functionsByNode map[graphNode]Function,
 	dispatchSurfaces map[graphNode][]graphNode,
 	aliasByKey map[string][]graphNode,
-) (map[graphNode][]adjacencyEdge, map[graphNode][]adjacencyEdge, []SuppressedEdge) {
-	out := make(map[graphNode][]adjacencyEdge)
-	ambiguous := make(map[graphNode][]adjacencyEdge)
-	var suppressed []SuppressedEdge
+) (adjacency, ambiguous, nameOnly map[graphNode][]adjacencyEdge, suppressed []SuppressedEdge) {
+	adjacency = make(map[graphNode][]adjacencyEdge)
+	ambiguous = make(map[graphNode][]adjacencyEdge)
+	nameOnly = make(map[graphNode][]adjacencyEdge)
 	ownerTypes := indexOwnerTypes(closure, fragments)
 
 	for _, key := range closure {
 		fragment := fragments[key]
-		componentSigs := indexComponentSignatures(key, fragment, out)
+		componentSigs := indexComponentSignatures(key, fragment, adjacency)
 		edges := collectCallEdges(fragment)
 		resolve := callEdgeResolver(key, componentSigs, componentSet(deps[key]), functionsBySignature, functionsByCanonicalSignature, aliasByKey)
 
-		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, out, &suppressed, dispatchSurfaces, ownerTypes, fragments, functionsByNode, ambiguous)
-		applyDispatchGroups(key, dispatchGroups, resolve, ownerTypes, fragments, functionsByNode, out, &suppressed, ambiguous)
+		dispatchGroups := applyImmediateEdgePolicy(key, edges, resolve, adjacency, &suppressed, dispatchSurfaces, ownerTypes, fragments, functionsByNode, ambiguous, nameOnly)
+		applyDispatchGroups(key, dispatchGroups, resolve, ownerTypes, fragments, functionsByNode, adjacency, &suppressed, ambiguous)
 	}
-	return out, ambiguous, suppressed
+	return adjacency, ambiguous, nameOnly, suppressed
 }
 
 // indexOwnerTypes maps each node to the declaring type of its function, derived
@@ -819,6 +822,7 @@ func applyImmediateEdgePolicy(
 	fragments map[ComponentKey]Fragment,
 	functionsByNode map[graphNode]Function,
 	ambiguous map[graphNode][]adjacencyEdge,
+	nameOnly map[graphNode][]adjacencyEdge,
 ) map[dispatchGroupKey][]callEdge {
 	// Interface-dispatch candidates are deferred and grouped per call site so
 	// ambiguity (>1 impl in closure) is detected across all sibling edges,
@@ -841,6 +845,7 @@ func applyImmediateEdgePolicy(
 			gk := dispatchKey(key, *e)
 			dispatchGroups[gk] = append(dispatchGroups[gk], *e)
 		case ResolutionNameOnly:
+			appendAdjacencyEdges(nameOnly, caller, targets.nodes, e)
 			*suppressed = append(*suppressed, suppressedEdge(key, *e, SuppressReasonNameOnly, candidateComponents(targets.nodes)))
 		case ResolutionUnknown:
 			*suppressed = append(*suppressed, suppressedEdge(key, *e, SuppressReasonUnknown, candidateComponents(targets.nodes)))

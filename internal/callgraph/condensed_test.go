@@ -525,3 +525,67 @@ func traceCondensed(tracer *Tracer, target FunctionID, userPackages map[string]b
 	trace := tracer.TraceBackCondensed(target, userPackages, 32, 128)
 	return trace.Chains, trace.Total, trace.Truncated
 }
+
+// nameOnlyGraph builds app.run -> lib.Sink reached by a name_only edge, with
+// lib.Sink also called by a typed chain lib.A <- lib.B <- lib.C of library
+// functions that no application code calls.
+func nameOnlyGraph(typedChain bool) (*CallGraph, FunctionID) {
+	mk := func(pkg, typ, name string) *FunctionDecl {
+		id := FunctionID{Package: pkg, Type: typ, Name: name}
+		return &FunctionDecl{ID: id, FilePath: "/" + typ + ".java", StartLine: 10, EndLine: 12}
+	}
+	run := mk("app", "App", "run")
+	sink := mk("lib", "Sink", "write")
+	functions := map[string]*FunctionDecl{run.ID.String(): run, sink.ID.String(): sink}
+	callers := map[string][]string{sink.ID.String(): {run.ID.String()}}
+	run.Calls = []FunctionCall{{Callee: sink.ID, Line: 11}}
+	if typedChain {
+		a, b, c := mk("lib", "A", "a"), mk("lib", "B", "b"), mk("lib", "C", "c")
+		for _, fn := range []*FunctionDecl{a, b, c} {
+			functions[fn.ID.String()] = fn
+		}
+		callers[sink.ID.String()] = append(callers[sink.ID.String()], a.ID.String())
+		callers[a.ID.String()] = []string{b.ID.String()}
+		callers[b.ID.String()] = []string{c.ID.String()}
+	}
+	resolution := EdgeResolution{Kind: EdgeKindNameOnly, CallSite: 11}
+	graph := &CallGraph{
+		Functions: functions,
+		Callers:   callers,
+		EdgeResolutions: map[string]EdgeResolution{
+			EdgeResolutionKey(run.ID.String(), sink.ID.String(), resolution): resolution,
+		},
+	}
+	return graph, sink.ID
+}
+
+// A finding reached only through a name_only edge reads unresolved. When the
+// depth limit cuts the guess-free walk, it has not shown that no typed route
+// exists, so the finding must not flip to unresolved on the strength of the cut.
+func TestTraceBackCondensed_DepthCutGuessFreeWalkIsNotUnresolved(t *testing.T) {
+	t.Parallel()
+
+	user := map[string]bool{"app": true}
+	tests := []struct {
+		name       string
+		typedChain bool
+		maxDepth   int
+		want       bool
+	}{
+		{name: "only a name_only route", typedChain: false, maxDepth: 32, want: true},
+		{name: "typed walk cut by the depth limit", typedChain: true, maxDepth: 2, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			graph, sink := nameOnlyGraph(tc.typedChain)
+			trace := NewTracer(graph, ".").TraceBackCondensed(sink, user, tc.maxDepth, 0)
+			if len(trace.Chains) == 0 {
+				t.Fatal("TraceBackCondensed() found no chain, want the name_only route")
+			}
+			if trace.UnresolvedDispatch != tc.want {
+				t.Errorf("UnresolvedDispatch = %v, want %v", trace.UnresolvedDispatch, tc.want)
+			}
+		})
+	}
+}

@@ -15,17 +15,19 @@ func TestLiveReachability(t *testing.T) {
 		containing        *callgraph.FunctionDecl
 		userPackages      map[string]bool
 		traced, truncated bool
+		guessed           bool
 		want              string
 	}{
-		{"no containing function", nil, user, false, false, graphfrag.ReachabilityNotApplicable},
-		{"mine path without user universe", fn, nil, false, false, graphfrag.ReachabilityNotApplicable},
-		{"traced chain", fn, user, true, false, graphfrag.ReachabilityReachable},
-		{"traced chain trumps truncation", fn, user, true, true, graphfrag.ReachabilityReachable},
-		{"untraced truncated is unknown", fn, user, false, true, graphfrag.ReachabilityUnknown},
-		{"untraced complete is unreachable", fn, user, false, false, graphfrag.ReachabilityUnreachable},
+		{"no containing function", nil, user, false, false, false, graphfrag.ReachabilityNotApplicable},
+		{"mine path without user universe", fn, nil, false, false, false, graphfrag.ReachabilityNotApplicable},
+		{"traced chain", fn, user, true, false, false, graphfrag.ReachabilityReachable},
+		{"traced chain trumps truncation", fn, user, true, true, false, graphfrag.ReachabilityReachable},
+		{"traced only through name_only edges is unknown", fn, user, true, false, true, graphfrag.ReachabilityUnknown},
+		{"untraced truncated is unknown", fn, user, false, true, false, graphfrag.ReachabilityUnknown},
+		{"untraced complete is unreachable", fn, user, false, false, false, graphfrag.ReachabilityUnreachable},
 	}
 	for _, tc := range cases {
-		if got := liveReachability(tc.containing, tc.userPackages, tc.traced, tc.truncated); got != tc.want {
+		if got := liveReachability(tc.containing, tc.userPackages, tc.traced, tc.truncated, tc.guessed); got != tc.want {
 			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
 		}
 	}

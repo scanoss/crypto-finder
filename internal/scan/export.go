@@ -120,6 +120,13 @@ type exportBuildContext struct {
 	// callChainPathsTotal records, per containing-function key, how many
 	// routes the graph holds (analysis.paths_total).
 	callChainPathsTotal map[string]int
+	// callChainUnresolvedDispatch records, per containing-function key, that
+	// every route found crosses a name_only edge. The verdict is then unknown
+	// (unresolved_dispatch), never reachable.
+	callChainUnresolvedDispatch map[string]bool
+	// tracer is shared by every finding so the index of name_only edges it
+	// builds on first use is built once per export.
+	tracer *callgraph.Tracer
 	// maxDepth bounds the frames of a chain; 0 is unbounded. Always
 	// callGraphExportMaxDepth outside tests.
 	maxDepth int
@@ -1072,11 +1079,15 @@ func liveFrameIdentity(n *callGraphChainNode) graphfrag.FrameIdentity {
 // issue #242). traced means the trace found at least one genuine chain — the
 // one-node self-chain fallback does not count. A walk the depth limit cut
 // downgrades a would-be unreachable to unknown, never to reachable; a route
-// budget never does, since a route was found.
-func liveReachability(containingFn *callgraph.FunctionDecl, userPackages map[string]bool, traced, depthLimited bool) string {
+// budget never does, since a route was found. guessed means every route found
+// crosses a name_only edge, which downgrades reachable to unknown: the chain
+// shows how the crypto may run, not that it does.
+func liveReachability(containingFn *callgraph.FunctionDecl, userPackages map[string]bool, traced, depthLimited, guessed bool) string {
 	switch {
 	case containingFn == nil || userPackages == nil:
 		return graphfrag.ReachabilityNotApplicable
+	case traced && guessed:
+		return graphfrag.ReachabilityUnknown
 	case traced:
 		return graphfrag.ReachabilityReachable
 	case depthLimited:
@@ -1808,16 +1819,8 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	if len(asset.ParameterConditions) > 0 {
 		fg.CallChains, chainsFilteredAway = filterChainsByCondition(fg.CallChains, asset)
 	}
-	truncated, depthLimited := false, false
-	if containingFn != nil {
-		key := containingFn.ID.String()
-		truncated = ctx.callChainTruncated[key]
-		depthLimited = ctx.callChainDepthLimited[key]
-	}
-	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated, depthLimited)
-	if fg.Reachability == graphfrag.ReachabilityUnknown && unresolvedReason == "" {
-		unresolvedReason = unresolvedTraversalTruncated
-	}
+	truncated, depthLimited, guessed := liveTraceFlags(ctx, containingFn, traced)
+	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated, depthLimited, guessed)
 	recordRouteCounts(ctx, &fg, containingFn, traced)
 	// A specialized asset whose value came from a caller outside the chain
 	// sample has none of the sampled chains left: they all carried other
@@ -1827,13 +1830,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	}
 	markValueEnumerationCut(&fg, asset)
 
-	if unresolvedReason == unresolvedTraversalTruncated {
-		// The finding is attributed; only its reachability is open.
-		fg.UnresolvedReason = unresolvedReason
-	} else if unresolvedReason != "" {
-		fg.UnresolvedReason = unresolvedReason
-		fg.FindingLocation = buildFindingLocation(ctx, finding, asset)
-	}
+	recordUnresolvedReason(ctx, &fg, finding, asset, unresolvedReason, guessed)
 
 	if duration := time.Since(start); duration > time.Second {
 		functionName := ""
@@ -1887,17 +1884,46 @@ func recordRouteCounts(ctx *exportBuildContext, fg *callGraphExportFinding, cont
 // and no chain was found (depthLimited && !traced), nothing is proved either
 // way — leave Reachable unset so entry-point indexing still runs, and keep
 // analysis partial even on the mine path.
+// recordUnresolvedReason says why a finding graph is incomplete. A finding
+// that could not be attributed carries its reason and its location. An
+// attributed one whose verdict is still unknown was cut by the depth limit
+// (traversal_truncated) or reached only through name_only edges
+// (unresolved_dispatch), and needs no location.
+func recordUnresolvedReason(ctx *exportBuildContext, fg *callGraphExportFinding, finding entities.Finding, asset entities.CryptographicAsset, reason string, guessed bool) {
+	switch {
+	case reason != "":
+		fg.UnresolvedReason = reason
+		fg.FindingLocation = buildFindingLocation(ctx, finding, asset)
+	case fg.Reachability != graphfrag.ReachabilityUnknown:
+	case guessed:
+		fg.UnresolvedReason = unresolvedDispatch
+	default:
+		fg.UnresolvedReason = unresolvedTraversalTruncated
+	}
+}
+
+// liveTraceFlags reads back what the containing function's trace recorded:
+// a cap cut the answer, the depth limit cut it in library code, and every
+// route found crosses a name_only edge.
+func liveTraceFlags(ctx *exportBuildContext, containingFn *callgraph.FunctionDecl, traced bool) (truncated, depthLimited, guessed bool) {
+	if containingFn == nil {
+		return false, false, false
+	}
+	key := containingFn.ID.String()
+	return ctx.callChainTruncated[key], ctx.callChainDepthLimited[key], traced && ctx.callChainUnresolvedDispatch[key]
+}
+
 func applyLiveReachabilityState(
 	fg *callGraphExportFinding,
 	containingFn *callgraph.FunctionDecl,
 	ctx *exportBuildContext,
-	traced, truncated, depthLimited bool,
+	traced, truncated, depthLimited, guessed bool,
 ) {
-	if containingFn != nil && ctx.userPackages != nil && (!depthLimited || traced) {
+	if containingFn != nil && ctx.userPackages != nil && (!depthLimited || traced) && !guessed {
 		reachable := traced
 		fg.Reachable = &reachable
 	}
-	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, depthLimited)
+	fg.Reachability = liveReachability(containingFn, ctx.userPackages, traced, depthLimited, guessed)
 	if fg.Reachability != graphfrag.ReachabilityNotApplicable || truncated {
 		fg.Analysis = liveFindingAnalysis(fg.CallChains, truncated)
 	}
@@ -3444,6 +3470,9 @@ func ensureCallChainCaches(ctx *exportBuildContext) {
 	if ctx.callChainPathsTotal == nil {
 		ctx.callChainPathsTotal = make(map[string]int)
 	}
+	if ctx.callChainUnresolvedDispatch == nil {
+		ctx.callChainUnresolvedDispatch = make(map[string]bool)
+	}
 }
 
 // structuralCallChains returns traceback paths as chain nodes without call-site
@@ -3478,6 +3507,14 @@ func structuralCallChains(
 	return result
 }
 
+// sharedTracer returns the export's tracer, creating it on first use.
+func (ctx *exportBuildContext) sharedTracer() *callgraph.Tracer {
+	if ctx.tracer == nil {
+		ctx.tracer = callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
+	}
+	return ctx.tracer
+}
+
 // structuralTracebackChains runs the bounded reverse tracer only (no call-site
 // expansion). Memoizes raw steps.
 func structuralTracebackChains(
@@ -3492,15 +3529,15 @@ func structuralTracebackChains(
 	if raw, ok := ctx.callChainRawCache[cacheKey]; ok {
 		return raw
 	}
-	tracer := callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
 	maxChains := ctx.emitMaxChains()
-	trace := tracer.TraceBackCondensed(containingFn.ID, ctx.userPackages, ctx.maxDepth, maxChains)
+	trace := ctx.sharedTracer().TraceBackCondensed(containingFn.ID, ctx.userPackages, ctx.maxDepth, maxChains)
 	// Feed the signal the 6.8 contract reads (analysis.call_chains partial,
 	// reachability unknown when the depth limit cut every route), and
 	// paths_total, which says how much was left out.
 	ctx.callChainTruncated[cacheKey] = trace.Truncated
 	ctx.callChainDepthLimited[cacheKey] = trace.DepthLimited
 	ctx.callChainPathsTotal[cacheKey] = trace.Total
+	ctx.callChainUnresolvedDispatch[cacheKey] = trace.UnresolvedDispatch
 	if trace.DepthLimited {
 		log.Warn().
 			Str("function", containingFn.ID.String()).

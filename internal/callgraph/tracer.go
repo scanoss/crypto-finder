@@ -17,6 +17,9 @@ const traceMaxFrontier = 1_000_000
 type Tracer struct {
 	graph  *CallGraph
 	pkgSep string
+	// untyped holds, per callee, the callers whose every resolution of the
+	// edge is name_only. Built on first use (untypedEdges).
+	untyped map[string]map[string]bool
 }
 
 type traceBFSItem struct {
