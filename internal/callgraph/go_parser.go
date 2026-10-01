@@ -242,13 +242,13 @@ func (p *GoParser) processImportSpec(spec *sitter.Node, src []byte, analysis *Fi
 	}
 
 	if alias == "" {
-		alias = goImplicitImportName(path)
+		alias = GoImplicitImportName(path)
 	}
 
 	analysis.Imports[alias] = path
 }
 
-// goImplicitImportName is the name an unaliased import binds. It is the
+// GoImplicitImportName is the name an unaliased import binds. It is the
 // imported package's own name, which this per-file pass cannot read, so it
 // follows the module path rules of golang.org/x/mod/module.SplitPathVersion:
 // the last path element, skipping a /vN major version suffix, which exists
@@ -256,7 +256,7 @@ func (p *GoParser) processImportSpec(spec *sitter.Node, src []byte, analysis *Fi
 // k8s.io/api/core/v1 declares package v1), and dropping a gopkg.in .vN suffix,
 // which exists for every N including 0 and 1 (gopkg.in/yaml.v1 declares
 // package yaml).
-func goImplicitImportName(path string) string {
+func GoImplicitImportName(path string) string {
 	parts := strings.Split(path, "/")
 	name := parts[len(parts)-1]
 	if parts[0] == "gopkg.in" {

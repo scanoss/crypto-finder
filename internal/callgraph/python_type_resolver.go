@@ -227,6 +227,14 @@ func pythonCalleeReturnType(
 	if callee := graph.Functions[call.Callee.String()]; callee != nil && callee.ReturnType != "" {
 		return callee.ReturnType, callee.ID.Package
 	}
+	// A call through a package's public path (`from dep import make_cipher`,
+	// re-exported by dep/__init__.py from dep/impl.py) keeps the public
+	// spelling, while the declaration is keyed by its module.
+	if key, ok := pythonPublicPathDeclaration(graph, call.Callee, call.Callee.String()); ok {
+		if callee := graph.Functions[key]; callee != nil && callee.ReturnType != "" {
+			return callee.ReturnType, callee.ID.Package
+		}
+	}
 	if kb == nil || len(kb.Contracts) == 0 {
 		return "", ""
 	}

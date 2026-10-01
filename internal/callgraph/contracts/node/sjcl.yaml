@@ -1,0 +1,256 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "sjcl"
+  coordinates:
+    - "sjcl"
+  version_range: ">=1.0.0"
+  description: "sjcl: the Stanford JavaScript Crypto Library"
+
+# SJCL IS A NAMESPACE and every contract is keyed under it. The npm package is
+# the library's default build: AES, the CCM, GCM and OCB2 modes, SHA-256,
+# HMAC, PBKDF2, the PRNG and the sjcl.encrypt / sjcl.decrypt convenience layer.
+# SHA-1, SHA-512, RIPEMD-160, CBC, CTR, HKDF, scrypt and the ECC module are in
+# the repository but are not compiled into the npm sjcl.js, so they are not
+# declared.
+#
+#     var sjcl = require('sjcl');
+#     var aes = new sjcl.cipher.aes(key);                       // factory
+#     var ct = sjcl.mode.gcm.encrypt(aes, plain, iv, adata, 128);  // operation
+#     var mac = new sjcl.misc.hmac(key, sjcl.hash.sha256);      // factory
+#     var tag = mac.mac(data);                                  // operation
+#     var out = sjcl.encrypt(password, text, { mode: 'gcm' });  // operation
+#     var words = sjcl.random.randomWords(8, 0);                // operation
+#
+# THE CONSTRUCTORS TYPE THE OBJECT. The parser keys `new sjcl.cipher.aes(key)`
+# `sjcl.cipher.aes.<init>`, and the calls made on the variable it is bound to
+# then resolve to `sjcl.cipher.aes.encrypt`. The same holds for
+# `sjcl.hash.sha256` and `sjcl.misc.hmac`; the cipher modes take the block
+# cipher as an argument and are plain functions under `sjcl.mode`.
+#
+# Declared from sjcl 1.0.8 (core/*.js and an introspection of the compiled
+# sjcl.js for every public function and its length) and checked against 1.0.0
+# and 1.0.9. Optional parameters are declared at every arity the function
+# accepts: pbkdf2 defaults count, length and the pseudorandom function family;
+# the modes default adata and the tag length; sjcl.encrypt and sjcl.decrypt take
+# optional params and result parameters. hmac.update, digest and reset exist
+# from a later 1.0.x than 1.0.0, which only has mac and encrypt.
+#
+# Deliberately NOT contracted: the codecs (sjcl.codec.*), bitArray and
+# bn helpers, sjcl.json encode and decode, the exception classes, and the PRNG
+# bookkeeping (addEntropy, isReady, getProgress, the entropy collectors,
+# setDefaultParanoia), which move or inspect data without producing key
+# material.
+contracts:
+
+  # The AES key schedule. Bulk encryption goes through a mode.
+  - method: "sjcl.cipher.aes.<init>"
+    arity: 1
+    return: { type: "sjcl.cipher.aes", confidence: high }
+    role: factory
+  - method: "sjcl.cipher.aes.encrypt"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.cipher.aes.decrypt"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: operation
+
+  # SHA-256, as an object and as a one-shot.
+  - method: "sjcl.hash.sha256.<init>"
+    arity: 0
+    return: { type: "sjcl.hash.sha256", confidence: high }
+    role: factory
+  - method: "sjcl.hash.sha256.<init>"
+    arity: 1
+    return: { type: "sjcl.hash.sha256", confidence: high }
+    role: factory
+  - method: "sjcl.hash.sha256.update"
+    arity: 1
+    return: { type: "sjcl.hash.sha256", confidence: high }
+    role: operation
+  - method: "sjcl.hash.sha256.finalize"
+    arity: 0
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.hash.sha256.reset"
+    arity: 0
+    return: { type: "sjcl.hash.sha256", confidence: high }
+    role: config
+  - method: "sjcl.hash.sha256.hash"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: operation
+
+  # HMAC, as a prf for the modes and for PBKDF2 too.
+  - method: "sjcl.misc.hmac.<init>"
+    arity: 1
+    return: { type: "sjcl.misc.hmac", confidence: high }
+    role: factory
+  - method: "sjcl.misc.hmac.<init>"
+    arity: 2
+    return: { type: "sjcl.misc.hmac", confidence: high }
+    role: factory
+  - method: "sjcl.misc.hmac.mac"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.misc.hmac.encrypt"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.misc.hmac.update"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sjcl.misc.hmac.digest"
+    arity: 0
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.misc.hmac.reset"
+    arity: 0
+    return: { type: "void", confidence: high }
+    role: config
+
+  # Key derivation.
+  - method: "sjcl.misc.pbkdf2"
+    arity: 2
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.misc.pbkdf2"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.misc.pbkdf2"
+    arity: 4
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.misc.pbkdf2"
+    arity: 5
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.misc.cachedPbkdf2"
+    arity: 1
+    return: { type: "sjcl.CachedKey", confidence: high }
+    role: operation
+  - method: "sjcl.misc.cachedPbkdf2"
+    arity: 2
+    return: { type: "sjcl.CachedKey", confidence: high }
+    role: operation
+
+  # The authenticated cipher modes.
+  - method: "sjcl.mode.ccm.encrypt"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ccm.encrypt"
+    arity: 4
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ccm.encrypt"
+    arity: 5
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ccm.decrypt"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ccm.decrypt"
+    arity: 4
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ccm.decrypt"
+    arity: 5
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.gcm.encrypt"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.gcm.encrypt"
+    arity: 4
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.gcm.encrypt"
+    arity: 5
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.gcm.decrypt"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.gcm.decrypt"
+    arity: 4
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.gcm.decrypt"
+    arity: 5
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ocb2.encrypt"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ocb2.encrypt"
+    arity: 4
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ocb2.encrypt"
+    arity: 5
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ocb2.encrypt"
+    arity: 6
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ocb2.decrypt"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ocb2.decrypt"
+    arity: 4
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ocb2.decrypt"
+    arity: 5
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.mode.ocb2.decrypt"
+    arity: 6
+    return: { type: "Array", confidence: high }
+    role: operation
+
+  # The convenience layer and the random source.
+  - method: "sjcl.encrypt"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "sjcl.encrypt"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "sjcl.encrypt"
+    arity: 4
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "sjcl.decrypt"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "sjcl.decrypt"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "sjcl.decrypt"
+    arity: 4
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "sjcl.random.randomWords"
+    arity: 1
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sjcl.random.randomWords"
+    arity: 2
+    return: { type: "Array", confidence: high }
+    role: operation

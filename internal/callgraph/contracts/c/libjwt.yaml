@@ -47,10 +47,6 @@ contracts:
         name: alg
         role: operation-determining
         contributes: {property: algorithm, derivation: argument_value}
-      - index: 3
-        name: len
-        role: metadata-contributing
-        contributes: {property: keyLength, derivation: argument_value}
   - method: jwt_add_grant
     arity: 3
     return: {type: "int", confidence: high}
@@ -83,11 +79,6 @@ contracts:
     arity: 4
     return: {type: "int", confidence: high}
     role: operation
-    parameters:
-      - index: 3
-        name: key_len
-        role: metadata-contributing
-        contributes: {property: keyLength, derivation: argument_value}
   - method: jwt_decode_2
     arity: 3
     return: {type: "int", confidence: high}
