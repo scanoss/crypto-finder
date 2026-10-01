@@ -173,7 +173,30 @@ type ExportFindingAnalysis struct {
 	// finding has no route, and on the stitched export.
 	PathsTotal int `json:"paths_total,omitempty"`
 	PathsKept  int `json:"paths_kept,omitempty"`
+	// RouteEvidence is how strongly the finding's strongest route was
+	// resolved, by its weakest call: RouteEvidenceDirect, RouteEvidenceDispatch
+	// or RouteEvidenceNameOnly (the verdict is then unknown with
+	// unresolved_dispatch). call_chains lists the strongest routes first.
+	// Present with a route, on the live and stitched exports.
+	RouteEvidence string `json:"route_evidence,omitempty"`
+	// NoCallersOnly reports that every root of the routes supporting the
+	// verdict (those free of name_only edges, or all when none is) is an
+	// application function nothing in the application calls (root_kind
+	// no_callers): the crypto is reached only from code with no known callers.
+	// Live export only; stitched chains carry no root_kind.
+	NoCallersOnly bool `json:"no_callers_only,omitempty"`
 }
+
+// Route evidence values of ExportFindingAnalysis.RouteEvidence.
+const (
+	// RouteEvidenceDirect: every call of the route resolved statically.
+	RouteEvidenceDirect = "direct"
+	// RouteEvidenceDispatch: the route needs at least one call linked to an
+	// implementation of the receiver's declared type, and no name_only call.
+	RouteEvidenceDispatch = "dispatch"
+	// RouteEvidenceNameOnly: every route needs a call linked only by name.
+	RouteEvidenceNameOnly = "name_only"
+)
 
 // ExportForwardClosure is the projected forward call graph from one finding
 // anchor (6.3+). Nodes are deduped forward-reachable functions (depth >= 1);
@@ -604,6 +627,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		r.markComposedRouteAnalysis(&fg, grp.anchorNode)
 		r.upgradeComposedReachability(&fg, grp.anchorNode)
 		r.markUnresolvedDispatch(&fg, grp.anchorNode)
+		stampStitchedRouteEvidence(&fg)
 		out.FindingGraphs = append(out.FindingGraphs, fg)
 	}
 
@@ -900,6 +924,62 @@ func stitchedReachability(chains [][]ExportChainNode, anySuppressed bool) string
 		return ReachabilityUnknown
 	}
 	return ReachabilityUnreachable
+}
+
+// stampStitchedRouteEvidence records the evidence of the finding's strongest
+// route (analysis.route_evidence). The stitch keeps its strongest routes
+// first, so the kept chains hold it: the best chain decides. A finding the
+// root reaches only over a name_only edge reads name_only. A finding proven
+// only by a dependency's entry-point index has no frame-by-frame route, and
+// no evidence is claimed for it.
+func stampStitchedRouteEvidence(fg *ExportFindingGraph) {
+	if fg.Analysis == nil {
+		return
+	}
+	switch {
+	case fg.UnresolvedReason == UnresolvedReasonDispatch:
+		fg.Analysis.RouteEvidence = RouteEvidenceNameOnly
+	case fg.Reachability == ReachabilityReachable:
+		fg.Analysis.RouteEvidence = bestChainEvidence(fg.CallChains)
+	}
+}
+
+// bestChainEvidence is the evidence of the strongest chain with at least one
+// call, each chain rated by its weakest frame; empty when there is none.
+func bestChainEvidence(chains [][]ExportChainNode) string {
+	best := ""
+	for _, chain := range chains {
+		if len(chain) < 2 {
+			continue
+		}
+		evidence := RouteEvidenceDirect
+		for i := 1; i < len(chain); i++ {
+			switch ResolutionKind(chain[i].EntryResolution) {
+			case ResolutionNameOnly:
+				evidence = RouteEvidenceNameOnly
+			case ResolutionInterfaceDispatch:
+				if evidence == RouteEvidenceDirect {
+					evidence = RouteEvidenceDispatch
+				}
+			case ResolutionExact, ResolutionUnknown:
+			}
+		}
+		if best == "" || routeEvidenceWeakness(evidence) < routeEvidenceWeakness(best) {
+			best = evidence
+		}
+	}
+	return best
+}
+
+func routeEvidenceWeakness(evidence string) int {
+	switch evidence {
+	case RouteEvidenceDirect:
+		return 0
+	case RouteEvidenceDispatch:
+		return 1
+	default:
+		return 2
+	}
 }
 
 // stitchedFindingAnalysis reports completeness for one finding graph.

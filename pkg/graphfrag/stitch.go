@@ -1293,6 +1293,7 @@ func traceBackward(
 	// with thousands of crypto operations — e.g. bcpg-jdk18on pulling in
 	// bcprov-jdk18on's full graph).
 	callers, inbounds := flattenReverse(reverse)
+	direct := flattenDirectReverse(reverse)
 
 	// reachableFromChainEntry is every node some entry in chainEntrySet can
 	// reach by forward calls. An entry reaches opNode forward iff opNode's
@@ -1313,7 +1314,7 @@ func traceBackward(
 		var chains []backwardChain
 		var truncated bool
 		if reachableFromChainEntry[opNode] {
-			chains, _, truncated = condensedBackwardChainsFast(opNode, callers, inbounds, chainEntrySet, maxChains)
+			chains, _, truncated = condensedBackwardChainsFast(opNode, callers, inbounds, direct, chainEntrySet, maxChains)
 		}
 		if len(chains) == 0 {
 			if truncated {

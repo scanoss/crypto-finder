@@ -124,6 +124,12 @@ type exportBuildContext struct {
 	// every route found crosses a name_only edge. The verdict is then unknown
 	// (unresolved_dispatch), never reachable.
 	callChainUnresolvedDispatch map[string]bool
+	// callChainEvidence records, per containing-function key, the evidence of
+	// the strongest route (analysis.route_evidence).
+	callChainEvidence map[string]callgraph.RouteEvidence
+	// callChainNoCallersOnly records, per containing-function key, that every
+	// root of the supporting routes is no_callers (analysis.no_callers_only).
+	callChainNoCallersOnly map[string]bool
 	// tracer is shared by every finding so the index of name_only edges it
 	// builds on first use is built once per export.
 	tracer *callgraph.Tracer
@@ -1815,13 +1821,19 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 
 	var traced bool
 	fg.CallChains, traced = buildCallChains(ctx, containingFn, cryptoCall)
-	chainsFilteredAway := false
+	chainsFilteredAway, chainsNarrowed := false, false
 	if len(asset.ParameterConditions) > 0 {
+		sampled := len(fg.CallChains)
 		fg.CallChains, chainsFilteredAway = filterChainsByCondition(fg.CallChains, asset)
+		chainsNarrowed = len(fg.CallChains) < sampled
 	}
 	truncated, depthLimited, guessed := liveTraceFlags(ctx, containingFn, traced)
 	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated, depthLimited, guessed)
 	recordRouteCounts(ctx, &fg, containingFn, traced)
+	// The trace behind those counts is cached per containing function and
+	// rates every value's routes together. A condition that dropped chains
+	// leaves only the surviving ones to rate.
+	reviseRouteEvidence(&fg, chainsNarrowed && traced)
 	// A specialized asset whose value came from a caller outside the chain
 	// sample has none of the sampled chains left: they all carried other
 	// values. Its chains are then incomplete, not complete and empty.
@@ -1869,14 +1881,17 @@ func filterChainsByCondition(chains [][]callGraphChainNode, asset entities.Crypt
 	return kept, len(chains) > 0 && len(kept) == 0
 }
 
-// recordRouteCounts copies how many routes the containing function's trace
-// found and how many the chains show onto a traced finding's analysis.
+// recordRouteCounts copies what the containing function's trace recorded about
+// its routes (how many, how well evidenced) onto a traced finding's analysis.
 func recordRouteCounts(ctx *exportBuildContext, fg *callGraphExportFinding, containingFn *callgraph.FunctionDecl, traced bool) {
 	if fg.Analysis == nil || !traced {
 		return
 	}
-	fg.Analysis.PathsTotal = ctx.callChainPathsTotal[containingFn.ID.String()]
+	key := containingFn.ID.String()
+	fg.Analysis.PathsTotal = ctx.callChainPathsTotal[key]
 	fg.Analysis.PathsKept = distinctChainRoutes(fg.CallChains)
+	fg.Analysis.RouteEvidence = string(ctx.callChainEvidence[key])
+	fg.Analysis.NoCallersOnly = ctx.callChainNoCallersOnly[key]
 }
 
 // applyLiveReachabilityState stamps Reachable, Reachability, and Analysis for one
@@ -3432,7 +3447,7 @@ func buildCallChains(
 	traced = len(raw) > 0
 	switch {
 	case traced:
-		expanded := expandCallChainCallSites(ctx.graph, raw, ctx.emitMaxChains())
+		expanded := expandCallChainCallSites(ctx, raw, ctx.emitMaxChains())
 		chains = materializeCallChainNodes(ctx, expanded)
 	case ctx.callChainDepthLimited[cacheKey]:
 		// The depth limit cut every route before a root. Emit zero chains — do
@@ -3472,6 +3487,12 @@ func ensureCallChainCaches(ctx *exportBuildContext) {
 	}
 	if ctx.callChainUnresolvedDispatch == nil {
 		ctx.callChainUnresolvedDispatch = make(map[string]bool)
+	}
+	if ctx.callChainEvidence == nil {
+		ctx.callChainEvidence = make(map[string]callgraph.RouteEvidence)
+	}
+	if ctx.callChainNoCallersOnly == nil {
+		ctx.callChainNoCallersOnly = make(map[string]bool)
 	}
 }
 
@@ -3538,6 +3559,8 @@ func structuralTracebackChains(
 	ctx.callChainDepthLimited[cacheKey] = trace.DepthLimited
 	ctx.callChainPathsTotal[cacheKey] = trace.Total
 	ctx.callChainUnresolvedDispatch[cacheKey] = trace.UnresolvedDispatch
+	ctx.callChainEvidence[cacheKey] = trace.Evidence
+	ctx.callChainNoCallersOnly[cacheKey] = trace.NoCallersOnly
 	if trace.DepthLimited {
 		log.Warn().
 			Str("function", containingFn.ID.String()).
@@ -3615,7 +3638,7 @@ func materializeCallChainNodes(
 // variant, then every chain's second, and so on. Spending it chain by chain
 // filled it with one route repeated at different call-site lines, while other
 // routes to the same crypto went unshown.
-func expandCallChainCallSites(graph *callgraph.CallGraph, chains []callgraph.CallChain, maxChains int) []callgraph.CallChain {
+func expandCallChainCallSites(ctx *exportBuildContext, chains []callgraph.CallChain, maxChains int) []callgraph.CallChain {
 	// Every chain keeps its first variant, so one chain can contribute at most
 	// what the others leave.
 	perChainLimit := 0
@@ -3624,7 +3647,7 @@ func expandCallChainCallSites(graph *callgraph.CallGraph, chains []callgraph.Cal
 	}
 	perChain := make([][]callgraph.CallChain, len(chains))
 	for i, chain := range chains {
-		perChain[i] = expandOneCallChain(graph, chain, perChainLimit)
+		perChain[i] = expandOneCallChain(ctx, chain, perChainLimit)
 	}
 	var expanded []callgraph.CallChain
 	for round := 0; ; round++ {
@@ -3663,14 +3686,15 @@ func distinctChainRoutes(chains [][]callGraphChainNode) int {
 }
 
 //nolint:gocognit // Bounded call-site cross-product is kept together so every cap check remains auditable.
-func expandOneCallChain(graph *callgraph.CallGraph, chain callgraph.CallChain, remaining int) []callgraph.CallChain {
+func expandOneCallChain(ctx *exportBuildContext, chain callgraph.CallChain, remaining int) []callgraph.CallChain {
 	variants := []callgraph.CallChain{{Steps: append([]callgraph.CallChainStep(nil), chain.Steps...), RootKind: chain.RootKind}}
 	for stepIndex := 1; stepIndex < len(chain.Steps); stepIndex++ {
-		caller := graph.Functions[chain.Steps[stepIndex-1].Function.String()]
+		caller := ctx.graph.Functions[chain.Steps[stepIndex-1].Function.String()]
 		matches := matchingInvocations(caller, chain.Steps[stepIndex].Function.String())
 		if len(matches) == 0 {
 			continue
 		}
+		sortCallSitesByCertainty(ctx, matches, chain.Steps[stepIndex-1], chain.Steps[stepIndex])
 		var next []callgraph.CallChain
 		for _, variant := range variants {
 			for _, call := range matches {
@@ -3693,6 +3717,24 @@ func expandOneCallChain(graph *callgraph.CallGraph, chain callgraph.CallChain, r
 		variants = next
 	}
 	return variants
+}
+
+// sortCallSitesByCertainty orders the call sites of one step so the most
+// certain comes first, keeping source order otherwise. The first variant of a
+// chain is the one a small budget keeps, and the tracer chose the route by its
+// strongest call: a first variant naming a weaker call site would show a
+// name_only frame on a route selected as free of one.
+func sortCallSitesByCertainty(ctx *exportBuildContext, calls []*callgraph.FunctionCall, caller, callee callgraph.CallChainStep) {
+	if len(calls) < 2 {
+		return
+	}
+	certainty := make(map[*callgraph.FunctionCall]int, len(calls))
+	for _, call := range calls {
+		site := caller
+		site.Line, site.StartCol, site.EndCol = call.Line, call.StartCol, call.EndCol
+		certainty[call] = chainEdgeCertainty(ctx, site, callee)
+	}
+	sort.SliceStable(calls, func(i, j int) bool { return certainty[calls[i]] > certainty[calls[j]] })
 }
 
 func exportUserPackages(result *engine.DepScanResult) map[string]bool {

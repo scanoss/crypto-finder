@@ -27,15 +27,31 @@ import (
 // certain classification of the caller-callee pair is reported, so a frame
 // never reads more certain than some edge that could have produced it.
 func applyChainEdgeResolution(ctx *exportBuildContext, node *callGraphChainNode, caller, callee callgraph.CallChainStep) {
-	if ctx == nil || node == nil {
+	if node == nil {
 		return
+	}
+	chosen, ok := chainEdgeResolution(ctx, caller, callee)
+	if !ok {
+		return
+	}
+	node.EntryResolution = chosen.Resolution
+	if chosen.Kind != callgraph.EdgeKindExact {
+		node.EntryDeclaredType = chosen.DeclaredType
+	}
+}
+
+// chainEdgeResolution is the classification applyChainEdgeResolution stamps
+// for the call from caller to callee; false when the builder recorded none.
+func chainEdgeResolution(ctx *exportBuildContext, caller, callee callgraph.CallChainStep) (fragmentEdgeResolution, bool) {
+	if ctx == nil {
+		return fragmentEdgeResolution{}, false
 	}
 	// Read only what the builder recorded: an edge it did not classify (added
 	// by a later resolution pass) is left without entry_resolution rather
 	// than claimed exact.
 	variants := ctx.fragmentEdgeResolutions[fragmentEdgePairKey(caller.Function.String(), callee.Function.String())]
 	if len(variants) == 0 {
-		return
+		return fragmentEdgeResolution{}, false
 	}
 	chosen, matched := variants[0], false
 	for i := range variants {
@@ -54,10 +70,16 @@ func applyChainEdgeResolution(ctx *exportBuildContext, node *callGraphChainNode,
 			}
 		}
 	}
-	node.EntryResolution = chosen.Resolution
-	if chosen.Kind != callgraph.EdgeKindExact {
-		node.EntryDeclaredType = chosen.DeclaredType
+	return chosen, true
+}
+
+// chainEdgeCertainty is how certain the call from caller to callee reads on
+// the exported frame; a pair the builder did not classify is exact.
+func chainEdgeCertainty(ctx *exportBuildContext, caller, callee callgraph.CallChainStep) int {
+	if chosen, ok := chainEdgeResolution(ctx, caller, callee); ok {
+		return edgeKindCertainty(chosen.Kind)
 	}
+	return edgeKindCertainty(callgraph.EdgeKindExact)
 }
 
 func chainStepMatchesCallSite(caller callgraph.CallChainStep, res callgraph.EdgeResolution) bool {

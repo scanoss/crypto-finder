@@ -4,6 +4,8 @@
 package graphfrag
 
 import (
+	"strings"
+
 	"github.com/scanoss/crypto-finder/pkg/graphwalk"
 )
 
@@ -54,7 +56,40 @@ func condensedBackwardChains(
 	maxChains int,
 ) (chains []backwardChain, total int, truncated bool) {
 	callers, inbounds := flattenReverse(reverse)
-	return condensedBackwardChainsFast(opNode, callers, inbounds, entrySet, maxChains)
+	return condensedBackwardChainsFast(opNode, callers, inbounds, flattenDirectReverse(reverse), entrySet, maxChains)
+}
+
+// reverseView is one flattened reverse adjacency: the callers of each node
+// and the call site of each edge.
+type reverseView struct {
+	callers  map[graphNode][]graphNode
+	inbounds map[callSiteKey]inbound
+}
+
+// flattenDirectReverse is flattenReverse without the interface-dispatch
+// edges: the routes whose every call resolved statically. It is nil when the
+// graph has no dispatch edge, since it would then be the whole graph again.
+func flattenDirectReverse(reverse map[graphNode][]reverseEdge) *reverseView {
+	direct := make(map[graphNode][]reverseEdge, len(reverse))
+	dispatch := false
+	for target, edges := range reverse {
+		kept := make([]reverseEdge, 0, len(edges))
+		for _, edge := range edges {
+			if edge.resolution == ResolutionInterfaceDispatch {
+				dispatch = true
+				continue
+			}
+			kept = append(kept, edge)
+		}
+		if len(kept) > 0 {
+			direct[target] = kept
+		}
+	}
+	if !dispatch {
+		return nil
+	}
+	callers, inbounds := flattenReverse(direct)
+	return &reverseView{callers: callers, inbounds: inbounds}
 }
 
 // flattenReverse converts the edge-list reverse adjacency into the plain
@@ -78,14 +113,62 @@ func flattenReverse(reverse map[graphNode][]reverseEdge) (callers map[graphNode]
 // condensedBackwardChainsFast is condensedBackwardChains against pre-flattened
 // callers/inbounds, so a caller walking many operations over the same reverse
 // graph (traceBackward) builds them once instead of per operation.
+//
+// The budget goes to the strongest evidence first: the routes over direct,
+// the graph without interface-dispatch edges, then the remaining routes. A
+// route whose every call resolved statically is therefore always kept when
+// one exists. direct is nil when the graph has no dispatch edge. total counts
+// the routes of the whole graph.
 func condensedBackwardChainsFast(
 	opNode graphNode,
 	callers map[graphNode][]graphNode,
 	inbounds map[callSiteKey]inbound,
+	direct *reverseView,
 	entrySet map[graphNode]bool,
 	maxChains int,
 ) (chains []backwardChain, total int, truncated bool) {
 	maxChains = ResolveMaxChains(maxChains)
+	reach, condensed, ok := backwardReach(opNode, callers, entrySet)
+	if !ok {
+		return nil, 0, false
+	}
+	total = graphwalk.Count(reach, condensed)
+
+	taken := make(map[string]bool)
+	take := func(route []graphNode, inbounds map[callSiteKey]inbound) bool {
+		key := routeNodesKey(route)
+		if !taken[key] {
+			taken[key] = true
+			chains = append(chains, materializeBackwardChain(route, inbounds))
+		}
+		return len(chains) < maxChains
+	}
+	if direct != nil {
+		if dReach, dCondensed, ok := backwardReach(opNode, direct.callers, entrySet); ok {
+			for _, route := range graphwalk.Routes(dReach, dCondensed, maxChains) {
+				take(route, direct.inbounds)
+			}
+		}
+	}
+	if len(chains) < maxChains {
+		// The whole graph yields the direct routes again; a budget of
+		// maxChains leaves room for every chain still missing.
+		for _, route := range graphwalk.Routes(reach, condensed, maxChains) {
+			if !take(route, inbounds) {
+				break
+			}
+		}
+	}
+	return chains, total, len(chains) < total
+}
+
+// backwardReach walks callers back from opNode to the entries; ok is false
+// when no entry is reached.
+func backwardReach(
+	opNode graphNode,
+	callers map[graphNode][]graphNode,
+	entrySet map[graphNode]bool,
+) (graphwalk.Reachable[graphNode], graphwalk.Condensed[graphNode], bool) {
 	reach := graphwalk.Reach(opNode, graphwalk.Options[graphNode]{
 		Callers:    func(n graphNode) []graphNode { return callers[n] },
 		Less:       nodeLess,
@@ -97,15 +180,21 @@ func condensedBackwardChainsFast(
 		MaxDepth:       stitchMaxDepth,
 	})
 	if len(reach.Terminal) == 0 {
-		return nil, 0, false
+		return reach, graphwalk.Condensed[graphNode]{}, false
 	}
+	return reach, graphwalk.Condense(reach, nodeLess), true
+}
 
-	condensed := graphwalk.Condense(reach, nodeLess)
-	total = graphwalk.Count(reach, condensed)
-	for _, route := range graphwalk.Routes(reach, condensed, maxChains) {
-		chains = append(chains, materializeBackwardChain(route, inbounds))
+// routeNodesKey identifies a concrete route by its nodes.
+func routeNodesKey(route []graphNode) string {
+	var b strings.Builder
+	for _, node := range route {
+		b.WriteString(node.Component.String())
+		b.WriteByte(0)
+		b.WriteString(node.Function)
+		b.WriteByte(0)
 	}
-	return chains, total, len(chains) < total
+	return b.String()
 }
 
 // materializeBackwardChain reverses a route — target first, entry last — into the

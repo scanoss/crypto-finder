@@ -164,7 +164,7 @@ func oracleFragmentEntryPointChains(
 		node := buildChainNode(ctx, containingFn.ID, containingFn.FilePath)
 		chains = [][]callGraphChainNode{{node}}
 	} else {
-		expanded := expandCallChainCallSites(ctx.graph, raw, callGraphExportMaxChains)
+		expanded := expandCallChainCallSites(ctx, raw, callGraphExportMaxChains)
 		chains = materializeCallChainNodes(ctx, expanded)
 	}
 	attachCryptoCall(chains, cryptoCall)
