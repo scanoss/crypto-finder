@@ -54,9 +54,9 @@ func TestBuilder_InitPyReexport_SiblingResolution(t *testing.T) {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
 
-	run, ok := graph.Functions[(FunctionID{Package: "pkg", Name: "run"}).String()]
+	run, ok := graph.Functions[(FunctionID{Package: "pkg.user", Name: "run"}).String()]
 	if !ok {
-		t.Fatalf("expected a declared FunctionDecl for pkg.run, got none (keys: %v)", keysOf(graph.Functions))
+		t.Fatalf("expected a declared FunctionDecl for pkg.user.run, got none (keys: %v)", keysOf(graph.Functions))
 	}
 
 	ctor := findPythonCallByMethod(run, constructorMethodName)
@@ -69,18 +69,13 @@ func TestBuilder_InitPyReexport_SiblingResolution(t *testing.T) {
 	}
 }
 
-// TestBuilder_InitPyReexport_FlatLayoutAlreadyResolved proves that a FLAT
+// TestBuilder_InitPyReexport_FlatLayoutResolvesToTheModule proves a FLAT
 // re-export target (a sibling file in the SAME directory as `__init__.py`,
-// not a sub-package) needs no rewrite at all: `FunctionID.Package` is keyed
-// at directory granularity, so `pkg/mod.py`'s declarations are already
-// filed under the same "pkg" package path that `from pkg import Cipher`
-// resolves to directly. This is a pinning test (no production code change),
-// documenting the gate's "no rewrite needed" branch and the spec/test drift
-// this fixture layout previously caused (the spec's own re-export scenario
-// text described a flat layout, but the only test exercising a real rewrite
-// used a sub-package layout — see the "Flat-layout re-export needs no
-// rewrite" spec scenario).
-func TestBuilder_InitPyReexport_FlatLayoutAlreadyResolved(t *testing.T) {
+// not a sub-package) is stitched like a sub-package one. A declaration is
+// keyed by its defining module, so `pkg/mod.py`'s Cipher is
+// `pkg.mod.(Cipher)`, and `from pkg import Cipher` reaches it only through
+// `pkg/__init__.py`'s `from .mod import Cipher`.
+func TestBuilder_InitPyReexport_FlatLayoutResolvesToTheModule(t *testing.T) {
 	root := t.TempDir()
 
 	writePythonReexportFixture(t, root, "__init__.py", "from .mod import Cipher\n")
@@ -95,18 +90,18 @@ func TestBuilder_InitPyReexport_FlatLayoutAlreadyResolved(t *testing.T) {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
 
-	run, ok := graph.Functions[(FunctionID{Package: "pkg", Name: "run"}).String()]
+	run, ok := graph.Functions[(FunctionID{Package: "pkg.user", Name: "run"}).String()]
 	if !ok {
-		t.Fatalf("expected a declared FunctionDecl for pkg.run, got none (keys: %v)", keysOf(graph.Functions))
+		t.Fatalf("expected a declared FunctionDecl for pkg.user.run, got none (keys: %v)", keysOf(graph.Functions))
 	}
 
 	ctor := findPythonCallByMethod(run, constructorMethodName)
 	if ctor == nil {
 		t.Fatalf("Cipher constructor call not found in run()'s calls")
 	}
-	want := FunctionID{Package: "pkg", Type: "Cipher", Name: constructorMethodName}
+	want := FunctionID{Package: "pkg.mod", Type: "Cipher", Name: constructorMethodName}
 	if ctor.Callee != want {
-		t.Errorf("Cipher() constructor callee = %+v, want %+v (flat-layout target is already under \"pkg\" — no rewrite should occur)", ctor.Callee, want)
+		t.Errorf("Cipher() constructor callee = %+v, want %+v (pkg/__init__.py's `from .mod import Cipher` re-export should stitch pkg.Cipher -> pkg.mod.Cipher)", ctor.Callee, want)
 	}
 }
 
@@ -136,9 +131,9 @@ func TestBuilder_InitPyReexport_NoInferredType(t *testing.T) {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
 
-	run, ok := graph.Functions[(FunctionID{Package: "pkg", Name: "run"}).String()]
+	run, ok := graph.Functions[(FunctionID{Package: "pkg.user", Name: "run"}).String()]
 	if !ok {
-		t.Fatalf("expected a declared FunctionDecl for pkg.run, got none (keys: %v)", keysOf(graph.Functions))
+		t.Fatalf("expected a declared FunctionDecl for pkg.user.run, got none (keys: %v)", keysOf(graph.Functions))
 	}
 
 	ctor := findPythonCallByMethod(run, constructorMethodName)
@@ -197,9 +192,9 @@ func TestBuilder_InitPyReexport_DoesNotRewriteKBKeyedDependency(t *testing.T) {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
 
-	run, ok := graph.Functions[(FunctionID{Package: "myapp", Name: "run"}).String()]
+	run, ok := graph.Functions[(FunctionID{Package: "myapp.user", Name: "run"}).String()]
 	if !ok {
-		t.Fatalf("expected a declared FunctionDecl for myapp.run, got none (keys: %v)", keysOf(graph.Functions))
+		t.Fatalf("expected a declared FunctionDecl for myapp.user.run, got none (keys: %v)", keysOf(graph.Functions))
 	}
 
 	ctor := findPythonCallByMethod(run, constructorMethodName)

@@ -8,13 +8,31 @@ library:
   description: "libsodium high-level cryptographic APIs"
 
 # Inventory source: libsodium 1.0.22 public headers at commit
-# 77e1ce5d6dee871c49ef211222ba18ef0c486bda. This first rule-paired slice
+# 77e1ce5d6dee871c49ef211222ba18ef0c486bda. The first rule-paired slice
 # contracts 99 stable high-level operations, state transitions, and key-generation
 # symbols. These cover the algorithm and related-crypto-material API dispositions;
 # protocol and certificate APIs are not applicable to libsodium.
-# covered-existing: none. skipped-non-crypto: size, limit, primitive-name, and
-# capability helpers. skipped-unsupported: none. needs-follow-up: algorithm-specific
-# low-level primitives, KEM/IPCrypt/XOF, scrypt, and raw implementation variants.
+#
+# The second slice adds the algorithm-specific APIs the detection rules report,
+# authored from the 1.0.22-RELEASE headers and checked against 1.0.19, 1.0.20 and
+# 1.0.21 (no arity changes): HMAC-SHA-256/512/512-256, SHA-256/512 and SHA-3
+# streaming, BLAKE2b, HKDF-SHA-256/512, the BLAKE2b KDF, Poly1305, Argon2i/id and
+# scrypt, X25519, NaCl box/secretbox and their XChaCha20 and XSalsa20
+# constructions, SipHash, Ed25519 and Ed25519ph, the ChaCha20/Salsa20/XChaCha20/
+# XSalsa20 streams, the AES-256-GCM precomputation calls, ML-KEM-768, X-Wing,
+# IPCrypt and the SHAKE/TurboSHAKE XOFs. The XOF and most IPCrypt calls arrived
+# in 1.0.21; SHA-3, crypto_ipcrypt_nd_keygen and the KEM calls in 1.0.22. Roles
+# follow the first slice: *_keygen, *_keypair and *_beforenm are factories,
+# *_init calls are config, and the rest are operations.
+#
+# covered-existing: none. skipped-non-crypto: size, limit, primitive-name,
+# string-prefix, capability and rehash-check helpers, and the Ed25519/X25519 key
+# conversion helpers. skipped-unsupported: none. needs-follow-up: the generic
+# crypto_kem_keypair/seed_keypair/enc/dec, whose names are the unprefixed NIST
+# KEM API that reference implementations also export, so a bare-name contract
+# would claim their calls for libsodium; the core_* group primitives,
+# scalarmult_ed25519/ristretto255, the salsa2012/salsa208 streams and the
+# verify_16/32/64 comparisons.
 contracts:
 
   # AEAD one-shot operations and key generation.
@@ -518,5 +536,959 @@ contracts:
     arity: 1
     return: {type: void, confidence: high}
     role: factory
+
+  # --- Second slice: algorithm-specific APIs. ---
+
+  # crypto_aead_aes256gcm.h
+  - method: crypto_aead_aes256gcm_beforenm
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: crypto_aead_aes256gcm_decrypt_afternm
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_aead_aes256gcm_decrypt_detached_afternm
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_aead_aes256gcm_encrypt_afternm
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_aead_aes256gcm_encrypt_detached_afternm
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_auth_hmacsha256.h
+  - method: crypto_auth_hmacsha256
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_auth_hmacsha256_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_auth_hmacsha256_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_auth_hmacsha256_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_auth_hmacsha256_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_auth_hmacsha256_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_auth_hmacsha512.h
+  - method: crypto_auth_hmacsha512
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_auth_hmacsha512_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_auth_hmacsha512_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_auth_hmacsha512_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_auth_hmacsha512_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_auth_hmacsha512_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_auth_hmacsha512256.h
+  - method: crypto_auth_hmacsha512256
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_auth_hmacsha512256_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_auth_hmacsha512256_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_auth_hmacsha512256_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_auth_hmacsha512256_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_auth_hmacsha512256_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_box.h
+  - method: crypto_box
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_afternm
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_open
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_open_afternm
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_box_curve25519xchacha20poly1305.h
+  - method: crypto_box_curve25519xchacha20poly1305_beforenm
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: crypto_box_curve25519xchacha20poly1305_detached
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_detached_afternm
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_easy
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_easy_afternm
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_keypair
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: crypto_box_curve25519xchacha20poly1305_open_detached
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_open_detached_afternm
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_open_easy
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_open_easy_afternm
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_seal
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_seal_open
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xchacha20poly1305_seed_keypair
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+
+  # crypto_box_curve25519xsalsa20poly1305.h
+  - method: crypto_box_curve25519xsalsa20poly1305
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xsalsa20poly1305_afternm
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xsalsa20poly1305_beforenm
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: crypto_box_curve25519xsalsa20poly1305_keypair
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: crypto_box_curve25519xsalsa20poly1305_open
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xsalsa20poly1305_open_afternm
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_box_curve25519xsalsa20poly1305_seed_keypair
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+
+  # crypto_generichash_blake2b.h
+  - method: crypto_generichash_blake2b
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: digestSize
+        role: metadata-contributing
+        contributes: {property: digestSize, derivation: argument_value}
+      - index: 5
+        name: keySize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: crypto_generichash_blake2b_final
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: digestSize
+        role: metadata-contributing
+        contributes: {property: digestSize, derivation: argument_value}
+  - method: crypto_generichash_blake2b_init
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keySize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+      - index: 3
+        name: digestSize
+        role: metadata-contributing
+        contributes: {property: digestSize, derivation: argument_value}
+  - method: crypto_generichash_blake2b_init_salt_personal
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_generichash_blake2b_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_generichash_blake2b_salt_personal
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_generichash_blake2b_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_hash_sha256.h
+  - method: crypto_hash_sha256
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_hash_sha256_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_hash_sha256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_hash_sha256_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_hash_sha3.h
+  - method: crypto_hash_sha3256
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_hash_sha3256_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_hash_sha3256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_hash_sha3256_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_hash_sha3512
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_hash_sha3512_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_hash_sha3512_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_hash_sha3512_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_hash_sha512.h
+  - method: crypto_hash_sha512
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_hash_sha512_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_hash_sha512_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_hash_sha512_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_ipcrypt.h
+  - method: crypto_ipcrypt_decrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ipcrypt_encrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ipcrypt_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_ipcrypt_nd_decrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ipcrypt_nd_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ipcrypt_nd_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_ipcrypt_ndx_decrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ipcrypt_ndx_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ipcrypt_ndx_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_ipcrypt_pfx_decrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ipcrypt_pfx_encrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: crypto_ipcrypt_pfx_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+
+  # crypto_kdf_blake2b.h
+  - method: crypto_kdf_blake2b_derive_from_key
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 2
+        name: subkeyId
+        role: metadata-contributing
+        contributes: {property: subkeyId, derivation: argument_value}
+      - index: 3
+        name: context
+        role: metadata-contributing
+        contributes: {property: context, derivation: argument_value}
+
+  # crypto_kdf_hkdf_sha256.h
+  - method: crypto_kdf_hkdf_sha256_expand
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_kdf_hkdf_sha256_extract
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kdf_hkdf_sha256_extract_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kdf_hkdf_sha256_extract_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_kdf_hkdf_sha256_extract_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kdf_hkdf_sha256_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+
+  # crypto_kdf_hkdf_sha512.h
+  - method: crypto_kdf_hkdf_sha512_expand
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_kdf_hkdf_sha512_extract
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kdf_hkdf_sha512_extract_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kdf_hkdf_sha512_extract_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_kdf_hkdf_sha512_extract_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kdf_hkdf_sha512_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+
+  # crypto_kem_mlkem768.h
+  - method: crypto_kem_mlkem768_dec
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kem_mlkem768_enc
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kem_mlkem768_enc_deterministic
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kem_mlkem768_keypair
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: crypto_kem_mlkem768_seed_keypair
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+
+  # crypto_kem_xwing.h
+  - method: crypto_kem_xwing_dec
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kem_xwing_enc
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kem_xwing_enc_deterministic
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_kem_xwing_keypair
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: crypto_kem_xwing_seed_keypair
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+
+  # crypto_onetimeauth_poly1305.h
+  - method: crypto_onetimeauth_poly1305
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_onetimeauth_poly1305_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_onetimeauth_poly1305_init
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_onetimeauth_poly1305_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_onetimeauth_poly1305_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_onetimeauth_poly1305_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_pwhash_argon2i.h
+  - method: crypto_pwhash_argon2i
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 5
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 6
+        name: memoryLimit
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 7
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: crypto_pwhash_argon2i_str
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 4
+        name: memoryLimit
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+  - method: crypto_pwhash_argon2i_str_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_pwhash_argon2id.h
+  - method: crypto_pwhash_argon2id
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 5
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 6
+        name: memoryLimit
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 7
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: crypto_pwhash_argon2id_str
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 4
+        name: memoryLimit
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+  - method: crypto_pwhash_argon2id_str_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_pwhash_scryptsalsa208sha256.h
+  - method: crypto_pwhash_scryptsalsa208sha256
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 5
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 6
+        name: memoryLimit
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+  - method: crypto_pwhash_scryptsalsa208sha256_ll
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_pwhash_scryptsalsa208sha256_str
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 4
+        name: memoryLimit
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+  - method: crypto_pwhash_scryptsalsa208sha256_str_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_scalarmult_curve25519.h
+  - method: crypto_scalarmult_curve25519
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_scalarmult_curve25519_base
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_secretbox.h
+  - method: crypto_secretbox
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_secretbox_open
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_secretbox_xchacha20poly1305.h
+  - method: crypto_secretbox_xchacha20poly1305_detached
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_secretbox_xchacha20poly1305_easy
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_secretbox_xchacha20poly1305_open_detached
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_secretbox_xchacha20poly1305_open_easy
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_secretbox_xsalsa20poly1305.h
+  - method: crypto_secretbox_xsalsa20poly1305
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_secretbox_xsalsa20poly1305_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_secretbox_xsalsa20poly1305_open
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_shorthash_siphash24.h
+  - method: crypto_shorthash_siphash24
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_shorthash_siphashx24.h
+  - method: crypto_shorthash_siphashx24
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_sign_ed25519.h
+  - method: crypto_sign_ed25519
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_sign_ed25519_detached
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_sign_ed25519_keypair
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: crypto_sign_ed25519_open
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_sign_ed25519_seed_keypair
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: crypto_sign_ed25519_verify_detached
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_sign_ed25519ph_final_create
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_sign_ed25519ph_final_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_sign_ed25519ph_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_sign_ed25519ph_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_stream_chacha20.h
+  - method: crypto_stream_chacha20
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_chacha20_ietf
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_chacha20_ietf_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_stream_chacha20_ietf_xor
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_chacha20_ietf_xor_ic
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_chacha20_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_stream_chacha20_xor
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_chacha20_xor_ic
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_stream_salsa20.h
+  - method: crypto_stream_salsa20
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_salsa20_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_stream_salsa20_xor
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_salsa20_xor_ic
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_stream_xchacha20.h
+  - method: crypto_stream_xchacha20
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_xchacha20_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_stream_xchacha20_xor
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_xchacha20_xor_ic
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_stream_xsalsa20.h
+  - method: crypto_stream_xsalsa20
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_xsalsa20_keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: crypto_stream_xsalsa20_xor
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: crypto_stream_xsalsa20_xor_ic
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_xof_shake128.h
+  - method: crypto_xof_shake128
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_xof_shake128_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_xof_shake128_squeeze
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_xof_shake128_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_xof_shake256.h
+  - method: crypto_xof_shake256
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_xof_shake256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_xof_shake256_squeeze
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_xof_shake256_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_xof_turboshake128.h
+  - method: crypto_xof_turboshake128
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_xof_turboshake128_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_xof_turboshake128_squeeze
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_xof_turboshake128_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # crypto_xof_turboshake256.h
+  - method: crypto_xof_turboshake256
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_xof_turboshake256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: crypto_xof_turboshake256_squeeze
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: outputLength
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: crypto_xof_turboshake256_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
 
 hierarchy: {}
