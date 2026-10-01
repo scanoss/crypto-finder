@@ -53,6 +53,10 @@ type exportBuildContext struct {
 	ecosystem               string
 	dependencies            []exportDependencyRoot
 	containingFunctionCache map[string]cachedContainingFunction
+	// functionsByFile narrows findContainingFunctionByFinding to one file's
+	// functions. Built on first use, like the cache above, over a graph that
+	// no longer changes.
+	functionsByFile *functionFileIndex
 	// callChainCache holds structural (non-expanded) chain nodes by containing
 	// function id. callChainRawCache holds the tracer steps for the same key so
 	// callgraph export can expand call sites without re-running TraceBackLimited.
@@ -1776,11 +1780,20 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 
 	var traced bool
 	fg.CallChains, traced = buildCallChains(ctx, containingFn, cryptoCall)
+	chainsFilteredAway := false
 	if len(asset.ParameterConditions) > 0 {
+		sampled := len(fg.CallChains)
 		fg.CallChains = filterConditionedCallChains(fg.CallChains, asset.ParameterConditions)
+		chainsFilteredAway = sampled > 0 && len(fg.CallChains) == 0
 	}
 	truncated := containingFn != nil && ctx.callChainTruncated[containingFn.ID.String()]
 	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated)
+	// A specialized asset whose value came from a caller outside the chain
+	// sample has none of the sampled chains left: they all carried other
+	// values. Its chains are then incomplete, not complete and empty.
+	if chainsFilteredAway && fg.Analysis != nil {
+		fg.Analysis.CallChains = graphfrag.AnalysisPartial
+	}
 
 	if unresolvedReason != "" {
 		fg.UnresolvedReason = unresolvedReason
@@ -4759,8 +4772,11 @@ func (ctx *exportBuildContext) findContainingFunctionByFinding(findingPath strin
 	// <clinit> may cover the whole class around the real method), so pick the
 	// tightest enclosing span instead of the first match; tie-break on the
 	// function key for full determinism.
+	if ctx.functionsByFile == nil {
+		ctx.functionsByFile = newFunctionFileIndex(ctx.graph.Functions)
+	}
 	var best *callgraph.FunctionDecl
-	for _, fn := range ctx.graph.Functions {
+	for _, fn := range ctx.functionsByFile.suffixCandidates(normalizedFindingPath) {
 		fnPath := filepath.ToSlash(fn.FilePath)
 		if !strings.HasSuffix(fnPath, normalizedFindingPath) {
 			continue

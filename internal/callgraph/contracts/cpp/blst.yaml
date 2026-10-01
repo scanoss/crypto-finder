@@ -1,0 +1,333 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: blst
+  coordinates:
+    - supranational/blst
+  version_range: ">=0.3.10,<0.4.0"
+  description: "blst C++ wrapper: SecretKey, point, pairing and PT object lifecycles"
+
+# Inventory sources: bindings/blst.hpp (namespace blst) from the upstream tag
+# archives v0.3.10 and v0.3.16, which declare the same methods. A method with
+# defaulted parameters is contracted at every arity a call site can use, and
+# the pointer-and-length and string_view overloads share those arities.
+#
+# Constructing a blst::P1 from a SecretKey, or an affine point from a point, is
+# a declaration, not a call, so there is nothing to contract for it; the
+# object's methods are keyed on the receiver type the C++ parser emits. hash_to
+# and sign_with return the receiver, so a chained call stays on its lifecycle.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: dup, to_jacobian, on_curve, in_group, is_inf, is_equal,
+#   add, dbl, neg, cneg, mult, generator, from_bendian/to_bendian, the Scalar
+#   class, Pairing::raw_aggregate and as_fp12.
+# needs-follow-up: the P1_Affines/P2_Affines multi-scalar helpers.
+# Resolution gap: receivers declared `auto` or through `using namespace blst`
+#   do not resolve to a contracted key, as for the other C++ entries.
+contracts:
+
+  # Secret key.
+  - method: blst::SecretKey.keygen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v3
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v3
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v3
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v4_5
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v4_5
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v4_5
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v4_5
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v5
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v5
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v5
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.keygen_v5
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.derive_master_eip2333
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::SecretKey.derive_child_eip2333
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # Points and affine points.
+  - method: blst::P1.hash_to
+    arity: 1
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.hash_to
+    arity: 2
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.hash_to
+    arity: 3
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.hash_to
+    arity: 4
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.hash_to
+    arity: 5
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.encode_to
+    arity: 1
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.encode_to
+    arity: 2
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.encode_to
+    arity: 3
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.encode_to
+    arity: 4
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.encode_to
+    arity: 5
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.sign_with
+    arity: 1
+    return: {type: "blst::P1*", confidence: high}
+    role: operation
+  - method: blst::P1.aggregate
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::P1.to_affine
+    arity: 0
+    return: {type: "blst::P1_Affine", confidence: high}
+    role: output
+  - method: blst::P1.serialize
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst::P1.compress
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst::P1_Affine.core_verify
+    arity: 3
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P1_Affine.core_verify
+    arity: 4
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P1_Affine.core_verify
+    arity: 5
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P1_Affine.core_verify
+    arity: 6
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P1_Affine.core_verify
+    arity: 7
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P1_Affine.serialize
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst::P1_Affine.compress
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst::P2.hash_to
+    arity: 1
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.hash_to
+    arity: 2
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.hash_to
+    arity: 3
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.hash_to
+    arity: 4
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.hash_to
+    arity: 5
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.encode_to
+    arity: 1
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.encode_to
+    arity: 2
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.encode_to
+    arity: 3
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.encode_to
+    arity: 4
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.encode_to
+    arity: 5
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.sign_with
+    arity: 1
+    return: {type: "blst::P2*", confidence: high}
+    role: operation
+  - method: blst::P2.aggregate
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::P2.to_affine
+    arity: 0
+    return: {type: "blst::P2_Affine", confidence: high}
+    role: output
+  - method: blst::P2.serialize
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst::P2.compress
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst::P2_Affine.core_verify
+    arity: 3
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P2_Affine.core_verify
+    arity: 4
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P2_Affine.core_verify
+    arity: 5
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P2_Affine.core_verify
+    arity: 6
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P2_Affine.core_verify
+    arity: 7
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::P2_Affine.serialize
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst::P2_Affine.compress
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+
+  # Pairing and PT.
+  - method: blst::PT.final_exp
+    arity: 0
+    return: {type: "blst::PT*", confidence: high}
+    role: operation
+  - method: blst::PT.finalverify
+    arity: 2
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: blst::Pairing.init
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: blst::Pairing.aggregate
+    arity: 3
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::Pairing.aggregate
+    arity: 4
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::Pairing.aggregate
+    arity: 5
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::Pairing.aggregate
+    arity: 6
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::Pairing.mul_n_aggregate
+    arity: 5
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::Pairing.mul_n_aggregate
+    arity: 6
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::Pairing.mul_n_aggregate
+    arity: 7
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::Pairing.mul_n_aggregate
+    arity: 8
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::Pairing.commit
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst::Pairing.merge
+    arity: 1
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst::Pairing.finalverify
+    arity: 0
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: blst::Pairing.finalverify
+    arity: 1
+    return: {type: "bool", confidence: high}
+    role: operation

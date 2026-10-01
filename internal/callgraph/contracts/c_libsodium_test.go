@@ -74,6 +74,13 @@ func TestLibsodiumParameterRoles(t *testing.T) {
 		{"crypto_kdf_derive_from_key", "metadata-contributing", "subkeyId", 5, 2},
 		{"crypto_pwhash", "operation-determining", "algorithm", 8, 7},
 		{"crypto_secretstream_xchacha20poly1305_push", "operation-determining", "operation", 8, 7},
+		{"crypto_pwhash_argon2id", "operation-determining", "algorithm", 8, 7},
+		{"crypto_pwhash_argon2id_str", "metadata-contributing", "memoryLimit", 5, 4},
+		{"crypto_pwhash_scryptsalsa208sha256", "metadata-contributing", "iterations", 7, 5},
+		{"crypto_generichash_blake2b_init", "metadata-contributing", "digestSize", 4, 3},
+		{"crypto_kdf_blake2b_derive_from_key", "metadata-contributing", "subkeyId", 5, 2},
+		{"crypto_kdf_hkdf_sha512_expand", "metadata-contributing", "outputLength", 5, 1},
+		{"crypto_xof_shake256_squeeze", "metadata-contributing", "outputLength", 3, 2},
 	}
 
 	for _, tt := range tests {
