@@ -378,7 +378,7 @@ func parseCallPattern(pattern string) ([]calleeSegment, bool, bool) {
 				return nil, false, false
 			}
 			p.skipSpace()
-			if p.pos != len(p.src) || typed {
+			if p.pos != len(p.src) || typed || isControlKeywordCallee(callee) {
 				return nil, false, false
 			}
 			return callee, constructor, true
@@ -386,6 +386,19 @@ func parseCallPattern(pattern string) ([]calleeSegment, bool, bool) {
 			return nil, false, false
 		}
 	}
+}
+
+// controlKeywords are words that read as a call in a pattern, `if (f(x))` or
+// `new(T)`, without naming a function.
+var controlKeywords = map[string]bool{
+	"if": true, "elif": true, "while": true, "for": true, "switch": true, "match": true,
+	"return": true, "new": true, "catch": true, "sizeof": true, "typeof": true,
+}
+
+// isControlKeywordCallee reports a single-segment callee that is a control
+// keyword, which names no function and must not become a catalog key.
+func isControlKeywordCallee(callee []calleeSegment) bool {
+	return len(callee) == 1 && controlKeywords[callee[0].name]
 }
 
 type calleeParser struct {

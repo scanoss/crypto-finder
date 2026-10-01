@@ -312,6 +312,14 @@ pattern-sinks:
 			body: `pattern: Password.hash(...).with($F)`,
 		},
 		{
+			name: "control keyword that reads as a call",
+			body: `pattern: if (hashlib.new($ALGO))`,
+		},
+		{
+			name: "builtin new with parentheses",
+			body: `pattern: new(Cipher)`,
+		},
+		{
 			name: "unconstrained receiver metavariable",
 			body: `pattern: $CRYPTO.createHash($ALGO)`,
 		},
