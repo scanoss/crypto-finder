@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Node callgraph contracts for web-push 3.x: `generateVAPIDKeys`, `getVapidHeaders`, `encrypt`, `generateRequestDetails` and `sendNotification` are operations at every optional-parameter arity and `setVapidDetails` is a config call. A function that returns one of their results now carries its type as an inferred return in the call graph export. `setGCMAPIKey` is not declared.
 - Node callgraph contracts for ssh2 1.x: the `Client` and `Server` constructors are factories and `Client.connect` is an operation, `utils.parseKey` is a factory whose parsed key has `sign` and `verify` as operations and the PEM and SSH public-key accessors as outputs, and `utils.generateKeyPair` and `generateKeyPairSync` are operations. A parsed key and a client built in the same function type the calls made on them, so those supporting calls carry their lifecycle role. Channel, session and agent methods are not declared.
 - Node callgraph contract for selfsigned 1.x to 5.x: `generate` is an operation at arities 0 to 2 and a function that returns its certificate bundle carries the type as an inferred return in the call graph export. The 1.x to 4.x callback form (three arguments) binds no result.
 - Node callgraph contracts for node-ssh 2.x and later: the `NodeSSH` constructor, under the named export and the pre-10.0 default-export spelling, is a factory and `connect` is an operation returning the client.
