@@ -136,3 +136,87 @@ func TestPaths_NoGraph(t *testing.T) {
 		t.Errorf("Paths without a graph = %v, want nil", got)
 	}
 }
+
+// npm resolves lodash at 4.17.21 for the application and at 3.10.1 for legacy.
+// Keyed by module name, the graph would call both copies direct. On
+// module@version nodes each copy has the route it really has.
+func TestPaths_ModuleAtTwoVersionsKeepsEachCopysRoute(t *testing.T) {
+	t.Parallel()
+	result := npmTwoLodashes()
+	parsed := map[string]bool{
+		"lodash": true, "lodash@4.17.21": true, "lodash@3.10.1": true,
+		"legacy": true, "legacy@1.0.0": true,
+	}
+	paths := Paths(result, parsed)
+
+	modern := paths["lodash@4.17.21"]
+	if want := []string{"lodash"}; !reflect.DeepEqual(pathModules(modern), want) || modern.Steps[0].Version != "4.17.21" {
+		t.Errorf("lodash@4.17.21: path %+v, want a one-step path through 4.17.21", modern.Steps)
+	}
+	nested := paths["lodash@3.10.1"]
+	if want := []string{"legacy", "lodash"}; !reflect.DeepEqual(pathModules(nested), want) || nested.Steps[1].Version != "3.10.1" {
+		t.Errorf("lodash@3.10.1: path %+v, want legacy then lodash 3.10.1: it is not direct", nested.Steps)
+	}
+	if _, byModule := paths["lodash"]; byModule {
+		t.Error("a module at two versions has a path keyed by its bare name")
+	}
+}
+
+// A source parsed for one copy says nothing about the other: legacy parsed
+// without lodash 3.10.1 marks that step, and a route through an unparsed
+// legacy@1.0.0 is without source whatever the other copies hold.
+func TestPaths_ModuleAtTwoVersionsReadsSourceByVersion(t *testing.T) {
+	t.Parallel()
+	parsed := map[string]bool{"lodash": true, "lodash@4.17.21": true, "legacy": true, "legacy@1.0.0": true}
+	nested := Paths(npmTwoLodashes(), parsed)["lodash@3.10.1"]
+	if len(nested.Steps) != 2 || nested.Steps[0].WithoutSource || !nested.Steps[1].WithoutSource || nested.WithoutSource {
+		t.Errorf("lodash@3.10.1 = %+v, want its own step without source though the module is parsed at 4.17.21", nested)
+	}
+
+	delete(parsed, "legacy@1.0.0")
+	nested = Paths(npmTwoLodashes(), parsed)["lodash@3.10.1"]
+	if !nested.WithoutSource || !nested.Steps[0].WithoutSource {
+		t.Errorf("lodash@3.10.1 = %+v, want a path without source through the unparsed legacy", nested)
+	}
+}
+
+// Without a versioned graph the routes of the two copies cannot be told apart,
+// so neither copy gets a path, nor does a dependency reached through one. A
+// dependency that avoids them keeps its route.
+func TestPaths_ModuleAtTwoVersionsWithoutVersionedGraphHasNoPath(t *testing.T) {
+	t.Parallel()
+	result := npmTwoLodashes()
+	result.VersionedGraph = nil
+	result.Graph["lodash"] = []string{"deep"}
+	result.Dependencies = append(result.Dependencies, Dependency{Module: "deep", Version: "1.0.0"})
+	parsed := map[string]bool{"lodash": true, "legacy": true, "deep": true}
+	paths := Paths(result, parsed)
+
+	for _, module := range []string{"lodash", "deep", "lodash@4.17.21", "lodash@3.10.1"} {
+		if path, ok := paths[module]; ok {
+			t.Errorf("%s has path %+v, want none: its route runs through a module of two versions", module, path.Steps)
+		}
+	}
+	if path, ok := paths["legacy"]; !ok || !reflect.DeepEqual(pathModules(path), []string{"legacy"}) {
+		t.Errorf("legacy path = %+v (%v), want its one-step route", path.Steps, ok)
+	}
+}
+
+func npmTwoLodashes() *ResolveResult {
+	return &ResolveResult{
+		RootModule: "app",
+		Dependencies: []Dependency{
+			{Module: "lodash", Version: "4.17.21"},
+			{Module: "lodash", Version: "3.10.1"},
+			{Module: "legacy", Version: "1.0.0"},
+		},
+		Graph: map[string][]string{
+			"app":    {"lodash", "legacy"},
+			"legacy": {"lodash"},
+		},
+		VersionedGraph: map[string][]Ref{
+			"app@1.0.0":    {{Module: "lodash", Version: "4.17.21"}, {Module: "legacy", Version: "1.0.0"}},
+			"legacy@1.0.0": {{Module: "lodash", Version: "3.10.1"}},
+		},
+	}
+}

@@ -212,3 +212,46 @@ func TestExportCallGraph_DependencyProvenanceMatchesSchemas(t *testing.T) {
 		assertJSONMatchesSchema(t, schema, path)
 	}
 }
+
+// lodash resolves at 4.17.21 for the application and at 3.10.1 for legacy. A
+// finding in the nested copy is not a direct dependency, and with no versioned
+// graph a finding in either copy carries no relationship or path, never a
+// wrong direct. Its package URL and version stay.
+func TestFindingDependency_ModuleAtTwoVersions(t *testing.T) {
+	t.Parallel()
+	resolved := &dependency.ResolveResult{
+		RootModule: "app",
+		Dependencies: []dependency.Dependency{
+			{Module: "lodash", Version: "4.17.21"}, {Module: "lodash", Version: "3.10.1"}, {Module: "legacy", Version: "1.0.0"},
+		},
+		Graph: map[string][]string{"app": {"lodash", "legacy"}, "legacy": {"lodash"}},
+		VersionedGraph: map[string][]dependency.Ref{
+			"app@1.0.0":    {{Module: "lodash", Version: "4.17.21"}, {Module: "legacy", Version: "1.0.0"}},
+			"legacy@1.0.0": {{Module: "lodash", Version: "3.10.1"}},
+		},
+	}
+	parsed := map[string]bool{"lodash@4.17.21": true, "lodash@3.10.1": true, "legacy@1.0.0": true}
+	describe := func(paths map[string]dependency.Path, version string) *graphfrag.ExportFindingDependency {
+		ctx := &exportBuildContext{ecosystem: "node", dependencyPaths: paths, dependencyVersions: map[string]string{"lodash": "4.17.21", "legacy": "1.0.0"}}
+		out, _ := ctx.findingDependency(&entities.DependencyInfo{Module: "lodash", Version: version})
+		return out
+	}
+
+	versioned := dependency.Paths(resolved, parsed)
+	if got := describe(versioned, "4.17.21"); got.Version != "4.17.21" || got.Relationship != graphfrag.DependencyDirect || len(got.Path) != 1 || got.Path[0].Version != "4.17.21" {
+		t.Errorf("lodash 4.17.21 with a versioned graph = %+v, want direct through 4.17.21", got)
+	}
+	got := describe(versioned, "3.10.1")
+	if got.Relationship != graphfrag.DependencyTransitive || len(got.Path) != 2 || got.Path[0].Module != "legacy" || got.Path[1].Version != "3.10.1" {
+		t.Errorf("lodash 3.10.1 with a versioned graph = %+v, want transitive through legacy to 3.10.1", got)
+	}
+
+	resolved.VersionedGraph = nil
+	unversioned := dependency.Paths(resolved, parsed)
+	for _, version := range []string{"4.17.21", "3.10.1"} {
+		got := describe(unversioned, version)
+		if got.Relationship != "" || got.Path != nil || got.Version != version || got.PURL == "" {
+			t.Errorf("lodash %s without a versioned graph = %+v, want its version and package URL and no relationship or path", version, got)
+		}
+	}
+}

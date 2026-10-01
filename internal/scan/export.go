@@ -1990,7 +1990,14 @@ func (ctx *exportBuildContext) findingDependency(info *entities.DependencyInfo) 
 		Version: info.Version,
 		PURL:    purl.Dependency(ctx.ecosystem, info.Module, info.Version),
 	}
-	path, ok := ctx.dependencyPaths[info.Module]
+	// Paths are keyed by module@version when the module resolves at several
+	// versions, and by module otherwise. A module with several versions and no
+	// versioned graph has no entry under either key, so its finding carries no
+	// relationship or path rather than one that may belong to another copy.
+	path, ok := ctx.dependencyPaths[dependency.Ref{Module: info.Module, Version: info.Version}.Key()]
+	if !ok {
+		path, ok = ctx.dependencyPaths[info.Module]
+	}
 	if !ok || len(path.Steps) == 0 {
 		return out, false
 	}
@@ -2000,8 +2007,11 @@ func (ctx *exportBuildContext) findingDependency(info *entities.DependencyInfo) 
 	}
 	out.Path = make([]graphfrag.ExportDependencyPathStep, len(path.Steps))
 	for i, step := range path.Steps {
-		version := ctx.dependencyVersions[step.Module]
-		if step.Module == info.Module {
+		version := step.Version
+		if version == "" {
+			version = ctx.dependencyVersions[step.Module]
+		}
+		if step.Module == info.Module && (step.Version == "" || step.Version == info.Version) {
 			version = info.Version
 		}
 		out.Path[i] = graphfrag.ExportDependencyPathStep{

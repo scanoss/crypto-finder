@@ -1272,6 +1272,7 @@ The bytecode resolution bottleneck has largely been removed. Remaining performan
 
 ### General
 - **Static analysis** — The call graph is built from syntactic call expressions. It cannot resolve interface dispatch, reflection-based calls, or function values passed as arguments.
+- **One module at two versions** — A finding's `dependency.relationship` and `dependency.path` come from the resolved dependency graph. When a module resolves at more than one version (npm installs a package twice when versions conflict), a resolver that records versioned edges (npm, Maven, Gradle, Cargo) gives each copy its own route. For a resolver that does not, the finding in such a module, and any dependency reached through one, carries no `relationship` or `path`; its `purl` and `version` stay.
 - **All paths stored** — When multiple call chains exist (BFS finds all paths), all are stored in `call_chains`. This ensures no reachability information is lost.
 
 ### Go-specific

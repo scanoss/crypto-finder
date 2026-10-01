@@ -699,7 +699,8 @@ type packageSets struct {
 	// dependencies already listed in graphPackages.
 	typeOnlyPackages []callgraph.PackageDir
 	// parsedModules names the dependencies in graphPackages: the ones whose
-	// code holds call edges.
+	// code holds call edges. Each is listed by module and by module@version,
+	// for a module resolved at several versions (dependency.Paths).
 	parsedModules map[string]bool
 }
 
@@ -766,6 +767,7 @@ func (ds *DependencyScanner) collectPackageSets(
 			if graphDeps == nil || graphDeps[result.dep.Module] {
 				sets.graphPackages = append(sets.graphPackages, pkg)
 				sets.parsedModules[result.dep.Module] = true
+				sets.parsedModules[dependency.Ref{Module: result.dep.Module, Version: result.dep.Version}.Key()] = true
 			}
 			continue
 		}
