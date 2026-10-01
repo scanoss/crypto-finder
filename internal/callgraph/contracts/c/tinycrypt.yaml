@@ -187,10 +187,9 @@ contracts:
     arity: 5
     return: {type: "int32_t", confidence: high}
     role: operation
-  - method: ecdsa_verify
-    arity: 4
-    return: {type: "int32_t", confidence: high}
-    role: operation
+  # ecdsa_verify (4 arguments, operation) is contracted by the Nettle entry
+  # with the same arity and role, and a C symbol has no namespace to tell the
+  # two apart, so it is covered-existing here.
 
   # P-256, v0.2.7+ names not shared with micro-ecc.
   - method: uECC_make_key_with_d
