@@ -475,9 +475,16 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 
 	root := tree.RootNode()
 
+	// A Python declaration is identified by the module that defines it, the
+	// path an import statement spells: `pkg/a.py`'s `f` is `pkg.a.f`, and
+	// only a package's own `__init__.py` defines names at `pkg.f`. Keying
+	// every module of a directory at the directory's path instead left a
+	// cross-module call, whose callee comes from the import, with no
+	// declaration to link to.
+	modulePath := pythonModuleDottedPath(filePath, packagePath)
 	analysis := &FileAnalysis{
 		FilePath:      filePath,
-		PackagePath:   packagePath,
+		PackagePath:   modulePath,
 		Imports:       make(map[string]string),
 		ImportedTypes: make(map[string]bool),
 		FromImports:   make(map[string]bool),
@@ -505,7 +512,7 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 
 	// Extract function and class declarations, resolving each scope's
 	// pending calls (fw) against its now-complete binding layer.
-	p.extractDeclarations(root, src, filePath, packagePath, analysis, fw)
+	p.extractDeclarations(root, src, filePath, modulePath, analysis, fw)
 
 	return analysis, nil
 }
@@ -518,7 +525,7 @@ func (p *PythonParser) recordPythonReExportsFromStatement(node *sitter.Node, src
 		// not inferred).
 		return
 	}
-	modulePath, ok := pythonImportFromModulePath(moduleNameNode, src, analysis.PackagePath)
+	modulePath, ok := pythonImportFromModulePath(moduleNameNode, src, pythonImportingPackage(analysis))
 	if !ok {
 		return
 	}
@@ -1406,7 +1413,7 @@ func (p *PythonParser) processImportStatement(node *sitter.Node, src []byte, ana
 // `from .foo import Bar` (the first dotted_name met that way is "Bar", not
 // "foo", since "foo" is nested inside relative_import). See T0 finding 3.
 func (p *PythonParser) processImportFromStatement(node *sitter.Node, src []byte, analysis *FileAnalysis) {
-	modulePath, ok := pythonImportFromModulePath(node.ChildByFieldName("module_name"), src, analysis.PackagePath)
+	modulePath, ok := pythonImportFromModulePath(node.ChildByFieldName("module_name"), src, pythonImportingPackage(analysis))
 	if !ok {
 		return
 	}
@@ -1476,6 +1483,19 @@ func pythonImportFromModulePath(moduleNameNode *sitter.Node, src []byte, package
 	default:
 		return "", false
 	}
+}
+
+// pythonImportingPackage is the package a module's relative imports resolve
+// against: the package that contains `pkg/a.py`, and the package itself for
+// its `__init__.py`.
+func pythonImportingPackage(analysis *FileAnalysis) string {
+	if pythonModuleDottedPathStem(analysis.FilePath) == "" {
+		return analysis.PackagePath
+	}
+	if i := strings.LastIndex(analysis.PackagePath, "."); i >= 0 {
+		return analysis.PackagePath[:i]
+	}
+	return ""
 }
 
 // pythonRelativeModulePath resolves a relative import's dot-prefix against
@@ -1591,24 +1611,24 @@ func pythonImportedName(analysis *FileAnalysis, local string) string {
 // by ONE earlier pythonWalk single-descent traversal over this same file,
 // see D1/A1 python-parser-parity-2) so neither buildModuleInitDecl nor
 // processClass need to re-walk the tree to build them.
-func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, fw *pythonFileWalk) {
+func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePath, modulePath string, analysis *FileAnalysis, fw *pythonFileWalk) {
 	for i := 0; i < int(root.ChildCount()); i++ {
 		child := root.Child(i)
 		switch child.Type() {
 		case pythonNodeFunctionDefinition:
-			decl := p.parseFunctionDef(child, src, filePath, packagePath, "", analysis, nil, fw)
+			decl := p.parseFunctionDef(child, src, filePath, modulePath, "", analysis, nil, fw)
 			if decl != nil {
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
 		case pythonNodeClassDefinition:
-			p.processClass(child, src, filePath, packagePath, analysis, fw)
+			p.processClass(child, src, filePath, modulePath, analysis, fw)
 		case "decorated_definition":
 			// Handle decorated functions and classes
-			p.processDecorated(child, src, filePath, packagePath, analysis, fw)
+			p.processDecorated(child, src, filePath, modulePath, analysis, fw)
 		}
 	}
 
-	if moduleDecl := p.buildModuleInitDecl(root, src, filePath, packagePath, analysis, fw); moduleDecl != nil {
+	if moduleDecl := p.buildModuleInitDecl(root, src, filePath, modulePath, analysis, fw); moduleDecl != nil {
 		analysis.Functions = append(analysis.Functions, *moduleDecl)
 	}
 }
@@ -1620,21 +1640,21 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 // which is what keeps TestPythonE2E_Bcrypt_ConsumerScan_NoSynthesis at zero.
 // fw.moduleScope is populated once per file by pythonWalk, already scoped to
 // ONLY module-level direct-statement binders and pending calls.
-func (p *PythonParser) buildModuleInitDecl(root *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis, fw *pythonFileWalk) *FunctionDecl {
+func (p *PythonParser) buildModuleInitDecl(root *sitter.Node, src []byte, filePath, modulePath string, analysis *FileAnalysis, fw *pythonFileWalk) *FunctionDecl {
 	calls := p.resolvePythonPendingCalls(fw.moduleScope, nil, src, filePath, analysis, fw)
 	if len(calls) == 0 {
 		return nil
 	}
 	return &FunctionDecl{
 		ID: FunctionID{
-			Package: pythonModuleDottedPath(filePath, packagePath),
+			Package: modulePath,
 			Name:    moduleInitMethodName,
 		},
 		FilePath:     filePath,
 		StartLine:    int(root.StartPoint().Row) + 1,
 		EndLine:      int(root.EndPoint().Row) + 1,
 		OwnerType:    pythonOwnerTypeModule,
-		OwnerName:    packagePath,
+		OwnerName:    modulePath,
 		FunctionType: functionTypeModuleInit,
 		Calls:        calls,
 	}
@@ -1659,12 +1679,9 @@ func pythonModuleDottedPath(filePath, packagePath string) string {
 }
 
 // pythonModuleDottedPathStem returns filePath's module stem for
-// pythonModuleDottedPath. Unlike pythonModuleFileStem (builder.go — used to
-// gate stub-vs-source collision handling and intentionally returns "" for
-// any non-".py" extension), this handles BOTH ".py" and ".pyi": a type-stub
-// module still needs its own distinct stem so its synthetic <module> decl
-// does not collapse onto the bare package path and collide with an
-// unrelated __init__.py's <module> decl in the same package. "" is returned
+// pythonModuleDottedPath. It handles BOTH ".py" and ".pyi", so a type stub
+// keys its declarations under the same module as the source it describes,
+// and the builder's stub-vs-source rule picks between them. "" is returned
 // only for __init__.py/__init__.pyi (whose module name IS the bare package
 // path).
 func pythonModuleDottedPathStem(filePath string) string {

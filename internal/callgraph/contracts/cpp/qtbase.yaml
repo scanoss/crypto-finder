@@ -1,0 +1,335 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: qtbase
+  coordinates:
+    - qt/qtbase
+  version_range: ">=5.15.0,<7.0.0"
+  description: "Qt Core and Qt Network cryptography: hashing, HMAC, PBKDF and TLS"
+
+# Inventory sources: qcryptographichash.h, qmessageauthenticationcode.h,
+# qpassworddigestor.h, qsslsocket.h, qsslconfiguration.h, qsslkey.h and
+# qsslcertificate.h from the upstream qtbase tags v5.15.2, v6.2.0 and v6.8.0.
+# The contracted arities hold across all three. resultView() and
+# QSslConfiguration::setMissingCertificateIsFatal arrived in 6.x;
+# QSslSocket::setCiphers exists (deprecated) only in 5.x. A method with
+# defaulted parameters is contracted at every arity a call site can use.
+#
+# Qt classes live in the global namespace (unless Qt is built with
+# QT_NAMESPACE), so the keys are the bare class names the C++ parser emits.
+# QPasswordDigestor is a namespace; its functions are keyed on it the same way.
+# Constructing a QCryptographicHash or QMessageAuthenticationCode with its
+# algorithm is a declaration, not a call, so there is nothing to contract for
+# it; the one-shot static hash() calls carry the algorithm as an argument, which
+# is operation-determining, and the PBKDF calls also report iterations and the
+# derived-key length.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: reset, hashLength, the QSslSocket/QSslConfiguration
+#   getters (peerCertificate, sessionCipher, ciphers, ...), setAllowedNextProtocols
+#   and the session-ticket and DTLS cookie accessors.
+# needs-follow-up: QSslCertificate::verify and importPkcs12, QSslKey
+#   construction, QDtls and QSslServer.
+# Resolution gap: receivers declared `auto` do not resolve to a contracted key,
+#   as for the other C++ entries.
+contracts:
+
+  # QCryptographicHash: incremental and one-shot hashing.
+  - method: QCryptographicHash.addData
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QCryptographicHash.addData
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QCryptographicHash.result
+    arity: 0
+    return: {type: "QByteArray", confidence: high}
+    role: output
+  - method: QCryptographicHash.resultView
+    arity: 0
+    return: {type: "QByteArrayView", confidence: high}
+    role: output
+  - method: QCryptographicHash.hash
+    arity: 2
+    return: {type: "QByteArray", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: method
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # QMessageAuthenticationCode: incremental and one-shot HMAC.
+  - method: QMessageAuthenticationCode.setKey
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QMessageAuthenticationCode.addData
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QMessageAuthenticationCode.addData
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QMessageAuthenticationCode.result
+    arity: 0
+    return: {type: "QByteArray", confidence: high}
+    role: output
+  - method: QMessageAuthenticationCode.resultView
+    arity: 0
+    return: {type: "QByteArrayView", confidence: high}
+    role: output
+  - method: QMessageAuthenticationCode.hash
+    arity: 3
+    return: {type: "QByteArray", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: method
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # QPasswordDigestor: PBKDF1 and PBKDF2.
+  - method: QPasswordDigestor.deriveKeyPbkdf1
+    arity: 5
+    return: {type: "QByteArray", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: method
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 4
+        name: dkLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: QPasswordDigestor.deriveKeyPbkdf2
+    arity: 5
+    return: {type: "QByteArray", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: method
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 4
+        name: dkLen
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  # QSslConfiguration: TLS configuration objects.
+  - method: QSslConfiguration.defaultConfiguration
+    arity: 0
+    return: {type: "QSslConfiguration", confidence: high}
+    role: factory
+  - method: QSslConfiguration.defaultDtlsConfiguration
+    arity: 0
+    return: {type: "QSslConfiguration", confidence: high}
+    role: factory
+  - method: QSslConfiguration.setProtocol
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setPeerVerifyMode
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setPeerVerifyDepth
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setCiphers
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setEllipticCurves
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setLocalCertificate
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setLocalCertificateChain
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setPrivateKey
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setCaCertificates
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.addCaCertificate
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.addCaCertificates
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.addCaCertificates
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.addCaCertificates
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setSslOption
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setDiffieHellmanParameters
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setPreSharedKeyIdentityHint
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setOcspStaplingEnabled
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setMissingCertificateIsFatal
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setDefaultConfiguration
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslConfiguration.setBackendConfigurationOption
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+
+  # QSslSocket: TLS socket configuration and handshake.
+  - method: QSslSocket.setSslConfiguration
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setProtocol
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setPeerVerifyMode
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setPeerVerifyDepth
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setLocalCertificate
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setLocalCertificate
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setLocalCertificateChain
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setPrivateKey
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setPrivateKey
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setPrivateKey
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setPrivateKey
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.setCiphers
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.ignoreSslErrors
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.ignoreSslErrors
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: QSslSocket.connectToHostEncrypted
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QSslSocket.connectToHostEncrypted
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QSslSocket.connectToHostEncrypted
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QSslSocket.connectToHostEncrypted
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QSslSocket.startClientEncryption
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QSslSocket.startServerEncryption
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: QSslSocket.waitForEncrypted
+    arity: 0
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: QSslSocket.waitForEncrypted
+    arity: 1
+    return: {type: "bool", confidence: high}
+    role: operation
+
+  # QSslKey and QSslCertificate encoding.
+  - method: QSslKey.toPem
+    arity: 0
+    return: {type: "QByteArray", confidence: high}
+    role: output
+  - method: QSslKey.toPem
+    arity: 1
+    return: {type: "QByteArray", confidence: high}
+    role: output
+  - method: QSslKey.toDer
+    arity: 0
+    return: {type: "QByteArray", confidence: high}
+    role: output
+  - method: QSslKey.toDer
+    arity: 1
+    return: {type: "QByteArray", confidence: high}
+    role: output
+  - method: QSslCertificate.toPem
+    arity: 0
+    return: {type: "QByteArray", confidence: high}
+    role: output
+  - method: QSslCertificate.toDer
+    arity: 0
+    return: {type: "QByteArray", confidence: high}
+    role: output

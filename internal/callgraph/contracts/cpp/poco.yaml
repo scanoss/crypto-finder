@@ -1,0 +1,202 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: poco
+  coordinates:
+    - pocoproject/poco
+  version_range: ">=1.14.0,<2.0.0"
+  description: "POCO: JWT Signer and NetSSL Context lifecycles"
+
+# Inventory sources: JWT/include/Poco/JWT/Signer.h and
+# NetSSL_OpenSSL/include/Poco/Net/Context.h from the upstream tag archives
+# poco-1.14.2-release and poco-1.15.3-release, which declare the same
+# signatures. A method with defaulted parameters is contracted at every arity a
+# call site can use. Context is usually held through its Poco::Net::Context::Ptr
+# (AutoPtr) alias, which the C++ parser emits as the receiver type, so the
+# Context methods are contracted on both spellings.
+#
+# This entry is partial by design. The POCO crypto findings the detection rules
+# report on Crypto::CipherKey, DigestEngine, RSAKey, RSADigestEngine and ECKey
+# are anchored on the object's declaration, and a declaration is not a call, so
+# no lifecycle is derived from them and contracts on their methods would never
+# be exercised. The JWT and TLS findings are anchored on method calls, and
+# these contracts give those lifecycles their roles.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: the Signer getters, encode/decode (base64url helpers),
+#   the Context session-cache sizing, timeout and flush calls and the getters.
+# needs-follow-up: Poco::Crypto (Cipher, CipherFactory, DigestEngine,
+#   RSADigestEngine, ECDSADigestEngine, X509Certificate, PKCS12Container),
+#   Poco::HMACEngine, Poco::SHA1Engine/SHA2Engine/MD5Engine, NetSSL_Win's Context,
+#   and SSLManager.
+# Resolution gap: receivers declared `auto`, as a reference initialized from
+#   another object (CipherFactory& f = CipherFactory::defaultFactory()), or
+#   through `using namespace Poco` do not resolve to a contracted key.
+contracts:
+
+  # JWT Signer: key and algorithm configuration, signing and verification.
+  - method: Poco::JWT::Signer.setAlgorithms
+    arity: 1
+    return: {type: "Poco::JWT::Signer&", confidence: high}
+    role: config
+  - method: Poco::JWT::Signer.addAlgorithm
+    arity: 1
+    return: {type: "Poco::JWT::Signer&", confidence: high}
+    role: config
+  - method: Poco::JWT::Signer.addAllAlgorithms
+    arity: 0
+    return: {type: "Poco::JWT::Signer&", confidence: high}
+    role: config
+  - method: Poco::JWT::Signer.setHMACKey
+    arity: 1
+    return: {type: "Poco::JWT::Signer&", confidence: high}
+    role: config
+  - method: Poco::JWT::Signer.setRSAKey
+    arity: 1
+    return: {type: "Poco::JWT::Signer&", confidence: high}
+    role: config
+  - method: Poco::JWT::Signer.setECKey
+    arity: 1
+    return: {type: "Poco::JWT::Signer&", confidence: high}
+    role: config
+  - method: Poco::JWT::Signer.sign
+    arity: 2
+    return: {type: "std::string", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: Poco::JWT::Signer.verify
+    arity: 1
+    return: {type: "Poco::JWT::Token", confidence: high}
+    role: operation
+  - method: Poco::JWT::Signer.tryVerify
+    arity: 2
+    return: {type: "bool", confidence: high}
+    role: operation
+
+  # Poco::Net::Context::Ptr: TLS context configuration.
+  - method: Poco::Net::Context::Ptr.useCertificate
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.addChainCertificate
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.addCertificateAuthority
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.usePrivateKey
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.enableSessionCache
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.enableSessionCache
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.enableSessionCache
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.enableExtendedCertificateVerification
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.enableExtendedCertificateVerification
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.disableStatelessSessionResumption
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.disableProtocols
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.requireMinimumProtocol
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.preferServerCiphers
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.setInvalidCertificateHandler
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context::Ptr.setSecurityLevel
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+
+  # Poco::Net::Context: TLS context configuration.
+  - method: Poco::Net::Context.useCertificate
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.addChainCertificate
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.addCertificateAuthority
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.usePrivateKey
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.enableSessionCache
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.enableSessionCache
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.enableSessionCache
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.enableExtendedCertificateVerification
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.enableExtendedCertificateVerification
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.disableStatelessSessionResumption
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.disableProtocols
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.requireMinimumProtocol
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.preferServerCiphers
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.setInvalidCertificateHandler
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: Poco::Net::Context.setSecurityLevel
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config

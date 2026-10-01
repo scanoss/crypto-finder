@@ -33,15 +33,17 @@ func MaterializeConditionedFindings(
 	if report == nil || graph == nil || len(rulePaths) == 0 {
 		return 0
 	}
-	catalog := engine.LoadRuleCryptoMetadata(rulePaths)
-	if len(catalog) == 0 {
+	rules := engine.LoadRuleCryptoMetadata(rulePaths)
+	if len(rules) == 0 {
 		return 0
 	}
+	catalog := conditionedCatalog{rules: rules, keys: newConditionedKeyMatcher(graph, ecosystem), ecosystem: ecosystem}
 	ctx := newExportBuildContext(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: ecosystem})
+	values := newConditionedValueEnumerator(ctx)
 	existing := indexExistingFindingRules(report)
 	added := 0
 	for findingIndex := range report.Findings {
-		added += materializeConditionedFinding(ctx, &report.Findings[findingIndex], graph, catalog, existing)
+		added += materializeConditionedFinding(ctx, values, &report.Findings[findingIndex], graph, catalog, existing)
 	}
 	if added > 0 {
 		log.Info().Int("count", added).Str("ecosystem", ecosystem).Msg("Materialized conditioned crypto findings from selector provenance")
@@ -51,24 +53,26 @@ func MaterializeConditionedFindings(
 
 func materializeConditionedFinding(
 	ctx *exportBuildContext,
+	values *conditionedValueEnumerator,
 	finding *entities.Finding,
 	graph *callgraph.CallGraph,
-	catalog map[string][]engine.RuleCryptoMetadata,
+	catalog conditionedCatalog,
 	existing map[string]struct{},
 ) int {
 	added := 0
 	originalCount := len(finding.CryptographicAssets)
 	for assetIndex := 0; assetIndex < originalCount; assetIndex++ {
-		added += materializeConditionedAnchor(ctx, finding, graph, catalog, existing, finding.CryptographicAssets[assetIndex])
+		added += materializeConditionedAnchor(ctx, values, finding, graph, catalog, existing, finding.CryptographicAssets[assetIndex])
 	}
 	return added
 }
 
 func materializeConditionedAnchor(
 	ctx *exportBuildContext,
+	values *conditionedValueEnumerator,
 	finding *entities.Finding,
 	graph *callgraph.CallGraph,
-	catalog map[string][]engine.RuleCryptoMetadata,
+	catalog conditionedCatalog,
 	existing map[string]struct{},
 	anchor entities.CryptographicAsset,
 ) int {
@@ -87,19 +91,28 @@ func materializeConditionedAnchor(
 	anchor.TerminalStartCol = terminalNode.StartCol
 	anchor.TerminalEndCol = terminalNode.EndCol
 	chains, _ := buildCallChains(ctx, containingFn, terminal)
-	return appendConditionedChainAssets(finding, anchor, rules, chains, existing)
+	candidates := make([][]callGraphParameter, 0, len(chains))
+	for _, chain := range chains {
+		if len(chain) > 0 && chain[len(chain)-1].CryptoCall != nil {
+			candidates = append(candidates, chain[len(chain)-1].CryptoCall.Parameters)
+		}
+	}
+	// The chains are a bounded sample: one caller's routes can fill the budget
+	// and hide every other caller's value. Specialize from all of them.
+	candidates = append(candidates, values.terminalVariants(containingFn.ID, terminal.Parameters)...)
+	return appendConditionedAssets(finding, anchor, rules, candidates, existing)
 }
 
 func conditionedTerminalCall(
 	graph *callgraph.CallGraph,
 	containingFn *callgraph.FunctionDecl,
 	anchor entities.CryptographicAsset,
-	catalog map[string][]engine.RuleCryptoMetadata,
+	catalog conditionedCatalog,
 ) (*callgraph.FunctionCall, []engine.RuleCryptoMetadata) {
 	lineCandidates := cryptoCallLineCandidates(containingFn, anchor.StartLine, anchor.EndLine)
 	conditioned := make([]*callgraph.FunctionCall, 0, len(lineCandidates))
 	for _, candidate := range lineCandidates {
-		if callContainsAnchorSpan(candidate, anchor) && len(conditionedRulesForCall(catalog, fullFunctionName(candidate.Callee))) > 0 {
+		if callContainsAnchorSpan(candidate, anchor) && len(catalog.rulesForCall(candidate)) > 0 {
 			conditioned = append(conditioned, candidate)
 		}
 	}
@@ -107,7 +120,7 @@ func conditionedTerminalCall(
 	if terminal == nil {
 		return nil, nil
 	}
-	return terminal, conditionedRulesForCall(catalog, fullFunctionName(terminal.Callee))
+	return terminal, catalog.rulesForCall(terminal)
 }
 
 func callContainsAnchorSpan(call *callgraph.FunctionCall, anchor entities.CryptographicAsset) bool {
@@ -117,21 +130,20 @@ func callContainsAnchorSpan(call *callgraph.FunctionCall, anchor entities.Crypto
 	return call.StartCol <= anchor.StartCol && call.EndCol >= anchor.EndCol
 }
 
-func appendConditionedChainAssets(
+// appendConditionedAssets emits one asset per (rule, resolved condition) over
+// every candidate argument list of the terminal call.
+func appendConditionedAssets(
 	finding *entities.Finding,
 	anchor entities.CryptographicAsset,
 	rules []engine.RuleCryptoMetadata,
-	chains [][]callGraphChainNode,
+	candidates [][]callGraphParameter,
 	existing map[string]struct{},
 ) int {
 	seen := make(map[string]struct{})
 	added := 0
-	for _, chain := range chains {
-		if len(chain) == 0 || chain[len(chain)-1].CryptoCall == nil {
-			continue
-		}
-		for _, rule := range rules {
-			if appendConditionedAsset(finding, anchor, rule, chain[len(chain)-1].CryptoCall.Parameters, seen, existing) {
+	for _, params := range candidates {
+		for i := range rules {
+			if appendConditionedAsset(finding, anchor, rules[i], params, seen, existing) {
 				added++
 			}
 		}
@@ -201,20 +213,32 @@ func conditionedAssetKey(filePath string, asset entities.CryptographicAsset, rul
 	return filePath + "\x00" + ruleID + "\x00" + strconv.Itoa(asset.StartLine) + ":" + strconv.Itoa(asset.StartCol) + ":" + strconv.Itoa(asset.EndLine) + ":" + strconv.Itoa(asset.EndCol) + "\x00" + metadata.String()
 }
 
-func conditionedRulesForCall(catalog map[string][]engine.RuleCryptoMetadata, callAPI string) []engine.RuleCryptoMetadata {
-	callAPI = strings.TrimSpace(callAPI)
+// conditionedCatalog is the conditioned-rule index of one scan, keyed by the
+// API symbol each rule's pattern names, with the ecosystem's rules for when a
+// key names a call.
+type conditionedCatalog struct {
+	rules     map[string][]engine.RuleCryptoMetadata
+	keys      conditionedKeyMatcher
+	ecosystem string
+}
+
+func (c conditionedCatalog) rulesForCall(call *callgraph.FunctionCall) []engine.RuleCryptoMetadata {
 	var rules []engine.RuleCryptoMetadata
 	seen := make(map[string]struct{})
-	for api, candidates := range catalog {
-		if callAPI == "" || (api != callAPI && !strings.HasSuffix(api, "."+callAPI) && !strings.HasSuffix(callAPI, "."+api)) {
+	for api, candidates := range c.rules {
+		if !c.keys.matches(api, call) {
 			continue
 		}
-		for _, candidate := range candidates {
+		for i := range candidates {
+			candidate := &candidates[i]
 			if _, duplicate := seen[candidate.Rule.ID]; duplicate {
 				continue
 			}
+			if !ruleTargetsEcosystem(candidate.Languages, c.ecosystem) {
+				continue
+			}
 			seen[candidate.Rule.ID] = struct{}{}
-			rules = append(rules, candidate)
+			rules = append(rules, *candidate)
 		}
 	}
 	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Rule.ID < rules[j].Rule.ID })

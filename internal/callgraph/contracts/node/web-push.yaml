@@ -1,0 +1,88 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "web-push"
+  coordinates:
+    - "web-push"
+  version_range: ">=3.0.0"
+  description: "web-push: Web Push protocol with VAPID, message encryption and a push-service client"
+
+# The module is a bag of functions, called through the module binding:
+#
+#     const webpush = require('web-push');
+#     const keys = webpush.generateVAPIDKeys();                     // operation
+#     webpush.setVapidDetails('mailto:ops@example.com', keys.publicKey, keys.privateKey); // config
+#     await webpush.sendNotification(subscription, payload);        // operation
+#
+# The parser keys a call on a directly required module by the package name, so
+# `webpush.sendNotification` and `const { sendNotification } = require('web-push')`
+# both reach `web-push.sendNotification`.
+#
+# Declared from web-push 3.6.7 (src/index.js, web-push-lib.js, vapid-helper.js,
+# encryption-helper.js) and checked against 3.0.0, 3.2.0 and 3.4.0. The set of
+# arities follows the optional parameters: sendNotification and
+# generateRequestDetails take (subscription[, payload[, options]]),
+# getVapidHeaders takes (audience, subject, publicKey, privateKey[,
+# contentEncoding][, expiration]) from 3.4.0 and without contentEncoding before,
+# and encrypt takes (userPublicKey, userAuth, payload[, contentEncoding]).
+#
+# generateVAPIDKeys draws a P-256 key pair (the ECDH curve prime256v1) and
+# getVapidHeaders signs an ES256 token with the VAPID private key; encrypt and
+# the encryption inside sendNotification and generateRequestDetails are
+# aes128gcm or aesgcm payload encryption. The results are plain objects.
+#
+# Deliberately NOT contracted: setGCMAPIKey, which stores a legacy API key, and
+# the constants and error class the module exports.
+contracts:
+  - method: "web-push.generateVAPIDKeys"
+    arity: 0
+    return: { type: "web-push.VapidKeys", confidence: high }
+    role: operation
+  - method: "web-push.setVapidDetails"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "web-push.getVapidHeaders"
+    arity: 4
+    return: { type: "web-push.VapidHeaders", confidence: high }
+    role: operation
+  - method: "web-push.getVapidHeaders"
+    arity: 5
+    return: { type: "web-push.VapidHeaders", confidence: high }
+    role: operation
+  - method: "web-push.getVapidHeaders"
+    arity: 6
+    return: { type: "web-push.VapidHeaders", confidence: high }
+    role: operation
+  - method: "web-push.encrypt"
+    arity: 3
+    return: { type: "web-push.EncryptionResult", confidence: high }
+    role: operation
+  - method: "web-push.encrypt"
+    arity: 4
+    return: { type: "web-push.EncryptionResult", confidence: high }
+    role: operation
+  - method: "web-push.generateRequestDetails"
+    arity: 1
+    return: { type: "web-push.RequestDetails", confidence: high }
+    role: operation
+  - method: "web-push.generateRequestDetails"
+    arity: 2
+    return: { type: "web-push.RequestDetails", confidence: high }
+    role: operation
+  - method: "web-push.generateRequestDetails"
+    arity: 3
+    return: { type: "web-push.RequestDetails", confidence: high }
+    role: operation
+  - method: "web-push.sendNotification"
+    arity: 1
+    return: { type: "web-push.SendResult", confidence: high }
+    role: operation
+  - method: "web-push.sendNotification"
+    arity: 2
+    return: { type: "web-push.SendResult", confidence: high }
+    role: operation
+  - method: "web-push.sendNotification"
+    arity: 3
+    return: { type: "web-push.SendResult", confidence: high }
+    role: operation

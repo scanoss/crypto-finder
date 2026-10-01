@@ -1,0 +1,222 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: blst
+  coordinates:
+    - supranational/blst
+  version_range: ">=0.3.10,<0.4.0"
+  description: "blst BLS12-381 signature and pairing C API"
+
+# Inventory sources: bindings/blst.h and bindings/blst_aux.h from the upstream tag
+# archives v0.3.10 and v0.3.16. No contracted function changes arity between
+# them; blst_miller_loop_n arrived after v0.3.10.
+#
+# blst writes every result through its first argument (the secret key, the
+# point, the signature, the pairing context), so the C receiver binding groups a
+# lifecycle around that object. Converting a point to or from its affine or
+# serialized form produces a new object from another, like a parse, so the
+# to_affine, from_affine, uncompress and deserialize calls are factories of the
+# object they write; compress and serialize write bytes out and are outputs.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: the blst_fp/fr/fp2/fp6/fp12 field arithmetic, the
+#   blst_p1/p2 add, double, mult, negate, on_curve, in_g1/g2, is_inf and
+#   is_equal helpers, blst_scalar_* conversions, blst_pairing_sizeof and the
+#   pairing getters, the blst_uint* helpers.
+# needs-follow-up: the multi-scalar multiplication (blst_p1s_*, blst_p2s_*) and
+#   aggregate-in-group helpers (blst_aggregate_in_g1/g2).
+contracts:
+
+  # Secret key generation and EIP-2333 derivation.
+  - method: blst_keygen
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_keygen_v3
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_keygen_v4_5
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_keygen_v5
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_derive_master_eip2333
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_derive_child_eip2333
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_sk_to_pk_in_g1
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_sk_to_pk_in_g2
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # Hash or encode a message to a group.
+  - method: blst_hash_to_g1
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_hash_to_g2
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_encode_to_g1
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_encode_to_g2
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # Signing and single-signature verification.
+  - method: blst_sign_pk_in_g1
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_sign_pk_in_g2
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_core_verify_pk_in_g1
+    arity: 9
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst_core_verify_pk_in_g2
+    arity: 9
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+
+  # Pairing primitives.
+  - method: blst_miller_loop
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_miller_loop_n
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_miller_loop_lines
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_final_exp
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_fp12_finalverify
+    arity: 2
+    return: {type: "bool", confidence: high}
+    role: operation
+
+  # Pairing context: init configures a caller-allocated context.
+  - method: blst_pairing_init
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+  - method: blst_pairing_aggregate_pk_in_g1
+    arity: 7
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst_pairing_aggregate_pk_in_g2
+    arity: 7
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst_pairing_mul_n_aggregate_pk_in_g1
+    arity: 9
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst_pairing_mul_n_aggregate_pk_in_g2
+    arity: 9
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst_pairing_commit
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blst_pairing_merge
+    arity: 2
+    return: {type: "BLST_ERROR", confidence: high}
+    role: operation
+  - method: blst_pairing_finalverify
+    arity: 2
+    return: {type: "bool", confidence: high}
+    role: operation
+
+  # Point conversion: the written point is a new object.
+  - method: blst_p1_to_affine
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: blst_p2_to_affine
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: blst_p1_from_affine
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: blst_p2_from_affine
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: blst_p1_uncompress
+    arity: 2
+    return: {type: "BLST_ERROR", confidence: high}
+    role: factory
+  - method: blst_p2_uncompress
+    arity: 2
+    return: {type: "BLST_ERROR", confidence: high}
+    role: factory
+  - method: blst_p1_deserialize
+    arity: 2
+    return: {type: "BLST_ERROR", confidence: high}
+    role: factory
+  - method: blst_p2_deserialize
+    arity: 2
+    return: {type: "BLST_ERROR", confidence: high}
+    role: factory
+
+  # Point encoding.
+  - method: blst_p1_compress
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst_p2_compress
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst_p1_affine_compress
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst_p2_affine_compress
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst_p1_serialize
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst_p2_serialize
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst_p1_affine_serialize
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: output
+  - method: blst_p2_affine_serialize
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: output
