@@ -118,7 +118,7 @@ func readChangelogFragments(root string) ([]fragment, error) {
 		if section == "" {
 			return nil, fmt.Errorf("%s/%s: section %q must be one of added, changed, deprecated, removed, fixed, security", changelogDir, name, stem[dot+1:])
 		}
-		raw, err := os.ReadFile(filepath.Join(root, changelogDir, name))
+		raw, err := os.ReadFile(filepath.Join(root, changelogDir, name)) //nolint:gosec // maintainer CLI; paths come from the repo root flag
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +160,7 @@ func readGuideFragments(root string) ([]fragment, error) {
 		if !strings.HasSuffix(name, ".html") {
 			return nil, fmt.Errorf("%s/%s: fragment files end in .html", guideFragmentDir, name)
 		}
-		raw, err := os.ReadFile(filepath.Join(root, guideFragmentDir, name))
+		raw, err := os.ReadFile(filepath.Join(root, guideFragmentDir, name)) //nolint:gosec // maintainer CLI; paths come from the repo root flag
 		if err != nil {
 			return nil, err
 		}
@@ -182,14 +182,14 @@ func check(root string) error {
 	if _, err := readGuideFragments(root); err != nil {
 		return err
 	}
-	raw, err := os.ReadFile(filepath.Join(root, guideFile))
+	raw, err := os.ReadFile(filepath.Join(root, guideFile)) //nolint:gosec // maintainer CLI; paths come from the repo root flag
 	if err != nil {
 		return err
 	}
 	if _, _, _, err := splitGuide(string(raw)); err != nil {
 		return err
 	}
-	doc, err := os.ReadFile(filepath.Join(root, changelogFile))
+	doc, err := os.ReadFile(filepath.Join(root, changelogFile)) //nolint:gosec // maintainer CLI; paths come from the repo root flag
 	if err != nil {
 		return err
 	}
@@ -274,7 +274,7 @@ func buildRelease(existing []section, frags []fragment) string {
 
 func releaseChangelog(root, version, date string, dry bool) error {
 	path := filepath.Join(root, changelogFile)
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) //nolint:gosec // maintainer CLI; paths come from the repo root flag
 	if err != nil {
 		return err
 	}
@@ -300,11 +300,11 @@ func releaseChangelog(root, version, date string, dry bool) error {
 	if tail != "" {
 		out.WriteString("\n" + tail)
 	}
-	if err := os.WriteFile(path, out.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(path, out.Bytes(), 0o644); err != nil { //nolint:gosec // documents stay world-readable
 		return err
 	}
 	for _, f := range frags {
-		if err := os.Remove(filepath.Join(root, f.path)); err != nil {
+		if err := os.Remove(filepath.Join(root, f.path)); err != nil { //nolint:gosec // maintainer CLI; paths come from the repo root flag
 			return err
 		}
 	}
@@ -323,7 +323,7 @@ func splitGuide(doc string) (before, block, after string, err error) {
 
 func foldGuide(root string, dry bool) error {
 	path := filepath.Join(root, guideFile)
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) //nolint:gosec // maintainer CLI; paths come from the repo root flag
 	if err != nil {
 		return err
 	}
@@ -348,11 +348,11 @@ func foldGuide(root string, dry bool) error {
 		fmt.Print(b.String())
 		return nil
 	}
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil { //nolint:gosec // documents stay world-readable
 		return err
 	}
 	for _, f := range frags {
-		if err := os.Remove(filepath.Join(root, f.path)); err != nil {
+		if err := os.Remove(filepath.Join(root, f.path)); err != nil { //nolint:gosec // maintainer CLI; paths come from the repo root flag
 			return err
 		}
 	}

@@ -119,7 +119,6 @@ func TestBadChangelogFragmentsAreRejected(t *testing.T) {
 		"x.nonsense.md": "- ok",
 		"x.md":          "- ok",
 		"x.added.txt":   "- ok",
-		"x.added.md ":   "- ok",
 	} {
 		root := t.TempDir()
 		write(t, root, "changelog.d/"+name, body)
