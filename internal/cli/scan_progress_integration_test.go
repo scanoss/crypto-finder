@@ -587,6 +587,62 @@ func TestScanProgressReportsEveryPassBeforeOutput(t *testing.T) {
 	}
 }
 
+// A rule that times out leaves its file's findings out. The scan still
+// succeeds, and the progress stream counts the cut-short files of the
+// primary scan and the dependencies whose scan was cut short.
+func TestScanProgressCountsScansCutShortByTimeouts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires a compiled CLI and external scanner process")
+	}
+
+	dir := t.TempDir()
+	root := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeNodeDependencyFixture(t, dir, root)
+	timedOut := filepath.Join(root, "node_modules", "dep", "index.js")
+	results, err := json.Marshal(map[string]any{
+		"results": []any{},
+		"errors": []map[string]any{{
+			"code": 2, "level": "warn", "type": "Timeout", "rule_id": "fixture",
+			"message": "Timeout when running fixture on " + timedOut + ":\n ", "path": timedOut,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "opengrep.json"), string(results))
+	writeProgressOpenGrepWithResults(t, filepath.Join(dir, "opengrep"), filepath.Join(dir, "opengrep.json"))
+	binary := buildProgressCryptoFinder(t)
+
+	cmd := exec.CommandContext(t.Context(), binary, "scan", "--progress", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), "--scan-dependencies", "--output", filepath.Join(dir, "findings.json"), root)
+	cmd.Env = progressTestEnv(dir)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("a scan with timed-out files exited non-zero: %v\nstderr:\n%s", err, stderr.String())
+	}
+
+	progressTransitions(t, stderr.String())
+	details := map[string]map[string]any{}
+	for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+		var event map[string]any
+		if json.Unmarshal([]byte(line), &event) != nil || event["event"] != "scan_progress" {
+			continue
+		}
+		if counts, ok := event["details"].(map[string]any); ok {
+			details[event["phase"].(string)] = counts
+		}
+	}
+	if got := details["detection"]["files_incomplete"]; got != float64(1) {
+		t.Errorf("detection files_incomplete = %v, want 1: %v", got, details["detection"])
+	}
+	if got := details["dependencies"]["deps_incomplete"]; got != float64(1) {
+		t.Errorf("dependencies deps_incomplete = %v, want 1: %v", got, details["dependencies"])
+	}
+}
+
 // A pass that fails closes as failed, and the scan after it, before the
 // structured error payload.
 func TestScanProgressFailedPassClosesScanAsFailed(t *testing.T) {

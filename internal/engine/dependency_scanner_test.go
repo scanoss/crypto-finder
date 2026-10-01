@@ -828,6 +828,118 @@ func TestDependencyScanner_FindingsCacheKeyIgnoresJobs(t *testing.T) {
 	}
 }
 
+type storingFindingsCache struct {
+	mu      sync.Mutex
+	entries map[string]*entities.InterimReport
+}
+
+func (c *storingFindingsCache) Get(_ context.Context, key string) (*entities.InterimReport, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	report, ok := c.entries[key]
+	return report, ok, nil
+}
+
+func (c *storingFindingsCache) Put(_ context.Context, key string, report *entities.InterimReport) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[key] = report
+	return nil
+}
+
+// How soon a rule times out on a file depends on host load, and the file's
+// findings are lost when it does. Such a dependency keeps what it found, is
+// counted as incomplete, and is never cached, so the next scan retries it.
+func TestDependencyScanner_IncompleteDependencyIsCountedAndNeverCached(t *testing.T) {
+	previous := log.Logger
+	t.Cleanup(func() { log.Logger = previous })
+	var logs bytes.Buffer
+	log.Logger = zerolog.New(zerolog.SyncWriter(&logs))
+
+	dir := t.TempDir()
+	rule := filepath.Join(dir, "rule.yaml")
+	if err := os.WriteFile(rule, []byte("rules:\n- id: fixture\n  languages: [go]\n  pattern: $X\n  message: fixture\n  severity: WARNING\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	slow, fast := filepath.Join(dir, "slow"), filepath.Join(dir, "fast")
+	var mu sync.Mutex
+	scans := map[string]int{}
+	var ruleTimeouts []uint8
+	registry := scanner.NewRegistry()
+	registry.Register("test-scanner", &mockScanner{
+		getInfoFunc: func() scanner.Info { return scanner.Info{Name: "test-scanner", Version: "1"} },
+		initializeFunc: func(_ context.Context, config scanner.Config) error {
+			mu.Lock()
+			defer mu.Unlock()
+			ruleTimeouts = append(ruleTimeouts, config.RuleTimeoutSeconds)
+			return nil
+		},
+		scanFunc: func(_ context.Context, target string, _ []string, info entities.ToolInfo) (*entities.InterimReport, error) {
+			mu.Lock()
+			scans[target]++
+			mu.Unlock()
+			report := &entities.InterimReport{Version: "1.0", Tool: info, Findings: []entities.Finding{{
+				FilePath:            filepath.Join(target, "found.go"),
+				CryptographicAssets: []entities.CryptographicAsset{{StartLine: 1, EndLine: 1, Metadata: map[string]string{"assetType": "algorithm"}}},
+			}}}
+			if target == slow {
+				report.IncompleteFiles = []string{filepath.Join(slow, "bundle.go")}
+			}
+			return report, nil
+		},
+	})
+	orch := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) { return []string{rule}, nil }}), registry)
+	resolver := &fakeResolver{ecosystem: "go", resolveFn: func(context.Context, string) (*dependency.ResolveResult, error) {
+		return &dependency.ResolveResult{RootModule: "app", Dependencies: []dependency.Dependency{
+			{Module: "example.com/slow", Version: "1", Dir: slow},
+			{Module: "example.com/fast", Version: "1", Dir: fast},
+		}}, nil
+	}}
+	cache := &storingFindingsCache{entries: map[string]*entities.InterimReport{}}
+	ds := NewDependencyScanner(orch, resolver, callgraph.NewBuilder(noopCallgraphParser{}), cache)
+	run := func() map[string]any {
+		t.Helper()
+		result, err := ds.ScanWithDependencies(t.Context(), &entities.InterimReport{}, DepScanOptions{Workers: 2, ScanOptions: ScanOptions{Target: dir, ScannerName: "test-scanner"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.ProgressDetails()
+	}
+
+	details := run()
+	want := map[string]any{"deps_scanned": 2, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 1, "deps_with_findings": 2, "total_dep_findings": 2}
+	if !reflect.DeepEqual(details, want) {
+		t.Errorf("progress details = %v, want %v", details, want)
+	}
+	if len(cache.entries) != 1 {
+		t.Fatalf("cached %d dependency reports, want 1: only the complete dependency", len(cache.entries))
+	}
+	for _, report := range cache.entries {
+		if got := report.Findings[0].FilePath; got != filepath.Join(fast, "found.go") {
+			t.Fatalf("cached report holds %s, want the complete dependency's finding", got)
+		}
+	}
+	var warnings []string
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+		if strings.Contains(line, `"level":"warn"`) {
+			warnings = append(warnings, line)
+		}
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "example.com/slow") || !strings.Contains(warnings[0], filepath.Join(slow, "bundle.go")) {
+		t.Fatalf("want one warning naming example.com/slow and its incomplete file, got:\n%s", strings.Join(warnings, "\n"))
+	}
+
+	run()
+	if scans[fast] != 1 || scans[slow] != 2 {
+		t.Fatalf("second scan: fast scanned %d times, slow %d times; want the complete dependency read from the cache and the incomplete one rescanned", scans[fast], scans[slow])
+	}
+	for _, seconds := range ruleTimeouts {
+		if seconds != 30 {
+			t.Fatalf("dependency scans ran with rule timeouts %v, want 30 s each", ruleTimeouts)
+		}
+	}
+}
+
 func TestDependencyScanner_ScanDependenciesParallel(t *testing.T) {
 	var scanCalls atomic.Int32
 	var sawEmptyTarget atomic.Bool

@@ -35,6 +35,12 @@ const maxWorkers = 8
 
 const npmEcosystem = "node"
 
+// dependencyRuleTimeoutSeconds replaces OpenGrep's 5 s limit per rule and
+// file, which also bounds parsing the file. Parsing a 750 KB bundle takes 2
+// to 3 s on an idle host and took 7 times as long with 8 scans
+// oversubscribing 32 threads, so the default dropped the whole file.
+const dependencyRuleTimeoutSeconds = 30
+
 const (
 	findingSourceDependency = "dependency"
 	findingSourceDirect     = "direct"
@@ -105,13 +111,14 @@ type DepScanResult struct {
 func (r *DepScanResult) ProgressDetails() map[string]any {
 	if r == nil {
 		return map[string]any{
-			"deps_scanned": 0, "deps_skipped": 0, "deps_failed": 0, "deps_with_findings": 0, "total_dep_findings": 0,
+			"deps_scanned": 0, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 0, "deps_with_findings": 0, "total_dep_findings": 0,
 		}
 	}
 	return map[string]any{
 		"deps_scanned":       r.summary.depsScanned,
 		"deps_skipped":       r.summary.depsSkippedSource,
 		"deps_failed":        r.summary.depsFailed,
+		"deps_incomplete":    r.summary.depsIncomplete,
 		"deps_with_findings": r.summary.depsWithFindings,
 		"total_dep_findings": r.summary.totalDepFindings,
 	}
@@ -132,7 +139,10 @@ type depScanResult struct {
 	dep    dependency.Dependency
 	report *entities.InterimReport
 	status depScanStatus
-	err    error
+	// incomplete marks a scanned dependency whose scan a time or memory
+	// limit cut short. Its report holds only what was found before.
+	incomplete bool
+	err        error
 }
 
 // ScanWithDependencies performs the full dependency scanning pipeline:
@@ -349,7 +359,7 @@ func (ds *DependencyScanner) reportProgress(opts DepScanOptions, status string, 
 	if opts.ScanOptions.Progress == nil {
 		return nil
 	}
-	if err := opts.ScanOptions.Progress("callgraph", status, cause); err != nil {
+	if err := opts.ScanOptions.Progress("callgraph", status, cause, nil); err != nil {
 		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write scan progress")
 	}
 	return nil
@@ -361,6 +371,7 @@ type dependencyScanSummary struct {
 	depsScanned       int
 	depsSkippedSource int
 	depsFailed        int
+	depsIncomplete    int
 }
 
 func summarizeDependencyResults(depResults []depScanResult) dependencyScanSummary {
@@ -374,6 +385,9 @@ func summarizeDependencyResults(depResults []depScanResult) dependencyScanSummar
 			summary.depsSkippedSource++
 		case depScanStatusFailed:
 			summary.depsFailed++
+		}
+		if result.incomplete {
+			summary.depsIncomplete++
 		}
 		if result.report != nil && hasFindings(result.report) {
 			summary.depsWithFindings++
@@ -394,6 +408,7 @@ func logDependencyScanSummary(summary dependencyScanSummary) {
 		Int("depsScanned", summary.depsScanned).
 		Int("depsSkippedNoSource", summary.depsSkippedSource).
 		Int("depsFailed", summary.depsFailed).
+		Int("depsIncomplete", summary.depsIncomplete).
 		Int("depsWithFindings", summary.depsWithFindings).
 		Int("totalDepFindings", summary.totalDepFindings).
 		Msg("Dependency scanning complete")
@@ -650,20 +665,39 @@ func (ds *DependencyScanner) scanSingleDep(
 		Str("version", dep.Version).
 		Msg("Scanned dependency")
 
-	// Store in cache on success
-	if err == nil && cacheKey != "" {
+	incomplete := false
+	if err == nil {
+		incomplete = !ds.cacheIfComplete(ctx, &dep, cacheKey, report)
+	}
+
+	return depScanResult{
+		key:        key,
+		dep:        dep,
+		report:     dependencyReportWithFindings(report),
+		status:     scanStatusForError(err),
+		incomplete: incomplete,
+		err:        err,
+	}
+}
+
+// cacheIfComplete stores a dependency's report under cacheKey, when caching
+// is on, unless a time or memory limit cut the scan short. It reports whether
+// the scan was complete and warns, naming the files, when it was not.
+func (ds *DependencyScanner) cacheIfComplete(ctx context.Context, dep *dependency.Dependency, cacheKey string, report *entities.InterimReport) bool {
+	if len(report.IncompleteFiles) > 0 {
+		log.Warn().
+			Str("module", dep.Module).
+			Str("version", dep.Version).
+			Strs("files", report.IncompleteFiles).
+			Msg("Dependency scan stopped at a time or memory limit in these files; its findings may be incomplete and are not cached")
+		return false
+	}
+	if cacheKey != "" {
 		if putErr := ds.findingsCache.Put(ctx, cacheKey, report); putErr != nil {
 			log.Warn().Err(putErr).Str("module", dep.Module).Msg("Failed to cache scan result")
 		}
 	}
-
-	return depScanResult{
-		key:    key,
-		dep:    dep,
-		report: dependencyReportWithFindings(report),
-		status: scanStatusForError(err),
-		err:    err,
-	}
+	return true
 }
 
 func dependencyReportWithFindings(report *entities.InterimReport) *entities.InterimReport {
@@ -694,6 +728,7 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	// skip patterns should not hide dependency source files.
 	depOpts.ScannerConfig.SkipPatterns = skip.OnlyDefaultTestPatterns(depOpts.ScannerConfig.SkipPatterns)
 	depOpts.ScannerConfig.IncludeGitIgnored = true
+	depOpts.ScannerConfig.RuleTimeoutSeconds = dependencyRuleTimeoutSeconds
 	if ds.resolver.Ecosystem() == npmEcosystem {
 		// Anchor below this artifact, not every node_modules ancestor: the
 		// dependency target itself usually lives inside node_modules.

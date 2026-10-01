@@ -53,9 +53,10 @@ func TransformSemgrepCompatibleOutputToInterimFormat(semgrepOutput *entities.Sem
 
 	// Create interim report
 	report := &entities.InterimReport{
-		Version:  "1.1", // Updated to v1.1 to support multiple rules per asset
-		Tool:     toolInfo,
-		Findings: findings,
+		Version:         "1.1", // Updated to v1.1 to support multiple rules per asset
+		Tool:            toolInfo,
+		Findings:        findings,
+		IncompleteFiles: incompleteFiles(semgrepOutput.Errors, target),
 	}
 
 	// Deduplicate findings at the same location before returning (unless disabled)

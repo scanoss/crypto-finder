@@ -130,12 +130,19 @@ type Config struct {
 	// Only supported by the Semgrep scanner.
 	Interfile bool
 
+	// RuleTimeoutSeconds caps the time the scanner spends running one rule
+	// on one file. Zero keeps the scanner's own default, 5 s for OpenGrep.
+	// Dependency scans raise it, because a loaded host makes the default
+	// fire and the file's findings are lost. Only the OpenGrep adapter
+	// applies it, and a timeout flag in ExtraArgs takes precedence.
+	RuleTimeoutSeconds uint8
+
 	// Jobs caps the analysis jobs one scan runs in parallel. Zero keeps the
 	// scanner's own default, which claims every core it detects. Dependency
 	// scans set it so concurrent scans share the cores. Only the OpenGrep
 	// adapter applies it, and a jobs flag in ExtraArgs takes precedence.
-	// An int32 after the flags fits their padding, so scan options stay
-	// under the by-value size limit the linter enforces.
+	// The small fields after the flags fit the flags' padding, so scan
+	// options stay under the by-value size limit the linter enforces.
 	Jobs int32
 }
 

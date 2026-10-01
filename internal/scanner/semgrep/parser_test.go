@@ -19,6 +19,9 @@ package semgrep
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -266,5 +269,63 @@ func TestHandleSemgrepCompatibleErrors_ExitCodeMeaning(t *testing.T) {
 	}
 	if f.Details["stderr"] != "banner noise" {
 		t.Errorf("expected stderr detail, got %q", f.Details["stderr"])
+	}
+}
+
+// testdata/opengrep-limit-errors.json is OpenGrep 1.29.0 output for
+// @arkade-os/sdk scanned with --timeout 1 (paths shortened, results trimmed).
+// One rule timed out on chunk-ZPL34T2Q.cjs, the same timer interrupted the
+// parse of chunk-QO3IKBYL.js, and index.d.ts has a syntax error that no limit
+// causes. With --timeout 3 the first two files report no error.
+func TestTransform_ListsFilesCutShortByScannerLimits(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "opengrep-limit-errors.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := ParseSemgrepCompatibleOutput(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report := TransformSemgrepCompatibleOutputToInterimFormat(output, entities.ToolInfo{}, "/deps/@arkade-os/sdk", []string{"/rules"}, false)
+
+	want := []string{"/deps/@arkade-os/sdk/dist/chunk-QO3IKBYL.js", "/deps/@arkade-os/sdk/dist/chunk-ZPL34T2Q.cjs"}
+	if !reflect.DeepEqual(report.IncompleteFiles, want) {
+		t.Fatalf("incomplete files = %q, want %q", report.IncompleteFiles, want)
+	}
+	if len(report.Findings) == 0 {
+		t.Fatal("results reported next to the limit errors were dropped")
+	}
+}
+
+func TestTransform_IncompleteFilesCountEachFileOnce(t *testing.T) {
+	output := &entities.SemgrepOutput{Errors: []entities.SemgrepError{
+		{Type: "Timeout", Level: "warn", Path: "/dep/big.js"},
+		{Type: "Timeout", Level: "warn", Path: "/dep/big.js"},
+		{Type: "Out of memory", Level: "error", Path: "/dep/huge.js"},
+		{Type: "Syntax error", Level: "warn", Path: "/dep/broken.js"},
+		{Type: []any{"PartialParsing", []any{}}, Level: "warn", Path: "/dep/partial.ts"},
+		// A limit without a file still leaves the scan incomplete.
+		{Type: "Out of memory", Level: "error"},
+	}}
+
+	report := TransformSemgrepCompatibleOutputToInterimFormat(output, entities.ToolInfo{}, "/dep", nil, false)
+
+	want := []string{"/dep", "/dep/big.js", "/dep/huge.js"}
+	if !reflect.DeepEqual(report.IncompleteFiles, want) {
+		t.Fatalf("incomplete files = %q, want %q", report.IncompleteFiles, want)
+	}
+}
+
+func TestTransform_DeterministicErrorsLeaveTheScanComplete(t *testing.T) {
+	output := &entities.SemgrepOutput{Errors: []entities.SemgrepError{
+		{Type: "Syntax error", Level: "warn", Path: "/dep/broken.js"},
+		{Type: "Other syntax error", Level: "warn", Path: "/dep/odd.js", Message: "Other syntax error at line /dep/odd.js:3:\n unexpected token"},
+	}}
+
+	report := TransformSemgrepCompatibleOutputToInterimFormat(output, entities.ToolInfo{}, "/dep", nil, false)
+
+	if report.IncompleteFiles != nil {
+		t.Fatalf("incomplete files = %q, want none", report.IncompleteFiles)
 	}
 }

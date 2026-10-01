@@ -70,6 +70,7 @@ type Scanner struct {
 	skipPatterns      []string
 	includeGitIgnored bool
 	jobs              int32
+	ruleTimeout       uint8
 	disableDedup      bool
 	discovery         *discoveryCache
 	helpDiscovery     *discoveryCache
@@ -153,6 +154,7 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	}
 	s.includeGitIgnored = config.IncludeGitIgnored
 	s.jobs = config.Jobs
+	s.ruleTimeout = config.RuleTimeoutSeconds
 	s.disableDedup = config.DisableDedup
 
 	return nil
@@ -304,8 +306,11 @@ func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string,
 	if s.includeGitIgnored {
 		args = append(args, "--no-git-ignore")
 	}
-	if s.jobs > 0 && !setsJobs(s.extraArgs) {
+	if s.jobs > 0 && !setsOption(s.extraArgs, "--jobs", "-j") {
 		args = append(args, "--jobs", strconv.FormatInt(int64(s.jobs), 10))
+	}
+	if s.ruleTimeout > 0 && !setsOption(s.extraArgs, "--timeout", "") {
+		args = append(args, "--timeout", strconv.Itoa(int(s.ruleTimeout)))
 	}
 
 	for _, rulePath := range rulePaths {
@@ -325,11 +330,12 @@ func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string,
 	return args
 }
 
-// setsJobs reports whether args already choose the job count. OpenGrep
-// rejects a repeated --jobs, and the certification profile passes its own.
-func setsJobs(args []string) bool {
+// setsOption reports whether args already set the long option or its short
+// form. OpenGrep rejects a repeated --jobs or --timeout, and the
+// certification profile passes its own --jobs.
+func setsOption(args []string, long, short string) bool {
 	return slices.ContainsFunc(args, func(arg string) bool {
-		return arg == "--jobs" || strings.HasPrefix(arg, "--jobs=") || strings.HasPrefix(arg, "-j")
+		return arg == long || strings.HasPrefix(arg, long+"=") || (short != "" && strings.HasPrefix(arg, short))
 	})
 }
 

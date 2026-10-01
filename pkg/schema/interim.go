@@ -47,6 +47,12 @@ type InterimReport struct {
 
 	// Findings contains all detected cryptographic assets grouped by file
 	Findings []Finding `json:"findings"`
+
+	// IncompleteFiles lists, sorted and without repeats, the files whose
+	// analysis the scanner cut short at a time or memory limit, so findings
+	// in them may be missing. How soon a limit fires depends on how loaded
+	// the host is. It is scan state, not part of the public report schema.
+	IncompleteFiles []string `json:"-"`
 }
 
 // ToolInfo contains metadata about the scanner that produced the report.

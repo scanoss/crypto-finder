@@ -1469,7 +1469,7 @@ func runScanPhase(progress *scanutil.ProgressWriter, phase, parent string, run f
 }
 
 func newProgressReporter(progress *scanutil.ProgressWriter, callgraphParent string) engine.ProgressReporter {
-	return func(phase, status string, cause error) error {
+	return func(phase, status string, cause error, details map[string]any) error {
 		parent := "scan"
 		if phase == "callgraph" {
 			parent = callgraphParent
@@ -1478,7 +1478,7 @@ func newProgressReporter(progress *scanutil.ProgressWriter, callgraphParent stri
 		case "started":
 			return progress.Start(phase, parent)
 		case "completed":
-			return progress.Complete(phase, parent, nil)
+			return progress.Complete(phase, parent, details)
 		case "failed":
 			if isScanCanceled(cause) {
 				return progress.Cancel(phase, parent, nil)

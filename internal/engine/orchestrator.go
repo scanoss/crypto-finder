@@ -90,7 +90,7 @@ type ScanOptions struct {
 }
 
 // ProgressReporter receives a lifecycle transition for a scan phase.
-type ProgressReporter func(phase, status string, cause error) error
+type ProgressReporter func(phase, status string, cause error, details map[string]any) error
 
 const (
 	progressPhaseRules     = "rules"
@@ -112,30 +112,41 @@ const (
 //
 // Returns the final interim report or an error if any step fails.
 func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
-	return o.scan(ctx, opts, nil, nil, nil)
+	return o.ScanScoped(ctx, opts, nil)
 }
 
 // ScanScoped is Scan with detection limited to scope's files under
 // opts.Target. A nil scope scans the whole target. The scanner must implement
 // scanner.ScopedScanner.
 func (o *Orchestrator) ScanScoped(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope) (*entities.InterimReport, error) {
-	return o.scan(ctx, opts, scope, nil, nil)
+	report, err := o.scan(ctx, opts, scope, nil, nil)
+	// Dependency scans call scan directly and warn with the dependency's identity.
+	if err == nil && len(report.IncompleteFiles) > 0 {
+		log.Warn().
+			Str("target", opts.Target).
+			Strs("files", report.IncompleteFiles).
+			Msg("Scan stopped at a time or memory limit in these files; their findings may be incomplete")
+	}
+	return report, err
 }
 
 //nolint:gocognit // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
 func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) (result *entities.InterimReport, err error) {
 	if opts.Progress != nil && !opts.ProgressDetectionStarted {
-		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); progressErr != nil {
+		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil, nil); progressErr != nil {
 			return nil, progressErr
 		}
 	}
 	if opts.Progress != nil {
 		defer func() {
 			status := progressStatusComplete
+			var details map[string]any
 			if err != nil {
 				status = progressStatusFailed
+			} else {
+				details = map[string]any{"files_incomplete": len(result.IncompleteFiles)}
 			}
-			if progressErr := o.reportProgress(opts, progressPhaseDetection, status, err); progressErr != nil {
+			if progressErr := o.reportProgress(opts, progressPhaseDetection, status, err, details); progressErr != nil {
 				result = nil
 				err = progressErr
 			}
@@ -271,7 +282,7 @@ func (o *Orchestrator) initializeScanner(ctx context.Context, opts ScanOptions) 
 }
 
 func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func(), validator *rules.ParameterConditionValidator) (err error) {
-	if progressErr := o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil); progressErr != nil {
+	if progressErr := o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil, nil); progressErr != nil {
 		return progressErr
 	}
 	defer func() {
@@ -279,7 +290,7 @@ func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths
 		if err != nil {
 			status = progressStatusFailed
 		}
-		if progressErr := o.reportProgress(opts, progressPhaseRules, status, err); progressErr != nil {
+		if progressErr := o.reportProgress(opts, progressPhaseRules, status, err, nil); progressErr != nil {
 			err = progressErr
 		}
 	}()
@@ -313,11 +324,11 @@ func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths
 	return nil
 }
 
-func (o *Orchestrator) reportProgress(opts ScanOptions, phase, status string, cause error) error {
+func (o *Orchestrator) reportProgress(opts ScanOptions, phase, status string, cause error, details map[string]any) error {
 	if opts.Progress == nil {
 		return nil
 	}
-	if err := opts.Progress(phase, status, cause); err != nil {
+	if err := opts.Progress(phase, status, cause, details); err != nil {
 		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write scan progress")
 	}
 	return nil

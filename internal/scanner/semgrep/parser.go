@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -84,6 +85,32 @@ func getErrorType(typeField any) string {
 	}
 
 	return ""
+}
+
+// limitErrorTypes are the error types reported when a rule ran out of time
+// or memory on a file. A loaded host reaches them sooner, unlike syntax errors.
+var limitErrorTypes = map[string]bool{"Timeout": true, "Out of memory": true}
+
+// limitInterruption marks a parse that a time or memory limit stopped. The
+// scanner reports that parse as a syntax error naming this exception.
+const limitInterruption = "Memprof_limits.Limit_reached"
+
+// incompleteFiles returns the sorted, distinct files whose analysis a time
+// or memory limit cut short. An error that names no file stands for target.
+func incompleteFiles(errs []entities.SemgrepError, target string) []string {
+	var files []string
+	for _, e := range errs {
+		if !limitErrorTypes[getErrorType(e.Type)] && !strings.Contains(e.Message, limitInterruption) {
+			continue
+		}
+		file := e.Path
+		if file == "" {
+			file = target
+		}
+		files = append(files, file)
+	}
+	slices.Sort(files)
+	return slices.Compact(files)
 }
 
 // LogSemgrepCompatibleErrors displays opengrep errors in a user-friendly format.

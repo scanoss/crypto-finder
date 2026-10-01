@@ -510,6 +510,56 @@ func TestBuildCommand_JobsComposeWithExtraArgs(t *testing.T) {
 	}
 }
 
+func TestBuildCommand_RuleTimeoutComposesWithExtraArgs(t *testing.T) {
+	originalLookPath, originalCommandOutput := lookPath, commandOutput
+	defer func() { lookPath, commandOutput = originalLookPath, originalCommandOutput }()
+	lookPath = func(string) (string, error) { return "/usr/local/bin/opengrep", nil }
+	commandOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "--version" {
+			return []byte("1.29.0"), nil
+		}
+		return []byte("--x-ignore-semgrepignore-files"), nil
+	}
+
+	for _, tt := range []struct {
+		name    string
+		seconds uint8
+		extra   []string
+		want    []string
+	}{
+		{name: "zero keeps the OpenGrep default"},
+		{name: "positive sets the per-file rule timeout", seconds: 30, want: []string{"--timeout", "30"}},
+		// OpenGrep exits 2 on a repeated --timeout, so explicit arguments win.
+		{name: "explicit timeout wins", seconds: 30, extra: []string{"--timeout", "10"}, want: []string{"--timeout", "10"}},
+		{name: "equals form", seconds: 30, extra: []string{"--timeout=10"}, want: []string{"--timeout=10"}},
+		{name: "threshold is a different option", seconds: 30, extra: []string{"--timeout-threshold", "5"}, want: []string{"--timeout", "30"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewScanner()
+			if err := s.Initialize(context.Background(), scanner.Config{RuleTimeoutSeconds: tt.seconds, ExtraArgs: tt.extra}); err != nil {
+				t.Fatal(err)
+			}
+			args := s.buildCommand(context.Background(), []string{"/deps/eta"}, []string{"/rules/node.yaml"}, false)
+			if got := timeoutArgs(args); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("timeout arguments = %v, want %v in argv %v", got, tt.want, args)
+			}
+		})
+	}
+}
+
+func timeoutArgs(args []string) []string {
+	var got []string
+	for i, arg := range args {
+		switch {
+		case arg == "--timeout":
+			got = append(got, args[i:min(i+2, len(args))]...)
+		case strings.HasPrefix(arg, "--timeout="):
+			got = append(got, arg)
+		}
+	}
+	return got
+}
+
 func jobsArgs(args []string) []string {
 	var got []string
 	for i, arg := range args {
