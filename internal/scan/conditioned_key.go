@@ -119,3 +119,37 @@ func goPackageClauseNames(graph *callgraph.CallGraph) map[string][]string {
 	}
 	return out
 }
+
+// ecosystemRuleLanguages lists the semgrep languages whose rules apply to a
+// call graph of each ecosystem. A C graph also holds C++ sources when headers
+// are shared.
+var ecosystemRuleLanguages = map[string][]string{
+	ecosystemJava:   {"java", "kotlin"},
+	ecosystemPython: {"python"},
+	ecosystemNode:   {"javascript", "typescript", "js", "ts"},
+	ecosystemGo:     {"go", "golang"},
+	ecosystemRust:   {"rust"},
+	ecosystemC:      {"c", "cpp", "c++"},
+	ecosystemCPP:    {"cpp", "c++", "c"},
+}
+
+// ruleTargetsEcosystem reports whether a conditioned rule may specialize a
+// call in this ecosystem. The catalog holds every language's rules under
+// shared keys (`hash`, `new`, `Cipher`), so without this a Rust call could take
+// a Python rule's condition and metadata. A rule without languages, or a scan
+// whose ecosystem is unknown, keeps the previous behavior.
+func ruleTargetsEcosystem(ruleLanguages []string, ecosystem string) bool {
+	allowed, known := ecosystemRuleLanguages[ecosystem]
+	if !known || len(ruleLanguages) == 0 {
+		return true
+	}
+	for _, language := range ruleLanguages {
+		language = strings.ToLower(strings.TrimSpace(language))
+		for _, candidate := range allowed {
+			if language == candidate {
+				return true
+			}
+		}
+	}
+	return false
+}

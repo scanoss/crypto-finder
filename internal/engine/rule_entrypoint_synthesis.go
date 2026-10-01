@@ -577,6 +577,7 @@ type ruleFileCryptoYAML struct {
 
 type ruleCryptoYAML struct {
 	ID             string            `yaml:"id"`
+	Languages      []string          `yaml:"languages"`
 	Message        string            `yaml:"message"`
 	Severity       string            `yaml:"severity"`
 	Pattern        string            `yaml:"pattern"`
@@ -619,6 +620,9 @@ type RuleCryptoMetadata struct {
 	Metadata            map[string]string
 	ParameterConditions []paramcondition.Condition
 	CaptureNames        []string
+	// Languages are the rule's semgrep languages. Call-site specialization
+	// applies a rule only to calls in an ecosystem it targets.
+	Languages []string
 }
 
 // LoadRuleCryptoMetadata indexes conditioned crypto rules by terminal symbols
@@ -663,11 +667,12 @@ func appendRuleCryptoMetadata(out map[string][]RuleCryptoMetadata, rule *ruleCry
 	candidate := RuleCryptoMetadata{
 		Rule:     entities.RuleInfo{ID: rule.ID, Message: rule.Message, Severity: strings.ToUpper(rule.Severity)},
 		Metadata: metadata, ParameterConditions: conditions, CaptureNames: ruleCaptureNames(rule.PatternSources),
+		Languages: rule.Languages,
 	}
 	for _, entrypoint := range entrypoints {
 		duplicate := false
-		for _, existing := range out[entrypoint] {
-			if existing.Rule.ID == candidate.Rule.ID && maps.Equal(existing.Metadata, candidate.Metadata) {
+		for i := range out[entrypoint] {
+			if existing := &out[entrypoint][i]; existing.Rule.ID == candidate.Rule.ID && maps.Equal(existing.Metadata, candidate.Metadata) {
 				duplicate = true
 				break
 			}

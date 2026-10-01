@@ -44,8 +44,8 @@ func conditionedCatalogKeys(t *testing.T, body string) []string {
 	}
 	var keys []string
 	for key, rules := range LoadRuleCryptoMetadata([]string{path}) {
-		for _, r := range rules {
-			if r.Rule.ID == "test.conditioned" {
+		for i := range rules {
+			if rules[i].Rule.ID == "test.conditioned" {
 				keys = append(keys, key)
 			}
 		}

@@ -25,8 +25,8 @@ func catalogOf(graph *callgraph.CallGraph, ecosystem string, keys ...string) con
 func matchedKeys(catalog conditionedCatalog, call *callgraph.FunctionCall) []string {
 	rules := catalog.rulesForCall(call)
 	keys := make([]string, 0, len(rules))
-	for _, rule := range rules {
-		keys = append(keys, rule.Rule.ID)
+	for i := range rules {
+		keys = append(keys, rules[i].Rule.ID)
 	}
 	return keys
 }
@@ -196,5 +196,62 @@ func TestMaterializeConditionedFindings_RustQualifiedKey(t *testing.T) {
 	asset := report.Findings[0].CryptographicAssets[1]
 	if asset.Rules[0].ID != "rust.openssl.digest" || asset.Metadata["algorithmName"] != "sha256" {
 		t.Fatalf("materialized asset = %#v", asset)
+	}
+}
+
+func TestConditionedCatalog_AppliesOnlyRulesForTheScanEcosystem(t *testing.T) {
+	t.Parallel()
+
+	rule := func(id string, languages ...string) engine.RuleCryptoMetadata {
+		return engine.RuleCryptoMetadata{Rule: entities.RuleInfo{ID: id}, Languages: languages}
+	}
+	// One key, as the real catalog holds it: rules of several languages share
+	// `bcrypt.hash`, so only the language decides which applies.
+	rules := map[string][]engine.RuleCryptoMetadata{
+		"bcrypt.hash": {
+			rule("python.passlib.bcrypt", "python"),
+			rule("rust.bcrypt.hash", "rust"),
+			rule("generic.no-language"),
+		},
+	}
+	call := callgraph.FunctionCall{Callee: callgraph.FunctionID{Package: "bcrypt", Name: "hash"}}
+
+	tests := []struct {
+		ecosystem string
+		want      []string
+	}{
+		{ecosystem: ecosystemRust, want: []string{"generic.no-language", "rust.bcrypt.hash"}},
+		{ecosystem: ecosystemPython, want: []string{"generic.no-language", "python.passlib.bcrypt"}},
+		{ecosystem: "", want: []string{"generic.no-language", "python.passlib.bcrypt", "rust.bcrypt.hash"}},
+	}
+	for _, tt := range tests {
+		catalog := conditionedCatalog{rules: rules, keys: newConditionedKeyMatcher(nil, tt.ecosystem), ecosystem: tt.ecosystem}
+		if got := matchedKeys(catalog, &call); !slices.Equal(got, tt.want) {
+			t.Errorf("ecosystem %q: rules = %v, want %v", tt.ecosystem, got, tt.want)
+		}
+	}
+}
+
+func TestRuleTargetsEcosystem_MapsSemgrepLanguages(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		languages []string
+		ecosystem string
+		want      bool
+	}{
+		{[]string{"javascript", "typescript"}, ecosystemNode, true},
+		{[]string{"cpp"}, ecosystemC, true},
+		{[]string{"c"}, ecosystemCPP, true},
+		{[]string{"Java"}, ecosystemJava, true},
+		{[]string{"python"}, ecosystemJava, false},
+		{[]string{"go"}, ecosystemRust, false},
+		{nil, ecosystemRust, true},
+		{[]string{"ruby"}, "ruby", true},
+	}
+	for _, tc := range cases {
+		if got := ruleTargetsEcosystem(tc.languages, tc.ecosystem); got != tc.want {
+			t.Errorf("ruleTargetsEcosystem(%v, %q) = %v, want %v", tc.languages, tc.ecosystem, got, tc.want)
+		}
 	}
 }

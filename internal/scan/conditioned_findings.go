@@ -37,7 +37,7 @@ func MaterializeConditionedFindings(
 	if len(rules) == 0 {
 		return 0
 	}
-	catalog := conditionedCatalog{rules: rules, keys: newConditionedKeyMatcher(graph, ecosystem)}
+	catalog := conditionedCatalog{rules: rules, keys: newConditionedKeyMatcher(graph, ecosystem), ecosystem: ecosystem}
 	ctx := newExportBuildContext(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: ecosystem})
 	existing := indexExistingFindingRules(report)
 	added := 0
@@ -131,8 +131,8 @@ func appendConditionedChainAssets(
 		if len(chain) == 0 || chain[len(chain)-1].CryptoCall == nil {
 			continue
 		}
-		for _, rule := range rules {
-			if appendConditionedAsset(finding, anchor, rule, chain[len(chain)-1].CryptoCall.Parameters, seen, existing) {
+		for i := range rules {
+			if appendConditionedAsset(finding, anchor, rules[i], chain[len(chain)-1].CryptoCall.Parameters, seen, existing) {
 				added++
 			}
 		}
@@ -206,8 +206,9 @@ func conditionedAssetKey(filePath string, asset entities.CryptographicAsset, rul
 // API symbol each rule's pattern names, with the ecosystem's rules for when a
 // key names a call.
 type conditionedCatalog struct {
-	rules map[string][]engine.RuleCryptoMetadata
-	keys  conditionedKeyMatcher
+	rules     map[string][]engine.RuleCryptoMetadata
+	keys      conditionedKeyMatcher
+	ecosystem string
 }
 
 func (c conditionedCatalog) rulesForCall(call *callgraph.FunctionCall) []engine.RuleCryptoMetadata {
@@ -217,12 +218,16 @@ func (c conditionedCatalog) rulesForCall(call *callgraph.FunctionCall) []engine.
 		if !c.keys.matches(api, call) {
 			continue
 		}
-		for _, candidate := range candidates {
+		for i := range candidates {
+			candidate := &candidates[i]
 			if _, duplicate := seen[candidate.Rule.ID]; duplicate {
 				continue
 			}
+			if !ruleTargetsEcosystem(candidate.Languages, c.ecosystem) {
+				continue
+			}
 			seen[candidate.Rule.ID] = struct{}{}
-			rules = append(rules, candidate)
+			rules = append(rules, *candidate)
 		}
 	}
 	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Rule.ID < rules[j].Rule.ID })
