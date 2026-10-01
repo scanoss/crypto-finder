@@ -102,8 +102,11 @@ func synthesizeRuleCryptoEntryPoints(
 	}
 
 	declsByFQN, declsByClass := indexGraphDeclarations(graph)
-	if ecosystem == ecosystemRust {
+	switch ecosystem {
+	case ecosystemRust:
 		declsByFQN = rustDeclarationsBySynthesisKey(graph)
+	case ecosystemPython:
+		addPythonPublicPathDeclarations(graph, declsByFQN, declsByClass)
 	}
 	fileIdx := indexReportFiles(report)
 	added := synthesizeRuleCryptoAssets(report, fileIdx, apiCrypto, declsByFQN, declsByClass, ecosystem, result)
@@ -146,6 +149,38 @@ func indexGraphDeclarations(
 		}
 	}
 	return declsByFQN, declsByClass
+}
+
+// addPythonPublicPathDeclarations also indexes each Python declaration under
+// the public paths `__init__.py` re-exports give its module-level name, so
+// `jwt/api_jwt.py`'s `encode` meets a rule api written `jwt.encode`. A
+// declaration is keyed by the module that defines it, while a rule names the
+// path a consumer imports.
+func addPythonPublicPathDeclarations(graph *callgraph.CallGraph, declsByFQN, declsByClass map[string][]*callgraph.FunctionDecl) {
+	if len(graph.PythonPublicPaths) == 0 {
+		return
+	}
+	publicByDeclared := make(map[string][]string, len(graph.PythonPublicPaths))
+	for public, declared := range graph.PythonPublicPaths {
+		publicByDeclared[declared] = append(publicByDeclared[declared], public)
+	}
+	for _, fn := range graph.Functions {
+		if fn.ID.Package == "" {
+			continue
+		}
+		if fn.ID.Type == "" {
+			for _, public := range publicByDeclared[fn.ID.Package+"."+fn.ID.Name] {
+				key := baseFQN(public)
+				declsByFQN[key] = append(declsByFQN[key], fn)
+			}
+			continue
+		}
+		for _, public := range publicByDeclared[fn.ID.Package+"."+fn.ID.Type] {
+			key := baseFQN(public + "." + fn.ID.Name)
+			declsByFQN[key] = append(declsByFQN[key], fn)
+			declsByClass[public] = append(declsByClass[public], fn)
+		}
+	}
 }
 
 // rustDeclarationsBySynthesisKey indexes Rust method definitions the way
@@ -211,45 +246,9 @@ func synthesizeRuleCryptoAssets(
 		if ecosystem == ecosystemRust {
 			decls = declsByFQN[rustSynthesisKey(api)]
 		}
-		if len(decls) == 0 && ecosystem == ecosystemPython {
-			decls = pythonModuleCollapsedDecls(api, declsByFQN)
-		}
 		added += synthesizeAPIAssets(report, fileIdx, api, metas, decls, declsByClass, result)
 	}
 	return added
-}
-
-func pythonModuleCollapsedDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl) []*callgraph.FunctionDecl {
-	parts := strings.Split(api, ".")
-	if len(parts) < 3 {
-		return nil
-	}
-	for i := 1; i < len(parts)-1; i++ {
-		collapsed := make([]string, 0, len(parts)-1)
-		collapsed = append(collapsed, parts[:i]...)
-		collapsed = append(collapsed, parts[i+1:]...)
-		decls := declsByFQN[strings.Join(collapsed, ".")]
-		if len(decls) == 0 {
-			continue
-		}
-		wantFile := parts[i]
-		matched := make([]*callgraph.FunctionDecl, 0, len(decls))
-		for _, d := range decls {
-			if pythonSourceFileStem(d.FilePath) == wantFile {
-				matched = append(matched, d)
-			}
-		}
-		if len(matched) > 0 {
-			return matched
-		}
-	}
-	return nil
-}
-
-func pythonSourceFileStem(path string) string {
-	base := filepath.Base(path)
-	base = strings.TrimSuffix(base, ".pyi")
-	return strings.TrimSuffix(base, ".py")
 }
 
 func synthesizeAPIAssets(

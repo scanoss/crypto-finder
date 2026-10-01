@@ -497,13 +497,15 @@ func TestBuilder_PreservesPythonSiblingModuleFunctionsWithSameName(t *testing.T)
 	}
 
 	for _, key := range []string{
-		"nacl.pwhash.kdf",
 		"nacl.pwhash.argon2id.kdf",
 		"nacl.pwhash.scrypt.kdf",
 	} {
 		if graph.Functions[key] == nil {
 			t.Fatalf("missing function %s; functions=%v", key, sortedFunctionKeys(graph.Functions))
 		}
+	}
+	if fn := graph.Functions["nacl.pwhash.kdf"]; fn != nil {
+		t.Fatalf("nacl.pwhash.kdf is declared by neither module, got %s", fn.FilePath)
 	}
 }
 
@@ -536,8 +538,8 @@ def run(data):
     c = make_cipher()
     return c.encrypt(data)
 `
-	if err := os.WriteFile(filepath.Join(depDir, "dep.py"), []byte(depSrc), 0o600); err != nil {
-		t.Fatalf("write dep.py: %v", err)
+	if err := os.WriteFile(filepath.Join(depDir, "__init__.py"), []byte(depSrc), 0o600); err != nil {
+		t.Fatalf("write dep/__init__.py: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(appDir, "app.py"), []byte(appSrc), 0o600); err != nil {
 		t.Fatalf("write app.py: %v", err)
@@ -554,9 +556,9 @@ def run(data):
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
 
-	run := graph.Functions["app.run"]
+	run := graph.Functions["app.app.run"]
 	if run == nil {
-		t.Fatalf("missing app.run; functions=%v", sortedFunctionKeys(graph.Functions))
+		t.Fatalf("missing app.app.run; functions=%v", sortedFunctionKeys(graph.Functions))
 	}
 	var call *FunctionCall
 	for i := range run.Calls {
@@ -606,7 +608,7 @@ def run(d):
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
 
-	wantID := FunctionID{Package: "mypkg", Type: "S", Name: pythonDunderCallMethodName}
+	wantID := FunctionID{Package: "mypkg.app", Type: "S", Name: pythonDunderCallMethodName}
 	dunderCall := graph.Functions[wantID.String()]
 	if dunderCall == nil {
 		t.Fatalf("missing %s declaration; functions=%v", wantID.String(), sortedFunctionKeys(graph.Functions))
