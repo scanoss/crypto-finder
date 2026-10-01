@@ -23,7 +23,7 @@ import (
 // same interpreter query once per subdirectory for the same answer.
 var rootManifests = map[string][]string{
 	// go.work is here because a workspace root carries no go.mod of its own and
-	// `go list -m -json all` resolves from it.
+	// `go list -m -json` lists the workspace modules from it.
 	"go":          {"go.mod", "go.work"},
 	ecosystemJava: {"pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"},
 	"rust":        {"Cargo.toml"},

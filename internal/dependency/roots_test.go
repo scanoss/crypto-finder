@@ -335,7 +335,7 @@ func TestResolutionRoots_UnreadableDirIsCountedAndSiblingsSurvive(t *testing.T) 
 }
 
 // The Go toolchain finds its own manifest upward: GoResolver sets only cmd.Dir
-// and `go list -m -json all` walks the ancestors. A directory inside a module
+// and `go list` walks the ancestors. A directory inside a module
 // therefore resolves today, and opening the gate there would resolve a nested
 // tooling module instead and lose the parent's whole dependency list.
 func TestResolutionRoots_GateClosedForAGoDirInsideAModule(t *testing.T) {

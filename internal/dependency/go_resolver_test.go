@@ -3,7 +3,9 @@ package dependency
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -25,11 +27,16 @@ func prependPath(t *testing.T, dir string) {
 func TestGoResolver_Resolve(t *testing.T) {
 	tmpBin := t.TempDir()
 	writeExecutable(t, tmpBin, "go", `#!/bin/sh
+if [ "$1" = "list" ] && [ "$2" = "-m" ]; then
+  echo '{"Path":"example.com/app","Main":true,"Dir":"/src/app"}'
+  exit 0
+fi
 if [ "$1" = "list" ]; then
   cat <<'JSON'
-{"Path":"example.com/app","Main":true}
-{"Path":"example.com/dep","Version":"v1.0.0","Dir":"/deps/dep"}
-{"Path":"example.com/no-dir","Version":"v1.2.0"}
+{"Module":{"Path":"example.com/app","Main":true,"Dir":"/src/app"}}
+{"Module":{"Path":"example.com/dep","Version":"v1.0.0","Dir":"/deps/dep"}}
+{"Module":{"Path":"example.com/no-dir","Version":"v1.2.0"}}
+{}
 JSON
   exit 0
 fi
@@ -68,11 +75,12 @@ exit 1
 func TestGoResolver_Resolve_GraphFailureIsNonFatal(t *testing.T) {
 	tmpBin := t.TempDir()
 	writeExecutable(t, tmpBin, "go", `#!/bin/sh
+if [ "$1" = "list" ] && [ "$2" = "-m" ]; then
+  echo '{"Path":"example.com/app","Main":true,"Dir":"/src/app"}'
+  exit 0
+fi
 if [ "$1" = "list" ]; then
-  cat <<'JSON'
-{"Path":"example.com/app","Main":true}
-{"Path":"example.com/dep","Version":"v1.0.0","Dir":"/deps/dep"}
-JSON
+  echo '{"Module":{"Path":"example.com/dep","Version":"v1.0.0","Dir":"/deps/dep"}}'
   exit 0
 fi
 if [ "$1" = "mod" ] && [ "$2" = "graph" ]; then
@@ -210,4 +218,136 @@ func TestGoResolver_CanResolve(t *testing.T) {
 			t.Fatal("CanResolve() = true, want false: go list cannot run with a file as its working directory")
 		}
 	})
+}
+
+// requireGoToolchain makes the real go tool resolve fixture modules offline and
+// independently of the developer's GOFLAGS, GOWORK and toolchain settings.
+func requireGoToolchain(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain required")
+	}
+	t.Setenv("GOFLAGS", "")
+	t.Setenv("GOPROXY", "off")
+	t.Setenv("GOTOOLCHAIN", "local")
+	t.Setenv("GOWORK", "")
+}
+
+// localGoMod declares module path and requires each named sibling module
+// through a replace that points at the sibling directory of that name.
+func localGoMod(path string, requires ...string) string {
+	var b strings.Builder
+	b.WriteString("module " + path + "\n\ngo 1.22\n")
+	for _, name := range requires {
+		b.WriteString("\nrequire example.com/" + name + " v1.0.0\nreplace example.com/" + name + " => ../" + name + "\n")
+	}
+	return b.String()
+}
+
+func TestGoResolver_InventoriesOnlyTheProductionImportClosure(t *testing.T) {
+	requireGoToolchain(t)
+	root := writeTree(t, map[string]string{
+		"used/go.mod":       localGoMod("example.com/used"),
+		"used/used.go":      "package used\n",
+		"testonly/go.mod":   localGoMod("example.com/testonly"),
+		"testonly/t.go":     "package testonly\n",
+		"tool/go.mod":       localGoMod("example.com/tool"),
+		"tool/tool.go":      "package tool\n",
+		"unused/go.mod":     localGoMod("example.com/unused"),
+		"unused/unused.go":  "package unused\n",
+		"nestedonly/go.mod": localGoMod("example.com/nestedonly"),
+		"nestedonly/n.go":   "package nestedonly\n",
+		"app/go.mod":        localGoMod("example.com/app", "used", "testonly", "tool", "unused"),
+		"app/main.go":       "package app\n\nimport _ \"example.com/used\"\n",
+		"app/app_test.go":   "package app\n\nimport _ \"example.com/testonly\"\n",
+		"app/tools.go":      "//go:build tools\n\npackage app\n\nimport _ \"example.com/tool\"\n",
+		"app/gen/go.mod":    "module example.com/app/gen\n\ngo 1.22\n\nrequire example.com/nestedonly v1.0.0\n\nreplace example.com/nestedonly => ../../nestedonly\n",
+		"app/gen/gen.go":    "package gen\n\nimport _ \"example.com/nestedonly\"\n",
+	})
+
+	result, err := NewGoResolver().Resolve(context.Background(), filepath.Join(root, "app"))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	if result.RootModule != "example.com/app" {
+		t.Errorf("RootModule = %q, want example.com/app", result.RootModule)
+	}
+	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used")}}
+	if !reflect.DeepEqual(result.Dependencies, want) {
+		t.Fatalf("Dependencies = %+v, want %+v: no production package imports the test-only, build-tagged tool, unused or nested-module requirement", result.Dependencies, want)
+	}
+}
+
+func TestGoResolver_PackageDirectoryResolvesItsWholeModule(t *testing.T) {
+	requireGoToolchain(t)
+	root := writeTree(t, map[string]string{
+		"cli/go.mod":            localGoMod("example.com/cli"),
+		"cli/cli.go":            "package cli\n",
+		"store/go.mod":          localGoMod("example.com/store"),
+		"store/store.go":        "package store\n",
+		"app/go.mod":            localGoMod("example.com/app", "cli", "store"),
+		"app/cmd/tool/main.go":  "package main\n\nimport _ \"example.com/cli\"\n\nfunc main() {}\n",
+		"app/internal/db/db.go": "package db\n\nimport _ \"example.com/store\"\n",
+	})
+
+	result, err := NewGoResolver().Resolve(context.Background(), filepath.Join(root, "app", "cmd"))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	deps := depsByModule(result)
+	if len(deps) != 2 || deps["example.com/cli"].Dir == "" || deps["example.com/store"].Dir == "" {
+		t.Fatalf("Dependencies = %+v, want cli and store: a package directory resolves the whole module above it, not only its own subtree", result.Dependencies)
+	}
+}
+
+func TestGoResolver_CollectsProductionModulesAcrossWorkspace(t *testing.T) {
+	requireGoToolchain(t)
+	root := writeTree(t, map[string]string{
+		"go.work":          "go 1.22\n\nuse (\n\t./a\n\t./b\n)\n",
+		"shared/go.mod":    localGoMod("example.com/shared"),
+		"shared/shared.go": "package shared\n",
+		"shared/sub/s.go":  "package sub\n",
+		"a/go.mod":         localGoMod("example.com/a", "shared"),
+		"a/a.go":           "package a\n\nimport _ \"example.com/shared\"\n",
+		"b/go.mod":         localGoMod("example.com/b", "shared"),
+		"b/b.go":           "package b\n\nimport _ \"example.com/shared/sub\"\n",
+	})
+
+	result, err := NewGoResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	want := []Dependency{{Module: "example.com/shared", Version: "v1.0.0", Dir: filepath.Join(root, "shared")}}
+	if !reflect.DeepEqual(result.Dependencies, want) {
+		t.Fatalf("Dependencies = %+v, want %+v: both workspace modules import a package of shared, which is listed once", result.Dependencies, want)
+	}
+}
+
+// Real trees carry packages the go tool cannot load, such as a directory that
+// mixes two package names. One of them must not discard the closure of every
+// package that does load.
+func TestGoResolver_PackageThatFailsToLoadKeepsTheRestOfTheClosure(t *testing.T) {
+	requireGoToolchain(t)
+	root := writeTree(t, map[string]string{
+		"used/go.mod":      localGoMod("example.com/used"),
+		"used/used.go":     "package used\n",
+		"app/go.mod":       localGoMod("example.com/app", "used"),
+		"app/ok/ok.go":     "package ok\n\nimport _ \"example.com/used\"\n",
+		"app/mixed/a.go":   "package a\n",
+		"app/mixed/b.go":   "package b\n",
+		"app/missing/m.go": "package missing\n\nimport _ \"example.com/notrequired\"\n",
+	})
+
+	result, err := NewGoResolver().Resolve(context.Background(), filepath.Join(root, "app"))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used")}}
+	if !reflect.DeepEqual(result.Dependencies, want) {
+		t.Fatalf("Dependencies = %+v, want %+v", result.Dependencies, want)
+	}
 }

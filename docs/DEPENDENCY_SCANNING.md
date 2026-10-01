@@ -398,7 +398,7 @@ This produces the **user report**. At this point there are no `source`, `call_ch
 
 ### Step 2: Resolve Dependencies
 
-The Go resolver runs `go list -m -json all`. It returns:
+The Go resolver lists the main module with `go list -m -json`, then runs `go list -e -deps` over the main module's packages and keeps every module that provides a package in that non-test import closure. Build constraints are evaluated for the scanning host: on amd64, `chacha20poly1305` imports `golang.org/x/sys/cpu`, so both modules below are in the closure, while on arm64 only `golang.org/x/crypto` is. On amd64 it returns:
 
 ```
 RootModule: "example.com/crypto-test"
@@ -1024,7 +1024,7 @@ internal/
 ├── dependency/
 │   ├── resolver.go                # Resolver interface + Dependency/ResolveResult types
 │   ├── registry.go                # Ecosystem → Resolver registry
-│   ├── go_resolver.go             # Go: `go list -m -json all`
+│   ├── go_resolver.go             # Go: production import closure via `go list -deps`
 │   ├── java_resolver.go           # Java: auto-detect Maven vs Gradle
 │   ├── maven_resolver.go          # Java/Maven: `mvn dependency:list/sources/tree`
 │   ├── gradle_resolver.go         # Java/Gradle: init-script export via `gradlew` / `gradle`
@@ -1052,7 +1052,7 @@ The extensible architecture makes adding a new language a matter of implementing
 
 ### Go
 
-- **Resolver**: [`GoResolver`](../internal/dependency/go_resolver.go) — uses `go list -m -json all` to resolve modules
+- **Resolver**: [`GoResolver`](../internal/dependency/go_resolver.go) — uses `go list -m -json` for the main modules and `go list -e -deps` for the modules in their production import closure
 - **Parser**: [`GoParser`](../internal/callgraph/go_parser.go) — syntactic parsing of Go source
 - **Manifest**: `go.mod`
 - **Module format**: Go import path (e.g., `golang.org/x/crypto`)
@@ -1276,6 +1276,9 @@ The bytecode resolution bottleneck has largely been removed. Remaining performan
 - **All paths stored** — When multiple call chains exist (BFS finds all paths), all are stored in `call_chains`. This ensures no reachability information is lost.
 
 ### Go-specific
+- **Production import closure only** — The inventory holds the modules that provide a package imported, directly or transitively, by a non-test package of a main module. Modules required only by `_test.go` files or by build-tagged tool files such as `tools.go`, and requirements nothing imports, are not resolved or scanned. `--include-tests` does not widen the inventory.
+- **Host build configuration** — `go list -deps` evaluates build constraints for the scanning host's `GOOS`, `GOARCH` and build tags (including any in `GOFLAGS`), so a module imported only on another platform is not inventoried.
+- **Packages that fail to load** — A package the go tool cannot load, such as a directory that mixes two package names or imports a module missing from the module cache while offline, is skipped with a warning. Modules imported only through it are not inventoried; the rest of the closure is.
 - **No cross-module method resolution** — Method calls on variables (e.g., `cipher.Encrypt()`) are recorded with the variable name as the type, not the resolved type. Cross-package type resolution would require full type analysis.
 
 ### Java-specific

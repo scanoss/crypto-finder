@@ -13,12 +13,21 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// goModule represents the JSON output of `go list -m -json`.
+// goModule represents the module fields in `go list` JSON output.
 type goModule struct {
 	Path    string `json:"Path"`
 	Version string `json:"Version"`
 	Dir     string `json:"Dir"`
 	Main    bool   `json:"Main"`
+}
+
+// goPackage holds the fields goListModules requests from `go list -deps`.
+type goPackage struct {
+	ImportPath string    `json:"ImportPath"`
+	Module     *goModule `json:"Module"`
+	Error      *struct {
+		Err string `json:"Err"`
+	} `json:"Error"`
 }
 
 // GoResolver resolves Go module dependencies using the `go` tool.
@@ -35,7 +44,7 @@ func (r *GoResolver) Ecosystem() string {
 }
 
 // CanResolve reports whether targetDir is a directory inside a Go module or
-// workspace. `go list -m -json all` searches upward from its working directory
+// workspace. `go list` searches upward from its working directory
 // for the nearest go.mod, or the go.work that stands in for one at a workspace
 // root, so a package directory below the module root resolves the whole module
 // and the precondition searches the same way. A file target answers false
@@ -60,8 +69,9 @@ func (r *GoResolver) CanResolve(targetDir string) bool {
 	}
 }
 
-// Resolve uses `go list -m -json all` to resolve all transitive dependencies
-// for the Go project at targetDir.
+// Resolve inventories the modules in the production import closure of the Go
+// project at targetDir: the modules that provide a package imported, directly
+// or transitively, by a non-test package of a main module.
 func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	modules, err := r.goListModules(ctx, targetDir)
 	if err != nil {
@@ -108,10 +118,56 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 	return result, nil
 }
 
-// goListModules runs `go list -m -json all` and parses the streamed JSON output.
-// The output is a stream of JSON objects (not a JSON array), so we decode them one by one.
+// goListModules returns the main modules, then each module that provides a
+// package in their non-test import closure, once. Requirements reached only
+// from tests, build-tagged tool files or nothing at all never enter it.
 func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule, error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-json", "all")
+	modules, err := goList[goModule](ctx, dir, "-m", "-json")
+	if err != nil {
+		return nil, err
+	}
+
+	// -e keeps a package that fails to load, such as a directory mixing two
+	// package names, from discarding the closure of every package that loads.
+	// Each main module's directory is listed because `./...` matches nothing
+	// at a go.work root and only a subtree below a module root.
+	args := []string{"-e", "-deps", "-json=ImportPath,Module,Error"}
+	for _, m := range modules {
+		if m.Dir == "" {
+			return nil, fmt.Errorf("go list -m: main module %s has no directory", m.Path)
+		}
+		args = append(args, filepath.Join(m.Dir, "..."))
+	}
+	packages, err := goList[goPackage](ctx, dir, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]bool)
+	failed := 0
+	for _, p := range packages {
+		if p.Error != nil {
+			failed++
+			log.Debug().Str("package", p.ImportPath).Str("error", p.Error.Err).Msg("Go package failed to load")
+		}
+		if p.Module == nil || p.Module.Main || seen[p.Module.Path] {
+			continue
+		}
+		seen[p.Module.Path] = true
+		modules = append(modules, *p.Module)
+	}
+	if failed > 0 {
+		log.Warn().Int("packages", failed).Msg("Go packages failed to load; modules imported only through them are not inventoried")
+	}
+
+	return modules, nil
+}
+
+// goList runs `go list` with args and decodes its output, a stream of JSON
+// objects rather than one array.
+func goList[T any](ctx context.Context, dir string, args ...string) ([]T, error) {
+	args = append([]string{"list"}, args...)
+	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = dir
 
 	var stdout, stderr bytes.Buffer
@@ -119,20 +175,19 @@ func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule,
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("go list -m -json all: %w\nstderr: %s", err, stderr.String())
+		return nil, fmt.Errorf("go %s: %w\nstderr: %s", strings.Join(args, " "), err, stderr.String())
 	}
 
-	modules := make([]goModule, 0, 32)
+	var out []T
 	decoder := json.NewDecoder(&stdout)
 	for decoder.More() {
-		var m goModule
-		if err := decoder.Decode(&m); err != nil {
+		var v T
+		if err := decoder.Decode(&v); err != nil {
 			return nil, fmt.Errorf("failed to decode go list output: %w", err)
 		}
-		modules = append(modules, m)
+		out = append(out, v)
 	}
-
-	return modules, nil
+	return out, nil
 }
 
 // goModGraph runs `go mod graph` and parses the output into an adjacency list.
