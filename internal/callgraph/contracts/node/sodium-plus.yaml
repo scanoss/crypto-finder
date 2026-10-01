@@ -1,0 +1,445 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "sodium-plus"
+  coordinates:
+    - "sodium-plus"
+  version_range: ">=0.1.0"
+  description: "sodium-plus: an asynchronous libsodium facade over sodium-native and libsodium-wrappers"
+
+# EVERYTHING IS A METHOD ON A SodiumPlus INSTANCE, and every one is awaited:
+#
+#     const { SodiumPlus } = require('sodium-plus');
+#     const sodium = await SodiumPlus.auto();                    // factory
+#     const key = await sodium.crypto_secretbox_keygen();        // operation
+#     const box = await sodium.crypto_secretbox(msg, nonce, key); // operation
+#
+# THE FACTORY IS KEYED `sodium-plus.SodiumPlus.auto`, and `new SodiumPlus(backend)`
+# `sodium-plus.SodiumPlus.<init>`. Typing `sodium` through `await` needs the
+# await-aware assigned-variable typing in the Node parser. The instance is
+# routinely created in one function and kept in a module-level `let sodium`; a
+# variable assigned in another function is not typed, and its calls stay
+# untyped receivers.
+#
+# The methods are declared from sodium-plus 0.9.0 (lib/sodiumplus.js for the
+# names and the arity of each default parameter, index.d.ts for the results) and
+# checked against 0.1.0, 0.3.0, 0.5.0 and 0.7.0: no method changed arity, and
+# methods added later are never called on an older release. The facade takes
+# optional trailing parameters, so each method is declared at every arity it
+# accepts. Key generation, key derivation, password hashing, encryption,
+# signing, MACs and key agreement are operations; extracting a key from a
+# keypair (crypto_box_secretkey, crypto_box_publickey, crypto_sign_secretkey,
+# crypto_sign_publickey) is an output; the stream states built by
+# crypto_generichash_init and crypto_secretstream_xchacha20poly1305_init_push
+# and _init_pull are factories.
+#
+# `crypto_box_keypair_from_secretkey_and_publickey` is the published name from
+# 0.8; earlier releases spelled the last word `secretkey`, so both are declared.
+# index.d.ts mis-spells the same method, which is why the names are read from the
+# JavaScript.
+#
+# Deliberately NOT contracted: the sodium_* helpers (add, compare, increment,
+# memcmp, memzero, pad, unpad, bin2hex, hex2bin, is_zero), which move or compare
+# bytes without a key, crypto_pwhash_str_needs_rehash and the secretstream rekey,
+# which inspect or advance state without producing key material, the
+# SodiumUtil and SodiumPolyfill helpers, and the key classes' type predicates.
+#
+# CryptographyKey.slice forwards its arguments to Buffer.slice, so it is declared
+# at arities 0 to 2.
+contracts:
+
+  # The facade and its backend.
+  - method: "sodium-plus.SodiumPlus.auto"
+    arity: 0
+    return: { type: "sodium-plus.SodiumPlus", confidence: high }
+    role: factory
+  - method: "sodium-plus.SodiumPlus.<init>"
+    arity: 1
+    return: { type: "sodium-plus.SodiumPlus", confidence: high }
+    role: factory
+  - method: "sodium-plus.getBackendObject"
+    arity: 0
+    return: { type: "sodium-plus.Backend", confidence: high }
+    role: factory
+  - method: "sodium-plus.getBackendObject"
+    arity: 1
+    return: { type: "sodium-plus.Backend", confidence: high }
+    role: factory
+
+  # The libsodium methods on a SodiumPlus instance.
+  - method: "sodium-plus.SodiumPlus.crypto_aead_xchacha20poly1305_ietf_decrypt"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_aead_xchacha20poly1305_ietf_decrypt"
+    arity: 4
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_aead_xchacha20poly1305_ietf_encrypt"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_aead_xchacha20poly1305_ietf_encrypt"
+    arity: 4
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_aead_xchacha20poly1305_ietf_keygen"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_auth"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_auth_keygen"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_auth_verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_box"
+    arity: 4
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_box_open"
+    arity: 4
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_box_keypair"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_box_keypair_from_secretkey_and_publickey"
+    arity: 2
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_box_secretkey"
+    arity: 1
+    return: { type: "sodium-plus.X25519SecretKey", confidence: high }
+    role: output
+  - method: "sodium-plus.SodiumPlus.crypto_box_publickey"
+    arity: 1
+    return: { type: "sodium-plus.X25519PublicKey", confidence: high }
+    role: output
+  - method: "sodium-plus.SodiumPlus.crypto_box_publickey_from_secretkey"
+    arity: 1
+    return: { type: "sodium-plus.X25519PublicKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_box_seal"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_box_seal_open"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_generichash"
+    arity: 1
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_generichash"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_generichash"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_generichash_init"
+    arity: 0
+    return: { type: "sodium-plus.GenericHashState", confidence: high }
+    role: factory
+  - method: "sodium-plus.SodiumPlus.crypto_generichash_init"
+    arity: 1
+    return: { type: "sodium-plus.GenericHashState", confidence: high }
+    role: factory
+  - method: "sodium-plus.SodiumPlus.crypto_generichash_init"
+    arity: 2
+    return: { type: "sodium-plus.GenericHashState", confidence: high }
+    role: factory
+  - method: "sodium-plus.SodiumPlus.crypto_generichash_update"
+    arity: 2
+    return: { type: "sodium-plus.GenericHashState", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_generichash_final"
+    arity: 1
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_generichash_final"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_generichash_keygen"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_kdf_derive_from_key"
+    arity: 4
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_kdf_keygen"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_kx_keypair"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_kx_seed_keypair"
+    arity: 1
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_kx_client_session_keys"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_kx_server_session_keys"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_onetimeauth"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_onetimeauth_verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_onetimeauth_keygen"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_pwhash"
+    arity: 5
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_pwhash"
+    arity: 6
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_pwhash_str"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_pwhash_str_verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_scalarmult"
+    arity: 2
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_scalarmult_base"
+    arity: 1
+    return: { type: "sodium-plus.X25519PublicKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretbox"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretbox_open"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretbox_keygen"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretstream_xchacha20poly1305_init_push"
+    arity: 1
+    return: { type: "sodium-plus.SecretStreamState", confidence: high }
+    role: factory
+  - method: "sodium-plus.SodiumPlus.crypto_secretstream_xchacha20poly1305_init_pull"
+    arity: 2
+    return: { type: "sodium-plus.SecretStreamState", confidence: high }
+    role: factory
+  - method: "sodium-plus.SodiumPlus.crypto_secretstream_xchacha20poly1305_push"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretstream_xchacha20poly1305_push"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretstream_xchacha20poly1305_push"
+    arity: 4
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretstream_xchacha20poly1305_pull"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretstream_xchacha20poly1305_pull"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretstream_xchacha20poly1305_pull"
+    arity: 4
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_secretstream_xchacha20poly1305_keygen"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_shorthash"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_shorthash_keygen"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_sign"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_sign_open"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_sign_detached"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_sign_verify_detached"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_sign_secretkey"
+    arity: 1
+    return: { type: "sodium-plus.Ed25519SecretKey", confidence: high }
+    role: output
+  - method: "sodium-plus.SodiumPlus.crypto_sign_publickey"
+    arity: 1
+    return: { type: "sodium-plus.Ed25519PublicKey", confidence: high }
+    role: output
+  - method: "sodium-plus.SodiumPlus.crypto_sign_keypair"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_sign_seed_keypair"
+    arity: 1
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_sign_ed25519_sk_to_curve25519"
+    arity: 1
+    return: { type: "sodium-plus.X25519SecretKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_sign_ed25519_pk_to_curve25519"
+    arity: 1
+    return: { type: "sodium-plus.X25519PublicKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_stream"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_stream_xor"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_stream_keygen"
+    arity: 0
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.randombytes_buf"
+    arity: 1
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.randombytes_uniform"
+    arity: 1
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-plus.SodiumPlus.crypto_box_keypair_from_secretkey_and_secretkey"
+    arity: 2
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: operation
+
+  # Key objects. Each key class extends CryptographyKey.
+  - method: "sodium-plus.CryptographyKey.<init>"
+    arity: 1
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.CryptographyKey.from"
+    arity: 1
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.CryptographyKey.from"
+    arity: 2
+    return: { type: "sodium-plus.CryptographyKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.X25519SecretKey.<init>"
+    arity: 1
+    return: { type: "sodium-plus.X25519SecretKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.X25519SecretKey.from"
+    arity: 1
+    return: { type: "sodium-plus.X25519SecretKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.X25519SecretKey.from"
+    arity: 2
+    return: { type: "sodium-plus.X25519SecretKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.X25519PublicKey.<init>"
+    arity: 1
+    return: { type: "sodium-plus.X25519PublicKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.X25519PublicKey.from"
+    arity: 1
+    return: { type: "sodium-plus.X25519PublicKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.X25519PublicKey.from"
+    arity: 2
+    return: { type: "sodium-plus.X25519PublicKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.Ed25519SecretKey.<init>"
+    arity: 1
+    return: { type: "sodium-plus.Ed25519SecretKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.Ed25519SecretKey.from"
+    arity: 1
+    return: { type: "sodium-plus.Ed25519SecretKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.Ed25519SecretKey.from"
+    arity: 2
+    return: { type: "sodium-plus.Ed25519SecretKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.Ed25519PublicKey.<init>"
+    arity: 1
+    return: { type: "sodium-plus.Ed25519PublicKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.Ed25519PublicKey.from"
+    arity: 1
+    return: { type: "sodium-plus.Ed25519PublicKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.Ed25519PublicKey.from"
+    arity: 2
+    return: { type: "sodium-plus.Ed25519PublicKey", confidence: high }
+    role: factory
+  - method: "sodium-plus.CryptographyKey.getBuffer"
+    arity: 0
+    return: { type: "Buffer", confidence: high }
+    role: output
+  - method: "sodium-plus.CryptographyKey.slice"
+    arity: 0
+    return: { type: "Buffer", confidence: high }
+    role: output
+  - method: "sodium-plus.CryptographyKey.slice"
+    arity: 1
+    return: { type: "Buffer", confidence: high }
+    role: output
+  - method: "sodium-plus.CryptographyKey.slice"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: output
+
+hierarchy:
+  sodium-plus.X25519SecretKey:
+    - sodium-plus.CryptographyKey
+  sodium-plus.X25519PublicKey:
+    - sodium-plus.CryptographyKey
+  sodium-plus.Ed25519SecretKey:
+    - sodium-plus.CryptographyKey
+  sodium-plus.Ed25519PublicKey:
+    - sodium-plus.CryptographyKey
