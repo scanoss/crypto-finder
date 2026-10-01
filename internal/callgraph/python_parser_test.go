@@ -1126,7 +1126,7 @@ def f(cipher):
 	if call.ReceiverVar != "cipher" {
 		t.Errorf("cipher.update ReceiverVar = %q, want %q (parameter must shadow the module import)", call.ReceiverVar, "cipher")
 	}
-	want := FunctionID{Package: "mypkg", Type: "cipher", Name: "update"}
+	want := FunctionID{Package: "mypkg.src", Type: "cipher", Name: "update"}
 	if call.Callee != want {
 		t.Errorf("cipher.update callee = %+v, want %+v (parameter must shadow the module import)", call.Callee, want)
 	}
@@ -1230,7 +1230,7 @@ func TestPythonParser_ReceiverVar_SelfAttributeChain(t *testing.T) {
 	if call.ReceiverVar != "" {
 		t.Errorf("self.a.b.encrypt ReceiverVar = %q, want empty (multi-level self chains are not resolved as a receiver identity)", call.ReceiverVar)
 	}
-	want := FunctionID{Package: "mypkg", Type: "self.a.b", Name: "encrypt"}
+	want := FunctionID{Package: "mypkg.src", Type: "self.a.b", Name: "encrypt"}
 	if call.Callee != want {
 		t.Errorf("self.a.b.encrypt callee = %+v, want %+v", call.Callee, want)
 	}
@@ -1264,7 +1264,7 @@ func TestPythonParser_SelfNamedReceiver_FreeFunction(t *testing.T) {
 	if call.Callee.Type != "" {
 		t.Errorf("self.encrypt callee.Type = %q, want empty (must not be treated as an instance attribute access)", call.Callee.Type)
 	}
-	want := FunctionID{Package: "mypkg", Name: "encrypt"}
+	want := FunctionID{Package: "mypkg.src", Name: "encrypt"}
 	if call.Callee != want {
 		t.Errorf("self.encrypt callee = %+v, want %+v", call.Callee, want)
 	}
@@ -1590,7 +1590,7 @@ func TestPythonParser_Decorator_StaticMethodNoReceiver(t *testing.T) {
 	if call.ReceiverVar != pythonSelfObjectName {
 		t.Errorf("ReceiverVar = %q, want %q (staticmethod parameter 0 is an ordinary local, even named \"self\")", call.ReceiverVar, pythonSelfObjectName)
 	}
-	want := FunctionID{Package: "mypkg", Type: pythonSelfObjectName, Name: "encrypt"}
+	want := FunctionID{Package: "mypkg.src", Type: pythonSelfObjectName, Name: "encrypt"}
 	if call.Callee != want {
 		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
 	}
@@ -1612,7 +1612,7 @@ func TestPythonParser_Decorator_ClassMethodCls(t *testing.T) {
         return klass.build(x)
 `
 	fns := parsePythonInline(t, src)
-	want := FunctionID{Package: "mypkg", Name: "build"}
+	want := FunctionID{Package: "mypkg.src", Name: "build"}
 
 	literal := findPythonFuncByName(fns, "literal")
 	if literal == nil {
@@ -1694,7 +1694,7 @@ func TestPythonParser_Decorator_CustomKeepsIdentity(t *testing.T) {
 	if call == nil {
 		t.Fatal("process call not found")
 	}
-	want := FunctionID{Package: "mypkg", Name: "process"}
+	want := FunctionID{Package: "mypkg.src", Name: "process"}
 	if call.Callee != want {
 		t.Errorf("Callee = %+v, want %+v (unaffected by a non-fixed-set decorator)", call.Callee, want)
 	}
@@ -1723,7 +1723,7 @@ func TestPythonParser_Super_InitResolvesBase(t *testing.T) {
 	if call == nil {
 		t.Fatalf("super().__init__() call not found among %+v", fn.Calls)
 	}
-	want := FunctionID{Package: "mypkg", Type: "BaseCipher", Name: constructorMethodName}
+	want := FunctionID{Package: "mypkg.src", Type: "BaseCipher", Name: constructorMethodName}
 	if call.Callee != want {
 		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
 	}
@@ -1749,7 +1749,7 @@ func TestPythonParser_Super_MethodResolvesBase(t *testing.T) {
 	if call == nil {
 		t.Fatal("super().transform(data) call not found")
 	}
-	want := FunctionID{Package: "mypkg", Type: "BaseCipher", Name: "transform"}
+	want := FunctionID{Package: "mypkg.src", Type: "BaseCipher", Name: "transform"}
 	if call.Callee != want {
 		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
 	}
@@ -1781,8 +1781,8 @@ func TestPythonParser_Super_NeverLocalSuper(t *testing.T) {
 	if call.Callee.Type != "" {
 		t.Errorf("Callee.Type = %q, want empty (no base class declared — never fabricated)", call.Callee.Type)
 	}
-	if call.Callee.Package != "mypkg" || call.Callee.Name != "run" {
-		t.Errorf("Callee = %+v, want Package=mypkg Name=run", call.Callee)
+	if call.Callee.Package != "mypkg.src" || call.Callee.Name != "run" {
+		t.Errorf("Callee = %+v, want Package=mypkg.src Name=run", call.Callee)
 	}
 	if call.ReceiverVar != "" {
 		t.Errorf("ReceiverVar = %q, want empty (super() is never a receiver)", call.ReceiverVar)
@@ -1816,7 +1816,7 @@ func TestPythonParser_DynamicDispatch_GetattrLiteral(t *testing.T) {
 	if call == nil {
 		t.Fatalf("getattr(obj, \"encrypt\")(data) call not found among %+v", fn.Calls)
 	}
-	want := FunctionID{Package: "mypkg", Type: "obj", Name: "encrypt"}
+	want := FunctionID{Package: "mypkg.src", Type: "obj", Name: "encrypt"}
 	if call.Callee != want {
 		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
 	}
@@ -1987,7 +1987,7 @@ def run(data):
 	if call == nil {
 		t.Fatalf("signer(data) call not found among %+v", fn.Calls)
 	}
-	want := FunctionID{Package: "mypkg", Type: "Signer", Name: pythonDunderCallMethodName}
+	want := FunctionID{Package: "mypkg.src", Type: "Signer", Name: pythonDunderCallMethodName}
 	if call.Callee != want {
 		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
 	}
@@ -2052,7 +2052,7 @@ def run(data):
 	// the KB fallback added alongside it.
 	propagatePythonAssignedVarTypes(graph, nil)
 
-	run := graph.Functions[FunctionID{Package: "mypkg", Name: "run"}.String()]
+	run := graph.Functions[FunctionID{Package: "mypkg.src", Name: "run"}.String()]
 	if run == nil {
 		t.Fatal("run function not found in graph")
 	}
@@ -2060,7 +2060,7 @@ def run(data):
 	if call == nil {
 		t.Fatal("c.encrypt(data) call not found")
 	}
-	want := FunctionID{Package: "mypkg", Type: "Cipher", Name: "encrypt"}
+	want := FunctionID{Package: "mypkg.src", Type: "Cipher", Name: "encrypt"}
 	if call.Callee != want {
 		t.Errorf("Callee = %+v, want %+v", call.Callee, want)
 	}
@@ -2268,7 +2268,7 @@ func TestPythonParser_TypeHint_UnresolvableNoType(t *testing.T) {
 	if call == nil {
 		t.Fatal("c.encrypt(data) call not found")
 	}
-	want := FunctionID{Package: "mypkg", Type: "c", Name: "encrypt"}
+	want := FunctionID{Package: "mypkg.src", Type: "c", Name: "encrypt"}
 	if call.Callee != want {
 		t.Errorf("Callee = %+v, want %+v (unresolvable annotation must fall through unchanged)", call.Callee, want)
 	}

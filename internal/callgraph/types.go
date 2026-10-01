@@ -458,6 +458,12 @@ type CallGraph struct {
 	// -> ["rsa::pkcs1v15::SigningKey"]). Contracts name the public path, the
 	// declaration carries the declaring one. Rust only.
 	PublicTypePaths map[string][]string
+	// PythonPublicPaths maps the path a package's `__init__.py` gives a name
+	// it imports to the path of the module that declares it ("jwt.encode" ->
+	// "jwt.api_jwt.encode"), following re-exports through nested packages.
+	// A declaration is keyed by its defining module, while a consumer and a
+	// rule name the public path. Python only.
+	PythonPublicPaths map[string]string
 	// JavaStringConstants merges every parsed file's String constants, keyed
 	// by owner FQN + ".NAME". Java only.
 	JavaStringConstants map[string]JavaStringConstant
