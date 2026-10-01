@@ -619,6 +619,11 @@ type RuleCryptoMetadata struct {
 	Metadata            map[string]string
 	ParameterConditions []paramcondition.Condition
 	CaptureNames        []string
+	// CaptureBinders are the rule's own metavariable-regex patterns that carry
+	// named groups. Applied to a resolved value they bind the metadata
+	// placeholders ($family, $mode, ...) the way the native match would, instead
+	// of inferring the names from the position of the condition's groups.
+	CaptureBinders []*regexp.Regexp
 	// Languages are the rule's semgrep languages. Call-site specialization
 	// applies a rule only to calls in an ecosystem it targets.
 	Languages []string
@@ -666,7 +671,8 @@ func appendRuleCryptoMetadata(out map[string][]RuleCryptoMetadata, rule *ruleCry
 	candidate := RuleCryptoMetadata{
 		Rule:     entities.RuleInfo{ID: rule.ID, Message: rule.Message, Severity: strings.ToUpper(rule.Severity)},
 		Metadata: metadata, ParameterConditions: conditions, CaptureNames: ruleCaptureNames(rule.PatternSources),
-		Languages: rule.Languages,
+		CaptureBinders: ruleCaptureBinders(rule.PatternSources),
+		Languages:      rule.Languages,
 	}
 	for _, entrypoint := range entrypoints {
 		duplicate := false
@@ -707,6 +713,30 @@ func ruleCaptureNames(sources []rulePatternYAML) []string {
 		}
 	}
 	return names
+}
+
+// ruleCaptureBinders returns the metavariable-regex patterns of sources that
+// declare at least one named group.
+func ruleCaptureBinders(sources []rulePatternYAML) []*regexp.Regexp {
+	var binders []*regexp.Regexp
+	for _, source := range sources {
+		for _, pattern := range source.Patterns {
+			if pattern.MetavariableRegex == nil {
+				continue
+			}
+			re, err := regexp.Compile(pattern.MetavariableRegex.Regex)
+			if err != nil {
+				continue
+			}
+			for _, name := range re.SubexpNames() {
+				if name != "" {
+					binders = append(binders, re)
+					break
+				}
+			}
+		}
+	}
+	return binders
 }
 
 // buildRuleCryptoByAPI walks the ruleset (files and/or directories) and indexes

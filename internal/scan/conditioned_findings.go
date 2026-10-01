@@ -6,6 +6,7 @@ package scan
 import (
 	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,9 +61,10 @@ func materializeConditionedFinding(
 	existing map[string]struct{},
 ) int {
 	added := 0
-	originalCount := len(finding.CryptographicAssets)
-	for assetIndex := 0; assetIndex < originalCount; assetIndex++ {
-		added += materializeConditionedAnchor(ctx, values, finding, graph, catalog, existing, finding.CryptographicAssets[assetIndex])
+	// Specializing an anchor may drop it from the finding, so walk a snapshot.
+	anchors := slices.Clone(finding.CryptographicAssets)
+	for i := range anchors {
+		added += materializeConditionedAnchor(ctx, values, finding, graph, catalog, existing, anchors[i])
 	}
 	return added
 }
@@ -109,7 +111,32 @@ func materializeConditionedAnchor(
 		anchor.ConditionedValuesIncomplete = true
 		markAnchorValuesIncomplete(finding, anchor)
 	}
-	return appendConditionedAssets(finding, anchor, rules, candidates, existing)
+	added := appendConditionedAssets(finding, anchor, rules, candidates, existing)
+	if added > 0 {
+		dropBlankAnchor(finding, anchor)
+	}
+	return added
+}
+
+// dropBlankAnchor removes the generic anchor asset once per-value assets stand
+// for its call. A dynamic-selector anchor names no algorithm, so beside the
+// specialized assets it is a blank duplicate of the same call. An anchor that
+// does name an algorithm is a real finding and stays.
+func dropBlankAnchor(finding *entities.Finding, anchor entities.CryptographicAsset) {
+	if anchor.Metadata["algorithmName"] != "" || anchor.Metadata["algorithmFamily"] != "" {
+		return
+	}
+	finding.CryptographicAssets = slices.DeleteFunc(finding.CryptographicAssets, func(asset entities.CryptographicAsset) bool {
+		return len(asset.ParameterConditions) == 0 && sameAssetSpan(asset, anchor) && sameRules(asset.Rules, anchor.Rules)
+	})
+}
+
+func sameAssetSpan(a, b entities.CryptographicAsset) bool {
+	return a.StartLine == b.StartLine && a.StartCol == b.StartCol && a.EndLine == b.EndLine && a.EndCol == b.EndCol
+}
+
+func sameRules(a, b []entities.RuleInfo) bool {
+	return slices.EqualFunc(a, b, func(x, y entities.RuleInfo) bool { return x.ID == y.ID })
 }
 
 // markAnchorValuesIncomplete flags the generic anchor asset of finding that
@@ -267,8 +294,68 @@ func (c conditionedCatalog) rulesForCall(call *callgraph.FunctionCall) []engine.
 }
 
 type parameterConditionMatch struct {
-	captures   map[string]string
+	captures   conditionCaptures
+	actuals    []string
 	conditions []paramcondition.Condition
+}
+
+// conditionCaptures holds what a condition regex bound, by how the name was
+// established, so the metadata placeholders resolve with a fixed precedence:
+// a group the condition names itself, then the rule's own named groups applied
+// to the resolved value, then a name inferred from the position of an unnamed
+// condition group.
+type conditionCaptures struct {
+	numbered   map[string]string
+	named      map[string]string
+	positional map[string]string
+}
+
+func newConditionCaptures() conditionCaptures {
+	return conditionCaptures{numbered: map[string]string{}, named: map[string]string{}, positional: map[string]string{}}
+}
+
+// placeholders merges the captures into the $name -> value map used to fill
+// rule metadata. bound is the rule's own named groups applied to the value.
+func (c conditionCaptures) placeholders(bound map[string]string) map[string]string {
+	out := make(map[string]string, len(c.numbered)+len(c.named)+len(c.positional)+len(bound))
+	for _, layer := range []map[string]string{c.numbered, c.positional, bound, c.named} {
+		maps.Copy(out, layer)
+	}
+	return out
+}
+
+// bindRuleCaptures applies the rule's named-group patterns to each resolved
+// value. A pattern binds only when it spans the whole value, bare or inside the
+// quotes the rule's source pattern is written against.
+func bindRuleCaptures(binders []*regexp.Regexp, actuals []string) map[string]string {
+	bound := make(map[string]string)
+	for _, actual := range actuals {
+		for _, re := range binders {
+			bindWholeValue(re, actual, bound)
+		}
+	}
+	return bound
+}
+
+// bindWholeValue adds the named groups of re to bound, for the first spelling
+// of actual that re matches from end to end. A name already bound keeps its
+// value.
+func bindWholeValue(re *regexp.Regexp, actual string, bound map[string]string) {
+	for _, candidate := range []string{actual, `"` + actual + `"`, "'" + actual + "'"} {
+		match := re.FindStringSubmatch(candidate)
+		if len(match) == 0 || match[0] != candidate {
+			continue
+		}
+		for i, name := range re.SubexpNames() {
+			if name == "" || match[i] == "" {
+				continue
+			}
+			if _, taken := bound[name]; !taken {
+				bound[name] = match[i]
+			}
+		}
+		return
+	}
 }
 
 // conditionVerdict is the three-valued answer to "does this asset's
@@ -320,7 +407,7 @@ func evaluateParameterConditions(
 			continue
 		}
 		answered++
-		if !matchParameterCondition(condition, actual, map[string]string{}, nil) {
+		if !matchParameterCondition(condition, actual, newConditionCaptures(), nil) {
 			return conditionRefuted
 		}
 	}
@@ -335,7 +422,7 @@ func matchParameterConditionsWithCaptureNames(
 	params []callGraphParameter,
 	captureNames []string,
 ) (parameterConditionMatch, bool) {
-	result := parameterConditionMatch{captures: make(map[string]string)}
+	result := parameterConditionMatch{captures: newConditionCaptures()}
 	for _, condition := range conditions {
 		index := conditionParameterIndex(condition, params)
 		if index < 0 || index >= len(params) {
@@ -352,6 +439,7 @@ func matchParameterConditionsWithCaptureNames(
 		if !matchParameterCondition(condition, actual, result.captures, captureNames) {
 			return parameterConditionMatch{}, false
 		}
+		result.actuals = append(result.actuals, actual)
 		result.conditions = append(result.conditions, exactResolvedCondition(condition, actual))
 	}
 	return result, true
@@ -372,7 +460,7 @@ func conditionParameterIndex(condition paramcondition.Condition, params []callGr
 	return -1
 }
 
-func matchParameterCondition(condition paramcondition.Condition, actual string, captures map[string]string, captureNames []string) bool {
+func matchParameterCondition(condition paramcondition.Condition, actual string, captures conditionCaptures, captureNames []string) bool {
 	if condition.Operator == paramcondition.OpExact {
 		return actual == normalizeSelectorValue(condition.Value)
 	}
@@ -391,13 +479,11 @@ func matchParameterCondition(condition paramcondition.Condition, actual string, 
 		if match[i] == "" {
 			continue
 		}
-		captures[strconv.Itoa(i)] = match[i]
-		name := re.SubexpNames()[i]
-		if name == "" && i-1 < len(captureNames) {
-			name = captureNames[i-1]
-		}
-		if name != "" {
-			captures[name] = match[i]
+		captures.numbered[strconv.Itoa(i)] = match[i]
+		if name := re.SubexpNames()[i]; name != "" {
+			captures.named[name] = match[i]
+		} else if i-1 < len(captureNames) {
+			captures.positional[captureNames[i-1]] = match[i]
 		}
 	}
 	return true
@@ -429,9 +515,18 @@ func cloneConditionedAsset(anchor entities.CryptographicAsset, rule engine.RuleC
 	asset.Metadata = maps.Clone(rule.Metadata)
 	asset.PURL = purl.Rule(asset.Metadata[engine.RulePURLMetadataKey])
 	delete(asset.Metadata, engine.RulePURLMetadataKey)
+	captures := match.captures.placeholders(bindRuleCaptures(rule.CaptureBinders, match.actuals))
+	names := make([]string, 0, len(captures))
+	for name := range captures {
+		names = append(names, name)
+	}
+	// Longest first, so $mode never eats the front of $model.
+	sort.Slice(names, func(i, j int) bool {
+		return len(names[i]) > len(names[j]) || len(names[i]) == len(names[j]) && names[i] < names[j]
+	})
 	for key, value := range asset.Metadata {
-		for name, capture := range match.captures {
-			value = strings.ReplaceAll(value, "$"+name, capture)
+		for _, name := range names {
+			value = strings.ReplaceAll(value, "$"+name, captures[name])
 		}
 		if strings.Contains(value, "$") {
 			delete(asset.Metadata, key)

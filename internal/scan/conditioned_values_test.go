@@ -87,7 +87,9 @@ func (g selectorGraph) report() *entities.InterimReport {
 
 func specializedNames(t *testing.T, report *entities.InterimReport) []string {
 	t.Helper()
-	assets := report.Findings[0].CryptographicAssets[1:]
+	// The blank anchor is dropped once its call is specialized, so every
+	// remaining asset is a per-value one.
+	assets := report.Findings[0].CryptographicAssets
 	names := make([]string, 0, len(assets))
 	for i := range assets {
 		names = append(names, assets[i].Metadata["algorithmName"])
