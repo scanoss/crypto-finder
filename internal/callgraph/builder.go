@@ -215,7 +215,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	if b.ecosystem == ecosystemJava {
 		reanchorGuessedJavaOwners(graph)
 	}
-	resolveEntryRefs(graph)
+	resolveEntryRefs(graph, b.pythonRootModules())
 	if provider, ok := b.parser.(publicTypePathProvider); ok {
 		graph.PublicTypePaths = provider.PublicTypePaths()
 	}
@@ -642,6 +642,17 @@ func (b *Builder) finishPythonBuild(graph *CallGraph) {
 	qualifyPythonProjectImports(b.pythonModules, b.pythonRootedAnalyses)
 	graph.PythonPublicPaths = resolvePythonPublicPaths(b.pythonInitImports, b.pythonModules)
 	applyPythonReExports(graph, b.pythonReExports)
+}
+
+// pythonRootModules lists the root modules the build's project-local Python
+// modules are keyed under, in a fixed order.
+func (b *Builder) pythonRootModules() []string {
+	roots := make([]string, 0, len(b.pythonRootedAnalyses))
+	for root := range b.pythonRootedAnalyses {
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+	return roots
 }
 
 // resetPythonBuildState clears what one Python build accumulates across its

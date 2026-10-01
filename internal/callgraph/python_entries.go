@@ -69,7 +69,6 @@ func applyPythonEntryRules(root *sitter.Node, src []byte, filePath, packagePath 
 	scope.bindModuleNames(root, src)
 	scope.decoratedEntries(root, src, kinds)
 	module := pythonModuleDottedPath(filePath, packagePath)
-	scripts := pythonConsoleScripts(filePath)[module]
 	runsAsMain := pythonHasMainGuard(root, src)
 	for i := range analysis.Functions {
 		decl := &analysis.Functions[i]
@@ -78,8 +77,6 @@ func applyPythonEntryRules(root *sitter.Node, src []byte, filePath, packagePath 
 		}
 		switch {
 		case decl.ID.Name == moduleInitMethodName && runsAsMain:
-			markEntry(decl, RootKindMain)
-		case decl.ID.Type == "" && scripts[decl.ID.Name]:
 			markEntry(decl, RootKindMain)
 		case kinds[decl.StartLine] != "":
 			markEntry(decl, kinds[decl.StartLine])
@@ -90,6 +87,22 @@ func applyPythonEntryRules(root *sitter.Node, src []byte, filePath, packagePath 
 		}
 	}
 	analysis.EntryRefs = append(analysis.EntryRefs, scope.registeredViews(root, src, module)...)
+	analysis.EntryRefs = append(analysis.EntryRefs, pythonConsoleScriptRefs(filePath)...)
+}
+
+// pythonConsoleScriptRefs names the functions the nearest manifest lists as
+// console scripts. The manifest spells a module as the project's own code is
+// imported (pkg.cli), while the graph keys a manifest-named project's modules
+// under its root module (probe.pkg.cli), so the build resolves each reference
+// against either spelling rather than this file matching its own module.
+func pythonConsoleScriptRefs(filePath string) []EntryRef {
+	var refs []EntryRef
+	for module, functions := range pythonConsoleScripts(filePath) {
+		for function := range functions {
+			refs = append(refs, EntryRef{Function: FunctionID{Package: module, Name: function}, Module: true, Kind: RootKindMain})
+		}
+	}
+	return refs
 }
 
 // nameOrigin returns the module a name's value comes from: the module an

@@ -33,9 +33,10 @@ type EntryRef struct {
 	// is empty: a gRPC service implementation.
 	AllExported bool
 	// Module says Function.Package is a Python module path, as an import
-	// spells it (shop.web.views). The graph keys a Python function by its
-	// defining module, so it also matches that module under the root module
-	// a manifest-named project prefixes onto its own.
+	// or a manifest spells it (shop.web.views). The graph keys a Python
+	// function by its defining module, so it matches that module exactly, or
+	// under the root module a manifest-named project prefixes onto its own,
+	// and under no other leading segments.
 	Module bool
 	// Kind is the root kind the handler gets.
 	Kind RootKind
@@ -44,9 +45,10 @@ type EntryRef struct {
 // resolveEntryRefs marks the declarations the collected EntryRefs name. A
 // reference to a function the graph does not declare, such as a handler
 // imported from a dependency, is dropped. A declaration keeps the kind a rule
-// gave it first.
-func resolveEntryRefs(graph *CallGraph) {
-	refs := graph.entryRefs
+// gave it first. pythonRoots are the root modules the build's project-local
+// Python modules are keyed under.
+func resolveEntryRefs(graph *CallGraph, pythonRoots []string) {
+	refs := uniqueEntryRefs(graph.entryRefs)
 	graph.entryRefs = nil
 	if len(refs) == 0 {
 		return
@@ -67,7 +69,7 @@ func resolveEntryRefs(graph *CallGraph) {
 			}
 		}
 		if ref.Module {
-			markPythonModuleFunction(byPackage, ref)
+			markPythonModuleFunction(byPackage, ref, pythonRoots)
 			continue
 		}
 		for _, decl := range byPackage[ref.Function.Package] {
@@ -78,21 +80,38 @@ func resolveEntryRefs(graph *CallGraph) {
 	}
 }
 
+// uniqueEntryRefs drops repeated references. Every file under a manifest
+// names the manifest's console scripts, and each reference costs a lookup.
+func uniqueEntryRefs(refs []EntryRef) []EntryRef {
+	seen := make(map[EntryRef]struct{}, len(refs))
+	out := refs[:0:0]
+	for _, ref := range refs {
+		if _, duplicate := seen[ref]; !duplicate {
+			seen[ref] = struct{}{}
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
 // markPythonModuleFunction marks the function ref names in the Python module
 // ref.Function.Package. The graph keys a Python function by its defining
 // module, so the spelled module matches directly, or after the root module a
 // manifest-named project prefixes onto its own modules (`probe.app.views` for
-// `import app.views`).
-func markPythonModuleFunction(byPackage map[string][]*FunctionDecl, ref EntryRef) {
+// `import app.views`). A module nested under other segments (`probe.x.app.views`)
+// is a different module and stays unmarked.
+func markPythonModuleFunction(byPackage map[string][]*FunctionDecl, ref EntryRef, roots []string) {
 	module := ref.Function.Package
 	if module == "" {
 		return
 	}
-	for pkg, decls := range byPackage {
-		if pkg != module && !strings.HasSuffix(pkg, "."+module) {
-			continue
-		}
-		for _, decl := range decls {
+	candidates := make([]string, 0, 1+len(roots))
+	candidates = append(candidates, module)
+	for _, root := range roots {
+		candidates = append(candidates, root+"."+module)
+	}
+	for _, pkg := range candidates {
+		for _, decl := range byPackage[pkg] {
 			if decl.ID.Type == "" && decl.ID.Name == ref.Function.Name {
 				markEntry(decl, ref.Kind)
 			}
