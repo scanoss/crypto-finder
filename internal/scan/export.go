@@ -2929,7 +2929,8 @@ func resolveSimpleCallgraphSourceValue(nodes []callgraph.SourceNode) (string, bo
 		return "", false
 	}
 	var resolved string
-	for _, node := range nodes {
+	for i := range nodes {
+		node := &nodes[i]
 		value := strings.TrimSpace(node.Value)
 		ok := node.Type == sourceNodeTypeValue && value != ""
 		if !ok && len(node.SourceNodes) > 0 {
@@ -2989,7 +2990,8 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 		return nil
 	}
 	result := make([]exportSourceNode, len(nodes))
-	for i, n := range nodes {
+	for i := range nodes {
+		n := &nodes[i]
 		result[i] = exportSourceNode{
 			Type:                 n.Type,
 			Name:                 n.Name,
@@ -2997,7 +2999,7 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 			Value:                n.Value,
 			SourceNodes:          convertSourceNodes(ctx, n.SourceNodes, defaultFilePath, defaultLine),
 			returnValue:          n.Flow != nil && n.Flow.ReturnValue,
-			guard:                sourceNodeGuard(&n),
+			guard:                sourceNodeGuard(n),
 			callArgument:         n.Flow != nil && n.Flow.CallArgument,
 			sourceParameterIndex: n.ParameterIndex,
 		}
@@ -4076,7 +4078,8 @@ func convertInferredReturnProvenance(nodes []callgraph.SourceNode) []exportSourc
 		return nil
 	}
 	result := make([]exportSourceNode, len(nodes))
-	for i, n := range nodes {
+	for i := range nodes {
+		n := &nodes[i]
 		result[i] = exportSourceNode{
 			Type:         n.Type,
 			Name:         n.Name,

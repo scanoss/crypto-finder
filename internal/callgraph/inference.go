@@ -554,8 +554,8 @@ func inferOnce(
 
 	// Collect candidates from all return sources.
 	var cands []candidate
-	for _, src := range fn.ReturnSources {
-		c, ok := candidateFromSource(src, graph, kb)
+	for i := range fn.ReturnSources {
+		c, ok := candidateFromSource(fn.ReturnSources[i], graph, kb)
 		if ok {
 			cands = append(cands, c)
 		}
@@ -605,8 +605,8 @@ func candidateFromSource(
 		return candidateFromCallResult(src, graph, kb)
 	case sourceNodeVariable, sourceNodeField, sourceNodeParameter:
 		// Recurse into sub-sources.
-		for _, sub := range src.SourceNodes {
-			if c, ok := candidateFromSource(sub, graph, kb); ok {
+		for i := range src.SourceNodes {
+			if c, ok := candidateFromSource(src.SourceNodes[i], graph, kb); ok {
 				return c, true
 			}
 		}
@@ -789,7 +789,8 @@ func resolveExactConditionalMatch(conds []contracts.Contract, resolvedArgs map[i
 // Returns a map from arg index to resolved literal value string.
 func resolveArgValues(nodes []SourceNode) map[int]string {
 	result := make(map[int]string)
-	for _, n := range nodes {
+	for i := range nodes {
+		n := &nodes[i]
 		if n.Type == sourceNodeValue && n.Value != "" {
 			result[n.ParameterIndex] = n.Value
 		}
