@@ -335,9 +335,9 @@ class Worker:
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
-	run := graph.Functions["mypkg.(Worker).run"]
+	run := graph.Functions["mypkg.worker.(Worker).run"]
 	if run == nil {
-		t.Fatalf("missing mypkg.(Worker).run; functions=%v", graph.Functions)
+		t.Fatalf("missing mypkg.worker.(Worker).run; functions=%v", graph.Functions)
 	}
 
 	var terminal *callgraph.FunctionCall

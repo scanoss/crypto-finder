@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
@@ -52,7 +53,7 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 				"pkg/__init__.py": "",
 				"pkg/mod.py":      "def helper():\n    return 1\n",
 			},
-			wantKeys: []string{"(Benchmark)._random_bytes", "pkg.helper"},
+			wantKeys: []string{"bench.(Benchmark)._random_bytes", "pkg.mod.helper"},
 		},
 		{
 			name:      "python src layout is transparent",
@@ -61,7 +62,7 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 				"src/mypkg/__init__.py": "",
 				"src/mypkg/core.py":     "def run():\n    return 1\n",
 			},
-			wantKeys: []string{"mypkg.run"},
+			wantKeys: []string{"mypkg.core.run"},
 		},
 		{
 			name:      "python src layout is transparent under a pyproject name",
@@ -72,7 +73,7 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 				"src/mylib/core.py":     "def run():\n    return 1\n",
 			},
 			rootModule: "mylib",
-			wantKeys:   []string{"mylib.mylib.run"},
+			wantKeys:   []string{"mylib.mylib.core.run"},
 		},
 		{
 			name:      "python lib layout is transparent",
@@ -82,7 +83,7 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 				"lib/Crypto/Hash/__init__.py": "",
 				"lib/Crypto/Hash/HMAC.py":     "def new(key):\n    return key\n",
 			},
-			wantKeys: []string{"Crypto.Hash.new"},
+			wantKeys: []string{"Crypto.Hash.HMAC.new"},
 		},
 		{
 			name:      "python lib that is itself a package keeps its name",
@@ -91,7 +92,7 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 				"lib/__init__.py": "",
 				"lib/util.py":     "def f():\n    return 1\n",
 			},
-			wantKeys: []string{"lib.f"},
+			wantKeys: []string{"lib.util.f"},
 		},
 		{
 			name:      "python lib layout stays transparent beside a src of C sources",
@@ -102,7 +103,7 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 				"lib/Crypto/Hash/__init__.py": "",
 				"lib/Crypto/Hash/HMAC.py":     "def new(key):\n    return key\n",
 			},
-			wantKeys: []string{"Crypto.Hash.new"},
+			wantKeys: []string{"Crypto.Hash.HMAC.new"},
 		},
 		{
 			name:      "python lib layout stays transparent beside a src holding only bytecode and C sources",
@@ -114,7 +115,7 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 				"lib/Crypto/Hash/__init__.py":                "",
 				"lib/Crypto/Hash/HMAC.py":                    "def new(key):\n    return key\n",
 			},
-			wantKeys: []string{"Crypto.Hash.new"},
+			wantKeys: []string{"Crypto.Hash.HMAC.new"},
 		},
 		{
 			name:      "python src and lib layouts with disjoint packages are both transparent",
@@ -125,7 +126,7 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 				"lib/other/__init__.py": "",
 				"lib/other/util.py":     "def f():\n    return 1\n",
 			},
-			wantKeys: []string{"mypkg.run", "other.f"},
+			wantKeys: []string{"mypkg.core.run", "other.util.f"},
 		},
 		{
 			name:      "node without package.json is rooted at the scan root",
@@ -239,8 +240,8 @@ func TestStandaloneCallGraph_LayoutDirKeepsItsSegmentWhenPromotionCollides(t *te
 				"lib/a/b/x.py": "def f():\n    return 2\n",
 			},
 			wantFiles: map[string]string{
-				"src.a.b.f": "src/a/b/x.py",
-				"lib.a.b.f": "lib/a/b/x.py",
+				"src.a.b.x.f": "src/a/b/x.py",
+				"lib.a.b.x.f": "lib/a/b/x.py",
 			},
 		},
 		{
@@ -261,8 +262,8 @@ func TestStandaloneCallGraph_LayoutDirKeepsItsSegmentWhenPromotionCollides(t *te
 				"src/a.py": "def f():\n    return 2\n",
 			},
 			wantFiles: map[string]string{
-				"f":     "a.py",
-				"src.f": "src/a.py",
+				"a.f":     "a.py",
+				"src.a.f": "src/a.py",
 			},
 		},
 	}
@@ -275,11 +276,11 @@ func TestStandaloneCallGraph_LayoutDirKeepsItsSegmentWhenPromotionCollides(t *te
 	}
 }
 
-// TestStandaloneCallGraph_SameNameInSiblingRootModulesKeysByStem pins the
-// alias a module collision adds at an unnamed root. Two modules at the same
-// package level that define the same name keep both declarations under
-// `<package>.<stem>.<name>`; with an empty root package that must be
-// `a.f` and `b.f`, never `.a.f`, which the key grammar rejects. Several
+// TestStandaloneCallGraph_SameNameInSiblingRootModulesKeysByStem pins that
+// two modules at the same package level that define the same name keep both
+// declarations, each under its own module, `<package>.<stem>.<name>`, and
+// under no other key; with an empty root package that must be `a.f` and
+// `b.f`, never `.a.f`, which the key grammar rejects. Several
 // root-level scripts each defining `main` is the common shape of a Python
 // sdist with no pyproject, so this is the normal case, not an edge.
 func TestStandaloneCallGraph_SameNameInSiblingRootModulesKeysByStem(t *testing.T) {
@@ -297,7 +298,6 @@ func TestStandaloneCallGraph_SameNameInSiblingRootModulesKeysByStem(t *testing.T
 				"b.py": "def f():\n    return 2\n",
 			},
 			wantFiles: map[string]string{
-				"f":   "a.py",
 				"a.f": "a.py",
 				"b.f": "b.py",
 			},
@@ -309,7 +309,6 @@ func TestStandaloneCallGraph_SameNameInSiblingRootModulesKeysByStem(t *testing.T
 				"src/b.py": "def f():\n    return 2\n",
 			},
 			wantFiles: map[string]string{
-				"f":   "a.py",
 				"a.f": "a.py",
 				"b.f": "src/b.py",
 			},
@@ -321,6 +320,52 @@ func TestStandaloneCallGraph_SameNameInSiblingRootModulesKeysByStem(t *testing.T
 			t.Parallel()
 			assertPythonFunctionFiles(t, tc.files, tc.wantFiles)
 		})
+	}
+}
+
+// A scan of a Python project whose pyproject name differs from its package
+// keys every symbol under that name, which no import statement spells, so a
+// call from one module to a function in another must still reach it: the
+// helper's chain has the cross-module caller.
+func TestStandaloneCallGraph_PythonCrossModuleCallerUnderAPyprojectName(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	for rel, content := range map[string]string{
+		"pyproject.toml":  "[project]\nname = \"probe\"\n",
+		"app/__init__.py": "",
+		"app/digest.py":   "import hashlib\n\n\ndef digest(alg, data):\n    return hashlib.new(alg, data).hexdigest()\n",
+		"app/main.py":     "from app.digest import digest\n\n\ndef caller(d):\n    return digest(\"sha1\", d)\n",
+	} {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := buildStandaloneCallGraphResultForEcosystem(dir, &entities.InterimReport{}, "python", javaruntime.Config{}, false, "", nil, true)
+	if err != nil {
+		t.Fatalf("build call graph: %v", err)
+	}
+	if result.RootModule != "probe" {
+		t.Fatalf("RootModule = %q, want probe", result.RootModule)
+	}
+
+	helper := callgraph.FunctionID{Package: "probe.app.digest", Name: "digest"}
+	chains, _ := callgraph.NewTracer(result.CallGraph, ".").TraceBackLimited(helper, nil, 8, 8)
+	got := make([][]string, 0, len(chains))
+	for _, chain := range chains {
+		var keys []string
+		for _, step := range chain.Steps {
+			keys = append(keys, step.Function.String())
+		}
+		got = append(got, keys)
+	}
+	want := [][]string{{"probe.app.main.caller", "probe.app.digest.digest"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("chains to %s = %v, want %v (functions %v)", helper, got, want, functionKeys(result.CallGraph.Functions))
 	}
 }
 

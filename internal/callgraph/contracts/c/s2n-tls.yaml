@@ -48,11 +48,6 @@ contracts:
     arity: 6
     return: {type: "int", confidence: high}
     role: config
-    parameters:
-      - index: 4
-        name: key_len
-        role: metadata-contributing
-        contributes: {property: keyLength, derivation: argument_value}
   - method: s2n_config_set_session_tickets_onoff
     arity: 2
     return: {type: "int", confidence: high}

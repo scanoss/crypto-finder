@@ -1,0 +1,114 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "web3"
+  coordinates:
+    - "web3"
+  version_range: ">=1.0.0"
+  description: "web3: the Ethereum JavaScript API umbrella package"
+
+# WHAT THE PARSER CAN KEY. A consumer builds the umbrella object and hashes
+# through its utilities:
+#
+#     const Web3 = require('web3');
+#     const web3 = new Web3(provider);                  // factory
+#     const h = Web3.utils.keccak256(data);             // operation
+#     const { utils } = require('web3');                // 4.x named export
+#     const s = utils.soliditySha3(a, b);               // operation
+#
+# `Web3.utils.*` and the 4.x `utils` named export are keyed `web3.utils.*`
+# whatever the local name, and `new Web3(..)` is keyed `web3.Web3.<init>`.
+#
+# WHAT IT CANNOT. The account and key operations hang off nested objects of the
+# instance: `web3.eth.accounts.sign(..)`, `web3.eth.accounts.create()`,
+# `web3.eth.accounts.privateKeyToAccount(pk).sign(..)`. The parser types a
+# variable from a contracted result and then types calls made directly on that
+# variable; a receiver that is itself a member chain (`web3.eth.accounts`), or
+# an alias of one, stays an untyped receiver, so nothing in that chain can be
+# reached by a contract and none is declared. Neither are the utilities reached
+# through an instance (`web3.utils.keccak256` on a `new Web3(..)` variable).
+#
+# Declared from web3 4.16.0 and web3-utils 4.3.3 (index.d.ts, hash.d.ts) and
+# checked against 1.10.4 and 1.2.0: keccak256, sha3 and sha3Raw take one value;
+# soliditySha3 and soliditySha3Raw are variadic and are declared for 1 to 6
+# arguments. The constructor takes an optional provider (and, in 1.x, an optional
+# net). sha3 and soliditySha3 may return nothing for an empty input; the declared
+# result is the hash string.
+#
+# Deliberately NOT contracted: the `web3.eth.accounts` surface (see above), the
+# provider, transport and signing-by-node calls (`eth.sign`, `eth.personal.sign`,
+# `eth.signTransaction`, `sendTransaction`), which ask the connected node to sign
+# over RPC, and the utilities that format or convert without hashing.
+contracts:
+  - method: "web3.Web3.<init>"
+    arity: 0
+    return: { type: "web3.Web3", confidence: high }
+    role: factory
+  - method: "web3.Web3.<init>"
+    arity: 1
+    return: { type: "web3.Web3", confidence: high }
+    role: factory
+  - method: "web3.Web3.<init>"
+    arity: 2
+    return: { type: "web3.Web3", confidence: high }
+    role: factory
+  - method: "web3.utils.keccak256"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.sha3"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.sha3Raw"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3"
+    arity: 4
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3"
+    arity: 5
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3"
+    arity: 6
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3Raw"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3Raw"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3Raw"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3Raw"
+    arity: 4
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3Raw"
+    arity: 5
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "web3.utils.soliditySha3Raw"
+    arity: 6
+    return: { type: "string", confidence: high }
+    role: operation
