@@ -303,6 +303,7 @@ func TestExportCallGraph_GoGRPCRegisteredServer(t *testing.T) {
 		{id: "quux-mock-by-name", file: "bar_impl.go", needle: `sha512.Sum512_256([]byte("mock"))`, reachability: unreachable},
 		{id: "quux-uncalled-producer", file: "bar_impl.go", needle: `sha512.Sum512_224([]byte("alt"))`, reachability: unreachable},
 		{id: "multi-registrar", file: "bar_impl.go", needle: `sha512.Sum512_224([]byte("multi"))`, reachability: reachable, rootKind: framework, first: "Hash"},
+		{id: "external-helper-registrar", file: "bar_impl.go", needle: `sha512.Sum512_224([]byte("helper"))`, reachability: reachable, rootKind: framework, first: "Hash"},
 		{id: "http-registrar", file: "bar_impl.go", needle: "sha512.New384(nil)", reachability: unreachable},
 		{id: "no-evidence", file: "bar_impl.go", needle: "sha512.New512_224(nil)", reachability: unreachable},
 		{id: "stream-of-service", file: "bar_impl.go", needle: "sha512.Sum512_256(nil)", reachability: reachable, rootKind: framework, first: "Watch"},

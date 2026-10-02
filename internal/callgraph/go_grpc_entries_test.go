@@ -186,24 +186,25 @@ type holder struct{ gs *grpc.Server }
 		body      string
 		confirmed bool
 		source    FunctionID
+		imports   bool
 		index     int
 	}{
-		"grpc.NewServer":    {body: `func f() { gs := grpc.NewServer(); pb.RegisterKeysServer(gs, &impl{}) }`, confirmed: true},
+		"grpc.NewServer":    {body: `func f() { gs := grpc.NewServer(); pb.RegisterKeysServer(gs, &impl{}) }`, confirmed: true, imports: true},
 		"typed parameter":   {body: `func f(gs *grpc.Server) { pb.RegisterKeysServer(gs, &impl{}) }`, confirmed: true},
 		"service registrar": {body: `func f(r grpc.ServiceRegistrar) { pb.RegisterKeysServer(r, &impl{}) }`, confirmed: true},
 		"typed field":       {body: `func (h *holder) f() { pb.RegisterKeysServer(h.gs, &impl{}) }`, confirmed: true},
 		"gateway mux":       {body: `func f(ctx any) { pb.RegisterKeysHandlerServer(ctx, runtime.NewServeMux(), &impl{}) }`, confirmed: true},
-		"untyped":           {body: `func f(s any) { pb.RegisterKeysServer(s, &impl{}) }`},
+		"untyped":           {body: `func f(s any) { pb.RegisterKeysServer(s, &impl{}) }`, imports: true},
 		"other package":     {body: `func f(s *boot.Mux) { pb.RegisterKeysServer(s, &impl{}) }`},
 		"result of a function": {
 			body:   `func f() { l, s, err := boot.Listen(); pb.RegisterKeysServer(s, &impl{}) }`,
-			source: FunctionID{Package: "example.com/app/boot", Name: "Listen"}, index: 1,
+			source: FunctionID{Package: "example.com/app/boot", Name: "Listen"}, index: 1, imports: true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			refs := grpcRefs(t, imports+tc.body)
-			if len(refs) != 1 || refs[0].GRPCRegistrar != tc.confirmed || refs[0].RegistrarFunc != tc.source || refs[0].RegistrarIndex != tc.index {
+			if len(refs) != 1 || refs[0].GRPCRegistrar != tc.confirmed || refs[0].RegistrarFunc != tc.source || refs[0].RegistrarIndex != tc.index || refs[0].FileImportsGRPC != tc.imports {
 				t.Fatalf("refs = %+v, want confirmed=%v source=%v index=%d", refs, tc.confirmed, tc.source, tc.index)
 			}
 		})
@@ -236,7 +237,9 @@ func TestRegistrationEvidence_FromTheGraph(t *testing.T) {
 		"grpc result":           {EntryRef{Interface: iface, RegistrarFunc: listen.ID, RegistrarIndex: 1}, graph(listen), true},
 		"wrong result position": {EntryRef{Interface: iface, RegistrarFunc: listen.ID, RegistrarIndex: 0}, graph(listen), false},
 		"other result type":     {EntryRef{Interface: iface, RegistrarFunc: other.ID, RegistrarIndex: 1}, graph(other), false},
-		"function not in graph": {EntryRef{Interface: iface, RegistrarFunc: listen.ID, RegistrarIndex: 1}, graph(), false},
+		"file imports grpc, helper outside the graph":  {EntryRef{Interface: iface, RegistrarFunc: listen.ID, RegistrarIndex: 1, FileImportsGRPC: true}, graph(), true},
+		"file imports grpc, helper declared elsewhere": {EntryRef{Interface: iface, RegistrarFunc: other.ID, RegistrarIndex: 1, FileImportsGRPC: true}, graph(other), false},
+		"function not in graph":                        {EntryRef{Interface: iface, RegistrarFunc: listen.ID, RegistrarIndex: 1}, graph(), false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

@@ -87,6 +87,7 @@ func (s *goEntryScope) serverRegistration(call *sitter.Node) {
 		Kind:        catalogEntryKind(&entry),
 	}
 	ref.GRPCRegistrar, ref.RegistrarFunc, ref.RegistrarIndex = s.registrarEvidence(args.NamedChild(registrar))
+	ref.FileImportsGRPC = s.registrarIsUntypedVariable(args.NamedChild(registrar))
 	switch {
 	case value.pkg == ref.Interface.Package && value.typ == ref.Interface.Type:
 		ref.Function = ref.Interface
@@ -143,6 +144,21 @@ func (s *goEntryScope) registrarEvidence(expr *sitter.Node) (confirmed bool, fn 
 	return false, FunctionID{}, 0
 }
 
+// registrarIsUntypedVariable reports whether the registrar is a variable whose
+// type is not known and the file imports google.golang.org/grpc, as in
+// `listen, server, err := helper.Setup(); pb.RegisterXServer(server, impl)`.
+func (s *goEntryScope) registrarIsUntypedVariable(expr *sitter.Node) bool {
+	if expr == nil || expr.Type() != goNodeIdentifier || s.serverValue(expr, 0).typ != "" {
+		return false
+	}
+	for _, path := range s.analysis.Imports {
+		if path == goGRPCPackage {
+			return true
+		}
+	}
+	return false
+}
+
 // multiValueSource finds the declaration `a, b, err := f()` of the name in
 // the functions enclosing id, and returns the call and the name's position.
 func (s *goEntryScope) multiValueSource(id *sitter.Node) (*sitter.Node, int, bool) {
@@ -184,7 +200,7 @@ func (s *goEntryScope) findMultiValue(node *sitter.Node, name string) (*sitter.N
 // acceptRegistrations drops the service registrations with no evidence that
 // they are gRPC ones, so a project's own httpx.RegisterHTTPServer(mux, srv)
 // roots nothing. Evidence is any of: the generated interface <X>Server is in
-// the graph; a generated file (*.pb.go) of the callee's package is; or the
+// the graph; a generated file (*.pb.go) of the callee's package is; the
 // registrar argument is a grpc.Server, grpc.ServiceRegistrar or gateway
 // ServeMux, by its type in the file or by the declared result of the function
 // it comes from.
@@ -203,7 +219,14 @@ func registrationEvidence(graph *CallGraph, ref *EntryRef) bool {
 	if ref.GRPCRegistrar {
 		return true
 	}
-	if registrarResultIsGRPC(graph, ref) {
+	resolved := false
+	if decl := graph.Functions[ref.RegistrarFunc.String()]; ref.RegistrarFunc != (FunctionID{}) && decl != nil {
+		resolved = true
+		if registrarResultIsGRPC(decl, ref.RegistrarIndex) {
+			return true
+		}
+	}
+	if ref.FileImportsGRPC && !resolved {
 		return true
 	}
 	for _, decl := range graph.Functions {
@@ -218,16 +241,12 @@ func registrationEvidence(graph *CallGraph, ref *EntryRef) bool {
 }
 
 // registrarResultIsGRPC reads the declared result the registrar comes from.
-func registrarResultIsGRPC(graph *CallGraph, ref *EntryRef) bool {
-	decl := graph.Functions[ref.RegistrarFunc.String()]
-	if ref.RegistrarFunc == (FunctionID{}) || decl == nil {
-		return false
-	}
+func registrarResultIsGRPC(decl *FunctionDecl, index int) bool {
 	results := splitGoResults(decl.ReturnType)
-	if ref.RegistrarIndex >= len(results) {
+	if index >= len(results) {
 		return false
 	}
-	result := strings.TrimLeft(results[ref.RegistrarIndex], "*")
+	result := strings.TrimLeft(results[index], "*")
 	dot := strings.LastIndex(result, ".")
 	return dot > 0 && goRegistrarType(result[:dot], result[dot+1:], "")
 }

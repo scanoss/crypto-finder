@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"example.com/ext/bar"
+	"example.com/ext/boot"
 	"example.com/ext/httpx"
 	"example.com/grpcreg/gen/foo"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -35,9 +36,15 @@ func main() {
 	_, srv, _ := newGRPC()
 	bar.RegisterMultiServer(srv, &multiImpl{})
 
-	// No gRPC registrar, no generated interface or file: nothing is rooted.
+	// The registrar comes from a function outside the tree and the file
+	// imports grpc.
+	_, helper, _ := boot.Listen()
+	bar.RegisterHelperServer(helper, &helperImpl{})
+
+	// A registrar of a known type that is not gRPC: nothing is rooted.
+	httpx.RegisterHTTPServer(&http.ServeMux{}, &httpImpl{})
 	httpx.RegisterHTTPServer(http.NewServeMux(), &httpImpl{})
-	bar.RegisterNopeServer(anything, &nopeImpl{})
+	registerNope(anything)
 
 	bar.RegisterStreamServer(gs, &streamImpl{})
 }

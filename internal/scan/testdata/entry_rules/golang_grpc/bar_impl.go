@@ -134,3 +134,10 @@ func (s *streamImpl) Other(req *bar.SignRequest, stream bar.Audit_FeedServer) er
 	_ = sha512.Sum384(nil)
 	return nil
 }
+
+type helperImpl struct{}
+
+func (s *helperImpl) Hash(ctx context.Context, req *bar.SignRequest) (*bar.SignResponse, error) {
+	_ = sha512.Sum512_224([]byte("helper"))
+	return nil, nil
+}

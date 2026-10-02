@@ -48,9 +48,13 @@ type EntryRef struct {
 	// gRPC server or gateway mux, by its type in the registering file.
 	// Otherwise RegistrarFunc and RegistrarIndex name the function and the
 	// result the registrar comes from. Go only.
-	GRPCRegistrar  bool
-	RegistrarFunc  FunctionID
-	RegistrarIndex int
+	GRPCRegistrar bool
+	// FileImportsGRPC says the registrar is a variable of no known type and
+	// the registering file imports google.golang.org/grpc: the evidence there
+	// is when the function it comes from is outside the graph.
+	FileImportsGRPC bool
+	RegistrarFunc   FunctionID
+	RegistrarIndex  int
 	// Module says Function.Package is a Python module path, as an import
 	// or a manifest spells it (shop.web.views). The graph keys a Python
 	// function by its defining module, so it matches that module exactly, or
