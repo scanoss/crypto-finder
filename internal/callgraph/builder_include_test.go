@@ -113,3 +113,56 @@ func TestBuilder_PackageIncludeFilesKeepsOnlyTheOwnersFiles(t *testing.T) {
 		})
 	}
 }
+
+// A distribution rooted at site-packages with no import path parses each of
+// its packages and modules under its own name (configobj, validate, six),
+// as a distribution rooted at one package directory parses that package,
+// and nothing of the distributions beside it.
+func TestBuilder_PackageIncludeFilesAtSitePackagesKeepsModuleNames(t *testing.T) {
+	t.Parallel()
+
+	site := t.TempDir()
+	for rel, name := range map[string]string{
+		"configobj/__init__.py": "load",
+		"validate/check.py":     "check",
+		"six.py":                "wrap",
+		"requests/api.py":       "get",
+		"other.py":              "other",
+	} {
+		path := filepath.Join(site, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("def "+name+"():\n    pass\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	parsers := map[string]Parser{"parallel": NewPythonParser(), "serial": serialParser{NewPythonParser()}}
+	for name, parser := range parsers {
+		t.Run(name, func(t *testing.T) {
+			graph, err := NewBuilderForEcosystem("python", parser).BuildFromDirectories([]PackageDir{{
+				Dir:              site,
+				DistributionName: "configobj",
+				Version:          "5.0",
+				IncludeFiles: []string{
+					filepath.Join(site, "configobj", "__init__.py"),
+					filepath.Join(site, "six.py"),
+					filepath.Join(site, "validate", "check.py"),
+				},
+			}}, nil)
+			if err != nil {
+				t.Fatalf("BuildFromDirectories: %v", err)
+			}
+			var got []string
+			for _, fn := range graph.Functions {
+				got = append(got, fn.ID.Package+"."+fn.ID.Name)
+			}
+			sort.Strings(got)
+			want := []string{"configobj.load", "six.wrap", "validate.check.check"}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("functions = %v, want %v", got, want)
+			}
+		})
+	}
+}

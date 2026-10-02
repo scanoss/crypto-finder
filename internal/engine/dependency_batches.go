@@ -43,7 +43,7 @@ type scanBatch struct {
 
 // shapeBatches groups work into the processes that scan it. Roots that nest
 // cannot share a process, because the outer root's exclusions hide the inner
-// one, unless they are disjoint siblings of one directory, so each nesting
+// one, unless they are disjoint (scanner.Disjoint), so each nesting
 // level is split on its own into
 // max(ceil(n / maxBatchRoots), min(workers, n)) batches: the heaviest work
 // goes first, each item into the lightest batch, so the workers finish
@@ -97,7 +97,11 @@ func balance(items []depWork, workers int) []scanBatch {
 // nestingLevels gives each root its depth among roots: 0 when no other root
 // holds it, otherwise one more than the level of the nearest root that does.
 // A root holds every path below its Dir at a separator and an equal Dir, an
-// earlier root holding a later one, unless the two are disjoint siblings.
+// earlier root holding a later one, unless the two are disjoint: a scoped
+// root (a Python distribution at site-packages, a namespace sibling) that
+// names none of the other's files. A batch applies every member's
+// exclusions, so this relies on scoped roots having no exclusion anchored
+// at their Dir; only npm roots, which are never scoped, have one.
 func nestingLevels(roots []scanner.Root) []int {
 	dirs := make([]string, len(roots))
 	for i := range roots {
@@ -107,7 +111,7 @@ func nestingLevels(roots []scanner.Root) []int {
 	for i, dir := range dirs {
 		parent[i] = -1
 		for j, other := range dirs {
-			if j == i || !holdsDir(other, dir) || (other == dir && (j > i || scanner.DisjointSiblings(roots[i], roots[j]))) {
+			if j == i || !holdsDir(other, dir) || (other == dir && j > i) || scanner.Disjoint(roots[i], roots[j]) {
 				continue
 			}
 			if parent[i] < 0 || len(other) > len(dirs[parent[i]]) || (len(other) == len(dirs[parent[i]]) && j > parent[i]) {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -66,7 +67,7 @@ func (r *PipResolver) CanResolve(targetDir string) bool {
 // Resolve uses `pip list` and `pip show` to resolve all installed Python packages
 // for the environment associated with the project at targetDir.
 //
-//nolint:gocognit,gocyclo // This workflow intentionally keeps fallback resolution logic together.
+//nolint:gocognit // This workflow intentionally keeps fallback resolution logic together.
 func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	// Step 1: Detect root module name
 	rootModule := r.detectRootModule(targetDir)
@@ -119,9 +120,8 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	}
 
 	// Step 5: Build dependencies list and graph
-	skippedSingleFile := 0
 	skippedNoSource := 0
-	var locations []string
+	var installs []installedDistribution
 	for _, pkg := range packages {
 		// Skip the root project itself
 		if strings.EqualFold(normalizePackageName(pkg.Name), normalizePackageName(rootModule)) {
@@ -129,30 +129,15 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		}
 
 		info := infoMap[normalizePackageName(pkg.Name)]
-		dir, importPath, reason := r.resolvePackageRoot(pkg.Name, info, distToImport)
-		if dir == "" {
-			switch reason {
-			case skipReasonUnknown:
-				log.Debug().Str("package", pkg.Name).Msg("Could not determine package source location, skipping")
-			case skipReasonSingleFile:
-				skippedSingleFile++
-				log.Debug().Str("package", pkg.Name).Msg("Single-file module (no directory to scan), skipping")
-			case skipReasonNoSource:
-				skippedNoSource++
-				log.Debug().Str("package", pkg.Name).Msg("No Python source found (likely C-extension or missing), skipping")
-			default:
-				log.Debug().Str("package", pkg.Name).Msg("Could not locate package source, skipping")
-			}
+		roots := r.resolvePackageRoots(pkg.Name, info, distToImport)
+		if len(roots) == 0 {
+			skippedNoSource++
+			log.Debug().Str("package", pkg.Name).Msg("No Python source found (likely C-extension or missing), skipping")
 			continue
 		}
 
-		result.Dependencies = append(result.Dependencies, Dependency{
-			Module:     pkg.Name,
-			ImportPath: importPath,
-			Version:    pkg.Version,
-			Dir:        dir,
-		})
-		locations = append(locations, info.Location)
+		result.Dependencies = append(result.Dependencies, Dependency{Module: pkg.Name, Version: pkg.Version})
+		installs = append(installs, installedDistribution{location: info.Location, roots: roots})
 
 		// Build graph from Requires field
 		if info.Requires != "" {
@@ -165,11 +150,10 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		}
 	}
 
-	ownSharedRoots(result.Dependencies, locations)
+	placeDistributions(result.Dependencies, installs)
 
 	log.Info().
 		Int("resolved", len(result.Dependencies)).
-		Int("skippedSingleFile", skippedSingleFile).
 		Int("skippedNoSource", skippedNoSource).
 		Str("root", result.RootModule).
 		Msg("Resolved pip dependencies")
@@ -400,63 +384,48 @@ func parsePipShowOutput(output string) map[string]pipShowInfo {
 	return result
 }
 
-// skipReason describes why a package could not be resolved.
-type skipReason int
-
-const (
-	skipReasonUnknown    skipReason = iota
-	skipReasonSingleFile            // package is a single .py file, not a directory
-	skipReasonNoSource              // no Python source on disk (C-extension or missing)
-)
-
-// resolvePackageDir finds the source directory for a Python package.
-// It uses the distribution→import mapping from importlib.metadata as the primary
-// strategy, falling back to heuristic name normalization for older Python environments.
-func (r *PipResolver) resolvePackageDir(pkgName string, info pipShowInfo, distToImport map[string][]string) (string, skipReason) {
-	dir, _, reason := r.resolvePackageRoot(pkgName, info, distToImport)
-	return dir, reason
-}
-
-// resolvePackageRoot returns both the selected source directory and the exact
-// import root that selected it. Distribution identity remains pkgName; callers
-// must not derive Python FQNs from that coordinate.
-func (r *PipResolver) resolvePackageRoot(pkgName string, info pipShowInfo, distToImport map[string][]string) (string, string, skipReason) {
+// resolvePackageRoots returns the top-level roots a distribution installed
+// in info.Location, relative to it and sorted: each of its import names that
+// is a package directory there, or a module file (six.py). A root inside
+// another root is part of it, and a name that is neither (a compiled
+// extension) is no root. Without a mapping, or when no mapped name is on
+// disk, the root is the directory named after the normalized distribution,
+// if there is one. Distribution identity remains pkgName; callers must not
+// derive Python FQNs from that coordinate.
+func (r *PipResolver) resolvePackageRoots(pkgName string, info pipShowInfo, distToImport map[string][]string) []string {
 	if info.Location == "" {
-		return "", "", skipReasonNoSource
+		return nil
 	}
 
-	// Strategy 1: Use importlib.metadata mapping (most reliable)
-	if len(distToImport) > 0 {
-		importNames := distToImport[normalizePackageName(pkgName)]
-		for _, importName := range importNames {
-			dir := filepath.Join(info.Location, importName)
-			if isDir(dir) {
-				return dir, importName, 0
-			}
-			// Check for single-file module (e.g., six.py)
-			if isFile(filepath.Join(info.Location, importName+".py")) {
-				return "", "", skipReasonSingleFile
-			}
+	var roots []string
+	for _, importName := range distToImport[normalizePackageName(pkgName)] {
+		name := filepath.Clean(filepath.FromSlash(importName))
+		// importlib infers __pycache__ from the bytecode a module file's
+		// RECORD lists; every module file of site-packages shares it.
+		if !filepath.IsLocal(name) || name == "__pycache__" {
+			continue
+		}
+		path := filepath.Join(info.Location, name)
+		switch {
+		case isDir(path):
+			roots = append(roots, name)
+		case isFile(path + ".py"):
+			roots = append(roots, name+".py")
 		}
 	}
-
-	// Strategy 2: Heuristic - normalized name as directory.
-	importName := normalizePackageName(pkgName)
-	dir := filepath.Join(info.Location, importName)
-	if isDir(dir) {
-		return dir, importName, 0
+	slices.Sort(roots)
+	roots = slices.Compact(roots)
+	roots = slices.DeleteFunc(roots, func(root string) bool {
+		return slices.ContainsFunc(roots, func(other string) bool { return underDir(other, root) })
+	})
+	if len(roots) > 0 {
+		return roots
 	}
 
-	// Strategy 3: Try lowercase variant
-	lower := strings.ToLower(importName)
-	if lower != importName {
-		dir = filepath.Join(info.Location, lower)
-		if isDir(dir) {
-			return dir, lower, 0
-		}
+	if name := normalizePackageName(pkgName); isDir(filepath.Join(info.Location, name)) {
+		return []string{name}
 	}
-
-	return "", "", skipReasonNoSource
+	return nil
 }
 
 // pythonPackagesDistributions calls the selected interpreter's

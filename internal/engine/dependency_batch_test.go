@@ -450,6 +450,17 @@ func TestNestingLevels(t *testing.T) {
 	if got, want := nestingLevels(siblings), []int{0, 0, 1, 2}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("nestingLevels = %v, want %v (disjoint siblings share a level; overlapping or unscoped ones nest)", got, want)
 	}
+	site := []scanner.Root{
+		{Dir: "/sp", Scope: scoped("configobj/__init__.py", "validate/__init__.py")},
+		{Dir: "/sp", Scope: scoped("six.py")},
+		{Dir: "/sp/solo"},
+		{Dir: "/sp/google", Scope: scoped("auth/a.py")},
+		{Dir: "/sp", Scope: scoped("solo/x.py")},
+		{Dir: "/sp", Scope: scoped("google/auth/a.py")},
+	}
+	if got, want := nestingLevels(site), []int{0, 0, 1, 1, 0, 0}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("nestingLevels = %v, want %v (a scoped root nests only the roots whose files it names)", got, want)
+	}
 	work := []depWork{weighted("/m/a/", 1), weighted("/m/a/node_modules/b", 1)}
 	if batches := shapeBatches(work, 1); len(batches) != 2 {
 		t.Fatalf("a root with a trailing separator shared a batch with the root nested under it: %v", batches)

@@ -227,7 +227,7 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 
 	signatures := make(map[string]pythonSignature)
 	hierarchy := make(map[string][]string)
-	r.walkDistribution(root.Dir, root.ImportPath, includedFiles(root.IncludeFiles), parser, signatures, hierarchy)
+	r.walkDistribution(root.Dir, root.ImportPath, newIncludeScope(root.Dir, root.IncludeFiles), parser, signatures, hierarchy)
 
 	if r.cache != nil {
 		entry := &CachedPythonSignatureIndex{
@@ -256,7 +256,7 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 // indexing to its files.
 func (r *PythonDependencyTypeResolver) walkDistribution(
 	dir, importPath string,
-	include map[string]bool,
+	include *includeScope,
 	parser pythonDependencyParser,
 	signatures map[string]pythonSignature,
 	hierarchy map[string][]string,
@@ -269,7 +269,7 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 
 	for _, name := range selectPythonDistFiles(entries) {
 		full := filepath.Join(dir, name)
-		if (include != nil && !include[full]) || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(full), false) {
+		if (include != nil && !include.files[full]) || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(full), false) {
 			continue
 		}
 		r.indexDistributionFile(full, importPath, parser, signatures, hierarchy)
@@ -281,7 +281,7 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 		}
 		name := entry.Name()
 		child := filepath.Join(dir, name)
-		if strings.HasPrefix(name, ".") || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(child), true) {
+		if strings.HasPrefix(name, ".") || (include != nil && !include.walk[child]) || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(child), true) {
 			continue
 		}
 		r.walkDistribution(child, pythonDependencySubPackagePath(importPath, name), include, parser, signatures, hierarchy)
@@ -314,18 +314,6 @@ func (r *PythonDependencyTypeResolver) indexDistributionFile(
 	for i := 0; i < count; i++ {
 		pythonIndexTopLevelNode(root.NamedChild(i), src, FunctionID{Package: modulePath}, signatures, hierarchy)
 	}
-}
-
-// includedFiles is files as a set, nil when files is: every file.
-func includedFiles(files []string) map[string]bool {
-	if files == nil {
-		return nil
-	}
-	set := make(map[string]bool, len(files))
-	for _, file := range files {
-		set[filepath.Clean(file)] = true
-	}
-	return set
 }
 
 // pythonDependencySubPackagePath mirrors PythonParser.SubPackagePath.

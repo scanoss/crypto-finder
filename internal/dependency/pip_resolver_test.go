@@ -333,95 +333,64 @@ func TestParsePackagesDistributions_Empty(t *testing.T) {
 	}
 }
 
-func TestResolvePackageDir_WithMapping(t *testing.T) {
-	// Create a temp site-packages directory structure
-	tmpDir := t.TempDir()
-	sitePackages := tmpDir
-
-	// Create directory packages
-	os.MkdirAll(filepath.Join(sitePackages, "bs4"), 0o755)
-	os.MkdirAll(filepath.Join(sitePackages, "PIL"), 0o755)
-
-	// Create a single-file module
-	os.WriteFile(filepath.Join(sitePackages, "six.py"), []byte("# six"), 0o644)
+func TestResolvePackageRoots_WithMapping(t *testing.T) {
+	sitePackages := t.TempDir()
+	for _, dir := range []string{"bs4", "PIL", "yaml", "_yaml", "googleapiclient/discovery_cache", "apiclient", "__pycache__"} {
+		if err := os.MkdirAll(filepath.Join(sitePackages, filepath.FromSlash(dir)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, file := range []string{"six.py", "_cffi_backend.so"} {
+		if err := os.WriteFile(filepath.Join(sitePackages, file), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	distToImport := map[string][]string{
-		"beautifulsoup4": {"bs4"},
-		"pillow":         {"PIL"},
-		"six":            {"six"},
+		"beautifulsoup4":           {"bs4"},
+		"pillow":                   {"PIL"},
+		"six":                      {"__pycache__", "six"},
+		"pyyaml":                   {"yaml", "_yaml"},
+		"google_api_python_client": {"googleapiclient/discovery_cache", "googleapiclient", "apiclient"},
+		"cffi":                     {"_cffi_backend"},
+		"escape":                   {"../outside"},
+	}
+
+	tests := []struct {
+		pkgName  string
+		location string
+		want     []string
+	}{
+		{"beautifulsoup4", sitePackages, []string{"bs4"}},
+		{"Pillow", sitePackages, []string{"PIL"}},
+		{"six", sitePackages, []string{"six.py"}},
+		{"PyYAML", sitePackages, []string{"_yaml", "yaml"}},
+		{"google-api-python-client", sitePackages, []string{"apiclient", "googleapiclient"}},
+		{"cffi", sitePackages, nil},
+		{"escape", sitePackages, nil},
+		{"missing-pkg", sitePackages, nil},
+		{"bs4", "", nil},
 	}
 
 	r := NewPipResolver()
-
-	tests := []struct {
-		name       string
-		pkgName    string
-		info       pipShowInfo
-		wantDir    string
-		wantReason skipReason
-	}{
-		{
-			name:    "beautifulsoup4 resolves via mapping to bs4/",
-			pkgName: "beautifulsoup4",
-			info:    pipShowInfo{Location: sitePackages},
-			wantDir: filepath.Join(sitePackages, "bs4"),
-		},
-		{
-			name:    "Pillow resolves via mapping to PIL/",
-			pkgName: "Pillow",
-			info:    pipShowInfo{Location: sitePackages},
-			wantDir: filepath.Join(sitePackages, "PIL"),
-		},
-		{
-			name:       "six is single-file, skipped",
-			pkgName:    "six",
-			info:       pipShowInfo{Location: sitePackages},
-			wantDir:    "",
-			wantReason: skipReasonSingleFile,
-		},
-		{
-			name:       "missing-pkg has no source",
-			pkgName:    "missing-pkg",
-			info:       pipShowInfo{Location: sitePackages},
-			wantDir:    "",
-			wantReason: skipReasonNoSource,
-		},
-		{
-			name:       "empty location",
-			pkgName:    "anything",
-			info:       pipShowInfo{Location: ""},
-			wantDir:    "",
-			wantReason: skipReasonNoSource,
-		},
-	}
-
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dir, reason := r.resolvePackageDir(tt.pkgName, tt.info, distToImport)
-			if dir != tt.wantDir {
-				t.Errorf("dir = %q, want %q", dir, tt.wantDir)
-			}
-			if reason != tt.wantReason {
-				t.Errorf("reason = %v, want %v", reason, tt.wantReason)
+		t.Run(tt.pkgName, func(t *testing.T) {
+			if got := r.resolvePackageRoots(tt.pkgName, pipShowInfo{Location: tt.location}, distToImport); !slices.Equal(got, tt.want) {
+				t.Errorf("roots = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestResolvePackageDir_FallbackWithoutMapping(t *testing.T) {
+func TestResolvePackageRoots_FallbackWithoutMapping(t *testing.T) {
 	tmpDir := t.TempDir()
-	// Create a package dir matching the normalized name
-	os.MkdirAll(filepath.Join(tmpDir, "my_package"), 0o755)
-
-	r := NewPipResolver()
-
-	// With nil distToImport, falls back to heuristic
-	dir, reason := r.resolvePackageDir("my-package", pipShowInfo{Location: tmpDir}, nil)
-	if dir != filepath.Join(tmpDir, "my_package") {
-		t.Errorf("dir = %q, want %q", dir, filepath.Join(tmpDir, "my_package"))
+	if err := os.MkdirAll(filepath.Join(tmpDir, "my_package"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if reason != 0 {
-		t.Errorf("reason = %v, want 0", reason)
+
+	got := NewPipResolver().resolvePackageRoots("my-package", pipShowInfo{Location: tmpDir}, nil)
+	if want := []string{"my_package"}; !slices.Equal(got, want) {
+		t.Errorf("roots = %q, want %q", got, want)
 	}
 }
 

@@ -21,7 +21,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -177,6 +179,48 @@ func TestPythonDepTypeResolver_IndexesOnlyIncludedFiles(t *testing.T) {
 	whole.IncludeFiles = nil
 	if pythonSignatureDistributionKey(auth) == pythonSignatureDistributionKey(whole) {
 		t.Error("a scoped index shares the cache key of the whole directory")
+	}
+}
+
+// A distribution rooted at site-packages indexes its packages and modules
+// under their own names, and never reads the directories of the
+// distributions beside it.
+func TestPythonDepTypeResolver_SitePackagesRootIndexesOnlyItsRoots(t *testing.T) {
+	t.Parallel()
+
+	site := t.TempDir()
+	writePythonDistFile(t, site, "configobj/creds.pyi", "def make() -> Cred: ...\n")
+	writePythonDistFile(t, site, "six.pyi", "def wrap() -> Wrapper: ...\n")
+	writePythonDistFile(t, site, "requests/api.pyi", "def get() -> Response: ...\n")
+
+	graph := &CallGraph{Functions: map[string]*FunctionDecl{}}
+	makeFn := &FunctionDecl{ID: FunctionID{Package: "configobj.creds", Name: "make"}}
+	wrapFn := &FunctionDecl{ID: FunctionID{Package: "six", Name: "wrap"}}
+	getFn := &FunctionDecl{ID: FunctionID{Package: "requests.api", Name: "get"}}
+	for _, fn := range []*FunctionDecl{makeFn, wrapFn, getFn} {
+		graph.Functions[fn.ID.String()] = fn
+	}
+
+	resolver := NewPythonDependencyTypeResolver(nil)
+	var mu sync.Mutex
+	var read []string
+	resolver.readDir = func(dir string) ([]os.DirEntry, error) {
+		mu.Lock()
+		read = append(read, dir)
+		mu.Unlock()
+		return os.ReadDir(dir)
+	}
+	root := PackageDir{Dir: site, DistributionName: "configobj", Version: "5", IncludeFiles: []string{
+		filepath.Join(site, "configobj", "creds.pyi"), filepath.Join(site, "six.pyi"),
+	}}
+	if err := resolver.ResolveTypes(graph, []PackageDir{root}); err != nil {
+		t.Fatalf("ResolveTypes() error = %v", err)
+	}
+	if makeFn.ReturnType != "Cred" || wrapFn.ReturnType != "Wrapper" || getFn.ReturnType != "" {
+		t.Errorf("ReturnTypes = make %q, wrap %q, get %q; want Cred, Wrapper and none", makeFn.ReturnType, wrapFn.ReturnType, getFn.ReturnType)
+	}
+	if slices.Contains(read, filepath.Join(site, "requests")) {
+		t.Errorf("read directories %v, want none outside the distribution's roots", read)
 	}
 }
 

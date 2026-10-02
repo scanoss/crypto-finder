@@ -24,55 +24,111 @@ func ListsFile(files []string, path string) bool {
 	return found
 }
 
-// ownSharedRoots gives each distribution whose Dir another distribution
-// shares the files it installed there. Namespace packages do this: protobuf,
-// google-auth and google-api-core all install into google/. A distribution
-// owns the files under Dir its dist-info RECORD lists; one without a RECORD
-// owns the files no sibling's RECORD lists. A distribution with a Dir of its
-// own keeps the whole directory. locations[i] is the site-packages directory
-// of deps[i], which RECORD paths are relative to.
-func ownSharedRoots(deps []Dependency, locations []string) {
-	byDir := make(map[string][]int)
-	var dirs []string
-	for i := range deps {
-		dir := filepath.Clean(deps[i].Dir)
-		if byDir[dir] == nil {
-			dirs = append(dirs, dir)
+// installedDistribution is where a distribution installed its source: the
+// site-packages directory, and the top-level packages (directories) and
+// modules (name.py files) it put there, relative to it, sorted.
+type installedDistribution struct {
+	location string
+	roots    []string
+}
+
+func (d *installedDistribution) path(root string) string {
+	return filepath.Join(d.location, root)
+}
+
+// placeDistributions gives deps[i], installed as installs[i], its Dir,
+// ImportPath and Files. A distribution with one top-level package keeps that
+// directory as its root and import path, as it always had. Any other one
+// (several packages, or a module file) is rooted at site-packages, the one
+// directory holding all of its roots, and lists their files: so its finding
+// paths name the package (validate/__init__.py), and its scope names nothing
+// of another distribution's roots below it. A package directory another
+// distribution also installed into (a namespace such as google/) is shared:
+// each holder owns the files under it its dist-info RECORD lists, and one
+// without a RECORD the files no holder's RECORD lists.
+func placeDistributions(deps []Dependency, installs []installedDistribution) {
+	p := placement{deps: deps, installs: installs, holders: make(map[string][]int), records: make(map[int][]string)}
+	for i := range installs {
+		for _, root := range installs[i].roots {
+			p.holders[installs[i].path(root)] = append(p.holders[installs[i].path(root)], i)
 		}
-		byDir[dir] = append(byDir[dir], i)
 	}
-	for _, dir := range dirs {
-		siblings := byDir[dir]
-		if len(siblings) < 2 {
+	for i := range deps {
+		install := &installs[i]
+		if len(install.roots) == 1 && isDir(install.path(install.roots[0])) {
+			dir := install.path(install.roots[0])
+			deps[i].Dir, deps[i].ImportPath = dir, install.roots[0]
+			if len(p.holders[dir]) > 1 {
+				deps[i].Files = p.shared(i, dir)
+			}
 			continue
 		}
-		claimed := make(map[string]bool)
-		var unrecorded []int
-		for _, i := range siblings {
-			files, ok := recordedFiles(locations[i], deps[i].Module, deps[i].Version, dir)
-			if !ok {
-				unrecorded = append(unrecorded, i)
-				continue
-			}
-			deps[i].Files = files
-			for _, file := range files {
-				claimed[file] = true
-			}
+		deps[i].Dir = filepath.Clean(install.location)
+		files := make([]string, 0, len(install.roots))
+		for _, root := range install.roots {
+			files = append(files, p.rootFiles(i, install.path(root))...)
 		}
-		if len(unrecorded) == 0 {
-			continue
-		}
-		remainder := unclaimedFiles(dir, claimed)
-		for _, i := range unrecorded {
-			deps[i].Files = slices.Clone(remainder)
-		}
+		slices.Sort(files)
+		deps[i].Files = slices.Compact(files)
 	}
 }
 
-// recordedFiles returns the regular files below dir that the RECORD of the
-// distribution module at version lists, sorted, and false when the
-// distribution has no readable RECORD in location.
-func recordedFiles(location, module, version, dir string) ([]string, bool) {
+// placement is the state placeDistributions shares between distributions:
+// the distributions holding each root, and each one's RECORD, read once.
+type placement struct {
+	deps     []Dependency
+	installs []installedDistribution
+	holders  map[string][]int
+	records  map[int][]string
+}
+
+// rootFiles returns the files distribution i owns of its root at path: the
+// module file itself, its share of a directory another distribution also
+// installed into, or every file of a directory of its own.
+func (p *placement) rootFiles(i int, path string) []string {
+	switch {
+	case !isDir(path):
+		return []string{path}
+	case len(p.holders[path]) > 1:
+		return p.shared(i, path)
+	default:
+		return unclaimedFiles(path, nil)
+	}
+}
+
+// shared returns the files under dir that distribution i owns: those its
+// RECORD lists, or without a RECORD those no holder's RECORD lists.
+func (p *placement) shared(i int, dir string) []string {
+	if files, ok := p.recorded(i); ok {
+		return filesUnder(dir, files)
+	}
+	claimed := make(map[string]bool)
+	for _, j := range p.holders[dir] {
+		files, _ := p.recorded(j)
+		for _, file := range filesUnder(dir, files) {
+			claimed[file] = true
+		}
+	}
+	return unclaimedFiles(dir, claimed)
+}
+
+func (p *placement) recorded(i int) ([]string, bool) {
+	if files, ok := p.records[i]; ok {
+		return files, files != nil
+	}
+	files, ok := recordedFiles(&p.installs[i], p.deps[i].Module, p.deps[i].Version)
+	if !ok {
+		files = nil
+	}
+	p.records[i] = files
+	return files, ok
+}
+
+// recordedFiles returns the regular files below install's package
+// directories that the RECORD of the distribution module at version lists,
+// sorted, and false when the distribution has no readable RECORD there.
+func recordedFiles(install *installedDistribution, module, version string) ([]string, bool) {
+	location := install.location
 	distInfo := findDistInfo(location, module, version)
 	if distInfo == "" {
 		return nil, false
@@ -98,16 +154,27 @@ func recordedFiles(location, module, version, dir string) ([]string, bool) {
 			continue
 		}
 		path := filepath.Join(location, filepath.FromSlash(row[0]))
-		if !underDir(dir, path) {
+		if !slices.ContainsFunc(install.roots, func(root string) bool { return underDir(install.path(root), path) }) {
 			continue
 		}
-		//nolint:gosec // G703: a RECORD entry is only stat'ed, and only when it lies below the distribution's directory.
+		//nolint:gosec // G703: a RECORD entry is only stat'ed, and only when it lies below one of the distribution's package directories.
 		if info, statErr := os.Lstat(path); statErr == nil && info.Mode().IsRegular() {
 			files = append(files, path)
 		}
 	}
 	slices.Sort(files)
 	return slices.Compact(files), true
+}
+
+// filesUnder returns the files, sorted, that lie below dir.
+func filesUnder(dir string, files []string) []string {
+	under := make([]string, 0)
+	for _, file := range files {
+		if underDir(dir, file) {
+			under = append(under, file)
+		}
+	}
+	return under
 }
 
 // findDistInfo returns the dist-info directory of module in location,

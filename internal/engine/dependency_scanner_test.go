@@ -1248,6 +1248,27 @@ func TestDependencyScanner_CollectPackageSets_DropsDepsWhenNoneHaveFindings(t *t
 	}
 }
 
+// A Python distribution rooted at site-packages parses under the empty import
+// path, so its packages keep their names (configobj, validate) rather than
+// gaining the distribution's as a prefix; other ecosystems fall back to it.
+func TestDependencyScanner_CollectPackageSets_PythonSitePackagesRootHasNoImportPath(t *testing.T) {
+	files := []string{"/sp/configobj/__init__.py", "/sp/validate/__init__.py"}
+	for ecosystem, want := range map[string]string{"python": "", "go": "example.com/lib"} {
+		ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: ecosystem}}
+		module := map[string]string{"python": "configobj", "go": "example.com/lib"}[ecosystem]
+		depResults := []depScanResult{{
+			dep:    dependency.Dependency{Module: module, Version: "1", Dir: "/sp", Files: files},
+			status: depScanStatusScanned,
+			report: reportWithCryptoAsset(),
+		}}
+		sets := ds.collectPackageSets("/user/project", &dependency.ResolveResult{}, depResults)
+		pkg := sets.graphPackages[len(sets.graphPackages)-1]
+		if pkg.ImportPath != want || pkg.DistributionName != module || !reflect.DeepEqual(pkg.IncludeFiles, files) {
+			t.Errorf("%s: package = %+v, want ImportPath %q, DistributionName %q and the dependency's files", ecosystem, pkg, want, module)
+		}
+	}
+}
+
 func TestDependencyScanner_CollectPackageSets_PrunesDepsOutsideCryptoPaths(t *testing.T) {
 	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: "go"}}
 	resolved := &dependency.ResolveResult{

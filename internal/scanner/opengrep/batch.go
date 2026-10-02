@@ -33,8 +33,9 @@ import (
 // the command-line budget when scoped roots name many files, and reports
 // each root as a scan of that root alone would: its results and errors are
 // the ones in its files, with paths relative to it. Roots must not nest or
-// repeat, except as disjoint siblings: an exclusion of the outer root could
-// hide the inner one, and OpenGrep scans a repeated target once.
+// repeat unless they are disjoint (scanner.Disjoint): a walk of the outer
+// root covers the inner one's files and its exclusions could hide them, and
+// OpenGrep scans a repeated target once.
 func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, failure.New(
@@ -85,11 +86,11 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths
 }
 
 // refuseNestedRoots fails when two roots nest or repeat and are not
-// disjoint siblings.
+// disjoint.
 func refuseNestedRoots(roots []scanner.Root) error {
 	for i := range roots {
 		for j := range roots {
-			if i != j && holds(filepath.Clean(roots[j].Dir), filepath.Clean(roots[i].Dir)) && !scanner.DisjointSiblings(roots[i], roots[j]) {
+			if i != j && holds(filepath.Clean(roots[j].Dir), filepath.Clean(roots[i].Dir)) && !scanner.Disjoint(roots[i], roots[j]) {
 				return failure.New(
 					failure.CodeInvalidArguments,
 					failure.StageInput,

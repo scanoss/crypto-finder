@@ -19,8 +19,10 @@ package scanner
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -72,24 +74,46 @@ type Root struct {
 	Scope *DetectionScope
 }
 
-// DisjointSiblings reports whether a and b are scoped to files of the same
-// directory and share none, as Python distributions installed into one
-// namespace directory are. One process can scan both, and each result names
-// a file of exactly one of them.
-func DisjointSiblings(a, b Root) bool {
-	if a.Scope == nil || b.Scope == nil || filepath.Clean(a.Dir) != filepath.Clean(b.Dir) {
+// Disjoint reports whether no file a scan of a reads is one a scan of b
+// reads. Roots whose directories do not nest are disjoint. A root holding
+// the other's directory (or repeating it) must be scoped and name none of
+// the other's files: Python distributions installed into one namespace
+// directory, or one rooted at site-packages beside the packages below it.
+// One process can scan disjoint roots, and each result names a file of
+// exactly one of them.
+func Disjoint(a, b Root) bool {
+	return avoids(a, b) && avoids(b, a)
+}
+
+// avoids reports whether holder, when its directory holds other's, scans
+// none of other's files.
+func avoids(holder, other Root) bool {
+	holderDir, otherDir := filepath.Clean(holder.Dir), filepath.Clean(other.Dir)
+	if !holdsPath(holderDir, otherDir) {
+		return true
+	}
+	if holder.Scope == nil {
 		return false
 	}
-	names := make(map[string]bool, len(a.Scope.Paths))
-	for _, rel := range a.Scope.Paths {
-		names[filepath.Clean(rel)] = true
+	var named map[string]bool
+	if other.Scope != nil {
+		named = make(map[string]bool, len(other.Scope.Paths))
+		for _, rel := range other.Scope.Paths {
+			named[filepath.Join(otherDir, rel)] = true
+		}
 	}
-	for _, rel := range b.Scope.Paths {
-		if names[filepath.Clean(rel)] {
+	for _, rel := range holder.Scope.Paths {
+		path := filepath.Join(holderDir, rel)
+		if (other.Scope == nil && holdsPath(otherDir, path)) || named[path] {
 			return false
 		}
 	}
 	return true
+}
+
+// holdsPath reports whether path is dir or lies below it.
+func holdsPath(dir, path string) bool {
+	return strings.HasPrefix(path, dir) && (len(path) == len(dir) || os.IsPathSeparator(path[len(dir)]))
 }
 
 // RootTargetBatches is TargetBatches over several roots: each unscoped root

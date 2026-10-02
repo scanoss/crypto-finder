@@ -208,7 +208,7 @@ func pythonSignatureIdentity(root PackageDir) pythonSignatureDistributionIdentit
 	return pythonSignatureDistributionIdentity{
 		distributionName:  distributionName,
 		importPath:        root.ImportPath,
-		sourceFingerprint: pythonSignatureSourceFingerprint(root.Dir, includedFiles(root.IncludeFiles)),
+		sourceFingerprint: pythonSignatureSourceFingerprint(root.Dir, newIncludeScope(root.Dir, root.IncludeFiles)),
 	}
 }
 
@@ -233,7 +233,7 @@ func pythonSignatureDistributionKeyForIdentity(root PackageDir, identity pythonS
 // input by normalized relative path and bytes. WalkDir is lexical, so the
 // result is deterministic and independent of the distribution's absolute
 // installation path. Unreadable or oversized inputs degrade by omission.
-func pythonSignatureSourceFingerprint(root string, include map[string]bool) string {
+func pythonSignatureSourceFingerprint(root string, include *includeScope) string {
 	digest := sha256.New()
 	if err := filepath.WalkDir(root, pythonSignatureFingerprintVisitor(root, include, digest)); err != nil {
 		log.Debug().Err(err).Str("root", root).Msg("Failed to walk Python signature source tree")
@@ -241,7 +241,7 @@ func pythonSignatureSourceFingerprint(root string, include map[string]bool) stri
 	return fmt.Sprintf("%x", digest.Sum(nil))
 }
 
-func pythonSignatureFingerprintVisitor(root string, include map[string]bool, digest hash.Hash) fs.WalkDirFunc {
+func pythonSignatureFingerprintVisitor(root string, include *includeScope, digest hash.Hash) fs.WalkDirFunc {
 	return func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return pythonSignatureFingerprintWalkFailure(entry)
@@ -250,9 +250,12 @@ func pythonSignatureFingerprintVisitor(root string, include map[string]bool, dig
 			return nil
 		}
 		if entry.IsDir() {
+			if path != root && include != nil && !include.walk[path] {
+				return fs.SkipDir
+			}
 			return pythonSignatureFingerprintDir(root, path, entry)
 		}
-		if !pythonSignatureFingerprintEligibleFile(entry) || (include != nil && !include[path]) {
+		if !pythonSignatureFingerprintEligibleFile(entry) || (include != nil && !include.files[path]) {
 			return nil
 		}
 		if pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(path), false) {

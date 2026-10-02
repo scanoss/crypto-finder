@@ -683,7 +683,7 @@ func (ds *DependencyScanner) lookupDependency(
 		Str("module", dep.Module).
 		Str("version", dep.Version).
 		Msg("Cache hit for dependency scan")
-	return depScanResult{index: item.index, key: item.key, dep: item.dep, report: dependencyReportWithFindings(report), status: depScanStatusScanned}, true
+	return depScanResult{index: item.index, key: item.key, dep: item.dep, report: dependencyReportWithFindings(item.ownFindings(report)), status: depScanStatusScanned}, true
 }
 
 // scanDepAlone scans one looked-up dependency in its own scanner process.
@@ -692,6 +692,7 @@ func (ds *DependencyScanner) scanDepAlone(ctx context.Context, item *depWork, va
 	log.Info().Str("module", dep.Module).Str("version", dep.Version).Msg("Scanning dependency")
 
 	report, err := ds.orchestrator.scan(ctx, item.opts, item.scope, item.scanner, validator)
+	report = item.ownFindings(report)
 	log.Info().
 		Str("module", dep.Module).
 		Str("version", dep.Version).
@@ -826,6 +827,28 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	return depOpts
 }
 
+// ownFindings keeps the findings of report in the dependency's Files. A
+// scanner that cannot limit detection to files scans all of Dir, which for
+// a Python distribution rooted at site-packages holds every other
+// distribution too.
+func (item *depWork) ownFindings(report *entities.InterimReport) *entities.InterimReport {
+	if report == nil || item.scope != nil || item.dep.Files == nil {
+		return report
+	}
+	owned := *report
+	owned.Findings = make([]entities.Finding, 0, len(report.Findings))
+	for i := range report.Findings {
+		path := filepath.FromSlash(report.Findings[i].FilePath)
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(item.dep.Dir, path)
+		}
+		if dependency.ListsFile(item.dep.Files, filepath.Clean(path)) {
+			owned.Findings = append(owned.Findings, report.Findings[i])
+		}
+	}
+	return &owned
+}
+
 // sourceScope lists dep's Files relative to dep.Dir, sorted. A file outside
 // dep.Dir adds nothing.
 func sourceScope(dep *dependency.Dependency) *scanner.DetectionScope {
@@ -909,7 +932,9 @@ func (ds *DependencyScanner) collectPackageSets(
 	for i := range depResults {
 		result := &depResults[i]
 		importPath := result.dep.ImportPath
-		if importPath == "" {
+		// A Python distribution rooted at site-packages has no import root:
+		// its top-level packages and modules keep their own names.
+		if importPath == "" && ds.resolver.Ecosystem() != ecosystemPython {
 			importPath = result.dep.Module
 		}
 		pkg := callgraph.PackageDir{

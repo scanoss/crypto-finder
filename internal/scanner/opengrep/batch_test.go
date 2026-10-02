@@ -70,6 +70,9 @@ func findingPaths(report *entities.InterimReport) []string {
 	for _, finding := range report.Findings {
 		paths = append(paths, filepath.ToSlash(finding.FilePath))
 	}
+	// The transformer groups results by file through a map, so finding order
+	// is not part of the report's contract.
+	slices.Sort(paths)
 	return paths
 }
 
@@ -247,12 +250,36 @@ func TestScanRoots_DisjointSiblingsShareAProcess(t *testing.T) {
 	}
 
 	for name, roots := range map[string][]scanner.Root{
-		"overlapping": {{Dir: ns, Scope: scoped("a/x.py")}, {Dir: ns, Scope: scoped("a/x.py", "b/y.py")}},
-		"unscoped":    {{Dir: ns, Scope: scoped("a/x.py")}, {Dir: ns}},
+		"overlapping":     {{Dir: ns, Scope: scoped("a/x.py")}, {Dir: ns, Scope: scoped("a/x.py", "b/y.py")}},
+		"unscoped":        {{Dir: ns, Scope: scoped("a/x.py")}, {Dir: ns}},
+		"holder names it": {{Dir: dir, Scope: scoped(filepath.Join("google", "a", "x.py"))}, {Dir: ns}},
 	} {
 		if _, err := s.ScanRoots(context.Background(), roots, rules, entities.ToolInfo{Name: "fixture"}); err == nil {
 			t.Errorf("%s siblings: want an error", name)
 		}
+	}
+}
+
+// A scoped root holding another root's directory, as a Python distribution
+// rooted at site-packages holds the packages below it, shares its process
+// when it names none of the inner root's files: each result goes to the root
+// whose scope names it, or else to the innermost root.
+func TestScanRoots_ScopedHolderSharesAProcessWithTheRootsBelowIt(t *testing.T) {
+	site := t.TempDir()
+	solo := filepath.Join(site, "solo")
+	exe := fakeOpengrep(t, site, fmt.Sprintf(`{"version":"1.12.1","results":[%s,%s,%s],"errors":[]}`,
+		result(filepath.Join(solo, "y.py")), result(filepath.Join(site, "validate", "x.py")), result(filepath.Join(site, "six.py"))))
+	s := batchScanner(t, exe)
+
+	reports, err := s.ScanRoots(context.Background(), []scanner.Root{
+		{Dir: site, Scope: &scanner.DetectionScope{Paths: []string{filepath.Join("validate", "x.py"), "six.py"}}},
+		{Dir: solo},
+	}, []string{filepath.Join(site, "rules.yaml")}, entities.ToolInfo{Name: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := [][]string{findingPaths(reports[0]), findingPaths(reports[1])}, [][]string{{"six.py", "validate/x.py"}, {"y.py"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("findings per root = %v, want %v", got, want)
 	}
 }
 
