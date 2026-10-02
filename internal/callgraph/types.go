@@ -382,6 +382,12 @@ type FunctionCall struct {
 	// nodeReturnOf names the project function whose result a Node call's
 	// receiver holds; the callee takes that function's declared return class.
 	nodeReturnOf FunctionID
+	// nodeUntyped is the callee before a receiver type that the builder still
+	// checks was applied: a default-imported class, or an unannotated field.
+	nodeUntyped FunctionID
+	// nodeInferredField names the unannotated class field the receiver was
+	// typed from.
+	nodeInferredField string
 }
 
 // SourceNode describes where a value comes from in the data flow.
@@ -495,6 +501,15 @@ type FileAnalysis struct {
 	// nodeInstances maps each name a Node module exports an instance under,
 	// or "default", to the class it is an instance of.
 	nodeInstances map[string]FunctionID
+	// nodeDefaultClass is the class the module exports as its default.
+	nodeDefaultClass FunctionID
+	// nodeAssignedProps holds the properties the file assigns on an object
+	// other than `this`.
+	nodeAssignedProps map[string]bool
+	// nodeSupertypeOwners lists the classes whose supertypes the parser
+	// resolved through the file's imports, so the hierarchy never re-resolves
+	// them by simple name.
+	nodeSupertypeOwners []string
 	// rustFacts holds the declared-type facts collected from a Rust file:
 	// struct and enum-variant field types, function return types, and the
 	// set of types the file declares. The receiver-typing layer resolves
@@ -583,6 +598,15 @@ type CallGraph struct {
 	// `module.name`, while files are merged; resolveNodeImportedInstances
 	// consumes it.
 	nodeInstances map[string]nodeModuleInstance
+	// nodeDefaultClasses indexes the class each Node module exports as its
+	// default, by module path.
+	nodeDefaultClasses map[string]nodeModuleInstance
+	// nodeAssignedProps holds every property name any Node module assigns on
+	// an object other than `this`.
+	nodeAssignedProps map[string]bool
+	// nodeClassOwners holds the Node classes whose supertypes the parser
+	// resolved through imports.
+	nodeClassOwners map[string]bool
 }
 
 // EdgeKind classifies how confidently a caller->callee edge was resolved.

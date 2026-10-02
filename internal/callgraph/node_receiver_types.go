@@ -4,6 +4,8 @@
 package callgraph
 
 import (
+	"strings"
+
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
@@ -21,6 +23,8 @@ const (
 	nodeTypeIdentifier           = "type_identifier"
 	nodeExportKind               = "export_statement"
 	nodeConstructorKeyword       = "constructor"
+	nodeClassHeritage            = "class_heritage"
+	nodeNestedTypeIdentifier     = "nested_type_identifier"
 )
 
 // nodeTypeRef names a class: the module that declares it and its name. With
@@ -31,6 +35,9 @@ type nodeTypeRef struct {
 	pkg       string
 	name      string
 	viaReturn bool
+	// inferredField names the unannotated class field the type was read from;
+	// the builder drops it when code outside the class assigns that field.
+	inferredField string
 }
 
 // nodeTypeFacts accumulates the declared type of each name, dropping a name as
@@ -72,7 +79,15 @@ type nodeFileTypes struct {
 	funcs      map[string]bool
 	moduleVars map[string]nodeTypeRef
 	fields     map[string]map[string]nodeTypeRef
-	instances  map[string]FunctionID
+	// inferredFields marks the fields typed from an initialiser, not an annotation.
+	inferredFields map[string]map[string]bool
+	instances      map[string]FunctionID
+	// defaultClass is the class `export default class X` or `export default X`
+	// makes the module's default export.
+	defaultClass FunctionID
+	// assignedProps holds the property names assigned on an object other than
+	// `this`: `svc.h = value`.
+	assignedProps map[string]bool
 }
 
 // nodeScope is the typing context of the function being parsed.
@@ -82,6 +97,8 @@ type nodeScope struct {
 	own      map[string]bool
 	shadowed map[string]bool
 	vars     map[string]nodeTypeRef
+	// names caches localNames once the scope is complete.
+	names map[string]bool
 }
 
 // nodeProjectImports lists the local names bound to a module of the scanned
@@ -106,8 +123,12 @@ func newNodeFileTypes(p *NodeParser, root *sitter.Node, src []byte, modulePath s
 		moduleVars: make(map[string]nodeTypeRef),
 		fields:     make(map[string]map[string]nodeTypeRef),
 		instances:  make(map[string]FunctionID),
+
+		inferredFields: make(map[string]map[string]bool),
+		assignedProps:  make(map[string]bool),
 	}
 	f.collectClassNames(root, src)
+	f.collectAssignedProps(root, src)
 	f.collectFunctionNames(root, src)
 	// Module variables read the classes and functions above, and the fields
 	// read the module variables' classes, so the order is fixed.
@@ -165,6 +186,11 @@ func (f *nodeFileTypes) resolveClass(name string) (nodeTypeRef, bool) {
 		if !f.project[name] {
 			return nodeTypeRef{}, false
 		}
+		if binding.isDefault || binding.member == nodeDefaultKeyword {
+			// The local name says nothing about the class the module exports
+			// by default; the builder reads that from the module itself.
+			return nodeTypeRef{pkg: binding.module, name: nodeDefaultKeyword}, true
+		}
 		pkg, last := binding.qualify()
 		if last == "" {
 			last = name
@@ -201,8 +227,9 @@ func (f *nodeFileTypes) annotatedClass(n *sitter.Node, src []byte) (nodeTypeRef,
 	return f.resolveClass(name)
 }
 
-// collectFunctionNames records the functions the file declares by name. A
-// name declared twice, as by a function in an inner scope, names none here.
+// collectFunctionNames records the functions the file declares at its top
+// level by name. A name declared twice names none here; a function nested in
+// another is no module function.
 func (f *nodeFileTypes) collectFunctionNames(root *sitter.Node, src []byte) {
 	count := make(map[string]int)
 	var walk func(n *sitter.Node)
@@ -211,6 +238,9 @@ func (f *nodeFileTypes) collectFunctionNames(root *sitter.Node, src []byte) {
 			if name := n.ChildByFieldName("name"); name != nil {
 				count[name.Content(src)]++
 			}
+		}
+		if n != root && n.Type() != nodeExportKind {
+			return
 		}
 		for i := 0; i < int(n.NamedChildCount()); i++ {
 			walk(n.NamedChild(i))
@@ -261,14 +291,16 @@ func (s *nodeScope) localNames() map[string]bool {
 	if s == nil {
 		return nil
 	}
-	names := make(map[string]bool, len(s.own)+len(s.shadowed))
-	for name := range s.own {
-		names[name] = true
+	if s.names == nil {
+		s.names = make(map[string]bool, len(s.own)+len(s.shadowed))
+		for name := range s.own {
+			s.names[name] = true
+		}
+		for name := range s.shadowed {
+			s.names[name] = true
+		}
 	}
-	for name := range s.shadowed {
-		names[name] = true
-	}
-	return names
+	return s.names
 }
 
 // initializerType types the value a declaration, field or assignment stores:
@@ -285,7 +317,7 @@ func (f *nodeFileTypes) initializerType(value *sitter.Node, src []byte, scope *n
 		}
 		name := function.Content(src)
 		if binding, bound := f.bindings[name]; bound && binding.module != "" {
-			if !f.project[name] {
+			if !f.project[name] || binding.isDefault || binding.member == nodeDefaultKeyword {
 				return nodeTypeRef{}, false
 			}
 			pkg, last := binding.qualify()
@@ -408,13 +440,43 @@ func (p *NodeParser) scopeFor(params, body *sitter.Node, own map[string]bool, sr
 		return nil
 	}
 	scope := &nodeScope{own: own, shadowed: make(map[string]bool)}
+	collectNodeWrittenNames(params, src, scope.shadowed)
+	collectNodeWrittenNames(body, src, scope.shadowed)
+	if body != nil {
+		if single := body.Parent().ChildByFieldName("parameter"); single != nil && single.Type() == goNodeIdentifier {
+			scope.shadowed[single.Content(src)] = true
+		}
+		collectEnclosingFunctionNames(body.Parent(), src, scope.shadowed)
+	}
 	previous := p.scope
 	p.scope = scope
 	defer func() { p.scope = previous }()
 	scope.vars = p.declaredVarTypes(params, body, src)
-	collectNodeWrittenNames(params, src, scope.shadowed)
-	collectNodeWrittenNames(body, src, scope.shadowed)
 	return scope
+}
+
+// collectEnclosingFunctionNames adds every name a function around n declares:
+// its parameters and variables. A nested function reads such a name from the
+// enclosing function, never from the module, so it is shadowed there; its type
+// is not followed.
+func collectEnclosingFunctionNames(n *sitter.Node, src []byte, into map[string]bool) {
+	for outer := n.Parent(); outer != nil; outer = outer.Parent() {
+		switch outer.Type() {
+		case nodeFunctionDeclaration, nodeGeneratorDeclaration, "generator_function", nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition:
+		default:
+			continue
+		}
+		params := outer.ChildByFieldName("parameters")
+		body := outer.ChildByFieldName("body")
+		for name := range collectNodeLocalNames(params, body, src) {
+			into[name] = true
+		}
+		collectNodeWrittenNames(params, src, into)
+		collectNodeWrittenNames(body, src, into)
+		if single := outer.ChildByFieldName("parameter"); single != nil && single.Type() == goNodeIdentifier {
+			into[single.Content(src)] = true
+		}
+	}
 }
 
 // collectNodeWrittenNames adds the names a destructuring declaration, a loop
@@ -488,7 +550,11 @@ func (p *NodeParser) receiverType(expr *sitter.Node, src []byte, owner string) (
 		if owner == "" || object == nil || property == nil || object.Type() != javaThisKeyword {
 			return nodeTypeRef{}, false
 		}
-		ref, ok := p.file.fields[owner][property.Content(src)]
+		name := property.Content(src)
+		ref, ok := p.file.fields[owner][name]
+		if ok && p.file.inferredFields[owner][name] {
+			ref.inferredField = name
+		}
 		return ref, ok
 	}
 	return nodeTypeRef{}, false
@@ -506,6 +572,10 @@ func (p *NodeParser) typeNodeReceiver(call *FunctionCall, object *sitter.Node, s
 	case ref.viaReturn:
 		call.nodeReturnOf = FunctionID{Package: ref.pkg, Name: ref.name}
 	default:
+		if ref.name == nodeDefaultKeyword || ref.inferredField != "" {
+			call.nodeUntyped = call.Callee
+			call.nodeInferredField = ref.inferredField
+		}
 		call.Callee = FunctionID{Package: ref.pkg, Type: ref.name, Name: call.Callee.Name}
 	}
 }
@@ -574,19 +644,31 @@ func (p *NodeParser) classFieldTypes(class *sitter.Node, src []byte) map[string]
 		}
 		p.recordFieldAssignments(member, src, params, inferred)
 	}
-	fields := make(map[string]nodeTypeRef, len(declared)+len(inferred.types))
+	fields, inferredNames := mergeFieldTypes(declared, hasAnnotation, inferred)
+	f.inferredFields[nodeClassOwner(class, src)] = inferredNames
+	return fields
+}
+
+// mergeFieldTypes settles each field's type: an annotation wins over what an
+// initialiser infers, and an annotated field of no plain class has none. It
+// also names the fields whose type was only inferred.
+func mergeFieldTypes(declared map[string]nodeTypeRef, hasAnnotation map[string]bool, inferred *nodeTypeFacts) (fields map[string]nodeTypeRef, inferredNames map[string]bool) {
+	fields = make(map[string]nodeTypeRef, len(declared)+len(inferred.types))
+	inferredNames = make(map[string]bool, len(inferred.types))
 	for name, ref := range inferred.types {
 		fields[name] = ref
+		inferredNames[name] = !hasAnnotation[name]
 	}
 	for name, ref := range declared {
 		fields[name] = ref
+		inferredNames[name] = false
 	}
 	for name := range hasAnnotation {
 		if _, ok := declared[name]; !ok {
 			delete(fields, name)
 		}
 	}
-	return fields
+	return fields, inferredNames
 }
 
 func (p *NodeParser) recordFieldDefinition(member *sitter.Node, src []byte, declared map[string]nodeTypeRef, hasAnnotation map[string]bool, inferred *nodeTypeFacts) {
@@ -704,11 +786,17 @@ func (f *nodeFileTypes) collectInstances(root *sitter.Node, src []byte) {
 		}
 		if decl := export.ChildByFieldName("declaration"); decl != nil {
 			f.exportDeclaredInstances(decl, src)
+			if hasNodeToken(export, nodeDefaultKeyword) {
+				f.recordDefaultClass(nodeClassOwnerOf(decl, src))
+			}
 			continue
 		}
 		value := export.ChildByFieldName("value")
 		if value == nil {
 			continue
+		}
+		if value.Type() == goNodeIdentifier {
+			f.recordDefaultClass(value.Content(src))
 		}
 		var ref nodeTypeRef
 		var ok bool
@@ -722,6 +810,46 @@ func (f *nodeFileTypes) collectInstances(root *sitter.Node, src []byte) {
 			f.instances[nodeDefaultKeyword] = FunctionID{Package: ref.pkg, Type: ref.name}
 		}
 	}
+}
+
+// nodeClassOwnerOf names the class a declaration declares, or "" for another
+// declaration.
+func nodeClassOwnerOf(decl *sitter.Node, src []byte) string {
+	switch decl.Type() {
+	case javaNodeClassDeclaration, nodeAbstractClassDeclaration:
+		if name := decl.ChildByFieldName("name"); name != nil {
+			return name.Content(src)
+		}
+	}
+	return ""
+}
+
+func (f *nodeFileTypes) recordDefaultClass(name string) {
+	if name != "" && f.classes[name] {
+		f.defaultClass = FunctionID{Package: f.modulePath, Type: name}
+	}
+}
+
+// collectAssignedProps records each property written on an object other than
+// `this`: any such write may replace the value of a class field of that name.
+func (f *nodeFileTypes) collectAssignedProps(root *sitter.Node, src []byte) {
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		switch n.Type() {
+		case nodeAssignmentExpression, "augmented_assignment_expression":
+			if left := n.ChildByFieldName("left"); left != nil && left.Type() == nodeMemberExpression {
+				object := left.ChildByFieldName("object")
+				property := left.ChildByFieldName("property")
+				if object != nil && property != nil && object.Type() != javaThisKeyword {
+					f.assignedProps[property.Content(src)] = true
+				}
+			}
+		}
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			walk(n.NamedChild(i))
+		}
+	}
+	walk(root)
 }
 
 func (f *nodeFileTypes) exportDeclaredInstances(decl *sitter.Node, src []byte) {
@@ -748,6 +876,35 @@ func (f *nodeFileTypes) exportDeclaredInstances(decl *sitter.Node, src []byte) {
 type nodeModuleInstance struct {
 	class     FunctionID
 	ambiguous bool
+}
+
+// mergeNodeFileFacts folds what one Node file declares about the classes it
+// exports and the properties it writes into the graph.
+func mergeNodeFileFacts(graph *CallGraph, analysis *FileAnalysis) {
+	mergeNodeInstances(graph, analysis)
+	for name := range analysis.nodeAssignedProps {
+		if graph.nodeAssignedProps == nil {
+			graph.nodeAssignedProps = make(map[string]bool)
+		}
+		graph.nodeAssignedProps[name] = true
+	}
+	if analysis.nodeDefaultClass != (FunctionID{}) {
+		if graph.nodeDefaultClasses == nil {
+			graph.nodeDefaultClasses = make(map[string]nodeModuleInstance)
+		}
+		module := nodeModulePath(analysis.PackagePath, analysis.FilePath)
+		if existing, seen := graph.nodeDefaultClasses[module]; seen && existing.class != analysis.nodeDefaultClass {
+			graph.nodeDefaultClasses[module] = nodeModuleInstance{ambiguous: true}
+		} else {
+			graph.nodeDefaultClasses[module] = nodeModuleInstance{class: analysis.nodeDefaultClass}
+		}
+	}
+	for _, owner := range analysis.nodeSupertypeOwners {
+		if graph.nodeClassOwners == nil {
+			graph.nodeClassOwners = make(map[string]bool)
+		}
+		graph.nodeClassOwners[normalizeHierarchyName(owner)] = true
+	}
 }
 
 func mergeNodeInstances(graph *CallGraph, analysis *FileAnalysis) {
@@ -778,6 +935,15 @@ func resolveNodeTypedReceivers(graph *CallGraph) {
 			call := &fn.Calls[i]
 			if class, ok := nodeReceiverClass(graph, call); ok {
 				call.Callee = FunctionID{Package: class.Package, Type: class.Type, Name: call.Callee.Name}
+				continue
+			}
+			if call.nodeUntyped == (FunctionID{}) {
+				continue
+			}
+			if class, ok := graph.nodeDeclaredClass(call.Callee); ok && !graph.nodeFieldReassigned(call) {
+				call.Callee = FunctionID{Package: class.Package, Type: class.Type, Name: call.Callee.Name}
+			} else {
+				call.Callee = call.nodeUntyped
 			}
 		}
 	}
@@ -789,36 +955,143 @@ func resolveNodeTypedReceivers(graph *CallGraph) {
 func nodeReceiverClass(graph *CallGraph, call *FunctionCall) (FunctionID, bool) {
 	if call.nodeInstanceKey != "" {
 		if instance, ok := graph.nodeInstances[call.nodeInstanceKey]; ok && !instance.ambiguous {
-			return instance.class, true
+			return graph.nodeDeclaredClass(instance.class)
 		}
 	}
 	if call.nodeReturnOf != (FunctionID{}) {
 		if decl := graph.Functions[call.nodeReturnOf.String()]; decl != nil && decl.nodeReturnClass.Type != "" {
-			return decl.nodeReturnClass, true
+			return graph.nodeDeclaredClass(decl.nodeReturnClass)
 		}
 	}
 	return FunctionID{}, false
 }
 
-// recordMethodlessClass declares a class that owns no function declaration,
-// such as an abstract class whose methods are all abstract, so a call typed
-// as that class still reaches its subclasses' overrides. The graph learns the
-// class from its supertypes. A base the file does not resolve to a class stays
-// unresolvable, so the ancestry reads as only partly recorded.
-func (p *NodeParser) recordMethodlessClass(class *sitter.Node, src []byte, modulePath, owner string, first int, analysis *FileAnalysis) {
-	if p.file == nil || len(analysis.Functions) > first || !p.file.classes[owner] {
+// nodeDeclaredClass turns the class a Node type names into the class itself.
+// The default export of a module names the class that module declares as
+// default, whatever an importer calls it; a module with no such class, or with
+// two files claiming its path, names none.
+func (g *CallGraph) nodeDeclaredClass(class FunctionID) (FunctionID, bool) {
+	if class.Type != nodeDefaultKeyword {
+		return class, class.Type != ""
+	}
+	exported, ok := g.nodeDefaultClasses[class.Package]
+	if !ok || exported.ambiguous {
+		return FunctionID{}, false
+	}
+	return exported.class, true
+}
+
+// nodeFieldReassigned reports whether a call typed from an unannotated field
+// has that field written somewhere outside the class, in any scanned module.
+func (g *CallGraph) nodeFieldReassigned(call *FunctionCall) bool {
+	return call.nodeInferredField != "" && g.nodeAssignedProps[call.nodeInferredField]
+}
+
+// recordNodeSupertypes records a class's direct supertypes, each resolved
+// through the file's imports to the module that declares it, so a library's
+// `Base` is never taken for a project class of the same name. A base the file
+// does not resolve to a class stays unresolvable, so the ancestry reads as only
+// partly recorded. A class with no base is recorded only when it owns no
+// function declaration, such as an abstract class whose methods are all
+// abstract, so a call typed as it still reaches its subclasses' overrides.
+func (p *NodeParser) recordNodeSupertypes(class *sitter.Node, src []byte, modulePath, owner string, first int, analysis *FileAnalysis) {
+	if p.file == nil || !p.file.classes[owner] {
 		return
 	}
-	bases := make([]string, 0)
-	for _, base := range nodeClassBases(class, src) {
-		if ref, ok := p.file.resolveClass(base); ok {
-			bases = append(bases, ref.pkg+"."+ref.name)
-			continue
-		}
-		bases = append(bases, javaUnresolvableSupertype)
+	bases := p.file.resolvedClassBases(class, src)
+	if len(bases) == 0 && len(analysis.Functions) > first {
+		return
 	}
 	if analysis.Supertypes == nil {
 		analysis.Supertypes = make(map[string][]string)
 	}
-	analysis.Supertypes[modulePath+"."+owner] = bases
+	key := modulePath + "." + owner
+	analysis.Supertypes[key] = append([]string{}, bases...)
+	analysis.nodeSupertypeOwners = append(analysis.nodeSupertypeOwners, key)
+}
+
+// resolvedClassBases lists the classes a heritage clause names as
+// `module.Class`, or the unresolvable marker for a base that is not a plain
+// reference to a class of the file or of a project module.
+func (f *nodeFileTypes) resolvedClassBases(class *sitter.Node, src []byte) []string {
+	var bases []string
+	var collect func(n *sitter.Node)
+	collect = func(n *sitter.Node) {
+		switch n.Type() {
+		case goNodeIdentifier, nodeTypeIdentifier:
+			bases = append(bases, f.resolveBase(n.Content(src), "", ""))
+		case nodeMemberExpression, nodeNestedTypeIdentifier:
+			bases = append(bases, f.resolveQualifiedBase(n.Content(src)))
+		case javaNodeGenericType:
+			if n.NamedChildCount() > 0 {
+				collect(n.NamedChild(0))
+			}
+		case nodeClassHeritage, "implements_clause", "extends_clause":
+			for _, child := range heritageTargets(n) {
+				collect(child)
+			}
+		default:
+			bases = append(bases, javaUnresolvableSupertype)
+		}
+	}
+	for i := 0; i < int(class.NamedChildCount()); i++ {
+		if child := class.NamedChild(i); child.Type() == nodeClassHeritage {
+			collect(child)
+		}
+	}
+	return bases
+}
+
+// heritageTargets lists the nodes of a heritage clause that name a class: the
+// value of an `extends` clause, without its type arguments, or each named child
+// of the other clauses.
+func heritageTargets(clause *sitter.Node) []*sitter.Node {
+	if value := clause.ChildByFieldName("value"); value != nil {
+		return []*sitter.Node{value}
+	}
+	var targets []*sitter.Node
+	for i := 0; i < int(clause.NamedChildCount()); i++ {
+		if child := clause.NamedChild(i); child.Type() != "type_arguments" {
+			targets = append(targets, child)
+		}
+	}
+	return targets
+}
+
+// resolveQualifiedBase resolves `ns.Name`, written as a base, through a
+// namespace import of a project module.
+func (f *nodeFileTypes) resolveQualifiedBase(text string) string {
+	text = strings.TrimSpace(text)
+	dot := strings.LastIndex(text, ".")
+	if dot < 0 || strings.ContainsAny(text, "()[]<> ") {
+		return javaUnresolvableSupertype
+	}
+	first, suffix := splitNodeMemberObject(text[:dot])
+	return f.resolveBase(first, suffix, text[dot+1:])
+}
+
+// resolveBase names the class a base reference denotes: a bare name resolves as
+// a type does, and `ns.Name` through a namespace import of a project module.
+func (f *nodeFileTypes) resolveBase(first, suffix, last string) string {
+	if last == "" {
+		ref, ok := f.resolveClass(first)
+		if !ok || ref.name == nodeDefaultKeyword {
+			return javaUnresolvableSupertype
+		}
+		binding, bound := f.bindings[first]
+		if bound && binding.module != "" && binding.member == "" {
+			// A namespace or `require` binding is a module, not a class.
+			return javaUnresolvableSupertype
+		}
+		return ref.pkg + "." + ref.name
+	}
+	binding, bound := f.bindings[first]
+	if !bound || !f.project[first] || binding.isDefault || binding.member == nodeDefaultKeyword {
+		return javaUnresolvableSupertype
+	}
+	pkg, name := binding.qualify(suffix, last)
+	if name == "" {
+		return javaUnresolvableSupertype
+	}
+	return pkg + "." + name
 }

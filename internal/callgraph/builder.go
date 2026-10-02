@@ -509,7 +509,7 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 		b.mergeAnalysisFunctions(graph, analysis)
 		mergeJavaStringConstants(graph, analysis)
 		graph.entryRefs = append(graph.entryRefs, analysis.EntryRefs...)
-		mergeNodeInstances(graph, analysis)
+		mergeNodeFileFacts(graph, analysis)
 	}
 }
 
@@ -1686,13 +1686,10 @@ func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hier
 		if !abstractCandidateShape(candidate, callee, arity) || (!sameRoot && !moduleFiles) {
 			continue
 		}
-		switch abstractCandidateKind(hierarchy, owner, calleeOwner, calleeComplete) {
+		switch abstractCandidateKindIn(hierarchy, owner, calleeOwner, calleeComplete, sameRoot) {
 		case EdgeKindInterfaceDispatch:
 			c.overrides = append(c.overrides, candidate.ID.String())
 		case EdgeKindNameOnly:
-			if !sameRoot {
-				continue
-			}
 			// The candidate may be a subtype of the callee's class, or an
 			// ancestor its record misses: either way one artifact must
 			// compile against the other's.
@@ -1703,6 +1700,21 @@ func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hier
 		}
 	}
 	return c
+}
+
+// abstractCandidateKindIn is abstractCandidateKind for a candidate in or out
+// of the callee's namespace root. Out of it, only a subtype the hierarchy
+// proves through import-resolved bases counts: a name_only candidate there is
+// no more than a method that shares a name.
+func abstractCandidateKindIn(hierarchy *dispatchHierarchy, owner, calleeOwner string, calleeComplete, sameRoot bool) EdgeKind {
+	kind := abstractCandidateKind(hierarchy, owner, calleeOwner, calleeComplete)
+	if sameRoot {
+		return kind
+	}
+	if kind == EdgeKindInterfaceDispatch && hierarchy.importProvenSubtype(owner, calleeOwner) {
+		return kind
+	}
+	return ""
 }
 
 // abstractCandidateShape reports whether candidate is a class method of the
