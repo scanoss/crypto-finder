@@ -1485,7 +1485,7 @@ func (b *Builder) expandInterfaceDispatch(
 		if len(candidate.Parameters) != len(calleeDecl.Parameters) {
 			continue
 		}
-		if namespaceRoot(candidate.ID.Package) != baseRoot {
+		if !b.dispatchScopeAllows(candidate.ID, calleeDecl.ID, baseRoot) {
 			continue
 		}
 		kind, ok := b.interfaceImplementationKind(hierarchy, candidate.ID, calleeDecl)
@@ -1508,6 +1508,23 @@ func (b *Builder) expandInterfaceDispatch(
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].CalleeKey < results[j].CalleeKey })
 	return results
+}
+
+// dispatchScopeAllows bounds which implementers an interface call may fan out
+// to. Java and the other dotted-name ecosystems keep the candidate in the
+// interface's namespace root. A Go import path has no such root
+// (namespaceRoot keeps a whole slash-separated path, so an implementer in a
+// sibling package never matched), and a Go interface is routinely implemented
+// in a sibling package, so Go is bounded by artifact instead: the
+// implementer's artifact must be able to compile against the interface's (the
+// same artifact, the scanned project, or a declared dependency), and the
+// structural method-set check decides the rest. A dependency type never
+// becomes an implementer of a project interface.
+func (b *Builder) dispatchScopeAllows(candidate, iface FunctionID, ifaceRoot string) bool {
+	if b.ecosystem == ecosystemGo {
+		return b.artifacts.compilesAgainst(declOwnerFQN(candidate), declOwnerFQN(iface))
+	}
+	return namespaceRoot(candidate.Package) == ifaceRoot
 }
 
 // interfaceImplementationKind classifies the type owning candidate against the

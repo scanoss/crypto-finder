@@ -1,0 +1,4 @@
+- A Go call through an interface now links to implementers declared in other packages, not only the interface's own package. Before, a method reached only through an interface whose implementer lived in a sibling package or module had no callers, and its finding read `no_callers`.
+  - The edge stays `interface_dispatch`, and a type still has to declare every method of the interface by name and arity.
+  - Implementers are bounded by artifact: the scanned project's types implement project and dependency interfaces, a dependency's types implement interfaces of that dependency or of what it depends on, and a dependency type never implements a project interface.
+  - Other ecosystems keep their namespace-root bound unchanged.
