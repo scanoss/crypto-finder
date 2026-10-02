@@ -225,9 +225,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 
 	// Build the reverse caller index (includes interface dispatch and fluent fallback)
 	callerIndexStart := time.Now()
-	pruneGoPredeclaredCalls(graph, b.ecosystem)
-	resolveGoFieldReceiverCalls(graph, b.ecosystem)
-	b.buildCallerIndex(graph)
+	b.indexCallers(graph)
 	callerIndexDuration := time.Since(callerIndexStart)
 
 	// Phase 2: Type resolution from bytecode — index ALL packages (including type-only)
@@ -309,6 +307,15 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 		Msg("Built call graph")
 
 	return graph, nil
+}
+
+// indexCallers runs the passes that settle call targets from the parsed
+// source, then builds the reverse caller index (with interface dispatch and
+// the fluent fallback) over them.
+func (b *Builder) indexCallers(graph *CallGraph) {
+	pruneGoPredeclaredCalls(graph, b.ecosystem)
+	resolveGoFieldReceiverCalls(graph, b.ecosystem)
+	b.buildCallerIndex(graph)
 }
 
 // analyzePackage parses all source files in a package directory,
