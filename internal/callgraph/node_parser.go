@@ -42,6 +42,10 @@ type NodeParser struct {
 	typescript   *sitter.Parser
 	tsx          *sitter.Parser
 	includeTests bool
+	// file and scope carry the declared types of the file and of the function
+	// being parsed while ParseFile runs; see node_receiver_types.go.
+	file  *nodeFileTypes
+	scope *nodeScope
 }
 
 // NewNodeParser creates a parser for JavaScript, TypeScript, and TSX source files.
@@ -191,6 +195,7 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	root := tree.RootNode()
 	bindings := make(nodeBindings)
 	extractNodeImports(root, src, bindings)
+	projectImports := nodeProjectImports(bindings, filePath, packagePath)
 	resolveNodeRelativeImports(bindings, filePath, packagePath)
 	for name, binding := range bindings {
 		analysis.Imports[name] = binding.module
@@ -204,6 +209,9 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	// package: see nodeModulePath. analysis.PackagePath keeps the package so the
 	// import map and the package name are unaffected.
 	modulePath := nodeModulePath(packagePath, filePath)
+	p.file = newNodeFileTypes(p, root, src, modulePath, bindings, projectImports)
+	defer func() { p.file, p.scope = nil, nil }()
+	analysis.nodeInstances = p.file.instances
 	p.extractDeclarations(root, src, filePath, modulePath, bindings, analysis)
 	if decl := p.moduleInitDecl(root, src, filePath, modulePath, bindings); decl != nil {
 		analysis.Functions = append(analysis.Functions, *decl)
@@ -236,6 +244,9 @@ func (p *NodeParser) parserForFile(path string) *sitter.Parser {
 type nodeBinding struct {
 	module string
 	member string
+	// isDefault marks a default import, `import X from 'm'`, which unlike a
+	// namespace import names the module's default export.
+	isDefault bool
 }
 
 type nodeBindings map[string]nodeBinding
@@ -349,7 +360,7 @@ func recordNodeImportAliases(node *sitter.Node, src []byte, module string, bindi
 	}
 	switch node.Type() {
 	case goNodeIdentifier:
-		bindings[node.Content(src)] = nodeBinding{module: module}
+		bindings[node.Content(src)] = nodeBinding{module: module, isDefault: node.Parent() != nil && node.Parent().Type() == "import_clause"}
 		return
 	case "import_specifier":
 		name := node.ChildByFieldName("name")
@@ -472,7 +483,7 @@ func (p *NodeParser) extractDeclarations(node *sitter.Node, src []byte, filePath
 	case "lexical_declaration", "variable_declaration":
 		p.extractAssignedFunctions(node, src, filePath, packagePath, bindings, analysis)
 		return
-	case javaNodeClassDeclaration:
+	case javaNodeClassDeclaration, nodeAbstractClassDeclaration:
 		p.extractClassMethods(node, src, filePath, packagePath, "", bindings, analysis)
 		return
 	case nodeObjectLiteral:
@@ -665,6 +676,7 @@ func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath
 		}
 	}
 	p.appendClassInit(body, fieldInit, src, filePath, packagePath, owner, bindings, analysis)
+	p.recordMethodlessClass(node, src, packagePath, owner, first, analysis)
 }
 
 // appendClassInit emits ONE synthetic `<clinit>` for a class whose body holds a
@@ -696,6 +708,11 @@ func (p *NodeParser) appendClassInit(body *sitter.Node, inits []*sitter.Node, sr
 		collectNodeBindingNames(init, src, own)
 	}
 	locals := bindings.withModuleVariables(own)
+	if p.file != nil {
+		previous := p.scope
+		p.scope = &nodeScope{own: own}
+		defer func() { p.scope = previous }()
+	}
 	for _, init := range inits {
 		decl.Calls = append(decl.Calls, p.extractCalls(init, src, filePath, packagePath, owner, bindings, locals)...)
 	}
@@ -733,9 +750,17 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 	}
 	own := collectNodeLocalNames(params, body, src)
 	locals := imports.withModuleVariables(own)
+	previousScope := p.scope
+	p.scope = p.scopeFor(params, body, own, src)
+	defer func() { p.scope = previousScope }()
 	decl.Calls = p.extractCalls(body, src, filePath, packagePath, owner, imports, locals)
 	decl.ImplicitCalls = nodeImplicitCalls(body, src, filePath, packagePath, imports, locals)
 	decl.ModuleVars = imports.moduleReceivers(decl.Calls, own)
+	if p.file != nil {
+		if ref, ok := p.file.annotatedClass(node.ChildByFieldName("return_type"), src); ok {
+			decl.nodeReturnClass = FunctionID{Package: ref.pkg, Type: ref.name}
+		}
+	}
 	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, owner, imports, locals)
 	return decl
 }
@@ -862,7 +887,7 @@ func collectNodeNestedBinding(node *sitter.Node, src []byte, locals map[string]b
 		return false
 	}
 	switch node.Type() {
-	case nodeFunctionDeclaration, nodeGeneratorDeclaration, javaNodeClassDeclaration:
+	case nodeFunctionDeclaration, nodeGeneratorDeclaration, javaNodeClassDeclaration, nodeAbstractClassDeclaration:
 		if name := node.ChildByFieldName("name"); name != nil {
 			locals[name.Content(src)] = true
 		}
@@ -873,7 +898,7 @@ func collectNodeNestedBinding(node *sitter.Node, src []byte, locals map[string]b
 
 func isNodeNestedScope(nodeType string) bool {
 	switch nodeType {
-	case nodeFunctionDeclaration, nodeGeneratorDeclaration, nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition, javaNodeClassDeclaration, nodeClassExpression:
+	case nodeFunctionDeclaration, nodeGeneratorDeclaration, nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition, javaNodeClassDeclaration, nodeAbstractClassDeclaration, nodeClassExpression:
 		return true
 	default:
 		return false
@@ -955,11 +980,13 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 		switch {
 		case object.Type() != nodeCallExpression && importedObject:
 			call.Callee.Package, _ = binding.qualify(suffix, name)
+			p.markImportedInstance(call, binding, first, suffix)
 		case object.Type() == "this" && owner != "":
 			call.Callee.Type = owner
 		case object.Type() == goNodeIdentifier && locals[objectText]:
 			call.ReceiverVar = objectText
 		}
+		p.typeNodeReceiver(call, object, src, owner, importedObject)
 		return call
 	default:
 		return nil

@@ -154,6 +154,17 @@ func indexDeclaredOwners(graph *CallGraph) (typesBySimple map[string][]string, p
 			simpleBases[owner] = decl.OwnerBases
 		}
 	}
+	// A class that owns no declaration, an abstract class with only abstract
+	// methods, is still a type a simple base name can denote.
+	for owner := range graph.SourceSupertypes {
+		owner = normalizeHierarchyName(owner)
+		if known[owner] {
+			continue
+		}
+		known[owner] = true
+		simple := simpleTypeName(owner)
+		typesBySimple[simple] = append(typesBySimple[simple], owner)
+	}
 	return typesBySimple, pkgByOwner, simpleBases, known
 }
 

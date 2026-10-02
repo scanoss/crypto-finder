@@ -249,6 +249,9 @@ type FunctionDecl struct {
 	TypeParamBounds map[string]string
 	Parameters      []FunctionParameter
 	Calls           []FunctionCall
+	// nodeReturnClass is the class a Node function declares as its return
+	// type, `function make(): Base`, when that is a plain class of the project.
+	nodeReturnClass FunctionID
 	// ReturnSources traces where return values originate when the parser supports it.
 	ReturnSources []SourceNode
 	// InferredReturn is the result of the post-build inference pass; nil when no inference fires.
@@ -372,6 +375,13 @@ type FunctionCall struct {
 	// ArgumentSources traces where each argument value comes from.
 	// Parallel to Arguments — same indices. Populated by the parser's data flow analysis.
 	ArgumentSources [][]SourceNode
+	// nodeInstanceKey names the export of a project module that the receiver
+	// of a Node call imports, `module.name` or `module.default`. The builder
+	// replaces the callee when that export is an instance of a class.
+	nodeInstanceKey string
+	// nodeReturnOf names the project function whose result a Node call's
+	// receiver holds; the callee takes that function's declared return class.
+	nodeReturnOf FunctionID
 }
 
 // SourceNode describes where a value comes from in the data flow.
@@ -482,6 +492,9 @@ type FileAnalysis struct {
 	// declared in another file, so the builder resolves them once every file
 	// is parsed (resolveEntryRefs).
 	EntryRefs []EntryRef
+	// nodeInstances maps each name a Node module exports an instance under,
+	// or "default", to the class it is an instance of.
+	nodeInstances map[string]FunctionID
 	// rustFacts holds the declared-type facts collected from a Rust file:
 	// struct and enum-variant field types, function return types, and the
 	// set of types the file declares. The receiver-typing layer resolves
@@ -566,6 +579,10 @@ type CallGraph struct {
 	// `package.Struct`; a field two declarations disagree on (build-tag
 	// variants) is stored with an empty Type and never resolves.
 	goStructFields map[string]map[string]GoFieldType
+	// nodeInstances indexes the instances Node modules export, by
+	// `module.name`, while files are merged; resolveNodeImportedInstances
+	// consumes it.
+	nodeInstances map[string]nodeModuleInstance
 }
 
 // EdgeKind classifies how confidently a caller->callee edge was resolved.
