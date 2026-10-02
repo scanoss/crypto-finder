@@ -110,7 +110,7 @@ func TestDependencyRulesProofTracksCurrentBytes(t *testing.T) {
 						return err
 					}
 					data, readErr := os.ReadFile(path)
-					if readErr == nil && strings.Contains(string(data), "id: fixture") {
+					if readErr == nil && strings.Contains(string(data), `"id":"fixture"`) {
 						selected = path
 					}
 					return readErr

@@ -70,7 +70,7 @@ func TestDependencyConsumerRetainsValidFindingsAndRejectsMalformedRules(t *testi
 			registry := scanner.NewRegistry()
 			registry.RegisterFactory("fixture", func() scanner.Scanner {
 				return consumerScanner{scan: func(_ context.Context, target string, paths []string, info entities.ToolInfo) (*entities.InterimReport, error) {
-					selected, data, err := preparedRuleFile(paths[0], "id: fixture")
+					selected, data, err := preparedRuleFile(paths[0], `"id":"fixture"`)
 					if err != nil {
 						return nil, err
 					}
@@ -103,7 +103,7 @@ func TestDependencyConsumerRetainsValidFindingsAndRejectsMalformedRules(t *testi
 						t.Fatal("asset count changed")
 					}
 					asset := finding.CryptographicAssets[0]
-					if !strings.Contains(asset.Metadata["observed"], "id: fixture") || !strings.Contains(asset.Metadata["observed"], "parameterCondition: 'param[0]==true'") || asset.StartLine != 2 || asset.Match != "digest()" || asset.FindingID == "" || asset.Source != "dependency" || asset.DependencyInfo == nil || asset.DependencyInfo.Module != deps[i].Module {
+					if !strings.Contains(asset.Metadata["observed"], `"id":"fixture"`) || !strings.Contains(asset.Metadata["observed"], `"parameterCondition":"param[0]==true"`) || asset.StartLine != 2 || asset.Match != "digest()" || asset.FindingID == "" || asset.Source != "dependency" || asset.DependencyInfo == nil || asset.DependencyInfo.Module != deps[i].Module {
 						t.Fatalf("finding changed: %+v", asset)
 					}
 				}

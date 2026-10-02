@@ -276,6 +276,158 @@ func TestPrepareRulePathsForScanner_MergesFilteredRulesIntoOneFile(t *testing.T)
 	}
 }
 
+// OpenGrep loads a rules file of JSON text about seven times faster than the
+// same rules as YAML, so the merged file holds one JSON rule per line. Each
+// scalar keeps the meaning OpenGrep's YAML parser gives it.
+func TestMaterializeRuleFiles_WritesMergedRulesAsJSONLines(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	first := writeRuleFile(t, dir, "a.yaml", `rules:
+  - id: a1
+    languages: [javascript, typescript]
+    severity: INFO
+    message: |
+      keeps "quoted" text
+      and <html> & lines
+    pattern-either:
+      - pattern: crypto.createHash('md5')
+      - patterns:
+          - pattern-inside: $X = require('crypto')
+          - pattern: $X.createHash(...)
+    metadata:
+      protocolVersion: 2.0
+      keySize: 128
+      exponent: 1e3
+      fips: True
+      approved: false
+      shouted: FALSE
+      word: yes
+      mixed: tRUE
+      since: 2001-12-14
+      quoted: "2.0"
+`)
+	second := writeRuleFile(t, dir, "b.yaml", "rules:\n  - id: b1\n    languages: [go]\n    pattern: md5.New()\n")
+
+	paths, cleanup, err := materializeRuleFiles([]string{first, second})
+	if err != nil {
+		t.Fatalf("materializeRuleFiles: %v", err)
+	}
+	defer cleanup()
+	data, err := os.ReadFile(filepath.Join(paths[0], mergedRulesFileName))
+	if err != nil {
+		t.Fatalf("read merged rules: %v", err)
+	}
+	if !json.Valid(data) {
+		t.Fatalf("merged rules are not JSON:\n%s", data)
+	}
+
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	if len(lines) != 4 || lines[0] != `{"rules":[` || lines[3] != "]}" {
+		t.Fatalf("want one rule per line between the rules brackets:\n%s", data)
+	}
+	ids := make([]string, 0, 2)
+	for _, line := range lines[1:3] {
+		var rule struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSuffix(line, ",")), &rule); err != nil {
+			t.Fatalf("rule line %q is not one JSON object: %v", line, err)
+		}
+		ids = append(ids, rule.ID)
+	}
+	if !reflect.DeepEqual(ids, []string{"a1", "b1"}) {
+		t.Fatalf("rule lines hold ids %v, want [a1 b1]", ids)
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var merged struct {
+		Rules []map[string]any `json:"rules"`
+	}
+	if err := decoder.Decode(&merged); err != nil {
+		t.Fatalf("decode merged rules: %v", err)
+	}
+	want := map[string]any{
+		"id":        "a1",
+		"languages": []any{"javascript", "typescript"},
+		"severity":  "INFO",
+		"message":   "keeps \"quoted\" text\nand <html> & lines\n",
+		"pattern-either": []any{
+			map[string]any{"pattern": "crypto.createHash('md5')"},
+			map[string]any{"patterns": []any{
+				map[string]any{"pattern-inside": "$X = require('crypto')"},
+				map[string]any{"pattern": "$X.createHash(...)"},
+			}},
+		},
+		"metadata": map[string]any{
+			"protocolVersion": json.Number("2.0"),
+			"keySize":         json.Number("128"),
+			"exponent":        json.Number("1e3"),
+			"fips":            true,
+			"approved":        false,
+			"shouted":         false,
+			"word":            "yes",
+			"mixed":           "tRUE",
+			"since":           "2001-12-14",
+			"quoted":          "2.0",
+		},
+	}
+	if !reflect.DeepEqual(merged.Rules[0], want) {
+		t.Fatalf("merged rule:\n got %#v\nwant %#v", merged.Rules[0], want)
+	}
+}
+
+// A file whose YAML has no JSON spelling with the meaning OpenGrep gives it
+// reaches the scanner verbatim: numbers JSON cannot write as they are (0x10,
+// 0o17, 017, 0b101, 1_000, +5, .5, 1.), aliases and merge keys, repeated
+// keys and other tags.
+func TestMaterializeRuleFiles_PassesYAMLWithoutJSONFormVerbatim(t *testing.T) {
+	t.Parallel()
+
+	head := "rules:\n  - id: r\n    languages: [go]\n    pattern: md5.New()\n"
+	cases := map[string]string{
+		"hex.yaml":       head + "    metadata: {n: 0x10}\n",
+		"octal.yaml":     head + "    metadata: {n: 0o17}\n",
+		"legacy.yaml":    head + "    metadata: {n: 017}\n",
+		"under.yaml":     head + "    metadata: {n: 1_000}\n",
+		"plus.yaml":      head + "    metadata: {n: +5}\n",
+		"dot.yaml":       head + "    metadata: {n: .5}\n",
+		"inf.yaml":       head + "    metadata: {n: .inf}\n",
+		"binary.yaml":    head + "    metadata: {n: 0b101}\n",
+		"trailing.yaml":  head + "    metadata: {n: 1.}\n",
+		"alias.yaml":     "rules:\n  - id: r\n    languages: &l [go]\n    message: m\n  - id: s\n    languages: *l\n",
+		"merge.yaml":     "rules:\n  - &base {id: r, languages: [go]}\n  - <<: *base\n    id: s\n",
+		"duplicate.yaml": head + "    pattern: sha1.New()\n",
+		"tagged.yaml":    head + "    metadata: {n: !!binary aGk=}\n",
+	}
+	dir := t.TempDir()
+	files := make([]string, 0, len(cases))
+	for name, content := range cases {
+		files = append(files, writeRuleFile(t, dir, name, content))
+	}
+	sort.Strings(files)
+
+	paths, cleanup, err := materializeRuleFiles(files)
+	if err != nil {
+		t.Fatalf("materializeRuleFiles: %v", err)
+	}
+	defer cleanup()
+	for name, content := range cases {
+		got, err := os.ReadFile(filepath.Join(paths[0], name))
+		if err != nil || string(got) != content {
+			t.Fatalf("%s must reach the scanner unchanged: err=%v got %q", name, err, got)
+		}
+	}
+	merged, err := os.ReadFile(filepath.Join(paths[0], mergedRulesFileName))
+	if err != nil {
+		t.Fatalf("read merged rules: %v", err)
+	}
+	if string(merged) != `{"rules":[]}`+"\n" {
+		t.Fatalf("merged rules = %q, want an empty rules list", merged)
+	}
+}
+
 // Files the merge cannot represent faithfully reach the scanner byte for byte,
 // so OpenGrep keeps judging them as it did when every file was passed alone:
 // it rejects invalid YAML and skips *.test.yaml fixtures inside a rules dir.
@@ -398,7 +550,8 @@ func TestPrepareRulePathsForScanner_MergedRulesKeepFindingsIntegration(t *testin
 		}
 	}
 	rule := func(id, pattern string) string {
-		return "rules:\n  - id: " + id + "\n    languages: [java]\n    severity: INFO\n    message: m\n    pattern: " + pattern + "\n"
+		return "rules:\n  - id: " + id + "\n    languages: [java]\n    severity: INFO\n    message: m\n    pattern: " + pattern +
+			"\n    metadata:\n      crypto:\n        assetType: algorithm\n        protocolVersion: 2.5\n        keySize: 128\n        fips: True\n        note: yes\n"
 	}
 	_ = writeRuleFile(t, filepath.Join(javaDir, "jca", "md5"), "rules.yaml", rule("dup", `MessageDigest.getInstance("MD5")`))
 	_ = writeRuleFile(t, filepath.Join(javaDir, "jca", "md5"), "extra.yaml", rule("dup", `MessageDigest.getInstance("SHA-256")`))
@@ -445,8 +598,12 @@ class Hash {
 		var got []string
 		for _, finding := range report.Findings {
 			for _, asset := range finding.CryptographicAssets {
+				metadata, err := json.Marshal(asset.Metadata)
+				if err != nil {
+					t.Fatalf("marshal metadata: %v", err)
+				}
 				for _, r := range asset.Rules {
-					got = append(got, strconv.Itoa(asset.StartLine)+":"+r.ID)
+					got = append(got, strconv.Itoa(asset.StartLine)+":"+r.ID+" "+string(metadata))
 				}
 			}
 		}
@@ -454,7 +611,8 @@ class Hash {
 		return got
 	}
 
-	want := []string{"5:jca.md5.dup", "5:other.dup", "9:jca.md5.dup", "9:top"}
+	const metadata = ` {"assetType":"algorithm","fips":"true","keySize":"128","note":"yes","protocolVersion":"2.5"}`
+	want := []string{"5:jca.md5.dup" + metadata, "5:other.dup" + metadata, "9:jca.md5.dup" + metadata, "9:top" + metadata}
 	if perFile := scan([]string{javaDir}); !reflect.DeepEqual(perFile, want) {
 		t.Fatalf("per-file baseline findings = %v, want %v", perFile, want)
 	}
@@ -582,7 +740,7 @@ func TestMaterializeRuleFiles_SurvivesRulesetReplacement(t *testing.T) {
 		survived = append(survived, string(data))
 	}
 	all := strings.Join(survived, "\n")
-	if !strings.Contains(all, "id: a") || !strings.Contains(all, "id: b") {
+	if !strings.Contains(all, `"id":"a"`) || !strings.Contains(all, `"id":"b"`) {
 		t.Fatalf("in-flight filtered rules lost after cache replacement: %q", all)
 	}
 }
@@ -623,7 +781,10 @@ func TestMaterializeRuleFiles_LogsMergedLineOfEachSourceFile(t *testing.T) {
 	}
 	for path, wantID := range map[string]string{first: "a1", second: "b1"} {
 		line := starts[path]
-		if line < 1 || line > len(lines) || lines[line-1] != "- id: "+wantID {
+		var rule struct {
+			ID string `json:"id"`
+		}
+		if line < 1 || line > len(lines) || json.Unmarshal([]byte(strings.TrimSuffix(lines[line-1], ",")), &rule) != nil || rule.ID != wantID {
 			t.Fatalf("log maps %s to merged line %d, want the line of rule %s:\n%s", path, line, wantID, merged)
 		}
 	}
