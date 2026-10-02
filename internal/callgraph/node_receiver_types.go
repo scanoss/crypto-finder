@@ -378,7 +378,7 @@ func (p *NodeParser) walkVarDeclarations(n *sitter.Node, src []byte, nested bool
 		}
 	case nodeAssignmentExpression, "augmented_assignment_expression":
 		poisonNodePattern(n.ChildByFieldName("left"), src, facts)
-	case "for_in_statement":
+	case nodeForInStatement:
 		if !nested {
 			poisonNodePattern(n.ChildByFieldName("left"), src, facts)
 		}
@@ -420,7 +420,7 @@ func poisonNodePattern(n *sitter.Node, src []byte, facts *nodeTypeFacts) {
 		return
 	}
 	switch n.Type() {
-	case goNodeIdentifier, "shorthand_property_identifier_pattern", "shorthand_property_identifier":
+	case goNodeIdentifier, nodeShorthandPattern, "shorthand_property_identifier":
 		facts.poison(n.Content(src))
 		return
 	case nodeMemberExpression, "subscript_expression":
@@ -493,7 +493,7 @@ func collectNodeWrittenNames(n *sitter.Node, src []byte, into map[string]bool) {
 			if name := n.ChildByFieldName("name"); name != nil && name.Type() != goNodeIdentifier {
 				poisonNodePattern(name, src, facts)
 			}
-		case "for_in_statement":
+		case nodeForInStatement:
 			poisonNodePattern(n.ChildByFieldName("left"), src, facts)
 		case javaNodeCatchClause:
 			poisonNodePattern(n.ChildByFieldName("parameter"), src, facts)

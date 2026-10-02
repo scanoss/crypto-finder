@@ -397,7 +397,7 @@ func extractNodeRequireImport(node *sitter.Node, src []byte, bindings nodeBindin
 		for i := 0; i < int(name.NamedChildCount()); i++ {
 			item := name.NamedChild(i)
 			switch item.Type() {
-			case "shorthand_property_identifier_pattern":
+			case nodeShorthandPattern:
 				bindings[item.Content(src)] = nodeBinding{module: binding.module, member: joinNodeMember(binding.member, item.Content(src))}
 			case "pair_pattern":
 				key := item.ChildByFieldName("key")
@@ -892,7 +892,7 @@ func collectNodeBindingNames(node *sitter.Node, src []byte, locals map[string]bo
 	switch node.Type() {
 	case nodeVariableDeclarator:
 		collectNodePatternNames(node.ChildByFieldName("name"), src, locals)
-	case "for_in_statement":
+	case nodeForInStatement:
 		collectNodePatternNames(node.ChildByFieldName("left"), src, locals)
 	case "catch_clause":
 		collectNodePatternNames(node.ChildByFieldName("parameter"), src, locals)
@@ -917,7 +917,7 @@ func collectNodePatternNames(node *sitter.Node, src []byte, locals map[string]bo
 		return
 	}
 	switch node.Type() {
-	case goNodeIdentifier, "shorthand_property_identifier_pattern":
+	case goNodeIdentifier, nodeShorthandPattern:
 		locals[node.Content(src)] = true
 	case "pair_pattern":
 		collectNodePatternNames(node.ChildByFieldName("value"), src, locals)
