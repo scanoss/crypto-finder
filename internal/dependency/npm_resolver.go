@@ -98,11 +98,25 @@ func (e npmLockV1Entry) requireMap() map[string]string {
 // pointing at directories that are already there. That is also the constraint —
 // without an install there is nothing to point at, and this resolver fails
 // rather than return dependencies whose Dir is empty.
-type NpmResolver struct{}
+type NpmResolver struct {
+	includeDev bool
+}
+
+// NpmResolverOption configures an NpmResolver.
+type NpmResolverOption func(*NpmResolver)
+
+// WithNpmDevDependencies also resolves the dev-only packages of the lockfile.
+func WithNpmDevDependencies() NpmResolverOption {
+	return func(r *NpmResolver) { r.includeDev = true }
+}
 
 // NewNpmResolver creates a new npm dependency resolver.
-func NewNpmResolver() *NpmResolver {
-	return &NpmResolver{}
+func NewNpmResolver(opts ...NpmResolverOption) *NpmResolver {
+	r := &NpmResolver{}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // Ecosystem returns "node".
@@ -131,7 +145,7 @@ func (r *NpmResolver) Resolve(_ context.Context, targetDir string) (*ResolveResu
 		return nil, err
 	}
 
-	packages, workspacePaths, rootDeps := npmPackagesByInstallPath(manifest, lock)
+	packages, workspacePaths, rootDeps := npmPackagesByInstallPath(manifest, lock, r.includeDev)
 
 	result := &ResolveResult{
 		RootModule:     npmRootModule(manifest, lock),
@@ -220,50 +234,59 @@ func npmRootModule(manifest *npmManifestFile, lock *npmLockFile) string {
 
 // npmPackagesByInstallPath reduces either lockfile shape to one path-keyed map,
 // and returns the root's own direct dependency names alongside it. Dev-only
-// packages are dropped: they are build tooling that never ships, and walking
-// them multiplies the scanned tree without adding anything a consumer runs.
+// packages are dropped unless includeDev is set: they are build tooling that
+// never ships, and walking them multiplies the scanned tree without adding
+// anything a consumer runs. A devOptional package stays, because npm installs
+// it without dev when an optional production dependency needs it.
 func npmPackagesByInstallPath(
 	manifest *npmManifestFile,
 	lock *npmLockFile,
+	includeDev bool,
 ) (packages, workspacePaths map[string]npmLockPackage, rootDeps []string) {
 	packages = make(map[string]npmLockPackage)
 	workspacePaths = make(map[string]npmLockPackage)
 
-	if len(lock.Packages) > 0 {
-		for installPath, pkg := range lock.Packages {
-			if installPath == "" {
-				rootDeps = sortedKeys(pkg.Dependencies)
-				continue
-			}
-			if pkg.Link {
-				// A link entry is the symlink npm drops in node_modules for a
-				// workspace member. Its target is already keyed by its own path,
-				// and the entry itself has no version, so taking it would report
-				// the same source twice and once without a coordinate.
-				continue
-			}
-			if !strings.HasPrefix(installPath, npmModulesSlash) {
-				// A path outside node_modules is the user's OWN package in a
-				// workspace, not something installed for them.
-				workspacePaths[installPath] = pkg
-				continue
-			}
-			packages[installPath] = pkg
-		}
-		if len(rootDeps) == 0 {
-			rootDeps = sortedKeys(manifest.Dependencies)
-		}
-		return packages, workspacePaths, rootDeps
+	if len(lock.Packages) == 0 {
+		collectNpmV1Entries("", lock.Dependencies, packages, includeDev)
+		return packages, workspacePaths, sortedKeys(manifest.Dependencies)
 	}
-
-	collectNpmV1Entries("", lock.Dependencies, packages)
-	return packages, workspacePaths, sortedKeys(manifest.Dependencies)
+	for installPath, pkg := range lock.Packages {
+		if installPath == "" {
+			rootDeps = sortedKeys(pkg.Dependencies)
+			continue
+		}
+		if pkg.Link {
+			// A link entry is the symlink npm drops in node_modules for a
+			// workspace member. Its target is already keyed by its own path,
+			// and the entry itself has no version, so taking it would report
+			// the same source twice and once without a coordinate.
+			continue
+		}
+		if !strings.HasPrefix(installPath, npmModulesSlash) {
+			// A path outside node_modules is the user's OWN package in a
+			// workspace, not something installed for them.
+			workspacePaths[installPath] = pkg
+			continue
+		}
+		if pkg.Dev && !includeDev {
+			continue
+		}
+		packages[installPath] = pkg
+	}
+	if len(rootDeps) == 0 {
+		rootDeps = sortedKeys(manifest.Dependencies)
+	}
+	return packages, workspacePaths, rootDeps
 }
 
 // collectNpmV1Entries flattens the nested v1 shape into install paths, which is
-// exactly what the v2 `packages` map states directly.
-func collectNpmV1Entries(prefix string, entries map[string]npmLockV1Entry, out map[string]npmLockPackage) {
+// exactly what the v2 `packages` map states directly. A dev entry's nested
+// entries are dev too, so they leave with it.
+func collectNpmV1Entries(prefix string, entries map[string]npmLockV1Entry, out map[string]npmLockPackage, includeDev bool) {
 	for name, entry := range entries {
+		if entry.Dev && !includeDev {
+			continue
+		}
 		installPath := path.Join(prefix, npmModulesDir, name)
 		out[installPath] = npmLockPackage{
 			Name:         name,
@@ -272,7 +295,7 @@ func collectNpmV1Entries(prefix string, entries map[string]npmLockV1Entry, out m
 			Dev:          entry.Dev,
 			Optional:     entry.Optional,
 		}
-		collectNpmV1Entries(installPath, entry.Dependencies, out)
+		collectNpmV1Entries(installPath, entry.Dependencies, out, includeDev)
 	}
 }
 
