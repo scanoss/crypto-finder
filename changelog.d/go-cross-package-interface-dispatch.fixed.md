@@ -1,6 +1,0 @@
-- A Go call through an interface now links to implementers declared in other packages, not only the interface's own package. Before, a method reached only through an interface whose implementer lived in a sibling package or module had no callers, and its finding read `no_callers`.
-  - The edge stays `interface_dispatch`, and a type still has to declare every method of the interface by name and arity.
-  - When more than 8 types in other packages implement the interface (a small one such as `Close() error` is satisfied by many), those edges are recorded as `name_only`, so a route through them reads `unknown`, never `reachable`. Implementers in the interface's own package are not counted and keep `interface_dispatch`.
-  - An interface with an unexported method is linked only to types of its own package, since no other package can implement it.
-  - With dependencies resolved, a dependency's type implements an interface of its own artifact or of one it depends on, and never one of the scanned project.
-  - Other ecosystems keep their namespace-root bound unchanged.

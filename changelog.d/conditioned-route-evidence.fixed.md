@@ -1,1 +1,0 @@
-- A finding specialized by a parameter condition now rates `analysis.route_evidence` and `analysis.no_callers_only` from the chains that survive the condition. Before, both came from the containing function's unfiltered trace, so a finding whose condition refuted the direct route still read `route_evidence: direct`. With no chain left, both are absent.
