@@ -216,7 +216,8 @@ func (c *Catalog) Match(language string, shape Shape, pkg, typeName, name string
 }
 
 // InDirectory reports whether filePath lies under a directory named Directory,
-// or Directory is empty.
+// or Directory is empty. filePath should be relative to the scanned tree, so
+// a directory above the scan root never counts.
 func (e *Entry) InDirectory(filePath string) bool {
 	if e.Directory == "" {
 		return true

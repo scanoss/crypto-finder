@@ -221,6 +221,13 @@ func TestExportCallGraph_PythonEntryPoints(t *testing.T) {
 		{id: "not-click", file: "src/shop/plugins.py", needle: "hashlib.sha3_512(", reachability: graphfrag.ReachabilityUnreachable},
 		{id: "django-urls", file: "src/shop/web/views.py", needle: "hashlib.sha256(", reachability: reachable, rootKind: framework, first: "receipt"},
 		{id: "django-cbv", file: "src/shop/web/views.py", needle: "hashlib.blake2s(", reachability: reachable, rootKind: framework, first: "RefundView"},
+		// A RunPython callback is reached from the class body of a Migration
+		// under a migrations directory, also a nested one; the same class in a
+		// module outside one is not an entry point, so its callback keeps
+		// no_callers.
+		{id: "migration", file: "src/shop/migrations/0001_seed.py", needle: "hashlib.sha3_384(", reachability: reachable, rootKind: framework, first: "Migration"},
+		{id: "migration-nested", file: "src/shop/migrations/sub/0002_nested.py", needle: "hashlib.sha3_224(", reachability: reachable, rootKind: framework, first: "Migration"},
+		{id: "migration-elsewhere", file: "src/shop/ledger.py", needle: "hashlib.pbkdf2_hmac(", reachability: reachable, rootKind: callgraph.RootKindNoCallers, first: "Migration"},
 		{id: "main-guard", file: "src/shop/batch.py", needle: "hashlib.shake_128(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "batch.<module>"},
 		{id: "console-script", file: "src/shop/cli.py", needle: "hashlib.sha512(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "rotate_keys"},
 	}

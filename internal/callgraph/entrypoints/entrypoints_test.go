@@ -174,6 +174,7 @@ func TestCatalog_MatchInFileHonoursDirectory(t *testing.T) {
 	for file, want := range map[string]bool{
 		"app/migrations/0001_x.py": true,
 		"/src/app/migrations/a.py": true,
+		"app/migrations/sub/a.py":  true,
 		"app/models.py":            false,
 		"app/migrationsx/a.py":     false,
 		"app/my_migrations/a.py":   false,

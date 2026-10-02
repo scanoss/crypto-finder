@@ -3,7 +3,10 @@
 
 package callgraph
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 // A manifest-named project keys its modules under the root module
 // (`probe.pkg.cli.main`), while the manifest spells the module as the code is
@@ -146,5 +149,29 @@ func TestBuilder_PythonClassBodyCallKeepsViewBases(t *testing.T) {
 	decl := graph.Functions["shop.views.(Index).get"]
 	if decl == nil || decl.EntryKind != RootKindFrameworkEntry {
 		t.Fatalf("shop.views.(Index).get = %+v, want a framework_entry", decl)
+	}
+}
+
+// Only a directory inside the scanned tree counts: a scan root that sits under
+// a directory named migrations does not root the Migration classes of the
+// project.
+func TestBuilder_PythonMigrationDirectoryAboveTheScanRootDoesNotCount(t *testing.T) {
+	t.Parallel()
+
+	base := writePythonTree(t, map[string]string{
+		"migrations/proj/app/__init__.py": "",
+		"migrations/proj/app/models.py":   "from django.db import migrations\n\n\nclass Migration(migrations.Migration):\n    operations = [migrations.RunPython(forwards)]\n",
+	})
+	graph, err := NewBuilderForEcosystem("python", NewPythonParser()).
+		BuildFromDirectories([]PackageDir{{Dir: filepath.Join(base, "migrations", "proj")}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+	decl := graph.Functions["app.models.(Migration).<clinit>"]
+	if decl == nil {
+		t.Fatalf("no clinit in %v", sortedFunctionKeys(graph.Functions))
+	}
+	if decl.EntryKind != "" {
+		t.Errorf("entry kind = %q, want none: migrations lies above the scan root", decl.EntryKind)
 	}
 }

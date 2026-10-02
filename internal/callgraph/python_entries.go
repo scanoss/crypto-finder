@@ -70,6 +70,10 @@ func applyPythonEntryRules(root *sitter.Node, src []byte, filePath, packagePath 
 	scope.decoratedEntries(root, src, kinds)
 	module := pythonModuleDottedPath(filePath, packagePath)
 	runsAsMain := pythonHasMainGuard(root, src)
+	// A directory-restricted entry reads the file's place inside the scanned
+	// tree, which the package path spells; the absolute path would also match
+	// a directory above the scan root.
+	treePath := strings.ReplaceAll(packagePath, ".", "/") + "/" + filepath.Base(filePath)
 	for i := range analysis.Functions {
 		decl := &analysis.Functions[i]
 		if decl.FilePath != filePath {
@@ -81,7 +85,7 @@ func applyPythonEntryRules(root *sitter.Node, src []byte, filePath, packagePath 
 		case kinds[decl.StartLine] != "":
 			markEntry(decl, kinds[decl.StartLine])
 		case decl.ID.Type != "":
-			if kind, ok := scope.supertypeEntryKind(decl.ID.Type, decl.ID.Name, filePath, map[string]bool{}); ok {
+			if kind, ok := scope.supertypeEntryKind(decl.ID.Type, decl.ID.Name, treePath, map[string]bool{}); ok {
 				markEntry(decl, kind)
 			}
 		}
