@@ -245,32 +245,15 @@ func (t *Tracer) selectTiered(walks []tierWalk, maxChains int) []CallChain {
 	return out
 }
 
-// selectRoutes picks a walk's routes. With a module function set, routes that
-// cross a different sequence of modules than those already kept come before
-// further variants of a kept sequence, so a small budget shows more paths.
+// selectRoutes picks a walk's routes. With a module function set, one route
+// through each library the walk reached, kept when its sequence of modules is
+// new, comes before further variants of a kept sequence, so a small budget
+// shows more library paths.
 func (t *Tracer) selectRoutes(w *reverseWalk, maxChains int) [][]string {
 	if t.moduleOf == nil || maxChains <= 0 {
 		return graphwalk.Select(w.reach, w.condensed, maxChains, w.rootLess)
 	}
-	return graphwalk.SelectDiverse(w.reach, w.condensed, maxChains, w.rootLess,
-		t.routeClass, graphwalk.DiverseScanLimit(maxChains))
-}
-
-// routeClass is a route's library path: the modules its functions belong to,
-// consecutive repeats collapsed.
-func (t *Tracer) routeClass(route []string) string {
-	var b strings.Builder
-	last := ""
-	for i, key := range route {
-		module := t.moduleOf(key)
-		if i > 0 && module == last {
-			continue
-		}
-		last = module
-		b.WriteString(module)
-		b.WriteByte('\x00')
-	}
-	return b.String()
+	return graphwalk.SelectDiverse(w.reach, w.condensed, maxChains, w.rootLess, t.moduleOf)
 }
 
 // rootLess orders a walk's roots for graphwalk.Select: recognized entry
