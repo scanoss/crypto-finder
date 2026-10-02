@@ -98,6 +98,7 @@ var (
 	scanDependencies             bool
 	scanIncludeTests             bool
 	scanIncludeDevDependencies   bool
+	scanNoDependencyFindingsAPI  bool
 	scanNoDefaultExclusions      bool     // --no-default-exclusions flag
 	scanExcludePatterns          []string // --exclude flag (repeatable)
 	scanDetectPathsFrom          string
@@ -178,6 +179,9 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanIncludeTests, "include-tests", false, "Include test sources in findings and dependency scans")
 	scanCmd.Flags().BoolVar(&scanIncludeDevDependencies, "include-dev-dependencies", false,
 		"Also scan npm dev-only dependencies (packages marked dev in package-lock.json); by default dependency scans cover the production tree")
+	scanCmd.Flags().BoolVar(&scanNoDependencyFindingsAPI, "no-dependency-findings-api", false,
+		"Scan every dependency locally instead of taking the findings the SCANOSS API publishes for its package version "+
+			"(used only when an API key is configured)")
 	scanCmd.Flags().BoolVar(&scanNoDefaultExclusions, "no-default-exclusions", false,
 		"Disable the built-in default exclusions (docs, vendor, node_modules, shaded, generated protobuf stubs, ...). "+
 			"Affects the primary scan only; dependency scans still skip test patterns controlled by --include-tests. "+
@@ -1064,6 +1068,10 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 
 		if ecosystem != "" {
 			depRegistry := newDependencyRegistry(scanIncludeDevDependencies)
+			var depScannerOptions []engine.DependencyScannerOption
+			if source := newDependencyFindingsSource(cfg.GetAPIURL(), cfg.GetAPIKey(), scanNoDependencyFindingsAPI); source != nil {
+				depScannerOptions = append(depScannerOptions, engine.WithDependencyFindingsSource(source))
+			}
 
 			resolver, resolverErr := depRegistry.Get(ecosystem)
 			switch {
@@ -1123,7 +1131,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 						}
 						defer closeCache()
 
-						depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache)
+						depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache, depScannerOptions...)
 						depOptions := engine.DepScanOptions{
 							Workers:     scanDepWorkers,
 							ScanOptions: scanOpts,
@@ -1555,6 +1563,16 @@ func newFindingsCache(ctx context.Context, cfg *config.Config) (engine.FindingsC
 			fmt.Sprintf("unknown findings-cache backend %q (allowed: %v)", backend, AllowedFindingsCacheBackends),
 		)
 	}
+}
+
+// newDependencyFindingsSource returns the SCANOSS API as the source of
+// published dependency findings, or nil when no API key is configured or
+// disabled is set.
+func newDependencyFindingsSource(apiURL, apiKey string, disabled bool) engine.DependencyFindingsSource {
+	if disabled || apiKey == "" {
+		return nil
+	}
+	return engine.NewAPIFindingsSource(api.NewClient(apiURL, apiKey))
 }
 
 // newDependencyRegistry registers the resolver of every supported ecosystem.
