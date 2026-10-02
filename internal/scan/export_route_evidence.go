@@ -32,19 +32,26 @@ func reviseRouteEvidence(fg *callGraphExportFinding, narrowed bool) {
 	if len(fg.CallChains) == 0 {
 		return
 	}
-	evidence := make([]callgraph.RouteEvidence, len(fg.CallChains))
-	best := callgraph.RouteEvidenceNameOnly
-	for i, chain := range fg.CallChains {
+	best, noCallersOnly := rateRoutes(fg.CallChains)
+	fg.Analysis.RouteEvidence = string(best)
+	fg.Analysis.NoCallersOnly = noCallersOnly
+}
+
+// rateRoutes rates a set of chains the way the tracer rates a function's
+// routes: the evidence of the strongest chain, and whether every chain that
+// supports it starts at an application function nothing calls. The supporting
+// chains are those free of name_only edges, or every chain when each needs one.
+func rateRoutes(chains [][]callGraphChainNode) (best callgraph.RouteEvidence, noCallersOnly bool) {
+	evidence := make([]callgraph.RouteEvidence, len(chains))
+	best = callgraph.RouteEvidenceNameOnly
+	for i, chain := range chains {
 		evidence[i] = chainRouteEvidence(chain)
 		if evidence[i].StrongerThan(best) {
 			best = evidence[i]
 		}
 	}
-	fg.Analysis.RouteEvidence = string(best)
-	// The routes that support the verdict are those free of name_only edges,
-	// or every route when each needs one.
 	supporting, noCallers := 0, 0
-	for i, chain := range fg.CallChains {
+	for i, chain := range chains {
 		if best != callgraph.RouteEvidenceNameOnly && evidence[i] == callgraph.RouteEvidenceNameOnly {
 			continue
 		}
@@ -53,7 +60,7 @@ func reviseRouteEvidence(fg *callGraphExportFinding, narrowed bool) {
 			noCallers++
 		}
 	}
-	fg.Analysis.NoCallersOnly = supporting > 0 && noCallers == supporting
+	return best, supporting > 0 && noCallers == supporting
 }
 
 // chainRouteEvidence rates one chain by its weakest frame: how the call

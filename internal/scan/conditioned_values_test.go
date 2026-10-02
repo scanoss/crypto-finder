@@ -87,7 +87,9 @@ func (g selectorGraph) report() *entities.InterimReport {
 
 func specializedNames(t *testing.T, report *entities.InterimReport) []string {
 	t.Helper()
-	assets := report.Findings[0].CryptographicAssets[1:]
+	// The blank anchor is dropped once its call is specialized, so every
+	// remaining asset is a per-value one.
+	assets := report.Findings[0].CryptographicAssets
 	names := make([]string, 0, len(assets))
 	for i := range assets {
 		names = append(names, assets[i].Metadata["algorithmName"])
@@ -264,7 +266,7 @@ func TestConditionedValueEnumerator_WalksOnceBelowARecursion(t *testing.T) {
 	terminal := buildCryptoCall(ctx, g.graph, helper, &helper.Calls[0])
 
 	enumerator := newConditionedValueEnumerator(ctx)
-	variants, _ := enumerator.terminalVariants(helper.ID, terminal.Parameters)
+	variants, _, _ := enumerator.terminalVariants(helper.ID, terminal.Parameters)
 	distinct := make(map[string]struct{})
 	for _, params := range variants {
 		distinct[params[0].ResolvedValue] = struct{}{}
@@ -389,5 +391,136 @@ func TestConditionedValueEnumeration_TruncationReportsPartialChains(t *testing.T
 				t.Errorf("%d finding graphs read analysis.call_chains partial, want none", partial)
 			}
 		})
+	}
+}
+
+// addDynamicCaller adds a function that calls callee with an argument the graph
+// cannot resolve.
+func (g selectorGraph) addDynamicCaller(name string, callee callgraph.FunctionID) callgraph.FunctionID {
+	id := callgraph.FunctionID{Package: "example", Type: "Callers", Name: name + "#0"}
+	g.addFunction(&callgraph.FunctionDecl{
+		ID: id, FilePath: "Callers.java",
+		Calls: []callgraph.FunctionCall{{
+			Callee: callee, FilePath: "Callers.java", Line: 8, StartCol: 9, EndCol: 30,
+			Arguments:       []string{"fromConfig()"},
+			ArgumentSources: [][]callgraph.SourceNode{{{Type: "CALL_RESULT", Name: "fromConfig"}}},
+		}},
+	})
+	return id
+}
+
+func blankAnchors(report *entities.InterimReport) int {
+	blank := 0
+	assets := report.Findings[0].CryptographicAssets
+	for i := range assets {
+		if len(assets[i].ParameterConditions) == 0 {
+			blank++
+		}
+	}
+	return blank
+}
+
+// The blank anchor is the report's only entry for a caller whose value does not
+// resolve, so it stays beside the per-value assets of the callers that do, and
+// its chains still reach that caller.
+func TestMaterializeConditionedFindings_KeepsAnchorForDynamicCaller(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, selectorValueRules)
+	g := newSelectorGraph()
+	g.addLiteralCaller("literal", selectorHelperID, 1)
+	dynamicID := g.addDynamicCaller("dynamic", selectorHelperID)
+	report := g.report()
+
+	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != 1 {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+	}
+	if got := blankAnchors(report); got != 1 {
+		t.Fatalf("blank anchors = %d, want the anchor kept for the dynamic caller (assets %v)", got, specializedNames(t, report))
+	}
+	var anchor entities.CryptographicAsset
+	for _, asset := range report.Findings[0].CryptographicAssets {
+		if len(asset.ParameterConditions) == 0 {
+			anchor = asset
+		}
+	}
+	ctx := newExportBuildContext(&engine.DepScanResult{Report: report, CallGraph: g.graph, Ecosystem: "java"})
+	fg := buildFindingGraph(ctx, report.Findings[0], anchor)
+	for _, chain := range fg.CallChains {
+		for _, node := range chain {
+			if node.FunctionKey == dynamicID.String() {
+				return
+			}
+		}
+	}
+	t.Fatalf("anchor call chains %d do not reach the dynamic caller %s", len(fg.CallChains), dynamicID)
+}
+
+// A value no rule matches is as unaccounted for as a dynamic one.
+func TestMaterializeConditionedFindings_KeepsAnchorForUnmatchedValue(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, selectorValueRules)
+	g := newSelectorGraph()
+	g.addLiteralCaller("literal", selectorHelperID, 1)
+	g.addFunction(&callgraph.FunctionDecl{
+		ID: callgraph.FunctionID{Package: "example", Type: "Callers", Name: "other#0"}, FilePath: "Callers.java",
+		Calls: []callgraph.FunctionCall{{
+			Callee: selectorHelperID, FilePath: "Callers.java", Line: 9, StartCol: 9, EndCol: 30,
+			Arguments: []string{`"FOO"`}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: `"FOO"`}}},
+		}},
+	})
+	report := g.report()
+
+	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != 1 {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+	}
+	if got := blankAnchors(report); got != 1 {
+		t.Fatalf("blank anchors = %d, want the anchor kept for the unmatched value", got)
+	}
+}
+
+// The helper is also reached through a forwarder that nothing calls, so the
+// forwarded value is unknown too.
+func TestMaterializeConditionedFindings_KeepsAnchorBehindUncalledForwarder(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, selectorValueRules)
+	g := newSelectorGraph()
+	g.addLiteralCaller("literal", selectorHelperID, 1)
+	g.addFunction(&callgraph.FunctionDecl{
+		ID: callgraph.FunctionID{Package: "example", Type: "Digests", Name: "forward#1"}, FilePath: "Digests.java", StartLine: 20, EndLine: 22,
+		Parameters: []callgraph.FunctionParameter{{Name: "name", Type: "String"}},
+		Calls:      []callgraph.FunctionCall{forwardCall(selectorHelperID, "name", 21)},
+	})
+	report := g.report()
+
+	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != 1 {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+	}
+	if got := blankAnchors(report); got != 1 {
+		t.Fatalf("blank anchors = %d, want the anchor kept for the forwarded unknown value", got)
+	}
+}
+
+// The dynamic caller's route can fall beyond the chain budget, where only the
+// value enumeration sees it.
+func TestMaterializeConditionedFindings_KeepsAnchorForDynamicCallerBeyondChainBudget(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, selectorValueRules)
+	values := graphfrag.DefaultMaxChainsPerOp + 12
+	g := newSelectorGraph()
+	for i := range values {
+		g.addLiteralCaller(fmt.Sprintf("caller%03d", i), selectorHelperID, i)
+	}
+	g.addDynamicCaller("zdynamic", selectorHelperID)
+	report := g.report()
+
+	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != values {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want %d", got, values)
+	}
+	if got := blankAnchors(report); got != 1 {
+		t.Fatalf("blank anchors = %d, want the anchor kept for the dynamic caller", got)
 	}
 }

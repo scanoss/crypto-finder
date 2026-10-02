@@ -4,6 +4,7 @@
 package scan
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 func TestMaterializeConditionedFindings_SpecializesWrapperPaths(t *testing.T) {
@@ -105,8 +107,8 @@ func TestMaterializeConditionedFindings_SpecializesWrapperPaths(t *testing.T) {
 		if wantFinding == otherFinding {
 			otherFinding = "java.pgp.des"
 		}
-		if !got[wantFinding] || !got["java.pgp.dynamic"] || got[otherFinding] {
-			t.Fatalf("fragment entry %s findings = %#v, want generic + %s only", entryID, got, wantFinding)
+		if !got[wantFinding] || got["java.pgp.dynamic"] || got[otherFinding] {
+			t.Fatalf("fragment entry %s findings = %#v, want %s only, without the blank generic anchor", entryID, got, wantFinding)
 		}
 	}
 }
@@ -165,10 +167,14 @@ func TestMaterializeConditionedFindings_ResolvesGuardedHelperReturnWithoutGuessi
 		Rules: []entities.RuleInfo{{ID: "java.digest.dynamic"}}, Metadata: map[string]string{"api": "Cipher.getInstance"},
 	}}}}}
 
+	anchor := report.Findings[0].CryptographicAssets[0]
 	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 	}
-	asset := report.Findings[0].CryptographicAssets[1]
+	if len(report.Findings[0].CryptographicAssets) != 1 {
+		t.Fatalf("assets = %#v, want the specialized asset in place of the blank anchor", report.Findings[0].CryptographicAssets)
+	}
+	asset := report.Findings[0].CryptographicAssets[0]
 	if asset.Metadata["algorithmName"] != "SHA-256" || asset.Rules[0].ID != "java.digest.sha2" {
 		t.Fatalf("materialized digest = %#v", asset)
 	}
@@ -177,9 +183,12 @@ func TestMaterializeConditionedFindings_ResolvesGuardedHelperReturnWithoutGuessi
 	}
 
 	graph.Functions[mainID.String()].Calls[0].ArgumentSources[0][0].SourceNodes = []callgraph.SourceNode{{Type: "PARAMETER", Name: "algorithm", ParameterIndex: 0}}
-	report.Findings[0].CryptographicAssets = report.Findings[0].CryptographicAssets[:1]
+	report.Findings[0].CryptographicAssets = []entities.CryptographicAsset{anchor}
 	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 0 {
 		t.Fatalf("dynamic MaterializeConditionedFindings() = %d, want no guessed asset", got)
+	}
+	if len(report.Findings[0].CryptographicAssets) != 1 {
+		t.Fatalf("assets = %#v, want the anchor kept when nothing resolved", report.Findings[0].CryptographicAssets)
 	}
 }
 
@@ -234,6 +243,204 @@ func TestConditionedRule_UsesPatternCaptureNamesForBroadVariants(t *testing.T) {
 	}
 }
 
+// The condition names (or omits) its groups independently of the rule's own
+// named groups, so a placeholder must be bound by name from the value, never by
+// the position of a condition group.
+func TestConditionedRule_BindsPlaceholdersByName(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, `rules:
+  - id: java.cipher.aes
+    message: AES
+    severity: INFO
+    pattern-sources:
+      - patterns:
+          - pattern: $ALGO
+          - metavariable-regex:
+              metavariable: $ALGO
+              regex: '"(?<family>AES)/(?<mode>CBC|ECB)/(?<padding>NoPadding|PKCS5Padding)"'
+    pattern-sinks:
+      - patterns:
+          - pattern: Cipher.getInstance($ALGO)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: $family
+        algorithmName: $family-$mode-$padding
+        algorithmMode: $mode
+        algorithmPadding: $padding
+        parameterCondition: param[0]~=AES/(CBC|ECB)/(NoPadding|PKCS5Padding)
+        api: Cipher.getInstance
+  - id: java.cipher.gcm
+    message: AES-GCM
+    severity: INFO
+    pattern-sources:
+      - patterns:
+          - pattern: $ALGO
+          - metavariable-regex:
+              metavariable: $ALGO
+              regex: '"(?<family>AES)/(?<mode>GCM|CCM)/(?<padding>NoPadding)"'
+    pattern-sinks:
+      - patterns:
+          - pattern: Cipher.getInstance($ALGO)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: $family
+        algorithmName: $family-$mode-$padding
+        parameterCondition: param[0]~=AES/(GCM|CCM)/NoPadding
+        api: Cipher.getInstance
+  - id: java.cipher.rc4
+    message: RC4
+    severity: INFO
+    pattern-sources:
+      - patterns:
+          - pattern: $ALGO
+          - metavariable-regex:
+              metavariable: $ALGO
+              regex: '"(?<family>RC4)"'
+    pattern-sinks:
+      - patterns:
+          - pattern: Cipher.getInstance($ALGO)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: $family
+        algorithmName: $family
+        parameterCondition: param[0]==RC4
+        api: Cipher.getInstance
+  - id: java.cipher.named
+    message: condition names its own groups
+    severity: INFO
+    pattern: Cipher.getInstance($ALGO)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: $mode
+        algorithmName: $mode-$family
+        parameterCondition: param[0]~=^(?P<mode>[A-Z]+)/(?P<family>[A-Z]+)$
+        api: Cipher.getInstance
+`)
+	byAPI := engine.LoadRuleCryptoMetadata([]string{rules})["Cipher.getInstance"]
+	byID := make(map[string]engine.RuleCryptoMetadata, len(byAPI))
+	for _, rule := range byAPI {
+		byID[rule.Rule.ID] = rule
+	}
+	cases := []struct {
+		rule, value, wantName, wantFamily string
+	}{
+		{"java.cipher.aes", "AES/CBC/PKCS5Padding", "AES-CBC-PKCS5Padding", "AES"},
+		{"java.cipher.gcm", "AES/GCM/NoPadding", "AES-GCM-NoPadding", "AES"},
+		{"java.cipher.rc4", "RC4", "RC4", "RC4"},
+		{"java.cipher.named", "CBC/AES", "CBC-AES", "CBC"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.rule, func(t *testing.T) {
+			t.Parallel()
+			finding := &entities.Finding{FilePath: "CipherFlow.java"}
+			anchor := entities.CryptographicAsset{StartLine: 4, Metadata: map[string]string{"api": "Cipher.getInstance"}}
+			rule := byID[tc.rule]
+			if !appendConditionedAsset(finding, anchor, rule, []callGraphParameter{{ResolvedValue: tc.value}}, map[string]struct{}{}, map[string]struct{}{}) {
+				t.Fatalf("appendConditionedAsset(%q) = false", tc.value)
+			}
+			got := finding.CryptographicAssets[0].Metadata
+			if got["algorithmName"] != tc.wantName || got["algorithmFamily"] != tc.wantFamily {
+				t.Fatalf("metadata = %#v, want name %q family %q", got, tc.wantName, tc.wantFamily)
+			}
+			if tc.rule == "java.cipher.aes" && (got["algorithmMode"] != "CBC" || got["algorithmPadding"] != "PKCS5Padding") {
+				t.Fatalf("metadata = %#v, want mode CBC and padding PKCS5Padding", got)
+			}
+		})
+	}
+}
+
+// An anchor that names an algorithm is a finding in its own right; only the
+// blank dynamic-selector anchor is redundant beside the per-value assets.
+func TestMaterializeConditionedFindings_KeepsNamedAnchor(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, `rules:
+  - id: java.digest.sha1
+    message: SHA-1
+    severity: INFO
+    pattern: MessageDigest.getInstance($ALGO)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: SHA-1
+        parameterCondition: param[0]==SHA-1
+        api: MessageDigest.getInstance
+`)
+	fnID := callgraph.FunctionID{Package: "example", Type: "DigestFlow", Name: "main#0"}
+	callee := callgraph.FunctionID{Package: "java.security", Type: "MessageDigest", Name: "getInstance#1"}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		fnID.String(): {
+			ID: fnID, FilePath: "DigestFlow.java", StartLine: 1, EndLine: 5,
+			Calls: []callgraph.FunctionCall{{Callee: callee, FilePath: "DigestFlow.java", Line: 3, StartCol: 5, EndCol: 40, Arguments: []string{`"SHA-1"`}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: `"SHA-1"`}}}}},
+		},
+	}}
+	report := &entities.InterimReport{Findings: []entities.Finding{{FilePath: "DigestFlow.java", Language: "java", CryptographicAssets: []entities.CryptographicAsset{{
+		StartLine: 3, EndLine: 3, StartCol: 5, EndCol: 40, Rules: []entities.RuleInfo{{ID: "java.digest.named"}},
+		Metadata: map[string]string{"algorithmName": "SHA-1", "api": "MessageDigest.getInstance"},
+	}}}}}
+
+	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 1 {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+	}
+	if got := len(report.Findings[0].CryptographicAssets); got != 2 {
+		t.Fatalf("assets = %#v, want the named anchor kept beside the specialized one", report.Findings[0].CryptographicAssets)
+	}
+}
+
+func TestNormalizeSelectorValue(t *testing.T) {
+	t.Parallel()
+
+	for in, want := range map[string]string{
+		`"SHA-1"`:         "SHA-1",
+		`'sha1'`:          "sha1",
+		"`sha1`":          "sha1",
+		"  'sha1'  ":      "sha1",
+		"`sha${bits}`":    "`sha${bits}`",
+		`'mixed"`:         `'mixed"`,
+		`'`:               `'`,
+		`sha1`:            "sha1",
+		`"a" + suffix`:    `"a" + suffix`,
+		`''`:              "",
+		`consts.HASH_SHA`: "consts.HASH_SHA",
+	} {
+		if got := normalizeSelectorValue(in); got != want {
+			t.Errorf("normalizeSelectorValue(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A Python or JavaScript call spells its literal with single quotes, and the
+// exact condition a rule carries is written without any.
+func TestConditionedRule_MatchesSingleQuotedLiteral(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, `rules:
+  - id: python.hashlib.sha1
+    message: SHA-1
+    severity: INFO
+    pattern: hashlib.new($A)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: SHA-1
+        parameterCondition: param[0]==sha1
+        api: hashlib.new
+`)
+	rule := engine.LoadRuleCryptoMetadata([]string{rules})["hashlib.new"][0]
+	for _, literal := range []string{`'sha1'`, `"sha1"`, "`sha1`"} {
+		finding := &entities.Finding{FilePath: "app.py"}
+		anchor := entities.CryptographicAsset{StartLine: 3, Metadata: map[string]string{"api": "hashlib.new"}}
+		if !appendConditionedAsset(finding, anchor, rule, []callGraphParameter{{ResolvedValue: literal}}, map[string]struct{}{}, map[string]struct{}{}) {
+			t.Errorf("literal %s did not match param[0]==sha1", literal)
+		}
+	}
+}
+
 func TestMaterializeConditionedFindings_DoesNotAttachNestedBuilderToOuterAnchor(t *testing.T) {
 	t.Parallel()
 
@@ -273,7 +480,10 @@ func TestMaterializeConditionedFindings_DoesNotAttachNestedBuilderToOuterAnchor(
 	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want only nested builder specialization", got)
 	}
-	asset := report.Findings[0].CryptographicAssets[2]
+	if len(report.Findings[0].CryptographicAssets) != 2 {
+		t.Fatalf("assets = %#v, want the outer anchor and the specialized builder", report.Findings[0].CryptographicAssets)
+	}
+	asset := report.Findings[0].CryptographicAssets[1]
 	if asset.StartCol != 39 || asset.Rules[0].ID != "java.pgp.aes128" {
 		t.Fatalf("materialized asset = %#v, want builder anchor only", asset)
 	}
@@ -286,4 +496,139 @@ func writeConditionedRules(t *testing.T, contents string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+const bindRuleTemplate = `rules:
+  - id: java.bind.test
+    message: bind
+    severity: INFO
+    pattern-sources:
+      - patterns:
+          - pattern: $ALGO
+          - metavariable-regex:
+              metavariable: $ALGO
+              regex: '%s'
+    pattern-sinks:
+      - patterns:
+          - pattern: Cipher.getInstance($ALGO)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: %s
+        parameterCondition: param[0]~=%s
+        api: Cipher.getInstance
+`
+
+// A binder is start-anchored like semgrep's metavariable-regex: it may stop
+// short of the end of the value unless the rule's own regex ends in $.
+func TestConditionedRule_BindsLikeSemgrepMetavariableRegex(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, regex, name2, condition, value, wantName string
+	}{
+		{"alternation with end anchor reaches the longer branch", `(?P<m>CBC|CBC-MAC)$`, "$m", `CBC(-MAC)?`, "CBC-MAC", "CBC-MAC"},
+		{"alternation without end anchor binds the prefix", `(?P<m>CBC|CBC-MAC)`, "$m", `CBC(-MAC)?`, "CBC-MAC", "CBC"},
+		{"regex without end anchor", `(?P<f>AES)`, "$f", `AES.*`, "AES-GCM", "AES"},
+		{"double-quoted spelling", `"(?P<v>x)"`, "$v", `x`, `x`, "x"},
+		{"single-quoted spelling", `''(?P<v>x)''`, "$v", `x`, `x`, "x"},
+		{"a match must start at the value", `(?P<f>GCM)`, "$f", `.*GCM`, "AES-GCM", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rules := writeConditionedRules(t, fmt.Sprintf(bindRuleTemplate, tc.regex, tc.name2, tc.condition))
+			rule := engine.LoadRuleCryptoMetadata([]string{rules})["Cipher.getInstance"][0]
+			finding := &entities.Finding{FilePath: "Flow.java"}
+			anchor := entities.CryptographicAsset{StartLine: 4, Metadata: map[string]string{"api": "Cipher.getInstance"}}
+			if !appendConditionedAsset(finding, anchor, rule, []callGraphParameter{{ResolvedValue: tc.value}}, map[string]struct{}{}, map[string]struct{}{}) {
+				t.Fatalf("appendConditionedAsset(%q) = false", tc.value)
+			}
+			if got := finding.CryptographicAssets[0].Metadata["algorithmName"]; got != tc.wantName {
+				t.Fatalf("algorithmName = %q, want %q", got, tc.wantName)
+			}
+		})
+	}
+}
+
+// A rule with no named group has no binder, and its metadata is untouched.
+func TestConditionedRule_WithoutNamedGroupsBindsNothing(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, fmt.Sprintf(bindRuleTemplate, `"RC4"`, "RC4", "RC4"))
+	rule := engine.LoadRuleCryptoMetadata([]string{rules})["Cipher.getInstance"][0]
+	if len(rule.CaptureBinders) != 0 {
+		t.Fatalf("CaptureBinders = %v, want none", rule.CaptureBinders)
+	}
+	finding := &entities.Finding{FilePath: "Flow.java"}
+	anchor := entities.CryptographicAsset{StartLine: 4, Metadata: map[string]string{"api": "Cipher.getInstance"}}
+	if !appendConditionedAsset(finding, anchor, rule, []callGraphParameter{{ResolvedValue: "RC4"}}, map[string]struct{}{}, map[string]struct{}{}) {
+		t.Fatal("appendConditionedAsset(RC4) = false")
+	}
+	if got := finding.CryptographicAssets[0].Metadata["algorithmName"]; got != "RC4" {
+		t.Fatalf("algorithmName = %q, want RC4", got)
+	}
+}
+
+func TestPlaceholderFiller(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		captures map[string]string
+		in, want string
+	}{
+		{"mode never eats model", map[string]string{"mode": "CBC", "model": "M1"}, "$mode-$model", "CBC-M1"},
+		{"only the shorter name is bound", map[string]string{"mode": "CBC"}, "$mode/$model", "CBC/CBCl"},
+		{"an inserted value is not substituted again", map[string]string{"a": "$b", "b": "X"}, "$a $b", "$b X"},
+		{"no captures", nil, "$a", "$a"},
+	}
+	for _, tc := range tests {
+		if got := placeholderFiller(tc.captures)(tc.in); got != tc.want {
+			t.Errorf("%s: fill(%q) = %q, want %q", tc.name, tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestDropBlankAnchor(t *testing.T) {
+	t.Parallel()
+
+	rule := func(id string) []entities.RuleInfo { return []entities.RuleInfo{{ID: id}} }
+	at := func(id string, line, startCol, endCol int) entities.CryptographicAsset {
+		return entities.CryptographicAsset{StartLine: line, EndLine: line, StartCol: startCol, EndCol: endCol, Rules: rule(id)}
+	}
+	perValue := entities.CryptographicAsset{StartLine: 3, EndLine: 3, StartCol: 5, EndCol: 40, Rules: rule("r.value"), ParameterConditions: []paramcondition.Condition{{}}}
+
+	t.Run("same span and rule is dropped", func(t *testing.T) {
+		t.Parallel()
+		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{at("r.dyn", 3, 5, 40), perValue}}
+		dropBlankAnchor(finding, at("r.dyn", 3, 5, 40))
+		if len(finding.CryptographicAssets) != 1 || len(finding.CryptographicAssets[0].ParameterConditions) == 0 {
+			t.Fatalf("assets = %#v, want only the per-value asset", finding.CryptographicAssets)
+		}
+	})
+	t.Run("another rule at the same span is kept", func(t *testing.T) {
+		t.Parallel()
+		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{at("r.dyn", 3, 5, 40), at("r.other", 3, 5, 40), perValue}}
+		dropBlankAnchor(finding, at("r.dyn", 3, 5, 40))
+		if len(finding.CryptographicAssets) != 2 || finding.CryptographicAssets[0].Rules[0].ID != "r.other" {
+			t.Fatalf("assets = %#v, want the other rule's anchor kept", finding.CryptographicAssets)
+		}
+	})
+	t.Run("two calls on one line without columns stay separate", func(t *testing.T) {
+		t.Parallel()
+		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{at("r.dyn", 3, 0, 0), at("r.dyn", 3, 0, 0), perValue}}
+		dropBlankAnchor(finding, at("r.dyn", 3, 0, 0))
+		if len(finding.CryptographicAssets) != 3 {
+			t.Fatalf("assets = %#v, want both anchors kept", finding.CryptographicAssets)
+		}
+	})
+	t.Run("two calls on one line with columns stay separate", func(t *testing.T) {
+		t.Parallel()
+		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{at("r.dyn", 3, 5, 40), at("r.dyn", 3, 50, 90), perValue}}
+		dropBlankAnchor(finding, at("r.dyn", 3, 5, 40))
+		if len(finding.CryptographicAssets) != 2 || finding.CryptographicAssets[0].StartCol != 50 {
+			t.Fatalf("assets = %#v, want the second call's anchor kept", finding.CryptographicAssets)
+		}
+	})
 }

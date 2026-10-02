@@ -6,6 +6,7 @@ package scan
 import (
 	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,9 +61,10 @@ func materializeConditionedFinding(
 	existing map[string]struct{},
 ) int {
 	added := 0
-	originalCount := len(finding.CryptographicAssets)
-	for assetIndex := 0; assetIndex < originalCount; assetIndex++ {
-		added += materializeConditionedAnchor(ctx, values, finding, graph, catalog, existing, finding.CryptographicAssets[assetIndex])
+	// Specializing an anchor may drop it from the finding, so walk a snapshot.
+	anchors := slices.Clone(finding.CryptographicAssets)
+	for i := range anchors {
+		added += materializeConditionedAnchor(ctx, values, finding, graph, catalog, existing, anchors[i])
 	}
 	return added
 }
@@ -92,14 +94,17 @@ func materializeConditionedAnchor(
 	anchor.TerminalEndCol = terminalNode.EndCol
 	chains, _ := buildCallChains(ctx, containingFn, terminal)
 	candidates := make([][]callGraphParameter, 0, len(chains))
+	unresolvedRoute := false
 	for _, chain := range chains {
 		if len(chain) > 0 && chain[len(chain)-1].CryptoCall != nil {
 			candidates = append(candidates, chain[len(chain)-1].CryptoCall.Parameters)
+		} else if len(chain) > 0 {
+			unresolvedRoute = true
 		}
 	}
 	// The chains are a bounded sample: one caller's routes can fill the budget
 	// and hide every other caller's value. Specialize from all of them.
-	variants, truncated := values.terminalVariants(containingFn.ID, terminal.Parameters)
+	variants, truncated, dynamic := values.terminalVariants(containingFn.ID, terminal.Parameters)
 	candidates = append(candidates, variants...)
 	if truncated {
 		// A caller value may be missing, so this anchor's specialization and
@@ -109,7 +114,55 @@ func materializeConditionedAnchor(
 		anchor.ConditionedValuesIncomplete = true
 		markAnchorValuesIncomplete(finding, anchor)
 	}
-	return appendConditionedAssets(finding, anchor, rules, candidates, existing)
+	added, unmatched := appendConditionedAssets(finding, anchor, rules, candidates, existing)
+	// The blank anchor is the only report entry for a route whose value is
+	// unknown, so it stays unless the per-value assets account for every route:
+	// every enumerated value resolved and matched a variant, no route is
+	// dynamic, and no caller value was cut off.
+	covered := !unresolvedRoute && unmatched == 0 && !truncated && !dynamicSelector(rules, terminal.Parameters, dynamic)
+	if added > 0 && covered {
+		dropBlankAnchor(finding, anchor)
+	}
+	return added
+}
+
+// dynamicSelector reports that some route reaches a parameter a rule's
+// condition reads without a resolved value.
+func dynamicSelector(rules []engine.RuleCryptoMetadata, params []callGraphParameter, dynamic map[int]bool) bool {
+	for i := range rules {
+		for _, condition := range rules[i].ParameterConditions {
+			if dynamic[conditionParameterIndex(condition, params)] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// dropBlankAnchor removes the generic anchor asset once per-value assets stand
+// for its call. A dynamic-selector anchor names no algorithm, so beside the
+// specialized assets it is a blank duplicate of the same call. An anchor that
+// does name an algorithm is a real finding and stays.
+func dropBlankAnchor(finding *entities.Finding, anchor entities.CryptographicAsset) {
+	if anchor.Metadata["algorithmName"] != "" || anchor.Metadata["algorithmFamily"] != "" {
+		return
+	}
+	finding.CryptographicAssets = slices.DeleteFunc(finding.CryptographicAssets, func(asset entities.CryptographicAsset) bool {
+		return len(asset.ParameterConditions) == 0 && sameAssetSpan(asset, anchor) && sameRules(asset.Rules, anchor.Rules)
+	})
+}
+
+// sameAssetSpan reports that two assets cover the same source span. A span
+// without columns cannot tell two calls on one line apart, so it never matches.
+func sameAssetSpan(a, b entities.CryptographicAsset) bool {
+	if a.StartCol <= 0 || a.EndCol <= 0 || b.StartCol <= 0 || b.EndCol <= 0 {
+		return false
+	}
+	return a.StartLine == b.StartLine && a.StartCol == b.StartCol && a.EndLine == b.EndLine && a.EndCol == b.EndCol
+}
+
+func sameRules(a, b []entities.RuleInfo) bool {
+	return slices.EqualFunc(a, b, func(x, y entities.RuleInfo) bool { return x.ID == y.ID })
 }
 
 // markAnchorValuesIncomplete flags the generic anchor asset of finding that
@@ -152,24 +205,30 @@ func callContainsAnchorSpan(call *callgraph.FunctionCall, anchor entities.Crypto
 }
 
 // appendConditionedAssets emits one asset per (rule, resolved condition) over
-// every candidate argument list of the terminal call.
+// every candidate argument list of the terminal call. unmatched counts the
+// candidates no rule matched.
 func appendConditionedAssets(
 	finding *entities.Finding,
 	anchor entities.CryptographicAsset,
 	rules []engine.RuleCryptoMetadata,
 	candidates [][]callGraphParameter,
 	existing map[string]struct{},
-) int {
+) (added, unmatched int) {
 	seen := make(map[string]struct{})
-	added := 0
 	for _, params := range candidates {
+		matchedAny := false
 		for i := range rules {
-			if appendConditionedAsset(finding, anchor, rules[i], params, seen, existing) {
+			matched, appended := specializeAnchor(finding, anchor, rules[i], params, seen, existing)
+			matchedAny = matchedAny || matched
+			if appended {
 				added++
 			}
 		}
+		if !matchedAny {
+			unmatched++
+		}
 	}
-	return added
+	return added, unmatched
 }
 
 func appendConditionedAsset(
@@ -179,29 +238,42 @@ func appendConditionedAsset(
 	params []callGraphParameter,
 	seen, existing map[string]struct{},
 ) bool {
+	_, appended := specializeAnchor(finding, anchor, rule, params, seen, existing)
+	return appended
+}
+
+// specializeAnchor appends the asset rule yields for params. matched reports
+// that the rule's conditions held, whether or not the asset was new.
+func specializeAnchor(
+	finding *entities.Finding,
+	anchor entities.CryptographicAsset,
+	rule engine.RuleCryptoMetadata,
+	params []callGraphParameter,
+	seen, existing map[string]struct{},
+) (matched, appended bool) {
 	if rule.Rule.ID == "" {
-		return false
+		return false, false
 	}
 	conditionMatch, ok := matchParameterConditionsWithCaptureNames(rule.ParameterConditions, params, rule.CaptureNames)
 	if !ok {
-		return false
+		return false, false
 	}
 	key := rule.Rule.ID
 	for _, condition := range conditionMatch.conditions {
 		key += "\x00" + condition.Raw
 	}
 	if _, duplicate := seen[key]; duplicate {
-		return false
+		return true, false
 	}
 	seen[key] = struct{}{}
 	asset := cloneConditionedAsset(anchor, rule, conditionMatch)
 	assetKey := conditionedAssetKey(finding.FilePath, asset, rule.Rule.ID)
 	if _, duplicate := existing[assetKey]; duplicate {
-		return false
+		return true, false
 	}
 	finding.CryptographicAssets = append(finding.CryptographicAssets, asset)
 	existing[assetKey] = struct{}{}
-	return true
+	return true, true
 }
 
 func indexExistingFindingRules(report *entities.InterimReport) map[string]struct{} {
@@ -267,8 +339,90 @@ func (c conditionedCatalog) rulesForCall(call *callgraph.FunctionCall) []engine.
 }
 
 type parameterConditionMatch struct {
-	captures   map[string]string
+	captures   conditionCaptures
+	actuals    []string
 	conditions []paramcondition.Condition
+}
+
+// conditionCaptures holds what a condition regex bound, by how the name was
+// established, so the metadata placeholders resolve with a fixed precedence:
+// a group the condition names itself, then the rule's own named groups applied
+// to the resolved value, then a name inferred from the position of an unnamed
+// condition group.
+type conditionCaptures struct {
+	numbered   map[string]string
+	named      map[string]string
+	positional map[string]string
+}
+
+func newConditionCaptures() conditionCaptures {
+	return conditionCaptures{numbered: map[string]string{}, named: map[string]string{}, positional: map[string]string{}}
+}
+
+// placeholders merges the captures into the $name -> value map used to fill
+// rule metadata. bound is the rule's own named groups applied to the value.
+func (c conditionCaptures) placeholders(bound map[string]string) map[string]string {
+	out := make(map[string]string, len(c.numbered)+len(c.named)+len(c.positional)+len(bound))
+	for _, layer := range []map[string]string{c.numbered, c.positional, bound, c.named} {
+		maps.Copy(out, layer)
+	}
+	return out
+}
+
+// bindRuleCaptures applies the rule's named-group patterns to each resolved
+// value, bare or inside the quotes the rule's source pattern is written against.
+// A binder is start-anchored, as semgrep's metavariable-regex is, so a rule that
+// does not end its regex with $ binds on a prefix of the value.
+func bindRuleCaptures(binders []*regexp.Regexp, actuals []string) map[string]string {
+	bound := make(map[string]string)
+	for _, actual := range actuals {
+		for _, re := range binders {
+			bindWholeValue(re, actual, bound)
+		}
+	}
+	return bound
+}
+
+// bindWholeValue adds the named groups of re, a start-anchored binder, to
+// bound, for the first spelling of actual that it matches. A name already bound
+// keeps its value.
+func bindWholeValue(re *regexp.Regexp, actual string, bound map[string]string) {
+	for _, candidate := range []string{actual, `"` + actual + `"`, "'" + actual + "'"} {
+		match := re.FindStringSubmatch(candidate)
+		if len(match) == 0 {
+			continue
+		}
+		for i, name := range re.SubexpNames() {
+			if name == "" || match[i] == "" {
+				continue
+			}
+			if _, taken := bound[name]; !taken {
+				bound[name] = match[i]
+			}
+		}
+		return
+	}
+}
+
+// placeholderFiller returns a function that replaces each $name of captures
+// with its value in one pass, so a value that itself contains "$name" is never
+// substituted again. Longer names come first, so $mode never eats the front of
+// $model.
+func placeholderFiller(captures map[string]string) func(string) string {
+	if len(captures) == 0 {
+		return func(value string) string { return value }
+	}
+	names := make([]string, 0, len(captures))
+	for name := range captures {
+		names = append(names, regexp.QuoteMeta(name))
+	}
+	sort.Slice(names, func(i, j int) bool {
+		return len(names[i]) > len(names[j]) || len(names[i]) == len(names[j]) && names[i] < names[j]
+	})
+	re := regexp.MustCompile(`\$(?:` + strings.Join(names, "|") + `)`)
+	return func(value string) string {
+		return re.ReplaceAllStringFunc(value, func(match string) string { return captures[match[1:]] })
+	}
 }
 
 // conditionVerdict is the three-valued answer to "does this asset's
@@ -320,7 +474,7 @@ func evaluateParameterConditions(
 			continue
 		}
 		answered++
-		if !matchParameterCondition(condition, actual, map[string]string{}, nil) {
+		if !matchParameterCondition(condition, actual, newConditionCaptures(), nil) {
 			return conditionRefuted
 		}
 	}
@@ -335,7 +489,7 @@ func matchParameterConditionsWithCaptureNames(
 	params []callGraphParameter,
 	captureNames []string,
 ) (parameterConditionMatch, bool) {
-	result := parameterConditionMatch{captures: make(map[string]string)}
+	result := parameterConditionMatch{captures: newConditionCaptures()}
 	for _, condition := range conditions {
 		index := conditionParameterIndex(condition, params)
 		if index < 0 || index >= len(params) {
@@ -352,6 +506,7 @@ func matchParameterConditionsWithCaptureNames(
 		if !matchParameterCondition(condition, actual, result.captures, captureNames) {
 			return parameterConditionMatch{}, false
 		}
+		result.actuals = append(result.actuals, actual)
 		result.conditions = append(result.conditions, exactResolvedCondition(condition, actual))
 	}
 	return result, true
@@ -372,7 +527,7 @@ func conditionParameterIndex(condition paramcondition.Condition, params []callGr
 	return -1
 }
 
-func matchParameterCondition(condition paramcondition.Condition, actual string, captures map[string]string, captureNames []string) bool {
+func matchParameterCondition(condition paramcondition.Condition, actual string, captures conditionCaptures, captureNames []string) bool {
 	if condition.Operator == paramcondition.OpExact {
 		return actual == normalizeSelectorValue(condition.Value)
 	}
@@ -391,13 +546,11 @@ func matchParameterCondition(condition paramcondition.Condition, actual string, 
 		if match[i] == "" {
 			continue
 		}
-		captures[strconv.Itoa(i)] = match[i]
-		name := re.SubexpNames()[i]
-		if name == "" && i-1 < len(captureNames) {
-			name = captureNames[i-1]
-		}
-		if name != "" {
-			captures[name] = match[i]
+		captures.numbered[strconv.Itoa(i)] = match[i]
+		if name := re.SubexpNames()[i]; name != "" {
+			captures.named[name] = match[i]
+		} else if i-1 < len(captureNames) {
+			captures.positional[captureNames[i-1]] = match[i]
 		}
 	}
 	return true
@@ -429,10 +582,10 @@ func cloneConditionedAsset(anchor entities.CryptographicAsset, rule engine.RuleC
 	asset.Metadata = maps.Clone(rule.Metadata)
 	asset.PURL = purl.Rule(asset.Metadata[engine.RulePURLMetadataKey])
 	delete(asset.Metadata, engine.RulePURLMetadataKey)
+	captures := match.captures.placeholders(bindRuleCaptures(rule.CaptureBinders, match.actuals))
+	fill := placeholderFiller(captures)
 	for key, value := range asset.Metadata {
-		for name, capture := range match.captures {
-			value = strings.ReplaceAll(value, "$"+name, capture)
-		}
+		value = fill(value)
 		if strings.Contains(value, "$") {
 			delete(asset.Metadata, key)
 			continue
@@ -448,5 +601,6 @@ func cloneConditionedAsset(anchor entities.CryptographicAsset, rule engine.RuleC
 		conditionRaws[i] = asset.ParameterConditions[i].Raw
 	}
 	asset.Metadata["parameterCondition"] = strings.Join(conditionRaws, ",")
+	asset.ConditionedValue = asset.Metadata["parameterCondition"]
 	return asset
 }

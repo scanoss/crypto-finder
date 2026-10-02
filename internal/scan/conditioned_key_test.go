@@ -193,7 +193,7 @@ func TestMaterializeConditionedFindings_RustQualifiedKey(t *testing.T) {
 	if got := MaterializeConditionedFindings(report, graph, []string{rules}, ecosystemRust); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 	}
-	asset := report.Findings[0].CryptographicAssets[1]
+	asset := report.Findings[0].CryptographicAssets[0]
 	if asset.Rules[0].ID != "rust.openssl.digest" || asset.Metadata["algorithmName"] != "sha256" {
 		t.Fatalf("materialized asset = %#v", asset)
 	}

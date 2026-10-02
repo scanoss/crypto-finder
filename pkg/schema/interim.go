@@ -125,6 +125,14 @@ type CryptographicAsset struct {
 	// the finding's call chains partial. In-process state, not public schema.
 	ConditionedValuesIncomplete bool `json:"-"`
 
+	// ConditionedValue is the exact resolved condition (for example
+	// "param[0]==SHA-256") a per-value asset was specialized for. Empty on every
+	// other asset. It keeps assets that one rule produced at one call distinct in
+	// FindingID and OccurrenceKey. In-process state, not public schema: it is
+	// lost in a JSON round-trip, so FindingID and OccurrenceKey must be assigned
+	// before the report is serialized and read back.
+	ConditionedValue string `json:"-"`
+
 	// Match is the actual code snippet that was matched
 	Match string `json:"match"`
 
