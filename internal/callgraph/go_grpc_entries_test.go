@@ -151,6 +151,8 @@ func TestHasGRPCSignature(t *testing.T) {
 		"value request":    {[]string{"context.Context", "pb.Req"}, "(*pb.Resp, error)", false},
 		"no error":         {[]string{"context.Context", "*pb.Req"}, "(*pb.Resp, int)", false},
 		"unqualified base": {[]string{"Server"}, "error", false},
+		"other service":    {[]string{"*pb.Req", "pb.Audit_FeedServer"}, "error", false},
+		"not a stream":     {[]string{"*pb.Req", "pb.KeysServer"}, "error", false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -158,8 +160,88 @@ func TestHasGRPCSignature(t *testing.T) {
 			for _, typ := range tc.params {
 				decl.Parameters = append(decl.Parameters, FunctionParameter{Type: typ})
 			}
-			if got := hasGRPCSignature(decl); got != tc.want {
+			if got := hasGRPCSignature(decl, "Keys"); got != tc.want {
 				t.Fatalf("hasGRPCSignature = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestServerRegistration_RegistrarEvidenceInTheFile(t *testing.T) {
+	t.Parallel()
+	const imports = `package main
+
+import (
+	pb "example.com/gen/keys"
+	"google.golang.org/grpc"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"example.com/app/boot"
+)
+
+type impl struct{}
+type holder struct{ gs *grpc.Server }
+
+`
+	for name, tc := range map[string]struct {
+		body      string
+		confirmed bool
+		source    FunctionID
+		index     int
+	}{
+		"grpc.NewServer":    {body: `func f() { gs := grpc.NewServer(); pb.RegisterKeysServer(gs, &impl{}) }`, confirmed: true},
+		"typed parameter":   {body: `func f(gs *grpc.Server) { pb.RegisterKeysServer(gs, &impl{}) }`, confirmed: true},
+		"service registrar": {body: `func f(r grpc.ServiceRegistrar) { pb.RegisterKeysServer(r, &impl{}) }`, confirmed: true},
+		"typed field":       {body: `func (h *holder) f() { pb.RegisterKeysServer(h.gs, &impl{}) }`, confirmed: true},
+		"gateway mux":       {body: `func f(ctx any) { pb.RegisterKeysHandlerServer(ctx, runtime.NewServeMux(), &impl{}) }`, confirmed: true},
+		"untyped":           {body: `func f(s any) { pb.RegisterKeysServer(s, &impl{}) }`},
+		"other package":     {body: `func f(s *boot.Mux) { pb.RegisterKeysServer(s, &impl{}) }`},
+		"result of a function": {
+			body:   `func f() { l, s, err := boot.Listen(); pb.RegisterKeysServer(s, &impl{}) }`,
+			source: FunctionID{Package: "example.com/app/boot", Name: "Listen"}, index: 1,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			refs := grpcRefs(t, imports+tc.body)
+			if len(refs) != 1 || refs[0].GRPCRegistrar != tc.confirmed || refs[0].RegistrarFunc != tc.source || refs[0].RegistrarIndex != tc.index {
+				t.Fatalf("refs = %+v, want confirmed=%v source=%v index=%d", refs, tc.confirmed, tc.source, tc.index)
+			}
+		})
+	}
+}
+
+func TestRegistrationEvidence_FromTheGraph(t *testing.T) {
+	t.Parallel()
+	iface := FunctionID{Package: "example.com/gen/keys", Type: "KeysServer"}
+	ref := EntryRef{Interface: iface}
+	graph := func(decls ...*FunctionDecl) *CallGraph {
+		g := &CallGraph{Functions: map[string]*FunctionDecl{}}
+		for _, decl := range decls {
+			g.Functions[decl.ID.String()] = decl
+		}
+		return g
+	}
+	listen := &FunctionDecl{ID: FunctionID{Package: "example.com/app/boot", Name: "Listen"}, ReturnType: "(net.Listener, *google.golang.org/grpc.Server, error)"}
+	other := &FunctionDecl{ID: FunctionID{Package: "example.com/app/boot", Name: "Dial"}, ReturnType: "(net.Listener, *net/http.Server, error)"}
+	for name, tc := range map[string]struct {
+		ref   EntryRef
+		graph *CallGraph
+		want  bool
+	}{
+		"nothing":               {ref, graph(), false},
+		"interface declared":    {ref, graph(&FunctionDecl{ID: FunctionID{Package: iface.Package, Type: iface.Type, Name: "Rotate"}, OwnerType: goOwnerInterface}), true},
+		"generated file":        {ref, graph(&FunctionDecl{ID: FunctionID{Package: iface.Package, Name: "Helper"}, FilePath: "gen/keys/keys.pb.go"}), true},
+		"other file":            {ref, graph(&FunctionDecl{ID: FunctionID{Package: iface.Package, Name: "Helper"}, FilePath: "gen/keys/keys.go"}), false},
+		"generated elsewhere":   {ref, graph(&FunctionDecl{ID: FunctionID{Package: "example.com/other", Name: "Helper"}, FilePath: "other/x.pb.go"}), false},
+		"grpc result":           {EntryRef{Interface: iface, RegistrarFunc: listen.ID, RegistrarIndex: 1}, graph(listen), true},
+		"wrong result position": {EntryRef{Interface: iface, RegistrarFunc: listen.ID, RegistrarIndex: 0}, graph(listen), false},
+		"other result type":     {EntryRef{Interface: iface, RegistrarFunc: other.ID, RegistrarIndex: 1}, graph(other), false},
+		"function not in graph": {EntryRef{Interface: iface, RegistrarFunc: listen.ID, RegistrarIndex: 1}, graph(), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := registrationEvidence(tc.graph, &tc.ref); got != tc.want {
+				t.Fatalf("registrationEvidence = %v, want %v", got, tc.want)
 			}
 		})
 	}

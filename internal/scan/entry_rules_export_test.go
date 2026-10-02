@@ -299,9 +299,20 @@ func TestExportCallGraph_GoGRPCRegisteredServer(t *testing.T) {
 		{id: "baz-gateway", file: "bar_impl.go", needle: "sha512.New()", reachability: reachable, rootKind: framework, first: "Hash"},
 		{id: "quux-interface-typed", file: "bar_impl.go", needle: "sha512.New512_256()", reachability: reachable, rootKind: framework, first: "Hash"},
 		{id: "other-interface-producer", file: "bar_impl.go", needle: "sha512.New512_224()", reachability: unreachable},
+		{id: "quux-mock-by-path", file: "mocks/quux.go", needle: "sha512.New512_384()", reachability: unreachable},
+		{id: "quux-mock-by-name", file: "bar_impl.go", needle: `sha512.Sum512_256([]byte("mock"))`, reachability: unreachable},
+		{id: "quux-uncalled-producer", file: "bar_impl.go", needle: `sha512.Sum512_224([]byte("alt"))`, reachability: unreachable},
+		{id: "multi-registrar", file: "bar_impl.go", needle: `sha512.Sum512_224([]byte("multi"))`, reachability: reachable, rootKind: framework, first: "Hash"},
+		{id: "http-registrar", file: "bar_impl.go", needle: "sha512.New384(nil)", reachability: unreachable},
+		{id: "no-evidence", file: "bar_impl.go", needle: "sha512.New512_224(nil)", reachability: unreachable},
+		{id: "stream-of-service", file: "bar_impl.go", needle: "sha512.Sum512_256(nil)", reachability: reachable, rootKind: framework, first: "Watch"},
+		{id: "stream-of-other-service", file: "bar_impl.go", needle: "sha512.Sum384(nil)", reachability: unreachable},
 		{id: "qux-unknown", file: "bar_impl.go", needle: "sha512.New384()", reachability: unreachable},
 	}
-	packages := map[string]string{"example.com/grpcreg/gen/foo": "gen/foo"}
+	packages := map[string]string{
+		"example.com/grpcreg/gen/foo": "gen/foo",
+		"example.com/grpcreg/mocks":   "mocks",
+	}
 	checkEntryRules(t, entryRulesFixturePackages(t, "golang_grpc", "go", "go", callgraph.NewGoParser(), cases, packages), cases)
 }
 

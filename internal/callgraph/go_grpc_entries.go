@@ -17,6 +17,7 @@
 package callgraph
 
 import (
+	"path/filepath"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -55,7 +56,9 @@ type goServerValue struct {
 // passes to a catalog server registration. The call must name a function of an
 // imported package; the server is its last argument (the second of
 // RegisterKeysServer(s, srv), the third of RegisterKeysHandlerServer(ctx, mux,
-// srv)). A value whose type cannot be resolved registers nothing.
+// srv)). A value whose type cannot be resolved registers nothing, and neither
+// does a registration with no evidence that it is a gRPC one (see
+// acceptRegistrations).
 func (s *goEntryScope) serverRegistration(call *sitter.Node) {
 	args := call.ChildByFieldName("arguments")
 	if args == nil || int(args.NamedChildCount()) < goMinRegistrationParams {
@@ -70,12 +73,20 @@ func (s *goEntryScope) serverRegistration(call *sitter.Node) {
 	if service == "" {
 		return
 	}
+	registrar := 0
+	if strings.HasSuffix(name, goHandlerServerSuffix) {
+		registrar = 1
+	}
+	if int(args.NamedChildCount()) <= registrar+1 {
+		return
+	}
 	value := s.serverValue(args.NamedChild(int(args.NamedChildCount())-1), 0)
 	ref := EntryRef{
 		AllExported: true,
 		Interface:   FunctionID{Package: pkg, Type: service + goServerSuffix},
 		Kind:        catalogEntryKind(&entry),
 	}
+	ref.GRPCRegistrar, ref.RegistrarFunc, ref.RegistrarIndex = s.registrarEvidence(args.NamedChild(registrar))
 	switch {
 	case value.pkg == ref.Interface.Package && value.typ == ref.Interface.Type:
 		ref.Function = ref.Interface
@@ -89,6 +100,140 @@ func (s *goEntryScope) serverRegistration(call *sitter.Node) {
 		return
 	}
 	s.analysis.EntryRefs = append(s.analysis.EntryRefs, ref)
+}
+
+const (
+	goGRPCPackage      = "google.golang.org/grpc"
+	goGatewayPackage   = "github.com/grpc-ecosystem/grpc-gateway"
+	goSeveralProducers = 2
+)
+
+// goRegistrarType reports whether a type or constructor of pkg is what a
+// generated register function takes first: a *grpc.Server or
+// grpc.ServiceRegistrar, or a grpc-gateway runtime.ServeMux.
+func goRegistrarType(pkg, typ, ctor string) bool {
+	switch {
+	case pkg == goGRPCPackage:
+		return typ == "Server" || typ == "ServiceRegistrar" || ctor == "NewServer"
+	case pkg == goGatewayPackage || strings.HasPrefix(pkg, goGatewayPackage+"/"):
+		return typ == "ServeMux" || ctor == "NewServeMux"
+	}
+	return false
+}
+
+// registrarEvidence resolves the registrar argument of a register call. It
+// says whether the argument is a gRPC server or gateway mux by its type
+// here; otherwise, when it comes from a function, which function and which of
+// its results, for the builder to read the declared result type.
+func (s *goEntryScope) registrarEvidence(expr *sitter.Node) (confirmed bool, fn FunctionID, index int) {
+	value := s.serverValue(expr, 0)
+	if goRegistrarType(value.pkg, value.typ, value.ctor) {
+		return true, FunctionID{}, 0
+	}
+	if expr != nil && expr.Type() == goNodeIdentifier {
+		if call, position, ok := s.multiValueSource(expr); ok {
+			if source := s.constructorValue(call, 0); source.ctor != "" {
+				return false, FunctionID{Package: source.pkg, Name: source.ctor}, position
+			}
+		}
+	}
+	if value.ctor != "" {
+		return false, FunctionID{Package: value.pkg, Name: value.ctor}, 0
+	}
+	return false, FunctionID{}, 0
+}
+
+// multiValueSource finds the declaration `a, b, err := f()` of the name in
+// the functions enclosing id, and returns the call and the name's position.
+func (s *goEntryScope) multiValueSource(id *sitter.Node) (*sitter.Node, int, bool) {
+	name := id.Content(s.src)
+	for scope := id.Parent(); scope != nil; scope = scope.Parent() {
+		switch scope.Type() {
+		case goNodeFunctionDecl, goNodeMethodDecl, goNodeFuncLiteral:
+			if call, position := s.findMultiValue(scope.ChildByFieldName("body"), name); call != nil {
+				return call, position, true
+			}
+		}
+	}
+	return nil, 0, false
+}
+
+func (s *goEntryScope) findMultiValue(node *sitter.Node, name string) (*sitter.Node, int) {
+	if node == nil || node.Type() == goNodeFuncLiteral {
+		return nil, 0
+	}
+	if node.Type() == goNodeShortVarDeclaration {
+		left, right := node.ChildByFieldName(goFieldLeft), node.ChildByFieldName(goFieldRight)
+		if left != nil && right != nil && right.Type() == goNodeExpressionList && right.NamedChildCount() == 1 &&
+			right.NamedChild(0).Type() == goNodeCallExpression {
+			for i := 0; i < int(left.NamedChildCount()); i++ {
+				if left.NamedChild(i).Content(s.src) == name {
+					return right.NamedChild(0), i
+				}
+			}
+		}
+	}
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		if call, position := s.findMultiValue(node.NamedChild(i), name); call != nil {
+			return call, position
+		}
+	}
+	return nil, 0
+}
+
+// acceptRegistrations drops the service registrations with no evidence that
+// they are gRPC ones, so a project's own httpx.RegisterHTTPServer(mux, srv)
+// roots nothing. Evidence is any of: the generated interface <X>Server is in
+// the graph; a generated file (*.pb.go) of the callee's package is; or the
+// registrar argument is a grpc.Server, grpc.ServiceRegistrar or gateway
+// ServeMux, by its type in the file or by the declared result of the function
+// it comes from.
+func acceptRegistrations(graph *CallGraph, refs []EntryRef) []EntryRef {
+	out := refs[:0:0]
+	for i := range refs {
+		ref := &refs[i]
+		if ref.Interface == (FunctionID{}) || registrationEvidence(graph, ref) {
+			out = append(out, *ref)
+		}
+	}
+	return out
+}
+
+func registrationEvidence(graph *CallGraph, ref *EntryRef) bool {
+	if ref.GRPCRegistrar {
+		return true
+	}
+	if registrarResultIsGRPC(graph, ref) {
+		return true
+	}
+	for _, decl := range graph.Functions {
+		if decl.ID.Package != ref.Interface.Package {
+			continue
+		}
+		if (decl.OwnerType == goOwnerInterface && decl.ID.Type == ref.Interface.Type) || isGeneratedProtoFile(decl.FilePath) {
+			return true
+		}
+	}
+	return false
+}
+
+// registrarResultIsGRPC reads the declared result the registrar comes from.
+func registrarResultIsGRPC(graph *CallGraph, ref *EntryRef) bool {
+	decl := graph.Functions[ref.RegistrarFunc.String()]
+	if ref.RegistrarFunc == (FunctionID{}) || decl == nil {
+		return false
+	}
+	results := splitGoResults(decl.ReturnType)
+	if ref.RegistrarIndex >= len(results) {
+		return false
+	}
+	result := strings.TrimLeft(results[ref.RegistrarIndex], "*")
+	dot := strings.LastIndex(result, ".")
+	return dot > 0 && goRegistrarType(result[:dot], result[dot+1:], "")
+}
+
+func isGeneratedProtoFile(path string) bool {
+	return strings.HasSuffix(path, ".pb.go")
 }
 
 // registerCall returns the imported package and the name of a call of a
@@ -276,9 +421,10 @@ func (s *goEntryScope) collectReturnedTypes(node *sitter.Node, types *[]string) 
 	}
 }
 
-// expandConstructorRefs replaces each constructor reference with a reference
-// per concrete type the constructor builds: the types it returns as literals,
-// and its declared result type when that is a type other than the interface.
+// expandConstructorRefs replaces each constructor reference, and each
+// reference to the registered interface itself, with a reference per concrete
+// type it stands for: the types a constructor returns as literals and its
+// declared result type, or the types the producers of the interface build.
 func expandConstructorRefs(graph *CallGraph, refs []EntryRef) []EntryRef {
 	out := make([]EntryRef, 0, len(refs))
 	for i := range refs {
@@ -319,15 +465,19 @@ func expandConstructorRefs(graph *CallGraph, refs []EntryRef) []EntryRef {
 // as the interface, as a parameter of the function that calls the register
 // function is, and these functions are what make it.
 func producerRefs(graph *CallGraph, ref *EntryRef) []EntryRef {
+	var producers []*FunctionDecl
+	for _, decl := range graph.Functions {
+		if decl.ID.Type != "" || len(decl.returnedTypes) == 0 || isTestDeclaration(decl) || isDoubleProducer(decl) {
+			continue
+		}
+		if pkg, typ := declaredResultType(decl); pkg == ref.Interface.Package && typ == ref.Interface.Type {
+			producers = append(producers, decl)
+		}
+	}
+	producers = calledProducers(graph, producers)
 	var out []EntryRef
 	seen := map[FunctionID]bool{}
-	for _, decl := range graph.Functions {
-		if decl.ID.Type != "" || len(decl.returnedTypes) == 0 {
-			continue
-		}
-		if pkg, typ := declaredResultType(decl); pkg != ref.Interface.Package || typ != ref.Interface.Type {
-			continue
-		}
+	for _, decl := range producers {
 		for _, typ := range decl.returnedTypes {
 			if id := (FunctionID{Package: decl.ID.Package, Type: typ}); !seen[id] {
 				seen[id] = true
@@ -336,6 +486,48 @@ func producerRefs(graph *CallGraph, ref *EntryRef) []EntryRef {
 		}
 	}
 	return out
+}
+
+var goDoublePathSegments = map[string]bool{"mock": true, "mocks": true, "fake": true, "fakes": true, "testutil": true}
+
+// isDoubleProducer recognizes a test double's constructor by its path or name.
+func isDoubleProducer(decl *FunctionDecl) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(decl.FilePath), "/") {
+		if goDoublePathSegments[segment] {
+			return true
+		}
+	}
+	for _, prefix := range []string{"newMock", "NewMock", "newFake", "NewFake"} {
+		if strings.HasPrefix(decl.ID.Name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// calledProducers keeps the producers some function of the graph calls, when
+// there are any: a service is built where the application calls its
+// constructor. With none called, all are kept.
+func calledProducers(graph *CallGraph, producers []*FunctionDecl) []*FunctionDecl {
+	if len(producers) < goSeveralProducers {
+		return producers
+	}
+	called := map[string]bool{}
+	for _, decl := range graph.Functions {
+		for i := range decl.Calls {
+			called[decl.Calls[i].Callee.String()] = true
+		}
+	}
+	var kept []*FunctionDecl
+	for _, decl := range producers {
+		if called[decl.ID.String()] {
+			kept = append(kept, decl)
+		}
+	}
+	if len(kept) == 0 {
+		return producers
+	}
+	return kept
 }
 
 // declaredResultType returns the package and name of the first result of a
@@ -360,6 +552,7 @@ func declaredResultType(decl *FunctionDecl) (pkg, typ string) {
 // pass: its name is a method of the service interface when the graph declares
 // it, else its signature is a gRPC handler's.
 func serviceMethodFilter(declarations []*FunctionDecl, iface string) func(*FunctionDecl) bool {
+	service := strings.TrimSuffix(iface, goServerSuffix)
 	names := make(map[string]bool)
 	for _, decl := range declarations {
 		if decl.OwnerType == goOwnerInterface && decl.ID.Type == iface {
@@ -369,13 +562,14 @@ func serviceMethodFilter(declarations []*FunctionDecl, iface string) func(*Funct
 	if len(names) > 0 {
 		return func(decl *FunctionDecl) bool { return names[decl.ID.Name] }
 	}
-	return hasGRPCSignature
+	return func(decl *FunctionDecl) bool { return hasGRPCSignature(decl, service) }
 }
 
 // hasGRPCSignature reports whether a method looks like a generated service
 // method: unary (ctx context.Context, req *Req) (*Resp, error), or streaming
-// ([req *Req,] stream Service_MethodServer) error.
-func hasGRPCSignature(decl *FunctionDecl) bool {
+// ([req *Req,] stream Service_MethodServer) error, the stream type named
+// for the service.
+func hasGRPCSignature(decl *FunctionDecl, service string) bool {
 	params := decl.Parameters
 	results := splitGoResults(decl.ReturnType)
 	switch {
@@ -384,7 +578,8 @@ func hasGRPCSignature(decl *FunctionDecl) bool {
 			strings.HasPrefix(results[0], "*") && results[1] == goErrorType
 	case (len(params) == 1 || len(params) == 2) && len(results) == 1 && results[0] == goErrorType:
 		stream := params[len(params)-1].Type
-		return strings.Contains(stream, ".") && strings.HasSuffix(stream, goServerSuffix) &&
+		_, name, qualified := strings.Cut(stream[strings.LastIndex(stream, "/")+1:], ".")
+		return qualified && strings.HasPrefix(name, service+"_") && strings.HasSuffix(name, goServerSuffix) &&
 			(len(params) == 1 || strings.HasPrefix(params[0].Type, "*"))
 	}
 	return false

@@ -44,6 +44,13 @@ type EntryRef struct {
 	// of the registered value: the types it roots are the ones the functions
 	// that declare that interface as their result build.
 	Producers bool
+	// GRPCRegistrar says the registrar argument of the register call is a
+	// gRPC server or gateway mux, by its type in the registering file.
+	// Otherwise RegistrarFunc and RegistrarIndex name the function and the
+	// result the registrar comes from. Go only.
+	GRPCRegistrar  bool
+	RegistrarFunc  FunctionID
+	RegistrarIndex int
 	// Module says Function.Package is a Python module path, as an import
 	// or a manifest spells it (shop.web.views). The graph keys a Python
 	// function by its defining module, so it matches that module exactly, or
@@ -66,7 +73,7 @@ func resolveEntryRefs(graph *CallGraph, pythonRoots []string) {
 		return
 	}
 	var byPackage map[string][]*FunctionDecl
-	refs = expandConstructorRefs(graph, refs)
+	refs = expandConstructorRefs(graph, acceptRegistrations(graph, refs))
 	for i := range refs {
 		ref := &refs[i]
 		if decl := lookupEntryRef(graph, ref.Function); decl != nil && !ref.AllExported {
