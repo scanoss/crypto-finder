@@ -58,10 +58,11 @@ type DepScanOptions struct {
 // DependencyScanner coordinates dependency resolution, scanning, call graph
 // construction, and finding attribution.
 type DependencyScanner struct {
-	orchestrator  *Orchestrator
-	resolver      dependency.Resolver
-	cgBuilder     *callgraph.Builder
-	findingsCache FindingsCache
+	orchestrator   *Orchestrator
+	resolver       dependency.Resolver
+	cgBuilder      *callgraph.Builder
+	findingsCache  FindingsCache
+	findingsSource DependencyFindingsSource
 }
 
 // NewDependencyScanner creates a new dependency scanner.
@@ -72,13 +73,18 @@ func NewDependencyScanner(
 	resolver dependency.Resolver,
 	cgBuilder *callgraph.Builder,
 	findingsCache FindingsCache,
+	opts ...DependencyScannerOption,
 ) *DependencyScanner {
-	return &DependencyScanner{
+	ds := &DependencyScanner{
 		orchestrator:  orchestrator,
 		resolver:      resolver,
 		cgBuilder:     cgBuilder,
 		findingsCache: findingsCache,
 	}
+	for _, opt := range opts {
+		opt(ds)
+	}
+	return ds
 }
 
 // DepScanResult holds the aggregated result of the dependency scanning pipeline.
@@ -668,12 +674,35 @@ func (ds *DependencyScanner) lookupDependency(
 		}
 	}
 
-	if item.cacheKey == "" {
+	if item.cacheKey != "" {
+		report, ok, err := ds.findingsCache.Get(ctx, item.cacheKey)
+		if err != nil {
+			log.Warn().Err(err).Str("module", dep.Module).Msg("Cache read error, scanning normally")
+		} else if ok {
+			log.Info().
+				Str("module", dep.Module).
+				Str("version", dep.Version).
+				Msg("Cache hit for dependency scan")
+			return depScanResult{index: item.index, key: item.key, dep: item.dep, report: dependencyReportWithFindings(item.ownFindings(report)), status: depScanStatusScanned}, true
+		}
+	}
+	return ds.lookupFindingsSource(ctx, item)
+}
+
+// lookupFindingsSource answers item from the findings source, when one is
+// configured and publishes the dependency's package version.
+func (ds *DependencyScanner) lookupFindingsSource(ctx context.Context, item *depWork) (result depScanResult, hit bool) {
+	dep := &item.dep
+	if ds.findingsSource == nil || dep.Version == "" {
 		return depScanResult{}, false
 	}
-	report, ok, err := ds.findingsCache.Get(ctx, item.cacheKey)
+	packageURL := purl.Dependency(ds.resolver.Ecosystem(), dep.Module, "")
+	if packageURL == "" {
+		return depScanResult{}, false
+	}
+	report, ok, err := ds.findingsSource.Findings(ctx, packageURL, dep.Version)
 	if err != nil {
-		log.Warn().Err(err).Str("module", dep.Module).Msg("Cache read error, scanning normally")
+		log.Warn().Err(err).Str("module", dep.Module).Str("version", dep.Version).Msg("Dependency findings unavailable from the SCANOSS API, scanning locally")
 		return depScanResult{}, false
 	}
 	if !ok {
@@ -682,8 +711,9 @@ func (ds *DependencyScanner) lookupDependency(
 	log.Info().
 		Str("module", dep.Module).
 		Str("version", dep.Version).
-		Msg("Cache hit for dependency scan")
-	return depScanResult{index: item.index, key: item.key, dep: item.dep, report: dependencyReportWithFindings(item.ownFindings(report)), status: depScanStatusScanned}, true
+		Str("rules_version", report.Rules.Version).
+		Msg("Dependency findings from the SCANOSS API")
+	return depScanResult{index: item.index, key: item.key, dep: item.dep, report: dependencyReportWithFindings(item.filesOf(report)), status: depScanStatusScanned}, true
 }
 
 // scanDepAlone scans one looked-up dependency in its own scanner process.
@@ -832,7 +862,17 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 // a Python distribution rooted at site-packages holds every other
 // distribution too.
 func (item *depWork) ownFindings(report *entities.InterimReport) *entities.InterimReport {
-	if report == nil || item.scope != nil || item.dep.Files == nil {
+	if item.scope != nil {
+		return report
+	}
+	return item.filesOf(report)
+}
+
+// filesOf keeps the findings of report in the dependency's Files, whatever
+// scope detection ran with. Findings published for a whole package cover
+// files the import closure leaves out.
+func (item *depWork) filesOf(report *entities.InterimReport) *entities.InterimReport {
+	if report == nil || item.dep.Files == nil {
 		return report
 	}
 	owned := *report
