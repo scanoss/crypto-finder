@@ -323,3 +323,201 @@ func (r *Repo) Load() {
 		}
 	}
 }
+
+func TestGoBuilder_FieldTypedByTypeParameterStaysUntyped(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+type Getter interface{ Get() }
+
+type T struct{}
+
+func (t *T) Get() {}
+
+type Foo[T Getter] struct{ c T }
+
+func (f *Foo[T]) Use() {
+	f.c.Get()
+}
+`)
+	if goHasCaller(g, "app.(*T).Get", "app.(*Foo).Use") || goHasCaller(g, "app.(T).Get", "app.(*Foo).Use") {
+		t.Errorf("a field typed by a type parameter must not resolve to the package's type T; callers=%v", g.Callers["app.(*T).Get"])
+	}
+}
+
+func TestGoBuilder_FieldReceiverAliasedImport(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(root, "cache")
+	appDir := filepath.Join(root, "app")
+	for _, d := range []string{cacheDir, appDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(cacheDir, "cache.go"): "package cache\n\ntype Manager struct{}\n\nfunc (m *Manager) Get() {}\n",
+		filepath.Join(appDir, "app.go"): `package app
+
+import c "example.com/m/cache"
+
+type Repo struct{ cm *c.Manager }
+
+func (r *Repo) Load() {
+	r.cm.Get()
+}
+`,
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := NewBuilderForEcosystem("go", NewGoParser()).BuildFromDirectories([]PackageDir{
+		{Dir: cacheDir, ImportPath: "example.com/m/cache"},
+		{Dir: appDir, ImportPath: "example.com/m/app"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callee := "example.com/m/cache.(*Manager).Get"
+	if !goHasCaller(g, callee, "example.com/m/app.(*Repo).Load") {
+		t.Errorf("aliased import field has no caller; callers=%v", g.Callers[callee])
+	}
+}
+
+func TestGoBuilder_FieldReceiverTypedLocalNamedLikeReceiverRoot(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+type Cm struct{}
+
+func (c *Cm) Get() {}
+
+type Repo struct{ cm *Cm }
+
+func (c *Cm) Self(r *Repo) {
+	r.cm.Get()
+}
+
+func Local() {
+	var r *Repo
+	r.cm.Get()
+}
+`)
+	for _, caller := range []string{"app.Local", "app.(*Cm).Self"} {
+		if !goHasCaller(g, "app.(*Cm).Get", caller) {
+			t.Errorf("no caller %s; callers=%v", caller, g.Callers["app.(*Cm).Get"])
+		}
+		if kind, ok := goEdgeKind(g, caller, "app.(*Cm).Get"); !ok || kind != EdgeKindExact {
+			t.Errorf("edge from %s kind = %q (found %v), want exact", caller, kind, ok)
+		}
+	}
+}
+
+func TestGoBuilder_FieldReceiverPointerAndValueMethodSets(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+type PtrM struct{}
+
+func (p *PtrM) Put() {}
+
+type ValM struct{}
+
+func (v ValM) Get() {}
+
+type Repo struct {
+	val PtrM
+	ptr *ValM
+}
+
+func (r *Repo) Load() {
+	r.val.Put()
+	r.ptr.Get()
+}
+`)
+	for _, callee := range []string{"app.(*PtrM).Put", "app.(ValM).Get"} {
+		if !goHasCaller(g, callee, "app.(*Repo).Load") {
+			t.Errorf("%s has no caller Load; callers=%v", callee, g.Callers[callee])
+			continue
+		}
+		if kind, ok := goEdgeKind(g, "app.(*Repo).Load", callee); ok && kind != EdgeKindExact {
+			t.Errorf("edge to %s kind = %q, want exact", callee, kind)
+		}
+	}
+}
+
+func TestGoBuilder_FieldReceiverThreeWayBuildTagMergeStaysUntyped(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"a.go": "package app\n\ntype A struct{}\n\nfunc (a *A) Get() {}\n\ntype B struct{}\n\nfunc (b *B) Get() {}\n\ntype Repo struct{ x *A }\n\nfunc (r *Repo) Load() { r.x.Get() }\n",
+		"b.go": "package app\n\ntype Repo struct{ x *B }\n",
+		"c.go": "package app\n\ntype Repo struct{ x *A }\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := NewBuilderForEcosystem("go", NewGoParser()).
+		BuildFromDirectories([]PackageDir{{Dir: dir, ImportPath: "app"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, callee := range []string{"app.(*A).Get", "app.(*B).Get"} {
+		if goHasCaller(g, callee, "app.(*Repo).Load") {
+			t.Errorf("A,B,A declarations must stay untyped, got edge to %s", callee)
+		}
+	}
+}
+
+func TestGoBuilder_FieldOfExternalOrUndeclaredTypeAddsNoFallbackEdge(t *testing.T) {
+	g := buildGoGraph(t, `package app
+
+import (
+	"sync"
+	. "example.com/dot"
+)
+
+type Other struct{}
+
+func (o *Other) Lock()  {}
+func (o *Other) Error() string { return "" }
+func (o *Other) Run()   {}
+
+func Lock()  {}
+func Error() {}
+func Run()   {}
+
+type Repo struct {
+	mu  sync.Mutex
+	err error
+	dot Widget
+}
+
+func (r *Repo) Load() {
+	r.mu.Lock()
+	r.err.Error()
+	r.dot.Run()
+}
+`)
+	caller := "app.(*Repo).Load"
+	for _, declared := range []string{
+		"app.(*Other).Lock", "app.(*Other).Error", "app.(*Other).Run",
+		"app.Lock", "app.Error", "app.Run",
+	} {
+		if goHasCaller(g, declared, caller) {
+			t.Errorf("name-based fallback edge from Load to %s", declared)
+		}
+		if _, ok := goEdgeKind(g, caller, declared); ok {
+			t.Errorf("EdgeResolution recorded from Load to declared function %s", declared)
+		}
+	}
+	allowed := map[string]bool{"sync.(Mutex).Lock": true, "app.(Widget).Run": true, "Error": true}
+	for key := range g.EdgeResolutions {
+		if !strings.HasPrefix(key, caller+"\x00") {
+			continue
+		}
+		callee := strings.SplitN(key, "\x00", 3)[1]
+		if !allowed[callee] {
+			t.Errorf("EdgeResolution from Load to unexpected target %q", callee)
+		}
+	}
+}

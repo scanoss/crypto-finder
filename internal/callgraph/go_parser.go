@@ -540,20 +540,44 @@ func (p *GoParser) recordGoStructFieldTypes(spec *sitter.Node, src []byte, analy
 	if structName == "" || body == nil {
 		return
 	}
+	typeParams := goTypeParameterNames(spec, src)
 	for i := 0; i < int(body.NamedChildCount()); i++ {
 		if field := body.NamedChild(i); field.Type() == javaNodeFieldDeclaration {
-			recordGoFieldDeclaration(field, structName, src, analysis)
+			recordGoFieldDeclaration(field, structName, src, analysis, typeParams)
 		}
 	}
 }
 
-func recordGoFieldDeclaration(field *sitter.Node, structName string, src []byte, analysis *FileAnalysis) {
+// goTypeParameterNames lists the type parameters a generic type declares. A
+// field typed by one has no concrete type, however a package-level type of the
+// same name reads.
+func goTypeParameterNames(spec *sitter.Node, src []byte) map[string]bool {
+	list := spec.ChildByFieldName("type_parameters")
+	if list == nil {
+		return nil
+	}
+	names := make(map[string]bool)
+	for i := 0; i < int(list.NamedChildCount()); i++ {
+		decl := list.NamedChild(i)
+		for j := 0; j < int(decl.NamedChildCount()); j++ {
+			if n := decl.NamedChild(j); n.Type() == goNodeIdentifier {
+				names[strings.TrimSpace(n.Content(src))] = true
+			}
+		}
+	}
+	return names
+}
+
+func recordGoFieldDeclaration(field *sitter.Node, structName string, src []byte, analysis *FileAnalysis, typeParams map[string]bool) {
 	ft := field.ChildByFieldName(goFieldType)
 	if ft == nil {
 		return
 	}
 	typeText := strings.TrimSpace(ft.Content(src))
 	if strings.Contains(typeText, "[") {
+		return
+	}
+	if typeParams[strings.TrimLeft(typeText, "* ")] {
 		return
 	}
 	pkg, typ, ok := goQualifyTypeText(typeText, analysis)
