@@ -554,6 +554,7 @@ func (p *NodeParser) moduleInitDecl(root *sitter.Node, src []byte, filePath, mod
 	locals := bindings.withModuleVariables(nil)
 	calls := p.extractCalls(root, src, filePath, modulePath, "", bindings, locals)
 	implicit := nodeImplicitCalls(root, src, filePath, modulePath, bindings, locals)
+	implicit = append(implicit, nodeCallbackReferences(root, src, filePath, modulePath, "", bindings, locals, nil)...)
 	if len(calls) == 0 && len(implicit) == 0 {
 		return nil
 	}
@@ -758,6 +759,7 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 	defer func() { p.scope = previousScope }()
 	decl.Calls = p.extractCalls(body, src, filePath, packagePath, owner, imports, locals)
 	decl.ImplicitCalls = nodeImplicitCalls(body, src, filePath, packagePath, imports, locals)
+	decl.ImplicitCalls = append(decl.ImplicitCalls, nodeCallbackReferences(body, src, filePath, packagePath, owner, imports, locals, own)...)
 	decl.ModuleVars = imports.moduleReceivers(decl.Calls, own)
 	if p.file != nil {
 		if ref, ok := p.file.annotatedClass(node.ChildByFieldName("return_type"), src); ok {

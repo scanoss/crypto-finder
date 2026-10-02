@@ -366,6 +366,11 @@ type FunctionCall struct {
 	// EndCol is the 1-based end column (exclusive) of this call expression.
 	// 0 when unknown. Mirrors the opengrep/semgrep convention: exclusive end.
 	EndCol int
+	// Reference marks an implicit call that is only the registration of a
+	// function as a value (a callback handed to an API that runs it). The
+	// builder indexes it as an exact edge only when Callee names a declared
+	// function, and expands no dispatch from it.
+	Reference bool
 	// ASTKind is the tree-sitter node kind of this call expression.
 	ASTKind string
 	// NamedASTPath is this call's named-node path relative to its containing function.

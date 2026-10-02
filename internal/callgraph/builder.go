@@ -994,6 +994,10 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 			b.indexCallDispatch(graph, callerKey, &fn.Calls[i], idx)
 		}
 		for i := range fn.ImplicitCalls {
+			if fn.ImplicitCalls[i].Reference {
+				b.indexCallbackReference(graph, callerKey, &fn.ImplicitCalls[i], idx)
+				continue
+			}
 			b.indexCallDispatch(graph, callerKey, &fn.ImplicitCalls[i], idx)
 		}
 	}

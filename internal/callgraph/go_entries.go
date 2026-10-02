@@ -49,6 +49,9 @@ const (
 // type the file declares (localType).
 type goOrigin struct {
 	pkg, localType string
+	// typeName is the name a package-qualified type gives (Command for
+	// cobra.Command), set only when the value's type is written that way.
+	typeName string
 }
 
 // goEntryScope resolves the values of one file to their packages, through
@@ -82,6 +85,7 @@ func applyGoEntryRules(root *sitter.Node, src []byte, packagePath string, analys
 		}
 	}
 	scope.registeredHandlers(root, packagePath)
+	scope.callbackReferences(root, packagePath)
 }
 
 func newGoEntryScope(root *sitter.Node, src []byte, analysis *FileAnalysis) *goEntryScope {
@@ -218,6 +222,9 @@ func (s *goEntryScope) selectorOrigin(expr *sitter.Node, depth int) goOrigin {
 	}
 	if operand.Type() == goNodeIdentifier || operand.Type() == goNodePackageIdentifier {
 		if pkg, ok := s.analysis.Imports[operand.Content(s.src)]; ok && !s.shadowed(operand) {
+			if expr.Type() == goNodeQualifiedType {
+				return goOrigin{pkg: pkg, typeName: field.Content(s.src)}
+			}
 			return goOrigin{pkg: pkg}
 		}
 	}
@@ -346,6 +353,8 @@ func (s *goEntryScope) registeredHandlers(root *sitter.Node, packagePath string)
 			}
 		case goNodeCompositeLiteral:
 			s.handlerFields(node, packagePath)
+		case goNodeAssignmentStmt:
+			s.assignedHandlerFields(node, packagePath)
 		case goNodeTypeSpec:
 			s.embeddedSupertypes(node, packagePath)
 		}

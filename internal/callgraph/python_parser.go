@@ -1632,6 +1632,7 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 	if moduleDecl := p.buildModuleInitDecl(root, src, filePath, modulePath, analysis, fw); moduleDecl != nil {
 		analysis.Functions = append(analysis.Functions, *moduleDecl)
 	}
+	addPythonCallbackReferences(analysis)
 }
 
 // buildModuleInitDecl builds the synthetic `<module>` FunctionDecl for a
