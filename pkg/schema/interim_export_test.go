@@ -172,3 +172,35 @@ func TestCryptographicAsset_ConditionedValueRoundTrips(t *testing.T) {
 		t.Errorf("conditioned_value emitted on an asset without one: %s", plain)
 	}
 }
+
+// An asset matched on an argument span keeps the columns of the call that
+// encloses it, which locate the crypto call in a report read back by another
+// scan.
+func TestCryptographicAsset_TerminalColumnsRoundTrip(t *testing.T) {
+	asset := schema.CryptographicAsset{StartLine: 87, EndLine: 87, StartCol: 31, EndCol: 52, TerminalStartCol: 13, TerminalEndCol: 53, Match: "cipher.init(true, new KeyParameter(key));"}
+	raw, err := json.Marshal(asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back schema.CryptographicAsset
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.TerminalStartCol != 13 || back.TerminalEndCol != 53 {
+		t.Errorf("read back terminal columns %d-%d from %s, want 13-53", back.TerminalStartCol, back.TerminalEndCol, raw)
+	}
+
+	plain, err := json.Marshal(schema.CryptographicAsset{Match: "x", StartCol: 1, EndCol: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(plain, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"terminal_start_col", "terminal_end_col"} {
+		if _, ok := fields[key]; ok {
+			t.Errorf("%s emitted on an asset without one: %s", key, plain)
+		}
+	}
+}

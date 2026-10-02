@@ -907,6 +907,7 @@ Version 1.7 keeps the attribution fields needed to join findings to the separate
 | `finding_id` | `string` | Always (when dependency scanning) | Short hash (SHA-256) for cross-referencing with the callgraph export |
 | `occurrence_key` | `string` | When a terminal AST anchor is available | Rule-independent `v1:<16 lowercase hex>` structural identity for the canonical finding |
 | `conditioned_value` | `string` | Per-value assets only | The resolved condition the asset was specialized for; part of its `finding_id` and `occurrence_key` (v1.7+) |
+| `terminal_start_col`, `terminal_end_col` | `integer` | Assets matched on an argument span | Columns of the enclosing call, used to locate the crypto call (v1.7+) |
 
 ## Call Graph Export
 

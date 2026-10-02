@@ -200,6 +200,14 @@
         "conditioned_value": {
           "type": "string",
           "description": "Resolved condition a per-value asset was specialized for, for example param[0]==HmacSHA256; part of finding_id and occurrence_key (v1.7+)."
+        },
+        "terminal_start_col": {
+          "type": "integer",
+          "description": "1-based start column of the call enclosing an asset matched on an argument span (v1.7+)."
+        },
+        "terminal_end_col": {
+          "type": "integer",
+          "description": "Exclusive end column of the call enclosing an asset matched on an argument span (v1.7+)."
         }
       },
       "oneOf": [

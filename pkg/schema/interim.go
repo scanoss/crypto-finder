@@ -120,10 +120,11 @@ type CryptographicAsset struct {
 	EndCol int `json:"end_col,omitempty"`
 
 	// TerminalStartCol/TerminalEndCol retain the structurally selected enclosing
-	// call for in-process exports when a scanner focuses a nested argument span.
-	// They are routing state, not part of the public finding schema.
-	TerminalStartCol int `json:"-"`
-	TerminalEndCol   int `json:"-"`
+	// call when a scanner focuses a nested argument span. They locate the crypto
+	// call for exports and occurrence keys, also when a report published by one
+	// scan is read by another (v1.7+).
+	TerminalStartCol int `json:"terminal_start_col,omitempty"`
+	TerminalEndCol   int `json:"terminal_end_col,omitempty"`
 
 	// ConditionedValuesIncomplete records that the enumeration of the values
 	// reaching this asset's selector parameter hit its depth cap or value bound,
