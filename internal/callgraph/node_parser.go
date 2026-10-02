@@ -218,7 +218,7 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	analysis.nodeDefaultClass = p.file.defaultClass
 	analysis.nodeAssignedProps = p.file.assignedProps
 	p.extractDeclarations(root, src, filePath, modulePath, bindings, analysis)
-	if decl := p.moduleInitDecl(root, src, filePath, modulePath, bindings); decl != nil {
+	if decl := p.moduleInitDecl(root, src, filePath, packagePath, modulePath, bindings); decl != nil {
 		analysis.Functions = append(analysis.Functions, *decl)
 	}
 	analysis.EntryRefs = nodeEntryRefs(root, src, filePath, modulePath, bindings)
@@ -553,11 +553,12 @@ func nodeAssignmentTarget(left *sitter.Node, src []byte) (name, owner string) {
 // moduleInitDecl collects the calls a module makes when it loads, its
 // top-level statements, under the synthetic <module> declaration the Python
 // parser also emits. A module that makes no such call gets none.
-func (p *NodeParser) moduleInitDecl(root *sitter.Node, src []byte, filePath, modulePath string, bindings nodeBindings) *FunctionDecl {
+func (p *NodeParser) moduleInitDecl(root *sitter.Node, src []byte, filePath, packagePath, modulePath string, bindings nodeBindings) *FunctionDecl {
 	locals := bindings.withModuleVariables(nil)
 	calls := p.extractCalls(root, src, filePath, modulePath, "", bindings, locals)
 	implicit := nodeImplicitCalls(root, src, filePath, modulePath, bindings, locals)
 	implicit = append(implicit, nodeCallbackReferences(root, src, filePath, modulePath, "", bindings, locals, nil)...)
+	implicit = append(implicit, nodeModuleImportReferences(root, src, filePath, packagePath, modulePath)...)
 	if len(calls) == 0 && len(implicit) == 0 {
 		return nil
 	}
