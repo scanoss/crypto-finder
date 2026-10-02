@@ -32,9 +32,9 @@ import (
 // ScanRoots runs one OpenGrep process over every root, or one per share of
 // the command-line budget when scoped roots name many files, and reports
 // each root as a scan of that root alone would: its results and errors are
-// the ones in files below it, with paths relative to it. Roots must not nest
-// or repeat: an exclusion of the outer root could hide the inner one, and
-// OpenGrep scans a repeated root once.
+// the ones in its files, with paths relative to it. Roots must not nest or
+// repeat, except as disjoint siblings: an exclusion of the outer root could
+// hide the inner one, and OpenGrep scans a repeated target once.
 func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, failure.New(
@@ -44,23 +44,12 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths
 			failure.WithDetail("scanner", ScannerName),
 		)
 	}
-	cleaned := make([]string, len(roots))
-	scoped := false
-	for i, root := range roots {
-		cleaned[i] = filepath.Clean(root.Dir)
-		scoped = scoped || root.Scope != nil
+	if err := refuseNestedRoots(roots); err != nil {
+		return nil, err
 	}
-	for i, inner := range cleaned {
-		for j, outer := range cleaned {
-			if i != j && holds(outer, inner) {
-				return nil, failure.New(
-					failure.CodeInvalidArguments,
-					failure.StageInput,
-					fmt.Sprintf("roots %s and %s cannot share one opengrep process: they nest or repeat", roots[j].Dir, roots[i].Dir),
-					failure.WithDetail("scanner", ScannerName),
-				)
-			}
-		}
+	scoped := false
+	for _, root := range roots {
+		scoped = scoped || root.Scope != nil
 	}
 
 	if s.timeout > 0 {
@@ -84,7 +73,7 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths
 	}
 	semgrep.LogSemgrepCompatibleErrors(parsed.Errors)
 
-	parts, err := partitionByRoot(parsed, cleaned)
+	parts, err := partitionByRoot(parsed, roots)
 	if err != nil {
 		return nil, err
 	}
@@ -95,18 +84,51 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths
 	return reports, nil
 }
 
-// partitionByRoot splits results and errors by the root holding their file.
-// A result outside every root (a symlinked root reported by its real path,
-// say) cannot be attributed, so the whole scan fails rather than lose it.
-// An error without a file, or with one outside every root, goes to every
+// refuseNestedRoots fails when two roots nest or repeat and are not
+// disjoint siblings.
+func refuseNestedRoots(roots []scanner.Root) error {
+	for i := range roots {
+		for j := range roots {
+			if i != j && holds(filepath.Clean(roots[j].Dir), filepath.Clean(roots[i].Dir)) && !scanner.DisjointSiblings(roots[i], roots[j]) {
+				return failure.New(
+					failure.CodeInvalidArguments,
+					failure.StageInput,
+					fmt.Sprintf("roots %s and %s cannot share one opengrep process: they nest or repeat", roots[j].Dir, roots[i].Dir),
+					failure.WithDetail("scanner", ScannerName),
+				)
+			}
+		}
+	}
+	return nil
+}
+
+// partitionByRoot splits results and errors by the root holding their file:
+// the root whose scope names it, else the innermost root below which it
+// lies. A result outside every root (a symlinked root reported by its real
+// path, say) cannot be attributed, so the whole scan fails rather than lose
+// it. An error without a file, or with one outside every root, goes to every
 // root: a limit it reports may have cut any of them short.
-func partitionByRoot(output *entities.SemgrepOutput, roots []string) ([]*entities.SemgrepOutput, error) {
-	parts := make([]*entities.SemgrepOutput, len(roots))
-	for i := range parts {
+func partitionByRoot(output *entities.SemgrepOutput, scanRoots []scanner.Root) ([]*entities.SemgrepOutput, error) {
+	parts := make([]*entities.SemgrepOutput, len(scanRoots))
+	roots := make([]string, len(scanRoots))
+	named := make(map[string]int)
+	for i := range scanRoots {
 		parts[i] = &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
+		roots[i] = filepath.Clean(scanRoots[i].Dir)
+		if scope := scanRoots[i].Scope; scope != nil {
+			for _, rel := range scope.Paths {
+				named[filepath.Join(roots[i], rel)] = i
+			}
+		}
+	}
+	rootOf := func(path string) int {
+		if i, ok := named[filepath.Clean(path)]; ok {
+			return i
+		}
+		return innermostRoot(path, roots)
 	}
 	for r := range output.Results {
-		i := rootOf(output.Results[r].Path, roots)
+		i := rootOf(output.Results[r].Path)
 		if i < 0 {
 			return nil, failure.New(
 				failure.CodeScannerOutputParseFailed,
@@ -118,7 +140,7 @@ func partitionByRoot(output *entities.SemgrepOutput, roots []string) ([]*entitie
 		parts[i].Results = append(parts[i].Results, output.Results[r])
 	}
 	for _, e := range output.Errors {
-		if i := rootOf(e.Path, roots); i >= 0 {
+		if i := rootOf(e.Path); i >= 0 {
 			parts[i].Errors = append(parts[i].Errors, e)
 			continue
 		}
@@ -129,9 +151,9 @@ func partitionByRoot(output *entities.SemgrepOutput, roots []string) ([]*entitie
 	return parts, nil
 }
 
-// rootOf returns the index of the root holding path, the longest one when
-// roots nest, or -1.
-func rootOf(path string, roots []string) int {
+// innermostRoot returns the index of the root holding path, the longest one
+// when roots nest, or -1.
+func innermostRoot(path string, roots []string) int {
 	best, bestLen := -1, -1
 	for i, root := range roots {
 		if len(root) > bestLen && holds(root, path) {

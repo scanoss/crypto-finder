@@ -43,17 +43,18 @@ type scanBatch struct {
 
 // shapeBatches groups work into the processes that scan it. Roots that nest
 // cannot share a process, because the outer root's exclusions hide the inner
-// one, so each nesting level is split on its own into
+// one, unless they are disjoint siblings of one directory, so each nesting
+// level is split on its own into
 // max(ceil(n / maxBatchRoots), min(workers, n)) batches: the heaviest work
 // goes first, each item into the lightest batch, so the workers finish
 // together and a very large dependency keeps a process to itself. The
 // batches come heaviest first.
 func shapeBatches(work []depWork, workers int) []scanBatch {
-	dirs := make([]string, len(work))
+	roots := make([]scanner.Root, len(work))
 	for i := range work {
-		dirs[i] = filepath.Clean(work[i].dep.Dir)
+		roots[i] = scanner.Root{Dir: filepath.Clean(work[i].dep.Dir), Scope: work[i].scope}
 	}
-	levels := nestingLevels(dirs)
+	levels := nestingLevels(roots)
 	byLevel := make(map[int][]depWork)
 	for i := range work {
 		byLevel[levels[i]] = append(byLevel[levels[i]], work[i])
@@ -93,16 +94,20 @@ func balance(items []depWork, workers int) []scanBatch {
 	return batches
 }
 
-// nestingLevels gives each dir its depth among dirs: 0 when no other dir
-// holds it, otherwise one more than the level of the nearest dir that does.
-// A dir holds itself (an earlier equal dir holds a later one) and every path
-// below it at a separator.
-func nestingLevels(dirs []string) []int {
+// nestingLevels gives each root its depth among roots: 0 when no other root
+// holds it, otherwise one more than the level of the nearest root that does.
+// A root holds every path below its Dir at a separator and an equal Dir, an
+// earlier root holding a later one, unless the two are disjoint siblings.
+func nestingLevels(roots []scanner.Root) []int {
+	dirs := make([]string, len(roots))
+	for i := range roots {
+		dirs[i] = filepath.Clean(roots[i].Dir)
+	}
 	parent := make([]int, len(dirs))
 	for i, dir := range dirs {
 		parent[i] = -1
 		for j, other := range dirs {
-			if j == i || !holdsDir(other, dir) || (other == dir && j > i) {
+			if j == i || !holdsDir(other, dir) || (other == dir && (j > i || scanner.DisjointSiblings(roots[i], roots[j]))) {
 				continue
 			}
 			if parent[i] < 0 || len(other) > len(dirs[parent[i]]) || (len(other) == len(dirs[parent[i]]) && j > parent[i]) {

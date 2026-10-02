@@ -926,3 +926,19 @@ func TestSynthesizeRuleCryptoEntryPointsForResult_TerminalFindingSuppressesOnlyI
 		})
 	}
 }
+
+// A synthesized finding in a namespace directory several Python
+// distributions share is filed under the one whose Files list its file.
+func TestSyntheticFindingLocation_NamespaceSiblingsOwnTheirFiles(t *testing.T) {
+	ns := filepath.Join(t.TempDir(), "google")
+	result := &DepScanResult{Ecosystem: "python", Dependencies: []dependency.Dependency{
+		{Module: "protobuf", Version: "7", Dir: ns, Files: []string{filepath.Join(ns, "protobuf", "msg.py")}},
+		{Module: "google-auth", Version: "2", Dir: ns, Files: []string{filepath.Join(ns, "auth", "creds.py")}},
+	}}
+	for rel, want := range map[string]string{"auth/creds.py": "google-auth", "protobuf/msg.py": "protobuf"} {
+		got, info, ok := syntheticFindingLocation(result, filepath.Join(ns, filepath.FromSlash(rel)))
+		if !ok || info == nil || info.Module != want || got != rel {
+			t.Errorf("syntheticFindingLocation(%q) = %q, %+v, %v; want %q under %q", rel, got, info, ok, rel, want)
+		}
+	}
+}

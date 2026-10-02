@@ -28,6 +28,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 	"github.com/scanoss/crypto-finder/pkg/purl"
@@ -496,7 +497,7 @@ func syntheticFindingLocation(result *DepScanResult, actualPath string) (string,
 		dep := &result.Dependencies[i]
 		rel, ok := pathRelativeToRoot(dep.Dir, cleanPath)
 		rootLen := len(filepath.Clean(dep.Dir))
-		if !ok || rootLen <= matchedDepRootLen {
+		if !ok || rootLen <= matchedDepRootLen || !dependency.ListsFile(dep.Files, cleanPath) {
 			continue
 		}
 		matchedDepIndex = i

@@ -208,7 +208,7 @@ func pythonSignatureIdentity(root PackageDir) pythonSignatureDistributionIdentit
 	return pythonSignatureDistributionIdentity{
 		distributionName:  distributionName,
 		importPath:        root.ImportPath,
-		sourceFingerprint: pythonSignatureSourceFingerprint(root.Dir),
+		sourceFingerprint: pythonSignatureSourceFingerprint(root.Dir, includedFiles(root.IncludeFiles)),
 	}
 }
 
@@ -233,15 +233,15 @@ func pythonSignatureDistributionKeyForIdentity(root PackageDir, identity pythonS
 // input by normalized relative path and bytes. WalkDir is lexical, so the
 // result is deterministic and independent of the distribution's absolute
 // installation path. Unreadable or oversized inputs degrade by omission.
-func pythonSignatureSourceFingerprint(root string) string {
+func pythonSignatureSourceFingerprint(root string, include map[string]bool) string {
 	digest := sha256.New()
-	if err := filepath.WalkDir(root, pythonSignatureFingerprintVisitor(root, digest)); err != nil {
+	if err := filepath.WalkDir(root, pythonSignatureFingerprintVisitor(root, include, digest)); err != nil {
 		log.Debug().Err(err).Str("root", root).Msg("Failed to walk Python signature source tree")
 	}
 	return fmt.Sprintf("%x", digest.Sum(nil))
 }
 
-func pythonSignatureFingerprintVisitor(root string, digest hash.Hash) fs.WalkDirFunc {
+func pythonSignatureFingerprintVisitor(root string, include map[string]bool, digest hash.Hash) fs.WalkDirFunc {
 	return func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return pythonSignatureFingerprintWalkFailure(entry)
@@ -252,7 +252,7 @@ func pythonSignatureFingerprintVisitor(root string, digest hash.Hash) fs.WalkDir
 		if entry.IsDir() {
 			return pythonSignatureFingerprintDir(root, path, entry)
 		}
-		if !pythonSignatureFingerprintEligibleFile(entry) {
+		if !pythonSignatureFingerprintEligibleFile(entry) || (include != nil && !include[path]) {
 			return nil
 		}
 		if pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(path), false) {

@@ -222,7 +222,41 @@ func TestScanRoots_ScopedRootsScanTheirFilesOnly(t *testing.T) {
 	}
 }
 
-func TestRootOf(t *testing.T) {
+// Distributions installed into one namespace directory are roots with the
+// same Dir and disjoint scopes: they share a process and each result goes to
+// the root whose scope names its file. Overlapping or unscoped siblings would
+// scan a file once for two roots, so they are refused.
+func TestScanRoots_DisjointSiblingsShareAProcess(t *testing.T) {
+	dir := t.TempDir()
+	ns := filepath.Join(dir, "google")
+	exe := fakeOpengrep(t, dir, fmt.Sprintf(`{"version":"1.12.1","results":[%s,%s],"errors":[]}`,
+		result(filepath.Join(ns, "b", "y.py")), result(filepath.Join(ns, "a", "x.py"))))
+	s := batchScanner(t, exe)
+	rules := []string{filepath.Join(dir, "rules.yaml")}
+	scoped := func(paths ...string) *scanner.DetectionScope { return &scanner.DetectionScope{Paths: paths} }
+
+	reports, err := s.ScanRoots(context.Background(), []scanner.Root{
+		{Dir: ns, Scope: scoped(filepath.Join("a", "x.py"))},
+		{Dir: ns, Scope: scoped(filepath.Join("b", "y.py"))},
+	}, rules, entities.ToolInfo{Name: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := [][]string{findingPaths(reports[0]), findingPaths(reports[1])}, [][]string{{"a/x.py"}, {"b/y.py"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("findings per sibling = %v, want %v", got, want)
+	}
+
+	for name, roots := range map[string][]scanner.Root{
+		"overlapping": {{Dir: ns, Scope: scoped("a/x.py")}, {Dir: ns, Scope: scoped("a/x.py", "b/y.py")}},
+		"unscoped":    {{Dir: ns, Scope: scoped("a/x.py")}, {Dir: ns}},
+	} {
+		if _, err := s.ScanRoots(context.Background(), roots, rules, entities.ToolInfo{Name: "fixture"}); err == nil {
+			t.Errorf("%s siblings: want an error", name)
+		}
+	}
+}
+
+func TestInnermostRoot(t *testing.T) {
 	roots := []string{filepath.FromSlash("/x/a"), filepath.FromSlash("/x/ab")}
 	tests := map[string]int{
 		filepath.FromSlash("/x/ab/i.js"):  1,
@@ -233,8 +267,8 @@ func TestRootOf(t *testing.T) {
 		"":                                -1,
 	}
 	for path, want := range tests {
-		if got := rootOf(path, roots); got != want {
-			t.Errorf("rootOf(%q) = %d, want %d", path, got, want)
+		if got := innermostRoot(path, roots); got != want {
+			t.Errorf("innermostRoot(%q) = %d, want %d", path, got, want)
 		}
 	}
 }

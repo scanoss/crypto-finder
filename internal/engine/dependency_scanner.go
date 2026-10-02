@@ -636,8 +636,8 @@ func (ds *DependencyScanner) lookupDependency(
 	}
 	item.scanner = initializedScanner
 	// A scanner that cannot limit detection to files scans the whole module.
-	if _, scoped := initializedScanner.(scanner.ScopedScanner); scoped && dep.PackageDirs != nil {
-		item.scope = packageScope(dep)
+	if _, scoped := initializedScanner.(scanner.ScopedScanner); scoped && dep.Files != nil {
+		item.scope = sourceScope(dep)
 	}
 	if ds.findingsCache != nil && rulesHash != "" {
 		env := os.Environ()
@@ -826,27 +826,17 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	return depOpts
 }
 
-// packageScope lists the regular files directly in each of dep's package
-// directories, relative to dep.Dir, sorted. A directory outside dep.Dir, or
-// one that cannot be read, adds nothing.
-func packageScope(dep *dependency.Dependency) *scanner.DetectionScope {
+// sourceScope lists dep's Files relative to dep.Dir, sorted. A file outside
+// dep.Dir adds nothing.
+func sourceScope(dep *dependency.Dependency) *scanner.DetectionScope {
 	scope := &scanner.DetectionScope{}
-	for _, dir := range dep.PackageDirs {
-		rel, ok := pathRelativeToRoot(dep.Dir, dir)
+	for _, file := range dep.Files {
+		rel, ok := pathRelativeToRoot(dep.Dir, file)
 		if !ok {
-			log.Debug().Str("module", dep.Module).Str("dir", dir).Msg("Package directory lies outside its module; not scanned")
+			log.Debug().Str("module", dep.Module).Str("file", file).Msg("Dependency file lies outside its root; not scanned")
 			continue
 		}
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			log.Debug().Err(err).Str("module", dep.Module).Str("dir", dir).Msg("Cannot read package directory; not scanned")
-			continue
-		}
-		for _, entry := range entries {
-			if entry.Type().IsRegular() {
-				scope.Paths = append(scope.Paths, filepath.Join(rel, entry.Name()))
-			}
-		}
+		scope.Paths = append(scope.Paths, rel)
 	}
 	sort.Strings(scope.Paths)
 	return scope
@@ -870,7 +860,7 @@ type packageSets struct {
 	parsedModules map[string]bool
 }
 
-// collectPackageSets builds two lists of PackageDirs for the two-phase callgraph build.
+// collectPackageSets builds two lists of callgraph.PackageDir for the two-phase callgraph build.
 // graphPackages: user code + successfully scanned deps with source, regardless of findings.
 // typeOnlyPackages: Java deps not source-parsed, used for bytecode type resolution only.
 func (ds *DependencyScanner) collectPackageSets(
@@ -928,10 +918,11 @@ func (ds *DependencyScanner) collectPackageSets(
 			DistributionName:     result.dep.Module,
 			Version:              result.dep.Version,
 			CompiledArtifactPath: result.dep.CompiledArtifactPath,
-			// Calls from an imported package reach only imported packages,
-			// and only their types are linked, so the rest of a Go module
-			// holds no call edge and no dispatch target.
-			IncludeDirs: result.dep.PackageDirs,
+			// Calls from an imported Go package reach only imported packages,
+			// and only their types are linked, so the rest of a module holds
+			// no call edge and no dispatch target. A Python namespace sibling
+			// parses only its own files, so each function has one owner.
+			IncludeFiles: result.dep.Files,
 		}
 		if result.status == depScanStatusScanned && result.dep.Dir != "" {
 			if graphDeps == nil || graphDeps[result.dep.Module] {
@@ -1399,7 +1390,7 @@ func canonicalDependencies(deps []dependency.Dependency) []dependency.Dependency
 		if existing.SourceArchivePath == "" && dep.SourceArchivePath != "" {
 			existing.SourceArchivePath = dep.SourceArchivePath
 		}
-		existing.PackageDirs = unionPackageDirs(existing.PackageDirs, dep.PackageDirs)
+		existing.Files = unionPaths(existing.Files, dep.Files)
 		unique[key] = existing
 	}
 
@@ -1413,9 +1404,9 @@ func canonicalDependencies(deps []dependency.Dependency) []dependency.Dependency
 	return result
 }
 
-// unionPackageDirs is every package directory of a and b, sorted, or nil,
-// the whole module, when either is.
-func unionPackageDirs(a, b []string) []string {
+// unionPaths is every path of a and b, sorted, or nil, the whole
+// dependency, when either is.
+func unionPaths(a, b []string) []string {
 	if a == nil || b == nil {
 		return nil
 	}

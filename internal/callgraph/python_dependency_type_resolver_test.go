@@ -151,6 +151,35 @@ func TestPythonDepTypeResolver_ClassBases(t *testing.T) {
 	}
 }
 
+// A distribution sharing a namespace directory indexes only its
+// IncludeFiles, and its cache entry is keyed by those files alone.
+func TestPythonDepTypeResolver_IndexesOnlyIncludedFiles(t *testing.T) {
+	t.Parallel()
+
+	ns := filepath.Join(t.TempDir(), "google")
+	writePythonDistFile(t, ns, "auth/creds.pyi", "def make() -> Cred: ...\n")
+	writePythonDistFile(t, ns, "protobuf/msg.pyi", "def build() -> Msg: ...\n")
+
+	graph := &CallGraph{Functions: map[string]*FunctionDecl{}}
+	makeFn := &FunctionDecl{ID: FunctionID{Package: "google.auth.creds", Name: "make"}}
+	buildFn := &FunctionDecl{ID: FunctionID{Package: "google.protobuf.msg", Name: "build"}}
+	graph.Functions[makeFn.ID.String()] = makeFn
+	graph.Functions[buildFn.ID.String()] = buildFn
+
+	auth := PackageDir{Dir: ns, ImportPath: "google", DistributionName: "google-auth", Version: "2", IncludeFiles: []string{filepath.Join(ns, "auth", "creds.pyi")}}
+	if err := NewPythonDependencyTypeResolver(nil).ResolveTypes(graph, []PackageDir{auth}); err != nil {
+		t.Fatalf("ResolveTypes() error = %v", err)
+	}
+	if makeFn.ReturnType != "Cred" || buildFn.ReturnType != "" {
+		t.Fatalf("ReturnTypes = make %q, build %q; want Cred and none: protobuf's stub is not google-auth's", makeFn.ReturnType, buildFn.ReturnType)
+	}
+	whole := auth
+	whole.IncludeFiles = nil
+	if pythonSignatureDistributionKey(auth) == pythonSignatureDistributionKey(whole) {
+		t.Error("a scoped index shares the cache key of the whole directory")
+	}
+}
+
 // TestPythonDepTypeResolver_CachePerDistribution (12.1) pins that a second
 // ResolveTypes call for the SAME distribution key (ImportPath@Version)
 // reuses the cached index instead of re-reading the filesystem: the fake

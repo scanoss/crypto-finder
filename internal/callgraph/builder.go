@@ -72,11 +72,12 @@ type PackageDir struct {
 	// it the root walk re-parses every member under a second import path, and one
 	// function acquires two identities.
 	ExcludeDirs []string
-	// IncludeDirs, when non-nil, limits parsing to these absolute directories
-	// under Dir, each without its subdirectories. The walk still passes
-	// through their parents, so each keeps the import path a whole walk gives
-	// it. Go dependencies list their imported packages here.
-	IncludeDirs []string
+	// IncludeFiles, when non-nil, limits parsing to these absolute files
+	// under Dir. The walk still passes through their parent directories, so
+	// each keeps the import path a whole walk gives it. A Go dependency lists
+	// the files of its imported packages, and a Python distribution sharing a
+	// namespace directory the files it installed.
+	IncludeFiles []string
 }
 
 // Builder constructs a CallGraph from multiple packages using a language-specific parser.
@@ -131,27 +132,30 @@ type Builder struct {
 	// excludeDirs is: packages are analyzed sequentially.
 	artifacts       *artifactScope
 	currentArtifact string
-	// include is the current package's IncludeDirs, nil to parse its whole
+	// include is the current package's IncludeFiles, nil to parse its whole
 	// tree. Per-package state, safe for the reason excludeDirs is.
 	include *includeScope
 }
 
-// includeScope holds each directory to parse in parse, and in walk each of
-// them plus every parent up to the package root, which the walk must pass
-// through to reach them.
+// includeScope holds the files to keep, each directory holding one in
+// parse, and in walk each of those plus every parent up to the package root,
+// which the walk must pass through to reach them.
 type includeScope struct {
+	files map[string]bool
 	parse map[string]bool
 	walk  map[string]bool
 }
 
-func newIncludeScope(root string, dirs []string) *includeScope {
-	if dirs == nil {
+func newIncludeScope(root string, files []string) *includeScope {
+	if files == nil {
 		return nil
 	}
 	root = filepath.Clean(root)
-	scope := &includeScope{parse: make(map[string]bool, len(dirs)), walk: map[string]bool{root: true}}
-	for _, dir := range dirs {
-		dir = filepath.Clean(dir)
+	scope := &includeScope{files: make(map[string]bool, len(files)), parse: make(map[string]bool), walk: map[string]bool{root: true}}
+	for _, file := range files {
+		file = filepath.Clean(file)
+		scope.files[file] = true
+		dir := filepath.Dir(file)
 		scope.parse[dir] = true
 		for ; dir != root && !scope.walk[dir]; dir = filepath.Dir(dir) {
 			scope.walk[dir] = true
@@ -388,7 +392,7 @@ func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
 	if b.ecosystem == ecosystemPython && pkg.Version == "" {
 		b.pythonProjectRoots = discoverPythonProjectRoots(b.packageRoot, b.pythonDependencyNames, b.skipWalkDirectory)
 	}
-	b.include = newIncludeScope(pkg.Dir, pkg.IncludeDirs)
+	b.include = newIncludeScope(pkg.Dir, pkg.IncludeFiles)
 	defer func() { b.include = nil }()
 	cloner, ok := b.parser.(ParserCloner)
 	workers := runtime.GOMAXPROCS(0)
@@ -588,7 +592,13 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 }
 
 func (b *Builder) skipSourceFile(analysis *FileAnalysis) bool {
-	if analysis == nil || analysis.FilePath == "" || b.skipMatcher == nil {
+	if analysis == nil || analysis.FilePath == "" {
+		return false
+	}
+	if b.include != nil && !b.include.files[filepath.Clean(analysis.FilePath)] {
+		return true
+	}
+	if b.skipMatcher == nil {
 		return false
 	}
 	return b.skipMatcher.ShouldSkip(filepath.ToSlash(analysis.FilePath), false)

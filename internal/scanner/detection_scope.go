@@ -72,6 +72,26 @@ type Root struct {
 	Scope *DetectionScope
 }
 
+// DisjointSiblings reports whether a and b are scoped to files of the same
+// directory and share none, as Python distributions installed into one
+// namespace directory are. One process can scan both, and each result names
+// a file of exactly one of them.
+func DisjointSiblings(a, b Root) bool {
+	if a.Scope == nil || b.Scope == nil || filepath.Clean(a.Dir) != filepath.Clean(b.Dir) {
+		return false
+	}
+	names := make(map[string]bool, len(a.Scope.Paths))
+	for _, rel := range a.Scope.Paths {
+		names[filepath.Clean(rel)] = true
+	}
+	for _, rel := range b.Scope.Paths {
+		if names[filepath.Clean(rel)] {
+			return false
+		}
+	}
+	return true
+}
+
 // RootTargetBatches is TargetBatches over several roots: each unscoped root
 // is one target, each scoped one its files joined onto Dir, all split so no
 // invocation exceeds the command-line budget.

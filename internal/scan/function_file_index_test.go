@@ -65,6 +65,30 @@ func TestDependencyForPath_AgreesWithTryingEveryRoot(t *testing.T) {
 	}
 }
 
+// Python distributions installed into one namespace directory share it as
+// their Dir; a file there belongs to the one whose Files list it, so each
+// exported function and call site names the distribution that installed it.
+func TestDependencyForPath_NamespaceSiblingsOwnTheirFiles(t *testing.T) {
+	ns := filepath.FromSlash("/sp/google")
+	auth, proto := filepath.Join(ns, "auth", "creds.py"), filepath.Join(ns, "protobuf", "msg.py")
+	artifacts := newExportArtifacts(&engine.DepScanResult{
+		ProjectRoot: "/work",
+		Dependencies: []dependency.Dependency{
+			{Module: "protobuf", Version: "7", Dir: ns, Files: []string{proto}},
+			{Module: "google-auth", Version: "2", Dir: ns, Files: []string{auth}},
+		},
+	})
+	for path, want := range map[string]string{auth: "google-auth", proto: "protobuf", filepath.Join(ns, "other.py"): ""} {
+		got := ""
+		if dep := artifacts.dependencyForPath(path); dep != nil {
+			got = dep.Module
+		}
+		if got != want {
+			t.Errorf("dependencyForPath(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
 // A project given as a relative target still binds to a graph whose files
 // were recorded with absolute paths, and the other way round.
 func TestFindContainingFunctionByFinding_ResolvesRelativeRoots(t *testing.T) {

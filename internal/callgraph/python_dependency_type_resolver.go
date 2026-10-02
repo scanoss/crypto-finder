@@ -227,7 +227,7 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 
 	signatures := make(map[string]pythonSignature)
 	hierarchy := make(map[string][]string)
-	r.walkDistribution(root.Dir, root.ImportPath, parser, signatures, hierarchy)
+	r.walkDistribution(root.Dir, root.ImportPath, includedFiles(root.IncludeFiles), parser, signatures, hierarchy)
 
 	if r.cache != nil {
 		entry := &CachedPythonSignatureIndex{
@@ -252,9 +252,11 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 // distribution), indexing every selected .py/.pyi file at each level and
 // descending into subdirectories under the growing dotted importPath.
 // An unreadable directory degrades silently (12.6): the caller simply
-// receives whatever was indexed before the failure.
+// receives whatever was indexed before the failure. A non-nil include limits
+// indexing to its files.
 func (r *PythonDependencyTypeResolver) walkDistribution(
 	dir, importPath string,
+	include map[string]bool,
 	parser pythonDependencyParser,
 	signatures map[string]pythonSignature,
 	hierarchy map[string][]string,
@@ -267,7 +269,7 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 
 	for _, name := range selectPythonDistFiles(entries) {
 		full := filepath.Join(dir, name)
-		if pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(full), false) {
+		if (include != nil && !include[full]) || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(full), false) {
 			continue
 		}
 		r.indexDistributionFile(full, importPath, parser, signatures, hierarchy)
@@ -282,7 +284,7 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 		if strings.HasPrefix(name, ".") || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(child), true) {
 			continue
 		}
-		r.walkDistribution(child, pythonDependencySubPackagePath(importPath, name), parser, signatures, hierarchy)
+		r.walkDistribution(child, pythonDependencySubPackagePath(importPath, name), include, parser, signatures, hierarchy)
 	}
 }
 
@@ -312,6 +314,18 @@ func (r *PythonDependencyTypeResolver) indexDistributionFile(
 	for i := 0; i < count; i++ {
 		pythonIndexTopLevelNode(root.NamedChild(i), src, FunctionID{Package: modulePath}, signatures, hierarchy)
 	}
+}
+
+// includedFiles is files as a set, nil when files is: every file.
+func includedFiles(files []string) map[string]bool {
+	if files == nil {
+		return nil
+	}
+	set := make(map[string]bool, len(files))
+	for _, file := range files {
+		set[filepath.Clean(file)] = true
+	}
+	return set
 }
 
 // pythonDependencySubPackagePath mirrors PythonParser.SubPackagePath.

@@ -432,9 +432,23 @@ func TestBatchScanOptions_ScalesTheProcessTimeoutWithRoots(t *testing.T) {
 
 func TestNestingLevels(t *testing.T) {
 	dirs := []string{"/m/a", "/m/a/node_modules/b", "/m/a/node_modules/b/node_modules/c", "/m/ab", "/m/c", "/m/c"}
+	roots := make([]scanner.Root, 0, len(dirs))
+	for _, dir := range dirs {
+		roots = append(roots, scanner.Root{Dir: dir})
+	}
 	want := []int{0, 1, 2, 0, 0, 1}
-	if got := nestingLevels(dirs); !reflect.DeepEqual(got, want) {
+	if got := nestingLevels(roots); !reflect.DeepEqual(got, want) {
 		t.Fatalf("nestingLevels = %v, want %v (a prefix only nests at a path separator, and an equal dir nests)", got, want)
+	}
+	scoped := func(paths ...string) *scanner.DetectionScope { return &scanner.DetectionScope{Paths: paths} }
+	siblings := []scanner.Root{
+		{Dir: "/sp/google", Scope: scoped("auth/a.py")},
+		{Dir: "/sp/google", Scope: scoped("protobuf/p.py")},
+		{Dir: "/sp/google", Scope: scoped("auth/a.py", "api/x.py")},
+		{Dir: "/sp/google"},
+	}
+	if got, want := nestingLevels(siblings), []int{0, 0, 1, 2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("nestingLevels = %v, want %v (disjoint siblings share a level; overlapping or unscoped ones nest)", got, want)
 	}
 	work := []depWork{weighted("/m/a/", 1), weighted("/m/a/node_modules/b", 1)}
 	if batches := shapeBatches(work, 1); len(batches) != 2 {

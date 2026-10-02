@@ -25,6 +25,30 @@ type goModule struct {
 	packageDirs []string
 }
 
+// packageFiles lists the regular files directly in each of dirs, sorted, or
+// nil, the whole module, when dirs is. A directory that cannot be read adds
+// nothing.
+func packageFiles(dirs []string) []string {
+	if dirs == nil {
+		return nil
+	}
+	files := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			log.Debug().Err(err).Str("dir", dir).Msg("Cannot read package directory; not scanned")
+			continue
+		}
+		for _, entry := range entries {
+			if entry.Type().IsRegular() {
+				files = append(files, filepath.Join(dir, entry.Name()))
+			}
+		}
+	}
+	slices.Sort(files)
+	return files
+}
+
 // goPackage holds the fields goListModules requests from `go list -deps`.
 type goPackage struct {
 	ImportPath string    `json:"ImportPath"`
@@ -101,10 +125,10 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 		}
 
 		result.Dependencies = append(result.Dependencies, Dependency{
-			Module:      m.Path,
-			Version:     m.Version,
-			Dir:         m.Dir,
-			PackageDirs: m.packageDirs,
+			Module:  m.Path,
+			Version: m.Version,
+			Dir:     m.Dir,
+			Files:   packageFiles(m.packageDirs),
 		})
 	}
 

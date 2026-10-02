@@ -121,6 +121,7 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	// Step 5: Build dependencies list and graph
 	skippedSingleFile := 0
 	skippedNoSource := 0
+	var locations []string
 	for _, pkg := range packages {
 		// Skip the root project itself
 		if strings.EqualFold(normalizePackageName(pkg.Name), normalizePackageName(rootModule)) {
@@ -151,6 +152,7 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 			Version:    pkg.Version,
 			Dir:        dir,
 		})
+		locations = append(locations, info.Location)
 
 		// Build graph from Requires field
 		if info.Requires != "" {
@@ -162,6 +164,8 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 			}
 		}
 	}
+
+	ownSharedRoots(result.Dependencies, locations)
 
 	log.Info().
 		Int("resolved", len(result.Dependencies)).

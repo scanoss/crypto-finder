@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -25,8 +26,9 @@ type exportArtifacts struct {
 	// dependencies is ordered longest Dir first, so the first root containing
 	// a path is its innermost one.
 	dependencies []exportDependencyRoot
-	// dependencyByDir is the first of dependencies per Dir.
-	dependencyByDir map[string]*exportDependencyRoot
+	// dependencyByDir lists dependencies per Dir. Python distributions
+	// installed into one namespace directory share it, each owning its Files.
+	dependencyByDir map[string][]*exportDependencyRoot
 	// dependencyByVersion is the first of dependencies per module@version.
 	dependencyByVersion map[string]*exportDependencyRoot
 	// cwd resolves relative paths, so a graph built from absolute directories
@@ -38,7 +40,7 @@ type exportArtifacts struct {
 func newExportArtifacts(result *engine.DepScanResult) exportArtifacts {
 	artifacts := exportArtifacts{
 		projectRoot:         filepath.Clean(result.ProjectRoot),
-		dependencyByDir:     make(map[string]*exportDependencyRoot),
+		dependencyByDir:     make(map[string][]*exportDependencyRoot),
 		dependencyByVersion: make(map[string]*exportDependencyRoot),
 	}
 	if cwd, err := os.Getwd(); err == nil {
@@ -52,6 +54,7 @@ func newExportArtifacts(result *engine.DepScanResult) exportArtifacts {
 			Module:  dep.Module,
 			Version: dep.Version,
 			Dir:     filepath.Clean(dep.Dir),
+			Files:   dep.Files,
 		})
 	}
 	sort.SliceStable(artifacts.dependencies, func(i, j int) bool {
@@ -59,9 +62,7 @@ func newExportArtifacts(result *engine.DepScanResult) exportArtifacts {
 	})
 	for i := range artifacts.dependencies {
 		dep := &artifacts.dependencies[i]
-		if _, ok := artifacts.dependencyByDir[dep.Dir]; !ok {
-			artifacts.dependencyByDir[dep.Dir] = dep
-		}
+		artifacts.dependencyByDir[dep.Dir] = append(artifacts.dependencyByDir[dep.Dir], dep)
 		key := dependencyVersionKey(dep.Module, dep.Version)
 		if _, ok := artifacts.dependencyByVersion[key]; !ok {
 			artifacts.dependencyByVersion[key] = dep
@@ -75,12 +76,13 @@ func dependencyVersionKey(module, version string) string {
 }
 
 // dependencyForPath returns the innermost dependency root containing the
-// cleaned path. It walks the path's ancestors instead of trying every root, so
-// a lookup costs the path's depth, not the number of dependencies.
+// cleaned path, and among roots sharing a Dir the first that owns it. It
+// walks the path's ancestors instead of trying every root, so a lookup costs
+// the path's depth, not the number of dependencies.
 func (a *exportArtifacts) dependencyForPath(path string) *exportDependencyRoot {
 	for dir := path; ; {
-		if dep := a.dependencyByDir[dir]; dep != nil {
-			if _, ok := relativeToRoot(dep.Dir, path); ok {
+		for _, dep := range a.dependencyByDir[dir] {
+			if _, ok := relativeToRoot(dep.Dir, path); ok && dependency.ListsFile(dep.Files, a.absPath(path)) {
 				return dep
 			}
 		}

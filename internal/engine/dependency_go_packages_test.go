@@ -163,7 +163,7 @@ func TestDependencyScanner_CacheKeyFollowsTheScannedPackages(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	keyFor := func(adapter scanner.Scanner, packageDirs ...string) string {
+	keyFor := func(adapter scanner.Scanner, files ...string) string {
 		t.Helper()
 		registry := scanner.NewRegistry()
 		registry.Register("test-scanner", adapter)
@@ -173,8 +173,8 @@ func TestDependencyScanner_CacheKeyFollowsTheScannedPackages(t *testing.T) {
 			findingsCache: &fakeFindingsCache{getMap: map[string]*entities.InterimReport{}},
 		}
 		dep := dependency.Dependency{Module: "example.com/mod", Version: "v1.0.0", Dir: module}
-		for _, rel := range packageDirs {
-			dep.PackageDirs = append(dep.PackageDirs, filepath.Join(module, rel))
+		for _, rel := range files {
+			dep.Files = append(dep.Files, filepath.Join(module, filepath.FromSlash(rel)))
 		}
 		item := depWork{key: dependencyKey(dep), dep: dep}
 		if _, hit := ds.lookupDependency(context.Background(), &item, []string{"rule.yaml"}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}); hit {
@@ -187,13 +187,13 @@ func TestDependencyScanner_CacheKeyFollowsTheScannedPackages(t *testing.T) {
 	}
 
 	whole := keyFor(&scopedMockScanner{})
-	onlyA := keyFor(&scopedMockScanner{}, "a")
-	onlyB := keyFor(&scopedMockScanner{}, "b")
-	both := keyFor(&scopedMockScanner{}, "a", "b")
+	onlyA := keyFor(&scopedMockScanner{}, "a/a.go")
+	onlyB := keyFor(&scopedMockScanner{}, "b/b.go")
+	both := keyFor(&scopedMockScanner{}, "a/a.go", "b/b.go")
 	if keys := map[string]bool{whole: true, onlyA: true, onlyB: true, both: true}; len(keys) != 4 {
 		t.Fatalf("cache keys collide: whole=%s a=%s b=%s a+b=%s", whole, onlyA, onlyB, both)
 	}
-	if got := keyFor(&mockScanner{}, "a"); got != whole {
+	if got := keyFor(&mockScanner{}, "a/a.go"); got != whole {
 		t.Errorf("a scanner that cannot limit detection scans the whole module, so its key must be the whole module's: got %s, want %s", got, whole)
 	}
 }
@@ -202,13 +202,13 @@ func TestDependencyScanner_CacheKeyFollowsTheScannedPackages(t *testing.T) {
 // imported packages; the scan covers all of them, once.
 func TestCanonicalDependencies_UnionsImportedPackages(t *testing.T) {
 	deps := canonicalDependencies([]dependency.Dependency{
-		{Module: "example.com/mod", Version: "v1", Dir: "/m", PackageDirs: []string{"/m/b", "/m/a"}},
-		{Module: "example.com/mod", Version: "v1", Dir: "/m", PackageDirs: []string{"/m/c", "/m/a"}},
-		{Module: "example.com/whole", Version: "v1", Dir: "/w", PackageDirs: []string{"/w/a"}},
+		{Module: "example.com/mod", Version: "v1", Dir: "/m", Files: []string{"/m/b/b.go", "/m/a/a.go"}},
+		{Module: "example.com/mod", Version: "v1", Dir: "/m", Files: []string{"/m/c/c.go", "/m/a/a.go"}},
+		{Module: "example.com/whole", Version: "v1", Dir: "/w", Files: []string{"/w/a/a.go"}},
 		{Module: "example.com/whole", Version: "v1", Dir: "/w"},
 	})
 	want := []dependency.Dependency{
-		{Module: "example.com/mod", Version: "v1", Dir: "/m", PackageDirs: []string{"/m/a", "/m/b", "/m/c"}},
+		{Module: "example.com/mod", Version: "v1", Dir: "/m", Files: []string{"/m/a/a.go", "/m/b/b.go", "/m/c/c.go"}},
 		{Module: "example.com/whole", Version: "v1", Dir: "/w"},
 	}
 	if !reflect.DeepEqual(deps, want) {

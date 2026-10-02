@@ -437,6 +437,9 @@ type exportDependencyRoot struct {
 	Module  string
 	Version string
 	Dir     string
+	// Files is the dependency's Files: nil when it owns every file below
+	// Dir, otherwise the files it owns of a directory it shares.
+	Files []string
 }
 
 // --- Entry point ---
