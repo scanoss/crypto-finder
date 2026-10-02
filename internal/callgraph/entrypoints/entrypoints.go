@@ -66,6 +66,12 @@ const (
 	// a framework type: HttpServlet.doPost, a Django View's get, the methods
 	// of a type embedding a generated gRPC Unimplemented...Server.
 	ShapeSupertype Shape = "supertype"
+	// ShapeServerRegistration is a call that registers a service
+	// implementation with a generated Register<Service>Server function, as
+	// pb.RegisterKeysServer(grpcServer, impl). Names are patterns with "*".
+	// The parser roots the methods of the registered value that belong to the
+	// service.
+	ShapeServerRegistration Shape = "server_registration"
 	// ShapeInterfaceMethod is a method that implements a framework interface
 	// by signature: ServeHTTP(http.ResponseWriter, *http.Request).
 	ShapeInterfaceMethod Shape = "interface_method"
@@ -104,7 +110,7 @@ var shapesByLanguage = map[string][]Shape{
 	"java":   {ShapeDecorator, ShapeSupertype},
 	"node":   {ShapeDecorator, ShapeRegistrationCall, ShapeFileConvention},
 	"python": {ShapeDecorator, ShapeRegistrationCall, ShapeSupertype},
-	"go":     {ShapeRegistrationCall, ShapeHandlerField, ShapeSupertype, ShapeInterfaceMethod},
+	"go":     {ShapeRegistrationCall, ShapeHandlerField, ShapeSupertype, ShapeInterfaceMethod, ShapeServerRegistration},
 }
 
 // packageSeparator is how each language spells a subpackage, for matching
@@ -145,9 +151,21 @@ type Entry struct {
 	RootKind string
 }
 
-// HasName reports whether the entry names name, or every name.
+// HasName reports whether the entry names name, or every name. The names of a
+// server registration are patterns ("Register*Server").
 func (e *Entry) HasName(name string) bool {
-	return slices.Contains(e.Names, name) || slices.Contains(e.Names, AnyName)
+	if slices.Contains(e.Names, name) || slices.Contains(e.Names, AnyName) {
+		return true
+	}
+	if e.Shape != ShapeServerRegistration {
+		return false
+	}
+	for _, pattern := range e.Names {
+		if ok, err := path.Match(pattern, name); err == nil && ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Covers reports whether pkg is one of From or a subpackage of one.
@@ -419,12 +437,29 @@ func validateLists(raw *yamlEntry) error {
 			}
 		}
 	}
-	if raw.Shape != ShapeSupertype && (slices.Contains(raw.From, AnyPackage) || slices.Contains(raw.Names, AnyName)) {
+	if raw.Shape != ShapeSupertype && raw.Shape != ShapeServerRegistration && (slices.Contains(raw.From, AnyPackage) || slices.Contains(raw.Names, AnyName)) {
 		return fmt.Errorf("%q in from or names is only valid for shape %q", AnyName, ShapeSupertype)
+	}
+	if err := validateNamePatterns(raw); err != nil {
+		return err
 	}
 	for _, pattern := range raw.Types {
 		if _, err := path.Match(pattern, ""); err != nil {
 			return fmt.Errorf("types pattern %q: %w", pattern, err)
+		}
+	}
+	return nil
+}
+
+// validateNamePatterns keeps patterns in the names of a server registration
+// only, which must keep a prefix: no other shape matches a name as a pattern.
+func validateNamePatterns(raw *yamlEntry) error {
+	for _, name := range raw.Names {
+		switch {
+		case raw.Shape == ShapeServerRegistration && name == AnyName:
+			return fmt.Errorf("names of shape %q must be patterns that keep a prefix, not %q", ShapeServerRegistration, AnyName)
+		case raw.Shape != ShapeServerRegistration && name != AnyName && strings.ContainsAny(name, "*?["):
+			return fmt.Errorf("name %q is a pattern, which only shape %q reads", name, ShapeServerRegistration)
 		}
 	}
 	return nil

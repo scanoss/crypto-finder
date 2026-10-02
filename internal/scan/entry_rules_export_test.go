@@ -43,12 +43,26 @@ type entryRuleCase struct {
 // one finding per case.
 func entryRulesFixture(t *testing.T, dir, ecosystem, language string, parser callgraph.Parser, cases []entryRuleCase) entryRootsFixture {
 	t.Helper()
+	return entryRulesFixturePackages(t, dir, ecosystem, language, parser, cases, nil)
+}
+
+// entryRulesFixturePackages is entryRulesFixture for a fixture with packages
+// in subdirectories: each packages entry maps an import path to its directory
+// under the fixture, and the root is walked without them.
+func entryRulesFixturePackages(t *testing.T, dir, ecosystem, language string, parser callgraph.Parser, cases []entryRuleCase, packages map[string]string) entryRootsFixture {
+	t.Helper()
 	_, testFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
 	root := filepath.Join(filepath.Dir(testFile), "testdata", "entry_rules", dir)
-	graph, err := callgraph.NewBuilderForEcosystem(ecosystem, parser).BuildFromDirectories([]callgraph.PackageDir{{Dir: root}}, nil)
+	dirs := make([]callgraph.PackageDir, 1, 1+len(packages))
+	dirs[0] = callgraph.PackageDir{Dir: root}
+	for importPath, sub := range packages {
+		dirs[0].ExcludeDirs = append(dirs[0].ExcludeDirs, filepath.Join(root, sub))
+		dirs = append(dirs, callgraph.PackageDir{Dir: filepath.Join(root, sub), ImportPath: importPath})
+	}
+	graph, err := callgraph.NewBuilderForEcosystem(ecosystem, parser).BuildFromDirectories(dirs, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -259,6 +273,48 @@ func TestExportCallGraph_GoEntryPoints(t *testing.T) {
 		{id: "cobra", file: "cmd.go", needle: "sha512.Sum512_224(", reachability: reachable, rootKind: framework, first: "runExport"},
 	}
 	checkEntryRules(t, entryRulesFixture(t, "golang", "go", "go", callgraph.NewGoParser(), cases), cases)
+}
+
+// TestExportCallGraph_GoGRPCRegisteredServer: the methods of the value passed
+// to a generated Register<Service>Server (or Register<Service>HandlerServer)
+// are entry points, found through a composite literal, a constructor that
+// returns the generated interface, or a local variable. When the interface is
+// in the tree only its methods count; otherwise the methods with a gRPC
+// signature. Methods that are not the service's, other types and a value of an
+// unknown type stay unreachable.
+func TestExportCallGraph_GoGRPCRegisteredServer(t *testing.T) {
+	t.Parallel()
+	reachable := graphfrag.ReachabilityReachable
+	unreachable := graphfrag.ReachabilityUnreachable
+	framework := callgraph.RootKindFrameworkEntry
+	cases := []entryRuleCase{
+		{id: "foo-unary", file: "foo_impl.go", needle: "sha256.Sum256(", reachability: reachable, rootKind: framework, first: "Encrypt"},
+		{id: "foo-stream", file: "foo_impl.go", needle: "sha256.Sum224(", reachability: reachable, rootKind: framework, first: "Watch"},
+		{id: "foo-not-in-interface", file: "foo_impl.go", needle: "sha256.New()", reachability: unreachable},
+		{id: "foo-unregistered-type", file: "foo_impl.go", needle: "sha256.New224()", reachability: unreachable},
+		{id: "bar-ctor-sign", file: "bar_impl.go", needle: "sha512.Sum512(", reachability: reachable, rootKind: framework, first: "Sign"},
+		{id: "bar-ctor-verify", file: "bar_impl.go", needle: "sha512.Sum384(", reachability: reachable, rootKind: framework, first: "Verify"},
+		{id: "bar-no-grpc-signature", file: "bar_impl.go", needle: "sha512.Sum512_256(", reachability: unreachable},
+		{id: "bar-unexported", file: "bar_impl.go", needle: "sha512.Sum512_224(", reachability: unreachable},
+		{id: "baz-gateway", file: "bar_impl.go", needle: "sha512.New()", reachability: reachable, rootKind: framework, first: "Hash"},
+		{id: "quux-interface-typed", file: "bar_impl.go", needle: "sha512.New512_256()", reachability: reachable, rootKind: framework, first: "Hash"},
+		{id: "other-interface-producer", file: "bar_impl.go", needle: "sha512.New512_224()", reachability: unreachable},
+		{id: "quux-mock-by-path", file: "mocks/quux.go", needle: "sha512.New512_384()", reachability: unreachable},
+		{id: "quux-mock-by-name", file: "bar_impl.go", needle: `sha512.Sum512_256([]byte("mock"))`, reachability: unreachable},
+		{id: "quux-uncalled-producer", file: "bar_impl.go", needle: `sha512.Sum512_224([]byte("alt"))`, reachability: unreachable},
+		{id: "multi-registrar", file: "bar_impl.go", needle: `sha512.Sum512_224([]byte("multi"))`, reachability: reachable, rootKind: framework, first: "Hash"},
+		{id: "external-helper-registrar", file: "bar_impl.go", needle: `sha512.Sum512_224([]byte("helper"))`, reachability: reachable, rootKind: framework, first: "Hash"},
+		{id: "http-registrar", file: "bar_impl.go", needle: "sha512.New384(nil)", reachability: unreachable},
+		{id: "no-evidence", file: "bar_impl.go", needle: "sha512.New512_224(nil)", reachability: unreachable},
+		{id: "stream-of-service", file: "bar_impl.go", needle: "sha512.Sum512_256(nil)", reachability: reachable, rootKind: framework, first: "Watch"},
+		{id: "stream-of-other-service", file: "bar_impl.go", needle: "sha512.Sum384(nil)", reachability: unreachable},
+		{id: "qux-unknown", file: "bar_impl.go", needle: "sha512.New384()", reachability: unreachable},
+	}
+	packages := map[string]string{
+		"example.com/grpcreg/gen/foo": "gen/foo",
+		"example.com/grpcreg/mocks":   "mocks",
+	}
+	checkEntryRules(t, entryRulesFixturePackages(t, "golang_grpc", "go", "go", callgraph.NewGoParser(), cases, packages), cases)
 }
 
 // TestExportCallGraph_MainInOtherLanguages: a C, C++ or Rust main is a

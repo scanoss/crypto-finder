@@ -32,6 +32,29 @@ type EntryRef struct {
 	// AllExported matches every exported method of Function.Type, whose Name
 	// is empty: a gRPC service implementation.
 	AllExported bool
+	// Interface narrows AllExported to the methods of the generated service
+	// interface (Package is its import path, Type its name, as KeysServer):
+	// the methods the graph declares for it, else the exported methods with
+	// a gRPC signature. Go only.
+	Interface FunctionID
+	// Constructor says Function is a function that returns the value
+	// registered, not its type: the types it builds are the ones named.
+	Constructor bool
+	// Producers says Function names the generated interface itself, the type
+	// of the registered value: the types it roots are the ones the functions
+	// that declare that interface as their result build.
+	Producers bool
+	// GRPCRegistrar says the registrar argument of the register call is a
+	// gRPC server or gateway mux, by its type in the registering file.
+	// Otherwise RegistrarFunc and RegistrarIndex name the function and the
+	// result the registrar comes from. Go only.
+	GRPCRegistrar bool
+	// FileImportsGRPC says the registrar is a variable of no known type and
+	// the registering file imports google.golang.org/grpc: the evidence there
+	// is when the function it comes from is outside the graph.
+	FileImportsGRPC bool
+	RegistrarFunc   FunctionID
+	RegistrarIndex  int
 	// Module says Function.Package is a Python module path, as an import
 	// or a manifest spells it (shop.web.views). The graph keys a Python
 	// function by its defining module, so it matches that module exactly, or
@@ -54,7 +77,9 @@ func resolveEntryRefs(graph *CallGraph, pythonRoots []string) {
 		return
 	}
 	var byPackage map[string][]*FunctionDecl
-	for _, ref := range refs {
+	refs = expandConstructorRefs(graph, acceptRegistrations(graph, refs))
+	for i := range refs {
+		ref := &refs[i]
 		if decl := lookupEntryRef(graph, ref.Function); decl != nil && !ref.AllExported {
 			markEntry(decl, ref.Kind)
 			continue
@@ -69,13 +94,23 @@ func resolveEntryRefs(graph *CallGraph, pythonRoots []string) {
 			}
 		}
 		if ref.Module {
-			markPythonModuleFunction(byPackage, ref, pythonRoots)
+			markPythonModuleFunction(byPackage, *ref, pythonRoots)
 			continue
 		}
-		for _, decl := range byPackage[ref.Function.Package] {
-			if ref.matchesMethod(decl) {
-				markEntry(decl, ref.Kind)
-			}
+		markExportedMethods(byPackage, ref)
+	}
+}
+
+// markExportedMethods marks the exported methods of the type ref names, and,
+// for a registered gRPC service, only the ones that belong to its interface.
+func markExportedMethods(byPackage map[string][]*FunctionDecl, ref *EntryRef) {
+	var inService func(*FunctionDecl) bool
+	if ref.Interface != (FunctionID{}) {
+		inService = serviceMethodFilter(byPackage[ref.Interface.Package], ref.Interface.Type)
+	}
+	for _, decl := range byPackage[ref.Function.Package] {
+		if ref.matchesMethod(decl) && (inService == nil || (decl.OwnerType != goOwnerInterface && inService(decl))) {
+			markEntry(decl, ref.Kind)
 		}
 	}
 }
@@ -85,10 +120,10 @@ func resolveEntryRefs(graph *CallGraph, pythonRoots []string) {
 func uniqueEntryRefs(refs []EntryRef) []EntryRef {
 	seen := make(map[EntryRef]struct{}, len(refs))
 	out := refs[:0:0]
-	for _, ref := range refs {
-		if _, duplicate := seen[ref]; !duplicate {
-			seen[ref] = struct{}{}
-			out = append(out, ref)
+	for i := range refs {
+		if _, duplicate := seen[refs[i]]; !duplicate {
+			seen[refs[i]] = struct{}{}
+			out = append(out, refs[i])
 		}
 	}
 	return out
@@ -133,7 +168,7 @@ func lookupEntryRef(graph *CallGraph, id FunctionID) *FunctionDecl {
 	return graph.Functions[id.String()]
 }
 
-func (ref EntryRef) matchesMethod(decl *FunctionDecl) bool {
+func (ref *EntryRef) matchesMethod(decl *FunctionDecl) bool {
 	if decl.ID.Type == "" {
 		return false
 	}

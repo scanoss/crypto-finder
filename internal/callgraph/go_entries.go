@@ -64,6 +64,8 @@ type goEntryScope struct {
 	// packageVars maps a package-level variable the file declares to its
 	// value, or its type when it has no value.
 	packageVars map[string]*sitter.Node
+	// packagePath is the import path of the file's package.
+	packagePath string
 }
 
 // applyGoEntryRules marks the file's entry points: init functions and package
@@ -73,6 +75,8 @@ type goEntryScope struct {
 // fields and the methods of a type that embeds a catalog type.
 func applyGoEntryRules(root *sitter.Node, src []byte, packagePath string, analysis *FileAnalysis) {
 	scope := newGoEntryScope(root, src, analysis)
+	scope.packagePath = packagePath
+	scope.recordReturnedTypes(root)
 	for i := range analysis.Functions {
 		decl := &analysis.Functions[i]
 		switch {
@@ -382,6 +386,7 @@ func (s *goEntryScope) registeredHandlers(root *sitter.Node, packagePath string)
 	walk = func(node *sitter.Node) {
 		switch node.Type() {
 		case goNodeCallExpression:
+			s.serverRegistration(node)
 			if entry, ok := s.registration(node); ok {
 				args := node.ChildByFieldName("arguments")
 				for i := 0; i < int(args.NamedChildCount()); i++ {
