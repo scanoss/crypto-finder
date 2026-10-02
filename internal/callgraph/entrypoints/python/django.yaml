@@ -2,7 +2,7 @@ schema_version: "1"
 language: python
 framework:
   name: django
-  description: "Django views a URL pattern names (path, re_path, url), the HTTP methods of class-based views, and signal receivers."
+  description: "Django views a URL pattern names (path, re_path, url), the HTTP methods of class-based views, and signal receivers, and the class body of a migration under a migrations directory."
 entries:
   - shape: registration_call
     from: [django.urls, django.conf.urls]
@@ -16,4 +16,10 @@ entries:
   - shape: decorator
     from: [django.dispatch]
     names: [receiver]
+    root_kind: framework_entry
+  - shape: supertype
+    from: [django.db.migrations]
+    names: ["<clinit>"]
+    types: [Migration]
+    directory: migrations
     root_kind: framework_entry

@@ -1836,6 +1836,7 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis, attrs, fw)
 
 	if clinit := p.buildClassInitDecl(body, src, filePath, packagePath, className, analysis, attrs, direct, fw); clinit != nil {
+		clinit.OwnerBases = bases
 		analysis.Functions = append(analysis.Functions, *clinit)
 	}
 }

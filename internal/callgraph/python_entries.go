@@ -81,7 +81,7 @@ func applyPythonEntryRules(root *sitter.Node, src []byte, filePath, packagePath 
 		case kinds[decl.StartLine] != "":
 			markEntry(decl, kinds[decl.StartLine])
 		case decl.ID.Type != "":
-			if kind, ok := scope.supertypeEntryKind(decl.ID.Type, decl.ID.Name, map[string]bool{}); ok {
+			if kind, ok := scope.supertypeEntryKind(decl.ID.Type, decl.ID.Name, filePath, map[string]bool{}); ok {
 				markEntry(decl, kind)
 			}
 		}
@@ -244,8 +244,9 @@ func (s *pythonEntryScope) decoratorEntry(decorated *sitter.Node, src []byte) (s
 // supertypeEntryKind reports whether method of class is one a framework
 // dispatcher calls: a catalog method of a class whose base, directly or
 // through a class of the same file, is a catalog type (a Django View, a
-// Flask MethodView).
-func (s *pythonEntryScope) supertypeEntryKind(class, method string, seen map[string]bool) (RootKind, bool) {
+// Flask MethodView). The class body (<clinit>) of a Django Migration under a
+// migrations directory counts too: the migration loader runs it.
+func (s *pythonEntryScope) supertypeEntryKind(class, method, filePath string, seen map[string]bool) (RootKind, bool) {
 	catalog := entryCatalog()
 	if seen[class] || !catalog.Named(entryLanguagePython, entrypoints.ShapeSupertype, method) {
 		return "", false
@@ -253,11 +254,11 @@ func (s *pythonEntryScope) supertypeEntryKind(class, method string, seen map[str
 	seen[class] = true
 	for _, base := range s.bases[class] {
 		module, typeName := s.baseType(base)
-		if entry, ok := catalog.Match(entryLanguagePython, entrypoints.ShapeSupertype, module, typeName, method); ok {
+		if entry, ok := catalog.MatchInFile(entryLanguagePython, entrypoints.ShapeSupertype, module, typeName, method, filePath); ok {
 			return catalogEntryKind(&entry), true
 		}
 		if _, local := s.bases[base]; local {
-			if kind, ok := s.supertypeEntryKind(base, method, seen); ok {
+			if kind, ok := s.supertypeEntryKind(base, method, filePath, seen); ok {
 				return kind, true
 			}
 		}
