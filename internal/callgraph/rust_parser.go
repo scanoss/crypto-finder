@@ -50,6 +50,7 @@ const (
 type RustParser struct {
 	parser       *sitter.Parser
 	includeTests bool
+	anchors      callAnchors
 	// crateAliasCache memoizes each crate root's `extern crate X as Y`
 	// renames, keyed by the root source file. Those aliases are crate-scoped
 	// but the import model is per file, so every file has to be able to see
@@ -319,6 +320,7 @@ func (p *RustParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 		return nil, fmt.Errorf("parsing %s: %w", filePath, err)
 	}
 	defer tree.Close()
+	defer p.anchors.reset()
 
 	root := tree.RootNode()
 
@@ -1293,7 +1295,7 @@ func (p *RustParser) extractCalls(body *sitter.Node, ctx *rustTypeCtx, filePath 
 			return true
 		}
 		if call := p.parseCallExpr(node, nodeCtx, filePath); call != nil {
-			setFunctionCallASTAnchor(call, node)
+			p.anchors.set(call, node)
 			// Chain identity is a property of the syntax, not of how the callee
 			// resolved, so it is stamped here for every shape parseCallExpr
 			// returns rather than in each of its seventeen constructors.

@@ -19,6 +19,7 @@ const cppNodeFunctionDefinition = "function_definition"
 type CPPParser struct {
 	parser       *sitter.Parser
 	includeTests bool
+	anchors      callAnchors
 }
 
 // NewCPPParser creates a C++ source parser backed by tree-sitter.
@@ -76,6 +77,7 @@ func (p *CPPParser) parseFile(filePath, packagePath string) (*FileAnalysis, erro
 		return nil, fmt.Errorf("callgraph: cpp parser: parse %s: %w", filePath, err)
 	}
 	defer tree.Close()
+	defer p.anchors.reset()
 
 	analysis := &FileAnalysis{
 		FilePath:      filePath,
@@ -392,7 +394,7 @@ func (p *CPPParser) walkCalls(node *sitter.Node, src []byte, filePath, packagePa
 	}
 	if node.Type() == cNodeCallExpression {
 		if call := p.parseCall(node, src, filePath, packagePath, staticFunctions, localTypes, variableTypes); call != nil {
-			setFunctionCallASTAnchor(call, node)
+			p.anchors.set(call, node)
 			*calls = append(*calls, *call)
 		}
 	}

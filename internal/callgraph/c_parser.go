@@ -24,6 +24,7 @@ const (
 type CParser struct {
 	parser       *sitter.Parser
 	includeTests bool
+	anchors      callAnchors
 }
 
 // NewCParser creates a C source parser backed by tree-sitter.
@@ -77,6 +78,7 @@ func (p *CParser) parseFile(filePath, packagePath string) (*FileAnalysis, error)
 		return nil, fmt.Errorf("callgraph: c parser: parse %s: %w", filePath, err)
 	}
 	defer tree.Close()
+	defer p.anchors.reset()
 
 	analysis := &FileAnalysis{
 		FilePath:    filePath,
@@ -251,7 +253,7 @@ func cDescendantByType(node *sitter.Node, nodeType string) *sitter.Node {
 func (p *CParser) walkCalls(node *sitter.Node, src []byte, filePath, packagePath string, staticFunctions, handles map[string]bool, calls *[]FunctionCall) {
 	if node.Type() == cNodeCallExpression {
 		if call := p.parseCall(node, src, filePath, packagePath, staticFunctions, handles); call != nil {
-			setFunctionCallASTAnchor(call, node)
+			p.anchors.set(call, node)
 			*calls = append(*calls, *call)
 		}
 	}

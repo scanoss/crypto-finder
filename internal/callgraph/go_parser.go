@@ -19,6 +19,7 @@ type GoParser struct {
 	initSeq      int
 	parser       *sitter.Parser
 	includeTests bool
+	anchors      callAnchors
 }
 
 const (
@@ -83,6 +84,7 @@ func (p *GoParser) ParseFile(filePath, packagePath string) (*FileAnalysis, error
 		return nil, fmt.Errorf("parsing %s: %w", filePath, err)
 	}
 	defer tree.Close()
+	defer p.anchors.reset()
 
 	root := tree.RootNode()
 
@@ -970,7 +972,7 @@ func (p *GoParser) walkForCalls(
 ) {
 	if node.Type() == "call_expression" {
 		if call := p.parseCallExpr(node, src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes); call != nil {
-			setFunctionCallASTAnchor(call, node)
+			p.anchors.set(call, node)
 			*calls = append(*calls, *call)
 		}
 	}
@@ -986,7 +988,7 @@ func (p *GoParser) walkForCalls(
 		if call := p.parseGoMisparsedGenericCall(node, src, filePath, analysis, varTypes); call != nil {
 			call.StartCol = int(node.StartPoint().Column) + 1
 			call.EndCol = int(node.EndPoint().Column) + 1
-			setFunctionCallASTAnchor(call, node)
+			p.anchors.set(call, node)
 			*calls = append(*calls, *call)
 		}
 	}

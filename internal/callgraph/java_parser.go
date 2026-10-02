@@ -17,6 +17,7 @@ import (
 type JavaParser struct {
 	parser       *sitter.Parser
 	includeTests bool
+	anchors      callAnchors
 }
 
 const (
@@ -159,6 +160,7 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 		return nil, fmt.Errorf("parsing %s: %w", filePath, err)
 	}
 	defer tree.Close()
+	defer p.anchors.reset()
 
 	root := tree.RootNode()
 
@@ -2405,22 +2407,22 @@ func (p *JavaParser) walkForCalls(node *sitter.Node, src []byte, filePath string
 	switch node.Type() {
 	case "method_invocation":
 		if call := p.parseMethodInvocation(node, src, filePath, analysis, currentClass, varTypes, varOrigins); call != nil {
-			setFunctionCallASTAnchor(call, node)
+			p.anchors.set(call, node)
 			*calls = append(*calls, *call)
 		}
 	case "object_creation_expression":
 		if call := p.parseObjectCreation(node, src, filePath, analysis, currentClass, varTypes, varOrigins); call != nil {
-			setFunctionCallASTAnchor(call, node)
+			p.anchors.set(call, node)
 			*calls = append(*calls, *call)
 		}
 	case "explicit_constructor_invocation":
 		if call := p.parseExplicitConstructorInvocation(node, src, filePath, analysis, currentClass, varTypes, varOrigins); call != nil {
-			setFunctionCallASTAnchor(call, node)
+			p.anchors.set(call, node)
 			*calls = append(*calls, *call)
 		}
 	case javaNodeMethodReference:
 		if call := p.parseMethodReference(node, src, filePath, analysis, currentClass, varTypes); call != nil {
-			setFunctionCallASTAnchor(call, node)
+			p.anchors.set(call, node)
 			*calls = append(*calls, *call)
 		}
 

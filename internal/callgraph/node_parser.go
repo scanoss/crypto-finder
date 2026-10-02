@@ -45,6 +45,7 @@ type NodeParser struct {
 	typescript   *sitter.Parser
 	tsx          *sitter.Parser
 	includeTests bool
+	anchors      callAnchors
 	// file and scope carry the declared types of the file and of the function
 	// being parsed while ParseFile runs; see node_receiver_types.go.
 	file  *nodeFileTypes
@@ -188,6 +189,7 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 		return nil, fmt.Errorf("callgraph: node parser: parse %s: %w", filePath, err)
 	}
 	defer tree.Close()
+	defer p.anchors.reset()
 
 	analysis := &FileAnalysis{
 		FilePath:    filePath,
@@ -975,7 +977,7 @@ func (p *NodeParser) walkNodeCalls(node *sitter.Node, src []byte, filePath, pack
 		call = parseNodeNew(node, src, filePath, imports, locals)
 	}
 	if call != nil {
-		setFunctionCallASTAnchor(call, node)
+		p.anchors.set(call, node)
 		*calls = append(*calls, *call)
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {

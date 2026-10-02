@@ -18,6 +18,7 @@ import (
 type PythonParser struct {
 	parser       *sitter.Parser
 	includeTests bool
+	anchors      callAnchors
 	// visits, when non-nil, counts every node visited by this parser
 	// instance's recursive walkers (D4, python-parser-parity-2). Always nil
 	// in production — set only by TestPythonParser_NodeVisitBudget via
@@ -472,6 +473,7 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 		return nil, fmt.Errorf("parsing %s: %w", filePath, err)
 	}
 	defer tree.Close()
+	defer p.anchors.reset()
 
 	root := tree.RootNode()
 
@@ -1221,7 +1223,7 @@ func (p *PythonParser) resolvePythonPendingCalls(scope *pythonScope, attrs map[s
 				}
 				dynamicImports[call.AssignedVar] = true
 			}
-			setFunctionCallASTAnchor(call, pc.node)
+			p.anchors.set(call, pc.node)
 			calls = append(calls, *call)
 			partials, callables = pythonRecordPartialOrCallable(pc.node, call, src, analysis, fw, partials, callables)
 		}
