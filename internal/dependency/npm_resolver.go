@@ -246,38 +246,37 @@ func npmPackagesByInstallPath(
 	packages = make(map[string]npmLockPackage)
 	workspacePaths = make(map[string]npmLockPackage)
 
-	if len(lock.Packages) > 0 {
-		for installPath, pkg := range lock.Packages {
-			if installPath == "" {
-				rootDeps = sortedKeys(pkg.Dependencies)
-				continue
-			}
-			if pkg.Link {
-				// A link entry is the symlink npm drops in node_modules for a
-				// workspace member. Its target is already keyed by its own path,
-				// and the entry itself has no version, so taking it would report
-				// the same source twice and once without a coordinate.
-				continue
-			}
-			if !strings.HasPrefix(installPath, npmModulesSlash) {
-				// A path outside node_modules is the user's OWN package in a
-				// workspace, not something installed for them.
-				workspacePaths[installPath] = pkg
-				continue
-			}
-			if pkg.Dev && !includeDev {
-				continue
-			}
-			packages[installPath] = pkg
-		}
-		if len(rootDeps) == 0 {
-			rootDeps = sortedKeys(manifest.Dependencies)
-		}
-		return packages, workspacePaths, rootDeps
+	if len(lock.Packages) == 0 {
+		collectNpmV1Entries("", lock.Dependencies, packages, includeDev)
+		return packages, workspacePaths, sortedKeys(manifest.Dependencies)
 	}
-
-	collectNpmV1Entries("", lock.Dependencies, packages, includeDev)
-	return packages, workspacePaths, sortedKeys(manifest.Dependencies)
+	for installPath, pkg := range lock.Packages {
+		if installPath == "" {
+			rootDeps = sortedKeys(pkg.Dependencies)
+			continue
+		}
+		if pkg.Link {
+			// A link entry is the symlink npm drops in node_modules for a
+			// workspace member. Its target is already keyed by its own path,
+			// and the entry itself has no version, so taking it would report
+			// the same source twice and once without a coordinate.
+			continue
+		}
+		if !strings.HasPrefix(installPath, npmModulesSlash) {
+			// A path outside node_modules is the user's OWN package in a
+			// workspace, not something installed for them.
+			workspacePaths[installPath] = pkg
+			continue
+		}
+		if pkg.Dev && !includeDev {
+			continue
+		}
+		packages[installPath] = pkg
+	}
+	if len(rootDeps) == 0 {
+		rootDeps = sortedKeys(manifest.Dependencies)
+	}
+	return packages, workspacePaths, rootDeps
 }
 
 // collectNpmV1Entries flattens the nested v1 shape into install paths, which is

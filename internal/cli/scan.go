@@ -97,6 +97,7 @@ var (
 	scanInterfile                bool
 	scanDependencies             bool
 	scanIncludeTests             bool
+	scanIncludeDevDependencies   bool
 	scanNoDefaultExclusions      bool     // --no-default-exclusions flag
 	scanExcludePatterns          []string // --exclude flag (repeatable)
 	scanDetectPathsFrom          string
@@ -175,6 +176,8 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanInterfile, "interfile", false, "Enable cross-file analysis (Semgrep Pro only, adds --pro flag)")
 	scanCmd.Flags().BoolVar(&scanDependencies, "scan-dependencies", false, "Enable recursive dependency scanning for cryptographic usage")
 	scanCmd.Flags().BoolVar(&scanIncludeTests, "include-tests", false, "Include test sources in findings and dependency scans")
+	scanCmd.Flags().BoolVar(&scanIncludeDevDependencies, "include-dev-dependencies", false,
+		"Also scan npm dev-only dependencies (packages marked dev in package-lock.json); by default dependency scans cover the production tree")
 	scanCmd.Flags().BoolVar(&scanNoDefaultExclusions, "no-default-exclusions", false,
 		"Disable the built-in default exclusions (docs, vendor, node_modules, shaded, generated protobuf stubs, ...). "+
 			"Affects the primary scan only; dependency scans still skip test patterns controlled by --include-tests. "+
@@ -1060,12 +1063,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		}
 
 		if ecosystem != "" {
-			depRegistry := dependency.NewRegistry()
-			depRegistry.Register("go", dependency.NewGoResolver())
-			depRegistry.Register("java", dependency.NewJavaResolver())
-			depRegistry.Register("python", dependency.NewPipResolver())
-			depRegistry.Register("rust", dependency.NewCargoResolver())
-			depRegistry.Register(ecosystemNode, dependency.NewNpmResolver())
+			depRegistry := newDependencyRegistry(scanIncludeDevDependencies)
 
 			resolver, resolverErr := depRegistry.Get(ecosystem)
 			switch {
@@ -1557,4 +1555,19 @@ func newFindingsCache(ctx context.Context, cfg *config.Config) (engine.FindingsC
 			fmt.Sprintf("unknown findings-cache backend %q (allowed: %v)", backend, AllowedFindingsCacheBackends),
 		)
 	}
+}
+
+// newDependencyRegistry registers the resolver of every supported ecosystem.
+func newDependencyRegistry(includeDevDependencies bool) *dependency.Registry {
+	registry := dependency.NewRegistry()
+	registry.Register("go", dependency.NewGoResolver())
+	registry.Register("java", dependency.NewJavaResolver())
+	registry.Register("python", dependency.NewPipResolver())
+	registry.Register("rust", dependency.NewCargoResolver())
+	var npmOptions []dependency.NpmResolverOption
+	if includeDevDependencies {
+		npmOptions = append(npmOptions, dependency.WithNpmDevDependencies())
+	}
+	registry.Register(ecosystemNode, dependency.NewNpmResolver(npmOptions...))
+	return registry
 }
