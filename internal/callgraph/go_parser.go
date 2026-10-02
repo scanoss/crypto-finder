@@ -40,6 +40,7 @@ const (
 	goNodeGenericType         = "generic_type"
 	goNodePointerType         = "pointer_type"
 	goNodeSelectorExpression  = "selector_expression"
+	goNodeIndexExpression     = "index_expression"
 	goFieldOperand            = "operand"
 	goFieldField              = "field"
 	goFieldFunction           = "function"
@@ -574,13 +575,7 @@ func recordGoFieldDeclaration(field *sitter.Node, structName string, src []byte,
 		return
 	}
 	typeText := strings.TrimSpace(ft.Content(src))
-	if strings.Contains(typeText, "[") {
-		return
-	}
-	if typeParams[strings.TrimLeft(typeText, "* ")] {
-		return
-	}
-	pkg, typ, ok := goQualifyTypeText(typeText, analysis)
+	entry, ok := goFieldTypeOf(typeText, analysis, typeParams)
 	if !ok {
 		return
 	}
@@ -592,7 +587,7 @@ func recordGoFieldDeclaration(field *sitter.Node, structName string, src []byte,
 	}
 	for j := 0; j < int(field.NamedChildCount()); j++ {
 		if n := field.NamedChild(j); n.Type() == goNodeFieldIdentifier {
-			analysis.GoStructFields[structName][strings.TrimSpace(n.Content(src))] = GoFieldType{Package: pkg, Type: typ}
+			analysis.GoStructFields[structName][strings.TrimSpace(n.Content(src))] = entry
 		}
 	}
 }
@@ -1010,11 +1005,15 @@ func (p *GoParser) walkForCalls(
 			for k, v := range varTypes {
 				scoped[k] = v
 			}
+			if child.Type() == goNodeFuncLiteral {
+				// The literal's own parameters shadow outer names inside it.
+				p.collectGoVarTypesAt(child, src, analysis, currentReceiverType, currentReceiverVar, scoped)
+			}
 			p.walkForCalls(child, src, filePath, analysis, currentReceiverType, currentReceiverVar, scoped, calls)
 			continue
 		}
 		p.walkForCalls(child, src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes, calls)
-		p.collectGoVarTypesAt(child, src, varTypes)
+		p.collectGoVarTypesAt(child, src, analysis, currentReceiverType, currentReceiverVar, varTypes)
 	}
 }
 
@@ -1092,7 +1091,7 @@ func (p *GoParser) parseCallExpr(
 	// type arguments are erased everywhere else, so they are unwrapped here
 	// too; before this the whole call was dropped (145 of tink-go's call
 	// sites, its key-serializer registrations among them).
-	for funcNode != nil && funcNode.Type() == "index_expression" {
+	for funcNode != nil && funcNode.Type() == goNodeIndexExpression {
 		funcNode = funcNode.ChildByFieldName(goFieldOperand)
 	}
 	if funcNode == nil {
@@ -1324,6 +1323,10 @@ func (p *GoParser) parseSelectorCall(
 		return fieldCall
 	}
 
+	if call := p.goCollectionElementCall(node, operandNode, field, src, filePath, line, args, analysis, currentReceiverType, currentReceiverVar, varTypes); call != nil {
+		return call
+	}
+
 	if operandNode.Type() != goNodeIdentifier {
 		// Any other receiver shape — a field chain (`s.c.XORKeyStream(...)`),
 		// an index expression (`hs[i].Sum(...)`), a composite literal — is a
@@ -1501,14 +1504,14 @@ func goBindNames(left *sitter.Node, src []byte, varTypes map[string]string, over
 		if name == "" || name == "_" {
 			continue
 		}
-		if _, exists := varTypes[name]; exists && !overwrite {
+		if existing, exists := varTypes[name]; exists && !overwrite && !strings.HasPrefix(existing, goRangeBoundMark) {
 			continue
 		}
 		varTypes[name] = ""
 	}
 }
 
-func (p *GoParser) collectGoVarTypesAt(node *sitter.Node, src []byte, varTypes map[string]string) {
+func (p *GoParser) collectGoVarTypesAt(node *sitter.Node, src []byte, analysis *FileAnalysis, currentReceiverType, currentReceiverVar string, varTypes map[string]string) {
 	if node.Type() == goNodeShortVarDeclaration {
 		p.collectGoShortVarTypes(node, src, varTypes)
 	}
@@ -1518,6 +1521,7 @@ func (p *GoParser) collectGoVarTypesAt(node *sitter.Node, src []byte, varTypes m
 		// same way, with no type this pass can name.
 		if l := node.ChildByFieldName("left"); l != nil {
 			goBindNames(l, src, varTypes, true)
+			p.bindGoRangeTypes(node, l, src, analysis, currentReceiverType, currentReceiverVar, varTypes)
 		}
 	}
 
@@ -1711,6 +1715,12 @@ func (p *GoParser) resolveSelectorReceiverType(
 	}
 
 	typeText, ok := varTypes[operand]
+	if strings.HasPrefix(typeText, goRangeBoundMark) {
+		typeText = strings.TrimPrefix(typeText, goRangeBoundMark)
+		if strings.HasPrefix(typeText, goRangeFieldTag) {
+			typeText = ""
+		}
+	}
 	if !ok || strings.TrimSpace(typeText) == "" {
 		// Unknown receiver: emit no identity at all rather than the caller's
 		// package. `cmd.StdoutPipe()` under the caller's package is an identity

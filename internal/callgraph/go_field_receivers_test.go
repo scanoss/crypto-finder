@@ -71,7 +71,10 @@ type Repo struct {
 			t.Errorf("field %s = %+v, want %+v", name, fields[name], ft)
 		}
 	}
-	for _, name := range []string{"hooks", "items", "generic", "Store"} {
+	if got, want := fields["items"], (GoFieldType{ElemPackage: "app", ElemType: "Store"}); got != want {
+		t.Errorf("field items = %+v, want %+v", got, want)
+	}
+	for _, name := range []string{"hooks", "generic", "Store"} {
 		if _, ok := fields[name]; ok {
 			t.Errorf("field %s must not be typed, got %+v", name, fields[name])
 		}
@@ -218,13 +221,11 @@ type Embedded struct{ Inner }
 type Repo struct {
 	inner Inner
 	hook  func()
-	ids   []*Cm
 }
 
 func (r *Repo) Load(e *Embedded, x unknown) {
 	r.inner.cm.Get()
 	e.cm.Get()
-	r.ids[0].Get()
 	x.cm.Get()
 	r.missing.Get()
 }

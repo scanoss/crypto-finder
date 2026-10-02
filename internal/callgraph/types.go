@@ -310,12 +310,35 @@ type FunctionParameter struct {
 type GoFieldReceiver struct {
 	Owner FunctionID
 	Name  string
+	// Part selects which type of the field the call's receiver has: the field
+	// itself (zero), or the element or key of a slice, array or map field that
+	// a range variable or an index expression yields.
+	Part GoFieldPart
 }
+
+// GoFieldPart names the component of a struct field a receiver is typed by.
+type GoFieldPart int
+
+const (
+	// GoFieldWhole types the receiver by the field itself.
+	GoFieldWhole GoFieldPart = iota
+	// GoFieldElem types it by the element (the value, for a map).
+	GoFieldElem
+	// GoFieldKey types it by the key of a map field.
+	GoFieldKey
+)
 
 // GoFieldType is a struct field's declared type, qualified by package path.
 type GoFieldType struct {
 	Package string
 	Type    string // pointer prefix kept, type arguments never present
+	// ElemPackage and ElemType type the elements of a slice, array or map
+	// field (the values, for a map); KeyPackage and KeyType type a map's keys.
+	// Type is empty for such a field.
+	ElemPackage string
+	ElemType    string
+	KeyPackage  string
+	KeyType     string
 }
 
 // FunctionCall represents a call expression within a function body.
