@@ -475,6 +475,37 @@ func Routes[T comparable](r Reachable[T], c Condensed[T], budget int) [][]T {
 // of the budget is then filled in Routes order, skipping routes already taken.
 // A budget of 0 means unbounded.
 func Select[T comparable](r Reachable[T], c Condensed[T], budget int, terminalLess func(a, b T) bool) [][]T {
+	return SelectDiverse(r, c, budget, terminalLess, nil, 0)
+}
+
+// DiverseScanLimit is the number of routes SelectDiverse is allowed to
+// enumerate while looking for new classes, for a given budget.
+//
+// The scan is the only part of selection whose cost is not bounded by the
+// budget: a route that repeats a class is enumerated and discarded. 128 routes
+// per kept chain, with a floor of 1024, gives a small budget room to leave a
+// cluster of near-identical routes while still costing a few thousand route
+// expansions per finding on a graph with hundreds of millions of routes.
+func DiverseScanLimit(budget int) int {
+	return max(1024, 128*budget)
+}
+
+// SelectDiverse is Select with one more step: after one route per terminal and
+// before the plain fill, it takes routes whose class has not been seen yet.
+//
+// class names what a reader sees of a route (for a call graph, the sequence of
+// libraries it crosses). Routes are examined in Routes order and one is taken
+// only if no route already kept shares its class, so a small budget shows as
+// many different paths as the graph holds instead of variants of the first.
+// The examination stops once scanLimit routes were enumerated, so a graph with
+// an enormous number of routes stays bounded; the plain fill then spends what
+// is left. A nil class, a scanLimit below 1 or an unbounded budget skips the
+// step and the result is Select's. Order is deterministic: nothing here
+// depends on map iteration.
+func SelectDiverse[T comparable](
+	r Reachable[T], c Condensed[T], budget int, terminalLess func(a, b T) bool,
+	class func(route []T) string, scanLimit int,
+) [][]T {
 	full := func(out [][]T) bool { return budget > 0 && len(out) >= budget }
 
 	terminals := make([]T, 0, len(r.Terminal))
@@ -487,6 +518,8 @@ func Select[T comparable](r Reachable[T], c Condensed[T], budget int, terminalLe
 
 	var out [][]T
 	taken := map[string]bool{}
+	classes := map[string]bool{}
+	diverse := class != nil && scanLimit > 0 && budget > 0
 	for _, terminal := range terminals {
 		if full(out) {
 			return out
@@ -501,12 +534,33 @@ func Select[T comparable](r Reachable[T], c Condensed[T], budget int, terminalLe
 			continue
 		}
 		taken[key] = true
+		if diverse {
+			classes[class(route)] = true
+		}
 		out = append(out, route)
 	}
 	if full(out) {
 		return out
 	}
-	walkRoutes(r, c, componentRoutes(r, c), func(route []T) bool {
+	counts := componentRoutes(r, c)
+	if diverse {
+		scanned := 0
+		walkRoutes(r, c, counts, func(route []T) bool {
+			scanned++
+			if key := routeKey(c, route); !taken[key] {
+				if cls := class(route); !classes[cls] {
+					classes[cls] = true
+					taken[key] = true
+					out = append(out, route)
+				}
+			}
+			return !full(out) && scanned < scanLimit
+		})
+		if full(out) {
+			return out
+		}
+	}
+	walkRoutes(r, c, counts, func(route []T) bool {
 		if key := routeKey(c, route); !taken[key] {
 			taken[key] = true
 			out = append(out, route)

@@ -20,7 +20,17 @@ type Tracer struct {
 	// edgeIdx holds the strongest recorded resolution of every classified
 	// caller->callee pair. Built on first use (edges).
 	edgeIdx *edgeIndex
+	// moduleOf names the module a function key belongs to, "" for first-party
+	// code. Optional: see SetModuleFunc.
+	moduleOf func(key string) string
 }
+
+// SetModuleFunc lets chain selection tell library paths apart. With it set,
+// a finding with more routes than the chain budget keeps routes through
+// different sequences of modules before further variants of one sequence. The
+// function must be deterministic and should attribute a function the way the
+// consumer shows it. Unset, selection ignores modules.
+func (t *Tracer) SetModuleFunc(moduleOf func(key string) string) { t.moduleOf = moduleOf }
 
 type traceBFSItem struct {
 	chain []CallChainStep
