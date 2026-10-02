@@ -65,10 +65,10 @@ func TestMaterializeConditionedFindings_SpecializesWrapperPaths(t *testing.T) {
 		Rules: []entities.RuleInfo{{ID: "java.pgp.dynamic"}}, Metadata: map[string]string{"api": "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>"},
 	}}}}}
 
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 2 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "java"}, []string{rules}); got != 2 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 2", got)
 	}
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 0 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "java"}, []string{rules}); got != 0 {
 		t.Fatalf("second MaterializeConditionedFindings() = %d, want idempotent 0", got)
 	}
 	byRule := make(map[string]entities.CryptographicAsset)
@@ -168,7 +168,7 @@ func TestMaterializeConditionedFindings_ResolvesGuardedHelperReturnWithoutGuessi
 	}}}}}
 
 	anchor := report.Findings[0].CryptographicAssets[0]
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 1 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "java"}, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 	}
 	if len(report.Findings[0].CryptographicAssets) != 1 {
@@ -184,7 +184,7 @@ func TestMaterializeConditionedFindings_ResolvesGuardedHelperReturnWithoutGuessi
 
 	graph.Functions[mainID.String()].Calls[0].ArgumentSources[0][0].SourceNodes = []callgraph.SourceNode{{Type: "PARAMETER", Name: "algorithm", ParameterIndex: 0}}
 	report.Findings[0].CryptographicAssets = []entities.CryptographicAsset{anchor}
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 0 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "java"}, []string{rules}); got != 0 {
 		t.Fatalf("dynamic MaterializeConditionedFindings() = %d, want no guessed asset", got)
 	}
 	if len(report.Findings[0].CryptographicAssets) != 1 {
@@ -384,7 +384,7 @@ func TestMaterializeConditionedFindings_KeepsNamedAnchor(t *testing.T) {
 		Metadata: map[string]string{"algorithmName": "SHA-1", "api": "MessageDigest.getInstance"},
 	}}}}}
 
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 1 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "java"}, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 	}
 	if got := len(report.Findings[0].CryptographicAssets); got != 2 {
@@ -477,7 +477,7 @@ func TestMaterializeConditionedFindings_DoesNotAttachNestedBuilderToOuterAnchor(
 		},
 	}}}
 
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 1 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "java"}, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want only nested builder specialization", got)
 	}
 	if len(report.Findings[0].CryptographicAssets) != 2 {

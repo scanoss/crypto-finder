@@ -10,11 +10,12 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// buildRustGraphForFilter parses one Rust file as the crate named pkg.
-func buildRustGraphForFilter(t *testing.T, pkg, src string) *callgraph.CallGraph {
+// buildRustResultForFilter scans one Rust file as the crate named pkg.
+func buildRustResultForFilter(t *testing.T, pkg, src string) *engine.DepScanResult {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "main.rs"), []byte(src), 0o600); err != nil {
@@ -25,7 +26,7 @@ func buildRustGraphForFilter(t *testing.T, pkg, src string) *callgraph.CallGraph
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
-	return graph
+	return &engine.DepScanResult{CallGraph: graph, Ecosystem: "rust", ProjectRoot: dir}
 }
 
 // reportAt builds the interim report opengrep would produce for one match of
@@ -91,11 +92,11 @@ const eddsaSignRule = "rust.ed25519-dalek.algorithm.signature.eddsa-sign"
 // method, in a file that imports the crate, is claimed by the crate's rule.
 func TestForeignReceiverFilter_DropsTheConsumersOwnType(t *testing.T) {
 	t.Parallel()
-	graph := buildRustGraphForFilter(t, "app", consumerSrc)
+	result := buildRustResultForFilter(t, "app", consumerSrc)
 	line, sc, ec := lineOf(t, consumerSrc, "own.sign(b\"x\")")
 	report := reportAt(eddsaSignRule, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 1 {
+	if got := FilterForeignReceiverAssets(report, result); got != 1 {
 		t.Fatalf("dropped = %d, want 1", got)
 	}
 	if got := assetCount(report); got != 0 {
@@ -117,11 +118,11 @@ func TestForeignReceiverFilter_KeepsEveryReceiverThatReachesTheCrate(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			graph := buildRustGraphForFilter(t, "app", consumerSrc)
+			result := buildRustResultForFilter(t, "app", consumerSrc)
 			line, sc, ec := lineOf(t, consumerSrc, tc.needle)
 			report := reportAt(eddsaSignRule, line, sc, ec)
 
-			if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+			if got := FilterForeignReceiverAssets(report, result); got != 0 {
 				t.Fatalf("dropped = %d, want 0", got)
 			}
 			if got := assetCount(report); got != 1 {
@@ -142,11 +143,11 @@ impl SigningKey {
     pub fn resign(&self, m: &[u8]) -> Vec<u8> { self.sign(m) }
 }
 `
-	graph := buildRustGraphForFilter(t, "ed25519_dalek", librarySrc)
+	result := buildRustResultForFilter(t, "ed25519_dalek", librarySrc)
 	line, sc, ec := lineOf(t, librarySrc, "self.sign(m)")
 	report := reportAt(eddsaSignRule, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0", got)
 	}
 }
@@ -154,11 +155,11 @@ impl SigningKey {
 // Other ecosystems are out of scope and must not be touched at all.
 func TestForeignReceiverFilter_IsRustOnly(t *testing.T) {
 	t.Parallel()
-	graph := buildRustGraphForFilter(t, "app", consumerSrc)
+	result := buildRustResultForFilter(t, "app", consumerSrc)
 	line, sc, ec := lineOf(t, consumerSrc, "own.sign(b\"x\")")
 	for _, eco := range []string{"java", "python", "go", "node", "c", ""} {
 		report := reportAt(eddsaSignRule, line, sc, ec)
-		if got := FilterForeignReceiverAssets(report, graph, eco); got != 0 {
+		if got := FilterForeignReceiverAssets(report, &engine.DepScanResult{CallGraph: result.CallGraph, ProjectRoot: result.ProjectRoot, Ecosystem: eco}); got != 0 {
 			t.Fatalf("ecosystem %q: dropped = %d, want 0", eco, got)
 		}
 	}
@@ -168,11 +169,11 @@ func TestForeignReceiverFilter_IsRustOnly(t *testing.T) {
 // even on the consumer's own type.
 func TestForeignReceiverFilter_KeepsRulesThatNameNoCrate(t *testing.T) {
 	t.Parallel()
-	graph := buildRustGraphForFilter(t, "app", consumerSrc)
+	result := buildRustResultForFilter(t, "app", consumerSrc)
 	line, sc, ec := lineOf(t, consumerSrc, "own.sign(b\"x\")")
 	for _, id := range []string{"generic.weak-signature", "java.bouncycastle.sign", ""} {
 		report := reportAt(id, line, sc, ec)
-		if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+		if got := FilterForeignReceiverAssets(report, result); got != 0 {
 			t.Fatalf("rule %q: dropped = %d, want 0", id, got)
 		}
 	}
@@ -182,7 +183,7 @@ func TestForeignReceiverFilter_KeepsRulesThatNameNoCrate(t *testing.T) {
 // crate-less rule instead of being dropped whole.
 func TestForeignReceiverFilter_DropsOnlyTheOffendingRule(t *testing.T) {
 	t.Parallel()
-	graph := buildRustGraphForFilter(t, "app", consumerSrc)
+	result := buildRustResultForFilter(t, "app", consumerSrc)
 	line, sc, ec := lineOf(t, consumerSrc, "own.sign(b\"x\")")
 	report := reportAt(eddsaSignRule, line, sc, ec)
 	report.Findings[0].CryptographicAssets[0].Rules = append(
@@ -190,7 +191,7 @@ func TestForeignReceiverFilter_DropsOnlyTheOffendingRule(t *testing.T) {
 		entities.RuleInfo{ID: "generic.signature-usage", Message: "generic", Severity: "INFO"},
 	)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0 (a crate-less rule survives)", got)
 	}
 	rules := report.Findings[0].CryptographicAssets[0].Rules
@@ -232,11 +233,11 @@ func TestForeignReceiverFilter_DropsWithTheRuleIDShapeProductionProduces(t *test
 	const productionID = "semgrep-rules.rust.ed25519-dalek.algorithm.signature." +
 		"rust.ed25519-dalek.algorithm.signature.eddsa-sign"
 
-	graph := buildRustGraphForFilter(t, "app", consumerSrc)
+	result := buildRustResultForFilter(t, "app", consumerSrc)
 	line, sc, ec := lineOf(t, consumerSrc, "own.sign(b\"x\")")
 	report := reportAt(productionID, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 1 {
+	if got := FilterForeignReceiverAssets(report, result); got != 1 {
 		t.Fatalf("dropped = %d, want 1", got)
 	}
 	if got := assetCount(report); got != 0 {
@@ -248,11 +249,11 @@ func TestForeignReceiverFilter_DropsWithTheRuleIDShapeProductionProduces(t *test
 // an empty cryptographic_assets list.
 func TestForeignReceiverFilter_RemovesAFindingLeftWithNoAsset(t *testing.T) {
 	t.Parallel()
-	graph := buildRustGraphForFilter(t, "app", consumerSrc)
+	result := buildRustResultForFilter(t, "app", consumerSrc)
 	line, sc, ec := lineOf(t, consumerSrc, "own.sign(b\"x\")")
 	report := reportAt(eddsaSignRule, line, sc, ec)
 
-	FilterForeignReceiverAssets(report, graph, "rust")
+	FilterForeignReceiverAssets(report, result)
 	if len(report.Findings) != 0 {
 		t.Fatalf("findings = %d, want 0", len(report.Findings))
 	}
@@ -278,11 +279,11 @@ impl Wrapper {
     }
 }
 `
-	graph := buildRustGraphForFilter(t, "app", wrapperSrc)
+	result := buildRustResultForFilter(t, "app", wrapperSrc)
 	line, sc, ec := lineOf(t, wrapperSrc, "self.to_keypair().sign(msg)")
 	report := reportAt(eddsaSignRule, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0 (the chain reaches ed25519_dalek)", got)
 	}
 }
@@ -304,11 +305,11 @@ impl EncodePrivateKey for InMemoryPrivateKey {
 
 pub fn encode(k: &InMemoryPrivateKey) { let _ = k.to_pkcs8_der(); }
 `
-	graph := buildRustGraphForFilter(t, "app", traitImplSrc)
+	result := buildRustResultForFilter(t, "app", traitImplSrc)
 	line, sc, ec := lineOf(t, traitImplSrc, "k.to_pkcs8_der()")
 	report := reportAt("rust.pkcs8.format.key.pkcs8-encode", line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0 (to_pkcs8_der is pkcs8's trait method)", got)
 	}
 }
@@ -358,11 +359,11 @@ impl MySigner for ConsumerOwnType {
 
 pub fn go(k: &SigningKey, c: &ConsumerOwnType) { let _ = c.sign(b"x"); }
 `
-	graph := buildRustGraphForFilter(t, "app", localTraitSrc)
+	result := buildRustResultForFilter(t, "app", localTraitSrc)
 	line, sc, ec := lineOf(t, localTraitSrc, "c.sign(b\"x\")")
 	report := reportAt(eddsaSignRule, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 1 {
+	if got := FilterForeignReceiverAssets(report, result); got != 1 {
 		t.Fatalf("dropped = %d, want 1 (MySigner is the consumer's own trait)", got)
 	}
 }
@@ -418,11 +419,11 @@ pub fn spki_der(cert: &CapturedX509Certificate) -> Vec<u8> {
     cert.to_public_key_der().unwrap().as_ref().to_vec()
 }
 `
-	graph := buildRustGraphForFilter(t, "app", extensionSrc)
+	result := buildRustResultForFilter(t, "app", extensionSrc)
 	line, sc, ec := lineOf(t, extensionSrc, "cert.to_public_key_der()")
 	report := reportAt("rust.spki.related-crypto-material.public-key.encode", line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0 (to_public_key_der is not declared here)", got)
 	}
 }
@@ -453,11 +454,11 @@ const snowTransportRule = "rust.snow.protocol.noise-patterns.transport-message-w
 
 func TestForeignReceiverFilter_DropsTheConsumersOwnModuleFunction(t *testing.T) {
 	t.Parallel()
-	graph := buildRustGraphForFilter(t, "app", moduleFreeFunctionSrc)
+	result := buildRustResultForFilter(t, "app", moduleFreeFunctionSrc)
 	line, sc, ec := lineOf(t, moduleFreeFunctionSrc, "framing::write_message(payload)")
 	report := reportAt(snowTransportRule, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 1 {
+	if got := FilterForeignReceiverAssets(report, result); got != 1 {
 		t.Fatalf("dropped = %d, want 1 — the consumer's own module function is claimed by snow's rule", got)
 	}
 	if got := assetCount(report); got != 0 {
@@ -470,11 +471,11 @@ func TestForeignReceiverFilter_DropsTheConsumersOwnModuleFunction(t *testing.T) 
 // the graph does not declare — `app.write_message` here — and must be kept.
 func TestForeignReceiverFilter_KeepsAnUndeclaredFreeFunctionCall(t *testing.T) {
 	t.Parallel()
-	graph := buildRustGraphForFilter(t, "app", moduleFreeFunctionSrc)
+	result := buildRustResultForFilter(t, "app", moduleFreeFunctionSrc)
 	line, sc, ec := lineOf(t, moduleFreeFunctionSrc, "hs.write_message(payload, out)")
 	report := reportAt(snowTransportRule, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0 — an unresolved receiver is not the consumer's own declaration", got)
 	}
 	if got := assetCount(report); got != 1 {
@@ -496,11 +497,11 @@ pub fn run(payload: &[u8]) {
     framing::write_message(payload);
 }
 `
-	graph := buildRustGraphForFilter(t, "snow", src)
+	result := buildRustResultForFilter(t, "snow", src)
 	line, sc, ec := lineOf(t, src, "framing::write_message(payload)")
 	report := reportAt(snowTransportRule, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0 — the declaring crate IS the crate the rule names", got)
 	}
 }
@@ -546,11 +547,11 @@ fn consumer_code(key: &[u8], message: &[u8]) {
     let _ = sign_hmac(hmac::HMAC_SHA256, key, message);
 }
 `
-	graph := buildRustGraphForFilter(t, "app", src)
+	result := buildRustResultForFilter(t, "app", src)
 	line, sc, ec := lineOf(t, src, "sign_hmac(hmac::HMAC_SHA256, key, message)")
 	report := reportAt("rust.aws-lc-rs.algorithm.mac.hmac", line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0 — the algorithm constant is the crate's own evidence", got)
 	}
 }

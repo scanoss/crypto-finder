@@ -6,7 +6,6 @@ package scan
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,8 +38,8 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 }
 
 func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandidate {
-	ctx := newExportBuildContext(result)
-	functions := newFunctionFileIndex(occurrenceAnchorFunctions(result))
+	ctx := newExportPathContext(result)
+	functions := newFunctionFileIndex(&ctx.exportArtifacts, occurrenceAnchorFunctions(result))
 	var candidates []occurrenceKeyCandidate
 
 	for i := range result.Report.Findings {
@@ -48,7 +47,10 @@ func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandid
 		for j := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[j]
 			asset.OccurrenceKey = ""
-			containing := findOccurrenceContainingFunction(functions, finding.FilePath, asset.StartLine)
+			var containing *callgraph.FunctionDecl
+			if file, ok := ctx.findingFile(finding.FilePath, asset.DependencyInfo); ok {
+				containing = functions.containing(file, asset.StartLine)
+			}
 			if containing == nil {
 				location := normalizeFindingPath(ctx, finding.FilePath, asset.DependencyInfo)
 				hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, "", "", "", asset.ConditionedValue)
@@ -126,30 +128,6 @@ func occurrenceAnchorFunctions(result *engine.DepScanResult) map[string]*callgra
 		functions[key] = fn
 	}
 	return functions
-}
-
-func findOccurrenceContainingFunction(functions *functionFileIndex, findingPath string, line int) *callgraph.FunctionDecl {
-	normalized := filepath.ToSlash(dependencyRelativePath(findingPath))
-	if normalized == "" {
-		normalized = filepath.ToSlash(findingPath)
-	}
-
-	var best *callgraph.FunctionDecl
-	for _, fn := range functions.segmentSuffixCandidates(normalized) {
-		if !hasPathSegmentSuffix(fn.FilePath, normalized) || line < fn.StartLine || line > fn.EndLine {
-			continue
-		}
-		if best == nil || tighterSpan(fn, best) {
-			best = fn
-		}
-	}
-	return best
-}
-
-func hasPathSegmentSuffix(path, suffix string) bool {
-	path = strings.Trim(filepath.ToSlash(path), "/")
-	suffix = strings.Trim(filepath.ToSlash(suffix), "/")
-	return path == suffix || strings.HasSuffix(path, "/"+suffix)
 }
 
 func occurrenceSourceSubject(result *engine.DepScanResult, asset *entities.CryptographicAsset) string {

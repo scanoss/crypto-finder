@@ -76,7 +76,7 @@ func perValueGraphs(t *testing.T, graph *callgraph.CallGraph, wantAssets int) ma
 		StartLine: 11, EndLine: 11, StartCol: 16, EndCol: 52, Match: "MessageDigest.getInstance(algorithm)",
 		Rules: []entities.RuleInfo{{ID: "java.digest.dynamic"}}, Metadata: map[string]string{"api": "java.security.MessageDigest.getInstance"},
 	}}}}}
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != wantAssets {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "java"}, []string{rules}); got != wantAssets {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want %d", got, wantAssets)
 	}
 	assets := report.Findings[0].CryptographicAssets
@@ -111,7 +111,7 @@ func TestBuildCallGraphExport_ConditionedFindingRatesItsSurvivingRoutes(t *testi
 		StartLine: 11, EndLine: 11, StartCol: 16, EndCol: 52, Match: "MessageDigest.getInstance(algorithm)",
 		Rules: []entities.RuleInfo{{ID: "java.digest.dynamic"}}, Metadata: map[string]string{"api": "java.security.MessageDigest.getInstance"},
 	}}}}}
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 2 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "java"}, []string{rules}); got != 2 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 2", got)
 	}
 	assets := report.Findings[0].CryptographicAssets

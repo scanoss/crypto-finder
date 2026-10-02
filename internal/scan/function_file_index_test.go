@@ -5,168 +5,124 @@ package scan
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/crypto-finder/internal/engine"
+	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// linearContainingFunctionByFinding is findContainingFunctionByFinding's walk
-// before the index: every function in the graph, raw path suffix.
-func linearContainingFunctionByFinding(functions map[string]*callgraph.FunctionDecl, findingPath string, line int) *callgraph.FunctionDecl {
-	normalized := filepath.ToSlash(dependencyRelativePath(findingPath))
-	if normalized == "" {
-		normalized = filepath.ToSlash(findingPath)
-	}
-	var best *callgraph.FunctionDecl
-	for _, fn := range functions {
-		if !strings.HasSuffix(filepath.ToSlash(fn.FilePath), normalized) || line < fn.StartLine || line > fn.EndLine {
-			continue
-		}
-		if best == nil || tighterSpan(fn, best) {
-			best = fn
+// linearDependencyForPath is dependencyForPath before the ancestor walk: the
+// first root, longest first, that the path is relative to.
+func linearDependencyForPath(dependencies []exportDependencyRoot, path string) *exportDependencyRoot {
+	for i := range dependencies {
+		if _, ok := relativeToRoot(dependencies[i].Dir, path); ok {
+			return &dependencies[i]
 		}
 	}
-	return best
+	return nil
 }
 
-// linearOccurrenceContainingFunction is findOccurrenceContainingFunction's
-// walk before the index: every function, whole path segments.
-func linearOccurrenceContainingFunction(functions map[string]*callgraph.FunctionDecl, findingPath string, line int) *callgraph.FunctionDecl {
-	normalized := filepath.ToSlash(dependencyRelativePath(findingPath))
-	if normalized == "" {
-		normalized = filepath.ToSlash(findingPath)
-	}
-	var best *callgraph.FunctionDecl
-	for _, fn := range functions {
-		if !hasPathSegmentSuffix(fn.FilePath, normalized) || line < fn.StartLine || line > fn.EndLine {
-			continue
+// The ancestor walk must answer what trying every root answered, for nested
+// roots, two dependencies sharing a directory, a root that is the path
+// itself, and relative paths, so export locations stay byte-identical.
+func TestDependencyForPath_AgreesWithTryingEveryRoot(t *testing.T) {
+	artifacts := newExportArtifacts(&engine.DepScanResult{
+		ProjectRoot: "/work",
+		Dependencies: []dependency.Dependency{
+			{Module: "outer", Version: "1", Dir: "/mod/outer@1"},
+			{Module: "inner", Version: "1", Dir: "/mod/outer@1/vendor/inner"},
+			{Module: "twin-a", Version: "1", Dir: "/mod/twin@1"},
+			{Module: "twin-b", Version: "1", Dir: "/mod/twin@1/"},
+			{Module: "vendored", Version: "1", Dir: "/work/vendor/lib"},
+			{Module: "relative", Version: "1", Dir: "deps/rel"},
+			{Module: "no-dir", Version: "1"},
+		},
+	})
+	for _, path := range []string{
+		"/mod/outer@1/a.go",
+		"/mod/outer@1",
+		"/mod/outer@1/vendor/inner/b.go",
+		"/mod/outer@1/vendor/innerx/b.go",
+		"/mod/twin@1/c.go",
+		"/work/vendor/lib/d.go",
+		"/work/e.go",
+		"/elsewhere/f.go",
+		"/",
+		"deps/rel/g.go",
+		"deps/relx/g.go",
+		"../deps/rel/h.go",
+		"i.go",
+		".",
+	} {
+		want := linearDependencyForPath(artifacts.dependencies, path)
+		if got := artifacts.dependencyForPath(path); got != want {
+			t.Errorf("dependencyForPath(%q) = %+v, want %+v", path, got, want)
 		}
-		if best == nil || tighterSpan(fn, best) {
-			best = fn
-		}
-	}
-	return best
-}
-
-// The paths a dependency scan mixes: the project tree, dependency trees under
-// module@version, nested classes, a base name that is the tail of another,
-// a root-level file, and two files of the same name in different packages.
-func functionFileIndexFixture() map[string]*callgraph.FunctionDecl {
-	files := []string{
-		"/work/src/main/java/com/acme/Crypto.java",
-		"/work/src/main/java/com/acme/NotCrypto.java",
-		"/work/src/main/java/com/other/Crypto.java",
-		"/deps/org.bouncycastle:bcprov@1.70/org/bouncycastle/x509/PKIXCertPathReviewer.java",
-		"/deps/org.bouncycastle:bcprov@1.70/org/bouncycastle/jcajce/provider/keystore/pkcs12/PKCS12KeyStoreSpi.java",
-		"/deps/com.example:lib@2.0/com/example/Crypto.java",
-		"/work/main.go",
-		"/work/cmd/tool/main.go",
-		`C:\work\src\Win.java`,
-	}
-	functions := make(map[string]*callgraph.FunctionDecl)
-	for i, file := range files {
-		// Nested spans: a whole-file <clinit>, a method, and a lambda inside
-		// it, plus a second method with the same span as the first so the
-		// tie-break on the function key decides.
-		for j, span := range [][2]int{{1, 400}, {10, 60}, {20, 30}, {10, 60}, {100, 200}} {
-			id := callgraph.FunctionID{Package: fmt.Sprintf("p%d", i), Name: fmt.Sprintf("f%d", j)}
-			functions[id.String()] = &callgraph.FunctionDecl{ID: id, FilePath: file, StartLine: span[0], EndLine: span[1]}
-		}
-	}
-	return functions
-}
-
-func functionFileIndexQueries() []string {
-	return []string{
-		"Crypto.java",
-		"acme/Crypto.java",
-		"com/acme/Crypto.java",
-		"src/main/java/com/acme/Crypto.java",
-		"rypto.java",
-		"NotCrypto.java",
-		"org.bouncycastle:bcprov@1.70/org/bouncycastle/x509/PKIXCertPathReviewer.java",
-		"org/bouncycastle/x509/PKIXCertPathReviewer.java",
-		"com.example:lib@2.0/com/example/Crypto.java",
-		"main.go",
-		"tool/main.go",
-		"/main.go",
-		"src/",
-		"Win.java",
-		"Missing.java",
-		"",
 	}
 }
 
-// The index only narrows which functions are checked; the answer must be the
-// one the full walk gave, for every path shape and line.
-func TestFunctionFileIndex_AgreesWithTheFullWalk(t *testing.T) {
-	functions := functionFileIndexFixture()
-	idx := newFunctionFileIndex(functions)
-	ctx := &exportBuildContext{
-		graph:                   &callgraph.CallGraph{Functions: functions},
-		containingFunctionCache: make(map[string]cachedContainingFunction),
+// A project given as a relative target still binds to a graph whose files
+// were recorded with absolute paths, and the other way round.
+func TestFindContainingFunctionByFinding_ResolvesRelativeRoots(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, query := range functionFileIndexQueries() {
-		for _, line := range []int{0, 1, 15, 25, 60, 61, 150, 400, 401} {
-			want := linearContainingFunctionByFinding(functions, query, line)
-			if got := ctx.findContainingFunctionByFinding(query, line); got != want {
-				t.Errorf("findContainingFunctionByFinding(%q, %d) = %v, want %v", query, line, got, want)
+	for _, tc := range []struct {
+		name, projectRoot, functionFile string
+	}{
+		{name: "relative root, absolute graph", projectRoot: ".", functionFile: filepath.Join(cwd, "src", "seal.go")},
+		{name: "absolute root, relative graph", projectRoot: cwd, functionFile: filepath.Join("src", "seal.go")},
+		{name: "no root, relative graph", projectRoot: "", functionFile: filepath.Join("src", "seal.go")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fn := anchorScopeFunction("app/src", tc.functionFile, 100)
+			ctx := newExportPathContext(&engine.DepScanResult{
+				ProjectRoot: tc.projectRoot,
+				CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{fn.ID.String(): fn}},
+			})
+			if got := ctx.findContainingFunctionByFinding("src/seal.go", nil, 10); got != fn {
+				t.Fatalf("findContainingFunctionByFinding = %v, want %s", got, fn.FilePath)
 			}
-			want = linearOccurrenceContainingFunction(functions, query, line)
-			if got := findOccurrenceContainingFunction(idx, query, line); got != want {
-				t.Errorf("findOccurrenceContainingFunction(%q, %d) = %v, want %v", query, line, got, want)
-			}
-		}
+		})
 	}
 }
 
-// What makes it fast: a path with a directory reaches only that file name's
-// functions, not the graph.
-func TestFunctionFileIndex_NarrowsToOneFileName(t *testing.T) {
-	idx := newFunctionFileIndex(functionFileIndexFixture())
-	for _, fn := range idx.suffixCandidates("org/bouncycastle/x509/PKIXCertPathReviewer.java") {
-		if !strings.HasSuffix(fn.FilePath, "/PKIXCertPathReviewer.java") {
-			t.Fatalf("candidate %s is declared in another file", fn.FilePath)
-		}
-	}
-	if got := len(idx.suffixCandidates("com/acme/Crypto.java")); got != 15 {
-		t.Fatalf("Crypto.java candidates = %d, want the 15 functions of its three files", got)
-	}
-	if got, all := len(idx.suffixCandidates("Crypto.java")), len(idx.all); got != all {
-		t.Fatalf("a bare file name can be the tail of a longer one, so it must check all %d functions, got %d", all, got)
+// A dependency the scan has no source directory for owns no files, so its
+// findings bind to nothing rather than to a file elsewhere.
+func TestFindContainingFunctionByFinding_DependencyWithoutSourceBindsNothing(t *testing.T) {
+	fn := anchorScopeFunction("example.com/app/util", "/work/util/seal.go", 100)
+	ctx := newExportPathContext(&engine.DepScanResult{
+		ProjectRoot: "/work",
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{fn.ID.String(): fn}},
+	})
+	dep := &entities.DependencyInfo{Module: "example.com/unscanned", Version: "v1.0.0"}
+	if got := ctx.findContainingFunctionByFinding("util/seal.go", dep, 10); got != nil {
+		t.Fatalf("finding of an unscanned dependency bound to %s", got.FilePath)
 	}
 }
 
-// BenchmarkContainingFunction_DependencyScale compares the walk with the
-// index at a dependency scan's size: about 400k functions across 40k files,
-// one lookup per asset.
-func BenchmarkContainingFunction_DependencyScale(b *testing.B) {
-	functions := make(map[string]*callgraph.FunctionDecl)
-	for f := 0; f < 40000; f++ {
-		file := fmt.Sprintf("/deps/m%d@1.0/org/pkg%d/File%d.java", f%100, f%997, f)
-		for m := 0; m < 10; m++ {
-			id := callgraph.FunctionID{Package: fmt.Sprintf("org.pkg%d", f), Name: fmt.Sprintf("m%d", m)}
-			functions[id.String()] = &callgraph.FunctionDecl{ID: id, FilePath: file, StartLine: m*20 + 1, EndLine: m*20 + 15}
-		}
+// BenchmarkDependencyForPath compares trying every root with walking the
+// path's ancestors, at a dependency scan's size: 200 dependency roots.
+func BenchmarkDependencyForPath(b *testing.B) {
+	deps := make([]dependency.Dependency, 200)
+	for i := range deps {
+		deps[i] = dependency.Dependency{Module: fmt.Sprintf("m%d", i), Version: "1", Dir: fmt.Sprintf("/home/u/go/pkg/mod/example.com/m%d@v1.0.0", i)}
 	}
-	query := "m7@1.0/org/pkg31/File20007.java"
-	b.Run("walk", func(b *testing.B) {
+	artifacts := newExportArtifacts(&engine.DepScanResult{ProjectRoot: "/work", Dependencies: deps})
+	path := "/home/u/go/pkg/mod/example.com/m7@v1.0.0/internal/pkg/file.go"
+	b.Run("every-root", func(b *testing.B) {
 		for range b.N {
-			_ = linearContainingFunctionByFinding(functions, query, 45)
+			_ = linearDependencyForPath(artifacts.dependencies, path)
 		}
 	})
-	b.Run("index", func(b *testing.B) {
-		idx := newFunctionFileIndex(functions)
-		b.ResetTimer()
+	b.Run("ancestors", func(b *testing.B) {
 		for range b.N {
-			ctx := &exportBuildContext{
-				graph:                   &callgraph.CallGraph{Functions: functions},
-				containingFunctionCache: make(map[string]cachedContainingFunction),
-				functionsByFile:         idx,
-			}
-			_ = ctx.findContainingFunctionByFinding(query, 45)
+			_ = artifacts.dependencyForPath(path)
 		}
 	})
 }

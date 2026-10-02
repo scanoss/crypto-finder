@@ -129,11 +129,11 @@ func TestMaterializeConditionedFindings_SpecializesEveryCallerBeyondChainBudget(
 	}
 	report := g.report()
 
-	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != values {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != values {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want %d", got, values)
 	}
 	assertNames(t, specializedNames(t, report), wantVariantNames(values))
-	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != 0 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != 0 {
 		t.Fatalf("second MaterializeConditionedFindings() = %d, want idempotent 0", got)
 	}
 }
@@ -161,7 +161,7 @@ func TestMaterializeConditionedFindings_FollowsTwoLevelParameterForwarding(t *te
 	g.addLiteralCaller("direct", selectorHelperID, values)
 	report := g.report()
 
-	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != values+1 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != values+1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want %d", got, values+1)
 	}
 	assertNames(t, specializedNames(t, report), wantVariantNames(values+1))
@@ -183,7 +183,7 @@ func TestMaterializeConditionedFindings_StopsAtParameterCycle(t *testing.T) {
 	}
 	report := g.report()
 
-	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != values {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != values {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want %d", got, values)
 	}
 	assertNames(t, specializedNames(t, report), wantVariantNames(values))
@@ -293,7 +293,7 @@ func TestBuildCallGraphExport_OutOfSampleValueReportsPartialChains(t *testing.T)
 		g.addLiteralCaller(fmt.Sprintf("caller%03d", i), selectorHelperID, i)
 	}
 	report := g.report()
-	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != values {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != values {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want %d", got, values)
 	}
 
@@ -373,7 +373,7 @@ func TestConditionedValueEnumeration_TruncationReportsPartialChains(t *testing.T
 				g.addLiteralCaller(fmt.Sprintf("top%03d", i), top, i+1)
 			}
 			report := g.report()
-			MaterializeConditionedFindings(report, g.graph, []string{rules}, "java")
+			MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules})
 
 			anchor := report.Findings[0].CryptographicAssets[0]
 			if anchor.ConditionedValuesIncomplete != tc.wantPartial {
@@ -432,7 +432,7 @@ func TestMaterializeConditionedFindings_KeepsAnchorForDynamicCaller(t *testing.T
 	dynamicID := g.addDynamicCaller("dynamic", selectorHelperID)
 	report := g.report()
 
-	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != 1 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 	}
 	if got := blankAnchors(report); got != 1 {
@@ -472,7 +472,7 @@ func TestMaterializeConditionedFindings_KeepsAnchorForUnmatchedValue(t *testing.
 	})
 	report := g.report()
 
-	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != 1 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 	}
 	if got := blankAnchors(report); got != 1 {
@@ -495,7 +495,7 @@ func TestMaterializeConditionedFindings_KeepsAnchorBehindUncalledForwarder(t *te
 	})
 	report := g.report()
 
-	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != 1 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 	}
 	if got := blankAnchors(report); got != 1 {
@@ -517,7 +517,7 @@ func TestMaterializeConditionedFindings_KeepsAnchorForDynamicCallerBeyondChainBu
 	g.addDynamicCaller("zdynamic", selectorHelperID)
 	report := g.report()
 
-	if got := MaterializeConditionedFindings(report, g.graph, []string{rules}, "java"); got != values {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != values {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want %d", got, values)
 	}
 	if got := blankAnchors(report); got != 1 {

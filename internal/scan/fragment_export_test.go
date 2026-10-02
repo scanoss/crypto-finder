@@ -414,11 +414,10 @@ func TestBuildGraphFragmentExport_AttachesCryptoAnnotationToContainingFunction(t
 	}
 
 	payload := buildGraphFragmentExport(&engine.DepScanResult{
-		Report:      report,
-		CallGraph:   graph,
-		ProjectRoot: t.TempDir(),
-		RootModule:  "net.crypto:c-crypto",
-		Ecosystem:   "java",
+		Report:     report,
+		CallGraph:  graph,
+		RootModule: "net.crypto:c-crypto",
+		Ecosystem:  "java",
 	})
 
 	if got, want := len(payload.CryptoAnnotations), 1; got != want {
@@ -788,11 +787,10 @@ func TestBuildGraphFragmentExport_CryptoOpCryptoCallIdentityMatchesFunctionDecl(
 	}
 
 	payload := buildGraphFragmentExport(&engine.DepScanResult{
-		Report:      report,
-		CallGraph:   graph,
-		ProjectRoot: t.TempDir(),
-		RootModule:  "com.app:app",
-		Ecosystem:   "java",
+		Report:     report,
+		CallGraph:  graph,
+		RootModule: "com.app:app",
+		Ecosystem:  "java",
 	})
 
 	if len(payload.CryptoAnnotations) != 1 {

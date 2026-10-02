@@ -597,24 +597,19 @@ func prepareReportOccurrenceKeys(target string, report *entities.InterimReport, 
 		// while this loop builds one per ecosystem whenever there are findings.
 		// It also runs after rule-entrypoint synthesis and conditioned-finding
 		// materialization, so it sees the assets those two passes add.
-		scanutil.FilterForeignReceiverAssets(report, occurrenceEcosystemGraph(result, ecosystem), ecosystem)
+		//
+		// A mixed-language target loops over several ecosystems and keeps the
+		// first graph in result, so the filter runs only on the iteration of
+		// the ecosystem that graph was built for.
+		if result != nil && result.Ecosystem == ecosystem {
+			scanutil.FilterForeignReceiverAssets(report, result)
+		}
 	}
 	if result != nil {
 		result.Report = report
 		scanutil.AssignOccurrenceKeys(result)
 	}
 	return result
-}
-
-// occurrenceEcosystemGraph returns the call graph in result only when it was
-// built for ecosystem. A mixed-language target loops over several ecosystems and
-// keeps the first graph in result.CallGraph, so returning it unconditionally
-// would hand a Java graph to a Rust pass.
-func occurrenceEcosystemGraph(result *engine.DepScanResult, ecosystem string) *callgraph.CallGraph {
-	if result == nil || result.Ecosystem != ecosystem {
-		return nil
-	}
-	return result.CallGraph
 }
 
 func addReportOccurrenceKeyAnchors(target string, report *entities.InterimReport, ecosystem string, javaRuntime javaruntime.Config, includeTests bool, compiledArtifact string, skipMatcher skip.SkipMatcher, result *engine.DepScanResult) *engine.DepScanResult {
@@ -1412,7 +1407,7 @@ func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesM
 		return err
 	}
 	return runScanPhase(progress, "conditioned_findings", parent, func() error {
-		scanutil.MaterializeConditionedFindings(report, result.CallGraph, rulePaths, result.Ecosystem)
+		scanutil.MaterializeConditionedFindings(report, result, rulePaths)
 		return nil
 	})
 }

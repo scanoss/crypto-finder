@@ -105,16 +105,17 @@ import (
 // when it has no rule left, so a match claimed by both a crate rule and a
 // generic one survives on the generic one.
 //
+// result supplies the call graph, its ecosystem and the project and dependency
+// roots that locate each finding's file; report is the report being filtered.
+//
 // Returns the number of assets dropped.
-func FilterForeignReceiverAssets(
-	report *entities.InterimReport,
-	graph *callgraph.CallGraph,
-	ecosystem string,
-) int {
-	if report == nil || graph == nil || ecosystem != ecosystemRust {
+func FilterForeignReceiverAssets(report *entities.InterimReport, result *engine.DepScanResult) int {
+	if report == nil || result == nil || result.CallGraph == nil || result.Ecosystem != ecosystemRust {
 		return 0
 	}
-	ctx := newExportBuildContext(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: ecosystem})
+	scoped := *result
+	scoped.Report = report
+	ctx := newExportBuildContext(&scoped)
 	dropped := 0
 	// A finding whose every asset is dropped is removed, as deadcode.FilterReport
 	// does: an empty cryptographic_assets list is a finding that claims nothing.
@@ -132,7 +133,7 @@ func FilterForeignReceiverAssets(
 	if dropped > 0 {
 		log.Info().
 			Int("count", dropped).
-			Str("ecosystem", ecosystem).
+			Str("ecosystem", result.Ecosystem).
 			Msg("Dropped crypto assets whose receiver type is declared by the scanned source, not by the rule's crate")
 	}
 	return dropped
@@ -367,7 +368,7 @@ func foreignSourceReceiver(
 	if len(claimed) == 0 {
 		return "", false
 	}
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
 	if containingFn == nil {
 		return "", false
 	}

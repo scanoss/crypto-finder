@@ -45,7 +45,6 @@ func dispatchChainContext(typedRoute bool) (*exportBuildContext, *callgraph.Func
 		graph:                   graph,
 		packageSeparator:        ".",
 		userPackages:            map[string]bool{"com.app": true},
-		containingFunctionCache: make(map[string]cachedContainingFunction),
 		fragmentEdgeResolutions: indexFragmentEdgeResolutions(graph),
 	}
 	ensureCallChainCaches(ctx)

@@ -759,12 +759,11 @@ func TestBuildCallGraphExport_OperationContractExportsSupportingCallOnly(t *test
 	}
 
 	ctx := &exportBuildContext{
-		graph:                   graph,
-		kb:                      kb,
-		declIndex:               map[string][]*callgraph.FunctionDecl{"org.bc.engines.AESEngine.processBlock": {processBlock}},
-		containingFunctionCache: make(map[string]cachedContainingFunction),
-		callChainCache:          make(map[string][][]callGraphChainNode),
-		callChainRemainingUses:  make(map[string]int),
+		graph:                  graph,
+		kb:                     kb,
+		declIndex:              map[string][]*callgraph.FunctionDecl{"org.bc.engines.AESEngine.processBlock": {processBlock}},
+		callChainCache:         make(map[string][][]callGraphChainNode),
+		callChainRemainingUses: make(map[string]int),
 	}
 	var buf bytes.Buffer
 	bw := bufio.NewWriter(&buf)
@@ -851,8 +850,7 @@ func TestDeriveSupportingCallsForFinding_CombinesContractRolesForDirectAssets(t 
 	}
 	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{owner.String(): ownerDecl}}
 	ctx := &exportBuildContext{
-		graph:                   graph,
-		containingFunctionCache: make(map[string]cachedContainingFunction),
+		graph: graph,
 		kb: &contracts.KnowledgeBase{
 			Contracts: map[string][]contracts.Contract{
 				"pkg.Builder.terminal#1": {{
@@ -1031,8 +1029,7 @@ func TestBuildDerivedSupportingCall_CategoryFromKB(t *testing.T) {
 	}
 	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{owner.String(): ownerDecl}}
 	ctx := &exportBuildContext{
-		graph:                   graph,
-		containingFunctionCache: make(map[string]cachedContainingFunction),
+		graph: graph,
 		kb: &contracts.KnowledgeBase{
 			Contracts: map[string][]contracts.Contract{
 				"pkg.Builder.terminal#1": {{
@@ -1152,8 +1149,7 @@ func TestBuildDerivedSupportingCall_UnknownCalleeStaysUncategorized(t *testing.T
 	}
 	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{owner.String(): ownerDecl}}
 	ctx := &exportBuildContext{
-		graph:                   graph,
-		containingFunctionCache: make(map[string]cachedContainingFunction),
+		graph: graph,
 		kb: &contracts.KnowledgeBase{
 			Contracts: map[string][]contracts.Contract{
 				"pkg.Builder.terminal#1": {{
@@ -1207,12 +1203,11 @@ func TestFindContainingFunctionByFinding_PicksTightestSpan(t *testing.T) {
 			wide.ID.String():  wide,
 			tight.ID.String(): tight,
 		}},
-		containingFunctionCache: make(map[string]cachedContainingFunction),
 	}
 
 	for i := 0; i < 50; i++ {
-		ctx.containingFunctionCache = make(map[string]cachedContainingFunction)
-		got := ctx.findContainingFunctionByFinding("com/password4j/PBKDF2Function.java", 130)
+		ctx.functionsByFile = nil
+		got := ctx.findContainingFunctionByFinding("com/password4j/PBKDF2Function.java", nil, 130)
 		if got == nil {
 			t.Fatalf("iteration %d: got nil, want internalHash", i)
 		}

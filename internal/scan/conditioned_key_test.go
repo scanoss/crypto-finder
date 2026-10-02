@@ -190,7 +190,7 @@ func TestMaterializeConditionedFindings_RustQualifiedKey(t *testing.T) {
 		Rules: []entities.RuleInfo{{ID: "rust.openssl.anchor"}},
 	}}}}}
 
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, ecosystemRust); got != 1 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: ecosystemRust}, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 	}
 	asset := report.Findings[0].CryptographicAssets[0]

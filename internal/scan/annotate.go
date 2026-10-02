@@ -196,10 +196,11 @@ func fragmentSourceNodeFromModel(n graphfrag.SourceNode) graphfrag.GraphFragment
 }
 
 // annotateContainingFunction maps a finding (file, line) to its owning function
-// in the imported fragment. It mirrors the full exporter's
-// findContainingFunctionByFinding path normalization (dependency-relative path,
-// then suffix match) so the recovered function_key is identical, falling back to
-// the exact-match Fragment.ContainingFunction helper.
+// in the imported fragment. A fragment holds one component, and its function
+// paths are relative to the component root like a finding's, so an exact path
+// match is the full export's binding. A finding path the fragment does not
+// name exactly falls back to the function whose path ends with its whole path
+// segments, after dropping a leading module@version directory.
 func annotateContainingFunction(fragment graphfrag.Fragment, findingPath string, line int) (graphfrag.Function, bool) {
 	if fn, ok := fragment.ContainingFunction(findingPath, line); ok {
 		return fn, true
@@ -214,8 +215,7 @@ func annotateContainingFunction(fragment graphfrag.Fragment, findingPath string,
 	bestSpan := 0
 	for i := range fragment.Functions {
 		fn := &fragment.Functions[i]
-		fnPath := filepath.ToSlash(fn.FilePath)
-		if !strings.HasSuffix(fnPath, normalized) {
+		if !hasPathSegmentSuffix(fn.FilePath, normalized) {
 			continue
 		}
 		if line < fn.StartLine || line > fn.EndLine {
@@ -231,6 +231,24 @@ func annotateContainingFunction(fragment graphfrag.Fragment, findingPath string,
 		return graphfrag.Function{}, false
 	}
 	return fragment.Functions[best], true
+}
+
+func dependencyRelativePath(path string) string {
+	slash := strings.Index(path, "/")
+	if slash <= 0 {
+		return path
+	}
+	prefix := path[:slash]
+	if strings.Contains(prefix, "@") {
+		return path[slash+1:]
+	}
+	return path
+}
+
+func hasPathSegmentSuffix(path, suffix string) bool {
+	path = strings.Trim(filepath.ToSlash(path), "/")
+	suffix = strings.Trim(filepath.ToSlash(suffix), "/")
+	return path == suffix || strings.HasSuffix(path, "/"+suffix)
 }
 
 func indexFragmentOpsByFindingID(fragment graphfrag.Fragment) map[string]graphfrag.CryptoOperation {
