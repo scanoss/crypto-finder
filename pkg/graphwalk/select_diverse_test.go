@@ -99,6 +99,9 @@ func TestSelectDiverseScanIsBounded(t *testing.T) {
 		t.Fatalf("got %d routes, want the budget of 8 filled", len(got))
 	}
 	// The terminal routes are classified once each; the scan adds at most limit.
+	if calls <= len(top) {
+		t.Fatalf("class called %d times, want the scan to examine routes beyond the %d terminals", calls, len(top))
+	}
 	if max := len(top) + limit; calls > max {
 		t.Fatalf("class called %d times, want at most %d", calls, max)
 	}
