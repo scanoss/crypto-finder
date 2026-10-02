@@ -62,20 +62,39 @@ var maxTargetArgBytes = func() int {
 // directory walk produces, and split so no invocation exceeds the
 // command-line budget. An empty scope yields no invocations.
 func TargetBatches(target string, scope *DetectionScope) [][]string {
-	if scope == nil {
-		return [][]string{{target}}
-	}
+	return RootTargetBatches([]Root{{Dir: target, Scope: scope}})
+}
+
+// Root is one directory a BatchScanner scans. A nil Scope scans every file
+// under Dir; a non-nil one only its files, as ScanScoped does.
+type Root struct {
+	Dir   string
+	Scope *DetectionScope
+}
+
+// RootTargetBatches is TargetBatches over several roots: each unscoped root
+// is one target, each scoped one its files joined onto Dir, all split so no
+// invocation exceeds the command-line budget.
+func RootTargetBatches(roots []Root) [][]string {
 	var batches [][]string
 	var current []string
 	size := 0
-	for _, rel := range scope.Paths {
-		path := filepath.Join(target, rel)
+	add := func(path string) {
 		if len(current) > 0 && size+len(path)+1 > maxTargetArgBytes {
 			batches = append(batches, current)
 			current, size = nil, 0
 		}
 		current = append(current, path)
 		size += len(path) + 1
+	}
+	for _, root := range roots {
+		if root.Scope == nil {
+			add(root.Dir)
+			continue
+		}
+		for _, rel := range root.Scope.Paths {
+			add(filepath.Join(root.Dir, rel))
+		}
 	}
 	if len(current) > 0 {
 		batches = append(batches, current)

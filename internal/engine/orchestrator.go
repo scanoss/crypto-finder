@@ -167,7 +167,7 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanne
 
 // scanRoots scans several roots in one scanner process and reports each as
 // its own scan. The instance must implement scanner.BatchScanner.
-func (o *Orchestrator) scanRoots(ctx context.Context, opts ScanOptions, roots []string, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) ([]*entities.InterimReport, error) {
+func (o *Orchestrator) scanRoots(ctx context.Context, opts ScanOptions, roots []scanner.Root, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) ([]*entities.InterimReport, error) {
 	batchScanner, ok := scannerInstance.(scanner.BatchScanner)
 	if !ok {
 		return nil, failure.New(
@@ -188,7 +188,7 @@ func (o *Orchestrator) scanRoots(ctx context.Context, opts ScanOptions, roots []
 		return nil, scanFailure(scanErr, opts.ScannerName)
 	}
 	for i, root := range roots {
-		if reports[i], err = o.finishScan(reports[i], prepared.languages, root); err != nil {
+		if reports[i], err = o.finishScan(reports[i], prepared.languages, root.Dir); err != nil {
 			return nil, err
 		}
 	}

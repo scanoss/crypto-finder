@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -558,7 +559,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		}
 		_, canBatch := item.scanner.(scanner.BatchScanner)
 		if canBatch {
-			item.weight = sourceWeight(item.dep.Dir, item.opts.LanguageHint)
+			item.weight = sourceWeight(item.dep.Dir, item.scope, item.opts.LanguageHint)
 		}
 		mu.Lock()
 		misses = append(misses, item)
@@ -634,6 +635,10 @@ func (ds *DependencyScanner) lookupDependency(
 		return depScanResult{index: item.index, key: item.key, dep: item.dep, status: depScanStatusFailed, err: err}, true
 	}
 	item.scanner = initializedScanner
+	// A scanner that cannot limit detection to files scans the whole module.
+	if _, scoped := initializedScanner.(scanner.ScopedScanner); scoped && dep.PackageDirs != nil {
+		item.scope = packageScope(dep)
+	}
 	if ds.findingsCache != nil && rulesHash != "" {
 		env := os.Environ()
 		sort.Strings(env)
@@ -654,7 +659,9 @@ func (ds *DependencyScanner) lookupDependency(
 			Languages     []string
 			Environment   []string
 			CWD           string
-		}{item.key, rulesHash, item.opts.JavaRuntimeCacheToken, item.opts.ScannerName, info, version.Version, config, item.opts.LanguageHint, env, cwd})
+			// Omitted for a whole-module scan, so those keys stay as they were.
+			Scope *scanner.DetectionScope `json:",omitempty"`
+		}{item.key, rulesHash, item.opts.JavaRuntimeCacheToken, item.opts.ScannerName, info, version.Version, config, item.opts.LanguageHint, env, cwd, item.scope})
 		// Unavailable context/identity disables caching, never scanner validation.
 		if encodeErr == nil && cwdErr == nil && info.Version != "" && info.Version != "unknown" {
 			item.cacheKey = fmt.Sprintf("dependency-findings-v2:%x", sha256.Sum256(identity))
@@ -684,7 +691,7 @@ func (ds *DependencyScanner) scanDepAlone(ctx context.Context, item *depWork, va
 	dep := &item.dep
 	log.Info().Str("module", dep.Module).Str("version", dep.Version).Msg("Scanning dependency")
 
-	report, err := ds.orchestrator.scan(ctx, item.opts, nil, item.scanner, validator)
+	report, err := ds.orchestrator.scan(ctx, item.opts, item.scope, item.scanner, validator)
 	log.Info().
 		Str("module", dep.Module).
 		Str("version", dep.Version).
@@ -715,11 +722,11 @@ func (ds *DependencyScanner) scanBatch(ctx context.Context, batch scanBatch, val
 		return []depScanResult{ds.scanDepAlone(ctx, &batch.items[0], validator)}
 	}
 	members := make([]ScanOptions, 0, len(batch.items))
-	roots := make([]string, 0, len(batch.items))
+	roots := make([]scanner.Root, 0, len(batch.items))
 	modules := make([]string, 0, len(batch.items))
 	for i := range batch.items {
 		members = append(members, batch.items[i].opts)
-		roots = append(roots, batch.items[i].dep.Dir)
+		roots = append(roots, scanner.Root{Dir: batch.items[i].dep.Dir, Scope: batch.items[i].scope})
 		modules = append(modules, batch.items[i].key)
 	}
 	batchOpts := batchScanOptions(members)
@@ -819,6 +826,32 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	return depOpts
 }
 
+// packageScope lists the regular files directly in each of dep's package
+// directories, relative to dep.Dir, sorted. A directory outside dep.Dir, or
+// one that cannot be read, adds nothing.
+func packageScope(dep *dependency.Dependency) *scanner.DetectionScope {
+	scope := &scanner.DetectionScope{}
+	for _, dir := range dep.PackageDirs {
+		rel, ok := pathRelativeToRoot(dep.Dir, dir)
+		if !ok {
+			log.Debug().Str("module", dep.Module).Str("dir", dir).Msg("Package directory lies outside its module; not scanned")
+			continue
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			log.Debug().Err(err).Str("module", dep.Module).Str("dir", dir).Msg("Cannot read package directory; not scanned")
+			continue
+		}
+		for _, entry := range entries {
+			if entry.Type().IsRegular() {
+				scope.Paths = append(scope.Paths, filepath.Join(rel, entry.Name()))
+			}
+		}
+	}
+	sort.Strings(scope.Paths)
+	return scope
+}
+
 // packageSets separates dependencies into two groups for the two-phase callgraph build.
 type packageSets struct {
 	// graphPackages get full source parsing: user code + every dependency whose
@@ -895,6 +928,10 @@ func (ds *DependencyScanner) collectPackageSets(
 			DistributionName:     result.dep.Module,
 			Version:              result.dep.Version,
 			CompiledArtifactPath: result.dep.CompiledArtifactPath,
+			// Calls from an imported package reach only imported packages,
+			// and only their types are linked, so the rest of a Go module
+			// holds no call edge and no dispatch target.
+			IncludeDirs: result.dep.PackageDirs,
 		}
 		if result.status == depScanStatusScanned && result.dep.Dir != "" {
 			if graphDeps == nil || graphDeps[result.dep.Module] {
@@ -1362,6 +1399,7 @@ func canonicalDependencies(deps []dependency.Dependency) []dependency.Dependency
 		if existing.SourceArchivePath == "" && dep.SourceArchivePath != "" {
 			existing.SourceArchivePath = dep.SourceArchivePath
 		}
+		existing.PackageDirs = unionPackageDirs(existing.PackageDirs, dep.PackageDirs)
 		unique[key] = existing
 	}
 
@@ -1373,6 +1411,17 @@ func canonicalDependencies(deps []dependency.Dependency) []dependency.Dependency
 		return dependencyLess(result[i], result[j])
 	})
 	return result
+}
+
+// unionPackageDirs is every package directory of a and b, sorted, or nil,
+// the whole module, when either is.
+func unionPackageDirs(a, b []string) []string {
+	if a == nil || b == nil {
+		return nil
+	}
+	union := slices.Concat(a, b)
+	slices.Sort(union)
+	return slices.Compact(union)
 }
 
 func dependencyKey(dep dependency.Dependency) string {

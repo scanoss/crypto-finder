@@ -451,8 +451,9 @@ func (r *JavaBytecodeTypeResolver) collectJARTasks(sourceRoots []PackageDir) []j
 	tasks := make([]jarTask, 0, len(sourceRoots))
 	seen := make(map[string]struct{}, len(sourceRoots))
 
-	for _, root := range sourceRoots {
-		jarPath := r.findCompiledJAR(root)
+	for i := range sourceRoots {
+		root := &sourceRoots[i]
+		jarPath := r.findCompiledJAR(*root)
 		if jarPath == "" {
 			continue
 		}
@@ -468,7 +469,7 @@ func (r *JavaBytecodeTypeResolver) collectJARTasks(sourceRoots []PackageDir) []j
 		tasks = append(tasks, jarTask{
 			order:       len(tasks),
 			jarPath:     jarPath,
-			artifactKey: buildBytecodeArtifactKey(root),
+			artifactKey: buildBytecodeArtifactKey(*root),
 		})
 	}
 

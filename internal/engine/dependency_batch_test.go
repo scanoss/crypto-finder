@@ -79,7 +79,16 @@ func (a *batchAdapter) Scan(_ context.Context, target string, _ []string, info e
 	return a.reportFor(target, info)
 }
 
-func (a *batchAdapter) ScanRoots(_ context.Context, roots, _ []string, info entities.ToolInfo) ([]*entities.InterimReport, error) {
+func rootDirs(roots []scanner.Root) []string {
+	dirs := make([]string, len(roots))
+	for i := range roots {
+		dirs[i] = roots[i].Dir
+	}
+	return dirs
+}
+
+func (a *batchAdapter) ScanRoots(_ context.Context, scanRoots []scanner.Root, _ []string, info entities.ToolInfo) ([]*entities.InterimReport, error) {
+	roots := rootDirs(scanRoots)
 	a.mu.Lock()
 	a.batches = append(a.batches, recordedBatch{roots: append([]string(nil), roots...), config: a.config})
 	a.mu.Unlock()
@@ -529,17 +538,21 @@ func TestSourceWeight_CountsOnlyTheEcosystemsSourceFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := sourceWeight(dir, ecosystemToLanguages(npmEcosystem)); got != 175 {
+	if got := sourceWeight(dir, nil, ecosystemToLanguages(npmEcosystem)); got != 175 {
 		t.Fatalf("sourceWeight = %d, want 175: the JavaScript and TypeScript bytes outside nested node_modules", got)
 	}
-	if got := sourceWeight(filepath.Join(dir, "missing"), ecosystemToLanguages(npmEcosystem)); got != 0 {
+	scope := &scanner.DetectionScope{Paths: []string{"index.js", "README.md", filepath.Join("node_modules", "nested", "index.js"), "gone.js"}}
+	if got := sourceWeight(dir, scope, ecosystemToLanguages(npmEcosystem)); got != 800 {
+		t.Fatalf("scoped sourceWeight = %d, want 800: the scope's JavaScript bytes and nothing else", got)
+	}
+	if got := sourceWeight(filepath.Join(dir, "missing"), nil, ecosystemToLanguages(npmEcosystem)); got != 0 {
 		t.Fatalf("sourceWeight of a missing dir = %d, want 0", got)
 	}
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(dir, link); err != nil {
 		t.Skip(err)
 	}
-	if got := sourceWeight(link, ecosystemToLanguages(npmEcosystem)); got != 175 {
+	if got := sourceWeight(link, nil, ecosystemToLanguages(npmEcosystem)); got != 175 {
 		t.Fatalf("sourceWeight through a symlinked root = %d, want 175", got)
 	}
 }

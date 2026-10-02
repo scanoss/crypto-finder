@@ -273,7 +273,7 @@ func TestGoResolver_InventoriesOnlyTheProductionImportClosure(t *testing.T) {
 	if result.RootModule != "example.com/app" {
 		t.Errorf("RootModule = %q, want example.com/app", result.RootModule)
 	}
-	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used")}}
+	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used"), PackageDirs: []string{filepath.Join(root, "used")}}}
 	if !reflect.DeepEqual(result.Dependencies, want) {
 		t.Fatalf("Dependencies = %+v, want %+v: no production package imports the test-only, build-tagged tool, unused or nested-module requirement", result.Dependencies, want)
 	}
@@ -320,7 +320,7 @@ func TestGoResolver_CollectsProductionModulesAcrossWorkspace(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 
-	want := []Dependency{{Module: "example.com/shared", Version: "v1.0.0", Dir: filepath.Join(root, "shared")}}
+	want := []Dependency{{Module: "example.com/shared", Version: "v1.0.0", Dir: filepath.Join(root, "shared"), PackageDirs: []string{filepath.Join(root, "shared"), filepath.Join(root, "shared", "sub")}}}
 	if !reflect.DeepEqual(result.Dependencies, want) {
 		t.Fatalf("Dependencies = %+v, want %+v: both workspace modules import a package of shared, which is listed once", result.Dependencies, want)
 	}
@@ -346,8 +346,39 @@ func TestGoResolver_PackageThatFailsToLoadKeepsTheRestOfTheClosure(t *testing.T)
 		t.Fatalf("Resolve: %v", err)
 	}
 
-	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used")}}
+	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used"), PackageDirs: []string{filepath.Join(root, "used")}}}
 	if !reflect.DeepEqual(result.Dependencies, want) {
 		t.Fatalf("Dependencies = %+v, want %+v", result.Dependencies, want)
+	}
+}
+
+// Go links only the packages a program imports, so a dependency lists the
+// directories of its imported packages: not its other packages, and not the
+// subdirectories of an imported one, which are packages of their own.
+func TestGoResolver_ListsTheImportedPackagesOfEachModule(t *testing.T) {
+	requireGoToolchain(t)
+	root := writeTree(t, map[string]string{
+		"lib/go.mod":                   localGoMod("example.com/lib"),
+		"lib/lib.go":                   "package lib\n",
+		"lib/codec/codec.go":           "package codec\n\nimport _ \"example.com/lib/codec/internal/wire\"\n",
+		"lib/codec/internal/wire/w.go": "package wire\n",
+		"lib/codec/extra/extra.go":     "package extra\n",
+		"lib/unused/unused.go":         "package unused\n",
+		"app/go.mod":                   localGoMod("example.com/app", "lib"),
+		"app/main.go":                  "package main\n\nimport _ \"example.com/lib/codec\"\n\nfunc main() {}\n",
+	})
+
+	result, err := NewGoResolver().Resolve(context.Background(), filepath.Join(root, "app"))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	lib := filepath.Join(root, "lib")
+	want := []Dependency{{Module: "example.com/lib", Version: "v1.0.0", Dir: lib, PackageDirs: []string{
+		filepath.Join(lib, "codec"),
+		filepath.Join(lib, "codec", "internal", "wire"),
+	}}}
+	if !reflect.DeepEqual(result.Dependencies, want) {
+		t.Fatalf("Dependencies = %+v, want %+v: the module root, unused/ and codec/extra/ are packages nothing imports", result.Dependencies, want)
 	}
 }

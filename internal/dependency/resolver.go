@@ -19,6 +19,11 @@ type Dependency struct {
 	Version string
 	// Dir is the absolute filesystem path to the dependency source code.
 	Dir string
+	// PackageDirs, when non-nil, limits the dependency's source to these
+	// absolute directories under Dir, each without its subdirectories. Go
+	// sets it to the packages a program imports: the only ones it links, and
+	// a subdirectory is another package. Nil means every file under Dir.
+	PackageDirs []string
 	// CompiledArtifactPath is the absolute path to the compiled artifact used for
 	// type-only indexing when source scanning is unavailable or incomplete.
 	CompiledArtifactPath string

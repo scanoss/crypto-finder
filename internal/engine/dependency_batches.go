@@ -21,7 +21,7 @@ import (
 const maxBatchRoots = 16
 
 // depWork is a scannable dependency waiting for its scan. The cache lookup
-// fills opts, cacheKey, scanner and weight.
+// fills opts, cacheKey, scanner and scope, then the scan fills weight.
 type depWork struct {
 	index    int
 	key      string
@@ -30,6 +30,9 @@ type depWork struct {
 	cacheKey string
 	scanner  scanner.Scanner
 	weight   int64
+	// scope limits the scan to the files of the dependency's imported
+	// packages; nil scans the whole dependency.
+	scope *scanner.DetectionScope
 }
 
 // scanBatch is one scanner process over several dependency roots.
@@ -187,16 +190,20 @@ var sourceExtensions = map[string][]string{
 	"typescript": {".ts", ".tsx", ".mts", ".cts"},
 }
 
-// sourceWeight sums the bytes of dir's source files in languages, not
-// descending into nested node_modules, which other dependencies own. The
-// root may be a symlink (pnpm installs are). What cannot be read weighs
-// nothing.
-func sourceWeight(dir string, languages []string) int64 {
+// sourceWeight sums the bytes of the source files in languages that a scan of
+// dir limited to scope reads: the scope's files, or with no scope every file
+// below dir, not descending into nested node_modules, which other
+// dependencies own. The root may be a symlink (pnpm installs are). What
+// cannot be read weighs nothing.
+func sourceWeight(dir string, scope *scanner.DetectionScope, languages []string) int64 {
 	counted := make(map[string]bool)
 	for _, language := range languages {
 		for _, ext := range sourceExtensions[language] {
 			counted[ext] = true
 		}
+	}
+	if scope != nil {
+		return scopedSourceWeight(dir, scope, counted)
 	}
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = resolved
@@ -222,6 +229,19 @@ func sourceWeight(dir string, languages []string) int64 {
 	})
 	if err != nil {
 		return 0
+	}
+	return total
+}
+
+func scopedSourceWeight(dir string, scope *scanner.DetectionScope, counted map[string]bool) int64 {
+	var total int64
+	for _, rel := range scope.Paths {
+		if !counted[filepath.Ext(rel)] {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(dir, rel)); err == nil {
+			total += info.Size()
+		}
 	}
 	return total
 }

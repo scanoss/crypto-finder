@@ -131,7 +131,8 @@ func (r *PythonDependencyTypeResolver) ResolveTypes(graph *CallGraph, sourceRoot
 func selectPythonDependencyRoots(sourceRoots []PackageDir) []PackageDir {
 	seen := make(map[string]struct{}, len(sourceRoots))
 	roots := make([]PackageDir, 0, len(sourceRoots))
-	for _, root := range sourceRoots {
+	for i := range sourceRoots {
+		root := &sourceRoots[i]
 		if root.Version == "" || root.Dir == "" {
 			continue
 		}
@@ -144,7 +145,7 @@ func selectPythonDependencyRoots(sourceRoots []PackageDir) []PackageDir {
 			continue
 		}
 		seen[key] = struct{}{}
-		roots = append(roots, root)
+		roots = append(roots, *root)
 	}
 	return roots
 }
@@ -159,8 +160,8 @@ type pythonDistributionIndexResult struct {
 func (r *PythonDependencyTypeResolver) buildIndexes(roots []PackageDir, workers int) (map[string]pythonSignature, map[string][]string) {
 	workCh := make(chan PackageDir, len(roots))
 	resultCh := make(chan pythonDistributionIndexResult, len(roots))
-	for _, root := range roots {
-		workCh <- root
+	for i := range roots {
+		workCh <- roots[i]
 	}
 	close(workCh)
 

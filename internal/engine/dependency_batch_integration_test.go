@@ -43,9 +43,9 @@ func (s *batchingOpengrep) Scan(ctx context.Context, target string, rulePaths []
 	return s.Scanner.Scan(ctx, target, rulePaths, toolInfo)
 }
 
-func (s *batchingOpengrep) ScanRoots(ctx context.Context, roots, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error) {
+func (s *batchingOpengrep) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error) {
 	s.log.mu.Lock()
-	s.log.batches = append(s.log.batches, append([]string(nil), roots...))
+	s.log.batches = append(s.log.batches, rootDirs(roots))
 	s.log.mu.Unlock()
 	return s.Scanner.ScanRoots(ctx, roots, rulePaths, toolInfo)
 }

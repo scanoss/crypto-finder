@@ -54,6 +54,7 @@ The [`Resolver` interface](../internal/dependency/resolver.go) discovers all dep
 | `Module`  | `golang.org/x/crypto`              | `org.bouncycastle:bcprov-jdk18on`| `cryptography`                   | `ring`                           | Import path / coordinate         |
 | `Version` | `v0.17.0`                           | `1.77`                           | `42.0.5`                         | `0.17.8`                         | Resolved version                 |
 | `Dir`     | `~/go/pkg/mod/golang.org/x/crypto@v0.17.0` | `~/.crypto-finder/cache/sources/org.bouncycastle:bcprov-jdk18on/1.77/` | `~/.local/lib/python3.x/site-packages/cryptography/` | `~/.cargo/registry/src/.../ring-0.17.8/` | Filesystem path to scan |
+| `PackageDirs` | `[.../x/crypto@v0.17.0/chacha20poly1305, ...]` | unset | unset | unset | Imported package directories, each scanned without its subdirectories; unset scans all of `Dir` |
 
 The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is the default user-code prefix. For Java, packages of functions whose files live in the scanned project tree are also user code. That matters for Gradle projects that omit `group` and therefore export a project name rather than a Java package prefix.
 
@@ -86,6 +87,8 @@ Batch shaping (`internal/engine/dependency_batches.go`):
 - **Process timeout.** A batch gets the single-scan `--timeout` once per `ceil(roots / jobs)`: OpenGrep analyzes `jobs` files at a time, so the roots consume about that many single-scan budgets of wall time. With the default 10 minutes and 4 jobs, a 16-root batch may run for 40 minutes before it is treated as failed.
 - **Failure isolation.** When a batch's process fails (exit status above 1, unreadable output, timeout), every dependency in it is scanned alone, as before batching, so one faulty dependency fails only itself and the others keep their findings and their cache entries. A canceled scan fails the batch's dependencies and rescans nothing.
 - A batch of one root, which includes every dependency when the scanner cannot batch (the Semgrep adapter), goes through the single-scan path unchanged.
+
+**Go dependencies scan only their imported packages.** A Go program contains only the packages it imports, so the Go resolver records the directory of each package in the production import closure (`PackageDirs`, from the `Dir` field of `go list -e -deps`), and the scan reads only the regular files directly in those directories: not the module's other packages, and not the subdirectories of an imported package, which are packages of their own. The dependency's root stays the module directory, so attribution, result paths, finding IDs and the batch nesting levels are those of a whole-module scan; only the targets change. The scanner receives the files as named targets (a `DetectionScope`, the same mechanism as `--detect-paths-from`, with `--force-exclude` so the dependency's skip patterns still apply to them). Files are leaves, so the package directories of one module, such as `foo/` and `foo/bar/`, never hide one another, and a batch over many files is split into several processes when the file list exceeds the command-line budget. OpenGrep keeps its language and size filters for named files, so a file in an imported package yields the findings it yielded in a whole-module scan. The findings cache key includes the scoped file list, so a whole-module entry is never served for a package-scoped scan, or one set of packages for another. A scanner that cannot limit detection to files (the Semgrep adapter) still scans the whole module, under the whole-module key.
 
 Dependencies without a usable local source directory are **not** sent to the scanner. They are logged as `Skipping dependency source scan: no local source directory` instead of triggering empty-path scanner failures. For Java, those dependencies still proceed to step 4 as **type-only** inputs as long as `module@version` can be resolved to a compiled JAR.
 
@@ -143,6 +146,8 @@ flowchart TB
 > Dependencies without findings contribute only their bytecode type signatures (class names,
 > method signatures, return types, interface hierarchy). This preserves 100% type resolution
 > accuracy for fluent chains while skipping expensive source parsing for ~80% of dependencies.
+
+A Go dependency's `PackageDirs` becomes the `IncludeDirs` of its `PackageDir`: the builder parses only the imported package directories, each without its subdirectories, and still walks through their parent directories so every package keeps the import path a whole-module walk gives it. This loses no reachability. A Go function can call only functions of packages its own package imports, which are in the closure too, and an interface value can only hold a type of a package the program contains, so the module's other packages hold no call edge and no dispatch target of the program.
 
 #### What the parser extracts
 
@@ -426,24 +431,24 @@ The `RootModule` (`example.com/crypto-test`) is the Go user-code prefix — any 
 
 ### Step 3: Scan Dependencies in Parallel
 
-Each dependency gets scanned with the same rules, limited to Go rules only:
+Each dependency gets scanned with the same rules, limited to Go rules only, and only in the packages the program imports: `chacha20poly1305`, `chacha20`, `internal/alias` and `internal/poly1305` of `golang.org/x/crypto`, and `cpu` of `golang.org/x/sys`. Measured on 2026-10-02 with the current rule set:
 
 | Dependency | Crypto Assets Found | Why |
 |------------|--------------------:|-----|
-| `golang.org/x/crypto` | ~870 | It **is** a crypto library — virtually every file matches |
-| `golang.org/x/sys` | ~3 | False positives (function names like `Generate` matching crypto rules) |
+| `golang.org/x/crypto` | 4 | `chacha20poly1305/chacha20poly1305_generic.go` and `chacha20poly1305/xchacha20poly1305.go`. A whole-module scan reports 378 in 58 files, all in packages this program does not contain |
+| `golang.org/x/sys` | 0 | `cpu` holds no crypto operation |
 
-Total: **~873 dependency findings**. Both dependencies have findings, so both proceed to step 4.
+Total: **4 dependency findings**. Only `golang.org/x/crypto` has findings, so it proceeds to step 4 together with the user code.
 
 ### Step 4: Build the Call Graph
 
-The builder receives three package directories:
+The builder receives the user code and the crypto-bearing dependency, limited to its imported packages:
 
 ```
 PackageDirs = [
     {Dir: ".../go_with_crypto_dep",           ImportPath: "example.com/crypto-test"},
-    {Dir: ".../golang.org/x/crypto@v0.31.0",  ImportPath: "golang.org/x/crypto"},
-    {Dir: ".../golang.org/x/sys@v0.28.0",     ImportPath: "golang.org/x/sys"},
+    {Dir: ".../golang.org/x/crypto@v0.31.0",  ImportPath: "golang.org/x/crypto",
+     IncludeDirs: [".../chacha20", ".../chacha20poly1305", ".../internal/alias", ".../internal/poly1305"]},
 ]
 ```
 
@@ -672,9 +677,9 @@ main.go:19  ──calls──→  mypkg/crypto.go:29  ──calls──→  x/cr
                                     source: "direct"
                                     exported slice: [[main@L19 → SecureDecrypt@L28]]
 
-golang.org/x/crypto/ssh/cipher.go:N  (internal SSH functions)
+golang.org/x/crypto/chacha20poly1305/*.go  (inside the imported package)
                                 │
-                                └── 870 findings with NO call chain
+                                └── 4 findings with NO call chain
                                     source: "dependency"
                                     → no exported reachability slice
 ```
@@ -1065,7 +1070,7 @@ The extensible architecture makes adding a new language a matter of implementing
 
 ### Go
 
-- **Resolver**: [`GoResolver`](../internal/dependency/go_resolver.go) — uses `go list -m -json` for the main modules and `go list -e -deps` for the modules in their production import closure
+- **Resolver**: [`GoResolver`](../internal/dependency/go_resolver.go) — uses `go list -m -json` for the main modules and `go list -e -deps` for the modules in their production import closure and the directories of their imported packages, the only ones scanned and parsed
 - **Parser**: [`GoParser`](../internal/callgraph/go_parser.go) — syntactic parsing of Go source
 - **Manifest**: `go.mod`
 - **Module format**: Go import path (e.g., `golang.org/x/crypto`)

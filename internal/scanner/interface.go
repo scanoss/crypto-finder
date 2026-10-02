@@ -164,8 +164,9 @@ type Info struct {
 }
 
 // BatchScanner is implemented by scanners that can scan several root
-// directories in one process. Each root's report is what a whole-target scan
-// of that root alone produces; reports are in the order of roots.
+// directories in one process. Each root's report is what a scan of that root
+// alone produces, whole or limited to its scope; reports are in the order of
+// roots.
 type BatchScanner interface {
-	ScanRoots(ctx context.Context, roots, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error)
+	ScanRoots(ctx context.Context, roots []Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error)
 }

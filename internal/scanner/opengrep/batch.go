@@ -29,12 +29,13 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
 
-// ScanRoots runs one OpenGrep process over every root and reports each root
-// as a scan of that root alone would: its results and errors are the ones
-// in files below it, with paths relative to it. Roots must not nest or
-// repeat: an exclusion of the outer root could hide the inner one, and
+// ScanRoots runs one OpenGrep process over every root, or one per share of
+// the command-line budget when scoped roots name many files, and reports
+// each root as a scan of that root alone would: its results and errors are
+// the ones in files below it, with paths relative to it. Roots must not nest
+// or repeat: an exclusion of the outer root could hide the inner one, and
 // OpenGrep scans a repeated root once.
-func (s *Scanner) ScanRoots(ctx context.Context, roots, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error) {
+func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, failure.New(
 			failure.CodeRulesLoadFailed,
@@ -44,8 +45,10 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots, rulePaths []string, tool
 		)
 	}
 	cleaned := make([]string, len(roots))
+	scoped := false
 	for i, root := range roots {
-		cleaned[i] = filepath.Clean(root)
+		cleaned[i] = filepath.Clean(root.Dir)
+		scoped = scoped || root.Scope != nil
 	}
 	for i, inner := range cleaned {
 		for j, outer := range cleaned {
@@ -53,7 +56,7 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots, rulePaths []string, tool
 				return nil, failure.New(
 					failure.CodeInvalidArguments,
 					failure.StageInput,
-					fmt.Sprintf("roots %s and %s cannot share one opengrep process: they nest or repeat", roots[j], roots[i]),
+					fmt.Sprintf("roots %s and %s cannot share one opengrep process: they nest or repeat", roots[j].Dir, roots[i].Dir),
 					failure.WithDetail("scanner", ScannerName),
 				)
 			}
@@ -65,9 +68,19 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots, rulePaths []string, tool
 		ctx, cancel = context.WithTimeout(ctx, s.timeout)
 		defer cancel()
 	}
-	parsed, _, _, err := s.run(ctx, s.buildCommand(ctx, roots, rulePaths, false), rulePaths, nil)
-	if err != nil {
-		return nil, err
+	if scoped {
+		if err := s.requireForceExclude(ctx); err != nil {
+			return nil, err
+		}
+	}
+	parsed := &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
+	for _, targets := range scanner.RootTargetBatches(roots) {
+		batch, _, _, err := s.run(ctx, s.buildCommand(ctx, targets, rulePaths, scoped), rulePaths, nil)
+		if err != nil {
+			return nil, err
+		}
+		parsed.Results = append(parsed.Results, batch.Results...)
+		parsed.Errors = append(parsed.Errors, batch.Errors...)
 	}
 	semgrep.LogSemgrepCompatibleErrors(parsed.Errors)
 
@@ -77,7 +90,7 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots, rulePaths []string, tool
 	}
 	reports := make([]*entities.InterimReport, len(roots))
 	for i, part := range parts {
-		reports[i] = semgrep.TransformSemgrepCompatibleOutputToInterimFormat(part, toolInfo, roots[i], rulePaths, s.disableDedup)
+		reports[i] = semgrep.TransformSemgrepCompatibleOutputToInterimFormat(part, toolInfo, roots[i].Dir, rulePaths, s.disableDedup)
 	}
 	return reports, nil
 }

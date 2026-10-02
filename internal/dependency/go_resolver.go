@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -19,11 +20,15 @@ type goModule struct {
 	Version string `json:"Version"`
 	Dir     string `json:"Dir"`
 	Main    bool   `json:"Main"`
+	// packageDirs are the directories of the module's packages in the
+	// import closure. goListModules fills it; go list never does.
+	packageDirs []string
 }
 
 // goPackage holds the fields goListModules requests from `go list -deps`.
 type goPackage struct {
 	ImportPath string    `json:"ImportPath"`
+	Dir        string    `json:"Dir"`
 	Module     *goModule `json:"Module"`
 	Error      *struct {
 		Err string `json:"Err"`
@@ -96,9 +101,10 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 		}
 
 		result.Dependencies = append(result.Dependencies, Dependency{
-			Module:  m.Path,
-			Version: m.Version,
-			Dir:     m.Dir,
+			Module:      m.Path,
+			Version:     m.Version,
+			Dir:         m.Dir,
+			PackageDirs: m.packageDirs,
 		})
 	}
 
@@ -119,8 +125,9 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 }
 
 // goListModules returns the main modules, then each module that provides a
-// package in their non-test import closure, once. Requirements reached only
-// from tests, build-tagged tool files or nothing at all never enter it.
+// package in their non-test import closure, once, with the directories of
+// those packages. Requirements reached only from tests, build-tagged tool
+// files or nothing at all never enter it.
 func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule, error) {
 	modules, err := goList[goModule](ctx, dir, "-m", "-json")
 	if err != nil {
@@ -131,7 +138,7 @@ func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule,
 	// package names, from discarding the closure of every package that loads.
 	// Each main module's directory is listed because `./...` matches nothing
 	// at a go.work root and only a subtree below a module root.
-	args := []string{"-e", "-deps", "-json=ImportPath,Module,Error"}
+	args := []string{"-e", "-deps", "-json=ImportPath,Dir,Module,Error"}
 	for _, m := range modules {
 		if m.Dir == "" {
 			return nil, fmt.Errorf("go list -m: main module %s has no directory", m.Path)
@@ -143,18 +150,30 @@ func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule,
 		return nil, err
 	}
 
-	seen := make(map[string]bool)
+	index := make(map[string]int)
 	failed := 0
 	for _, p := range packages {
 		if p.Error != nil {
 			failed++
 			log.Debug().Str("package", p.ImportPath).Str("error", p.Error.Err).Msg("Go package failed to load")
 		}
-		if p.Module == nil || p.Module.Main || seen[p.Module.Path] {
+		if p.Module == nil || p.Module.Main {
 			continue
 		}
-		seen[p.Module.Path] = true
-		modules = append(modules, *p.Module)
+		i, seen := index[p.Module.Path]
+		if !seen {
+			i = len(modules)
+			index[p.Module.Path] = i
+			modules = append(modules, *p.Module)
+		}
+		// A package the go tool could not find has no directory.
+		if p.Dir != "" {
+			modules[i].packageDirs = append(modules[i].packageDirs, p.Dir)
+		}
+	}
+	for _, i := range index {
+		slices.Sort(modules[i].packageDirs)
+		modules[i].packageDirs = slices.Compact(modules[i].packageDirs)
 	}
 	if failed > 0 {
 		log.Warn().Int("packages", failed).Msg("Go packages failed to load; modules imported only through them are not inventoried")
