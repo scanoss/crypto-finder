@@ -73,6 +73,41 @@ func less(i, j int) bool { return false }
 			want: []string{"app.start -> app.task"},
 		},
 		{
+			name: "range variable, type switch binding, named result and literal parameter shadow the function",
+			source: `func viaRange(g *errgroup.Group, checks []func() error) {
+	for _, task := range checks {
+		g.Go(task)
+	}
+}
+
+func viaTypeSwitch(g *errgroup.Group, v any) {
+	switch job := v.(type) {
+	case func() error:
+		g.Go(job)
+	}
+}
+
+func viaResult(g *errgroup.Group) (task func() error) {
+	g.Go(task)
+	return
+}
+
+func viaLiteral(g *errgroup.Group) {
+	func(job func() error) { g.Go(job) }(nil)
+}
+`,
+			not: []string{"app.viaRange -> app.task", "app.viaTypeSwitch -> app.job", "app.viaResult -> app.task", "app.viaLiteral -> app.job"},
+		},
+		{
+			name: "go statement and callback in one function",
+			source: `func start(g *errgroup.Group) {
+	go tick()
+	g.Go(task)
+}
+`,
+			want: []string{"app.start -> app.task", "app.start -> app.tick"},
+		},
+		{
 			name: "unknown registrar",
 			source: `func reg(f func()) { f() }
 

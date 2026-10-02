@@ -3,7 +3,11 @@
 
 package callgraph
 
-import "strings"
+import (
+	"strings"
+
+	sitter "github.com/smacker/go-tree-sitter"
+)
 
 // pythonCallbackAPIs lists the callback-invoking APIs, by the callee the
 // parser resolves for the registering call, with the arguments they take a
@@ -53,18 +57,21 @@ func addPythonCallbackReferences(analysis *FileAnalysis) {
 	executors, declared := pythonCallbackScope(analysis)
 	for i := range analysis.Functions {
 		decl := &analysis.Functions[i]
-		params := make(map[string]bool, len(decl.Parameters))
+		bound := make(map[string]bool, len(decl.Parameters)+len(decl.boundNames))
 		for _, param := range decl.Parameters {
-			params[param.Name] = true
+			bound[param.Name] = true
+		}
+		for name := range decl.boundNames {
+			bound[name] = true
 		}
 		for j := range decl.Calls {
 			call := &decl.Calls[j]
-			api, ok := pythonCallbackAPI(call, analysis, declared, executors)
+			api, ok := pythonCallbackAPI(call, analysis, declared, executors, bound)
 			if !ok {
 				continue
 			}
 			for _, arg := range callbackArguments(call.Arguments, api) {
-				if target, ok := pythonCallbackTarget(arg, decl, analysis, params); ok {
+				if target, ok := pythonCallbackTarget(arg, decl, analysis, bound); ok {
 					decl.ImplicitCalls = appendCallbackReference(decl.ImplicitCalls, callbackReference(call, target, arg))
 				}
 			}
@@ -73,7 +80,9 @@ func addPythonCallbackReferences(analysis *FileAnalysis) {
 }
 
 // pythonCallbackScope returns the variables the file binds to an executor or
-// pool, and the module-level functions it declares (a declared `map` is not
+// pool (file-wide: a variable bound to an executor in one function counts in
+// every function of the file, which only matters for a call that also names a
+// known executor method), and the module-level functions it declares (a declared `map` is not
 // the builtin).
 func pythonCallbackScope(analysis *FileAnalysis) (executors, declared map[string]bool) {
 	executors = make(map[string]bool)
@@ -101,11 +110,11 @@ func pythonCallbackKey(call *FunctionCall) string {
 	return call.Callee.String()
 }
 
-func pythonCallbackAPI(call *FunctionCall, analysis *FileAnalysis, declared, executors map[string]bool) (callbackAPI, bool) {
+func pythonCallbackAPI(call *FunctionCall, analysis *FileAnalysis, declared, executors, bound map[string]bool) (callbackAPI, bool) {
 	if api, ok := pythonCallbackAPIs[pythonCallbackKey(call)]; ok {
 		return api, true
 	}
-	if call.Callee.Package == analysis.PackagePath && call.Callee.Type == "" && call.Raw == call.Callee.Name && !declared[call.Raw] {
+	if call.Callee.Package == analysis.PackagePath && call.Callee.Type == "" && call.Raw == call.Callee.Name && !declared[call.Raw] && !bound[call.Raw] {
 		api, ok := pythonBuiltinCallbackAPIs[call.Raw]
 		return api, ok
 	}
@@ -119,12 +128,13 @@ func pythonCallbackAPI(call *FunctionCall, analysis *FileAnalysis, declared, exe
 // pythonCallbackTarget resolves a callback argument to the function it names:
 // a bare name (a function of the module, or an imported one), `module.fn` of
 // an imported module, or `self.method`. Anything else, a call result, a
-// lambda or a parameter, names no function.
-func pythonCallbackTarget(arg string, decl *FunctionDecl, analysis *FileAnalysis, params map[string]bool) (FunctionID, bool) {
+// lambda, or a name the function binds (a parameter, a local, a loop or
+// comprehension variable, a nested def), names no function.
+func pythonCallbackTarget(arg string, decl *FunctionDecl, analysis *FileAnalysis, bound map[string]bool) (FunctionID, bool) {
 	object, name, qualified := strings.Cut(arg, ".")
 	switch {
 	case !qualified:
-		if !callbackIdentifier.MatchString(arg) || params[arg] {
+		if !callbackIdentifier.MatchString(arg) || bound[arg] {
 			return FunctionID{}, false
 		}
 		if pkg, ok := analysis.Imports[arg]; ok {
@@ -134,7 +144,7 @@ func pythonCallbackTarget(arg string, decl *FunctionDecl, analysis *FileAnalysis
 			return FunctionID{Package: pkg, Name: pythonImportedName(analysis, arg)}, true
 		}
 		return FunctionID{Package: analysis.PackagePath, Name: arg}, true
-	case !callbackIdentifier.MatchString(object) || !callbackIdentifier.MatchString(name) || params[object]:
+	case !callbackIdentifier.MatchString(object) || !callbackIdentifier.MatchString(name) || bound[object] && object != pythonSelfObjectName:
 		return FunctionID{}, false
 	case object == pythonSelfObjectName:
 		if decl.ID.Type == "" {
@@ -150,4 +160,83 @@ func pythonCallbackTarget(arg string, decl *FunctionDecl, analysis *FileAnalysis
 		pkg += "." + pythonImportedName(analysis, object)
 	}
 	return FunctionID{Package: pkg, Name: name}, true
+}
+
+const (
+	pythonNodeDefaultParameter  = "default_parameter"
+	pythonNodeTuplePattern      = "tuple_pattern"
+	pythonNodeTypedParameter    = "typed_parameter"
+	pythonNodeTypedDefaultParam = "typed_default_parameter"
+)
+
+// pythonBoundNames collects every name a function definition binds anywhere
+// in its span, nested functions, lambdas and comprehensions included: its
+// parameters, assignment, loop, `with` and `except` targets, walrus targets,
+// and the names of nested definitions, classes and imports. Closure calls are
+// attributed to the enclosing function, so a name any scope inside binds may
+// not be the module-level function of that name.
+func pythonBoundNames(fn *sitter.Node, src []byte) map[string]bool {
+	names := make(map[string]bool)
+	pythonBoundParameterNames(fn.ChildByFieldName("parameters"), src, names)
+	for i := 0; i < int(fn.NamedChildCount()); i++ {
+		pythonCollectBindings(fn.NamedChild(i), src, names)
+	}
+	return names
+}
+
+func pythonCollectBindings(node *sitter.Node, src []byte, names map[string]bool) {
+	switch node.Type() {
+	case "assignment", "augmented_assignment", javaNodeForStatement, "for_in_clause":
+		pythonTargetNames(node.ChildByFieldName("left"), src, names)
+	case "named_expression":
+		pythonTargetNames(node.ChildByFieldName("name"), src, names)
+	case "as_pattern":
+		pythonTargetNames(node.ChildByFieldName("alias"), src, names)
+	case "function_definition", "class_definition":
+		pythonTargetNames(node.ChildByFieldName("name"), src, names)
+		pythonBoundParameterNames(node.ChildByFieldName("parameters"), src, names)
+	case "lambda":
+		pythonBoundParameterNames(node.ChildByFieldName("parameters"), src, names)
+	case "aliased_import":
+		pythonTargetNames(node.ChildByFieldName("alias"), src, names)
+	case "import_statement", "import_from_statement":
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			if child := node.NamedChild(i); child.Type() == "dotted_name" && child.NamedChildCount() > 0 {
+				names[child.NamedChild(0).Content(src)] = true
+			}
+		}
+	}
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		pythonCollectBindings(node.NamedChild(i), src, names)
+	}
+}
+
+// pythonTargetNames records the names an assignment-like target binds; an
+// attribute or a subscript binds none.
+func pythonTargetNames(node *sitter.Node, src []byte, names map[string]bool) {
+	if node == nil {
+		return
+	}
+	switch node.Type() {
+	case goNodeIdentifier:
+		names[node.Content(src)] = true
+	case "attribute", "subscript":
+	default:
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			pythonTargetNames(node.NamedChild(i), src, names)
+		}
+	}
+}
+
+// pythonBoundParameterNames records the names a parameter list binds, not the
+// default values it reads.
+func pythonBoundParameterNames(params *sitter.Node, src []byte, names map[string]bool) {
+	for i := 0; params != nil && i < int(params.NamedChildCount()); i++ {
+		switch child := params.NamedChild(i); child.Type() {
+		case goNodeIdentifier, "list_splat_pattern", "dictionary_splat_pattern", pythonNodeTypedParameter, pythonNodeTuplePattern:
+			pythonTargetNames(child, src, names)
+		case pythonNodeDefaultParameter, pythonNodeTypedDefaultParam:
+			pythonTargetNames(child.ChildByFieldName("name"), src, names)
+		}
+	}
 }

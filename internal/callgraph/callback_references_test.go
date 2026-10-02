@@ -17,7 +17,12 @@ type callbackCase struct {
 	not    []string
 }
 
+// hasEdge reports an edge; a registrar of "*" stands for any caller, for a
+// registration made inside an anonymous function.
 func hasEdge(graph *CallGraph, edge [2]string) bool {
+	if edge[0] == "*" {
+		return len(graph.Callers[edge[1]]) > 0
+	}
 	return slices.Contains(graph.Callers[edge[1]], edge[0])
 }
 
@@ -126,6 +131,32 @@ func TestBuilder_PythonCallbackReferences(t *testing.T) {
 			name:   "parameter shadows a module function",
 			source: "def start(fn):\n    threading.Thread(target=fn).start()\n",
 			not:    []string{"app.mod.start -> app.mod.fn"},
+		},
+		{
+			name: "names bound inside the function shadow a module function",
+			source: "def viaNested(items):\n    def inner(fn):\n        threading.Thread(target=fn).start()\n\n" +
+				"def viaLambda(items):\n    return lambda fn: threading.Thread(target=fn)\n\n" +
+				"def viaComprehension(fs):\n    return [threading.Thread(target=fn) for fn in fs]\n\n" +
+				"def viaLoop(fs):\n    for fn in fs:\n        threading.Thread(target=fn).start()\n\n" +
+				"def viaWith(open_it):\n    with open_it() as fn:\n        threading.Thread(target=fn).start()\n\n" +
+				"def viaDef():\n    def fn():\n        pass\n    threading.Thread(target=fn).start()\n\n" +
+				"def viaAssign(get):\n    fn, rest = get()\n    threading.Thread(target=fn).start()\n\n" +
+				"def viaWalrus(get):\n    if (fn := get()):\n        threading.Thread(target=fn).start()\n",
+			not: []string{
+				"app.mod.viaNested -> app.mod.fn", "app.mod.viaLambda -> app.mod.fn", "app.mod.viaComprehension -> app.mod.fn",
+				"app.mod.viaLoop -> app.mod.fn", "app.mod.viaWith -> app.mod.fn", "app.mod.viaDef -> app.mod.fn",
+				"app.mod.viaAssign -> app.mod.fn", "app.mod.viaWalrus -> app.mod.fn",
+			},
+		},
+		{
+			name:   "a local named like a builtin is not the builtin",
+			source: "def start(get, xs):\n    map = get()\n    map(fn, xs)\n",
+			not:    []string{"app.mod.start -> app.mod.fn"},
+		},
+		{
+			name:   "a function may register itself",
+			source: "def retry():\n    threading.Timer(1, retry).start()\n",
+			want:   []string{"app.mod.retry -> app.mod.retry"},
 		},
 		{
 			name:   "module declares its own map",

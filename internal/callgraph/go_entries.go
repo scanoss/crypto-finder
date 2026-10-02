@@ -241,12 +241,49 @@ func (s *goEntryScope) shadowed(id *sitter.Node) bool {
 	for scope := id.Parent(); scope != nil; scope = scope.Parent() {
 		switch scope.Type() {
 		case goNodeFunctionDecl, goNodeMethodDecl, goNodeFuncLiteral:
-			if _, ok := s.localDeclaration(scope, id.Content(s.src)); ok {
+			name := id.Content(s.src)
+			if _, ok := s.localDeclaration(scope, name); ok || s.otherBinding(scope, name) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// otherBinding reports whether a function binds name some way localDeclaration
+// has no value or type for: a named result, a range clause variable, or a type
+// switch binding. The name is then not the package-level one it spells.
+func (s *goEntryScope) otherBinding(fn *sitter.Node, name string) bool {
+	if _, ok := s.parameterType(fn.ChildByFieldName("result"), name); ok {
+		return true
+	}
+	var walk func(node *sitter.Node) bool
+	walk = func(node *sitter.Node) bool {
+		if node == nil {
+			return false
+		}
+		var list *sitter.Node
+		switch node.Type() {
+		case goNodeFuncLiteral:
+			return false
+		case "range_clause":
+			list = node.ChildByFieldName(goFieldLeft)
+		case "type_switch_statement":
+			list = node.ChildByFieldName("alias")
+		}
+		for i := 0; list != nil && i < int(list.NamedChildCount()); i++ {
+			if list.NamedChild(i).Content(s.src) == name {
+				return true
+			}
+		}
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			if walk(node.NamedChild(i)) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(fn.ChildByFieldName("body"))
 }
 
 // localDeclaration finds name among a function's receiver, parameters and

@@ -19,17 +19,14 @@ var nodeGlobalCallbackAPIs = map[string]callbackAPI{
 }
 
 // nodeMethodCallbackAPIs are the Array, Promise and event emitter methods that
-// call a function argument. The receiver is usually of a type the parser
+// call a function argument. `find`, `some`, `every` and `sort` are left out: as method names they are likelier a domain or repository method than an Array one. The receiver is usually of a type the parser
 // cannot know (`items.map(fn)`), so they match by method name and argument
 // position. That is sound for the edge recorded: the registrar passes a
 // declared function to a method that runs the function it is given. An
 // imported object (`_.map(xs, fn)`, `Promise.race`) is not matched.
 var nodeMethodCallbackAPIs = map[string]callbackAPI{
 	"map": positional(0), "forEach": positional(0), "filter": positional(0),
-	"reduce": positional(0), "reduceRight": positional(0), "some": positional(0),
-	"every": positional(0), "find": positional(0), "findIndex": positional(0),
-	"findLast": positional(0), "findLastIndex": positional(0), "flatMap": positional(0),
-	"sort": positional(0),
+	"reduce": positional(0), "reduceRight": positional(0), "flatMap": positional(0),
 	"then": positional(0, 1), "catch": positional(0), "finally": positional(0),
 	"addEventListener": positional(1),
 	"on":               positional(1), "once": positional(1), "addListener": positional(1),

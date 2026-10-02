@@ -237,6 +237,10 @@ type FunctionDecl struct {
 	// attribution, which matches a crypto call by its position, never picks
 	// one.
 	ImplicitCalls []FunctionCall
+	// boundNames holds every name the declaration binds anywhere in its
+	// span, nested closures included (Python only): a callback argument with
+	// one of these names is not known to be the module function it spells.
+	boundNames map[string]bool
 	// FileTypeNamesAtRisk is the declaring file's FileAnalysis.TypeNamesAtRisk,
 	// shared by every declaration of the file (Java only).
 	FileTypeNamesAtRisk map[string]bool

@@ -14,6 +14,7 @@ import _ from 'lodash';
 function a() {}
 function b() {}
 function c() {}
+function d() {}
 
 `
 	tests := []callbackCase{
@@ -35,7 +36,7 @@ function c() {}
   xs.map(a);
   xs.forEach(b);
   xs.filter(c as any);
-  [1].sort(a);
+  xs.flatMap(a);
 }
 `,
 			want: []string{"app/main.start -> app/main.a", "app/main.start -> app/main.b", "app/main.start -> app/main.c"},
@@ -121,6 +122,71 @@ function viaLocal(get: any) {
 }
 `,
 			not: []string{"app/main.viaParam -> app/main.a", "app/main.viaLocal -> app/main.b"},
+		},
+		{
+			name: "methods too likely a domain method to match",
+			source: `function start(repo: any) {
+  repo.find(a);
+  repo.findIndex(a);
+  repo.findLast(a);
+  repo.findLastIndex(a);
+  repo.some(b);
+  repo.every(b);
+  repo.sort(c);
+}
+`,
+			not: []string{"app/main.start -> app/main.a", "app/main.start -> app/main.b", "app/main.start -> app/main.c"},
+		},
+		{
+			name: "name bound by an enclosing function",
+			source: `function viaClosure(a: () => void, items: number[]) {
+  items.forEach(() => setTimeout(a, 1));
+}
+
+function viaOuterLocal(items: number[]) {
+  const b = items.length;
+  items.forEach(function () { setTimeout(b, 1); });
+}
+
+function viaArrowParam() {
+  return (c: any) => setTimeout(c, 1);
+}
+
+function viaOuterDestructure(x: any, items: number[]) {
+  const { d } = x;
+  items.forEach(() => setTimeout(d, 1));
+}
+`,
+			not: []string{"* -> app/main.a", "* -> app/main.b", "* -> app/main.c", "* -> app/main.d"},
+		},
+		{
+			name: "destructured names shadow a function",
+			source: `function viaConst(x: any) {
+  const { a } = x;
+  const [b] = x;
+  setTimeout(a, 1);
+  setTimeout(b, 1);
+}
+
+function viaParam({ c }: any) {
+  setTimeout(c, 1);
+}
+
+function viaRenamed(x: any) {
+  const { y: a } = x;
+  setTimeout(a, 1);
+}
+`,
+			not: []string{"app/main.viaConst -> app/main.a", "app/main.viaConst -> app/main.b", "app/main.viaParam -> app/main.c", "app/main.viaRenamed -> app/main.a"},
+		},
+		{
+			name: "loop and catch bindings shadow a function",
+			source: `function start(xs: any[]) {
+  for (const a of xs) { setTimeout(a, 1); }
+  try { xs.length; } catch (b) { setTimeout(b, 1); }
+}
+`,
+			not: []string{"app/main.start -> app/main.a", "app/main.start -> app/main.b"},
 		},
 		{
 			name: "imported object and shadowed global",

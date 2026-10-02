@@ -1783,6 +1783,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		Parameters:      parameters,
 		Visibility:      pythonVisibilityForName(name),
 		OwnerVisibility: ownerVisibility,
+		boundNames:      pythonBoundNames(node, src),
 	}
 
 	if body != nil {

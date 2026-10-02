@@ -6,6 +6,7 @@ package callgraph
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,6 +26,8 @@ const (
 	nodeFunctionDeclaration   = "function_declaration"
 	nodeGeneratorDeclaration  = "generator_function_declaration"
 	nodeArrowFunction         = "arrow_function"
+	nodeObjectPattern         = "object_pattern"
+	nodeAssignmentPattern     = "assignment_pattern"
 	nodeFunctionExpression    = "function_expression"
 	nodeMethodDefinition      = "method_definition"
 	nodeReturnStatement       = "return_statement"
@@ -390,7 +393,7 @@ func extractNodeRequireImport(node *sitter.Node, src []byte, bindings nodeBindin
 	switch name.Type() {
 	case goNodeIdentifier:
 		bindings[name.Content(src)] = binding
-	case "object_pattern":
+	case nodeObjectPattern:
 		for i := 0; i < int(name.NamedChildCount()); i++ {
 			item := name.NamedChild(i)
 			switch item.Type() {
@@ -759,7 +762,7 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 	defer func() { p.scope = previousScope }()
 	decl.Calls = p.extractCalls(body, src, filePath, packagePath, owner, imports, locals)
 	decl.ImplicitCalls = nodeImplicitCalls(body, src, filePath, packagePath, imports, locals)
-	decl.ImplicitCalls = append(decl.ImplicitCalls, nodeCallbackReferences(body, src, filePath, packagePath, owner, imports, locals, own)...)
+	decl.ImplicitCalls = append(decl.ImplicitCalls, nodeCallbackReferences(body, src, filePath, packagePath, owner, imports, locals, nodeBoundNames(node, params, body, src))...)
 	decl.ModuleVars = imports.moduleReceivers(decl.Calls, own)
 	if p.file != nil {
 		if ref, ok := p.file.annotatedClass(node.ChildByFieldName("return_type"), src); ok {
@@ -853,6 +856,25 @@ func nodeParameters(node *sitter.Node, src []byte) []FunctionParameter {
 	return params
 }
 
+// nodeBoundNames returns the names a function and every function enclosing it
+// bind (parameters, locals, destructured names): a callback argument with one
+// of them is a value from some scope, not the module-level function it spells.
+func nodeBoundNames(fn, params, body *sitter.Node, src []byte) map[string]bool {
+	names := collectNodeLocalNames(params, body, src)
+	for scope := fn.Parent(); scope != nil; scope = scope.Parent() {
+		if isNodeNestedScope(scope.Type()) && scope.Type() != javaNodeClassDeclaration && scope.Type() != nodeClassExpression {
+			maps.Copy(names, collectNodeLocalNames(scope.ChildByFieldName("parameters"), scope.ChildByFieldName("body"), src))
+			if single := scope.ChildByFieldName("parameter"); single != nil {
+				collectNodePatternNames(single, src, names)
+			}
+		}
+	}
+	if single := fn.ChildByFieldName("parameter"); single != nil {
+		collectNodePatternNames(single, src, names)
+	}
+	return names
+}
+
 func collectNodeLocalNames(params, body *sitter.Node, src []byte) map[string]bool {
 	locals := make(map[string]bool)
 	collectNodeBindingNames(params, src, locals)
@@ -867,23 +889,44 @@ func collectNodeBindingNames(node *sitter.Node, src []byte, locals map[string]bo
 	if collectNodeNestedBinding(node, src, locals) {
 		return
 	}
-	if node.Type() == nodeVariableDeclarator {
-		name := node.ChildByFieldName("name")
-		if name != nil && name.Type() == goNodeIdentifier {
-			locals[name.Content(src)] = true
-		}
-	}
-	if node.Type() == goNodeIdentifier && node.Parent() != nil && node.Parent().Type() == "formal_parameters" {
-		locals[node.Content(src)] = true
-	}
-	if node.Type() == "required_parameter" || node.Type() == "optional_parameter" {
-		pattern := node.ChildByFieldName("pattern")
-		if pattern != nil && pattern.Type() == goNodeIdentifier {
-			locals[pattern.Content(src)] = true
+	switch node.Type() {
+	case nodeVariableDeclarator:
+		collectNodePatternNames(node.ChildByFieldName("name"), src, locals)
+	case "for_in_statement":
+		collectNodePatternNames(node.ChildByFieldName("left"), src, locals)
+	case "catch_clause":
+		collectNodePatternNames(node.ChildByFieldName("parameter"), src, locals)
+	case "required_parameter", "optional_parameter":
+		collectNodePatternNames(node.ChildByFieldName("pattern"), src, locals)
+	case goNodeIdentifier, nodeObjectPattern, "array_pattern", nodeAssignmentPattern, "rest_pattern":
+		if parent := node.Parent(); parent != nil && (parent.Type() == "formal_parameters" ||
+			parent.Type() == nodeArrowFunction && parent.ChildByFieldName("parameter") != nil && parent.ChildByFieldName("parameter").Equal(node)) {
+			collectNodePatternNames(node, src, locals)
 		}
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
 		collectNodeBindingNames(node.Child(i), src, locals)
+	}
+}
+
+// collectNodePatternNames records the names a binding pattern introduces: a
+// plain name, or the names inside a destructuring pattern (`{a, b: c}`,
+// `[x, ...rest]`, `{d = 1}`), without the default values it reads.
+func collectNodePatternNames(node *sitter.Node, src []byte, locals map[string]bool) {
+	if node == nil {
+		return
+	}
+	switch node.Type() {
+	case goNodeIdentifier, "shorthand_property_identifier_pattern":
+		locals[node.Content(src)] = true
+	case "pair_pattern":
+		collectNodePatternNames(node.ChildByFieldName("value"), src, locals)
+	case nodeAssignmentPattern, "object_assignment_pattern":
+		collectNodePatternNames(node.ChildByFieldName("left"), src, locals)
+	case nodeObjectPattern, "array_pattern", "rest_pattern":
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			collectNodePatternNames(node.NamedChild(i), src, locals)
+		}
 	}
 }
 
