@@ -45,10 +45,8 @@ func resolveNodeRelativeModule(filePath, packagePath, specifier string) (string,
 		modulePath = ""
 	}
 	target := filepath.Join(filepath.Dir(filePath), filepath.FromSlash(specifier))
-	// './a.js' in TypeScript names a.ts: the written extension is dropped the
-	// way nodeModulePath drops it from the declaring file.
-	if ext := path.Ext(modulePath); ext != "" && isNodeSourceExtension(ext) {
-		return strings.TrimSuffix(modulePath, ext), true
+	if resolved, ok := resolveWrittenNodeExtension(modulePath, target, packagePath); ok {
+		return resolved, true
 	}
 	// A file wins over a directory of the same name, as in Node's resolver;
 	// a directory resolves to its index module.
@@ -59,6 +57,22 @@ func resolveNodeRelativeModule(filePath, packagePath, specifier string) (string,
 		return modulePath + "/index", true
 	}
 	return modulePath, true
+}
+
+// resolveWrittenNodeExtension resolves a specifier that carries a source
+// extension. One naming a file as it stands is that file: './run.mjs' beside
+// run.ts is run.mjs, which nodeModulePath keys apart from run.ts. Otherwise
+// './a.js' in TypeScript names a.ts, and the written extension is dropped the
+// way nodeModulePath drops it from the declaring file.
+func resolveWrittenNodeExtension(modulePath, target, packagePath string) (string, bool) {
+	ext := path.Ext(modulePath)
+	if ext == "" || !isNodeSourceExtension(ext) {
+		return "", false
+	}
+	if info, err := os.Stat(target); err == nil && !info.IsDir() {
+		return nodeModulePath(packagePath, target), true
+	}
+	return strings.TrimSuffix(modulePath, ext), true
 }
 
 func isNodeSourceExtension(ext string) bool {

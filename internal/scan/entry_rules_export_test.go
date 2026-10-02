@@ -181,6 +181,20 @@ func TestExportCallGraph_NodeEntryPoints(t *testing.T) {
 		{id: "library-export", file: "packages/hashlib/lib/index.js", needle: `createHash('sha3-256')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "fingerprint"},
 		// memo.get('/session', () => ..): memo comes from no router package,
 		// so the callback is called by the module that passes it, not a route.
+		// package.json scripts: `tsx scripts/seed.ts` behind an env assignment,
+		// `node ./scripts/build.cjs --minify` after `tsc &&`.
+		{id: "script-tsx", file: "scripts/seed.ts", needle: `createHash('sha256')`, reachability: reachable, rootKind: callgraph.RootKindMain, first: "seed.<module>"},
+		{id: "script-chained", file: "scripts/build.cjs", needle: `createHash('sha1')`, reachability: reachable, rootKind: callgraph.RootKindMain, first: "build.<module>"},
+		// A shebang naming node (with env -S and flags) or bun. cli.mjs and cli.ts
+		// share a stem: each keeps its own top level.
+		{id: "shebang-mjs", file: "scripts/cli.mjs", needle: `createHash('md5')`, reachability: reachable, rootKind: callgraph.RootKindMain, first: "cli.mjs.<module>"},
+		{id: "shebang-ts", file: "scripts/cli.ts", needle: `createHash('sha384')`, reachability: reachable, rootKind: callgraph.RootKindMain, first: "cli.<module>"},
+		// A plain module, a file only eslint or jest names, and a shebang
+		// naming python are not script entries.
+		{id: "script-plain", file: "scripts/helper.js", needle: `createHash('sha224')`, reachability: graphfrag.ReachabilityUnreachable},
+		{id: "script-eslint", file: "scripts/linted.js", needle: `createHash('sha512')`, reachability: graphfrag.ReachabilityUnreachable},
+		{id: "script-jest", file: "scripts/tested.js", needle: `createHash('sha3-512')`, reachability: graphfrag.ReachabilityUnreachable},
+		{id: "shebang-python", file: "scripts/legacy.js", needle: `createHash('ripemd160')`, reachability: graphfrag.ReachabilityUnreachable},
 		{id: "not-a-router", file: "src/cache/warm.ts", needle: `createHash('sha512-224')`, reachability: reachable, rootKind: callgraph.RootKindNoCallers, first: "warm.<module>"},
 	}
 	checkEntryRules(t, entryRulesFixture(t, "node", "node", "typescript", callgraph.NewNodeParser(), cases), cases)
