@@ -1,0 +1,1 @@
+- `scan --scan-dependencies` now gives every asset a `finding_id`, as the interim contract states, also without `--export-callgraph` or `--export-graph-fragment`. Assets added after the dependency phase, such as library entry points and per-value assets, had none unless an export was requested. The `--progress` stream of such a scan now reports the `finding_ids` pass.

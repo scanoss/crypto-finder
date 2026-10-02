@@ -499,6 +499,8 @@ func TestScanProgressReportsEveryPassBeforeOutput(t *testing.T) {
 				writeNodeDependencyFixture(t, dir, root)
 				return []string{"--scan-dependencies"}
 			},
+			// The passes after the dependency phase add assets, so their
+			// finding ids are assigned even when no export asks for them.
 			want: []string{
 				"/scan:started",
 				"scan/detection:started",
@@ -513,6 +515,8 @@ func TestScanProgressReportsEveryPassBeforeOutput(t *testing.T) {
 				"scan/entry_points:completed",
 				"scan/conditioned_findings:started",
 				"scan/conditioned_findings:completed",
+				"scan/finding_ids:started",
+				"scan/finding_ids:completed",
 				"scan/occurrence_keys:started",
 				"scan/occurrence_keys:completed",
 				"scan/oid_projection:started",
