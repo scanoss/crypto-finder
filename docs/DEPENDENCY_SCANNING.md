@@ -62,7 +62,7 @@ The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is t
 
 Rules are pre-loaded once and filtered to the ecosystem's language(s). For a Go project, only `go` rules are kept; for Java, only `java` rules. This avoids running irrelevant rules against source code, significantly reducing scanner overhead.
 
-The kept rules are then written to one merged YAML file, which every dependency scan reuses. OpenGrep loads each config file separately on every run, so one file loads faster than hundreds. Each merged rule ID carries its source file's directory, the prefix OpenGrep derived from the file location before, so finding rule IDs do not change. Files the merge cannot represent exactly (invalid YAML, `*.test.yaml` fixtures, hidden paths) are passed to the scanner unchanged.
+The kept rules are then written to one merged file, which every dependency scan reuses. OpenGrep loads each config file separately on every run, so one file loads faster than hundreds. The merged file is named `merged-rules.yaml` but holds JSON text, one rule per line: JSON is valid YAML, and OpenGrep parses it about seven times faster. Each merged rule ID carries its source file's directory, the prefix OpenGrep derived from the file location before, so finding rule IDs do not change. Files the merge cannot represent exactly are passed to the scanner unchanged. These are invalid YAML, `*.test.yaml` fixtures, hidden paths, and YAML with no JSON form of the same meaning, such as a number written `0x10` or an alias.
 
 ### Step 3: Scan Dependencies in Parallel
 

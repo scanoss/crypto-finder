@@ -2,12 +2,14 @@ package engine
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -200,8 +202,8 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 		targetRoot = filepath.Join(tempRoot, baseName)
 	}
 
-	merged := bytes.NewBufferString("rules:\n")
-	mergedRules, copied, nextLine := 0, 0, 2
+	var merged mergedRules
+	copied := 0
 	for _, ruleFile := range ruleFiles {
 		relPath, err := filepath.Rel(baseDir, ruleFile)
 		if err != nil {
@@ -209,13 +211,13 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 			return nil, nil, fmt.Errorf("resolve relative rule path for %s: %w", ruleFile, err)
 		}
 
-		if rules, count, ok := mergeableRules(ruleFile, relPath); ok {
-			if count > 0 {
-				log.Debug().Str("path", ruleFile).Int("mergedLine", nextLine).Msg("Merged rule file into " + mergedRulesFileName)
+		if rules, ok := mergeableRules(ruleFile, relPath); ok {
+			if len(rules) > 0 {
+				log.Debug().Str("path", ruleFile).Int("mergedLine", merged.nextLine()).Msg("Merged rule file into " + mergedRulesFileName)
 			}
-			merged.Write(rules)
-			mergedRules += count
-			nextLine += bytes.Count(rules, []byte("\n"))
+			for _, rule := range rules {
+				merged.add(rule)
+			}
 			continue
 		}
 		log.Debug().Str("path", ruleFile).Msg("Passing rule file to scanner unmerged")
@@ -225,18 +227,14 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 		}
 		copied++
 	}
-	if mergedRules == 0 {
-		merged.Reset()
-		merged.WriteString("rules: []\n")
-	}
-	if err := writeMergedRules(filepath.Join(targetRoot, mergedRulesFileName), merged.Bytes()); err != nil {
+	if err := writeMergedRules(filepath.Join(targetRoot, mergedRulesFileName), merged.bytes()); err != nil {
 		removeMaterializedRules(tempRoot)
 		return nil, nil, err
 	}
 
 	log.Info().
 		Int("sourceFiles", len(ruleFiles)).
-		Int("mergedRules", mergedRules).
+		Int("mergedRules", merged.count).
 		Int("unmergedFiles", copied).
 		Str("path", targetRoot).
 		Msg("Materialized filtered rules for scanner")
@@ -248,57 +246,182 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 
 // mergedRulesFileName holds every mergeable filtered rule. OpenGrep loads each
 // config file separately, so one merged file loads faster and with far less
-// CPU than hundreds of small ones.
+// CPU than hundreds of small ones. Its content is JSON, which is YAML too:
+// OpenGrep 1.29 reads 1,600 rules of JSON text in a seventh of the time it
+// takes for the same rules as YAML, but only loads .yaml/.yml names from a
+// config directory.
 const mergedRulesFileName = "merged-rules.yaml"
 
-// mergeableRules encodes the rules of one filtered file as entries of the
-// merged top-level rules sequence, or returns false when the file must reach
-// the scanner verbatim. It encodes per file because yaml.v3 queues every
-// event of a document until the document ends, which cost about 800 MB of
-// allocations for 3,700 rules encoded as one document.
+// mergedRules builds the merged file: one JSON rule per line after the line
+// that opens the rules list, so OpenGrep's error lines map back to a rule.
+type mergedRules struct {
+	buf   bytes.Buffer
+	count int
+}
+
+func (m *mergedRules) nextLine() int { return m.count + 2 }
+
+func (m *mergedRules) add(rule []byte) {
+	if m.count == 0 {
+		m.buf.WriteString("{\"rules\":[\n")
+	} else {
+		m.buf.WriteString(",\n")
+	}
+	m.buf.Write(rule)
+	m.count++
+}
+
+func (m *mergedRules) bytes() []byte {
+	if m.count == 0 {
+		return []byte("{\"rules\":[]}\n")
+	}
+	m.buf.WriteString("\n]}\n")
+	return m.buf.Bytes()
+}
+
+// mergeableRules encodes the rules of one filtered file as one JSON object
+// per rule, or returns false when the file must reach the scanner verbatim:
+// when it is not a plain rules file, or when some node has no JSON spelling
+// that OpenGrep reads the way it reads the YAML.
 //
 // The scanner still receives the materialized directory, and OpenGrep
 // prefixes each rule ID with its file's directory. Each merged rule's ID
 // therefore carries its file's directory relative to the materialized root,
 // so check_id, the cleaned rule ID and the separation between equal IDs from
 // different directories stay what they were with one file per rule file.
-func mergeableRules(path, relPath string) ([]byte, int, bool) {
+func mergeableRules(path, relPath string) ([][]byte, bool) {
 	if !scannerLoadsAsPlainRuleFile(relPath) {
-		return nil, 0, false
+		return nil, false
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, 0, false
+		return nil, false
 	}
 	rules := plainRulesSequence(data)
 	if rules == nil {
-		return nil, 0, false
+		return nil, false
 	}
-	if len(rules.Content) == 0 {
-		return nil, 0, true
-	}
-
 	prefix := ""
 	if dir := filepath.Dir(relPath); dir != "." {
 		prefix = strings.ReplaceAll(filepath.ToSlash(dir), "/", ".") + "."
 	}
+	encoded := make([][]byte, 0, len(rules.Content))
 	for _, rule := range rules.Content {
 		id := mappingValue(rule, "id")
-		if id == nil || id.Kind != yaml.ScalarNode || id.ShortTag() != "!!str" {
-			return nil, 0, false
+		if id == nil || id.Kind != yaml.ScalarNode || id.ShortTag() != yamlStrTag {
+			return nil, false
 		}
 		id.Value = prefix + id.Value
-		stripComments(rule)
+		var out bytes.Buffer
+		if !appendRuleJSON(&out, rule) {
+			return nil, false
+		}
+		encoded = append(encoded, out.Bytes())
 	}
-	// Block style, so the entries can follow the shared "rules:" key.
-	rules.Style = 0
-	var encoded bytes.Buffer
-	encoder := yaml.NewEncoder(&encoded)
-	encoder.SetIndent(2)
-	if encoder.Encode(rules) != nil || encoder.Close() != nil {
-		return nil, 0, false
+	return encoded, true
+}
+
+// jsonNumber matches the numbers JSON can spell. A YAML number written any
+// other way (0x10, 0o17, 017, 1_000, +5, .5, 1.) has no literal JSON form
+// with the value OpenGrep reads, so its file is not merged.
+var jsonNumber = regexp.MustCompile(`^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$`)
+
+const yamlStrTag = "!!str"
+
+// appendRuleJSON writes node as JSON with the meaning OpenGrep's YAML parser
+// gives it, and reports false for anything it cannot write that way: aliases,
+// merge keys, repeated or non-string keys, and tags other than the core ones.
+// Numbers keep their literal text, so metadata such as 2.0 reaches OpenGrep
+// as written.
+func appendRuleJSON(out *bytes.Buffer, node *yaml.Node) bool {
+	switch node.Kind {
+	case yaml.MappingNode:
+		return appendMappingJSON(out, node)
+	case yaml.SequenceNode:
+		return appendSequenceJSON(out, node)
+	case yaml.ScalarNode:
+		return appendScalarJSON(out, node)
+	case yaml.DocumentNode, yaml.AliasNode:
+		return false
+	default:
+		return false
 	}
-	return encoded.Bytes(), len(rules.Content), true
+}
+
+func appendMappingJSON(out *bytes.Buffer, node *yaml.Node) bool {
+	out.WriteByte('{')
+	seen := make(map[string]struct{}, len(node.Content)/2)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Kind != yaml.ScalarNode || key.ShortTag() != yamlStrTag {
+			return false
+		}
+		if _, dup := seen[key.Value]; dup {
+			return false
+		}
+		seen[key.Value] = struct{}{}
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		if !appendJSONString(out, key.Value) {
+			return false
+		}
+		out.WriteByte(':')
+		if !appendRuleJSON(out, node.Content[i+1]) {
+			return false
+		}
+	}
+	out.WriteByte('}')
+	return true
+}
+
+func appendSequenceJSON(out *bytes.Buffer, node *yaml.Node) bool {
+	out.WriteByte('[')
+	for i, item := range node.Content {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		if !appendRuleJSON(out, item) {
+			return false
+		}
+	}
+	out.WriteByte(']')
+	return true
+}
+
+func appendScalarJSON(out *bytes.Buffer, node *yaml.Node) bool {
+	switch node.ShortTag() {
+	case yamlStrTag, "!!timestamp":
+		return appendJSONString(out, node.Value)
+	case "!!int", "!!float":
+		if !jsonNumber.MatchString(node.Value) {
+			return false
+		}
+		out.WriteString(node.Value)
+		return true
+	case "!!bool":
+		switch node.Value {
+		case "true", "True", "TRUE":
+			out.WriteString("true")
+		case "false", "False", "FALSE":
+			out.WriteString("false")
+		default:
+			return false
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func appendJSONString(out *bytes.Buffer, value string) bool {
+	encoder := json.NewEncoder(out)
+	encoder.SetEscapeHTML(false)
+	if encoder.Encode(value) != nil {
+		return false
+	}
+	out.Truncate(out.Len() - 1) // Encode ends each value with a newline.
+	return true
 }
 
 // plainRulesSequence returns the rules sequence of a file that is one YAML
@@ -352,15 +475,6 @@ func mappingValue(node *yaml.Node, key string) *yaml.Node {
 		}
 	}
 	return value
-}
-
-// stripComments drops comments before re-encoding: they carry no rule
-// semantics, and yaml.v3 can misplace some of them when emitting.
-func stripComments(node *yaml.Node) {
-	node.HeadComment, node.LineComment, node.FootComment = "", "", ""
-	for _, child := range node.Content {
-		stripComments(child)
-	}
 }
 
 func writeMergedRules(path string, data []byte) error {
