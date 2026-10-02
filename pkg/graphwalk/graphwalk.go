@@ -507,38 +507,15 @@ func SelectDiverse[T comparable](
 	class func(route []T) string, scanLimit int,
 ) [][]T {
 	full := func(out [][]T) bool { return budget > 0 && len(out) >= budget }
+	diverse := class != nil && scanLimit > 0 && budget > 0
 
-	terminals := make([]T, 0, len(r.Terminal))
-	for node, terminal := range r.Terminal {
-		if _, reached := r.Depth[node]; terminal && reached {
-			terminals = append(terminals, node)
-		}
-	}
-	sortNodes(terminals, terminalLess)
-
-	var out [][]T
 	taken := map[string]bool{}
 	classes := map[string]bool{}
-	diverse := class != nil && scanLimit > 0 && budget > 0
-	for _, terminal := range terminals {
-		if full(out) {
-			return out
-		}
-		route := r.Route(terminal)
-		if route == nil {
-			continue
-		}
-		slices.Reverse(route)
-		key := routeKey(c, route)
-		if taken[key] {
-			continue
-		}
-		taken[key] = true
+	out := shortestPerTerminal(r, c, terminalLess, full, taken, func(route []T) {
 		if diverse {
 			classes[class(route)] = true
 		}
-		out = append(out, route)
-	}
+	})
 	if full(out) {
 		return out
 	}
@@ -567,6 +544,42 @@ func SelectDiverse[T comparable](
 		}
 		return !full(out)
 	})
+	return out
+}
+
+// shortestPerTerminal returns one shortest route to each reached terminal in
+// terminalLess order until full, recording each in taken and handing it to
+// kept.
+func shortestPerTerminal[T comparable](
+	r Reachable[T], c Condensed[T], terminalLess func(a, b T) bool,
+	full func([][]T) bool, taken map[string]bool, kept func([]T),
+) [][]T {
+	terminals := make([]T, 0, len(r.Terminal))
+	for node, terminal := range r.Terminal {
+		if _, reached := r.Depth[node]; terminal && reached {
+			terminals = append(terminals, node)
+		}
+	}
+	sortNodes(terminals, terminalLess)
+
+	var out [][]T
+	for _, terminal := range terminals {
+		if full(out) {
+			return out
+		}
+		route := r.Route(terminal)
+		if route == nil {
+			continue
+		}
+		slices.Reverse(route)
+		key := routeKey(c, route)
+		if taken[key] {
+			continue
+		}
+		taken[key] = true
+		kept(route)
+		out = append(out, route)
+	}
 	return out
 }
 

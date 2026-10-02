@@ -29,11 +29,12 @@ func libraryOf(route []string) string {
 	var path []string
 	for _, n := range route {
 		lib := "app"
-		if strings.HasPrefix(n, "x") {
+		switch {
+		case strings.HasPrefix(n, "x"):
 			lib = "x"
-		} else if strings.HasPrefix(n, "y") {
+		case strings.HasPrefix(n, "y"):
 			lib = "y"
-		} else if n == "sink" {
+		case n == "sink":
 			lib = "sink"
 		}
 		if len(path) == 0 || path[len(path)-1] != lib {
@@ -102,8 +103,8 @@ func TestSelectDiverseScanIsBounded(t *testing.T) {
 	if calls <= len(top) {
 		t.Fatalf("class called %d times, want the scan to examine routes beyond the %d terminals", calls, len(top))
 	}
-	if max := len(top) + limit; calls > max {
-		t.Fatalf("class called %d times, want at most %d", calls, max)
+	if ceiling := len(top) + limit; calls > ceiling {
+		t.Fatalf("class called %d times, want at most %d", calls, ceiling)
 	}
 	if DiverseScanLimit(4) < 1024 || DiverseScanLimit(32) != 4096 {
 		t.Fatalf("DiverseScanLimit = %d, %d, want floor 1024 and 128 per chain", DiverseScanLimit(4), DiverseScanLimit(32))
