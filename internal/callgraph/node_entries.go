@@ -65,7 +65,7 @@ func nodeEntryRefs(root *sitter.Node, src []byte, filePath, modulePath string, b
 			refs = append(refs, EntryRef{Function: id, Kind: RootKindFrameworkEntry})
 		}
 	}
-	if role != nodeNotAnEntry || nodeRunsAsMain(root, src) {
+	if role != nodeNotAnEntry || nodeRunsAsMain(root, src) || nodeHasScriptShebang(filePath, src) {
 		refs = append(refs, EntryRef{Function: FunctionID{Package: modulePath, Name: moduleInitMethodName}, Kind: RootKindMain})
 	}
 	return refs
@@ -660,7 +660,7 @@ func nodePackageEntryRole(filePath string) nodeEntryRole {
 	rel = filepath.ToSlash(rel)
 	rel = strings.TrimSuffix(rel, filepath.Ext(rel))
 	switch {
-	case manifest.bins[rel]:
+	case manifest.bins[rel], manifest.scripts[rel]:
 		return nodeProgramEntry
 	case manifest.mains[rel]:
 		return nodeLibraryEntry
@@ -672,6 +672,9 @@ type nodeManifest struct {
 	dir   string
 	mains map[string]bool
 	bins  map[string]bool
+	// scripts are the files a "scripts" command runs with node, tsx, ts-node,
+	// bun or deno.
+	scripts map[string]bool
 	// deps are the packages the manifest declares in dependencies,
 	// devDependencies, peerDependencies or optionalDependencies.
 	deps map[string]bool
@@ -712,13 +715,14 @@ func parseNodeManifest(dir string, data []byte) *nodeManifest {
 		Module  string          `json:"module"`
 		Exports json.RawMessage `json:"exports"`
 		Bin     json.RawMessage `json:"bin"`
+		Scripts map[string]any  `json:"scripts"`
 
 		Dependencies         map[string]json.RawMessage `json:"dependencies"`
 		DevDependencies      map[string]json.RawMessage `json:"devDependencies"`
 		PeerDependencies     map[string]json.RawMessage `json:"peerDependencies"`
 		OptionalDependencies map[string]json.RawMessage `json:"optionalDependencies"`
 	}
-	manifest := &nodeManifest{dir: dir, mains: map[string]bool{}, bins: map[string]bool{}, deps: map[string]bool{}}
+	manifest := &nodeManifest{dir: dir, mains: map[string]bool{}, bins: map[string]bool{}, scripts: map[string]bool{}, deps: map[string]bool{}}
 	if json.Unmarshal(data, &fields) != nil {
 		return manifest
 	}
@@ -747,7 +751,24 @@ func parseNodeManifest(dir string, data []byte) *nodeManifest {
 			manifest.bins[candidate] = true
 		}
 	}
+	manifest.addScripts(fields.Scripts)
 	return manifest
+}
+
+// addScripts records the files the "scripts" commands run with a JavaScript
+// or TypeScript runtime.
+func (m *nodeManifest) addScripts(scripts map[string]any) {
+	for _, value := range scripts {
+		command, isString := value.(string)
+		if !isString {
+			continue
+		}
+		for _, target := range nodeScriptTargets(command) {
+			for _, candidate := range nodeSourceCandidates(target) {
+				m.scripts[candidate] = true
+			}
+		}
+	}
 }
 
 // nodeManifestPaths collects the file paths of an exports or bin field: a

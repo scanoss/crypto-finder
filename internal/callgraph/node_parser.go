@@ -132,7 +132,15 @@ func nodeModulePath(packagePath, filePath string) string {
 	// trimming it empties the base, and an empty base falls back to the package
 	// path, which is the key its parent directory's `b.js` already holds.
 	if ext := filepath.Ext(base); ext != "" && ext != base {
-		base = strings.TrimSuffix(base, ext)
+		stem := strings.TrimSuffix(base, ext)
+		// `a.ts` beside `a.mjs` would share one identity and the later file
+		// would replace the other's declarations. The file a resolver picks
+		// for './a' keeps the extension-less key; the others keep their
+		// extension.
+		if shadowedByNodeSibling(filePath, stem, ext) {
+			stem = base
+		}
+		base = stem
 	}
 	if base == "" {
 		return packagePath
@@ -141,6 +149,21 @@ func nodeModulePath(packagePath, filePath string) string {
 		return base
 	}
 	return packagePath + "/" + base
+}
+
+// shadowedByNodeSibling reports whether a file of the same directory and stem
+// has an extension a Node resolver tries before ext.
+func shadowedByNodeSibling(filePath, stem, ext string) bool {
+	dir := filepath.Dir(filePath)
+	for _, candidate := range nodeSourceExtensions {
+		if strings.EqualFold(candidate, ext) {
+			return false
+		}
+		if info, err := os.Stat(filepath.Join(dir, stem+candidate)); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseFile parses one JavaScript or TypeScript source file.
