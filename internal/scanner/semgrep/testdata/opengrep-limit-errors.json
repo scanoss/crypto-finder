@@ -1,0 +1,235 @@
+{
+ "version": "1.29.0",
+ "results": [
+  {
+   "check_id": "javascript.jsonwebtoken.algorithm.operation.javascript.jsonwebtoken.algorithm.operation.decode",
+   "path": "/deps/@arkade-os/sdk/dist/chunk-JCJ5WFS3.js",
+   "start": {
+    "line": 1277,
+    "col": 11,
+    "offset": 40071
+   },
+   "end": {
+    "line": 1277,
+    "col": 32,
+    "offset": 40092
+   },
+   "extra": {
+    "metavars": {
+     "$NS": {
+      "start": {
+       "line": 1277,
+       "col": 11,
+       "offset": 40071
+      },
+      "end": {
+       "line": 1277,
+       "col": 14,
+       "offset": 40074
+      },
+      "abstract_content": "hex"
+     },
+     "$F": {
+      "start": {
+       "line": 1283,
+       "col": 5,
+       "offset": 40214
+      },
+      "end": {
+       "line": 1283,
+       "col": 13,
+       "offset": 40222
+      },
+      "abstract_content": "sequence"
+     }
+    },
+    "message": "Detected a jsonwebtoken decode, which reads the claims WITHOUT verifying the signature",
+    "metadata": {
+     "purl": "pkg:npm/jsonwebtoken",
+     "category": "security",
+     "subcategory": "cryptography",
+     "confidence": "HIGH",
+     "references": [
+      "https://www.npmjs.com/package/jsonwebtoken"
+     ],
+     "crypto": {
+      "algorithmPrimitive": "other",
+      "api": "jsonwebtoken.decode",
+      "assetType": "algorithm",
+      "findingType": "signature",
+      "library": "jsonwebtoken",
+      "operation": "other"
+     }
+    },
+    "severity": "INFO",
+    "fingerprint": "2f9e8b5e57d2a800c66f6b4b28cd8cd6e8d56665a0be51903aaea650669cc271c0ac7e29982b830b8c1bda208b493e4bdfcdad74f37fa6805960b8b763e30d7e_0",
+    "lines": "    txid: hex.decode(coin.txid),",
+    "is_ignored": false,
+    "validation_state": "NO_VALIDATOR",
+    "engine_kind": "OSS"
+   }
+  },
+  {
+   "check_id": "javascript.jsonwebtoken.algorithm.operation.javascript.jsonwebtoken.algorithm.operation.decode",
+   "path": "/deps/@arkade-os/sdk/dist/chunk-OWCPXRGP.cjs",
+   "start": {
+    "line": 1299,
+    "col": 11,
+    "offset": 41336
+   },
+   "end": {
+    "line": 1299,
+    "col": 37,
+    "offset": 41362
+   },
+   "extra": {
+    "metavars": {
+     "$NS": {
+      "start": {
+       "line": 1299,
+       "col": 11,
+       "offset": 41336
+      },
+      "end": {
+       "line": 1299,
+       "col": 19,
+       "offset": 41344
+      },
+      "abstract_content": "base.hex"
+     },
+     "$F": {
+      "start": {
+       "line": 1305,
+       "col": 5,
+       "offset": 41484
+      },
+      "end": {
+       "line": 1305,
+       "col": 13,
+       "offset": 41492
+      },
+      "abstract_content": "sequence"
+     }
+    },
+    "message": "Detected a jsonwebtoken decode, which reads the claims WITHOUT verifying the signature",
+    "metadata": {
+     "purl": "pkg:npm/jsonwebtoken",
+     "category": "security",
+     "subcategory": "cryptography",
+     "confidence": "HIGH",
+     "references": [
+      "https://www.npmjs.com/package/jsonwebtoken"
+     ],
+     "crypto": {
+      "algorithmPrimitive": "other",
+      "api": "jsonwebtoken.decode",
+      "assetType": "algorithm",
+      "findingType": "signature",
+      "library": "jsonwebtoken",
+      "operation": "other"
+     }
+    },
+    "severity": "INFO",
+    "fingerprint": "6cb6c3b7d63f3e45ec0a7774d76a1975563972ac99ecb9731549381fc77326eab89fe535071d517f7dd7c30819909cfeb762557b1618f3acfa69889b370b2f48_0",
+    "lines": "    txid: base.hex.decode(coin.txid),",
+    "is_ignored": false,
+    "validation_state": "NO_VALIDATOR",
+    "engine_kind": "OSS"
+   }
+  }
+ ],
+ "errors": [
+  {
+   "code": 2,
+   "level": "warn",
+   "type": "Timeout",
+   "rule_id": "javascript.jsrsasign.algorithm.jws.javascript.jsrsasign.algorithm.jws.hs256",
+   "message": "Timeout when running javascript.jsrsasign.algorithm.jws.javascript.jsrsasign.algorithm.jws.hs256 on /deps/@arkade-os/sdk/dist/chunk-ZPL34T2Q.cjs:\n ",
+   "path": "/deps/@arkade-os/sdk/dist/chunk-ZPL34T2Q.cjs"
+  },
+  {
+   "code": 2,
+   "level": "warn",
+   "type": "Other syntax error",
+   "message": "Other syntax error at line /deps/@arkade-os/sdk/dist/chunk-QO3IKBYL.js:1:\n Memprof_limits.Limit_reached: token set",
+   "path": "/deps/@arkade-os/sdk/dist/chunk-QO3IKBYL.js"
+  },
+  {
+   "code": 3,
+   "level": "warn",
+   "type": [
+    "PartialParsing",
+    [
+     {
+      "path": "/deps/@arkade-os/sdk/dist/index.d.ts",
+      "start": {
+       "line": 4760,
+       "col": 21,
+       "offset": 0
+      },
+      "end": {
+       "line": 4760,
+       "col": 48,
+       "offset": 27
+      }
+     },
+     {
+      "path": "/deps/@arkade-os/sdk/dist/index.d.ts",
+      "start": {
+       "line": 4875,
+       "col": 20,
+       "offset": 0
+      },
+      "end": {
+       "line": 4875,
+       "col": 21,
+       "offset": 1
+      }
+     }
+    ]
+   ],
+   "message": "Syntax error at line /deps/@arkade-os/sdk/dist/index.d.ts:4760:\n `extends readonly InputRef[]` was unexpected",
+   "path": "/deps/@arkade-os/sdk/dist/index.d.ts",
+   "spans": [
+    {
+     "file": "/deps/@arkade-os/sdk/dist/index.d.ts",
+     "start": {
+      "line": 4760,
+      "col": 21,
+      "offset": 0
+     },
+     "end": {
+      "line": 4760,
+      "col": 48,
+      "offset": 27
+     }
+    },
+    {
+     "file": "/deps/@arkade-os/sdk/dist/index.d.ts",
+     "start": {
+      "line": 4875,
+      "col": 20,
+      "offset": 0
+     },
+     "end": {
+      "line": 4875,
+      "col": 21,
+      "offset": 1
+     }
+    }
+   ]
+  }
+ ],
+ "paths": {
+  "scanned": [
+   "/deps/@arkade-os/sdk/dist/chunk-5BLDMQED.cjs",
+   "/deps/@arkade-os/sdk/dist/chunk-C6UYPHTQ.cjs",
+   "/deps/@arkade-os/sdk/dist/chunk-CSS74VCN.cjs",
+   "/deps/@arkade-os/sdk/dist/chunk-ENWR2F2P.js",
+   "/deps/@arkade-os/sdk/dist/chunk-G7DOBFQN.cjs",
+   "/deps/@arkade-os/sdk/dist/chunk-JCJ5WFS3.js"
+  ]
+ },
+ "interfile_languages_used": [],
+ "skipped_rules": []
+}

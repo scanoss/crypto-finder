@@ -102,11 +102,11 @@ func TestRustBlake3LocalModuleShadowIsNotServed(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			graph := buildRustGraphForFilter(t, "app", blake3ModuleShadowSrc)
+			result := buildRustResultForFilter(t, "app", blake3ModuleShadowSrc)
 			line, sc, ec := lineOf(t, blake3ModuleShadowSrc, tc.needle)
 			report := reportAt(blake3HashRule, line, sc, ec)
 
-			if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 1 {
+			if got := FilterForeignReceiverAssets(report, result); got != 1 {
 				t.Fatalf("dropped = %d, want 1 — the consumer's own mod blake3 is claimed by blake3's rule", got)
 			}
 			if got := assetCount(report); got != 0 {
@@ -121,11 +121,11 @@ func TestRustBlake3LocalModuleShadowIsNotServed(t *testing.T) {
 func TestRustBlake3ReceiverNamedBlake3IsNotServed(t *testing.T) {
 	t.Parallel()
 
-	graph := buildRustGraphForFilter(t, "app", blake3ReceiverShadowSrc)
+	result := buildRustResultForFilter(t, "app", blake3ReceiverShadowSrc)
 	line, sc, ec := lineOf(t, blake3ReceiverShadowSrc, `blake3.hash(b"x")`)
 	report := reportAt(blake3HashRule, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 1 {
+	if got := FilterForeignReceiverAssets(report, result); got != 1 {
 		t.Fatalf("dropped = %d, want 1 — the receiver is the consumer's own type", got)
 	}
 	if got := assetCount(report); got != 0 {
@@ -137,11 +137,11 @@ func TestRustBlake3ReceiverNamedBlake3IsNotServed(t *testing.T) {
 func TestRustBlake3GlobShadowedFreeFunctionIsNotServed(t *testing.T) {
 	t.Parallel()
 
-	graph := buildRustGraphForFilter(t, "app", blake3GlobShadowSrc)
+	result := buildRustResultForFilter(t, "app", blake3GlobShadowSrc)
 	line, sc, ec := lineOf(t, blake3GlobShadowSrc, `fn residual_own_hash() -> usize { hash(b"x") }`)
 	report := reportAt(blake3HashRule, line, sc, ec)
 
-	if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 1 {
+	if got := FilterForeignReceiverAssets(report, result); got != 1 {
 		t.Fatalf("dropped = %d, want 1 — the call resolves to the consumer's own fn hash", got)
 	}
 	if got := assetCount(report); got != 0 {
@@ -194,11 +194,11 @@ func TestRustBlake3GenuineCallSurvivesTheFilter(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			graph := buildRustGraphForFilter(t, "app", tc.src)
+			result := buildRustResultForFilter(t, "app", tc.src)
 			line, sc, ec := lineOf(t, tc.src, tc.needle)
 			report := reportAt(tc.rule, line, sc, ec)
 
-			if got := FilterForeignReceiverAssets(report, graph, "rust"); got != 0 {
+			if got := FilterForeignReceiverAssets(report, result); got != 0 {
 				t.Fatalf("dropped = %d, want 0 — a genuine blake3 call must be served", got)
 			}
 			if got := assetCount(report); got != 1 {

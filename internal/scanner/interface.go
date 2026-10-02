@@ -115,6 +115,11 @@ type Config struct {
 	// Example: []string{"node_modules/", "*.min.js", "test/"}
 	SkipPatterns []string
 
+	// IncludeGitIgnored scans files the enclosing Git work tree ignores. Only
+	// resolved dependency roots set it: installed dependencies usually live in
+	// ignored directories such as node_modules. Primary scans leave it false.
+	IncludeGitIgnored bool
+
 	// DisableDedup when true, disables per-line deduplication of cryptographic assets.
 	// By default (false), assets detected at the same location are merged.
 	// Set to true to preserve all individual detections for debugging or compatibility.
@@ -124,6 +129,21 @@ type Config struct {
 	// When enabled with Semgrep, this adds the --pro flag to enable Semgrep Pro features.
 	// Only supported by the Semgrep scanner.
 	Interfile bool
+
+	// RuleTimeoutSeconds caps the time the scanner spends running one rule
+	// on one file. Zero keeps the scanner's own default, 5 s for OpenGrep.
+	// Dependency scans raise it, because a loaded host makes the default
+	// fire and the file's findings are lost. Only the OpenGrep adapter
+	// applies it, and a timeout flag in ExtraArgs takes precedence.
+	RuleTimeoutSeconds uint8
+
+	// Jobs caps the analysis jobs one scan runs in parallel. Zero keeps the
+	// scanner's own default, which claims every core it detects. Dependency
+	// scans set it so concurrent scans share the cores. Only the OpenGrep
+	// adapter applies it, and a jobs flag in ExtraArgs takes precedence.
+	// The small fields after the flags fit the flags' padding, so scan
+	// options stay under the by-value size limit the linter enforces.
+	Jobs int32
 }
 
 // Info contains metadata about a scanner implementation.
@@ -141,4 +161,12 @@ type Info struct {
 	// Description provides a brief explanation of what the scanner detects.
 	// Example: "Static analysis tool for detecting cryptographic algorithm usage"
 	Description string
+}
+
+// BatchScanner is implemented by scanners that can scan several root
+// directories in one process. Each root's report is what a scan of that root
+// alone produces, whole or limited to its scope; reports are in the order of
+// roots.
+type BatchScanner interface {
+	ScanRoots(ctx context.Context, roots []Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error)
 }

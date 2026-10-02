@@ -146,7 +146,25 @@ func (m *AlgorithmMapper) addMode(props *cdx.CryptoAlgorithmProperties, asset *e
 // addPadding adds padding scheme if available.
 func (m *AlgorithmMapper) addPadding(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
 	if algorithmPadding, ok := asset.Metadata["algorithmPadding"]; ok && algorithmPadding != "" {
-		props.Padding = cdx.CryptoPadding(algorithmPadding)
+		props.Padding = cdx.CryptoPadding(cbomPadding(algorithmPadding))
+	}
+}
+
+// cbomPadding maps CycloneDX padding spellings and unambiguous Java cipher
+// transformation names onto the CycloneDX enum. Any other value is returned
+// unchanged so strict BOM validation still rejects it.
+func cbomPadding(value string) string {
+	switch padding := strings.ToLower(strings.TrimSpace(value)); padding {
+	case "pkcs5padding":
+		return "pkcs5"
+	case "pkcs7padding":
+		return "pkcs7"
+	case "nopadding":
+		return "raw"
+	case "pkcs5", "pkcs7", "pkcs1v15", "oaep", "raw", "other", "unknown":
+		return padding
+	default:
+		return value
 	}
 }
 

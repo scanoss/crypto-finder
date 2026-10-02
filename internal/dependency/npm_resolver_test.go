@@ -220,10 +220,10 @@ func TestNpmResolver_MissingLockfileIsNamed(t *testing.T) {
 	}
 }
 
-// Dev dependencies are RESOLVED, matching the three ecosystems that already do:
-// CargoResolver runs bare `cargo metadata` and appends every package, GoResolver
-// runs `go list -m -json all`, and PipResolver lists the whole environment. Only
-// the two Java resolvers narrow to compile scope.
+// Dev dependencies are RESOLVED, matching CargoResolver, which runs bare
+// `cargo metadata` and appends every package, and PipResolver, which lists the
+// whole environment. The two Java resolvers narrow to compile scope, and
+// GoResolver to the modules imported by non-test packages.
 //
 // The reason is not consistency for its own sake. A crypto inventory that skips
 // dev dependencies cannot see cryptography that exists only there, and that is

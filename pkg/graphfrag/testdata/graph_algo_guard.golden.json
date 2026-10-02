@@ -1,0 +1,47 @@
+{
+  "graph_algo_version": "graph-algo-6",
+  "ecosystems": {
+    "c": {
+      "sha256": "68216ad861424864829c6643900d55e54ef8fb983ceea18b9370b584e5745c8b",
+      "functions": 4,
+      "internal_edges": 2,
+      "external_calls": 9
+    },
+    "cpp": {
+      "sha256": "ca258eaa404a85379fafaeefc44313fe718298c4024835f90e74cc574391972a",
+      "functions": 4,
+      "internal_edges": 1,
+      "external_calls": 7
+    },
+    "go": {
+      "sha256": "ea6f4f6dbcd8725cc53b278f78ac081d57594a82bf4547d0f44078d70ad7113d",
+      "functions": 9,
+      "internal_edges": 12,
+      "external_calls": 7
+    },
+    "java": {
+      "sha256": "4a9c29d52c81b54929a30f719a0a260d9c9efb13ca0b7be785c109f243948aea",
+      "functions": 6,
+      "internal_edges": 7,
+      "external_calls": 10
+    },
+    "node": {
+      "sha256": "0eae73b914dea85f38fa0771e919971881b130c38bd4fba968fe422ef00c2b27",
+      "functions": 8,
+      "internal_edges": 5,
+      "external_calls": 15
+    },
+    "python": {
+      "sha256": "d8acfcc7f4e9debba2bb78052dba4159d10a4481f90289b67b8eadd0732bc9b4",
+      "functions": 8,
+      "internal_edges": 4,
+      "external_calls": 11
+    },
+    "rust": {
+      "sha256": "0fca6816c89cdade0b004102a78821c71fea7cdcf33fe4711ef6a1c3504e36ba",
+      "functions": 5,
+      "internal_edges": 1,
+      "external_calls": 11
+    }
+  }
+}

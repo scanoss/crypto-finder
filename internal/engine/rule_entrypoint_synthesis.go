@@ -28,6 +28,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 	"github.com/scanoss/crypto-finder/pkg/purl"
@@ -305,7 +306,7 @@ func synthesizeDeclaredAPIAssets(
 ) int {
 	added := 0
 	for _, fn := range decls {
-		if functionBodyHasTerminalFinding(report, fn) {
+		if functionBodyHasTerminalFinding(report, fn, result) {
 			continue // Type 1: primitive already detected inside the method.
 		}
 		for _, meta := range metas {
@@ -403,15 +404,21 @@ func baseFQN(fqn string) string {
 // functionBodyHasTerminalFinding reports whether report already contains a
 // non-supporting crypto asset inside fn. CSPRNG salt generation is supporting
 // evidence and must not suppress a synthesized KDF/hash API boundary.
-func functionBodyHasTerminalFinding(report *entities.InterimReport, fn *callgraph.FunctionDecl) bool {
-	fnPath := filepath.ToSlash(fn.FilePath)
+//
+// A finding is in fn's file only when it names the same file of the same
+// artifact: the key a synthetic asset at fn would be filed under.
+func functionBodyHasTerminalFinding(report *entities.InterimReport, fn *callgraph.FunctionDecl, result *DepScanResult) bool {
+	filePath, depInfo, ok := syntheticFindingLocation(result, fn.FilePath)
+	if !ok {
+		return false
+	}
+	fnKey := syntheticFindingKey(filePath, depInfo)
 	for i := range report.Findings {
-		if !strings.HasSuffix(fnPath, filepath.ToSlash(report.Findings[i].FilePath)) &&
-			!strings.HasSuffix(filepath.ToSlash(report.Findings[i].FilePath), fnPath) {
-			continue
-		}
 		for j := range report.Findings[i].CryptographicAssets {
 			a := &report.Findings[i].CryptographicAssets[j]
+			if syntheticFindingKey(report.Findings[i].FilePath, a.DependencyInfo) != fnKey {
+				continue
+			}
 			if a.StartLine >= fn.StartLine && a.StartLine <= fn.EndLine && syntheticSuppressingAsset(a) {
 				return true
 			}
@@ -490,7 +497,7 @@ func syntheticFindingLocation(result *DepScanResult, actualPath string) (string,
 		dep := &result.Dependencies[i]
 		rel, ok := pathRelativeToRoot(dep.Dir, cleanPath)
 		rootLen := len(filepath.Clean(dep.Dir))
-		if !ok || rootLen <= matchedDepRootLen {
+		if !ok || rootLen <= matchedDepRootLen || !dependency.ListsFile(dep.Files, cleanPath) {
 			continue
 		}
 		matchedDepIndex = i

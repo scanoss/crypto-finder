@@ -47,5 +47,7 @@ RUN go version && \
 # Set working directory
 WORKDIR /workspace
 
-# Default command runs tests
-CMD ["go", "test", "-v", "-race", "-coverprofile=coverage.out", "-covermode=atomic", "./..."]
+# Default command runs tests. internal/callgraph alone takes about 10 minutes
+# under -race with coverage on CI runners, which is go test's default
+# per-package timeout.
+CMD ["go", "test", "-v", "-race", "-timeout", "30m", "-coverprofile=coverage.out", "-covermode=atomic", "./..."]

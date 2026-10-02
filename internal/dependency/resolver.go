@@ -13,12 +13,23 @@ type Dependency struct {
 	Module string
 	// ImportPath is the source namespace when it differs from Module. Python
 	// resolvers use it for distribution/import-root pairs such as
-	// argon2-cffi/argon2; other ecosystems leave it empty.
+	// argon2-cffi/argon2, and leave it empty for a distribution rooted at
+	// site-packages, whose packages keep their own names; other ecosystems
+	// leave it empty.
 	ImportPath string
 	// Version is the resolved version (e.g., "v0.17.0" or "1.2.3").
 	Version string
 	// Dir is the absolute filesystem path to the dependency source code.
 	Dir string
+	// Files, when non-nil, limits the dependency's source to these absolute,
+	// clean, sorted regular files under Dir. Go lists the Go files the host
+	// build compiles (go list GoFiles and CgoFiles) in each package a program
+	// imports: the only files it links. Python lists the files a
+	// distribution installed into a namespace directory it shares with other
+	// distributions (google/, say), and, for a distribution rooted at
+	// site-packages because it installed several top-level packages or a
+	// module file, the files of each of them. Nil means every file under Dir.
+	Files []string
 	// CompiledArtifactPath is the absolute path to the compiled artifact used for
 	// type-only indexing when source scanning is unavailable or incomplete.
 	CompiledArtifactPath string

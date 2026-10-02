@@ -17,13 +17,18 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
@@ -727,5 +732,55 @@ func TestOrchestrator_ScanScoped(t *testing.T) {
 	var fe *failure.Error
 	if !errors.As(err, &fe) || fe.Code != failure.CodeInvalidArguments {
 		t.Fatalf("expected %s for a scanner without scope support, got %v", failure.CodeInvalidArguments, err)
+	}
+}
+
+// The primary scan names the files a time or memory limit cut short in a
+// warning, and counts them on the completed detection phase.
+func TestOrchestrator_Scan_ReportsFilesCutShortByScannerLimits(t *testing.T) {
+	previous := log.Logger
+	t.Cleanup(func() { log.Logger = previous })
+
+	for _, tt := range []struct {
+		name       string
+		incomplete []string
+		wantCount  int
+	}{
+		{name: "complete scan"},
+		{name: "two files cut short", incomplete: []string{"/repo/dist/a.js", "/repo/dist/b.js"}, wantCount: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			log.Logger = zerolog.New(&logs)
+			registry := scanner.NewRegistry()
+			registry.Register("test-scanner", &mockScanner{scanFunc: func(_ context.Context, _ string, _ []string, info entities.ToolInfo) (*entities.InterimReport, error) {
+				return &entities.InterimReport{Version: "1.0", Tool: info, Findings: []entities.Finding{}, IncompleteFiles: tt.incomplete}, nil
+			}})
+			orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{}), registry)
+			var detection map[string]any
+			opts := ScanOptions{Target: "/repo", ScannerName: "test-scanner", LanguageHint: []string{"javascript"}, Progress: func(phase, status string, _ error, details map[string]any) error {
+				if phase == progressPhaseDetection && status == progressStatusComplete {
+					detection = details
+				}
+				return nil
+			}}
+
+			if _, err := orchestrator.Scan(context.Background(), opts); err != nil {
+				t.Fatal(err)
+			}
+
+			if want := map[string]any{"files_incomplete": tt.wantCount}; !reflect.DeepEqual(detection, want) {
+				t.Errorf("detection completed details = %v, want %v", detection, want)
+			}
+			warned := strings.Contains(logs.String(), `"level":"warn"`)
+			if warned != (tt.wantCount > 0) {
+				t.Fatalf("warning logged = %v, want %v:\n%s", warned, tt.wantCount > 0, logs.String())
+			}
+			for _, file := range tt.incomplete {
+				if !strings.Contains(logs.String(), file) {
+					t.Fatalf("warning does not name %s:\n%s", file, logs.String())
+				}
+			}
+		})
 	}
 }

@@ -90,7 +90,7 @@ type ScanOptions struct {
 }
 
 // ProgressReporter receives a lifecycle transition for a scan phase.
-type ProgressReporter func(phase, status string, cause error) error
+type ProgressReporter func(phase, status string, cause error, details map[string]any) error
 
 const (
 	progressPhaseRules     = "rules"
@@ -112,36 +112,101 @@ const (
 //
 // Returns the final interim report or an error if any step fails.
 func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
-	return o.scan(ctx, opts, nil, nil, nil)
+	return o.ScanScoped(ctx, opts, nil)
 }
 
 // ScanScoped is Scan with detection limited to scope's files under
 // opts.Target. A nil scope scans the whole target. The scanner must implement
 // scanner.ScopedScanner.
 func (o *Orchestrator) ScanScoped(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope) (*entities.InterimReport, error) {
-	return o.scan(ctx, opts, scope, nil, nil)
+	report, err := o.scan(ctx, opts, scope, nil, nil)
+	// Dependency scans call scan directly and warn with the dependency's identity.
+	if err == nil && len(report.IncompleteFiles) > 0 {
+		log.Warn().
+			Str("target", opts.Target).
+			Strs("files", report.IncompleteFiles).
+			Msg("Scan stopped at a time or memory limit in these files; their findings may be incomplete")
+	}
+	return report, err
 }
 
-//nolint:gocognit // Scan lifecycle and failure mapping must share the named return observed by deferred progress reporting.
 func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) (result *entities.InterimReport, err error) {
 	if opts.Progress != nil && !opts.ProgressDetectionStarted {
-		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil); progressErr != nil {
+		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil, nil); progressErr != nil {
 			return nil, progressErr
 		}
 	}
 	if opts.Progress != nil {
 		defer func() {
 			status := progressStatusComplete
+			var details map[string]any
 			if err != nil {
 				status = progressStatusFailed
+			} else {
+				details = map[string]any{"files_incomplete": len(result.IncompleteFiles)}
 			}
-			if progressErr := o.reportProgress(opts, progressPhaseDetection, status, err); progressErr != nil {
+			if progressErr := o.reportProgress(opts, progressPhaseDetection, status, err, details); progressErr != nil {
 				result = nil
 				err = progressErr
 			}
 		}()
 	}
 
+	prepared, err := o.prepareScan(ctx, opts, scannerInstance, validator)
+	if err != nil {
+		return nil, err
+	}
+	defer prepared.cleanup()
+
+	report, scanErr := runScanner(ctx, opts, scope, prepared.scanner, prepared.rulePaths, toolInfo())
+	if scanErr != nil {
+		return nil, scanFailure(scanErr, opts.ScannerName)
+	}
+	return o.finishScan(report, prepared.languages, opts.Target)
+}
+
+// scanRoots scans several roots in one scanner process and reports each as
+// its own scan. The instance must implement scanner.BatchScanner.
+func (o *Orchestrator) scanRoots(ctx context.Context, opts ScanOptions, roots []scanner.Root, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) ([]*entities.InterimReport, error) {
+	batchScanner, ok := scannerInstance.(scanner.BatchScanner)
+	if !ok {
+		return nil, failure.New(
+			failure.CodeInvalidArguments,
+			failure.StageInput,
+			fmt.Sprintf("scanner '%s' cannot scan several roots in one process", opts.ScannerName),
+			failure.WithDetail("scanner", opts.ScannerName),
+		)
+	}
+	prepared, err := o.prepareScan(ctx, opts, scannerInstance, validator)
+	if err != nil {
+		return nil, err
+	}
+	defer prepared.cleanup()
+
+	reports, scanErr := batchScanner.ScanRoots(ctx, roots, prepared.rulePaths, toolInfo())
+	if scanErr != nil {
+		return nil, scanFailure(scanErr, opts.ScannerName)
+	}
+	for i, root := range roots {
+		if reports[i], err = o.finishScan(reports[i], prepared.languages, root.Dir); err != nil {
+			return nil, err
+		}
+	}
+	return reports, nil
+}
+
+// preparedScan is what a scanner process needs before it runs.
+type preparedScan struct {
+	languages []string
+	rulePaths []string
+	cleanup   func()
+	scanner   scanner.Scanner
+}
+
+// prepareScan detects the languages unless hinted, prepares the rule paths
+// and initializes the scanner unless one was supplied. Its cleanup removes
+// any rule files materialized for the scanner.
+func (o *Orchestrator) prepareScan(ctx context.Context, opts ScanOptions, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) (*preparedScan, error) {
 	// Step 1: Detect languages
 	var languages []string
 
@@ -166,13 +231,9 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanne
 	// Step 2: Load rules (use pre-loaded paths if provided, otherwise load from manager)
 	var rulePaths []string
 	var rawRulePaths []string
-	var cleanupRulePaths func()
-	defer func() {
-		if cleanupRulePaths != nil {
-			cleanupRulePaths()
-		}
-	}()
+	cleanupRulePaths := func() {}
 	if loadErr := o.loadRules(opts, languages, &rulePaths, &rawRulePaths, &cleanupRulePaths, validator); loadErr != nil {
+		cleanupRulePaths()
 		return nil, loadErr
 	}
 
@@ -181,35 +242,37 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanne
 		var initializeErr error
 		scannerInstance, initializeErr = o.initializeScanner(ctx, opts)
 		if initializeErr != nil {
+			cleanupRulePaths()
 			return nil, initializeErr
 		}
 	}
+	return &preparedScan{languages: languages, rulePaths: rulePaths, cleanup: cleanupRulePaths, scanner: scannerInstance}, nil
+}
 
-	// Step 5: Execute scan
-	// Create tool info from crypto-finder's name and version
-	toolInfo := entities.ToolInfo{
-		Name:    version.ToolName,
-		Version: version.Version,
-	}
-	report, scanErr := runScanner(ctx, opts, scope, scannerInstance, rulePaths, toolInfo)
-	if scanErr != nil {
-		return nil, failure.WrapUnknown(
-			scanErr,
-			failure.CodeScannerExecutionFailed,
-			failure.StageScan,
-			"scan failed",
-			failure.WithDetail("scanner", opts.ScannerName),
-		)
-	}
+// toolInfo names crypto-finder as the tool behind a report.
+func toolInfo() entities.ToolInfo {
+	return entities.ToolInfo{Name: version.ToolName, Version: version.Version}
+}
 
-	// Step 5b: Stamp the ruleset that produced these findings. Best-effort:
-	// remote sources lift it from .cache-meta.json, local sources compute a
-	// content fingerprint, MultiSource picks the first non-empty. An empty
-	// RulesInfo is acceptable (ad-hoc local files with no metadata).
+func scanFailure(err error, scannerName string) error {
+	return failure.WrapUnknown(
+		err,
+		failure.CodeScannerExecutionFailed,
+		failure.StageScan,
+		"scan failed",
+		failure.WithDetail("scanner", scannerName),
+	)
+}
+
+// finishScan stamps the ruleset behind a scanner report and enriches it.
+func (o *Orchestrator) finishScan(report *entities.InterimReport, languages []string, target string) (*entities.InterimReport, error) {
+	// Stamp the ruleset that produced these findings. Best-effort: remote
+	// sources lift it from .cache-meta.json, local sources compute a content
+	// fingerprint, MultiSource picks the first non-empty. An empty RulesInfo
+	// is acceptable (ad-hoc local files with no metadata).
 	report.Rules = o.rulesManager.Info()
 
-	// Step 6: Process and enrich results
-	enrichedReport, processErr := o.processor.Process(report, languages, opts.Target)
+	enrichedReport, processErr := o.processor.Process(report, languages, target)
 	if processErr != nil {
 		return nil, failure.WrapUnknown(
 			processErr,
@@ -218,7 +281,6 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanne
 			"failed to process results",
 		)
 	}
-
 	return enrichedReport, nil
 }
 
@@ -271,7 +333,7 @@ func (o *Orchestrator) initializeScanner(ctx context.Context, opts ScanOptions) 
 }
 
 func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func(), validator *rules.ParameterConditionValidator) (err error) {
-	if progressErr := o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil); progressErr != nil {
+	if progressErr := o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil, nil); progressErr != nil {
 		return progressErr
 	}
 	defer func() {
@@ -279,7 +341,7 @@ func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths
 		if err != nil {
 			status = progressStatusFailed
 		}
-		if progressErr := o.reportProgress(opts, progressPhaseRules, status, err); progressErr != nil {
+		if progressErr := o.reportProgress(opts, progressPhaseRules, status, err, nil); progressErr != nil {
 			err = progressErr
 		}
 	}()
@@ -313,11 +375,11 @@ func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths
 	return nil
 }
 
-func (o *Orchestrator) reportProgress(opts ScanOptions, phase, status string, cause error) error {
+func (o *Orchestrator) reportProgress(opts ScanOptions, phase, status string, cause error, details map[string]any) error {
 	if opts.Progress == nil {
 		return nil
 	}
-	if err := opts.Progress(phase, status, cause); err != nil {
+	if err := opts.Progress(phase, status, cause, details); err != nil {
 		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write scan progress")
 	}
 	return nil

@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -198,6 +200,8 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 		targetRoot = filepath.Join(tempRoot, baseName)
 	}
 
+	merged := bytes.NewBufferString("rules:\n")
+	mergedRules, copied, nextLine := 0, 0, 2
 	for _, ruleFile := range ruleFiles {
 		relPath, err := filepath.Rel(baseDir, ruleFile)
 		if err != nil {
@@ -205,21 +209,176 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 			return nil, nil, fmt.Errorf("resolve relative rule path for %s: %w", ruleFile, err)
 		}
 
-		destPath := filepath.Join(targetRoot, relPath)
-		if err := copyRuleFile(ruleFile, destPath); err != nil {
+		if rules, count, ok := mergeableRules(ruleFile, relPath); ok {
+			if count > 0 {
+				log.Debug().Str("path", ruleFile).Int("mergedLine", nextLine).Msg("Merged rule file into " + mergedRulesFileName)
+			}
+			merged.Write(rules)
+			mergedRules += count
+			nextLine += bytes.Count(rules, []byte("\n"))
+			continue
+		}
+		log.Debug().Str("path", ruleFile).Msg("Passing rule file to scanner unmerged")
+		if err := copyRuleFile(ruleFile, filepath.Join(targetRoot, relPath)); err != nil {
 			removeMaterializedRules(tempRoot)
 			return nil, nil, err
 		}
+		copied++
+	}
+	if mergedRules == 0 {
+		merged.Reset()
+		merged.WriteString("rules: []\n")
+	}
+	if err := writeMergedRules(filepath.Join(targetRoot, mergedRulesFileName), merged.Bytes()); err != nil {
+		removeMaterializedRules(tempRoot)
+		return nil, nil, err
 	}
 
 	log.Info().
 		Int("sourceFiles", len(ruleFiles)).
+		Int("mergedRules", mergedRules).
+		Int("unmergedFiles", copied).
 		Str("path", targetRoot).
 		Msg("Materialized filtered rules for scanner")
 
 	return []string{targetRoot}, func() {
 		removeMaterializedRules(tempRoot)
 	}, nil
+}
+
+// mergedRulesFileName holds every mergeable filtered rule. OpenGrep loads each
+// config file separately, so one merged file loads faster and with far less
+// CPU than hundreds of small ones.
+const mergedRulesFileName = "merged-rules.yaml"
+
+// mergeableRules encodes the rules of one filtered file as entries of the
+// merged top-level rules sequence, or returns false when the file must reach
+// the scanner verbatim. It encodes per file because yaml.v3 queues every
+// event of a document until the document ends, which cost about 800 MB of
+// allocations for 3,700 rules encoded as one document.
+//
+// The scanner still receives the materialized directory, and OpenGrep
+// prefixes each rule ID with its file's directory. Each merged rule's ID
+// therefore carries its file's directory relative to the materialized root,
+// so check_id, the cleaned rule ID and the separation between equal IDs from
+// different directories stay what they were with one file per rule file.
+func mergeableRules(path, relPath string) ([]byte, int, bool) {
+	if !scannerLoadsAsPlainRuleFile(relPath) {
+		return nil, 0, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, false
+	}
+	rules := plainRulesSequence(data)
+	if rules == nil {
+		return nil, 0, false
+	}
+	if len(rules.Content) == 0 {
+		return nil, 0, true
+	}
+
+	prefix := ""
+	if dir := filepath.Dir(relPath); dir != "." {
+		prefix = strings.ReplaceAll(filepath.ToSlash(dir), "/", ".") + "."
+	}
+	for _, rule := range rules.Content {
+		id := mappingValue(rule, "id")
+		if id == nil || id.Kind != yaml.ScalarNode || id.ShortTag() != "!!str" {
+			return nil, 0, false
+		}
+		id.Value = prefix + id.Value
+		stripComments(rule)
+	}
+	// Block style, so the entries can follow the shared "rules:" key.
+	rules.Style = 0
+	var encoded bytes.Buffer
+	encoder := yaml.NewEncoder(&encoded)
+	encoder.SetIndent(2)
+	if encoder.Encode(rules) != nil || encoder.Close() != nil {
+		return nil, 0, false
+	}
+	return encoded.Bytes(), len(rules.Content), true
+}
+
+// plainRulesSequence returns the rules sequence of a file that is one YAML
+// document holding nothing but a top-level rules sequence, or nil.
+func plainRulesSequence(data []byte) *yaml.Node {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	var doc yaml.Node
+	if decoder.Decode(&doc) != nil || !errors.Is(decoder.Decode(new(yaml.Node)), io.EOF) || len(doc.Content) != 1 {
+		return nil
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode || len(root.Content) != 2 || root.Content[0].Value != "rules" || root.Content[1].Kind != yaml.SequenceNode {
+		return nil
+	}
+	return root.Content[1]
+}
+
+// scannerLoadsAsPlainRuleFile reports whether a scanner walking a rules
+// directory loads this file like any other. OpenGrep 1.29 only loads
+// lowercase .yaml/.yml names there and skips *.test.* and *.fixed.* fixtures;
+// hidden paths are copied too, so each scanner keeps its own treatment of
+// them.
+func scannerLoadsAsPlainRuleFile(relPath string) bool {
+	name := filepath.Base(relPath)
+	if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+		return false
+	}
+	stem := strings.TrimSuffix(strings.TrimSuffix(name, ".yaml"), ".yml")
+	if strings.HasSuffix(stem, ".test") || strings.HasSuffix(stem, ".fixed") {
+		return false
+	}
+	for _, part := range strings.Split(filepath.ToSlash(relPath), "/") {
+		if strings.HasPrefix(part, ".") {
+			return false
+		}
+	}
+	return true
+}
+
+func mappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	var value *yaml.Node
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			if value != nil {
+				return nil
+			}
+			value = node.Content[i+1]
+		}
+	}
+	return value
+}
+
+// stripComments drops comments before re-encoding: they carry no rule
+// semantics, and yaml.v3 can misplace some of them when emitting.
+func stripComments(node *yaml.Node) {
+	node.HeadComment, node.LineComment, node.FootComment = "", "", ""
+	for _, child := range node.Content {
+		stripComments(child)
+	}
+}
+
+func writeMergedRules(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("create merged rules directory: %w", err)
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("create merged rules file: %w", err)
+	}
+	_, err = file.Write(data)
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return fmt.Errorf("write merged rules file: %w", err)
+	}
+	return nil
 }
 
 // filteredRunTTL is how old a run-* dir under .crypto-finder-filtered must be

@@ -146,7 +146,7 @@ func oracleFragmentEntryPointChains(
 	finding entities.Finding,
 	asset entities.CryptographicAsset,
 ) [][]callGraphChainNode {
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
 	if containingFn == nil {
 		return nil
 	}
@@ -425,7 +425,7 @@ func conditionedPGPWrapperFixture(t *testing.T) *engine.DepScanResult {
 		StartLine: 11, EndLine: 11, StartCol: 16, EndCol: 63, Match: "new JcePGPDataEncryptorBuilder(algorithm)",
 		Rules: []entities.RuleInfo{{ID: "java.pgp.dynamic"}}, Metadata: map[string]string{"api": "org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>"},
 	}}}}}
-	if got := MaterializeConditionedFindings(report, graph, []string{rules}, "java"); got != 2 {
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "java"}, []string{rules}); got != 2 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 2", got)
 	}
 	for i := range report.Findings[0].CryptographicAssets {

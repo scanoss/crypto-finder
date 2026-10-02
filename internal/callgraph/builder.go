@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -49,6 +50,16 @@ type Parser interface {
 	PackageSeparator() string
 }
 
+// SelectiveParser is implemented by parsers that can skip a directory's
+// files before reading them. The builder uses it when a package lists its
+// IncludeFiles, so an unlisted file costs nothing; other parsers parse the
+// whole directory and the builder drops the unlisted analyses.
+type SelectiveParser interface {
+	// ParseDirectorySelected is ParseDirectory limited to the files keep
+	// accepts, by absolute path. A nil keep accepts every file.
+	ParseDirectorySelected(dir string, packagePath string, keep func(path string) bool) ([]*FileAnalysis, error)
+}
+
 // ParserCloner is implemented by parsers that can produce an independent
 // instance of themselves for concurrent use. tree-sitter parsers are not
 // reentrant, so parallel source parsing requires one parser per worker; a
@@ -71,6 +82,12 @@ type PackageDir struct {
 	// it the root walk re-parses every member under a second import path, and one
 	// function acquires two identities.
 	ExcludeDirs []string
+	// IncludeFiles, when non-nil, limits parsing to these absolute files
+	// under Dir. The walk still passes through their parent directories, so
+	// each keeps the import path a whole walk gives it. A Go dependency lists
+	// the files of its imported packages, and a Python distribution sharing a
+	// namespace directory the files it installed.
+	IncludeFiles []string
 }
 
 // Builder constructs a CallGraph from multiple packages using a language-specific parser.
@@ -125,6 +142,44 @@ type Builder struct {
 	// excludeDirs is: packages are analyzed sequentially.
 	artifacts       *artifactScope
 	currentArtifact string
+	// include is the current package's IncludeFiles, nil to parse its whole
+	// tree. Per-package state, safe for the reason excludeDirs is.
+	include *includeScope
+}
+
+// includeScope holds the files to keep, each directory holding one in
+// parse, and in walk each of those plus every parent up to the package root,
+// which the walk must pass through to reach them.
+type includeScope struct {
+	files map[string]bool
+	parse map[string]bool
+	walk  map[string]bool
+}
+
+func newIncludeScope(root string, files []string) *includeScope {
+	if files == nil {
+		return nil
+	}
+	root = filepath.Clean(root)
+	scope := &includeScope{files: make(map[string]bool, len(files)), parse: make(map[string]bool), walk: map[string]bool{root: true}}
+	for _, file := range files {
+		file = filepath.Clean(file)
+		scope.files[file] = true
+		dir := filepath.Dir(file)
+		scope.parse[dir] = true
+		for ; dir != root && !scope.walk[dir]; dir = filepath.Dir(dir) {
+			scope.walk[dir] = true
+			if filepath.Dir(dir) == dir {
+				break
+			}
+		}
+	}
+	return scope
+}
+
+// parsesDir reports whether the current package's walk parses dir.
+func (b *Builder) parsesDir(dir string) bool {
+	return b.include == nil || b.include.parse[filepath.Clean(dir)]
 }
 
 // pythonInitImport is one name a package's `__init__.py` binds with
@@ -207,9 +262,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	b.artifacts = newArtifactScopeFor(b.ecosystem, b.artifactGraph)
 	graph.artifacts = b.artifacts
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
-	for _, pkg := range packages {
-		if err := b.analyzePackage(pkg, graph); err != nil {
-			log.Debug().Err(err).Str("package", pkg.ImportPath).Msg("Failed to analyze package")
+	for i := range packages {
+		if err := b.analyzePackage(packages[i], graph); err != nil {
+			log.Debug().Err(err).Str("package", packages[i].ImportPath).Msg("Failed to analyze package")
 			continue
 		}
 	}
@@ -347,6 +402,8 @@ func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
 	if b.ecosystem == ecosystemPython && pkg.Version == "" {
 		b.pythonProjectRoots = discoverPythonProjectRoots(b.packageRoot, b.pythonDependencyNames, b.skipWalkDirectory)
 	}
+	b.include = newIncludeScope(pkg.Dir, pkg.IncludeFiles)
+	defer func() { b.include = nil }()
 	cloner, ok := b.parser.(ParserCloner)
 	workers := runtime.GOMAXPROCS(0)
 	if !ok || workers <= 1 {
@@ -438,6 +495,9 @@ func (b *Builder) skipWalkDirectory(path, name string) bool {
 	if _, excluded := b.excludeDirs[filepath.Clean(path)]; excluded {
 		return true
 	}
+	if b.include != nil && !b.include.walk[filepath.Clean(path)] {
+		return true
+	}
 	if b.skipMatcher == nil {
 		return false
 	}
@@ -472,7 +532,10 @@ func (b *Builder) collectParseDirs(dir, importPath string) []parseDirWork {
 // on the package's root directory aborts the package with that error (nothing
 // merged), while subdirectory failures are logged and skipped.
 func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, cloner ParserCloner, workers int) error {
-	work := b.collectParseDirs(pkg.Dir, pkg.ImportPath)
+	work := slices.DeleteFunc(b.collectParseDirs(pkg.Dir, pkg.ImportPath), func(w parseDirWork) bool { return !b.parsesDir(w.dir) })
+	if len(work) == 0 {
+		return nil
+	}
 	if workers > len(work) {
 		workers = len(work)
 	}
@@ -492,13 +555,13 @@ func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, clone
 				if i >= len(work) {
 					return
 				}
-				results[i], errs[i] = parser.ParseDirectory(work[i].dir, work[i].importPath)
+				results[i], errs[i] = b.parseDirectory(parser, work[i].dir, work[i].importPath)
 			}
 		}()
 	}
 	wg.Wait()
 
-	if errs[0] != nil {
+	if errs[0] != nil && work[0].dir == pkg.Dir {
 		return errs[0]
 	}
 	for i := range work {
@@ -512,14 +575,26 @@ func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, clone
 }
 
 func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph, projectLocal bool) error {
-	analyses, err := b.parser.ParseDirectory(dir, importPath)
-	if err != nil {
-		return err
+	if b.parsesDir(dir) {
+		analyses, err := b.parseDirectory(b.parser, dir, importPath)
+		if err != nil {
+			return err
+		}
+		b.addAnalyses(graph, analyses, projectLocal)
 	}
-
-	b.addAnalyses(graph, analyses, projectLocal)
 	b.analyzeSubdirs(dir, importPath, graph, projectLocal)
 	return nil
+}
+
+// parseDirectory parses dir with parser, reading only the current package's
+// listed files when the parser can skip the others.
+func (b *Builder) parseDirectory(parser Parser, dir, importPath string) ([]*FileAnalysis, error) {
+	selective, ok := parser.(SelectiveParser)
+	if b.include == nil || !ok {
+		return parser.ParseDirectory(dir, importPath)
+	}
+	files := b.include.files
+	return selective.ParseDirectorySelected(dir, importPath, func(path string) bool { return files[path] })
 }
 
 func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projectLocal bool) {
@@ -538,7 +613,13 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 }
 
 func (b *Builder) skipSourceFile(analysis *FileAnalysis) bool {
-	if analysis == nil || analysis.FilePath == "" || b.skipMatcher == nil {
+	if analysis == nil || analysis.FilePath == "" {
+		return false
+	}
+	if b.include != nil && !b.include.files[filepath.Clean(analysis.FilePath)] {
+		return true
+	}
+	if b.skipMatcher == nil {
 		return false
 	}
 	return b.skipMatcher.ShouldSkip(filepath.ToSlash(analysis.FilePath), false)
@@ -4015,7 +4096,8 @@ func methodLookupName(name string) string {
 // versioned packages define, by their directory contents and import path.
 func pythonDependencyTopLevelNames(packages []PackageDir) map[string]bool {
 	names := map[string]bool{}
-	for _, pkg := range packages {
+	for i := range packages {
+		pkg := &packages[i]
 		if pkg.Version == "" {
 			continue
 		}

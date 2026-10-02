@@ -25,21 +25,27 @@ import (
 // semantics remain rule-owned: this function only evaluates parameterCondition
 // predicates and copies the applicable rule metadata onto the original source
 // anchor. Ambiguous paths produce no specialized asset.
+//
+// result supplies the call graph, its ecosystem and the project and
+// dependency roots that locate each finding's file; report is the report
+// being specialized.
 func MaterializeConditionedFindings(
 	report *entities.InterimReport,
-	graph *callgraph.CallGraph,
+	result *engine.DepScanResult,
 	rulePaths []string,
-	ecosystem string,
 ) int {
-	if report == nil || graph == nil || len(rulePaths) == 0 {
+	if report == nil || result == nil || result.CallGraph == nil || len(rulePaths) == 0 {
 		return 0
 	}
 	rules := engine.LoadRuleCryptoMetadata(rulePaths)
 	if len(rules) == 0 {
 		return 0
 	}
+	graph, ecosystem := result.CallGraph, result.Ecosystem
 	catalog := conditionedCatalog{rules: rules, keys: newConditionedKeyMatcher(graph, ecosystem), ecosystem: ecosystem}
-	ctx := newExportBuildContext(&engine.DepScanResult{Report: report, CallGraph: graph, Ecosystem: ecosystem})
+	scoped := *result
+	scoped.Report = report
+	ctx := newExportBuildContext(&scoped)
 	values := newConditionedValueEnumerator(ctx)
 	existing := indexExistingFindingRules(report)
 	added := 0
@@ -81,7 +87,7 @@ func materializeConditionedAnchor(
 	if len(anchor.ParameterConditions) > 0 {
 		return 0
 	}
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, anchor.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, anchor.DependencyInfo, anchor.StartLine)
 	if containingFn == nil {
 		return 0
 	}

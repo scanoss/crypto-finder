@@ -45,11 +45,10 @@ func depthChainContext(pkg string, maxDepth int, userPackages map[string]bool) (
 		caller, last = id, decl
 	}
 	ctx := &exportBuildContext{
-		graph:                   graph,
-		packageSeparator:        ".",
-		userPackages:            userPackages,
-		containingFunctionCache: make(map[string]cachedContainingFunction),
-		maxDepth:                maxDepth,
+		graph:            graph,
+		packageSeparator: ".",
+		userPackages:     userPackages,
+		maxDepth:         maxDepth,
 	}
 	ensureCallChainCaches(ctx)
 	ctx.callChainRemainingUses[last.ID.String()] = 1

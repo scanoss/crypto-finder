@@ -43,15 +43,16 @@ const unknownResult = "unknown"
 
 // Scanner implements the scanner.Scanner interface for Semgrep.
 type Scanner struct {
-	executablePath string
-	version        string
-	timeout        time.Duration
-	workDir        string
-	env            map[string]string
-	extraArgs      []string
-	skipPatterns   []string
-	disableDedup   bool
-	interfile      bool
+	executablePath    string
+	version           string
+	timeout           time.Duration
+	workDir           string
+	env               map[string]string
+	extraArgs         []string
+	skipPatterns      []string
+	includeGitIgnored bool
+	disableDedup      bool
+	interfile         bool
 }
 
 // NewScanner creates a new Semgrep adapter with default settings.
@@ -104,6 +105,7 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	if config.SkipPatterns != nil {
 		s.skipPatterns = slices.Clone(config.SkipPatterns)
 	}
+	s.includeGitIgnored = config.IncludeGitIgnored
 	s.disableDedup = config.DisableDedup
 	s.interfile = config.Interfile
 
@@ -187,6 +189,10 @@ func (s *Scanner) buildCommand(target string, rulePaths []string) []string {
 	args := []string{
 		"--json",           // JSON output format
 		"--metrics", "off", // Disable telemetry
+	}
+
+	if s.includeGitIgnored {
+		args = append(args, "--no-git-ignore")
 	}
 
 	for _, rulePath := range rulePaths {

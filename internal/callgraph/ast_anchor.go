@@ -10,51 +10,86 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
-func setFunctionCallASTAnchor(call *FunctionCall, node *sitter.Node) {
+// callAnchors sets the AST anchors of the calls found in one parse tree. It
+// indexes each ancestor's named children once and reuses that index for every
+// later call under the same ancestor, so a file with n sibling statements that
+// each hold a call costs O(n) child visits, not O(n) per call. The zero value
+// is ready to use; reset drops the indexes once the tree is closed.
+type callAnchors struct {
+	// childIndexes maps a parent to the named-child index of each of its
+	// named, non-comment children, keyed by child ID (the identity Node.Equal
+	// compares). Keying parents by pointer keeps their tree's nodes reachable,
+	// so no other tree can reuse a cached child ID.
+	childIndexes map[*sitter.Node]map[uintptr]int
+}
+
+func (a *callAnchors) set(call *FunctionCall, node *sitter.Node) {
 	if call == nil || node == nil {
 		return
 	}
 	call.ASTKind = node.Type()
-	call.NamedASTPath = namedASTPath(node)
+	call.NamedASTPath = a.namedASTPath(node)
+}
+
+func (a *callAnchors) reset() {
+	a.childIndexes = nil
 }
 
 // namedASTPath encodes each relative named node as <kind>[<zero-based named-child index>] from the containing function to the call.
-func namedASTPath(node *sitter.Node) string {
-	var parts []string
-	for current, parent := node, node.Parent(); current != nil && parent != nil; current, parent = parent, parent.Parent() {
-		index := namedChildIndex(parent, current)
-		if index < 0 {
+// A call with no function container above it (a Go package-level variable
+// initializer, a JavaScript top-level statement) has no anchor, and the walk
+// learns that before it computes any index.
+func (a *callAnchors) namedASTPath(node *sitter.Node) string {
+	lineage := []*sitter.Node{node}
+	for current := node; ; {
+		parent := current.Parent()
+		if parent == nil {
 			return ""
 		}
-		parts = append(parts, fmt.Sprintf("%s[%d]", current.Type(), index))
+		lineage = append(lineage, parent)
 		if isFunctionContainer(parent.Type()) {
-			for left, right := 0, len(parts)-1; left < right; left, right = left+1, right-1 {
-				parts[left], parts[right] = parts[right], parts[left]
-			}
-			return strings.Join(parts, "/")
+			break
 		}
+		current = parent
 	}
-	return ""
+	parts := make([]string, 0, len(lineage)-1)
+	for i := len(lineage) - 2; i >= 0; i-- {
+		index, ok := a.childIndex(lineage[i+1], lineage[i])
+		if !ok {
+			return ""
+		}
+		parts = append(parts, fmt.Sprintf("%s[%d]", lineage[i].Type(), index))
+	}
+	return strings.Join(parts, "/")
 }
 
-func namedChildIndex(parent, child *sitter.Node) int {
-	index := 0
-	// The count is hoisted out of the loop condition on purpose: every
-	// tree-sitter node access is a cgo call, and evaluating it once per
-	// iteration doubled the cost of a scan that runs for every call expression
-	// in every file.
-	parentNamedChildren := int(parent.NamedChildCount())
-	for i := 0; i < parentNamedChildren; i++ {
-		namedChild := parent.NamedChild(i)
-		if strings.Contains(namedChild.Type(), "comment") {
+func (a *callAnchors) childIndex(parent, child *sitter.Node) (int, bool) {
+	indexes, ok := a.childIndexes[parent]
+	if !ok {
+		indexes = namedChildIndexes(parent)
+		if a.childIndexes == nil {
+			a.childIndexes = make(map[*sitter.Node]map[uintptr]int)
+		}
+		a.childIndexes[parent] = indexes
+	}
+	index, ok := indexes[child.ID()]
+	return index, ok
+}
+
+// namedChildIndexes visits parent's children once with a cursor; NamedChild(i)
+// would rescan from the first child for every i.
+func namedChildIndexes(parent *sitter.Node) map[uintptr]int {
+	indexes := make(map[uintptr]int)
+	cursor := sitter.NewTreeCursor(parent)
+	defer cursor.Close()
+	for ok := cursor.GoToFirstChild(); ok; ok = cursor.GoToNextSibling() {
+		child := cursor.CurrentNode()
+		if !child.IsNamed() || strings.Contains(child.Type(), "comment") {
 			continue
 		}
-		if namedChild.Equal(child) {
-			return index
-		}
-		index++
+		indexes[child.ID()] = len(indexes)
 	}
-	return -1
+	return indexes
 }
 
 // isFunctionContainer reports whether kind is a node type that bounds a

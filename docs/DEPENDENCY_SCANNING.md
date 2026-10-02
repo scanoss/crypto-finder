@@ -54,6 +54,7 @@ The [`Resolver` interface](../internal/dependency/resolver.go) discovers all dep
 | `Module`  | `golang.org/x/crypto`              | `org.bouncycastle:bcprov-jdk18on`| `cryptography`                   | `ring`                           | Import path / coordinate         |
 | `Version` | `v0.17.0`                           | `1.77`                           | `42.0.5`                         | `0.17.8`                         | Resolved version                 |
 | `Dir`     | `~/go/pkg/mod/golang.org/x/crypto@v0.17.0` | `~/.crypto-finder/cache/sources/org.bouncycastle:bcprov-jdk18on/1.77/` | `~/.local/lib/python3.x/site-packages/cryptography/` | `~/.cargo/registry/src/.../ring-0.17.8/` | Filesystem path to scan |
+| `Files` | `[.../x/crypto@v0.17.0/chacha20poly1305/chacha20poly1305.go, ...]` | unset | `[.../site-packages/google/auth/_helpers.py, ...]` for a namespace distribution, `[.../site-packages/configobj/__init__.py, ..., .../site-packages/validate/__init__.py]` for one with several top-level roots, otherwise unset | unset | The only files of `Dir` the dependency's source holds: the Go files the host build compiles in Go's imported packages, or a Python distribution's own files in a shared namespace directory; unset scans all of `Dir` |
 
 The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is the default user-code prefix. For Java, packages of functions whose files live in the scanned project tree are also user code. That matters for Gradle projects that omit `group` and therefore export a project name rather than a Java package prefix.
 
@@ -61,18 +62,45 @@ The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is t
 
 Rules are pre-loaded once and filtered to the ecosystem's language(s). For a Go project, only `go` rules are kept; for Java, only `java` rules. This avoids running irrelevant rules against source code, significantly reducing scanner overhead.
 
+The kept rules are then written to one merged YAML file, which every dependency scan reuses. OpenGrep loads each config file separately on every run, so one file loads faster than hundreds. Each merged rule ID carries its source file's directory, the prefix OpenGrep derived from the file location before, so finding rule IDs do not change. Files the merge cannot represent exactly (invalid YAML, `*.test.yaml` fixtures, hidden paths) are passed to the scanner unchanged.
+
 ### Step 3: Scan Dependencies in Parallel
 
 ```mermaid
 flowchart TB
-    Work["Deduplicated Deps"] --> Pool["Worker Pool<br/><i>default: 4 goroutines</i>"]
-    Pool --> W1["Worker 1"] --> R1["Report A"]
-    Pool --> W2["Worker 2"] --> R2["Report B"]
-    Pool --> W3["Worker 3"] --> R3["Report C"]
-    Pool --> W4["Worker 4"] --> R4["Report D"]
+    Work["Deduplicated Deps"] --> Cache{"Findings cache<br/><i>per dependency</i>"}
+    Cache -->|hit| R0["Cached report"]
+    Cache -->|miss| Shape["Batches<br/><i>balanced by source bytes,<br/>at most 16 roots each</i>"]
+    Shape --> Pool["Worker Pool<br/><i>default: half the cores, max 8</i>"]
+    Pool --> W1["Worker 1: one scanner process<br/>over roots A, B, C"] --> R1["Reports A, B, C"]
+    Pool --> W2["Worker 2: one scanner process<br/>over roots D, E"] --> R2["Reports D, E"]
 ```
 
-Each dependency is scanned independently using the same `Orchestrator.Scan()` pipeline as user code (Semgrep/OpenGrep rules → deduplication → enrichment). Dependencies are deduplicated by `module@version` and processed in a stable order (`module`, `version`, `dir`) so repeated scans produce deterministic report and call graph inputs.
+Dependencies are deduplicated by `module@version` and processed in a stable order (`module`, `version`, `dir`) so repeated scans produce deterministic report and call graph inputs. The findings cache is consulted per dependency; the misses are then grouped into batches and each worker runs **one scanner process per batch**, over every root in it, instead of one process per dependency. OpenGrep loads the rules once per process, and that load is the dominant cost of scanning a small dependency (about 20 s for the JavaScript and TypeScript rules), so a 50-package npm project pays it a handful of times instead of 50. Each process gets `--jobs` sized to its share of the cores (see the `scannerJobs` log field).
+
+Each root's report is what a scan of that root alone produces. The OpenGrep adapter (`ScanRoots`, `internal/scanner/opengrep/batch.go`) attributes every result and error to the root holding its file (longest prefix) and runs the same transformation per root, with that root as the target, so paths, deduplication, rule IDs and finding IDs are unchanged. An error without a file, such as a memory limit reported for the whole process, marks every root in the batch incomplete. The dependency scanner then stamps the ruleset and enriches each report as it does for a single scan, and writes each dependency to the findings cache under its own key, still skipping a dependency whose scan stopped at a limit.
+
+Batch shaping (`internal/engine/dependency_batches.go`):
+
+- **Nested roots never share a process.** An npm dependency's scan excludes its own `node_modules/`, where another dependency may be installed, and an exclusion applies to the whole process. Roots are assigned a nesting level (0 when no other root holds them, otherwise one more than the root that does; a repeated directory counts as nested) and only roots of the same level are batched together. A scoped root that names none of another root's files does not hold it (`scanner.Disjoint`): Python namespace siblings, and a Python distribution rooted at `site-packages` beside the distributions installed below it, share a level. Scoped roots carry no exclusion anchored at their own directory, so sharing a process hides none of the other root's files.
+- **Balanced by weight.** Each dependency is weighed by the bytes of its source files for the ecosystem's languages (a cheap walk that skips nested `node_modules`). Within a level, the misses are split into `max(ceil(n / 16), min(workers, n))` batches: heaviest dependency first, each into the lightest batch, so the workers finish together and a very large dependency keeps a process to itself. Batches are queued heaviest first.
+- **Process timeout.** A batch gets the single-scan `--timeout` once per `ceil(roots / jobs)`: OpenGrep analyzes `jobs` files at a time, so the roots consume about that many single-scan budgets of wall time. With the default 10 minutes and 4 jobs, a 16-root batch may run for 40 minutes before it is treated as failed.
+- **Failure isolation.** When a batch's process fails (exit status above 1, unreadable output, timeout), every dependency in it is scanned alone, as before batching, so one faulty dependency fails only itself and the others keep their findings and their cache entries. A canceled scan fails the batch's dependencies and rescans nothing.
+- A batch of one root, which includes every dependency when the scanner cannot batch (the Semgrep adapter), goes through the single-scan path unchanged.
+
+**Go dependencies scan only the files their imported packages compile.** A Go program contains only the packages it imports, and of each package only the files its build compiles, so the Go resolver lists, for each package in the production import closure, the Go files `go list -e -deps` reports in `GoFiles` and `CgoFiles` (`Files`), and the scan reads only those files: not the module's other packages, not the subdirectories of an imported package, which are packages of their own, and not the files that build constraints exclude. Build constraints apply file by file, for the scanning host (see Host build configuration under Go-specific): a file for another `GOOS` or `GOARCH` (`*_windows.go`, `//go:build darwin`), one whose build tag is unset, a `//go:build ignore` generator, and with `CGO_ENABLED=0` a file that imports `"C"` are not scanned. Only Go files are listed, because a Go dependency scan runs only Go rules and the Go call graph parses only Go files: a package's C, assembly and other files, and its `_test.go` files, never yielded a finding. modernc.org/libc, for example, ships one 4 MB `ccgo_<os>_<arch>.go` per platform, and the host build compiles one of them. The dependency's root stays the module directory, so attribution, result paths, finding IDs and the batch nesting levels are those of a whole-module scan; only the targets change. The scanner receives the files as named targets (a `DetectionScope`, the same mechanism as `--detect-paths-from`, with `--force-exclude` so the dependency's skip patterns still apply to them). Files are leaves, so the packages of one module, such as `foo/` and `foo/bar/`, never hide one another, and a batch over many files is split into several processes when the file list exceeds the command-line budget. OpenGrep keeps its language and size filters for named files, so a file in an imported package yields the findings it yielded in a whole-module scan. The findings cache key includes the scoped file list, so a whole-module entry is never served for a package-scoped scan, or one set of packages for another. A scanner that cannot limit detection to files (the Semgrep adapter) still scans the whole module, under the whole-module key, and the dependency keeps only the findings in its files.
+
+**Python namespace distributions scan only their own files.** Several distributions can install into one namespace directory: protobuf, googleapis-common-protos, google-auth and google-api-core all resolve to `site-packages/google`. When two or more distributions resolve to the same `Dir`, the pip resolver gives each one the files under it that its `*.dist-info/RECORD` lists and that exist (`Files`). A distribution without a RECORD owns the files no sibling's RECORD lists; `top_level.txt` names import roots, not files, so it can choose `Dir` but cannot split it. A distribution with a directory of its own keeps `Files` unset and scans its whole `Dir` as before. The shared directory stays the root, so a finding's path is relative to it, as in a whole-directory scan (`auth/_helpers.py` for google-auth), and the files go to the scanner as named targets through the same `DetectionScope` as Go's packages. Siblings whose files are disjoint share a batch: the scanner attributes each result by the exact file named in a scope, so they are not nesting levels of one another. Siblings whose files overlap (two RECORDs listing one file, or two distributions without a RECORD) are still scanned in separate processes. Each file is therefore scanned once and reported under the one distribution that installed it. Previously every sibling scanned the whole namespace in its own process and reported every finding in it. A scanner that cannot limit detection to files (the Semgrep adapter) still scans the whole directory for each sibling, and each sibling keeps only the findings in its own files.
+
+**Python distributions scan every top-level package and module they installed.** `packages_distributions()` maps import names to distributions, so one distribution can have several: `configobj` installs `configobj/` and `validate/`, `PyYAML` installs `yaml/` and `_yaml/`, setuptools installs `setuptools/`, `pkg_resources/` and `_distutils_hack/`. The resolver takes each name that is a directory in `site-packages`, or a module file `name.py` there (`six.py`), drops a name inside another one (`googleapiclient/discovery_cache`) names that are neither (compiled extensions), and `__pycache__`, which importlib infers from the bytecode of module files and which all module files share, and sorts the rest. A distribution with exactly one package directory keeps it as `Dir` and `ImportPath`, so its paths, finding IDs and cache keys are unchanged. Any other distribution is rooted at `site-packages`, the one directory that holds all its roots, with an empty `ImportPath` and `Files` listing every file under each of its package directories and each module file; its share of a namespace directory it also installs into is the files its RECORD lists, as above. Its finding paths therefore start with the package (`validate/__init__.py`, `six.py`). Previously the resolver kept whichever name it met first in a Go map, a different one from run to run: `configobj` scanned `configobj/` in one run and `validate/` in the next, setuptools one of its three packages, and a distribution whose first name was a module file, such as `six`, was skipped as a single-file module. Findings and call-graph functions of these distributions changed between runs of the same binary on the same environment; they no longer do. The scope of a distribution at `site-packages` names none of the other distributions' files, so it batches with them (see above) and never reports their findings.
+
+**Dependency scans use their own exclusions.** `buildDepScanOptions` (`internal/engine/dependency_scanner.go`) replaces the primary scan's skip patterns with `skip.OnlyDefaultTestPatterns`, which keeps only the built-in test patterns (`DefaultSkippedTestPatterns` in `internal/skip/source_defaults.go`: `test/`, `tests/`, `src/test/`, `src/tests/`, `__tests__/`, `**/*Test.java`, `**/*Tests.java`, `**/*_test.go`, `**/test_*.py`). For npm it adds an anchor on the dependency's own `node_modules/`, because the dependency directory usually sits inside a `node_modules` tree itself and each child package is scanned under its own identity. It also sets `IncludeGitIgnored`, which passes the OpenGrep flag that disables `.gitignore` handling. As a result, none of these apply inside a dependency root:
+
+- `--exclude` and `settings.skip.patterns.scanning` from `scanoss.json`. `--exclude` is not a way to hide dependency findings.
+- The built-in skipped directories (`dist`, `build`, `vendor`, `target`, `docs`, `shaded`, ...) and the generated-stub globs (`*.pb.go`, `*_pb2.py`, ...). `--no-default-exclusions` has nothing to remove here.
+- `.gitignore` files.
+
+`--include-tests` leaves the test patterns out of the list, so a dependency scan then reads its test files too. The reason for the narrow list: a published package is not a checkout, and often ships its only code in `dist/` or `build/`, which the source-tree defaults would hide. Go dependencies narrow the scan further to the Go files each imported package compiles for the host build (see above), which never include `_test.go` files.
 
 Dependencies without a usable local source directory are **not** sent to the scanner. They are logged as `Skipping dependency source scan: no local source directory` instead of triggering empty-path scanner failures. For Java, those dependencies still proceed to step 4 as **type-only** inputs as long as `module@version` can be resolved to a compiled JAR.
 
@@ -130,6 +158,10 @@ flowchart TB
 > Dependencies without findings contribute only their bytecode type signatures (class names,
 > method signatures, return types, interface hierarchy). This preserves 100% type resolution
 > accuracy for fluent chains while skipping expensive source parsing for ~80% of dependencies.
+
+A dependency's `Files` becomes the `IncludeFiles` of its `PackageDir`. For Go, the builder parses only the files the host build compiles in the imported packages (the Go parser skips an unlisted file before reading it, so modernc.org/libc's seven other `ccgo_linux_<arch>.go` files cost nothing) and still walks through their parent directories so every package keeps the import path a whole-module walk gives it. This loses no reachability. A Go function can call only functions of packages its own package imports, which are in the closure too, and an interface value can only hold a type of a package the program contains, so the module's other packages hold no call edge and no dispatch target of the program. Likewise a file that build constraints exclude is not part of the program the host builds.
+
+For a Python namespace distribution, the builder parses only its own files of the shared namespace directory, under the import path a whole walk gives them (`google.auth._helpers`), and the Python dependency type resolver indexes only them. Each function of a namespace directory is parsed once and belongs to the distribution that installed it, so containing-function lookups, synthesized entry-point findings and the call-graph export name that distribution. A distribution rooted at `site-packages` parses under the empty import path, so each package and module keeps its own name (`configobj`, `validate.check`, `six`), and both the builder and the type resolver walk only the directories that hold its files.
 
 #### What the parser extracts
 
@@ -398,7 +430,7 @@ This produces the **user report**. At this point there are no `source`, `call_ch
 
 ### Step 2: Resolve Dependencies
 
-The Go resolver runs `go list -m -json all`. It returns:
+The Go resolver lists the main module with `go list -m -json`, then runs `go list -e -deps` over the main module's packages and keeps every module that provides a package in that non-test import closure. Build constraints are evaluated for the scanning host: on amd64, `chacha20poly1305` imports `golang.org/x/sys/cpu`, so both modules below are in the closure, while on arm64 only `golang.org/x/crypto` is. On amd64 it returns:
 
 ```
 RootModule: "example.com/crypto-test"
@@ -413,24 +445,24 @@ The `RootModule` (`example.com/crypto-test`) is the Go user-code prefix — any 
 
 ### Step 3: Scan Dependencies in Parallel
 
-Each dependency gets scanned with the same rules, limited to Go rules only:
+Each dependency gets scanned with the same rules, limited to Go rules only, and only in the packages the program imports: `chacha20poly1305`, `chacha20`, `internal/alias` and `internal/poly1305` of `golang.org/x/crypto`, and `cpu` of `golang.org/x/sys`. Measured on 2026-10-02 with the current rule set:
 
 | Dependency | Crypto Assets Found | Why |
 |------------|--------------------:|-----|
-| `golang.org/x/crypto` | ~870 | It **is** a crypto library — virtually every file matches |
-| `golang.org/x/sys` | ~3 | False positives (function names like `Generate` matching crypto rules) |
+| `golang.org/x/crypto` | 4 | `chacha20poly1305/chacha20poly1305_generic.go` and `chacha20poly1305/xchacha20poly1305.go`. A whole-module scan reports 378 in 58 files, all in packages this program does not contain |
+| `golang.org/x/sys` | 0 | `cpu` holds no crypto operation |
 
-Total: **~873 dependency findings**. Both dependencies have findings, so both proceed to step 4.
+Total: **4 dependency findings**. Only `golang.org/x/crypto` has findings, so it proceeds to step 4 together with the user code.
 
 ### Step 4: Build the Call Graph
 
-The builder receives three package directories:
+The builder receives the user code and the crypto-bearing dependency, limited to its imported packages:
 
 ```
 PackageDirs = [
     {Dir: ".../go_with_crypto_dep",           ImportPath: "example.com/crypto-test"},
-    {Dir: ".../golang.org/x/crypto@v0.31.0",  ImportPath: "golang.org/x/crypto"},
-    {Dir: ".../golang.org/x/sys@v0.28.0",     ImportPath: "golang.org/x/sys"},
+    {Dir: ".../golang.org/x/crypto@v0.31.0",  ImportPath: "golang.org/x/crypto",
+     IncludeFiles: [".../chacha20/chacha_generic.go", ..., ".../chacha20poly1305/chacha20poly1305.go", ..., ".../internal/poly1305/sum_generic.go", ...]},
 ]
 ```
 
@@ -659,9 +691,9 @@ main.go:19  ──calls──→  mypkg/crypto.go:29  ──calls──→  x/cr
                                     source: "direct"
                                     exported slice: [[main@L19 → SecureDecrypt@L28]]
 
-golang.org/x/crypto/ssh/cipher.go:N  (internal SSH functions)
+golang.org/x/crypto/chacha20poly1305/*.go  (inside the imported package)
                                 │
-                                └── 870 findings with NO call chain
+                                └── 4 findings with NO call chain
                                     source: "dependency"
                                     → no exported reachability slice
 ```
@@ -951,13 +983,13 @@ Dependency scanning is dominated by opengrep execution time (~93% of pipeline ti
 
 ### How It Works
 
-The cache sits between Step 2 (rule loading) and Step 3 (parallel scanning) in the pipeline. Before scanning each dependency, `scanSingleDep` checks for a cached result. On a cache miss, the scan runs normally and the result is stored.
+The cache sits between Step 2 (rule loading) and Step 3 (parallel scanning) in the pipeline. Before scanning, `lookupDependency` checks each dependency for a cached result. The misses are scanned in batches (Step 3) and each dependency's report is stored under its own key, unless its scan stopped at a time or memory limit.
 
 ```mermaid
 flowchart LR
     Dep["module@version"] --> Check{"Cache hit?"}
     Check -->|Yes| Report["Cached InterimReport"]
-    Check -->|No| Scan["orchestrator.Scan()"]
+    Check -->|No| Scan["batched scanner process"]
     Scan --> Store["Store in cache"]
     Store --> Report
 ```
@@ -1024,7 +1056,7 @@ internal/
 ├── dependency/
 │   ├── resolver.go                # Resolver interface + Dependency/ResolveResult types
 │   ├── registry.go                # Ecosystem → Resolver registry
-│   ├── go_resolver.go             # Go: `go list -m -json all`
+│   ├── go_resolver.go             # Go: production import closure via `go list -deps`
 │   ├── java_resolver.go           # Java: auto-detect Maven vs Gradle
 │   ├── maven_resolver.go          # Java/Maven: `mvn dependency:list/sources/tree`
 │   ├── gradle_resolver.go         # Java/Gradle: init-script export via `gradlew` / `gradle`
@@ -1052,7 +1084,7 @@ The extensible architecture makes adding a new language a matter of implementing
 
 ### Go
 
-- **Resolver**: [`GoResolver`](../internal/dependency/go_resolver.go) — uses `go list -m -json all` to resolve modules
+- **Resolver**: [`GoResolver`](../internal/dependency/go_resolver.go) — uses `go list -m -json` for the main modules and `go list -e -deps` for the modules in their production import closure and the Go files their imported packages compile for the host build (`GoFiles`, `CgoFiles`), the only ones scanned and parsed
 - **Parser**: [`GoParser`](../internal/callgraph/go_parser.go) — syntactic parsing of Go source
 - **Manifest**: `go.mod`
 - **Module format**: Go import path (e.g., `golang.org/x/crypto`)
@@ -1144,7 +1176,7 @@ The `PipResolver` executes the following steps:
 2. **`python -m pip list --format=json`** — lists all installed packages with versions
 3. **`python -m pip show <packages>`** — gets location and dependency info for each package (batched in groups of 50)
 4. **Distribution-to-import mapping** — uses that SAME interpreter's `importlib.metadata.packages_distributions()` (Python 3.10+) to map distribution names to import names. Falls back to scanning `*.dist-info` directories (`top_level.txt` → `RECORD` file) for older Python versions
-5. **Package directory resolution** — uses the import mapping, then heuristic name normalization, to find the source directory. Single-file modules (e.g., `six.py`) and C-extension packages are skipped
+5. **Package root resolution** — uses the import mapping, then heuristic name normalization, to find every top-level package directory and module file of the distribution (see "Python distributions scan every top-level package and module they installed"). C-extension packages are skipped
 
 #### Python Call Resolution
 
@@ -1244,7 +1276,7 @@ The pipeline has three main time consumers:
 
 1. **Source parsing for graph packages** (~23s on warm `eladmin`): Parses `.java` files from 32 packages (user code + 27 deps with findings) to build 168K function declarations with call sites.
 
-2. **Dependency scanning with opengrep**: Still dominates cold scans. On warm scans most dependencies hit the findings cache; on first scans the cost depends on dependency source size and worker count (`--dep-workers`).
+2. **Dependency scanning with opengrep**: Still dominates cold scans. On warm scans most dependencies hit the findings cache; on first scans the cost depends on dependency source size and worker count (`--dep-workers`). Batching removed the per-dependency rule load, so the remaining cost is the analysis itself.
 
 3. **Call graph post-processing** (~2-3s): Caller index construction, bytecode merge/rewrite, and fluent-chain resolution are no longer dominant but still scale with graph size.
 
@@ -1262,7 +1294,7 @@ The bytecode resolution bottleneck has largely been removed. Remaining performan
 #### Opengrep scanning
 
 - **Result caching**: The existing `DiskFindingsCache` caches dependency scan results by `module@version:rulesHash`. On repeated scans of the same project, most dependencies hit the cache.
-- **Cold-scan throughput**: First-scan performance still depends heavily on opengrep throughput over large dependency sources.
+- **Cold-scan throughput**: First-scan performance still depends heavily on opengrep throughput over large dependency sources. Scanning only the directories a Go module actually imports, rather than the whole module, is the next lever there.
 
 #### Call graph export
 
@@ -1276,6 +1308,9 @@ The bytecode resolution bottleneck has largely been removed. Remaining performan
 - **All paths stored** — When multiple call chains exist (BFS finds all paths), all are stored in `call_chains`. This ensures no reachability information is lost.
 
 ### Go-specific
+- **Production import closure only** — The inventory holds the modules that provide a package imported, directly or transitively, by a non-test package of a main module. Modules required only by `_test.go` files or by build-tagged tool files such as `tools.go`, and requirements nothing imports, are not resolved or scanned. `--include-tests` does not widen the inventory.
+- **Host build configuration** — `go list -deps` evaluates build constraints for the scanning host's `GOOS`, `GOARCH` and build tags (including any in `GOFLAGS`), so a module imported only on another platform is not inventoried, and within an imported package only the files that build compiles are scanned and parsed. `CGO_ENABLED` decides whether files that import `"C"` count.
+- **Packages that fail to load** — A package the go tool cannot load, such as a directory that mixes two package names or imports a module missing from the module cache while offline, is skipped with a warning. Modules imported only through it are not inventoried; the rest of the closure is.
 - **No cross-module method resolution** — Method calls on variables (e.g., `cipher.Encrypt()`) are recorded with the variable name as the type, not the resolved type. Cross-package type resolution would require full type analysis.
 
 ### Java-specific
@@ -1287,7 +1322,6 @@ The bytecode resolution bottleneck has largely been removed. Remaining performan
 
 ### Python-specific
 - **Requires a Python interpreter with `pip` available** — The resolver now runs `python -m pip` and `importlib.metadata` through the same interpreter. If `VIRTUAL_ENV` is set, that environment's Python is preferred; otherwise it falls back to `python3` then `python` from PATH.
-- **Single-file modules skipped** — Packages distributed as a single `.py` file (e.g., `six.py`) are skipped since there is no directory to scan.
 - **C-extension packages skipped** — Packages without Python source on disk (compiled C extensions) cannot be scanned.
 - **Distribution-to-import mapping** — Relies on `importlib.metadata` (Python 3.10+) or `*.dist-info` fallback; packages with non-standard layouts may not be resolved.
 - **No dynamic dispatch** — Calls resolved through `getattr`, `__getattr__`, or metaclass magic are not tracked.

@@ -25,6 +25,7 @@ import (
 	"maps"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,16 +61,19 @@ var (
 
 // Scanner implements the scanner.Scanner interface for OpenGrep.
 type Scanner struct {
-	executablePath string
-	version        string
-	timeout        time.Duration
-	workDir        string
-	env            map[string]string
-	extraArgs      []string
-	skipPatterns   []string
-	disableDedup   bool
-	discovery      *discoveryCache
-	helpDiscovery  *discoveryCache
+	executablePath    string
+	version           string
+	timeout           time.Duration
+	workDir           string
+	env               map[string]string
+	extraArgs         []string
+	skipPatterns      []string
+	includeGitIgnored bool
+	jobs              int32
+	ruleTimeout       uint8
+	disableDedup      bool
+	discovery         *discoveryCache
+	helpDiscovery     *discoveryCache
 }
 
 // NewScanner creates a new OpenGrep adapter with default settings.
@@ -148,6 +152,9 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	if config.SkipPatterns != nil {
 		s.skipPatterns = slices.Clone(config.SkipPatterns)
 	}
+	s.includeGitIgnored = config.IncludeGitIgnored
+	s.jobs = config.Jobs
+	s.ruleTimeout = config.RuleTimeoutSeconds
 	s.disableDedup = config.DisableDedup
 
 	return nil
@@ -197,31 +204,9 @@ func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.Detect
 	opengrepResults := &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
 	for _, targets := range scanner.TargetBatches(target, scope) {
 		args := s.buildCommand(ctx, targets, rulePaths, scope != nil)
-
-		output, stderr, err := s.execute(ctx, args, outcome)
+		batch, output, stderr, err := s.run(ctx, args, rulePaths, outcome)
 		if err != nil {
-			log.Debug().
-				Strs("configs", rulePaths).
-				Str("target", target).
-				Str("stderr", semgrep.SanitizeScannerStderr(stderr)).
-				Msg("opengrep command failed")
-
 			return nil, err
-		}
-
-		// Parse opengrep JSON output (uses same format as Semgrep)
-		batch, err := semgrep.ParseSemgrepCompatibleOutput(output)
-		if err != nil {
-			if outcome != nil {
-				outcome.Reason = "parse-failure"
-			}
-			return nil, failure.Wrap(
-				err,
-				failure.CodeScannerOutputParseFailed,
-				failure.StageScan,
-				"failed to parse opengrep output",
-				failure.WithDetail("scanner", ScannerName),
-			)
 		}
 		opengrepResults.Results = append(opengrepResults.Results, batch.Results...)
 		opengrepResults.Errors = append(opengrepResults.Errors, batch.Errors...)
@@ -242,6 +227,34 @@ func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.Detect
 	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(opengrepResults, toolInfo, target, rulePaths, s.disableDedup)
 
 	return report, nil
+}
+
+// run executes one opengrep process and parses its JSON output, which uses
+// the Semgrep format.
+func (s *Scanner) run(ctx context.Context, args, rulePaths []string, outcome *scanner.Outcome) (parsed *entities.SemgrepOutput, output []byte, stderr string, err error) {
+	output, stderr, err = s.execute(ctx, args, outcome)
+	if err != nil {
+		log.Debug().
+			Strs("configs", rulePaths).
+			Strs("args", args).
+			Str("stderr", semgrep.SanitizeScannerStderr(stderr)).
+			Msg("opengrep command failed")
+		return nil, nil, stderr, err
+	}
+	parsed, err = semgrep.ParseSemgrepCompatibleOutput(output)
+	if err != nil {
+		if outcome != nil {
+			outcome.Reason = "parse-failure"
+		}
+		return nil, nil, stderr, failure.Wrap(
+			err,
+			failure.CodeScannerOutputParseFailed,
+			failure.StageScan,
+			"failed to parse opengrep output",
+			failure.WithDetail("scanner", ScannerName),
+		)
+	}
+	return parsed, output, stderr, nil
 }
 
 // GetInfo returns metadata about the OpenGrep adapter.
@@ -296,6 +309,15 @@ func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string,
 		"--taint-intrafile", // Enable taint analysis
 	}
 	args = append(args, s.ignoreControlArgs(ctx, namedFiles)...)
+	if s.includeGitIgnored {
+		args = append(args, "--no-git-ignore")
+	}
+	if s.jobs > 0 && !setsOption(s.extraArgs, "--jobs", "-j") {
+		args = append(args, "--jobs", strconv.FormatInt(int64(s.jobs), 10))
+	}
+	if s.ruleTimeout > 0 && !setsOption(s.extraArgs, "--timeout", "") {
+		args = append(args, "--timeout", strconv.Itoa(int(s.ruleTimeout)))
+	}
 
 	for _, rulePath := range rulePaths {
 		args = append(args, "--config", rulePath)
@@ -312,6 +334,15 @@ func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string,
 	args = append(args, targets...)
 
 	return args
+}
+
+// setsOption reports whether args already set the long option or its short
+// form. OpenGrep rejects a repeated --jobs or --timeout, and the
+// certification profile passes its own --jobs.
+func setsOption(args []string, long, short string) bool {
+	return slices.ContainsFunc(args, func(arg string) bool {
+		return arg == long || strings.HasPrefix(arg, long+"=") || (short != "" && strings.HasPrefix(arg, short))
+	})
 }
 
 // ignoreControlArgs disables OpenGrep's built-in default ignore file

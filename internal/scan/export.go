@@ -53,15 +53,15 @@ const callGraphExportMaxDepth = 0
 // --- v4 JSON schema types (simplified) ---
 
 type exportBuildContext struct {
-	graph                   *callgraph.CallGraph
-	projectRoot             string
-	ecosystem               string
-	dependencies            []exportDependencyRoot
-	containingFunctionCache map[string]cachedContainingFunction
-	// functionsByFile narrows findContainingFunctionByFinding to one file's
-	// functions. Built on first use, like the cache above, over a graph that
+	graph     *callgraph.CallGraph
+	ecosystem string
+	exportArtifacts
+	// functionsByFile holds the graph's functions by declaring file for
+	// findContainingFunctionByFinding. Built on first use, over a graph that
 	// no longer changes.
 	functionsByFile *functionFileIndex
+	// exportLocations memoizes normalizeExportPath by the path it was given.
+	exportLocations map[string]normalizedExportLocation
 	// callChainCache holds structural (non-expanded) chain nodes by containing
 	// function id. callChainRawCache holds the tracer steps for the same key so
 	// callgraph export can expand call sites without re-running TraceBackLimited.
@@ -146,11 +146,6 @@ type exportBuildContext struct {
 	dependencyPaths map[string]dependency.Path
 	// dependencyVersions is the resolved version of each dependency module.
 	dependencyVersions map[string]string
-}
-
-type cachedContainingFunction struct {
-	fn    *callgraph.FunctionDecl
-	found bool
 }
 
 type callGraphExportV2 struct {
@@ -442,6 +437,9 @@ type exportDependencyRoot struct {
 	Module  string
 	Version string
 	Dir     string
+	// Files is the dependency's Files: nil when it owns every file below
+	// Dir, otherwise the files it owns of a directory it shares.
+	Files []string
 }
 
 // --- Entry point ---
@@ -754,7 +752,7 @@ func streamFindingGraphs(
 		if buildEntryPointIndex && (fg.Reachable == nil || *fg.Reachable) {
 			// The index comes from reverse reachability, not from the chains that
 			// happened to be exported (issue #249).
-			containingFn := ctx.findContainingFunctionByFinding(item.finding.FilePath, item.asset.StartLine)
+			containingFn := ctx.findContainingFunctionByFinding(item.finding.FilePath, item.asset.DependencyInfo, item.asset.StartLine)
 			addFindingGraphReachSetToEntryPointIndex(ctx, index, &fg, containingFn, supportingByID, referencedSupporting)
 			// The walk's terminals ARE the 6.8 root definition — the first
 			// root-module caller, or an in-degree-zero graph root — and it knows
@@ -948,12 +946,13 @@ func buildCallGraphExportV2WithMaxChains(result *engine.DepScanResult, maxChains
 	}
 
 	// containingByFinding remembers where each finding sits so the entry-point
-	// pass below can resolve its containing function (cached in ctx) after
-	// supporting calls have been deduped.
+	// pass below can resolve its containing function after supporting calls
+	// have been deduped.
 	type findingSite struct {
-		findingID string
-		filePath  string
-		startLine int
+		findingID  string
+		filePath   string
+		dependency *entities.DependencyInfo
+		startLine  int
 	}
 	var sites []findingSite
 
@@ -963,9 +962,10 @@ func buildCallGraphExportV2WithMaxChains(result *engine.DepScanResult, maxChains
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
 			sites = append(sites, findingSite{
-				findingID: asset.FindingID,
-				filePath:  finding.FilePath,
-				startLine: asset.StartLine,
+				findingID:  asset.FindingID,
+				filePath:   finding.FilePath,
+				dependency: asset.DependencyInfo,
+				startLine:  asset.StartLine,
 			})
 			if log.Debug().Enabled() {
 				log.Debug().
@@ -1007,7 +1007,7 @@ func buildCallGraphExportV2WithMaxChains(result *engine.DepScanResult, maxChains
 	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx, out.FindingGraphs, out.SupportingCalls, func(findingID string) *callgraph.FunctionDecl {
 		for i := range sites {
 			if sites[i].findingID == findingID {
-				return ctx.findContainingFunctionByFinding(sites[i].filePath, sites[i].startLine)
+				return ctx.findContainingFunctionByFinding(sites[i].filePath, sites[i].dependency, sites[i].startLine)
 			}
 		}
 		return nil
@@ -1688,12 +1688,22 @@ func newCallGraphExportBuildContext(result *engine.DepScanResult, findings []ent
 	return newExportBuildContextWithUserPackages(result, findings, options.MaxChains, userPackages)
 }
 
+// newExportPathContext is the part of an export context that locates files
+// and findings in the graph, without the chain, contract and edge indexes an
+// export builds on top of it.
+func newExportPathContext(result *engine.DepScanResult) *exportBuildContext {
+	return &exportBuildContext{
+		graph:           result.CallGraph,
+		ecosystem:       result.Ecosystem,
+		exportArtifacts: newExportArtifacts(result),
+	}
+}
+
 func newExportBuildContextWithUserPackages(result *engine.DepScanResult, findings []entities.Finding, maxChains int, userPackages map[string]bool) *exportBuildContext {
 	ctx := &exportBuildContext{
 		graph:                   result.CallGraph,
-		projectRoot:             filepath.Clean(result.ProjectRoot),
 		ecosystem:               result.Ecosystem,
-		containingFunctionCache: make(map[string]cachedContainingFunction),
+		exportArtifacts:         newExportArtifacts(result),
 		callChainCache:          make(map[string][][]callGraphChainNode),
 		callChainRawCache:       make(map[string][]callgraph.CallChain),
 		callChainRemainingUses:  make(map[string]int),
@@ -1705,19 +1715,6 @@ func newExportBuildContextWithUserPackages(result *engine.DepScanResult, finding
 	}
 	ctx.dependencyPaths = result.DependencyPaths
 	ctx.dependencyVersions = dependencyVersions(result.Dependencies)
-	for _, dep := range result.Dependencies {
-		if dep.Dir == "" {
-			continue
-		}
-		ctx.dependencies = append(ctx.dependencies, exportDependencyRoot{
-			Module:  dep.Module,
-			Version: dep.Version,
-			Dir:     filepath.Clean(dep.Dir),
-		})
-	}
-	sort.SliceStable(ctx.dependencies, func(i, j int) bool {
-		return len(ctx.dependencies[i].Dir) > len(ctx.dependencies[j].Dir)
-	})
 	ctx.populateCallChainUsageCounts(findings)
 
 	// Load contracts + index method definitions so synthesized terminal entry
@@ -1810,7 +1807,7 @@ func (ctx *exportBuildContext) contractDeclKeys(id callgraph.FunctionID) []strin
 
 func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) callGraphExportFinding {
 	start := time.Now()
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
 	matchedOperation := buildMatchedOperation(asset)
 
 	fg := callGraphExportFinding{
@@ -2279,7 +2276,7 @@ func deriveRawSupportingCallsForFinding(ctx *exportBuildContext, finding entitie
 	if isSyntheticEntryPoint(asset) {
 		return deriveContractSupportingCalls(ctx, asset)
 	}
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
 	if containingFn == nil {
 		return nil
 	}
@@ -3999,54 +3996,47 @@ func addProjectSourcePackages(pkgs map[string]bool, result *engine.DepScanResult
 	if result.CallGraph == nil {
 		return
 	}
-	projectRoot := absCleanPath(result.ProjectRoot)
-	if projectRoot == "" {
+	if strings.TrimSpace(result.ProjectRoot) == "" {
 		return
 	}
-	depDirs := make([]string, 0, len(result.Dependencies))
-	for _, dep := range result.Dependencies {
-		if dir := absCleanPath(dep.Dir); dir != "" {
-			depDirs = append(depDirs, dir)
-		}
+	artifacts := newExportArtifacts(result)
+	projectRoot := artifacts.absPath(artifacts.projectRoot)
+	depDirs := make(map[string]bool, len(artifacts.dependencies))
+	for _, dep := range artifacts.dependencies {
+		depDirs[artifacts.absPath(dep.Dir)] = true
 	}
+	// A graph declares many functions per file, so each file is placed once.
+	inProject := make(map[string]bool)
 	for _, fn := range result.CallGraph.Functions {
-		if fn == nil || !isProjectSourceFile(fn.FilePath, projectRoot, depDirs) {
+		if fn == nil || strings.TrimSpace(fn.FilePath) == "" {
 			continue
 		}
-		pkgs[fn.ID.Package] = true
-	}
-}
-
-func isProjectSourceFile(path, projectRoot string, depDirs []string) bool {
-	cleaned := absCleanPath(path)
-	if cleaned == "" {
-		return false
-	}
-	for _, depDir := range depDirs {
-		if pathIsInside(cleaned, depDir) {
-			return false
+		inside, seen := inProject[fn.FilePath]
+		if !seen {
+			inside = isProjectSourceFile(artifacts.absPath(fn.FilePath), projectRoot, depDirs)
+			inProject[fn.FilePath] = inside
+		}
+		if inside {
+			pkgs[fn.ID.Package] = true
 		}
 	}
-	return pathIsInside(cleaned, projectRoot)
 }
 
-func absCleanPath(path string) string {
-	if strings.TrimSpace(path) == "" {
-		return ""
+// isProjectSourceFile reports whether the absolute file lies under the
+// project root and under no dependency directory, by walking its ancestors.
+func isProjectSourceFile(file, projectRoot string, depDirs map[string]bool) bool {
+	inside := false
+	for dir := file; ; {
+		if depDirs[dir] {
+			return false
+		}
+		inside = inside || dir == projectRoot
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return inside
+		}
+		dir = parent
 	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return filepath.Clean(path)
-	}
-	return abs
-}
-
-func pathIsInside(path, root string) bool {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func exportPackageSeparator(ecosystem string) string {
@@ -4068,7 +4058,7 @@ func (ctx *exportBuildContext) populateCallChainUsageCounts(findings []entities.
 	for _, finding := range findings {
 		for i := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[i]
-			containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+			containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
 			if containingFn == nil {
 				continue
 			}
@@ -5099,7 +5089,26 @@ func normalizeFindingPath(ctx *exportBuildContext, findingPath string, depInfo *
 	return normalizeExportPath(ctx, findingPath)
 }
 
+// normalizeExportPath names actualPath by its artifact and its path inside it.
+// An export asks once per function and call site, for few distinct files, so
+// each file is located once; every caller still gets its own DependencyInfo.
 func normalizeExportPath(ctx *exportBuildContext, actualPath string) normalizedExportLocation {
+	location, ok := ctx.exportLocations[actualPath]
+	if !ok {
+		location = locateExportPath(ctx, actualPath)
+		if ctx.exportLocations == nil {
+			ctx.exportLocations = make(map[string]normalizedExportLocation)
+		}
+		ctx.exportLocations[actualPath] = location
+	}
+	if location.DependencyInfo != nil {
+		dep := *location.DependencyInfo
+		location.DependencyInfo = &dep
+	}
+	return location
+}
+
+func locateExportPath(ctx *exportBuildContext, actualPath string) normalizedExportLocation {
 	if actualPath == "" {
 		return normalizedExportLocation{}
 	}
@@ -5137,16 +5146,6 @@ func normalizeExportPath(ctx *exportBuildContext, actualPath string) normalizedE
 	return normalizedExportLocation{FilePath: filepath.ToSlash(cleanPath)}
 }
 
-func (ctx *exportBuildContext) dependencyForPath(path string) *exportDependencyRoot {
-	for i := range ctx.dependencies {
-		dep := &ctx.dependencies[i]
-		if _, ok := relativeToRoot(dep.Dir, path); ok {
-			return dep
-		}
-	}
-	return nil
-}
-
 func relativeToRoot(root, path string) (string, bool) {
 	if root == "" {
 		return "", false
@@ -5175,70 +5174,17 @@ func dependencyContextFromEntity(depInfo *entities.DependencyInfo, ecosystem str
 	}
 }
 
-func (ctx *exportBuildContext) findContainingFunctionByFinding(findingPath string, line int) *callgraph.FunctionDecl {
-	normalizedFindingPath := filepath.ToSlash(dependencyRelativePath(findingPath))
-	if normalizedFindingPath == "" {
-		normalizedFindingPath = filepath.ToSlash(findingPath)
-	}
-
-	cacheKey := fmt.Sprintf("%s:%d", normalizedFindingPath, line)
-	if cached, ok := ctx.containingFunctionCache[cacheKey]; ok {
-		if cached.found {
-			return cached.fn
-		}
+// findContainingFunctionByFinding returns the graph function whose span holds
+// line in the file a finding names; depInfo is the finding asset's dependency.
+func (ctx *exportBuildContext) findContainingFunctionByFinding(findingPath string, depInfo *entities.DependencyInfo, line int) *callgraph.FunctionDecl {
+	file, ok := ctx.findingFile(findingPath, depInfo)
+	if !ok {
 		return nil
 	}
-
-	// graph.Functions is an unordered map and spans can nest (a synthetic
-	// <clinit> may cover the whole class around the real method), so pick the
-	// tightest enclosing span instead of the first match; tie-break on the
-	// function key for full determinism.
 	if ctx.functionsByFile == nil {
-		ctx.functionsByFile = newFunctionFileIndex(ctx.graph.Functions)
+		ctx.functionsByFile = newFunctionFileIndex(&ctx.exportArtifacts, ctx.graph.Functions)
 	}
-	var best *callgraph.FunctionDecl
-	for _, fn := range ctx.functionsByFile.suffixCandidates(normalizedFindingPath) {
-		fnPath := filepath.ToSlash(fn.FilePath)
-		if !strings.HasSuffix(fnPath, normalizedFindingPath) {
-			continue
-		}
-		if line < fn.StartLine || line > fn.EndLine {
-			continue
-		}
-		if best == nil || tighterSpan(fn, best) {
-			best = fn
-		}
-	}
-	if best != nil {
-		ctx.containingFunctionCache[cacheKey] = cachedContainingFunction{fn: best, found: true}
-		return best
-	}
-	ctx.containingFunctionCache[cacheKey] = cachedContainingFunction{found: false}
-	return nil
-}
-
-// tighterSpan reports whether a encloses fewer lines than b (or, on equal
-// spans, sorts first by function key) so the containing-function choice is
-// stable across map iteration orders.
-func tighterSpan(a, b *callgraph.FunctionDecl) bool {
-	spanA := a.EndLine - a.StartLine
-	spanB := b.EndLine - b.StartLine
-	if spanA != spanB {
-		return spanA < spanB
-	}
-	return a.ID.String() < b.ID.String()
-}
-
-func dependencyRelativePath(path string) string {
-	slash := strings.Index(path, "/")
-	if slash <= 0 {
-		return path
-	}
-	prefix := path[:slash]
-	if strings.Contains(prefix, "@") {
-		return path[slash+1:]
-	}
-	return path
+	return ctx.functionsByFile.containing(file, line)
 }
 
 func isSimpleIdentifier(expr string) bool {

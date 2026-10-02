@@ -170,7 +170,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--detect-paths-from <file>` | — | Detect findings only in the files listed in `<file>` (one path per line, relative to the target; `-` reads stdin). The call graph and reachability still read the whole target. OpenGrep only. See [Scanning changed files](#scanning-changed-files) |
 | `--scan-dependencies` | off | Recursively scan third-party dependencies (requires the deps image or local toolchains) |
 | `--dep-ecosystem <eco>` | `auto` | Dependency ecosystem: `auto`, `go`, `java`, `python`, `rust` |
-| `--dep-workers <n>` | `0` | Parallel dependency scan workers (0 = half of CPU cores, max 8; Java max 2) |
+| `--dep-workers <n>` | `0` | Parallel dependency scan workers (0 = half of CPU cores, max 8; Java max 2). When two or more dependency scans run at once, each OpenGrep run gets `--jobs` set to the CPU cores divided by the number of scans |
 | `--findings-cache <backend>` | `disk` | Dependency findings cache backend: `disk`, `none`, `postgres` (also via `SCANOSS_FINDINGS_CACHE_BACKEND`; postgres needs `SCANOSS_FINDINGS_CACHE_DSN`) |
 | `--progress` | off | Write scan lifecycle JSONL to stderr; findings remain on stdout or `--output`, and explicit `--error-format=text` is incompatible |
 | `--export-callgraph <file>` | — | Write the finding-centric crypto call graph (reachability slices) to `<file>` |

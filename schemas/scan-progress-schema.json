@@ -14,7 +14,20 @@
       "const": "1"
     },
     "phase": {
-      "enum": ["scan", "rules", "detection", "dependencies", "callgraph", "export"]
+      "enum": [
+        "scan",
+        "rules",
+        "detection",
+        "dependencies",
+        "callgraph",
+        "entry_points",
+        "conditioned_findings",
+        "finding_ids",
+        "occurrence_keys",
+        "oid_projection",
+        "export",
+        "output"
+      ]
     },
     "status": {
       "enum": ["started", "completed", "failed", "canceled", "skipped"]
@@ -53,6 +66,14 @@
           "type": "integer",
           "minimum": 0
         },
+        "deps_incomplete": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_incomplete": {
+          "type": "integer",
+          "minimum": 0
+        },
         "deps_with_findings": {
           "type": "integer",
           "minimum": 0
@@ -70,8 +91,10 @@
               {"required": ["deps_scanned"]},
               {"required": ["deps_skipped"]},
               {"required": ["deps_failed"]},
+              {"required": ["deps_incomplete"]},
               {"required": ["deps_with_findings"]},
-              {"required": ["total_dep_findings"]}
+              {"required": ["total_dep_findings"]},
+              {"required": ["files_incomplete"]}
             ]
           }
         },
@@ -84,7 +107,24 @@
             "total_dep_findings"
           ],
           "not": {
-            "required": ["reason"]
+            "anyOf": [
+              {"required": ["reason"]},
+              {"required": ["files_incomplete"]}
+            ]
+          }
+        },
+        {
+          "required": ["files_incomplete"],
+          "not": {
+            "anyOf": [
+              {"required": ["reason"]},
+              {"required": ["deps_scanned"]},
+              {"required": ["deps_skipped"]},
+              {"required": ["deps_failed"]},
+              {"required": ["deps_incomplete"]},
+              {"required": ["deps_with_findings"]},
+              {"required": ["total_dep_findings"]}
+            ]
           }
         }
       ]
@@ -199,6 +239,26 @@
     },
     {
       "if": {
+        "required": ["details"],
+        "properties": {
+          "details": {
+            "required": ["files_incomplete"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "phase": {
+            "const": "detection"
+          },
+          "status": {
+            "const": "completed"
+          }
+        }
+      }
+    },
+    {
+      "if": {
         "required": ["phase"],
         "properties": {
           "phase": {
@@ -220,7 +280,7 @@
         "required": ["phase"],
         "properties": {
           "phase": {
-            "enum": ["rules", "detection", "dependencies", "export"]
+            "enum": ["rules", "detection", "dependencies", "export", "output"]
           }
         }
       },
@@ -229,6 +289,24 @@
         "properties": {
           "parent_phase": {
             "const": "scan"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["phase"],
+        "properties": {
+          "phase": {
+            "enum": ["entry_points", "conditioned_findings", "finding_ids", "occurrence_keys", "oid_projection"]
+          }
+        }
+      },
+      "then": {
+        "required": ["parent_phase"],
+        "properties": {
+          "parent_phase": {
+            "enum": ["scan", "export"]
           }
         }
       }

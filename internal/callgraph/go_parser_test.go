@@ -23,6 +23,24 @@ func TestGoParser_Basics(t *testing.T) {
 	}
 }
 
+func TestGoParser_ParseDirectorySelectedReadsOnlyKeptFiles(t *testing.T) {
+	var parser SelectiveParser = NewGoParser()
+	dir := t.TempDir()
+	for _, name := range []string{"a.go", "b.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("package p\n\nfunc F() {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kept := filepath.Join(dir, "a.go")
+	analyses, err := parser.ParseDirectorySelected(dir, "example.com/p", func(path string) bool { return path == kept })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(analyses) != 1 || analyses[0].FilePath != kept {
+		t.Fatalf("analyses = %+v, want only %s", analyses, kept)
+	}
+}
+
 func TestGoParser_ParseDirectoryAndFile(t *testing.T) {
 	p := NewGoParser()
 	dir := t.TempDir()

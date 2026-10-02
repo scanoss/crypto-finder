@@ -163,8 +163,10 @@ Four independent version numbers ship in the outputs — do not conflate them:
 | Interim report format | `schema.InterimFormatVersion` | `1.6` | The findings.json envelope changes |
 | Callgraph export schema | `graphfrag.CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | SDK `6.14`; CLI `6.17` | The partner-facing reachability contract changes |
 | Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.13` | The fragment wire format changes |
-| Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-5` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
+| Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-6` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
 
 Schema `6.17` (interned frames, introduced in `6.15`, the optional `scan_metadata.ecosystems` list of `6.16`, and the optional dependency, route-analysis, `root_kind` and `unresolved_reason` additions of `6.17`) is the local CLI default and an opt-in SDK interned render (`ScanMeta.InternedFrames`). Explicit `--export-callgraph-interned-frames=false` restores CLI `6.14`. Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
+
+`TestGraphAlgoVersionGuard` (`pkg/graphfrag/graph_algo_guard_test.go`) enforces the `GraphAlgoVersion` rule. It builds a small app-plus-dependency corpus per ecosystem, hashes the structural part of each fragment export (functions, internal edges, external calls), and fails when a hash changes while `GraphAlgoVersion` still equals the version in `pkg/graphfrag/testdata/graph_algo_guard.golden.json`. After a bump, record the new hashes with `go test ./pkg/graphfrag/ -run TestGraphAlgoVersionGuard -update`. That command refuses to run without a bump. Use `-update -force` only for an edit to the guard's own fixtures, or for a change the PR explains does not invalidate cached graphs.
 
 Every schema bump is recorded in [CHANGELOG.md](../CHANGELOG.md) (a hard repo requirement) and the format details live in [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md).

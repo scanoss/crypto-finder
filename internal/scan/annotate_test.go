@@ -71,11 +71,10 @@ func annotateGoldenFixture(t *testing.T) (*engine.DepScanResult, ComponentKey) {
 	engine.AssignFindingIDs(report)
 
 	return &engine.DepScanResult{
-		Report:      report,
-		CallGraph:   graph,
-		ProjectRoot: t.TempDir(),
-		RootModule:  "com.app:app",
-		Ecosystem:   "java",
+		Report:     report,
+		CallGraph:  graph,
+		RootModule: "com.app:app",
+		Ecosystem:  "java",
 	}, ComponentKey{Purl: "pkg:maven/com.app/app", Version: "1.0.0"}
 }
 

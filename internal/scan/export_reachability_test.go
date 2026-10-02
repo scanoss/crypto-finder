@@ -499,10 +499,9 @@ func TestBuildFindingGraph_PopulatesReachable(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := &exportBuildContext{
-				graph:                   newGraph(tc.withCaller),
-				userPackages:            tc.userPackages,
-				packageSeparator:        ".",
-				containingFunctionCache: make(map[string]cachedContainingFunction),
+				graph:            newGraph(tc.withCaller),
+				userPackages:     tc.userPackages,
+				packageSeparator: ".",
 			}
 			got := buildFindingGraph(ctx, finding, asset).Reachable
 			switch {

@@ -131,7 +131,8 @@ func (r *PythonDependencyTypeResolver) ResolveTypes(graph *CallGraph, sourceRoot
 func selectPythonDependencyRoots(sourceRoots []PackageDir) []PackageDir {
 	seen := make(map[string]struct{}, len(sourceRoots))
 	roots := make([]PackageDir, 0, len(sourceRoots))
-	for _, root := range sourceRoots {
+	for i := range sourceRoots {
+		root := &sourceRoots[i]
 		if root.Version == "" || root.Dir == "" {
 			continue
 		}
@@ -144,7 +145,7 @@ func selectPythonDependencyRoots(sourceRoots []PackageDir) []PackageDir {
 			continue
 		}
 		seen[key] = struct{}{}
-		roots = append(roots, root)
+		roots = append(roots, *root)
 	}
 	return roots
 }
@@ -159,8 +160,8 @@ type pythonDistributionIndexResult struct {
 func (r *PythonDependencyTypeResolver) buildIndexes(roots []PackageDir, workers int) (map[string]pythonSignature, map[string][]string) {
 	workCh := make(chan PackageDir, len(roots))
 	resultCh := make(chan pythonDistributionIndexResult, len(roots))
-	for _, root := range roots {
-		workCh <- root
+	for i := range roots {
+		workCh <- roots[i]
 	}
 	close(workCh)
 
@@ -226,7 +227,7 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 
 	signatures := make(map[string]pythonSignature)
 	hierarchy := make(map[string][]string)
-	r.walkDistribution(root.Dir, root.ImportPath, parser, signatures, hierarchy)
+	r.walkDistribution(root.Dir, root.ImportPath, newIncludeScope(root.Dir, root.IncludeFiles), parser, signatures, hierarchy)
 
 	if r.cache != nil {
 		entry := &CachedPythonSignatureIndex{
@@ -251,9 +252,11 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 // distribution), indexing every selected .py/.pyi file at each level and
 // descending into subdirectories under the growing dotted importPath.
 // An unreadable directory degrades silently (12.6): the caller simply
-// receives whatever was indexed before the failure.
+// receives whatever was indexed before the failure. A non-nil include limits
+// indexing to its files.
 func (r *PythonDependencyTypeResolver) walkDistribution(
 	dir, importPath string,
+	include *includeScope,
 	parser pythonDependencyParser,
 	signatures map[string]pythonSignature,
 	hierarchy map[string][]string,
@@ -266,7 +269,7 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 
 	for _, name := range selectPythonDistFiles(entries) {
 		full := filepath.Join(dir, name)
-		if pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(full), false) {
+		if (include != nil && !include.files[full]) || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(full), false) {
 			continue
 		}
 		r.indexDistributionFile(full, importPath, parser, signatures, hierarchy)
@@ -278,10 +281,10 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 		}
 		name := entry.Name()
 		child := filepath.Join(dir, name)
-		if strings.HasPrefix(name, ".") || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(child), true) {
+		if strings.HasPrefix(name, ".") || (include != nil && !include.walk[child]) || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(child), true) {
 			continue
 		}
-		r.walkDistribution(child, pythonDependencySubPackagePath(importPath, name), parser, signatures, hierarchy)
+		r.walkDistribution(child, pythonDependencySubPackagePath(importPath, name), include, parser, signatures, hierarchy)
 	}
 }
 

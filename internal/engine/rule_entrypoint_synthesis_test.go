@@ -870,3 +870,75 @@ func TestBuildSyntheticAssetFromRule_ParameterConditions_AntiDrift(t *testing.T)
 			synthAsset.ParameterConditions, transformerAsset.ParameterConditions)
 	}
 }
+
+// A terminal finding suppresses synthesis only for the declaration in its own
+// file: another dependency's file at the same relative path, or a project file
+// whose path merely ends with the declaration's, is a different method body.
+func TestSynthesizeRuleCryptoEntryPointsForResult_TerminalFindingSuppressesOnlyItsOwnFile(t *testing.T) {
+	cacheRoot := t.TempDir()
+	depRoot := filepath.Join(cacheRoot, "com.example-library", "1.2.3")
+	otherRoot := filepath.Join(cacheRoot, "com.example-other", "4.5.6")
+	projectRoot := t.TempDir()
+	rel := "src/main/java/com/example/Builder.java"
+	terminal := func(path string, dep *entities.DependencyInfo) entities.Finding {
+		source := findingSourceDirect
+		if dep != nil {
+			source = findingSourceDependency
+		}
+		return entities.Finding{FilePath: path, Language: "java", CryptographicAssets: []entities.CryptographicAsset{{
+			StartLine: 11, EndLine: 11, Source: source, DependencyInfo: dep,
+			Metadata: map[string]string{"algorithmPrimitive": "kdf"},
+		}}}
+	}
+	library := &entities.DependencyInfo{Module: "com.example:library", Version: "1.2.3"}
+	other := &entities.DependencyInfo{Module: "com.example:other", Version: "4.5.6"}
+	dependencies := []dependency.Dependency{
+		{Module: library.Module, Version: library.Version, Dir: depRoot},
+		{Module: other.Module, Version: other.Version, Dir: otherRoot},
+	}
+
+	for _, tc := range []struct {
+		name     string
+		declPath string
+		finding  entities.Finding
+		want     int
+	}{
+		{name: "own dependency file", declPath: filepath.Join(depRoot, rel), finding: terminal(rel, library), want: 0},
+		{name: "other dependency, same path", declPath: filepath.Join(depRoot, rel), finding: terminal(rel, other), want: 1},
+		{name: "project file, same path", declPath: filepath.Join(depRoot, rel), finding: terminal(rel, nil), want: 1},
+		{name: "own project file", declPath: filepath.Join(projectRoot, rel), finding: terminal(rel, nil), want: 0},
+		{name: "project file ending the path", declPath: filepath.Join(projectRoot, "vendored", rel), finding: terminal(rel, nil), want: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decl := builderWithBcrypt()
+			decl.FilePath = tc.declPath
+			result := &DepScanResult{
+				Report:       &entities.InterimReport{Findings: []entities.Finding{tc.finding}},
+				CallGraph:    graphWith(decl),
+				Ecosystem:    "java",
+				ProjectRoot:  projectRoot,
+				Dependencies: dependencies,
+			}
+			rule := writeRule(t, t.TempDir(), "com.example.Builder.withBcrypt", "bcrypt")
+			if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{rule}); got != tc.want {
+				t.Fatalf("synthesized findings = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// A synthesized finding in a namespace directory several Python
+// distributions share is filed under the one whose Files list its file.
+func TestSyntheticFindingLocation_NamespaceSiblingsOwnTheirFiles(t *testing.T) {
+	ns := filepath.Join(t.TempDir(), "google")
+	result := &DepScanResult{Ecosystem: "python", Dependencies: []dependency.Dependency{
+		{Module: "protobuf", Version: "7", Dir: ns, Files: []string{filepath.Join(ns, "protobuf", "msg.py")}},
+		{Module: "google-auth", Version: "2", Dir: ns, Files: []string{filepath.Join(ns, "auth", "creds.py")}},
+	}}
+	for rel, want := range map[string]string{"auth/creds.py": "google-auth", "protobuf/msg.py": "protobuf"} {
+		got, info, ok := syntheticFindingLocation(result, filepath.Join(ns, filepath.FromSlash(rel)))
+		if !ok || info == nil || info.Module != want || got != rel {
+			t.Errorf("syntheticFindingLocation(%q) = %q, %+v, %v; want %q under %q", rel, got, info, ok, rel, want)
+		}
+	}
+}

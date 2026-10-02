@@ -1482,7 +1482,7 @@ func fragmentEntryPointChains(
 	finding entities.Finding,
 	asset entities.CryptographicAsset,
 ) [][]callGraphChainNode {
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
 	if containingFn == nil {
 		return nil
 	}
@@ -1739,7 +1739,7 @@ func buildGraphFragmentCryptoAnnotation(ctx *exportBuildContext, finding entitie
 	matched := buildMatchedOperation(asset)
 	op := buildBaseGraphFragmentCryptoAnnotation(finding, asset, matched)
 
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
 	if containingFn != nil {
 		op.FunctionKey = containingFn.ID.String()
 		attachGraphFragmentCryptoCall(ctx, containingFn, matched, asset, &op)

@@ -7,13 +7,17 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
@@ -23,6 +27,16 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/skip"
 )
+
+// scanSingleDep looks one dependency up and scans it alone, the way the
+// cache identity tests drive a dependency.
+func (ds *DependencyScanner) scanSingleDep(ctx context.Context, dep dependency.Dependency, key string, rulePaths []string, opts DepScanOptions) depScanResult {
+	item := depWork{key: key, dep: dep}
+	if result, hit := ds.lookupDependency(ctx, &item, rulePaths, "hash", opts); hit {
+		return result
+	}
+	return ds.scanDepAlone(ctx, &item, nil)
+}
 
 type fakeResolver struct {
 	ecosystem string
@@ -578,20 +592,20 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	cachedReport := &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{{}}}}}
 	cache.getMap[cacheKey] = cachedReport
 
-	res := ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
+	res := ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
 	if res.err != nil || res.report == nil || res.report == cachedReport || scanCalls != 1 {
 		t.Fatalf("legacy entry must miss and scan, result=%#v calls=%d", res, scanCalls)
 	}
 	cacheKey = cache.putLastKey
 	cachedReport = res.report
 	cache.getMap[cacheKey] = cachedReport
-	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
+	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
 	if res.err != nil || res.report != cachedReport || scanCalls != 1 {
 		t.Fatalf("new entry must reuse report without scanning, result=%#v calls=%d", res, scanCalls)
 	}
 
 	delete(cache.getMap, cacheKey)
-	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, "hash", DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}}, nil)
+	res = ds.scanSingleDep(context.Background(), *dep, dep.Module+"@"+dep.Version, []string{goRule}, DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner"}})
 	if res.err != nil {
 		t.Fatalf("scanSingleDep cache miss error: %v", res.err)
 	}
@@ -603,6 +617,56 @@ func TestDependencyScanner_LoadFilteredRulesAndScanSingleDep(t *testing.T) {
 	}
 	if cache.putCalls != 2 || cache.putLastKey == "" {
 		t.Fatalf("expected cache put call after successful scan, puts=%d key=%q", cache.putCalls, cache.putLastKey)
+	}
+}
+
+func TestDependencyScanner_LoadFilteredRules_NodeKeepsJavaScriptAndTypeScriptRules(t *testing.T) {
+	ruleDir := t.TempDir()
+	for name, languages := range map[string]string{
+		"web":    "[javascript, typescript]",
+		"ts":     "[typescript]",
+		"python": "[python]",
+	} {
+		if err := os.WriteFile(filepath.Join(ruleDir, name+".yaml"), []byte("rules:\n  - id: "+name+"\n    languages: "+languages+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ruleSource := &mockRuleSource{loadFunc: func() ([]string, error) { return []string{ruleDir}, nil }}
+	ds := &DependencyScanner{orchestrator: NewOrchestrator(&mockDetector{}, rules.NewManager(ruleSource), scanner.NewRegistry())}
+
+	rulePaths, cleanup, err := ds.loadFilteredRules(npmEcosystem, nil)
+	if err != nil {
+		t.Fatalf("loadFilteredRules: %v", err)
+	}
+	defer cleanup()
+	var got []string
+	for _, rulePath := range rulePaths {
+		walkErr := filepath.WalkDir(rulePath, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return err
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			var parsed struct {
+				Rules []struct{ ID string } `yaml:"rules"`
+			}
+			if unmarshalErr := yaml.Unmarshal(data, &parsed); unmarshalErr != nil {
+				return unmarshalErr
+			}
+			for _, rule := range parsed.Rules {
+				got = append(got, rule.ID)
+			}
+			return nil
+		})
+		if walkErr != nil {
+			t.Fatal(walkErr)
+		}
+	}
+	sort.Strings(got)
+	if want := []string{"ts", "web"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Node dependency rules = %v, want %v", got, want)
 	}
 }
 
@@ -626,9 +690,9 @@ func TestDependencyScanner_ScanSingleDep_DropsNoFindingReportsFromMemory(t *test
 	}
 
 	dep := dependency.Dependency{Module: "github.com/acme/no-crypto", Version: "v1", Dir: t.TempDir()}
-	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/go.yaml"}, "hash", DepScanOptions{
+	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/go.yaml"}, DepScanOptions{
 		ScanOptions: ScanOptions{ScannerName: "test-scanner"},
-	}, nil)
+	})
 	if res.err != nil {
 		t.Fatalf("scanSingleDep: %v", res.err)
 	}
@@ -694,6 +758,195 @@ func TestDependencyScanWorkers_DefaultsAreMemorySafeForJava(t *testing.T) {
 	}
 	if got := dependencyScanWorkers(0, "go"); got < 1 || got > maxWorkers {
 		t.Fatalf("go default workers = %d, want 1..%d", got, maxWorkers)
+	}
+}
+
+func TestDependencyScanJobs_ConcurrentScansShareTheCores(t *testing.T) {
+	cpus := runtime.NumCPU()
+	if got := dependencyScanJobs(1); got != 0 {
+		t.Fatalf("a lone dependency scan got %d jobs, want 0 (the OpenGrep default)", got)
+	}
+	for _, workers := range []int{2, 3, maxWorkers, cpus + 1} {
+		jobs := int(dependencyScanJobs(workers))
+		if jobs < 1 {
+			t.Fatalf("%d workers: %d jobs, want at least 1", workers, jobs)
+		}
+		if workers <= cpus && jobs*workers > cpus {
+			t.Fatalf("%d workers x %d jobs oversubscribe %d cores", workers, jobs, cpus)
+		}
+		if (jobs+1)*workers <= cpus {
+			t.Fatalf("%d workers x %d jobs leave some of %d cores idle", workers, jobs, cpus)
+		}
+	}
+}
+
+func TestDependencyScanner_ScanDependenciesParallel_SplitsCoresAcrossConcurrentScans(t *testing.T) {
+	var mu sync.Mutex
+	var seen []int32
+	registry := scanner.NewRegistry()
+	registry.Register("test-scanner", &mockScanner{initializeFunc: func(_ context.Context, config scanner.Config) error {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, config.Jobs)
+		return nil
+	}})
+	orch := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) { return []string{"/rules/go.yaml"}, nil }}), registry)
+	ds := &DependencyScanner{orchestrator: orch, resolver: &fakeResolver{ecosystem: "go"}}
+	scan := func(workers int, modules ...string) []int32 {
+		seen = nil
+		deps := make([]dependency.Dependency, 0, len(modules))
+		for _, module := range modules {
+			deps = append(deps, dependency.Dependency{Module: module, Version: "1", Dir: t.TempDir()})
+		}
+		opts := DepScanOptions{Workers: workers, ScanOptions: ScanOptions{ScannerName: "test-scanner"}}
+		if _, err := ds.scanDependenciesParallel(context.Background(), deps, []string{"/rules/go.yaml"}, "", opts, nil); err != nil {
+			t.Fatal(err)
+		}
+		return seen
+	}
+
+	half := int32(max(1, runtime.NumCPU()/2))
+	if got := scan(2, "a", "b", "c"); !reflect.DeepEqual(got, []int32{half, half, half}) {
+		t.Fatalf("two workers: scanner jobs = %v, want %d each", got, half)
+	}
+	if got := scan(maxWorkers, "a", "b"); !reflect.DeepEqual(got, []int32{half, half}) {
+		t.Fatalf("two dependencies under %d workers: scanner jobs = %v, want %d each", maxWorkers, got, half)
+	}
+	if got := scan(maxWorkers, "a"); !reflect.DeepEqual(got, []int32{0}) {
+		t.Fatalf("a lone dependency: scanner jobs = %v, want [0]", got)
+	}
+}
+
+func TestDependencyScanner_FindingsCacheKeyIgnoresJobs(t *testing.T) {
+	cache := &fakeFindingsCache{getMap: map[string]*entities.InterimReport{}}
+	registry := scanner.NewRegistry()
+	registry.Register("test-scanner", &mockScanner{})
+	orch := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) { return []string{"/rules/go.yaml"}, nil }}), registry)
+	ds := &DependencyScanner{orchestrator: orch, resolver: &fakeResolver{ecosystem: "go"}, findingsCache: cache}
+	dep := dependency.Dependency{Module: "a", Version: "1", Dir: t.TempDir()}
+	keyFor := func(jobs int32) string {
+		opts := DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner", ScannerConfig: scanner.Config{Jobs: jobs}}}
+		if res := ds.scanSingleDep(context.Background(), dep, "a@1", []string{"/rules/go.yaml"}, opts); res.err != nil {
+			t.Fatal(res.err)
+		}
+		return cache.putLastKey
+	}
+
+	four, one := keyFor(4), keyFor(1)
+	if four == "" || four != one {
+		t.Fatalf("parallelism alone changed the findings cache key: %q vs %q", four, one)
+	}
+}
+
+type storingFindingsCache struct {
+	mu      sync.Mutex
+	entries map[string]*entities.InterimReport
+}
+
+func (c *storingFindingsCache) Get(_ context.Context, key string) (*entities.InterimReport, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	report, ok := c.entries[key]
+	return report, ok, nil
+}
+
+func (c *storingFindingsCache) Put(_ context.Context, key string, report *entities.InterimReport) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[key] = report
+	return nil
+}
+
+// How soon a rule times out on a file depends on host load, and the file's
+// findings are lost when it does. Such a dependency keeps what it found, is
+// counted as incomplete, and is never cached, so the next scan retries it.
+func TestDependencyScanner_IncompleteDependencyIsCountedAndNeverCached(t *testing.T) {
+	previous := log.Logger
+	t.Cleanup(func() { log.Logger = previous })
+	var logs bytes.Buffer
+	log.Logger = zerolog.New(zerolog.SyncWriter(&logs))
+
+	dir := t.TempDir()
+	rule := filepath.Join(dir, "rule.yaml")
+	if err := os.WriteFile(rule, []byte("rules:\n- id: fixture\n  languages: [go]\n  pattern: $X\n  message: fixture\n  severity: WARNING\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	slow, fast := filepath.Join(dir, "slow"), filepath.Join(dir, "fast")
+	var mu sync.Mutex
+	scans := map[string]int{}
+	var ruleTimeouts []uint8
+	registry := scanner.NewRegistry()
+	registry.Register("test-scanner", &mockScanner{
+		getInfoFunc: func() scanner.Info { return scanner.Info{Name: "test-scanner", Version: "1"} },
+		initializeFunc: func(_ context.Context, config scanner.Config) error {
+			mu.Lock()
+			defer mu.Unlock()
+			ruleTimeouts = append(ruleTimeouts, config.RuleTimeoutSeconds)
+			return nil
+		},
+		scanFunc: func(_ context.Context, target string, _ []string, info entities.ToolInfo) (*entities.InterimReport, error) {
+			mu.Lock()
+			scans[target]++
+			mu.Unlock()
+			report := &entities.InterimReport{Version: "1.0", Tool: info, Findings: []entities.Finding{{
+				FilePath:            filepath.Join(target, "found.go"),
+				CryptographicAssets: []entities.CryptographicAsset{{StartLine: 1, EndLine: 1, Metadata: map[string]string{"assetType": "algorithm"}}},
+			}}}
+			if target == slow {
+				report.IncompleteFiles = []string{filepath.Join(slow, "bundle.go")}
+			}
+			return report, nil
+		},
+	})
+	orch := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) { return []string{rule}, nil }}), registry)
+	resolver := &fakeResolver{ecosystem: "go", resolveFn: func(context.Context, string) (*dependency.ResolveResult, error) {
+		return &dependency.ResolveResult{RootModule: "app", Dependencies: []dependency.Dependency{
+			{Module: "example.com/slow", Version: "1", Dir: slow},
+			{Module: "example.com/fast", Version: "1", Dir: fast},
+		}}, nil
+	}}
+	cache := &storingFindingsCache{entries: map[string]*entities.InterimReport{}}
+	ds := NewDependencyScanner(orch, resolver, callgraph.NewBuilder(noopCallgraphParser{}), cache)
+	run := func() map[string]any {
+		t.Helper()
+		result, err := ds.ScanWithDependencies(t.Context(), &entities.InterimReport{}, DepScanOptions{Workers: 2, ScanOptions: ScanOptions{Target: dir, ScannerName: "test-scanner"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.ProgressDetails()
+	}
+
+	details := run()
+	want := map[string]any{"deps_scanned": 2, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 1, "deps_with_findings": 2, "total_dep_findings": 2}
+	if !reflect.DeepEqual(details, want) {
+		t.Errorf("progress details = %v, want %v", details, want)
+	}
+	if len(cache.entries) != 1 {
+		t.Fatalf("cached %d dependency reports, want 1: only the complete dependency", len(cache.entries))
+	}
+	for _, report := range cache.entries {
+		if got := report.Findings[0].FilePath; got != filepath.Join(fast, "found.go") {
+			t.Fatalf("cached report holds %s, want the complete dependency's finding", got)
+		}
+	}
+	var warnings []string
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+		if strings.Contains(line, `"level":"warn"`) {
+			warnings = append(warnings, line)
+		}
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "example.com/slow") || !strings.Contains(warnings[0], filepath.Join(slow, "bundle.go")) {
+		t.Fatalf("want one warning naming example.com/slow and its incomplete file, got:\n%s", strings.Join(warnings, "\n"))
+	}
+
+	run()
+	if scans[fast] != 1 || scans[slow] != 2 {
+		t.Fatalf("second scan: fast scanned %d times, slow %d times; want the complete dependency read from the cache and the incomplete one rescanned", scans[fast], scans[slow])
+	}
+	for _, seconds := range ruleTimeouts {
+		if seconds != 30 {
+			t.Fatalf("dependency scans ran with rule timeouts %v, want 30 s each", ruleTimeouts)
+		}
 	}
 }
 
@@ -803,12 +1056,12 @@ func TestDependencyScanner_ScanSingleDep_JavaRuntimePartitionsCacheKey(t *testin
 	}
 
 	dep := dependency.Dependency{Module: "org.example:lib", Version: "1.2.3", Dir: t.TempDir()}
-	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/java.yaml"}, "hash", DepScanOptions{
+	res := ds.scanSingleDep(context.Background(), dep, dep.Module+"@"+dep.Version, []string{"/rules/java.yaml"}, DepScanOptions{
 		ScanOptions: ScanOptions{
 			ScannerName:           "test-scanner",
 			JavaRuntimeCacheToken: "jdk-21",
 		},
-	}, nil)
+	})
 	if res.err != nil {
 		t.Fatalf("scanSingleDep: %v", res.err)
 	}
@@ -992,6 +1245,27 @@ func TestDependencyScanner_CollectPackageSets_DropsDepsWhenNoneHaveFindings(t *t
 	sets := ds.collectPackageSets("/user/project", resolved, depResults)
 	if hasPackage(sets.graphPackages, "example.com/no-crypto") {
 		t.Fatalf("unexpected no-crypto dependency in graphPackages: %#v", sets.graphPackages)
+	}
+}
+
+// A Python distribution rooted at site-packages parses under the empty import
+// path, so its packages keep their names (configobj, validate) rather than
+// gaining the distribution's as a prefix; other ecosystems fall back to it.
+func TestDependencyScanner_CollectPackageSets_PythonSitePackagesRootHasNoImportPath(t *testing.T) {
+	files := []string{"/sp/configobj/__init__.py", "/sp/validate/__init__.py"}
+	for ecosystem, want := range map[string]string{"python": "", "go": "example.com/lib"} {
+		ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: ecosystem}}
+		module := map[string]string{"python": "configobj", "go": "example.com/lib"}[ecosystem]
+		depResults := []depScanResult{{
+			dep:    dependency.Dependency{Module: module, Version: "1", Dir: "/sp", Files: files},
+			status: depScanStatusScanned,
+			report: reportWithCryptoAsset(),
+		}}
+		sets := ds.collectPackageSets("/user/project", &dependency.ResolveResult{}, depResults)
+		pkg := sets.graphPackages[len(sets.graphPackages)-1]
+		if pkg.ImportPath != want || pkg.DistributionName != module || !reflect.DeepEqual(pkg.IncludeFiles, files) {
+			t.Errorf("%s: package = %+v, want ImportPath %q, DistributionName %q and the dependency's files", ecosystem, pkg, want, module)
+		}
 	}
 }
 

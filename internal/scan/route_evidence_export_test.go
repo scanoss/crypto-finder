@@ -87,7 +87,6 @@ func (g *evidenceGraph) context(maxChains int) *exportBuildContext {
 		graph:                   g.graph,
 		packageSeparator:        ".",
 		userPackages:            map[string]bool{"com.app": true},
-		containingFunctionCache: make(map[string]cachedContainingFunction),
 		fragmentEdgeResolutions: indexFragmentEdgeResolutions(g.graph),
 		maxChainsBudget:         maxChains,
 	}

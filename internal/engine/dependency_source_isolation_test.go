@@ -37,6 +37,21 @@ import (
 	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
+const nodeHashRule = `rules:
+  - id: node.hash
+    languages: [javascript]
+    message: Hash operation
+    severity: INFO
+    pattern: crypto.createHash(...)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: SHA-256
+        algorithmFamily: SHA
+        algorithmPrimitive: hash
+        operation: digest
+`
+
 // This exercises actual scanner path matching: an unanchored node_modules
 // exclusion can hide the dependency target itself, not just its children.
 func TestDependencyScanner_NpmSourceIsolationIntegration(t *testing.T) {
@@ -69,20 +84,7 @@ func TestDependencyScanner_NpmSourceIsolationIntegration(t *testing.T) {
 				}
 			}
 			rule := filepath.Join(root, "crypto.yaml")
-			if err := os.WriteFile(rule, []byte(`rules:
-  - id: node.hash
-    languages: [javascript]
-    message: Hash operation
-    severity: INFO
-    pattern: crypto.createHash(...)
-    metadata:
-      crypto:
-        assetType: algorithm
-        algorithmName: SHA-256
-        algorithmFamily: SHA
-        algorithmPrimitive: hash
-        operation: digest
-`), 0o600); err != nil {
+			if err := os.WriteFile(rule, []byte(nodeHashRule), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			patterns := []string{"node_modules", "dist", "index.js"}
@@ -149,6 +151,62 @@ func TestDependencyScanner_NpmSourceIsolationIntegration(t *testing.T) {
 	}
 }
 
+// Installed dependencies usually sit under a Git-ignored directory, and
+// OpenGrep consults .gitignore whenever its target lies inside a Git work tree.
+func TestDependencyScanner_GitIgnoredDependencySourceIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires real OpenGrep and git subprocesses")
+	}
+	for _, tool := range []string{"opengrep", "git"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s not installed", tool)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	if out, err := exec.CommandContext(ctx, "git", "init", "--quiet", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	depDir := filepath.Join(root, "node_modules", "eta")
+	files := map[string]string{
+		".gitignore":                    "node_modules/\n",
+		"node_modules/eta/index.js":     "const crypto = require('crypto'); crypto.createHash('sha256');\n",
+		"node_modules/eta/package.json": `{"name":"eta","version":"1.0.0"}`,
+		"crypto.yaml":                   nodeHashRule,
+	}
+	for rel, contents := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: npmEcosystem}}
+	opts := DepScanOptions{ScanOptions: ScanOptions{Target: root, ScannerConfig: scanner.Config{
+		SkipPatterns: skip.WithDefaultTestPatterns([]string{"node_modules/"}), Timeout: 30 * time.Second, WorkDir: root, ExtraArgs: []string{"--jobs", "1"},
+	}}}
+	dep := &dependency.Dependency{Module: "eta", Version: "1.0.0", Dir: depDir}
+	depOpts := ds.buildDepScanOptions(dep, []string{filepath.Join(root, "crypto.yaml")}, opts)
+	s := opengrep.NewScanner()
+	if err := s.Initialize(ctx, depOpts.ScannerConfig); err != nil {
+		t.Fatal(err)
+	}
+	report, err := s.Scan(ctx, depDir, depOpts.RulePaths, entities.ToolInfo{Name: "opengrep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		got = append(got, filepath.ToSlash(finding.FilePath))
+	}
+	if want := []string{"index.js"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Git-ignored dependency findings = %v, want %v", got, want)
+	}
+}
+
 func TestDependencyScanner_SourceScopeCache(t *testing.T) {
 	dep := dependency.Dependency{Module: "library", Version: "1", Dir: t.TempDir()}
 	key := "library@1"
@@ -165,7 +223,7 @@ func TestDependencyScanner_SourceScopeCache(t *testing.T) {
 	opts := DepScanOptions{ScanOptions: ScanOptions{ScannerName: "fixture"}}
 	scan := func(ecosystem string) depScanResult {
 		ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: ecosystem}, findingsCache: cache, orchestrator: orchestrator}
-		return ds.scanSingleDep(context.Background(), dep, key, []string{"fixture.yaml"}, "hash", opts, nil)
+		return ds.scanSingleDep(context.Background(), dep, key, []string{"fixture.yaml"}, opts)
 	}
 
 	goRes := scan("go")
@@ -214,7 +272,11 @@ func TestDependencyScanner_SourceIsolationOptions(t *testing.T) {
 				opts := DepScanOptions{ScanOptions: ScanOptions{ScannerConfig: scanner.Config{SkipPatterns: patterns}}}
 				dep := &dependency.Dependency{Dir: filepath.Join(t.TempDir(), "node_modules", "@scope", "library")}
 				ds := &DependencyScanner{resolver: &fakeResolver{ecosystem: ecosystem}}
-				got := ds.buildDepScanOptions(dep, nil, opts).ScannerConfig.SkipPatterns
+				config := ds.buildDepScanOptions(dep, nil, opts).ScannerConfig
+				if !config.IncludeGitIgnored {
+					t.Fatal("a resolved dependency root must be scanned even where the project's .gitignore excludes it")
+				}
+				got := config.SkipPatterns
 				want := skip.OnlyDefaultTestPatterns(patterns)
 				if ecosystem == "node" {
 					want = append(want, filepath.ToSlash(filepath.Join(dep.Dir, "node_modules"))+"/")

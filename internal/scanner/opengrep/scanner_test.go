@@ -19,6 +19,8 @@ package opengrep
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -445,4 +447,128 @@ func TestScan_DetectionScopeRefusedWithoutForceExclude(t *testing.T) {
 	if !errors.As(err, &fe) || fe.Code != failure.CodeScannerUnavailable {
 		t.Fatalf("expected %s, got %v", failure.CodeScannerUnavailable, err)
 	}
+}
+
+func TestBuildCommand_GitIgnoreOverrideOnlyWhenRequested(t *testing.T) {
+	originalCommandOutput := commandOutput
+	defer func() { commandOutput = originalCommandOutput }()
+	commandOutput = func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte("--x-ignore-semgrepignore-files"), nil
+	}
+
+	for _, include := range []bool{false, true} {
+		s := NewScanner()
+		s.includeGitIgnored = include
+		args := s.buildCommand(context.Background(), []string{"/project/node_modules/eta"}, []string{"/rules/node.yaml"}, false)
+		if got := containsArg(args, "--no-git-ignore"); got != include {
+			t.Errorf("includeGitIgnored=%v: --no-git-ignore present = %v, args %v", include, got, args)
+		}
+	}
+}
+
+func TestBuildCommand_JobsComposeWithExtraArgs(t *testing.T) {
+	originalLookPath, originalCommandOutput := lookPath, commandOutput
+	defer func() { lookPath, commandOutput = originalLookPath, originalCommandOutput }()
+	lookPath = func(string) (string, error) { return "/usr/local/bin/opengrep", nil }
+	commandOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "--version" {
+			return []byte("1.29.0"), nil
+		}
+		return []byte("--x-ignore-semgrepignore-files"), nil
+	}
+
+	rule, target := "/rules/node.yaml", "/deps/eta"
+	for _, tt := range []struct {
+		name      string
+		jobs      int32
+		extra     []string
+		want      []string
+		certified bool
+	}{
+		{name: "zero keeps the OpenGrep default"},
+		{name: "positive caps parallel jobs", jobs: 4, want: []string{"--jobs", "4"}},
+		// OpenGrep exits 2 on a repeated --jobs, so explicit arguments win.
+		{name: "certification profile keeps its own", jobs: 4, extra: []string{"--quiet", "--jobs", "2"}, want: []string{"--jobs", "2"}, certified: true},
+		{name: "equals form", jobs: 4, extra: []string{"--jobs=2"}, want: []string{"--jobs=2"}},
+		{name: "short form", jobs: 4, extra: []string{"-j", "2"}, want: []string{"-j", "2"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewScanner()
+			if err := s.Initialize(context.Background(), scanner.Config{Jobs: tt.jobs, ExtraArgs: tt.extra}); err != nil {
+				t.Fatal(err)
+			}
+			args := s.buildCommand(context.Background(), []string{target}, []string{rule}, false)
+			if got := jobsArgs(args); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("jobs arguments = %v, want %v in argv %v", got, tt.want, args)
+			}
+			if tt.certified {
+				if _, reason := s.certify(target, []string{rule}, args, nil, ""); reason == "unknown-profile" {
+					t.Fatalf("argv %v no longer matches the certification profile", args)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildCommand_RuleTimeoutComposesWithExtraArgs(t *testing.T) {
+	originalLookPath, originalCommandOutput := lookPath, commandOutput
+	defer func() { lookPath, commandOutput = originalLookPath, originalCommandOutput }()
+	lookPath = func(string) (string, error) { return "/usr/local/bin/opengrep", nil }
+	commandOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "--version" {
+			return []byte("1.29.0"), nil
+		}
+		return []byte("--x-ignore-semgrepignore-files"), nil
+	}
+
+	for _, tt := range []struct {
+		name    string
+		seconds uint8
+		extra   []string
+		want    []string
+	}{
+		{name: "zero keeps the OpenGrep default"},
+		{name: "positive sets the per-file rule timeout", seconds: 30, want: []string{"--timeout", "30"}},
+		// OpenGrep exits 2 on a repeated --timeout, so explicit arguments win.
+		{name: "explicit timeout wins", seconds: 30, extra: []string{"--timeout", "10"}, want: []string{"--timeout", "10"}},
+		{name: "equals form", seconds: 30, extra: []string{"--timeout=10"}, want: []string{"--timeout=10"}},
+		{name: "threshold is a different option", seconds: 30, extra: []string{"--timeout-threshold", "5"}, want: []string{"--timeout", "30"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewScanner()
+			if err := s.Initialize(context.Background(), scanner.Config{RuleTimeoutSeconds: tt.seconds, ExtraArgs: tt.extra}); err != nil {
+				t.Fatal(err)
+			}
+			args := s.buildCommand(context.Background(), []string{"/deps/eta"}, []string{"/rules/node.yaml"}, false)
+			if got := timeoutArgs(args); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("timeout arguments = %v, want %v in argv %v", got, tt.want, args)
+			}
+		})
+	}
+}
+
+func timeoutArgs(args []string) []string {
+	var got []string
+	for i, arg := range args {
+		switch {
+		case arg == "--timeout":
+			got = append(got, args[i:min(i+2, len(args))]...)
+		case strings.HasPrefix(arg, "--timeout="):
+			got = append(got, arg)
+		}
+	}
+	return got
+}
+
+func jobsArgs(args []string) []string {
+	var got []string
+	for i, arg := range args {
+		switch {
+		case arg == "--jobs" || arg == "-j":
+			got = append(got, args[i:min(i+2, len(args))]...)
+		case strings.HasPrefix(arg, "--jobs=") || strings.HasPrefix(arg, "-j"):
+			got = append(got, arg)
+		}
+	}
+	return got
 }
