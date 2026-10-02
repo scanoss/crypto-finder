@@ -2,10 +2,14 @@ schema_version: "1"
 language: go
 framework:
   name: grpc
-  description: "gRPC service implementations: every exported method of a type that embeds the Unimplemented<Service>Server protoc-gen-go-grpc generates. The generated package is the application's own, so any imported package qualifies; a type the file declares itself does not."
+  description: "gRPC service implementations: every exported method of a type that embeds the Unimplemented<Service>Server protoc-gen-go-grpc generates, and the service methods of the value passed to a generated Register<Service>Server or Register<Service>HandlerServer. The generated package is the application's own, so any imported package qualifies; a type the file declares itself does not."
 entries:
   - shape: supertype
     from: ["*"]
     types: ["Unimplemented*Server"]
     names: ["*"]
+    root_kind: framework_entry
+  - shape: server_registration
+    from: ["*"]
+    names: ["Register*Server"]
     root_kind: framework_entry

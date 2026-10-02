@@ -65,6 +65,11 @@ func TestLoadEmbedded(t *testing.T) {
 		{"go", ShapeRegistrationCall, "example.com/cache", "", "Get", false},
 		{"go", ShapeSupertype, "example.com/shop/gen/keys", "UnimplementedKeysServer", "Rotate", true},
 		{"go", ShapeSupertype, "", "UnimplementedKeysServer", "Rotate", false},
+		{"go", ShapeServerRegistration, "example.com/shop/gen/keys", "", "RegisterKeysServer", true},
+		{"go", ShapeServerRegistration, "example.com/shop/gen/keys", "", "RegisterKeysHandlerServer", true},
+		{"go", ShapeServerRegistration, "example.com/shop/gen/keys", "", "RegisterKeysClient", false},
+		{"go", ShapeServerRegistration, "example.com/shop/gen/keys", "", "ServeKeysServer", false},
+		{"go", ShapeServerRegistration, "", "", "RegisterKeysServer", false},
 	} {
 		if _, got := catalog.Match(tc.language, tc.shape, tc.pkg, tc.typeName, tc.name); got != tc.want {
 			t.Errorf("Match(%s, %s, %q, %q, %q) = %v, want %v", tc.language, tc.shape, tc.pkg, tc.typeName, tc.name, got, tc.want)
@@ -95,6 +100,11 @@ func TestLoad_RejectsMalformedFiles(t *testing.T) {
 		"field of other shape": {
 			header + "  - shape: decorator\n    from: [x]\n    names: [Get]\n    path: required\n    root_kind: framework_entry\n",
 			"not read by shape",
+		},
+		"pattern outside server registration": {strings.Replace(expressYAML, "names: [get, use]", `names: ["get*"]`, 1), "is a pattern"},
+		"bare wildcard registration": {
+			"schema_version: \"1\"\nlanguage: go\nframework:\n  name: x\nentries:\n  - shape: server_registration\n    from: [\"*\"]\n    names: [\"*\"]\n    root_kind: framework_entry\n",
+			"keep a prefix",
 		},
 		"wildcard outside supertype": {strings.Replace(expressYAML, "names: [get, use]", `names: ["*"]`, 1), "only valid"},
 		"directory on a go supertype": {

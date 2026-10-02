@@ -237,6 +237,10 @@ type FunctionDecl struct {
 	// attribution, which matches a crypto call by its position, never picks
 	// one.
 	ImplicitCalls []FunctionCall
+	// returnedTypes holds the types of the package a Go function returns as
+	// &T{}, T{} or new(T), as T: the concrete types behind a constructor that
+	// declares an interface result.
+	returnedTypes []string
 	// boundNames holds every name the declaration binds anywhere in its
 	// span, nested closures included (Python only): a callback argument with
 	// one of these names is not known to be the module function it spells.
