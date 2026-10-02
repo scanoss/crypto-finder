@@ -4,6 +4,10 @@
 package callgraph
 
 import (
+	"path/filepath"
+	"slices"
+	"strings"
+
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
@@ -16,6 +20,8 @@ const (
 
 // nodeModuleImportCollector gathers the project modules one module loads.
 type nodeModuleImportCollector struct {
+	root                  *sitter.Node
+	typescript            bool
 	src                   []byte
 	filePath, packagePath string
 	modulePath            string
@@ -35,6 +41,7 @@ type nodeModuleImportCollector struct {
 // and is left out, as is a module importing itself.
 func nodeModuleImportReferences(root *sitter.Node, src []byte, filePath, packagePath, modulePath string) []FunctionCall {
 	c := &nodeModuleImportCollector{
+		root: root, typescript: nodeIsTypeScriptFile(filePath),
 		src: src, filePath: filePath, packagePath: packagePath, modulePath: modulePath,
 		seen: make(map[string]bool),
 	}
@@ -49,7 +56,7 @@ func (c *nodeModuleImportCollector) walk(node *sitter.Node) {
 	switch node.Type() {
 	case nodeImportStatement, nodeExportKind:
 		if source := node.ChildByFieldName("source"); source != nil {
-			if !nodeIsTypeOnlyModuleStatement(node) {
+			if !nodeIsTypeOnlyModuleStatement(node) && !c.erased(node) {
 				c.add(node, source)
 			}
 			return
@@ -111,4 +118,96 @@ func nodeIsTypeOnlyModuleStatement(node *sitter.Node) bool {
 		}
 	}
 	return false
+}
+
+func nodeIsTypeScriptFile(filePath string) bool {
+	return slices.Contains(nodeSourceExtensions[:4], strings.ToLower(filepath.Ext(filePath)))
+}
+
+// erased reports a statement TypeScript drops without loading the module: every
+// specifier carries the inline `type` keyword, or, in a TypeScript file, every
+// binding the statement introduces is used only where a type is written. A
+// bare `import './x'` introduces no binding and is never erased. A name used
+// as `typeof X` in a type counts as a value use, which keeps the edge.
+func (c *nodeModuleImportCollector) erased(node *sitter.Node) bool {
+	specifiers, values := nodeModuleBindings(node, c.src)
+	if specifiers == 0 {
+		return false
+	}
+	if len(values) == 0 {
+		return true
+	}
+	if !c.typescript || node.Type() != nodeImportStatement {
+		return false
+	}
+	for _, name := range values {
+		if c.usedAsValue(name, node) {
+			return false
+		}
+	}
+	return true
+}
+
+// nodeModuleBindings counts the specifiers of an import or export statement and
+// returns the local names of those without the inline `type` keyword.
+func nodeModuleBindings(node *sitter.Node, src []byte) (specifiers int, values []string) {
+	var collect func(n *sitter.Node)
+	collect = func(n *sitter.Node) {
+		switch n.Type() {
+		case "import_specifier", "export_specifier":
+			specifiers++
+			if nodeHasInlineTypeKeyword(n) {
+				return
+			}
+			name := n.ChildByFieldName("name")
+			if alias := n.ChildByFieldName("alias"); alias != nil {
+				name = alias
+			}
+			if name != nil {
+				values = append(values, name.Content(src))
+			}
+			return
+		case goNodeIdentifier:
+			if parent := n.Parent(); parent != nil && (parent.Type() == nodeImportClause || parent.Type() == "namespace_import") {
+				specifiers++
+				values = append(values, n.Content(src))
+			}
+			return
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			collect(n.Child(i))
+		}
+	}
+	collect(node)
+	return specifiers, values
+}
+
+func nodeHasInlineTypeKeyword(specifier *sitter.Node) bool {
+	for i := 0; i < int(specifier.ChildCount()); i++ {
+		if child := specifier.Child(i); child.Type() == nodeTypeKeyword && !child.IsNamed() {
+			return true
+		}
+	}
+	return false
+}
+
+// usedAsValue reports an identifier named name outside the import statement.
+// Type positions use type_identifier nodes, so an identifier is a value use.
+func (c *nodeModuleImportCollector) usedAsValue(name string, statement *sitter.Node) bool {
+	var found bool
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if found || n == nil || n == statement {
+			return
+		}
+		if n.Type() == goNodeIdentifier && n.Content(c.src) == name {
+			found = true
+			return
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(c.root)
+	return found
 }
