@@ -1632,6 +1632,7 @@ func (p *PythonParser) extractDeclarations(root *sitter.Node, src []byte, filePa
 	if moduleDecl := p.buildModuleInitDecl(root, src, filePath, modulePath, analysis, fw); moduleDecl != nil {
 		analysis.Functions = append(analysis.Functions, *moduleDecl)
 	}
+	addPythonCallbackReferences(analysis)
 }
 
 // buildModuleInitDecl builds the synthetic `<module>` FunctionDecl for a
@@ -1782,6 +1783,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 		Parameters:      parameters,
 		Visibility:      pythonVisibilityForName(name),
 		OwnerVisibility: ownerVisibility,
+		boundNames:      pythonBoundNames(node, src),
 	}
 
 	if body != nil {

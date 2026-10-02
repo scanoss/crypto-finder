@@ -50,6 +50,8 @@ const (
 	nodeOptionalParameter   = "optional_parameter"
 	nodeRequireFunction     = "require"
 	nodeExpressionStatement = rustNodeExpressionStatement
+	nodeForInStatement      = "for_in_statement"
+	nodeShorthandPattern    = "shorthand_property_identifier_pattern"
 	// nodeOriginDepth bounds how many assignments nodeOrigin follows.
 	nodeOriginDepth = 8
 )

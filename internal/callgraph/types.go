@@ -237,6 +237,10 @@ type FunctionDecl struct {
 	// attribution, which matches a crypto call by its position, never picks
 	// one.
 	ImplicitCalls []FunctionCall
+	// boundNames holds every name the declaration binds anywhere in its
+	// span, nested closures included (Python only): a callback argument with
+	// one of these names is not known to be the module function it spells.
+	boundNames map[string]bool
 	// FileTypeNamesAtRisk is the declaring file's FileAnalysis.TypeNamesAtRisk,
 	// shared by every declaration of the file (Java only).
 	FileTypeNamesAtRisk map[string]bool
@@ -366,6 +370,11 @@ type FunctionCall struct {
 	// EndCol is the 1-based end column (exclusive) of this call expression.
 	// 0 when unknown. Mirrors the opengrep/semgrep convention: exclusive end.
 	EndCol int
+	// Reference marks an implicit call that is only the registration of a
+	// function as a value (a callback handed to an API that runs it). The
+	// builder indexes it as an exact edge only when Callee names a declared
+	// function, and expands no dispatch from it.
+	Reference bool
 	// ASTKind is the tree-sitter node kind of this call expression.
 	ASTKind string
 	// NamedASTPath is this call's named-node path relative to its containing function.
