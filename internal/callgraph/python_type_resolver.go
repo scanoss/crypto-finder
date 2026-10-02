@@ -230,11 +230,12 @@ func pythonCalleeReturnType(
 	graph *CallGraph,
 	kb *contracts.KnowledgeBase,
 	classes map[string]bool,
+	callerPkg string,
 ) (returnType, declPackage string) {
 	if returnType, declPackage = pythonDeclaredOrContractReturnType(call, graph, kb); returnType != "" {
 		return returnType, declPackage
 	}
-	return pythonConstructedClass(call, graph, classes)
+	return pythonConstructedClass(call, graph, classes, callerPkg)
 }
 
 // pythonConstructedClass reports the class a constructor call builds, when the
@@ -242,12 +243,22 @@ func pythonCalleeReturnType(
 // <init>}`) names its class outright, and a bare same-package call names one
 // only when no module-level function shadows it. A class the tree does not
 // declare is left untyped, so a type is never invented from a callee's name.
-func pythonConstructedClass(call *FunctionCall, graph *CallGraph, classes map[string]bool) (class, pkg string) {
+func pythonConstructedClass(
+	call *FunctionCall,
+	graph *CallGraph,
+	classes map[string]bool,
+	callerPkg string,
+) (class, pkg string) {
 	callee := call.Callee
 	if callee.Package == "" {
 		return "", ""
 	}
 	if callee.Name == constructorMethodName && callee.Type != "" {
+		// A module-level function of the caller's module that reuses the
+		// imported class's name rebinds it, so the call builds nothing.
+		if _, shadowed := graph.Functions[FunctionID{Package: callerPkg, Name: callee.Type}.String()]; shadowed {
+			return "", ""
+		}
 		if pythonClassDeclared(graph, classes, callee.Package, callee.Type) {
 			return callee.Type, callee.Package
 		}
@@ -403,7 +414,7 @@ func propagatePythonAssignedVarTypesForDecl(
 		if call.AssignedVar == "" {
 			continue
 		}
-		returnType, declPackage := pythonCalleeReturnType(call, graph, kb, classes)
+		returnType, declPackage := pythonCalleeReturnType(call, graph, kb, classes, fn.ID.Package)
 		if returnType == "" {
 			// INVALIDATE ON RE-BIND. This assignment rebinds the variable to
 			// something whose type is not knowable, so any type learned from an
@@ -436,6 +447,10 @@ func propagatePythonAssignedVarTypesForDecl(
 // visited innermost first so `A(1).b().c()` types `b` before `c` reads it. A
 // link the contract resolver already typed no longer carries the receiver
 // text as its type and is left alone.
+//
+// Safe false negatives, each leaving the link untyped and so unlinked: a class
+// with no methods of its own is not indexed as a class, and a chain split
+// across lines is recorded as separate calls that share no start position.
 func typePythonConstructorChainReceivers(
 	fn *FunctionDecl,
 	graph *CallGraph,
@@ -459,11 +474,9 @@ func typePythonConstructorChainReceivers(
 		if inner == nil {
 			continue
 		}
-		typ, pkg := pythonConstructedClass(inner, graph, classes)
+		typ, pkg := pythonConstructedClass(inner, graph, classes, fn.ID.Package)
 		if typ == "" {
-			if decl := graph.Functions[inner.Callee.String()]; decl != nil && decl.ReturnType != "" {
-				typ, pkg = decl.ReturnType, decl.ID.Package
-			}
+			typ, pkg = pythonAnnotatedClass(inner, graph, classes)
 		}
 		if typ == "" {
 			continue
@@ -472,6 +485,36 @@ func typePythonConstructorChainReceivers(
 		call.Callee.Package, call.Callee.Type = pythonSplitAssignedType(tracked)
 		call.ResolvedReceiverType = call.Callee.Type
 	}
+}
+
+// pythonAnnotatedClass reports the class a call's in-graph callee is annotated
+// to return. Only a bare class name declared in the callee's own module is
+// typed: the scan keeps no per-file import table, so a name the module imports
+// from elsewhere cannot be placed in a package, and a subscripted or dotted
+// annotation (`Optional[Scanner]`, `mod.Scanner`) names no single class. Both
+// are left untyped, which links nothing rather than a wrong method.
+func pythonAnnotatedClass(call *FunctionCall, graph *CallGraph, classes map[string]bool) (class, pkg string) {
+	decl := graph.Functions[call.Callee.String()]
+	if decl == nil || !isPythonIdentifier(decl.ReturnType) {
+		return "", ""
+	}
+	if !classes[decl.ID.Package+"|"+decl.ReturnType] {
+		return "", ""
+	}
+	return decl.ReturnType, decl.ID.Package
+}
+
+func isPythonIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		letter := r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		if !letter && (i == 0 || r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // pythonChainReceiverCall finds the link of calls[i]'s chain that produces its

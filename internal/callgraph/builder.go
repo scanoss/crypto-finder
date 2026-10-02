@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1009,11 +1008,15 @@ func newDispatchIndexes(graph *CallGraph) dispatchIndexes {
 // reindexPythonRetypedCalls indexes the calls whose receiver type was learned
 // after the caller index was built: the type-resolution passes rewrite
 // `s.scan()` to `Scanner.scan` in place, but the reverse index still holds the
-// pre-rewrite key, so the declared method would show no caller. A call is
-// re-indexed only when its rewritten target is a declaration the index does
-// not already credit to this caller; indexCallDispatch then adds the exact
-// edge and the same subclass and inherited expansions a parse-time typed call
-// receives.
+// pre-rewrite key, so the declared method would show no caller. This covers a
+// receiver typed from a constructor and one typed from a declared return
+// annotation alike. Every retyped call whose target is declared goes through
+// indexCallDispatch, which adds the exact edge and the subclass and inherited
+// expansions a parse-time typed call receives; the dedup set is seeded from
+// the existing index, so an edge already present is not duplicated and a call
+// site never loses its expansions because another site had the exact edge.
+//
+// Callers is filled in map order, so the lists this pass touched are sorted.
 func (b *Builder) reindexPythonRetypedCalls(graph *CallGraph) {
 	var idx dispatchIndexes
 	built := false
@@ -1026,16 +1029,35 @@ func (b *Builder) reindexPythonRetypedCalls(graph *CallGraph) {
 			if call.ResolvedReceiverType == "" {
 				continue
 			}
-			key := call.Callee.String()
-			if _, declared := graph.Functions[key]; !declared || slices.Contains(graph.Callers[key], callerKey) {
+			if _, declared := graph.Functions[call.Callee.String()]; !declared {
 				continue
 			}
 			if !built {
-				idx, built = newDispatchIndexes(graph), true
+				idx, built = newSeededDispatchIndexes(graph), true
 			}
 			b.indexCallDispatch(graph, callerKey, call, idx)
 		}
 	}
+	if built {
+		for _, callers := range graph.Callers {
+			sort.Strings(callers)
+		}
+	}
+}
+
+// newSeededDispatchIndexes is newDispatchIndexes with the dedup set already
+// holding every edge graph.Callers has, for a pass that runs after the index
+// was built.
+func newSeededDispatchIndexes(graph *CallGraph) dispatchIndexes {
+	idx := newDispatchIndexes(graph)
+	for callee, callers := range graph.Callers {
+		set := make(map[string]struct{}, len(callers))
+		for _, c := range callers {
+			set[c] = struct{}{}
+		}
+		idx.callerSeen[callee] = set
+	}
+	return idx
 }
 
 // dispatchIndexes bundles the lookup tables buildCallerIndex needs to expand

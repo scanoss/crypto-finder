@@ -5,6 +5,7 @@ package callgraph
 
 import (
 	"slices"
+	"sort"
 	"testing"
 )
 
@@ -205,6 +206,12 @@ func TestBuilder_PythonConstructedReceiverIsNotGuessed(t *testing.T) {
 			},
 		},
 		{
+			name: "rebound to an unknown call after construction",
+			files: map[string]string{
+				"m.py": pythonScannerClassSrc + "\n\ndef run(cfg, p):\n    s = Scanner(cfg)\n    s = unknown(cfg)\n    return s.scan(p)\n",
+			},
+		},
+		{
 			name: "call of a name that is no class",
 			files: map[string]string{
 				"m.py": pythonScannerClassSrc + "\n\ndef run(cfg, p):\n    s = Missing(cfg)\n    return s.scan(p)\n",
@@ -226,5 +233,149 @@ func TestBuilder_PythonConstructedReceiverIsNotGuessed(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A receiver typed from a declared return annotation (`-> Scanner`) is a
+// declared type, so its method gains the caller just as a constructed one does.
+func TestBuilder_PythonAnnotatedReceiverLinksTheClassMethod(t *testing.T) {
+	t.Parallel()
+
+	graph := buildPythonProject(t, map[string]string{
+		"m.py": pythonScannerClassSrc + "\n\ndef make() -> Scanner:\n    return Scanner(1)\n\n\ndef run(p):\n    s = make()\n    return s.scan(p)\n",
+	})
+	if callers := graph.Callers["probe.m.(Scanner).scan"]; !slices.Contains(callers, "probe.m.run") {
+		t.Errorf("Callers[Scanner.scan] = %v, want probe.m.run", callers)
+	}
+	if callers := graph.Callers["probe.m.(Other).scan"]; slices.Contains(callers, "probe.m.run") {
+		t.Errorf("Callers[Other.scan] = %v, must not include probe.m.run", callers)
+	}
+}
+
+// Re-indexing never duplicates a caller, and every Callers list is sorted so
+// output does not depend on map order.
+func TestBuilder_PythonRetypedCallsKeepCallersUniqueAndSorted(t *testing.T) {
+	t.Parallel()
+
+	graph := buildPythonProject(t, map[string]string{
+		"m.py": pythonScannerClassSrc + "\n\ndef b(p):\n    s = Scanner(1)\n    s.scan(p)\n    return s.scan(p)\n\n\ndef a(p):\n    return Scanner(1).scan(p)\n",
+	})
+	callers := graph.Callers["probe.m.(Scanner).scan"]
+	if want := []string{"probe.m.a", "probe.m.b"}; !slices.Equal(callers, want) {
+		t.Errorf("Callers[Scanner.scan] = %v, want %v", callers, want)
+	}
+	for callee, list := range graph.Callers {
+		if !sort.StringsAreSorted(list) {
+			t.Errorf("Callers[%s] = %v, not sorted", callee, list)
+		}
+		seen := map[string]bool{}
+		for _, c := range list {
+			if seen[c] {
+				t.Errorf("Callers[%s] = %v, duplicate %s", callee, list, c)
+			}
+			seen[c] = true
+		}
+	}
+}
+
+// Two modules may declare a class of the same name; the receiver's method is
+// the one of the module the class was imported from.
+func TestBuilder_PythonConstructedReceiverPicksTheImportedModule(t *testing.T) {
+	t.Parallel()
+
+	graph := buildPythonProject(t, map[string]string{
+		"app/__init__.py": "",
+		"app/one.py":      "class Scanner:\n    def scan(self):\n        return 1\n",
+		"app/two.py":      "class Scanner:\n    def scan(self):\n        return 2\n",
+		"app/main.py":     "from app.two import Scanner\n\n\ndef run():\n    s = Scanner()\n    return s.scan()\n",
+	})
+	if callers := graph.Callers["probe.app.two.(Scanner).scan"]; !slices.Contains(callers, "probe.app.main.run") {
+		t.Errorf("Callers[two.Scanner.scan] = %v, want probe.app.main.run", callers)
+	}
+	if callers := graph.Callers["probe.app.one.(Scanner).scan"]; slices.Contains(callers, "probe.app.main.run") {
+		t.Errorf("Callers[one.Scanner.scan] = %v, must not include probe.app.main.run", callers)
+	}
+}
+
+// A chain typed from a return annotation is typed only for a bare class
+// declared in the callee's own module. A class named from another module, a
+// subscripted annotation, and a scalar annotation are left untyped.
+func TestBuilder_PythonChainAnnotationIsTypedOnlyForALocalClass(t *testing.T) {
+	t.Parallel()
+
+	const other = "class Scanner:\n    def scan(self):\n        return 1\n"
+	cases := []struct {
+		name  string
+		files map[string]string
+		want  bool
+	}{
+		{
+			name: "class declared in the same module",
+			files: map[string]string{
+				"m.py": "class Scanner:\n    def scan(self):\n        return 1\n\n\ndef make() -> Scanner:\n    return Scanner()\n\n\ndef run():\n    return make().scan()\n",
+			},
+			want: true,
+		},
+		{
+			name: "annotation names a class of another module",
+			files: map[string]string{
+				"m.py":     "from other import Scanner\n\n\ndef make() -> Scanner:\n    return Scanner()\n\n\ndef run():\n    return make().scan()\n",
+				"other.py": other,
+			},
+		},
+		{
+			name: "optional annotation",
+			files: map[string]string{
+				"m.py": "from typing import Optional\n\n\nclass Scanner:\n    def scan(self):\n        return 1\n\n\ndef make() -> Optional[Scanner]:\n    return Scanner()\n\n\ndef run():\n    return make().scan()\n",
+			},
+		},
+		{
+			name: "scalar annotation",
+			files: map[string]string{
+				"m.py": "class Scanner:\n    def scan(self):\n        return 1\n\n\ndef make() -> int:\n    return 1\n\n\ndef run():\n    return make().scan()\n",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			graph := buildPythonProject(t, tc.files)
+			var got []string
+			for callee, callers := range graph.Callers {
+				if slices.Contains(callers, "probe.m.run") && callee != "probe.m.make" {
+					got = append(got, callee)
+				}
+			}
+			sort.Strings(got)
+			if !tc.want {
+				for _, call := range graph.Functions["probe.m.run"].Calls {
+					if call.ResolvedReceiverType != "" {
+						t.Errorf("call %s was typed %q, want it left untyped", call.Raw, call.ResolvedReceiverType)
+					}
+				}
+			}
+			linked := slices.Contains(got, "probe.m.(Scanner).scan")
+			if linked != tc.want {
+				t.Errorf("run's callees = %v, linked Scanner.scan = %v, want %v", got, linked, tc.want)
+			}
+		})
+	}
+}
+
+// A function defined after an imported class of the same name rebinds the
+// name, so the call builds nothing and links no method of the imported class.
+func TestBuilder_PythonFunctionShadowsImportedClass(t *testing.T) {
+	t.Parallel()
+
+	graph := buildPythonProject(t, map[string]string{
+		"app/__init__.py": "",
+		"app/scanner.py":  pythonScannerClassSrc,
+		"app/main.py":     "from app.scanner import Scanner\n\n\ndef Scanner(cfg):\n    return cfg\n\n\ndef run(cfg, p):\n    s = Scanner(cfg)\n    return s.scan(p)\n",
+	})
+	for _, decl := range []string{"probe.app.scanner.(Scanner).scan", "probe.app.scanner.(Other).scan"} {
+		if callers := graph.Callers[decl]; slices.Contains(callers, "probe.app.main.run") {
+			t.Errorf("Callers[%s] = %v, must not include probe.app.main.run", decl, callers)
+		}
 	}
 }
