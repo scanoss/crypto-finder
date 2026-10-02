@@ -1,1 +1,0 @@
-- A finding whose selector value enumeration was cut by the walk's depth cap or by its value bound now reads `analysis.call_chains: partial` in the callgraph export, and the cut is logged as a warning. Before, the cut dropped caller values without any mark, so a specialized finding could look complete while a caller's value was missing.
