@@ -51,6 +51,8 @@ const SchemaVersion = "graph-fragment-1.13"
 // in a way that alters the structural graph. Consumers key their cached
 // structural graphs on this so a routine binary release does not invalidate the
 // cache — only a graph-affecting change does. Stamped into scan_metadata.
+// TestGraphAlgoVersionGuard fails when the structural graph changes without a
+// bump (see docs/ARCHITECTURE.md, Schema Versioning).
 //
 // graph-algo-6: Go dependencies contribute only their imported packages, on
 // top of the Go, Node and Python call resolution and Go interface dispatch
