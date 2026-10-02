@@ -48,6 +48,13 @@ type conditionedValueEnumerator struct {
 	// a value cut at an ancestor still on the stack reaches the root through
 	// that ancestor's own walk. terminalVariants resets it per call.
 	truncated bool
+	// dynamic records that some route into the parameter being walked carries
+	// no resolved value: a call site passes a dynamic expression, or nothing
+	// calls the function at all. dynamicMemo remembers it per (function,
+	// parameter), so a cached walk still reports it. terminalVariants resets
+	// dynamic per parameter.
+	dynamic     bool
+	dynamicMemo map[string]bool
 }
 
 // conditionedUpstreamCall is the argument list of one call into a function,
@@ -60,29 +67,36 @@ type conditionedUpstreamCall struct {
 
 func newConditionedValueEnumerator(ctx *exportBuildContext) *conditionedValueEnumerator {
 	return &conditionedValueEnumerator{
-		ctx:      ctx,
-		maxDepth: maxConditionedWalkDepth,
-		maxValue: maxConditionedSelectorValues,
-		memo:     make(map[string][]conditionedUpstreamCall),
-		onStack:  make(map[string]bool),
+		ctx:         ctx,
+		maxDepth:    maxConditionedWalkDepth,
+		maxValue:    maxConditionedSelectorValues,
+		memo:        make(map[string][]conditionedUpstreamCall),
+		onStack:     make(map[string]bool),
+		dynamicMemo: make(map[string]bool),
 	}
 }
 
 // terminalVariants returns copies of the terminal call's parameters, one per
 // distinct caller value of each unresolved parameter. truncated reports that
 // the depth cap or the value bound cut an enumeration, so some caller value
-// may be missing from the result.
-func (e *conditionedValueEnumerator) terminalVariants(owner callgraph.FunctionID, params []callGraphParameter) (variants [][]callGraphParameter, truncated bool) {
+// may be missing from the result. dynamic lists the parameter indices that
+// some route reaches with no resolved value, which no variant stands for.
+func (e *conditionedValueEnumerator) terminalVariants(owner callgraph.FunctionID, params []callGraphParameter) (variants [][]callGraphParameter, truncated bool, dynamic map[int]bool) {
 	e.truncated = false
+	dynamic = make(map[int]bool)
 	for index := range params {
 		if params[index].ResolvedValue != "" {
 			continue
 		}
 		e.walkMemo = make(map[string][]conditionedUpstreamCall)
+		e.dynamic = false
 		resolved, _ := e.resolveVariants(owner, params, index, 0)
 		variants = append(variants, resolved...)
+		if e.dynamic {
+			dynamic[index] = true
+		}
 	}
-	return variants, e.truncated
+	return variants, e.truncated, dynamic
 }
 
 // resolveVariants returns copies of params, a call made inside owner, in which
@@ -98,8 +112,15 @@ func (e *conditionedValueEnumerator) resolveVariants(
 	}
 	complete = true
 	seen := make(map[string]struct{})
-	for _, callerIndex := range propagatedParameterIndices(params[index].SourceNodes) {
+	callerIndices := propagatedParameterIndices(params[index].SourceNodes)
+	if len(callerIndices) == 0 {
+		e.dynamic = true
+	}
+	for _, callerIndex := range callerIndices {
 		upstream, upstreamComplete := e.callerArguments(owner, callerIndex, depth)
+		if upstreamComplete && len(upstream) == 0 {
+			e.dynamic = true
+		}
 		complete = complete && upstreamComplete
 		for _, call := range upstream {
 			variant := cloneCallGraphParameters(params)
@@ -122,9 +143,11 @@ func (e *conditionedValueEnumerator) resolveVariants(
 func (e *conditionedValueEnumerator) callerArguments(fn callgraph.FunctionID, index, depth int) ([]conditionedUpstreamCall, bool) {
 	key := fn.String() + "\x00" + strconv.Itoa(index)
 	if cached, ok := e.memo[key]; ok {
+		e.dynamic = e.dynamic || e.dynamicMemo[key]
 		return cached, true
 	}
 	if cached, ok := e.walkMemo[key]; ok {
+		e.dynamic = e.dynamic || e.dynamicMemo[key]
 		return cached, false
 	}
 	if e.onStack[key] {
@@ -137,8 +160,14 @@ func (e *conditionedValueEnumerator) callerArguments(fn callgraph.FunctionID, in
 		return nil, false
 	}
 	e.onStack[key] = true
+	outerDynamic := e.dynamic
+	e.dynamic = false
 	calls, complete := e.collectCallerArguments(fn, index, depth)
 	delete(e.onStack, key)
+	if e.dynamic {
+		e.dynamicMemo[key] = true
+	}
+	e.dynamic = e.dynamic || outerDynamic
 	// A walk a cycle cut short is only partial from this entry; recompute it
 	// from the next one instead of caching the partial set.
 	if complete {

@@ -716,7 +716,9 @@ func ruleCaptureNames(sources []rulePatternYAML) []string {
 }
 
 // ruleCaptureBinders returns the metavariable-regex patterns of sources that
-// declare at least one named group.
+// declare at least one named group. Each is compiled start-anchored, the way
+// semgrep applies metavariable-regex: it must match from the first character of
+// the value, but need not reach the last unless the rule's regex says so with $.
 func ruleCaptureBinders(sources []rulePatternYAML) []*regexp.Regexp {
 	var binders []*regexp.Regexp
 	for _, source := range sources {
@@ -728,9 +730,13 @@ func ruleCaptureBinders(sources []rulePatternYAML) []*regexp.Regexp {
 			if err != nil {
 				continue
 			}
+			anchored, err := regexp.Compile(`^(?:` + pattern.MetavariableRegex.Regex + `)`)
+			if err != nil {
+				continue
+			}
 			for _, name := range re.SubexpNames() {
 				if name != "" {
-					binders = append(binders, re)
+					binders = append(binders, anchored)
 					break
 				}
 			}

@@ -4,6 +4,7 @@
 package scan
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 func TestMaterializeConditionedFindings_SpecializesWrapperPaths(t *testing.T) {
@@ -494,4 +496,139 @@ func writeConditionedRules(t *testing.T, contents string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+const bindRuleTemplate = `rules:
+  - id: java.bind.test
+    message: bind
+    severity: INFO
+    pattern-sources:
+      - patterns:
+          - pattern: $ALGO
+          - metavariable-regex:
+              metavariable: $ALGO
+              regex: '%s'
+    pattern-sinks:
+      - patterns:
+          - pattern: Cipher.getInstance($ALGO)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: %s
+        parameterCondition: param[0]~=%s
+        api: Cipher.getInstance
+`
+
+// A binder is start-anchored like semgrep's metavariable-regex: it may stop
+// short of the end of the value unless the rule's own regex ends in $.
+func TestConditionedRule_BindsLikeSemgrepMetavariableRegex(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, regex, name2, condition, value, wantName string
+	}{
+		{"alternation with end anchor reaches the longer branch", `(?P<m>CBC|CBC-MAC)$`, "$m", `CBC(-MAC)?`, "CBC-MAC", "CBC-MAC"},
+		{"alternation without end anchor binds the prefix", `(?P<m>CBC|CBC-MAC)`, "$m", `CBC(-MAC)?`, "CBC-MAC", "CBC"},
+		{"regex without end anchor", `(?P<f>AES)`, "$f", `AES.*`, "AES-GCM", "AES"},
+		{"double-quoted spelling", `"(?P<v>x)"`, "$v", `x`, `x`, "x"},
+		{"single-quoted spelling", `''(?P<v>x)''`, "$v", `x`, `x`, "x"},
+		{"a match must start at the value", `(?P<f>GCM)`, "$f", `.*GCM`, "AES-GCM", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rules := writeConditionedRules(t, fmt.Sprintf(bindRuleTemplate, tc.regex, tc.name2, tc.condition))
+			rule := engine.LoadRuleCryptoMetadata([]string{rules})["Cipher.getInstance"][0]
+			finding := &entities.Finding{FilePath: "Flow.java"}
+			anchor := entities.CryptographicAsset{StartLine: 4, Metadata: map[string]string{"api": "Cipher.getInstance"}}
+			if !appendConditionedAsset(finding, anchor, rule, []callGraphParameter{{ResolvedValue: tc.value}}, map[string]struct{}{}, map[string]struct{}{}) {
+				t.Fatalf("appendConditionedAsset(%q) = false", tc.value)
+			}
+			if got := finding.CryptographicAssets[0].Metadata["algorithmName"]; got != tc.wantName {
+				t.Fatalf("algorithmName = %q, want %q", got, tc.wantName)
+			}
+		})
+	}
+}
+
+// A rule with no named group has no binder, and its metadata is untouched.
+func TestConditionedRule_WithoutNamedGroupsBindsNothing(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, fmt.Sprintf(bindRuleTemplate, `"RC4"`, "RC4", "RC4"))
+	rule := engine.LoadRuleCryptoMetadata([]string{rules})["Cipher.getInstance"][0]
+	if len(rule.CaptureBinders) != 0 {
+		t.Fatalf("CaptureBinders = %v, want none", rule.CaptureBinders)
+	}
+	finding := &entities.Finding{FilePath: "Flow.java"}
+	anchor := entities.CryptographicAsset{StartLine: 4, Metadata: map[string]string{"api": "Cipher.getInstance"}}
+	if !appendConditionedAsset(finding, anchor, rule, []callGraphParameter{{ResolvedValue: "RC4"}}, map[string]struct{}{}, map[string]struct{}{}) {
+		t.Fatal("appendConditionedAsset(RC4) = false")
+	}
+	if got := finding.CryptographicAssets[0].Metadata["algorithmName"]; got != "RC4" {
+		t.Fatalf("algorithmName = %q, want RC4", got)
+	}
+}
+
+func TestPlaceholderFiller(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		captures map[string]string
+		in, want string
+	}{
+		{"mode never eats model", map[string]string{"mode": "CBC", "model": "M1"}, "$mode-$model", "CBC-M1"},
+		{"only the shorter name is bound", map[string]string{"mode": "CBC"}, "$mode/$model", "CBC/CBCl"},
+		{"an inserted value is not substituted again", map[string]string{"a": "$b", "b": "X"}, "$a $b", "$b X"},
+		{"no captures", nil, "$a", "$a"},
+	}
+	for _, tc := range tests {
+		if got := placeholderFiller(tc.captures)(tc.in); got != tc.want {
+			t.Errorf("%s: fill(%q) = %q, want %q", tc.name, tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestDropBlankAnchor(t *testing.T) {
+	t.Parallel()
+
+	rule := func(id string) []entities.RuleInfo { return []entities.RuleInfo{{ID: id}} }
+	at := func(id string, line, startCol, endCol int) entities.CryptographicAsset {
+		return entities.CryptographicAsset{StartLine: line, EndLine: line, StartCol: startCol, EndCol: endCol, Rules: rule(id)}
+	}
+	perValue := entities.CryptographicAsset{StartLine: 3, EndLine: 3, StartCol: 5, EndCol: 40, Rules: rule("r.value"), ParameterConditions: []paramcondition.Condition{{}}}
+
+	t.Run("same span and rule is dropped", func(t *testing.T) {
+		t.Parallel()
+		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{at("r.dyn", 3, 5, 40), perValue}}
+		dropBlankAnchor(finding, at("r.dyn", 3, 5, 40))
+		if len(finding.CryptographicAssets) != 1 || len(finding.CryptographicAssets[0].ParameterConditions) == 0 {
+			t.Fatalf("assets = %#v, want only the per-value asset", finding.CryptographicAssets)
+		}
+	})
+	t.Run("another rule at the same span is kept", func(t *testing.T) {
+		t.Parallel()
+		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{at("r.dyn", 3, 5, 40), at("r.other", 3, 5, 40), perValue}}
+		dropBlankAnchor(finding, at("r.dyn", 3, 5, 40))
+		if len(finding.CryptographicAssets) != 2 || finding.CryptographicAssets[0].Rules[0].ID != "r.other" {
+			t.Fatalf("assets = %#v, want the other rule's anchor kept", finding.CryptographicAssets)
+		}
+	})
+	t.Run("two calls on one line without columns stay separate", func(t *testing.T) {
+		t.Parallel()
+		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{at("r.dyn", 3, 0, 0), at("r.dyn", 3, 0, 0), perValue}}
+		dropBlankAnchor(finding, at("r.dyn", 3, 0, 0))
+		if len(finding.CryptographicAssets) != 3 {
+			t.Fatalf("assets = %#v, want both anchors kept", finding.CryptographicAssets)
+		}
+	})
+	t.Run("two calls on one line with columns stay separate", func(t *testing.T) {
+		t.Parallel()
+		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{at("r.dyn", 3, 5, 40), at("r.dyn", 3, 50, 90), perValue}}
+		dropBlankAnchor(finding, at("r.dyn", 3, 5, 40))
+		if len(finding.CryptographicAssets) != 2 || finding.CryptographicAssets[0].StartCol != 50 {
+			t.Fatalf("assets = %#v, want the second call's anchor kept", finding.CryptographicAssets)
+		}
+	})
 }

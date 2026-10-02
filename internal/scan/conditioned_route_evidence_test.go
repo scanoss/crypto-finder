@@ -262,3 +262,33 @@ func TestBuildCallGraphExport_DeadCallerValueIsFlaggedNoCallersOnly(t *testing.T
 		t.Errorf("V2 = %q no_callers_only %v, want reachable and flagged", dead.Reachability, dead.Analysis.NoCallersOnly)
 	}
 }
+
+// The tracer spends the route budget strongest evidence first, so a cut sample
+// holds a name_only route only after every exact one. A value's guessed route
+// in the sample therefore means no exact route carries it, and rating the sample
+// is sound; a value whose exact route fell beyond the cut has no chain left and
+// reads unknown (traversal_truncated), never reachable and never guessed.
+func TestBuildCallGraphExport_CutSampleKeepsExactRoutesBeforeGuessedOnes(t *testing.T) {
+	t.Parallel()
+
+	build := func(fillers int) map[string]callGraphExportFinding {
+		callers := make([]routeCaller, 0, fillers+2)
+		callers = append(callers, routeCaller{typ: "AGuessed", value: 1, kind: callgraph.EdgeKindNameOnly})
+		for i := range fillers {
+			callers = append(callers, routeCaller{typ: fmt.Sprintf("Filler%03d", i), value: 2, kind: callgraph.EdgeKindExact})
+		}
+		callers = append(callers, routeCaller{typ: "ZExact", value: 1, kind: callgraph.EdgeKindExact})
+		return perValueGraphs(t, routeSelectorGraphOf(callers...), 2)
+	}
+
+	// One route over the budget: the guessed route is the one cut.
+	cut := build(graphfrag.DefaultMaxChainsPerOp - 1)["V1"]
+	if cut.Reachability != graphfrag.ReachabilityReachable || len(cut.CallChains) != 1 || cut.Analysis.CallChains != graphfrag.AnalysisPartial {
+		t.Errorf("V1 with the guessed route cut = %q, %d chains, %+v; want reachable over its exact route, partial", cut.Reachability, len(cut.CallChains), cut.Analysis)
+	}
+	// The budget is spent before either V1 route: nothing is left to rate.
+	spent := build(graphfrag.DefaultMaxChainsPerOp + 8)["V1"]
+	if spent.Reachability != graphfrag.ReachabilityUnknown || spent.UnresolvedReason != "traversal_truncated" {
+		t.Errorf("V1 with both routes cut = %q (%q), want unknown (traversal_truncated)", spent.Reachability, spent.UnresolvedReason)
+	}
+}
