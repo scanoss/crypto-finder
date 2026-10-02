@@ -289,8 +289,10 @@ export function viaClassName() { return service.ProjectService.createProject() }
 	}
 }
 
-// A module path two files share names no instance.
-func TestNodeSingletonOfAmbiguousModuleResolvesToNothing(t *testing.T) {
+// Two files of one directory with the same stem keep separate module paths:
+// the import resolves to the file Node picks for `../a/box` (box.ts), so the
+// singleton links to that file's class and never to the other file's.
+func TestNodeSingletonOfSameStemModulesResolvesToTheImportedFile(t *testing.T) {
 	t.Parallel()
 	graph := buildNodeFiles(t, map[string]string{
 		"a/box.ts": "export class A { run() { return 1 } }\nexport const box = new A()\n",
@@ -298,9 +300,13 @@ func TestNodeSingletonOfAmbiguousModuleResolvesToNothing(t *testing.T) {
 		"b/use.ts": "import { box } from '../a/box'\nexport function f() { return box.run() }\n",
 	})
 	caller, _ := graphFunction(t, graph, "app/b/use", "", "f")
+	want, _ := graphFunction(t, graph, "app/a/box", "A", "run")
+	if !hasCaller(graph, want, caller) {
+		t.Errorf("f does not reach %s, want the edge to the imported file's class", want)
+	}
 	for key, fn := range graph.Functions {
-		if fn.ID.Name == "run" && hasCaller(graph, key, caller) {
-			t.Errorf("f reaches %s, want no edge: two files make the module ambiguous", key)
+		if fn.ID.Name == "run" && key != want && hasCaller(graph, key, caller) {
+			t.Errorf("f reaches %s, want only %s", key, want)
 		}
 	}
 }
