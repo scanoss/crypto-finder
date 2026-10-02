@@ -743,7 +743,7 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 	}
 
 	if body != nil {
-		varTypes := p.collectGoVarTypes(params, src)
+		varTypes := p.collectGoVarTypes(params, src, node)
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, "", "", varTypes)
 		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, "", "", varTypes)
 	}
@@ -800,7 +800,7 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 	decl.ReturnType = p.extractReturnType(node.ChildByFieldName("result"), src, analysis)
 
 	if body != nil {
-		varTypes := p.collectGoVarTypes(params, src)
+		varTypes := p.collectGoVarTypes(params, src, node)
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, receiver, receiverVar, varTypes)
 		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, receiver, receiverVar, varTypes)
 	}
@@ -1434,9 +1434,12 @@ func (p *GoParser) goFieldReceiverCall(
 
 // collectGoVarTypes seeds a function's binding map with its parameters; the
 // body's bindings are collected in textual order during the call walk.
-func (p *GoParser) collectGoVarTypes(paramsNode *sitter.Node, src []byte) map[string]string {
+func (p *GoParser) collectGoVarTypes(paramsNode *sitter.Node, src []byte, decl *sitter.Node) map[string]string {
 	varTypes := make(map[string]string)
 	p.collectGoParameterTypes(paramsNode, src, varTypes)
+	for name := range goTypeParameterNames(decl, src) {
+		varTypes[goTypeParamKey+name] = ""
+	}
 	return varTypes
 }
 
@@ -1575,8 +1578,9 @@ func (p *GoParser) collectGoShortVarTypes(node *sitter.Node, src []byte, varType
 	// `hash` (Go's innermost-scope rule), or `hash.Available()` resolves as a
 	// call into the package. An unknown type stays empty — the honest form —
 	// and the builder pass may still type it from the producer's return.
-	goBindNames(left, src, varTypes, false)
 	count := int(left.NamedChildCount())
+	prior := goIdentifierRightTypes(left, right, src, varTypes)
+	goBindNames(left, src, varTypes, false)
 	// A type assertion states its type in its own syntax even in the
 	// two-valued form: `r, ok := x.(RecipientWithLabels)` binds the first
 	// name to the asserted type (the second is the bool).
@@ -1600,6 +1604,8 @@ func (p *GoParser) collectGoShortVarTypes(node *sitter.Node, src []byte, varType
 		}
 		if typeText := goSyntacticType(right.NamedChild(i), src); typeText != "" {
 			varTypes[name] = typeText
+		} else if prior[i] != "" {
+			varTypes[name] = prior[i]
 		}
 	}
 }
@@ -1720,6 +1726,9 @@ func (p *GoParser) resolveSelectorReceiverType(
 		if strings.HasPrefix(typeText, goRangeFieldTag) {
 			typeText = ""
 		}
+	}
+	if goVarTypeIsTypeParam(varTypes, typeText) {
+		typeText = ""
 	}
 	if !ok || strings.TrimSpace(typeText) == "" {
 		// Unknown receiver: emit no identity at all rather than the caller's

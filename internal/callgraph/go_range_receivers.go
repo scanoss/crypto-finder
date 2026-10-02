@@ -17,7 +17,47 @@ const (
 	// goRangeFieldTag marks a range variable whose type waits on the
 	// graph-wide struct field table: "<tag><part>|<pkg>|<type>|<field>".
 	goRangeFieldTag = "field|"
+	// goRangeKeyPart names the key part inside a field tag.
+	goRangeKeyPart = "key"
 )
+
+// goTypeParamKey prefixes the binding-map key that records a type parameter of
+// the enclosing generic function, which no package declares.
+const goTypeParamKey = "\x02"
+
+// goVarTypeIsTypeParam reports whether a binding's type text names, at its
+// core, a type parameter of the enclosing function.
+func goVarTypeIsTypeParam(varTypes map[string]string, typeText string) bool {
+	text := strings.TrimPrefix(typeText, goRangeBoundMark)
+	for {
+		coll, ok := goCollectionTypes(text)
+		if !ok {
+			break
+		}
+		if coll.isMap && goVarTypeIsTypeParam(varTypes, coll.key) {
+			return true
+		}
+		text = coll.elem
+	}
+	_, ok := varTypes[goTypeParamKey+strings.TrimLeft(strings.TrimSpace(text), "* ")]
+	return ok
+}
+
+// goIdentifierRightTypes snapshots, before a `:=` rebinds its names, the type
+// of each right-hand identifier: `v := v` keeps the type the outer v had.
+func goIdentifierRightTypes(left, right *sitter.Node, src []byte, varTypes map[string]string) []string {
+	count := int(left.NamedChildCount())
+	if count == 0 || count != int(right.NamedChildCount()) {
+		return nil
+	}
+	prior := make([]string, count)
+	for i := 0; i < count; i++ {
+		if rn := right.NamedChild(i); rn != nil && rn.Type() == goNodeIdentifier {
+			prior[i] = varTypes[strings.TrimSpace(rn.Content(src))]
+		}
+	}
+	return prior
+}
 
 // goCollection is the element (and, for a map, key) type text of a slice,
 // array or map type.
@@ -180,7 +220,7 @@ func (p *GoParser) bindGoRangeTypes(
 		if coll.viaField {
 			partName := "elem"
 			if part == GoFieldKey {
-				partName = "key"
+				partName = goRangeKeyPart
 			}
 			varTypes[name] = goRangeBoundMark + goRangeFieldTag + strings.Join([]string{partName, coll.owner.Package, coll.owner.Type, coll.field}, "|")
 			return
@@ -238,7 +278,7 @@ func (p *GoParser) goCollectionElementCall(
 			return nil
 		}
 		part := GoFieldElem
-		if parts[0] == "key" {
+		if parts[0] == goRangeKeyPart {
 			part = GoFieldKey
 		}
 		return call(FunctionID{}, &GoFieldReceiver{Owner: FunctionID{Package: parts[1], Type: parts[2]}, Name: parts[3], Part: part})
@@ -251,7 +291,7 @@ func (p *GoParser) goCollectionElementCall(
 			return call(FunctionID{}, &GoFieldReceiver{Owner: coll.owner, Name: coll.field, Part: GoFieldElem})
 		}
 		pkg, typ, ok := goQualifyTypeText(coll.elem, analysis)
-		if !ok {
+		if !ok || goVarTypeIsTypeParam(varTypes, coll.elem) {
 			return nil
 		}
 		return call(FunctionID{Package: pkg, Type: typ}, nil)

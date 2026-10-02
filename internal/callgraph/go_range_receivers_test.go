@@ -356,47 +356,141 @@ func TestGoBuilder_RangeFieldTwoDeclarationsDisagreeStayUnresolved(t *testing.T)
 }
 
 func TestGoBuilder_RangeInterfaceElementCrossPackage(t *testing.T) {
-	root := t.TempDir()
-	rulesDir := filepath.Join(root, "rules")
-	appDir := filepath.Join(root, "app")
-	for _, d := range []string{rulesDir, appDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
+	g := buildGoTree(t, map[string]string{
+		"rules/rules.go": "package rules\n\ntype Source interface{ Load() }\n",
+		"impl/impl.go":   "package impl\n\ntype Remote struct{}\n\nfunc (r *Remote) Load() {}\n",
+		"app/app.go":     "package app\n\nimport \"example.com/m/rules\"\n\ntype Manager struct{ sources []rules.Source }\n\nfunc (m *Manager) LoadAll() {\n\tfor _, s := range m.sources {\n\t\ts.Load()\n\t}\n}\n",
+	})
+	caller := "example.com/m/app.(*Manager).LoadAll"
+	goRangeExpectEdge(t, g, caller, "example.com/m/rules.(Source).Load", EdgeKindExact)
+	goRangeExpectEdge(t, g, caller, "example.com/m/impl.(*Remote).Load", EdgeKindInterfaceDispatch)
+}
+
+func TestGoBuilder_RangeAssignmentFormTypesOnlyInsideTheLoop(t *testing.T) {
+	g := buildGoGraph(t, goRangeDecls+`
+type Manager struct{ cms []*Cm }
+
+type Other struct{}
+
+func (o *Other) Get() {}
+
+func (m *Manager) Run(c *Other) {
+	var k int
+	for k, c = range m.cms {
+		c.Get()
 	}
-	files := map[string]string{
-		filepath.Join(rulesDir, "rules.go"): `package rules
+	c.Get()
+	_ = k
+}
+`)
+	goRangeExpectEdge(t, g, "app.(*Manager).Run", "app.(*Cm).Get", EdgeKindExact)
+	goRangeExpectEdge(t, g, "app.(*Manager).Run", "app.(*Other).Get", EdgeKindExact)
+}
 
-type Source interface{ Load() }
+func TestGoBuilder_RangeUnsupportedShapesStayUnresolved(t *testing.T) {
+	g := buildGoGraph(t, goRangeDecls+`
+import "iter"
 
-type Remote struct{}
-
-func (r *Remote) Load() {}
-`,
-		filepath.Join(appDir, "app.go"): `package app
-
-import "example.com/m/rules"
-
-type Manager struct{ sources []rules.Source }
-
-func (m *Manager) LoadAll() {
-	for _, s := range m.sources {
-		s.Load()
+func PtrArray(p *[4]*Cm) {
+	for _, c := range p {
+		c.Get()
 	}
 }
-`,
+
+func Seq(seq iter.Seq[*Cm]) {
+	for c := range seq {
+		c.Get()
 	}
-	for path, content := range files {
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
+}
+
+func Nested(a [][]*Cm) {
+	a[0][1].Get()
+}
+`)
+	for _, caller := range []string{"app.PtrArray", "app.Seq", "app.Nested"} {
+		goRangeExpectNoCaller(t, g, "app.(*Cm).Get", caller)
+	}
+}
+
+func TestGoBuilder_RangeFuncLiteralParamShadowsOuterTypedVar(t *testing.T) {
+	g := buildGoGraph(t, goRangeDecls+`
+type Other struct{}
+
+func (o *Other) Get() {}
+
+func Run(c *Cm, mk func() *Other) {
+	func(c *Other) { c.Get() }(mk())
+}
+`)
+	goRangeExpectNoCaller(t, g, "app.(*Cm).Get", "app.Run")
+}
+
+func TestGoBuilder_RangeMapFieldOneVariableIsTheKey(t *testing.T) {
+	g := buildGoGraph(t, goRangeDecls+`
+type Keyed struct{}
+
+func (k Keyed) Name() {}
+
+type Registry struct {
+	byKey map[Keyed]*Cm
+	list  []*Cm
+}
+
+func (r *Registry) Keys() {
+	for k := range r.byKey {
+		k.Name()
+	}
+}
+
+func (r *Registry) Indexes() {
+	for i := range r.list {
+		i.Get()
+	}
+}
+`)
+	goRangeExpectEdge(t, g, "app.(*Registry).Keys", "app.(Keyed).Name", EdgeKindExact)
+	goRangeExpectNoCaller(t, g, "app.(*Cm).Get", "app.(*Registry).Indexes")
+}
+
+func TestGoBuilder_RangeRedeclaredFromIdentifierKeepsType(t *testing.T) {
+	g := buildGoGraph(t, goRangeDecls+`
+type Manager struct{ cms []*Cm }
+
+func (m *Manager) Run() {
+	for _, c := range m.cms {
+		c := c
+		go func() { c.Get() }()
+	}
+}
+`)
+	goRangeExpectEdge(t, g, "app.(*Manager).Run", "app.(*Cm).Get", EdgeKindExact)
+}
+
+func TestGoBuilder_RangeOverTypeParameterElementsStaysUnresolved(t *testing.T) {
+	g := buildGoGraph(t, goRangeDecls+`
+type Getter interface{ Get() }
+
+func Each[T Getter](xs []T) {
+	for _, x := range xs {
+		x.Get()
+	}
+	xs[0].Get()
+}
+
+type Box struct{ items []string }
+
+func (b *Box) Run() {
+	for _, s := range b.items {
+		s.Get()
+	}
+}
+`)
+	for _, k := range goCalleeKeys(g) {
+		if k == "app.(T).Get" {
+			t.Errorf("type parameter T qualified as a package type: %q", k)
 		}
 	}
-	g, err := NewBuilderForEcosystem("go", NewGoParser()).BuildFromDirectories([]PackageDir{
-		{Dir: rulesDir, ImportPath: "example.com/m/rules"},
-		{Dir: appDir, ImportPath: "example.com/m/app"},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	goRangeExpectEdge(t, g, "example.com/m/app.(*Manager).LoadAll", "example.com/m/rules.(Source).Load", EdgeKindExact)
+	goRangeExpectNoCaller(t, g, "app.(Getter).Get", "app.Each")
+	goRangeExpectNoCaller(t, g, "app.(*Cm).Get", "app.Each")
+	goRangeExpectNoCaller(t, g, "app.(*Cm).Get", "app.(*Box).Run")
 }
