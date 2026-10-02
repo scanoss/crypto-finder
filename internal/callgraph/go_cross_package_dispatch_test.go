@@ -4,6 +4,7 @@
 package callgraph
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,12 +23,12 @@ func writeGoTree(t *testing.T, root string, files map[string]string) {
 	}
 }
 
-func buildGoTree(t *testing.T, files map[string]string, importPath string) *CallGraph {
+func buildGoTree(t *testing.T, files map[string]string) *CallGraph {
 	t.Helper()
 	root := t.TempDir()
 	writeGoTree(t, root, files)
 	g, err := NewBuilderForEcosystem("go", NewGoParser()).
-		BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: importPath}}, nil)
+		BuildFromDirectories([]PackageDir{{Dir: root, ImportPath: "example.com/m"}}, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories: %v", err)
 	}
@@ -87,7 +88,7 @@ func FromLocal(d string) string {
 	return s.Sign(d)
 }
 `,
-	}, "example.com/m")
+	})
 
 	provider := "example.com/m/impl.(*Provider).Sign"
 	for _, caller := range []string{
@@ -123,7 +124,7 @@ type SignOnly struct{}
 func (s *SignOnly) Sign(data string) string { return data }
 `,
 		"app/app.go": "package app\n\nimport \"example.com/m/lic\"\n\nfunc Use(p lic.Pair) string { return p.Sign(\"x\") }\n",
-	}, "example.com/m")
+	})
 	caller := "example.com/m/app.Use"
 	assertGoDispatch(t, g, caller, "example.com/m/impl.(*Full).Sign")
 	if goHasCaller(g, "example.com/m/impl.(*SignOnly).Sign", caller) {
@@ -137,7 +138,7 @@ func TestGoBuilder_InterfaceDispatchToImplementerInNestedModule(t *testing.T) {
 		"third_party/ext@v1.0.0/go.mod": "module example.org/ext\n\ngo 1.21\n",
 		"third_party/ext@v1.0.0/ext.go": "package ext\n\ntype Remote struct{}\n\nfunc (r *Remote) Sign(data string) string { return data }\n",
 		"app/app.go":                    "package app\n\nimport \"example.com/m/lic\"\n\nfunc Use(s lic.Signer) string { return s.Sign(\"x\") }\n",
-	}, "example.com/m")
+	})
 	assertGoDispatch(t, g, "example.com/m/app.Use", "example.org/ext.(*Remote).Sign")
 }
 
@@ -153,6 +154,7 @@ func TestGoBuilder_DispatchFanOutIsBoundedByArtifact(t *testing.T) {
 		"app/app.go": `package app
 
 import (
+	"fmt"
 	"example.com/m/closer"
 	"example.org/dep"
 )
@@ -222,5 +224,106 @@ func TestJavaBuilder_InterfaceDispatchStaysInNamespaceRoot(t *testing.T) {
 	}
 	if goHasCaller(g, far, run) {
 		t.Errorf("cross-root implementer must stay unlinked")
+	}
+}
+
+func closerTree(n int, samePackage bool) map[string]string {
+	files := map[string]string{
+		"closer/closer.go": "package closer\n\ntype Closer interface{ Close() error }\n",
+		"app/app.go":       "package app\n\nimport \"example.com/m/closer\"\n\nfunc Use(c closer.Closer) error { return c.Close() }\n",
+	}
+	for i := range n {
+		pkg := fmt.Sprintf("p%02d", i)
+		files[pkg+"/"+pkg+".go"] = fmt.Sprintf("package %s\n\ntype T struct{}\n\nfunc (t *T) Close() error { return nil }\n", pkg)
+	}
+	if samePackage {
+		files["closer/own.go"] = "package closer\n\ntype Own struct{}\n\nfunc (o *Own) Close() error { return nil }\n"
+	}
+	return files
+}
+
+func TestGoBuilder_CrossPackageDispatchOverCapIsNameOnly(t *testing.T) {
+	const caller = "example.com/m/app.Use"
+
+	few := buildGoTree(t, closerTree(goCrossPackageDispatchCap, false))
+	for i := range goCrossPackageDispatchCap {
+		assertGoDispatch(t, few, caller, fmt.Sprintf("example.com/m/p%02d.(*T).Close", i))
+	}
+
+	many := buildGoTree(t, closerTree(20, true))
+	for i := range 20 {
+		callee := fmt.Sprintf("example.com/m/p%02d.(*T).Close", i)
+		if !goHasCaller(many, callee, caller) {
+			t.Fatalf("%s lost its edge; callers=%v", callee, many.Callers[callee])
+		}
+		if kind, _ := goEdgeKind(many, caller, callee); kind != EdgeKindNameOnly {
+			t.Errorf("%s edge = %q, want name_only past the cap", callee, kind)
+		}
+	}
+	assertGoDispatch(t, many, caller, "example.com/m/closer.(*Own).Close")
+}
+
+func TestGoBuilder_UnexportedMethodInterfaceStaysInItsPackage(t *testing.T) {
+	g := buildGoTree(t, map[string]string{
+		"lic/lic.go": `package lic
+
+type Sealed interface {
+	Sign(data string) string
+	seal()
+}
+
+type Own struct{}
+
+func (o *Own) Sign(data string) string { return data }
+func (o *Own) seal()                   {}
+`,
+		"impl/impl.go": `package impl
+
+type Outside struct{}
+
+func (o *Outside) Sign(data string) string { return data }
+func (o *Outside) seal()                   {}
+`,
+		"app/app.go": "package app\n\nimport \"example.com/m/lic\"\n\nfunc Use(s lic.Sealed) string { return s.Sign(\"x\") }\n",
+	})
+	caller := "example.com/m/app.Use"
+	assertGoDispatch(t, g, caller, "example.com/m/lic.(*Own).Sign")
+	if goHasCaller(g, "example.com/m/impl.(*Outside).Sign", caller) {
+		t.Errorf("a type outside the package cannot implement an interface with an unexported method")
+	}
+}
+
+func TestGoBuilder_DependencyImplementerOfAnotherDependencyInterface(t *testing.T) {
+	build := func(requires map[string][]string) *CallGraph {
+		projectDir, aDir, bDir := t.TempDir(), t.TempDir(), t.TempDir()
+		writeGoTree(t, projectDir, map[string]string{
+			"app/app.go": "package app\n\nimport \"example.org/a\"\n\nfunc Use(s a.Signer) string { return s.Sign(\"x\") }\n",
+		})
+		writeGoTree(t, aDir, map[string]string{"a.go": "package a\n\ntype Signer interface{ Sign(d string) string }\n"})
+		writeGoTree(t, bDir, map[string]string{"b.go": "package b\n\ntype Impl struct{}\n\nfunc (i *Impl) Sign(d string) string { return d }\n"})
+		b := NewBuilderForEcosystem("go", NewGoParser())
+		if requires != nil {
+			b.SetArtifactDependencies(requires)
+		}
+		g, err := b.BuildFromDirectories([]PackageDir{
+			{Dir: projectDir, ImportPath: "example.com/m"},
+			{Dir: aDir, ImportPath: "example.org/a", Version: "1.0.0"},
+			{Dir: bDir, ImportPath: "example.org/b", Version: "1.0.0"},
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	const caller, impl = "example.com/m/app.Use", "example.org/b.(*Impl).Sign"
+
+	if g := build(nil); goHasCaller(g, impl, caller) {
+		t.Errorf("without a resolved dependency graph a dependency type is not linked to another dependency's interface")
+	}
+	if g := build(map[string][]string{"example.org/b": {"example.org/a"}}); !goHasCaller(g, impl, caller) {
+		t.Errorf("b requires a, so b's type can implement a's interface; callers=%v", g.Callers[impl])
+	}
+	if g := build(map[string][]string{"example.org/a": {"example.org/b"}}); goHasCaller(g, impl, caller) {
+		t.Errorf("a requiring b does not let b's type implement a's interface")
 	}
 }

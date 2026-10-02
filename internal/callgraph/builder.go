@@ -1446,9 +1446,22 @@ func (a interfaceDispatchAlias) kind() EdgeKind {
 	return a.Kind
 }
 
+// goCrossPackageDispatchCap is the most implementing types in other packages a
+// Go interface call links as interface_dispatch. It is a precision bound, not
+// a performance one: a small interface such as Close() error is satisfied by
+// every closer in the project, so past this many the call cannot be said to
+// reach any one of them and the edges are recorded as name_only instead.
+const goCrossPackageDispatchCap = 8
+
 // expandInterfaceDispatch links an interface method call site to the
-// implementations in the graph: methods of the same name and arity, in the same
-// namespace root, declared by a type that really implements the interface.
+// implementations in the graph: methods of the same name and arity declared by
+// a type that really implements the interface. Java and the other dotted-name
+// ecosystems keep the candidate in the interface's namespace root. Go has no
+// such root: an implementer in the interface's own package is linked as
+// before, one in another package only when its artifact can compile against
+// the interface's, the interface has no unexported method, and no more than
+// goCrossPackageDispatchCap such types implement it (past that they are
+// linked as name_only).
 // For Java that is a class whose known extends/implements hierarchy reaches the
 // interface (dispatchHierarchy.isSubtype); for Go, a type that declares every
 // method of the interface. A class whose recorded ancestry excludes the
@@ -1476,16 +1489,11 @@ func (b *Builder) expandInterfaceDispatch(
 
 	declaredType := interfaceDeclaredType(calleeDecl.ID)
 	baseRoot := namespaceRoot(calleeDecl.ID.Package)
+	ownPackageOnly := b.ecosystem == ecosystemGo && hierarchy != nil && hierarchy.goInterfaceHasUnexportedMethod(calleeDecl.ID)
 	byOwner := make(map[string][]*FunctionDecl)
 	kindByOwner := make(map[string]EdgeKind)
 	for _, candidate := range targets {
-		if candidate.OwnerType == ownerTypeInterface {
-			continue
-		}
-		if len(candidate.Parameters) != len(calleeDecl.Parameters) {
-			continue
-		}
-		if !b.dispatchScopeAllows(candidate.ID, calleeDecl.ID, baseRoot) {
+		if !b.dispatchCandidateInScope(candidate, calleeDecl, baseRoot, ownPackageOnly) {
 			continue
 		}
 		kind, ok := b.interfaceImplementationKind(hierarchy, candidate.ID, calleeDecl)
@@ -1500,6 +1508,10 @@ func (b *Builder) expandInterfaceDispatch(
 		kindByOwner[owner] = kind
 	}
 
+	if b.ecosystem == ecosystemGo {
+		demoteCrossPackageOverCap(byOwner, kindByOwner, calleeDecl.ID.Package)
+	}
+
 	var results []interfaceDispatchAlias
 	for owner, candidates := range byOwner {
 		for _, candidate := range overridingCandidates(calleeDecl, candidates) {
@@ -1508,6 +1520,37 @@ func (b *Builder) expandInterfaceDispatch(
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].CalleeKey < results[j].CalleeKey })
 	return results
+}
+
+// demoteCrossPackageOverCap turns the interface_dispatch links to types of
+// other packages into name_only when more than goCrossPackageDispatchCap types
+// qualify. Types of the interface's own package are never demoted.
+func demoteCrossPackageOverCap(byOwner map[string][]*FunctionDecl, kindByOwner map[string]EdgeKind, ifacePkg string) {
+	var cross []string
+	for owner, candidates := range byOwner {
+		if candidates[0].ID.Package != ifacePkg && kindByOwner[owner] == EdgeKindInterfaceDispatch {
+			cross = append(cross, owner)
+		}
+	}
+	if len(cross) <= goCrossPackageDispatchCap {
+		return
+	}
+	for _, owner := range cross {
+		kindByOwner[owner] = EdgeKindNameOnly
+	}
+}
+
+// dispatchCandidateInScope reports whether candidate is a same-arity,
+// non-interface method the interface call may fan out to. ownPackageOnly keeps
+// a Go interface with an unexported method to its own package.
+func (b *Builder) dispatchCandidateInScope(candidate, iface *FunctionDecl, ifaceRoot string, ownPackageOnly bool) bool {
+	if candidate.OwnerType == ownerTypeInterface || len(candidate.Parameters) != len(iface.Parameters) {
+		return false
+	}
+	if ownPackageOnly && candidate.ID.Package != iface.ID.Package {
+		return false
+	}
+	return b.dispatchScopeAllows(candidate.ID, iface.ID, ifaceRoot)
 }
 
 // dispatchScopeAllows bounds which implementers an interface call may fan out

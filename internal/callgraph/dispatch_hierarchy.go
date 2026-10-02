@@ -19,6 +19,8 @@ package callgraph
 import (
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // hierarchyMaxDepth bounds the ancestor walk. Real inheritance chains are far
@@ -564,6 +566,21 @@ func (h *dispatchHierarchy) mayHaveAncestorNamed(sub, super string, typesBySimpl
 // seen as an implementation; that trades a missed edge for never inventing
 // one.
 func (h *dispatchHierarchy) implementsStructurally(candidate, iface FunctionID) bool {
+	h.ensureGoMethodSets()
+	required := h.goMethodSets[goMethodSetKey(iface.Package, iface.Type, true)]
+	if len(required) == 0 {
+		return false
+	}
+	have := h.goMethodSets[goMethodSetKey(candidate.Package, candidate.Type, false)]
+	for method := range required {
+		if !have[method] {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *dispatchHierarchy) ensureGoMethodSets() {
 	if h.goMethodSets == nil {
 		h.goMethodSets = make(map[string]map[string]bool)
 		for _, fn := range h.graph.Functions {
@@ -579,17 +596,20 @@ func (h *dispatchHierarchy) implementsStructurally(candidate, iface FunctionID) 
 			set[methodArityKey(fn.ID.Name)] = true
 		}
 	}
-	required := h.goMethodSets[goMethodSetKey(iface.Package, iface.Type, true)]
-	if len(required) == 0 {
-		return false
-	}
-	have := h.goMethodSets[goMethodSetKey(candidate.Package, candidate.Type, false)]
-	for method := range required {
-		if !have[method] {
-			return false
+}
+
+// goInterfaceHasUnexportedMethod reports whether the Go interface iface
+// declares a method whose name is not exported. Only its own package can
+// implement such an interface.
+func (h *dispatchHierarchy) goInterfaceHasUnexportedMethod(iface FunctionID) bool {
+	h.ensureGoMethodSets()
+	for method := range h.goMethodSets[goMethodSetKey(iface.Package, iface.Type, true)] {
+		name := BaseFunctionName(method)
+		if first, _ := utf8.DecodeRuneInString(name); name != "" && !unicode.IsUpper(first) {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 func goMethodSetKey(pkg, typ string, isInterface bool) string {

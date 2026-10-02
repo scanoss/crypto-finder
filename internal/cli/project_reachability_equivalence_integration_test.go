@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -70,13 +71,13 @@ func TestProjectReachabilityMatchesDependencyScan(t *testing.T) {
 	rules := filepath.Join(root, "testdata", "rules", "project-reachability.yaml")
 
 	cases := []projectReachabilityCase{
-		// hasher.Hash (main.go:35) is reached only from dependency code:
+		// hasher.Hash (app/main.go:35) is reached only from dependency code:
 		// reachlib.Apply calls it through the dependency's Hasher interface.
 		// The dependency scan follows that edge and reads it reachable; the
 		// project-only pass has no dependency code in its graph and cannot,
 		// so it reads unreachable. Every other finding must still match.
 		{language: "go", tools: []string{"go"}, env: isolatedHome, divergences: map[string]divergence{
-			"main.go:35": {dependencyScan: graphfrag.ReachabilityReachable, projectOnly: graphfrag.ReachabilityUnreachable},
+			"app/main.go:35": {dependencyScan: graphfrag.ReachabilityReachable, projectOnly: graphfrag.ReachabilityUnreachable},
 		}},
 		{language: "python", tools: []string{"python3"}, env: pythonVenvWithDependency},
 		// Maven resolution reads the real ~/.m2, so this case keeps HOME.
@@ -173,7 +174,7 @@ func runReachabilityPass(t *testing.T, binary string, env []string, rules, langu
 	for _, finding := range report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[i]
-			locations[asset.FindingID] = fmt.Sprintf("%s:%d", finding.FilePath, asset.StartLine)
+			locations[asset.FindingID] = fmt.Sprintf("%s:%d", path.Join(filepath.Base(target), filepath.ToSlash(finding.FilePath)), asset.StartLine)
 			if asset.Source == "dependency" {
 				pass.dependencyFindings++
 			}
