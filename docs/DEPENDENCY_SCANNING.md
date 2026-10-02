@@ -895,9 +895,9 @@ Key observations:
 
 ---
 
-## Interim Report Contract (v1.6)
+## Interim Report Contract (v1.7)
 
-Version 1.6 keeps the attribution fields needed to join findings to the separate reachability export and adds an optional AST-anchored structural identity when callgraph evidence is available. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for dependency module, version, and package URL. Direct findings may additionally expose a valid rule package URL at the asset-level `purl`; it is version-enriched only when one unambiguous direct dependency match exists.
+Version 1.7 keeps the attribution fields needed to join findings to the separate reachability export and adds an optional AST-anchored structural identity when callgraph evidence is available. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for dependency module, version, and package URL. Direct findings may additionally expose a valid rule package URL at the asset-level `purl`; it is version-enriched only when one unambiguous direct dependency match exists.
 
 | Field | Type | When Present | Description |
 |-------|------|--------------|-------------|
@@ -906,6 +906,7 @@ Version 1.6 keeps the attribution fields needed to join findings to the separate
 | `purl` | `string` | Direct findings with valid rule metadata | Canonical package identity, optionally enriched from the direct dependency graph |
 | `finding_id` | `string` | Always (when dependency scanning) | Short hash (SHA-256) for cross-referencing with the callgraph export |
 | `occurrence_key` | `string` | When a terminal AST anchor is available | Rule-independent `v1:<16 lowercase hex>` structural identity for the canonical finding |
+| `conditioned_value` | `string` | Per-value assets only | The resolved condition the asset was specialized for; part of its `finding_id` and `occurrence_key` (v1.7+) |
 
 ## Call Graph Export
 

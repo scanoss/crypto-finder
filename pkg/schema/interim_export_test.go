@@ -62,8 +62,8 @@ func TestInterimReportPublicContract(t *testing.T) {
 		t.Errorf("internal field leaked in %s", data)
 	}
 
-	if schema.InterimFormatVersion != "1.6" {
-		t.Errorf("InterimFormatVersion = %q, want 1.6", schema.InterimFormatVersion)
+	if schema.InterimFormatVersion != "1.7" {
+		t.Errorf("InterimFormatVersion = %q, want 1.7", schema.InterimFormatVersion)
 	}
 }
 
@@ -134,5 +134,41 @@ func assertJSONKeys(t *testing.T, object map[string]any, name string, want ...st
 		if _, ok := object[key]; !ok {
 			t.Errorf("%s missing JSON key %q", name, key)
 		}
+	}
+}
+
+// A per-value asset's resolved condition is part of its identity, so it must
+// survive a report published by one scan and read by another.
+func TestCryptographicAsset_ConditionedValueRoundTrips(t *testing.T) {
+	asset := schema.CryptographicAsset{StartLine: 70, EndLine: 70, Match: "Mac.getInstance(name)", ConditionedValue: "param[0]==HmacMD5"}
+	raw, err := json.Marshal(asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["conditioned_value"] != "param[0]==HmacMD5" {
+		t.Errorf("conditioned_value = %v in %s", fields["conditioned_value"], raw)
+	}
+	var back schema.CryptographicAsset
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.ConditionedValue != asset.ConditionedValue {
+		t.Errorf("read back %q, want %q", back.ConditionedValue, asset.ConditionedValue)
+	}
+
+	plain, err := json.Marshal(schema.CryptographicAsset{Match: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plainFields map[string]any
+	if err := json.Unmarshal(plain, &plainFields); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := plainFields["conditioned_value"]; ok {
+		t.Errorf("conditioned_value emitted on an asset without one: %s", plain)
 	}
 }

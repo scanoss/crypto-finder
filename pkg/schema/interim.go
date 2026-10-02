@@ -27,7 +27,7 @@ import (
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.6"
+const InterimFormatVersion = "1.7"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -134,10 +134,9 @@ type CryptographicAsset struct {
 	// ConditionedValue is the exact resolved condition (for example
 	// "param[0]==SHA-256") a per-value asset was specialized for. Empty on every
 	// other asset. It keeps assets that one rule produced at one call distinct in
-	// FindingID and OccurrenceKey. In-process state, not public schema: it is
-	// lost in a JSON round-trip, so FindingID and OccurrenceKey must be assigned
-	// before the report is serialized and read back.
-	ConditionedValue string `json:"-"`
+	// FindingID and OccurrenceKey, also when a report published by one scan is
+	// read by another (v1.7+).
+	ConditionedValue string `json:"conditioned_value,omitempty"`
 
 	// Match is the actual code snippet that was matched
 	Match string `json:"match"`
