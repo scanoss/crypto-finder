@@ -22,9 +22,9 @@ type Dependency struct {
 	// Dir is the absolute filesystem path to the dependency source code.
 	Dir string
 	// Files, when non-nil, limits the dependency's source to these absolute,
-	// clean, sorted regular files under Dir. Go lists the files directly in
-	// the directory of each package a program imports: the only packages it
-	// links, and a subdirectory is another package. Python lists the files a
+	// clean, sorted regular files under Dir. Go lists the Go files the host
+	// build compiles (go list GoFiles and CgoFiles) in each package a program
+	// imports: the only files it links. Python lists the files a
 	// distribution installed into a namespace directory it shares with other
 	// distributions (google/, say), and, for a distribution rooted at
 	// site-packages because it installed several top-level packages or a

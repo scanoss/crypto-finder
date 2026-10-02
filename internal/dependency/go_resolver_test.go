@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -273,7 +274,7 @@ func TestGoResolver_InventoriesOnlyTheProductionImportClosure(t *testing.T) {
 	if result.RootModule != "example.com/app" {
 		t.Errorf("RootModule = %q, want example.com/app", result.RootModule)
 	}
-	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used"), Files: []string{filepath.Join(root, "used", "go.mod"), filepath.Join(root, "used", "used.go")}}}
+	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used"), Files: []string{filepath.Join(root, "used", "used.go")}}}
 	if !reflect.DeepEqual(result.Dependencies, want) {
 		t.Fatalf("Dependencies = %+v, want %+v: no production package imports the test-only, build-tagged tool, unused or nested-module requirement", result.Dependencies, want)
 	}
@@ -320,7 +321,7 @@ func TestGoResolver_CollectsProductionModulesAcrossWorkspace(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 
-	want := []Dependency{{Module: "example.com/shared", Version: "v1.0.0", Dir: filepath.Join(root, "shared"), Files: []string{filepath.Join(root, "shared", "go.mod"), filepath.Join(root, "shared", "shared.go"), filepath.Join(root, "shared", "sub", "s.go")}}}
+	want := []Dependency{{Module: "example.com/shared", Version: "v1.0.0", Dir: filepath.Join(root, "shared"), Files: []string{filepath.Join(root, "shared", "shared.go"), filepath.Join(root, "shared", "sub", "s.go")}}}
 	if !reflect.DeepEqual(result.Dependencies, want) {
 		t.Fatalf("Dependencies = %+v, want %+v: both workspace modules import a package of shared, which is listed once", result.Dependencies, want)
 	}
@@ -346,7 +347,7 @@ func TestGoResolver_PackageThatFailsToLoadKeepsTheRestOfTheClosure(t *testing.T)
 		t.Fatalf("Resolve: %v", err)
 	}
 
-	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used"), Files: []string{filepath.Join(root, "used", "go.mod"), filepath.Join(root, "used", "used.go")}}}
+	want := []Dependency{{Module: "example.com/used", Version: "v1.0.0", Dir: filepath.Join(root, "used"), Files: []string{filepath.Join(root, "used", "used.go")}}}
 	if !reflect.DeepEqual(result.Dependencies, want) {
 		t.Fatalf("Dependencies = %+v, want %+v", result.Dependencies, want)
 	}
@@ -381,5 +382,51 @@ func TestGoResolver_ListsTheImportedPackagesOfEachModule(t *testing.T) {
 	}}}
 	if !reflect.DeepEqual(result.Dependencies, want) {
 		t.Fatalf("Dependencies = %+v, want %+v: the module root, unused/ and codec/extra/ are packages nothing imports", result.Dependencies, want)
+	}
+}
+
+// A dependency lists the files the host build compiles, as go list reports
+// them: build constraints apply file by file, cgo files count only when cgo
+// is enabled, and tests and non-Go files are never listed.
+func TestGoResolver_ListsTheFilesTheHostBuildCompiles(t *testing.T) {
+	requireGoToolchain(t)
+	other := "windows"
+	if runtime.GOOS == other {
+		other = "linux"
+	}
+	host := "plat_" + runtime.GOOS + ".go"
+	root := writeTree(t, map[string]string{
+		"lib/go.mod":                            localGoMod("example.com/lib"),
+		"lib/plat/" + host:                      "package plat\n",
+		"lib/plat/plat_" + other + ".go":        "package plat\n",
+		"lib/plat/tagged.go":                    "//go:build cfnotset\n\npackage plat\n",
+		"lib/plat/gen.go":                       "//go:build ignore\n\npackage main\n",
+		"lib/plat/cgo.go":                       "package plat\n\nimport \"C\"\n",
+		"lib/plat/plat_test.go":                 "package plat\n",
+		"lib/plat/asm_" + runtime.GOARCH + ".s": "",
+		"lib/plat/README.md":                    "",
+		"app/go.mod":                            localGoMod("example.com/app", "lib"),
+		"app/main.go":                           "package main\n\nimport _ \"example.com/lib/plat\"\n\nfunc main() {}\n",
+	})
+	plat := filepath.Join(root, "lib", "plat")
+
+	for _, tc := range []struct {
+		cgo  string
+		want []string
+	}{
+		{cgo: "1", want: []string{filepath.Join(plat, "cgo.go"), filepath.Join(plat, host)}},
+		{cgo: "0", want: []string{filepath.Join(plat, host)}},
+	} {
+		t.Run("CGO_ENABLED="+tc.cgo, func(t *testing.T) {
+			t.Setenv("CGO_ENABLED", tc.cgo)
+			result, err := NewGoResolver().Resolve(context.Background(), filepath.Join(root, "app"))
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			want := []Dependency{{Module: "example.com/lib", Version: "v1.0.0", Dir: filepath.Join(root, "lib"), Files: tc.want}}
+			if !reflect.DeepEqual(result.Dependencies, want) {
+				t.Fatalf("Dependencies = %+v, want %+v", result.Dependencies, want)
+			}
+		})
 	}
 }

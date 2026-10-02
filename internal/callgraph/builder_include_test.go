@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 )
 
@@ -60,6 +61,76 @@ func TestBuilder_PackageIncludeFilesParsesOnlyImportedGoPackages(t *testing.T) {
 			want := []string{"example.com/mod/deep/er/leaf.Leaf", "example.com/mod/used.Used"}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("functions = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// recordingParser parses nothing and records every file it is asked to read.
+type recordingParser struct {
+	mu   *sync.Mutex
+	read *[]string
+}
+
+func (p recordingParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, error) {
+	return p.ParseDirectorySelected(dir, packagePath, nil)
+}
+
+func (p recordingParser) ParseDirectorySelected(dir, _ string, keep func(string) bool) ([]*FileAnalysis, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if !entry.IsDir() && (keep == nil || keep(path)) {
+			*p.read = append(*p.read, path)
+		}
+	}
+	return nil, nil
+}
+
+func (p recordingParser) SubPackagePath(parent, dir string) string { return parent + "/" + dir }
+func (p recordingParser) PackageSeparator() string                 { return "/" }
+
+type cloningRecordingParser struct{ recordingParser }
+
+func (p cloningRecordingParser) CloneParser() Parser { return p }
+
+// A file that IncludeFiles leaves out is never read, not merely dropped
+// after parsing: modernc.org/libc holds eight 4 MB generated files, one per
+// platform, in the directory of a package the host build compiles one of.
+func TestBuilder_PackageIncludeFilesNeverParsesUnlistedFiles(t *testing.T) {
+	t.Parallel()
+
+	module := t.TempDir()
+	for _, rel := range []string{"plat/plat_linux.go", "plat/plat_windows.go", "plat/gen.go", "other/o.go"} {
+		path := filepath.Join(module, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("package x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listed := filepath.Join(module, "plat", "plat_linux.go")
+
+	for name, wrap := range map[string]func(recordingParser) Parser{
+		"parallel": func(p recordingParser) Parser { return cloningRecordingParser{p} },
+		"serial":   func(p recordingParser) Parser { return p },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var read []string
+			parser := wrap(recordingParser{mu: &sync.Mutex{}, read: &read})
+			if _, err := NewBuilderForEcosystem("go", parser).BuildFromDirectories([]PackageDir{{
+				Dir: module, ImportPath: "example.com/mod", Version: "v1.0.0", IncludeFiles: []string{listed},
+			}}, nil); err != nil {
+				t.Fatalf("BuildFromDirectories: %v", err)
+			}
+			if want := []string{listed}; !reflect.DeepEqual(read, want) {
+				t.Errorf("files read = %v, want %v", read, want)
 			}
 		})
 	}

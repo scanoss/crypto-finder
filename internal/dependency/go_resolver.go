@@ -20,43 +20,36 @@ type goModule struct {
 	Version string `json:"Version"`
 	Dir     string `json:"Dir"`
 	Main    bool   `json:"Main"`
-	// packageDirs are the directories of the module's packages in the
-	// import closure. goListModules fills it; go list never does.
-	packageDirs []string
-}
-
-// packageFiles lists the regular files directly in each of dirs, sorted, or
-// nil, the whole module, when dirs is. A directory that cannot be read adds
-// nothing.
-func packageFiles(dirs []string) []string {
-	if dirs == nil {
-		return nil
-	}
-	files := make([]string, 0, len(dirs))
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			log.Debug().Err(err).Str("dir", dir).Msg("Cannot read package directory; not scanned")
-			continue
-		}
-		for _, entry := range entries {
-			if entry.Type().IsRegular() {
-				files = append(files, filepath.Join(dir, entry.Name()))
-			}
-		}
-	}
-	slices.Sort(files)
-	return files
+	// files are the Go files the host build compiles in the module's
+	// packages in the import closure, nil when none of them has a directory.
+	// goListModules fills it; go list never does.
+	files []string
 }
 
 // goPackage holds the fields goListModules requests from `go list -deps`.
+// GoFiles and CgoFiles are the Go files the build compiles once build
+// constraints, GOOS, GOARCH, tags and CGO_ENABLED have been applied, relative
+// to Dir. Only Go files are taken: a Go dependency scan runs only Go rules
+// and the Go call graph parses only Go files, so the package's C, assembly
+// and other files would add targets no rule or parser reads.
 type goPackage struct {
 	ImportPath string    `json:"ImportPath"`
 	Dir        string    `json:"Dir"`
+	GoFiles    []string  `json:"GoFiles"`
+	CgoFiles   []string  `json:"CgoFiles"`
 	Module     *goModule `json:"Module"`
 	Error      *struct {
 		Err string `json:"Err"`
 	} `json:"Error"`
+}
+
+// compiledFiles returns the absolute paths of the Go files the build compiles.
+func (p *goPackage) compiledFiles() []string {
+	files := make([]string, 0, len(p.GoFiles)+len(p.CgoFiles))
+	for _, name := range slices.Concat(p.GoFiles, p.CgoFiles) {
+		files = append(files, filepath.Join(p.Dir, name))
+	}
+	return files
 }
 
 // GoResolver resolves Go module dependencies using the `go` tool.
@@ -128,7 +121,7 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 			Module:  m.Path,
 			Version: m.Version,
 			Dir:     m.Dir,
-			Files:   packageFiles(m.packageDirs),
+			Files:   m.files,
 		})
 	}
 
@@ -149,9 +142,9 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 }
 
 // goListModules returns the main modules, then each module that provides a
-// package in their non-test import closure, once, with the directories of
-// those packages. Requirements reached only from tests, build-tagged tool
-// files or nothing at all never enter it.
+// package in their non-test import closure, once, with the Go files the
+// build compiles in those packages. Requirements reached only from tests,
+// build-tagged tool files or nothing at all never enter it.
 func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule, error) {
 	modules, err := goList[goModule](ctx, dir, "-m", "-json")
 	if err != nil {
@@ -162,7 +155,7 @@ func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule,
 	// package names, from discarding the closure of every package that loads.
 	// Each main module's directory is listed because `./...` matches nothing
 	// at a go.work root and only a subtree below a module root.
-	args := []string{"-e", "-deps", "-json=ImportPath,Dir,Module,Error"}
+	args := []string{"-e", "-deps", "-json=ImportPath,Dir,GoFiles,CgoFiles,Module,Error"}
 	for _, m := range modules {
 		if m.Dir == "" {
 			return nil, fmt.Errorf("go list -m: main module %s has no directory", m.Path)
@@ -191,13 +184,17 @@ func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule,
 			modules = append(modules, *p.Module)
 		}
 		// A package the go tool could not find has no directory.
+		// One that compiles no file for this build still limits the scan.
 		if p.Dir != "" {
-			modules[i].packageDirs = append(modules[i].packageDirs, p.Dir)
+			if modules[i].files == nil {
+				modules[i].files = []string{}
+			}
+			modules[i].files = append(modules[i].files, p.compiledFiles()...)
 		}
 	}
 	for _, i := range index {
-		slices.Sort(modules[i].packageDirs)
-		modules[i].packageDirs = slices.Compact(modules[i].packageDirs)
+		slices.Sort(modules[i].files)
+		modules[i].files = slices.Compact(modules[i].files)
 	}
 	if failed > 0 {
 		log.Warn().Int("packages", failed).Msg("Go packages failed to load; modules imported only through them are not inventoried")

@@ -50,6 +50,16 @@ type Parser interface {
 	PackageSeparator() string
 }
 
+// SelectiveParser is implemented by parsers that can skip a directory's
+// files before reading them. The builder uses it when a package lists its
+// IncludeFiles, so an unlisted file costs nothing; other parsers parse the
+// whole directory and the builder drops the unlisted analyses.
+type SelectiveParser interface {
+	// ParseDirectorySelected is ParseDirectory limited to the files keep
+	// accepts, by absolute path. A nil keep accepts every file.
+	ParseDirectorySelected(dir string, packagePath string, keep func(path string) bool) ([]*FileAnalysis, error)
+}
+
 // ParserCloner is implemented by parsers that can produce an independent
 // instance of themselves for concurrent use. tree-sitter parsers are not
 // reentrant, so parallel source parsing requires one parser per worker; a
@@ -545,7 +555,7 @@ func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, clone
 				if i >= len(work) {
 					return
 				}
-				results[i], errs[i] = parser.ParseDirectory(work[i].dir, work[i].importPath)
+				results[i], errs[i] = b.parseDirectory(parser, work[i].dir, work[i].importPath)
 			}
 		}()
 	}
@@ -566,7 +576,7 @@ func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, clone
 
 func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph, projectLocal bool) error {
 	if b.parsesDir(dir) {
-		analyses, err := b.parser.ParseDirectory(dir, importPath)
+		analyses, err := b.parseDirectory(b.parser, dir, importPath)
 		if err != nil {
 			return err
 		}
@@ -574,6 +584,17 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph, projectLo
 	}
 	b.analyzeSubdirs(dir, importPath, graph, projectLocal)
 	return nil
+}
+
+// parseDirectory parses dir with parser, reading only the current package's
+// listed files when the parser can skip the others.
+func (b *Builder) parseDirectory(parser Parser, dir, importPath string) ([]*FileAnalysis, error) {
+	selective, ok := parser.(SelectiveParser)
+	if b.include == nil || !ok {
+		return parser.ParseDirectory(dir, importPath)
+	}
+	files := b.include.files
+	return selective.ParseDirectorySelected(dir, importPath, func(path string) bool { return files[path] })
 }
 
 func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projectLocal bool) {
