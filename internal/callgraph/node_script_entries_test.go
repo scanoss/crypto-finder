@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +43,9 @@ func TestNodeHasScriptShebang(t *testing.T) {
 		{"shebang not first line", "a.js", "\n#!/usr/bin/env node\n", false},
 		{"other extension", "a.json", "#!/usr/bin/env node\n", false},
 		{"bare shebang", "a.js", "#!\n", false},
+		{"env -u value", "a.js", "#!/usr/bin/env -u FOO node\n", true},
+		{"env --unset value", "a.js", "#!/usr/bin/env --unset FOO node\n", true},
+		{"env -u value then python", "a.js", "#!/usr/bin/env -u node python3\n", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -71,6 +75,11 @@ func TestNodeScriptTargets(t *testing.T) {
 		{"echo hi; node scripts/a.js | tee out.log", []string{"scripts/a.js"}},
 		{`node "scripts/quoted.js"`, []string{"scripts/quoted.js"}},
 		{"node --require ./setup.js scripts/a.js", []string{"scripts/a.js"}},
+		{"node --max-old-space-size 4096 scripts/a.js", []string{"scripts/a.js"}},
+		{"tsx watch scripts/a.ts", []string{"scripts/a.ts"}},
+		{"dotenv -e .env -- node scripts/a.js", []string{"scripts/a.js"}},
+		{"npx -y tsx scripts/a.ts", []string{"scripts/a.ts"}},
+		{"env -u FOO node scripts/a.js", []string{"scripts/a.js"}},
 		{"eslint scripts/a.js", nil},
 		{"jest scripts/a.test.js", nil},
 		{"bun run build", nil},
@@ -185,6 +194,69 @@ func TestNodeParser_ShebangImportModuleKeepsTopLevelBesideSameStemFile(t *testin
 		if ref.Function.Name == moduleInitMethodName {
 			t.Fatalf("plain run.ts rooted: %v", ref)
 		}
+	}
+}
+
+func TestNodePackageEntryRole_ExplicitExtensionRootsOnlyThatFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeNodeFixtureFile(t, filepath.Join(dir, "package.json"), `{"bin":"bin/tool.mjs","scripts":{"cli":"node scripts/cli.mjs","gone":"node dist/gone.js","bare":"node run.js"}}`)
+	for _, rel := range []string{"scripts/cli.mjs", "scripts/cli.ts", "bin/tool.mjs", "bin/tool.ts", "src/gone.ts", "run.js", "src/run.ts", "run/index.ts"} {
+		writeNodeFixtureFile(t, filepath.Join(dir, rel), "x()\n")
+	}
+	cases := map[string]nodeEntryRole{
+		"scripts/cli.mjs": nodeProgramEntry,
+		"scripts/cli.ts":  nodeNotAnEntry,
+		"bin/tool.mjs":    nodeProgramEntry,
+		"bin/tool.ts":     nodeNotAnEntry,
+		"src/gone.ts":     nodeProgramEntry,
+		"run.js":          nodeProgramEntry,
+		"src/run.ts":      nodeNotAnEntry,
+		"run/index.ts":    nodeNotAnEntry,
+	}
+	for rel, want := range cases {
+		if got := nodePackageEntryRole(filepath.Join(dir, filepath.FromSlash(rel))); got != want {
+			t.Errorf("nodePackageEntryRole(%s) = %v, want %v", rel, got, want)
+		}
+	}
+}
+
+func TestResolveNodeRelativeModule_WrittenExtensionOfAnExistingFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	for _, name := range []string{"main.mjs", "run.ts", "run.mjs", "a.ts"} {
+		writeNodeFixtureFile(t, filepath.Join(dir, name), "x()\n")
+	}
+	importer := filepath.Join(dir, "main.mjs")
+	for specifier, want := range map[string]string{
+		"./run.mjs": "pkg/run.mjs",
+		"./run.ts":  "pkg/run",
+		"./a.js":    "pkg/a",
+	} {
+		if got, ok := resolveNodeRelativeModule(importer, "pkg", specifier); !ok || got != want {
+			t.Errorf("resolveNodeRelativeModule(%q) = (%q, %v), want %q", specifier, got, ok, want)
+		}
+	}
+}
+
+func TestNodeBuilder_ExplicitExtensionImportReachesTheShadowedSibling(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeNodeFixtureFile(t, filepath.Join(root, "pkg", "main.mjs"), "import { go } from './run.mjs';\nexport function start() { return go(); }\n")
+	writeNodeFixtureFile(t, filepath.Join(root, "pkg", "run.mjs"), "import { createHash } from 'crypto';\nexport function go() { return createHash('md5'); }\n")
+	writeNodeFixtureFile(t, filepath.Join(root, "pkg", "run.ts"), "export function go() { return 1; }\n")
+	graph, err := NewBuilderForEcosystem("node", NewNodeParser()).BuildFromDirectories([]PackageDir{{Dir: filepath.Join(root, "pkg")}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for key, callers := range graph.Callers {
+		if strings.HasSuffix(key, "run.mjs.go") && len(callers) == 1 && strings.HasSuffix(callers[0], "main.start") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("run.mjs go has no caller main.start: %v", graph.Callers)
 	}
 }
 

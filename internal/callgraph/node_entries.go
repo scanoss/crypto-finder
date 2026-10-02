@@ -658,11 +658,13 @@ func nodePackageEntryRole(filePath string) nodeEntryRole {
 		return nodeNotAnEntry
 	}
 	rel = filepath.ToSlash(rel)
-	rel = strings.TrimSuffix(rel, filepath.Ext(rel))
+	stem := strings.TrimSuffix(rel, filepath.Ext(rel))
+	// A target written with an extension of a file that exists is recorded
+	// under its full path, so its same-stem sibling is not an entry.
 	switch {
-	case manifest.bins[rel], manifest.scripts[rel]:
+	case manifest.bins[rel], manifest.scripts[rel], manifest.bins[stem], manifest.scripts[stem]:
 		return nodeProgramEntry
-	case manifest.mains[rel]:
+	case manifest.mains[rel], manifest.mains[stem]:
 		return nodeLibraryEntry
 	}
 	return nodeNotAnEntry
@@ -742,14 +744,10 @@ func parseNodeManifest(dir string, data []byte) *nodeManifest {
 		mains = []string{"index"}
 	}
 	for _, entry := range mains {
-		for _, candidate := range nodeSourceCandidates(entry) {
-			manifest.mains[candidate] = true
-		}
+		manifest.record(manifest.mains, entry)
 	}
 	for _, entry := range nodeManifestPaths(fields.Bin) {
-		for _, candidate := range nodeSourceCandidates(entry) {
-			manifest.bins[candidate] = true
-		}
+		manifest.record(manifest.bins, entry)
 	}
 	manifest.addScripts(fields.Scripts)
 	return manifest
@@ -764,10 +762,25 @@ func (m *nodeManifest) addScripts(scripts map[string]any) {
 			continue
 		}
 		for _, target := range nodeScriptTargets(command) {
-			for _, candidate := range nodeSourceCandidates(target) {
-				m.scripts[candidate] = true
-			}
+			m.record(m.scripts, target)
 		}
+	}
+}
+
+// record marks the file a manifest entry names in set. An entry written with
+// a source extension that exists as written is exactly that file; otherwise
+// (built output the tree does not hold, or no extension) it is every source
+// file nodeSourceCandidates says it can denote.
+func (m *nodeManifest) record(set map[string]bool, entry string) {
+	clean := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(entry)), "./")
+	if isNodeSourceExtension(filepath.Ext(clean)) && !strings.Contains(clean, "*") {
+		if info, err := os.Stat(filepath.Join(m.dir, filepath.FromSlash(clean))); err == nil && !info.IsDir() {
+			set[clean] = true
+			return
+		}
+	}
+	for _, candidate := range nodeSourceCandidates(entry) {
+		set[candidate] = true
 	}
 }
 
