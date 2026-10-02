@@ -354,3 +354,49 @@ func TestGoBuilder_RangeFieldTwoDeclarationsDisagreeStayUnresolved(t *testing.T)
 		goRangeExpectNoCaller(t, g, callee, "app.(*M).Run")
 	}
 }
+
+func TestGoBuilder_RangeInterfaceElementCrossPackage(t *testing.T) {
+	root := t.TempDir()
+	rulesDir := filepath.Join(root, "rules")
+	appDir := filepath.Join(root, "app")
+	for _, d := range []string{rulesDir, appDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(rulesDir, "rules.go"): `package rules
+
+type Source interface{ Load() }
+
+type Remote struct{}
+
+func (r *Remote) Load() {}
+`,
+		filepath.Join(appDir, "app.go"): `package app
+
+import "example.com/m/rules"
+
+type Manager struct{ sources []rules.Source }
+
+func (m *Manager) LoadAll() {
+	for _, s := range m.sources {
+		s.Load()
+	}
+}
+`,
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := NewBuilderForEcosystem("go", NewGoParser()).BuildFromDirectories([]PackageDir{
+		{Dir: rulesDir, ImportPath: "example.com/m/rules"},
+		{Dir: appDir, ImportPath: "example.com/m/app"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goRangeExpectEdge(t, g, "example.com/m/app.(*Manager).LoadAll", "example.com/m/rules.(Source).Load", EdgeKindExact)
+}
