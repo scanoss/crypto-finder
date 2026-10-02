@@ -31,11 +31,20 @@ import (
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
+// divergence is a first-party finding whose two verdicts are expected to
+// differ, and what each side must read.
+type divergence struct {
+	dependencyScan, projectOnly string
+}
+
 // projectReachabilityCase names a fixture under
 // testdata/projects/project_reachability/<language>, whose app/ is the target.
 type projectReachabilityCase struct {
-	language string
-	tools    []string
+	// divergences are the findings, by location, whose verdicts are expected
+	// to differ between the two passes.
+	divergences map[string]divergence
+	language    string
+	tools       []string
 	// env prepares the toolchain for both passes and returns extra variables.
 	env func(t *testing.T) []string
 }
@@ -61,7 +70,14 @@ func TestProjectReachabilityMatchesDependencyScan(t *testing.T) {
 	rules := filepath.Join(root, "testdata", "rules", "project-reachability.yaml")
 
 	cases := []projectReachabilityCase{
-		{language: "go", tools: []string{"go"}, env: isolatedHome},
+		// hasher.Hash (main.go:35) is reached only from dependency code:
+		// reachlib.Apply calls it through the dependency's Hasher interface.
+		// The dependency scan follows that edge and reads it reachable; the
+		// project-only pass has no dependency code in its graph and cannot,
+		// so it reads unreachable. Every other finding must still match.
+		{language: "go", tools: []string{"go"}, env: isolatedHome, divergences: map[string]divergence{
+			"main.go:35": {dependencyScan: graphfrag.ReachabilityReachable, projectOnly: graphfrag.ReachabilityUnreachable},
+		}},
 		{language: "python", tools: []string{"python3"}, env: pythonVenvWithDependency},
 		// Maven resolution reads the real ~/.m2, so this case keeps HOME.
 		{language: "java", tools: []string{"mvn", "java"}, env: func(*testing.T) []string { return nil }},
@@ -87,13 +103,26 @@ func TestProjectReachabilityMatchesDependencyScan(t *testing.T) {
 
 			require.Positive(t, full.dependencyFindings, "the --scan-dependencies pass exported no dependency finding, so resolution did not run")
 			var mismatches []string
+			seenDivergence := map[string]bool{}
 			for _, v := range project.verdicts {
 				want, ok := full.byID[v.findingID]
+				if d, expected := tc.divergences[v.location]; expected && ok {
+					seenDivergence[v.location] = true
+					if want.reachability != d.dependencyScan || v.reachability != d.projectOnly {
+						mismatches = append(mismatches, fmt.Sprintf("%s %s: dependency scan %s, project-only %s; expected %s and %s", v.findingID, v.location, want.reachability, v.reachability, d.dependencyScan, d.projectOnly))
+					}
+					continue
+				}
 				switch {
 				case !ok:
 					mismatches = append(mismatches, fmt.Sprintf("%s %s: %s with the flag, absent from the dependency scan", v.findingID, v.location, v.reachability))
 				case want.reachability != v.reachability:
 					mismatches = append(mismatches, fmt.Sprintf("%s %s: %s with the flag, %s in the dependency scan", v.findingID, v.location, v.reachability, want.reachability))
+				}
+			}
+			for location := range tc.divergences {
+				if !seenDivergence[location] {
+					mismatches = append(mismatches, location+": expected divergent finding not found in both passes")
 				}
 			}
 			require.Empty(t, mismatches, "first-party reachability differs from the dependency scan")
