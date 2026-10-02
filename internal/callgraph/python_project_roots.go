@@ -62,7 +62,7 @@ func declaresPythonPackageRoot(dir string) bool {
 // spelled as written. Hidden and skipped directories are not read.
 func pythonImportedModules(root string, skipDir func(path, name string) bool) map[string]bool {
 	imported := map[string]bool{}
-	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return filepath.SkipDir
 		}
@@ -72,26 +72,42 @@ func pythonImportedModules(root string, skipDir func(path, name string) bool) ma
 			}
 			return nil
 		}
-		if !strings.HasSuffix(entry.Name(), ".py") {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		for _, m := range pythonFromImport.FindAllSubmatch(data, -1) {
-			imported[string(m[1])] = true
-		}
-		for _, m := range pythonPlainImport.FindAllSubmatch(data, -1) {
-			for _, name := range strings.Split(string(m[1]), ",") {
-				if fields := strings.Fields(name); len(fields) > 0 {
-					imported[fields[0]] = true
-				}
-			}
+		if strings.HasSuffix(entry.Name(), ".py") {
+			addPythonFileImports(path, imported)
 		}
 		return nil
 	})
+	if err != nil {
+		log.Debug().Err(err).Str("dir", root).Msg("Python import scan stopped early")
+	}
 	return imported
+}
+
+func addPythonFileImports(path string, imported map[string]bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	for _, m := range pythonFromImport.FindAllSubmatch(data, -1) {
+		imported[string(m[1])] = true
+	}
+	for _, m := range pythonPlainImport.FindAllSubmatch(data, -1) {
+		for _, name := range strings.Split(string(m[1]), ",") {
+			if fields := strings.Fields(name); len(fields) > 0 {
+				imported[fields[0]] = true
+			}
+		}
+	}
+}
+
+// pythonDottedPrefix is dir's path below root spelled as a module path, the
+// prefix its modules are keyed under when it is not re-rooted.
+func pythonDottedPrefix(root, dir string) string {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return ""
+	}
+	return strings.ReplaceAll(filepath.ToSlash(rel), "/", ".")
 }
 
 // importsThroughPrefix reports whether any import spells prefix or a module
@@ -148,8 +164,7 @@ func discoverPythonProjectRoots(root string, taken map[string]bool, skipDir func
 		if imported == nil {
 			imported = pythonImportedModules(root, skipDir)
 		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil || importsThroughPrefix(imported, strings.ReplaceAll(filepath.ToSlash(rel), "/", ".")) {
+		if importsThroughPrefix(imported, pythonDottedPrefix(root, path)) {
 			return nil
 		}
 		if claimPythonProject(path, claimed) {
