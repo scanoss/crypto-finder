@@ -97,7 +97,11 @@ func TestLoad_RejectsMalformedFiles(t *testing.T) {
 			"not read by shape",
 		},
 		"wildcard outside supertype": {strings.Replace(expressYAML, "names: [get, use]", `names: ["*"]`, 1), "only valid"},
-		"empty value":                {strings.Replace(expressYAML, "names: [get, use]", `names: [get, ""]`, 1), "empty value"},
+		"directory on a go supertype": {
+			"schema_version: \"1\"\nlanguage: go\nframework:\n  name: x\nentries:\n  - shape: supertype\n    from: [x]\n    names: [Run]\n    directory: migrations\n    root_kind: framework_entry\n",
+			"directory",
+		},
+		"empty value": {strings.Replace(expressYAML, "names: [get, use]", `names: [get, ""]`, 1), "empty value"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -157,5 +161,27 @@ func TestLoadFS_DetectsConflicts(t *testing.T) {
 	}
 	if entry, ok := catalog.Match("node", ShapeRegistrationCall, "koa", "", "get"); !ok || entry.Framework != "koa" || entry.Path != PathRequired {
 		t.Errorf("Match(koa get) = %+v, %v; want the koa entry with the default path rule", entry, ok)
+	}
+}
+
+func TestCatalog_MatchInFileHonoursDirectory(t *testing.T) {
+	t.Parallel()
+
+	catalog, err := LoadEmbedded()
+	if err != nil {
+		t.Fatalf("LoadEmbedded: %v", err)
+	}
+	for file, want := range map[string]bool{
+		"app/migrations/0001_x.py": true,
+		"/src/app/migrations/a.py": true,
+		"app/migrations/sub/a.py":  true,
+		"app/models.py":            false,
+		"app/migrationsx/a.py":     false,
+		"app/my_migrations/a.py":   false,
+	} {
+		_, got := catalog.MatchInFile("python", ShapeSupertype, "django.db.migrations", "Migration", "<clinit>", file)
+		if got != want {
+			t.Errorf("MatchInFile(%q) = %v, want %v", file, got, want)
+		}
 	}
 }

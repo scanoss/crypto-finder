@@ -33,6 +33,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -137,7 +138,7 @@ type Entry struct {
 	ParameterTypes []string
 	// Directory is a path segment the file must be under, and Files the file
 	// names without extension it may have (file_convention only; either may
-	// be empty).
+	// be empty). A Python supertype entry may also set Directory.
 	Directory string
 	Files     []string
 	// RootKind is the root kind a matched function gets.
@@ -208,6 +209,29 @@ func (c *Catalog) Match(language string, shape Shape, pkg, typeName, name string
 	for i := range entries {
 		e := &entries[i]
 		if e.HasName(name) && e.Covers(pkg) && e.HasType(typeName) {
+			return *e, true
+		}
+	}
+	return Entry{}, false
+}
+
+// InDirectory reports whether filePath lies under a directory named Directory,
+// or Directory is empty. filePath should be relative to the scanned tree, so
+// a directory above the scan root never counts.
+func (e *Entry) InDirectory(filePath string) bool {
+	if e.Directory == "" {
+		return true
+	}
+	return strings.Contains("/"+filepath.ToSlash(filePath)+"/", "/"+e.Directory+"/")
+}
+
+// MatchInFile is Match for an entry that may be restricted to a directory: it
+// also requires filePath to lie under the entry's Directory.
+func (c *Catalog) MatchInFile(language string, shape Shape, pkg, typeName, name, filePath string) (Entry, bool) {
+	entries := c.Entries(language, shape)
+	for i := range entries {
+		e := &entries[i]
+		if e.HasName(name) && e.Covers(pkg) && e.HasType(typeName) && e.InDirectory(filePath) {
 			return *e, true
 		}
 	}
@@ -367,6 +391,9 @@ func validateEntry(language string, raw *yamlEntry) (Entry, error) {
 	if err := validateShapeFields(raw); err != nil {
 		return Entry{}, err
 	}
+	if raw.Shape == ShapeSupertype && raw.Directory != "" && language != "python" {
+		return Entry{}, fmt.Errorf("field directory is not read by a %s supertype entry", language)
+	}
 	entry := Entry{
 		Language: language, Shape: raw.Shape, From: raw.From, Names: raw.Names, Types: raw.Types,
 		Path: raw.Path, ParameterTypes: raw.ParameterTypes, Directory: raw.Directory, Files: raw.Files,
@@ -415,7 +442,7 @@ func validateShapeFields(raw *yamlEntry) error {
 	return errors.Join(
 		unused("path", raw.Path != "", ShapeRegistrationCall),
 		unused("parameter_types", len(raw.ParameterTypes) > 0, ShapeInterfaceMethod),
-		unused("directory", raw.Directory != "", ShapeFileConvention),
+		unused("directory", raw.Directory != "", ShapeFileConvention, ShapeSupertype),
 		unused("files", len(raw.Files) > 0, ShapeFileConvention),
 		unused("types", len(raw.Types) > 0, ShapeSupertype, ShapeHandlerField),
 		validateShapeRequirements(raw),
