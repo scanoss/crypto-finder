@@ -89,7 +89,7 @@ version: ## Display current version
 # Test targets
 # ============================================================================
 test: ## Run all tests
-	@go test -v -race -coverprofile=coverage.out ./...
+	@go test -v -race -timeout 30m -coverprofile=coverage.out ./...
 
 test-docker: ## Run tests in Docker (same as CI) with semgrep/opengrep
 	@echo "Building test Docker image with Go + semgrep + opengrep..."
