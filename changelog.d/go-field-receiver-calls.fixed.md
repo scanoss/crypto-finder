@@ -1,0 +1,7 @@
+- A Go call through a struct field, `r.cache.Get()` or `s.discovery.get()`, now links to the method it calls. Before, the call was recorded with no callee type, so a method reached only that way had no callers and its finding read `no_callers`.
+  - The field's declared type comes from the struct declaration, resolved through the file's imports (aliased imports included), in this or another package.
+  - A concrete field links to the method with an `exact` edge. A field of interface type links to the interface method and to every implementer, as `interface_dispatch` edges.
+  - The receiver must be the method's own receiver or a typed local or parameter, and the field a named, non-generic field of a struct the graph declares once.
+  - These shapes stay unresolved, as before: a longer chain (`r.a.b.M()`), a promoted embedded field, a func-typed field, a field typed by a type parameter or a generic type, an indexed element, a field two or more declarations of the same struct (build-tag variants) type differently, and an unqualified field type under a dot import (`import . "x"`).
+  - A field whose type is not declared in the graph (`error`, `sync.Mutex`) records a call to that type's method but adds no name-based fallback edge.
+  - Behavior change: a Go receiver typed `pkg.Type`, where `pkg` is not an import of the file, now resolves to no type instead of `<package>.pkg.Type`, so that call stays untyped rather than carrying an identity that matches nothing.
