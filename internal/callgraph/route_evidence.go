@@ -211,49 +211,80 @@ func noCallersOnly(walks []tierWalk) bool {
 // the direct walk selects (one per root first, then further routes), then
 // those the dispatch walk adds, then the rest. The route that justifies the
 // verdict is therefore always kept. A maxChains of 0 means unlimited.
+//
+// With a module function set (SetModuleFunc), distinct routes come before
+// variants across all tiers: first, tier by tier, one route per root and one
+// route through each library whose sequence of modules no kept chain shows;
+// only then, tier by tier, further routes. A small budget then shows the
+// libraries a weaker tier reaches instead of more variants of a stronger
+// tier's one path, and the first chain is still the strongest route.
 func (t *Tracer) selectTiered(walks []tierWalk, maxChains int) []CallChain {
-	var out []CallChain
-	taken := make(map[string]bool)
-	full := func() bool { return maxChains > 0 && len(out) >= maxChains }
+	sel := &tieredSelection{tracer: t, maxChains: maxChains, taken: map[string]bool{}, classes: map[string]bool{}}
+	tiers := distinctWalks(walks)
+	if t.moduleOf != nil && maxChains > 0 {
+		for _, w := range tiers {
+			sel.add(w, graphwalk.TerminalRoutes(w.reach, w.condensed, maxChains, w.rootLess), false)
+			sel.add(w, graphwalk.GroupRoutes(w.reach, w.rootLess, t.moduleOf), true)
+		}
+	}
+	for _, w := range tiers {
+		// A looser walk selects the stricter walks' routes again; asking for
+		// the whole budget leaves room for maxChains-len(out) new ones.
+		sel.add(w, graphwalk.Select(w.reach, w.condensed, maxChains, w.rootLess), false)
+	}
+	return sel.out
+}
+
+// distinctWalks drops a tier that repeats the previous one's walk and tiers
+// that reach no root.
+func distinctWalks(walks []tierWalk) []*reverseWalk {
+	var out []*reverseWalk
 	var previous *reverseWalk
 	for _, tw := range walks {
 		w := tw.walk
-		if full() {
-			break
-		}
-		if w == previous || len(w.reach.Terminal) == 0 {
-			previous = w
-			continue
+		if w != previous && len(w.reach.Terminal) > 0 {
+			out = append(out, w)
 		}
 		previous = w
-		// A looser walk selects the stricter walks' routes again; asking for
-		// the whole budget leaves room for maxChains-len(out) new ones.
-		for _, route := range t.selectRoutes(w, maxChains) {
-			key := strings.Join(route, "\x00")
-			if taken[key] {
-				continue
-			}
-			taken[key] = true
-			chain := t.materializeRoute(route)
-			chain.RootKind = w.rootKinds[route[len(route)-1]]
-			out = append(out, chain)
-			if full() {
-				break
-			}
-		}
 	}
 	return out
 }
 
-// selectRoutes picks a walk's routes. With a module function set, one route
-// through each library the walk reached, kept when its sequence of modules is
-// new, comes before further variants of a kept sequence, so a small budget
-// shows more library paths.
-func (t *Tracer) selectRoutes(w *reverseWalk, maxChains int) [][]string {
-	if t.moduleOf == nil || maxChains <= 0 {
-		return graphwalk.Select(w.reach, w.condensed, maxChains, w.rootLess)
+// tieredSelection accumulates chains across tiers and passes.
+type tieredSelection struct {
+	tracer    *Tracer
+	maxChains int
+	out       []CallChain
+	taken     map[string]bool
+	classes   map[string]bool
+}
+
+func (s *tieredSelection) full() bool { return s.maxChains > 0 && len(s.out) >= s.maxChains }
+
+// add keeps each route not already kept. With needNewClass a route is kept only
+// when no kept chain crosses the same sequence of modules.
+func (s *tieredSelection) add(w *reverseWalk, routes [][]string, needNewClass bool) {
+	for _, route := range routes {
+		if s.full() {
+			return
+		}
+		key := strings.Join(route, "\x00")
+		if s.taken[key] {
+			continue
+		}
+		var class string
+		if s.tracer.moduleOf != nil {
+			class = graphwalk.RouteClass(route, s.tracer.moduleOf)
+			if needNewClass && s.classes[class] {
+				continue
+			}
+		}
+		s.taken[key] = true
+		s.classes[class] = true
+		chain := s.tracer.materializeRoute(route)
+		chain.RootKind = w.rootKinds[route[len(route)-1]]
+		s.out = append(s.out, chain)
 	}
-	return graphwalk.SelectDiverse(w.reach, w.condensed, maxChains, w.rootLess, t.moduleOf)
 }
 
 // rootLess orders a walk's roots for graphwalk.Select: recognized entry
