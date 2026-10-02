@@ -45,7 +45,7 @@ func resolveNodeRelativeModule(filePath, packagePath, specifier string) (string,
 		modulePath = ""
 	}
 	target := filepath.Join(filepath.Dir(filePath), filepath.FromSlash(specifier))
-	if resolved, ok := resolveWrittenNodeExtension(modulePath, target, packagePath); ok {
+	if resolved, ok := resolveWrittenNodeExtension(modulePath, target); ok {
 		return resolved, true
 	}
 	// A file wins over a directory of the same name, as in Node's resolver;
@@ -64,13 +64,21 @@ func resolveNodeRelativeModule(filePath, packagePath, specifier string) (string,
 // run.ts is run.mjs, which nodeModulePath keys apart from run.ts. Otherwise
 // './a.js' in TypeScript names a.ts, and the written extension is dropped the
 // way nodeModulePath drops it from the declaring file.
-func resolveWrittenNodeExtension(modulePath, target, packagePath string) (string, bool) {
+//
+// modulePath is the specifier joined onto the importer's package path, so the
+// package of the file it names is modulePath's own directory, not the
+// importer's.
+func resolveWrittenNodeExtension(modulePath, target string) (string, bool) {
 	ext := path.Ext(modulePath)
 	if ext == "" || !isNodeSourceExtension(ext) {
 		return "", false
 	}
 	if info, err := os.Stat(target); err == nil && !info.IsDir() {
-		return nodeModulePath(packagePath, target), true
+		dir := path.Dir(modulePath)
+		if dir == "." {
+			dir = ""
+		}
+		return nodeModulePath(dir, target), true
 	}
 	return strings.TrimSuffix(modulePath, ext), true
 }
