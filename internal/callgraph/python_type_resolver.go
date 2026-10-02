@@ -8,6 +8,7 @@
 package callgraph
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
@@ -203,11 +204,12 @@ func (c *PythonTypeResolverChain) ResolveTypes(graph *CallGraph, sourceRoots []P
 // contract resolver above, whose FQN+arity KB lookup is inherently
 // self-limiting to the Python KB's own method names.
 func propagatePythonAssignedVarTypes(graph *CallGraph, kb *contracts.KnowledgeBase) {
+	classes := indexKnownClassTypes(graph)
 	for _, fn := range graph.Functions {
 		if fn == nil || len(fn.Calls) == 0 || !isPythonSourceFile(fn.FilePath) {
 			continue
 		}
-		propagatePythonAssignedVarTypesForDecl(fn, graph, kb)
+		propagatePythonAssignedVarTypesForDecl(fn, graph, kb, classes)
 	}
 }
 
@@ -219,19 +221,79 @@ func propagatePythonAssignedVarTypes(graph *CallGraph, kb *contracts.KnowledgeBa
 // scanned source's own truth and must win, so wiring the KB in cannot change
 // any result that already resolved. The KB is consulted only where the old
 // code returned nothing at all.
+//
+// A constructor call has no return annotation to read: its type is the class
+// itself. That is the last resort, after the contract KB, so a contract that
+// models a constructor as returning another type still wins.
 func pythonCalleeReturnType(
 	call *FunctionCall,
 	graph *CallGraph,
 	kb *contracts.KnowledgeBase,
+	classes map[string]bool,
 ) (returnType, declPackage string) {
-	if callee := graph.Functions[call.Callee.String()]; callee != nil && callee.ReturnType != "" {
+	if returnType, declPackage = pythonDeclaredOrContractReturnType(call, graph, kb); returnType != "" {
+		return returnType, declPackage
+	}
+	return pythonConstructedClass(call, graph, classes)
+}
+
+// pythonConstructedClass reports the class a constructor call builds, when the
+// scanned tree declares that class: an imported class call (`{pkg, Type,
+// <init>}`) names its class outright, and a bare same-package call names one
+// only when no module-level function shadows it. A class the tree does not
+// declare is left untyped, so a type is never invented from a callee's name.
+func pythonConstructedClass(call *FunctionCall, graph *CallGraph, classes map[string]bool) (class, pkg string) {
+	callee := call.Callee
+	if callee.Package == "" {
+		return "", ""
+	}
+	if callee.Name == constructorMethodName && callee.Type != "" {
+		if pythonClassDeclared(graph, classes, callee.Package, callee.Type) {
+			return callee.Type, callee.Package
+		}
+		return "", ""
+	}
+	if callee.Type != "" || !classes[callee.Package+"|"+callee.Name] {
+		return "", ""
+	}
+	if _, isFunc := graph.Functions[callee.String()]; isFunc {
+		return "", ""
+	}
+	return callee.Name, callee.Package
+}
+
+// pythonClassDeclared reports whether the tree declares class typ under pkg,
+// directly or behind the public path a package's `__init__.py` gives it.
+func pythonClassDeclared(graph *CallGraph, classes map[string]bool, pkg, typ string) bool {
+	if classes[pkg+"|"+typ] {
+		return true
+	}
+	target, ok := graph.PythonPublicPaths[pkg+"."+typ]
+	if !ok {
+		return false
+	}
+	sep := strings.LastIndex(target, ".")
+	return sep > 0 && classes[target[:sep]+"|"+target[sep+1:]]
+}
+
+// pythonDeclaredOrContractReturnType is the original lookup: an in-graph
+// decl's return annotation, then the contract KB. A constructor's own
+// `__init__` annotation (`-> None`) is not what calling the class returns, so
+// it is never read here.
+func pythonDeclaredOrContractReturnType(
+	call *FunctionCall,
+	graph *CallGraph,
+	kb *contracts.KnowledgeBase,
+) (returnType, declPackage string) {
+	isCtor := call.Callee.Name == constructorMethodName
+	if callee := graph.Functions[call.Callee.String()]; !isCtor && callee != nil && callee.ReturnType != "" {
 		return callee.ReturnType, callee.ID.Package
 	}
 	// A call through a package's public path (`from dep import make_cipher`,
 	// re-exported by dep/__init__.py from dep/impl.py) keeps the public
 	// spelling, while the declaration is keyed by its module.
 	if key, ok := pythonPublicPathDeclaration(graph, call.Callee, call.Callee.String()); ok {
-		if callee := graph.Functions[key]; callee != nil && callee.ReturnType != "" {
+		if callee := graph.Functions[key]; !isCtor && callee != nil && callee.ReturnType != "" {
 			return callee.ReturnType, callee.ID.Package
 		}
 	}
@@ -324,7 +386,9 @@ func propagatePythonAssignedVarTypesForDecl(
 	fn *FunctionDecl,
 	graph *CallGraph,
 	kb *contracts.KnowledgeBase,
+	classes map[string]bool,
 ) {
+	typePythonConstructorChainReceivers(fn, graph, classes)
 	var varTypes map[string]pythonTrackedAssignedType
 	for _, i := range assignmentPropagationOrder(fn.Calls) {
 		call := &fn.Calls[i]
@@ -339,7 +403,7 @@ func propagatePythonAssignedVarTypesForDecl(
 		if call.AssignedVar == "" {
 			continue
 		}
-		returnType, declPackage := pythonCalleeReturnType(call, graph, kb)
+		returnType, declPackage := pythonCalleeReturnType(call, graph, kb, classes)
 		if returnType == "" {
 			// INVALIDATE ON RE-BIND. This assignment rebinds the variable to
 			// something whose type is not knowable, so any type learned from an
@@ -362,6 +426,77 @@ func propagatePythonAssignedVarTypesForDecl(
 		}
 		varTypes[call.AssignedVar] = pythonTrackedAssignedType{name: returnType, declPackage: declPackage}
 	}
+}
+
+// typePythonConstructorChainReceivers types the receiver of a method called
+// directly on a call's result, `Scanner(cfg).scan(p)`. The parser keys such a
+// link on the receiver's source text, which names no type, while the inner
+// call is recorded as its own link of the same chain. When that inner call
+// builds a known class the outer link is that class's method. Links are
+// visited innermost first so `A(1).b().c()` types `b` before `c` reads it. A
+// link the contract resolver already typed no longer carries the receiver
+// text as its type and is left alone.
+func typePythonConstructorChainReceivers(
+	fn *FunctionDecl,
+	graph *CallGraph,
+	classes map[string]bool,
+) {
+	var chained []int
+	for i := range fn.Calls {
+		if fn.Calls[i].ChainID != "" && strings.HasSuffix(fn.Calls[i].Callee.Type, ")") {
+			chained = append(chained, i)
+		}
+	}
+	if len(chained) == 0 {
+		return
+	}
+	sort.SliceStable(chained, func(a, b int) bool {
+		return len(fn.Calls[chained[a]].Raw) < len(fn.Calls[chained[b]].Raw)
+	})
+	for _, i := range chained {
+		call := &fn.Calls[i]
+		inner := pythonChainReceiverCall(fn.Calls, i)
+		if inner == nil {
+			continue
+		}
+		typ, pkg := pythonConstructedClass(inner, graph, classes)
+		if typ == "" {
+			if decl := graph.Functions[inner.Callee.String()]; decl != nil && decl.ReturnType != "" {
+				typ, pkg = decl.ReturnType, decl.ID.Package
+			}
+		}
+		if typ == "" {
+			continue
+		}
+		tracked := pythonTrackedAssignedType{name: typ, declPackage: pkg}
+		call.Callee.Package, call.Callee.Type = pythonSplitAssignedType(tracked)
+		call.ResolvedReceiverType = call.Callee.Type
+	}
+}
+
+// pythonChainReceiverCall finds the link of calls[i]'s chain that produces its
+// receiver. A link's Raw is its callee expression (`A(1).scan`, `A`), while the
+// outer link's Callee.Type is the receiver call's full text (`A(1)`), so the
+// receiver is the link that starts where the outer one does and whose Raw,
+// followed by an argument list, begins that text. Of several such links the
+// longest Raw is the receiver, since `A(1).b()` is produced by `A(1).b`, not
+// by `A`. Nil when no link fits.
+func pythonChainReceiverCall(calls []FunctionCall, i int) *FunctionCall {
+	outer := &calls[i]
+	var best *FunctionCall
+	for j := range calls {
+		c := &calls[j]
+		if j == i || c.ChainID != outer.ChainID || c.Line != outer.Line || c.StartCol != outer.StartCol {
+			continue
+		}
+		if !strings.HasPrefix(outer.Callee.Type, c.Raw+"(") || len(c.Raw) >= len(outer.Raw) {
+			continue
+		}
+		if best == nil || len(c.Raw) > len(best.Raw) {
+			best = c
+		}
+	}
+	return best
 }
 
 // assignmentPropagationOrder is document order, except that a fluent chain's

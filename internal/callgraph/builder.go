@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -279,6 +280,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	resolveFluentChainCalleesByContract(graph, kb)
 	if b.ecosystem == ecosystemPython {
 		propagatePythonTypesThroughChains(graph, kb)
+		b.reindexPythonRetypedCalls(graph)
 	}
 	resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
 	resolveNodeAssignedVarCallees(graph, kb)
@@ -977,8 +979,21 @@ func rewritePythonReExportedCallee(graph *CallGraph, callee *FunctionID, table m
 
 // buildCallerIndex builds the reverse index: for each callee, which functions call it.
 func (b *Builder) buildCallerIndex(graph *CallGraph) {
+	idx := newDispatchIndexes(graph)
+
+	for callerKey, fn := range graph.Functions {
+		for i := range fn.Calls {
+			b.indexCallDispatch(graph, callerKey, &fn.Calls[i], idx)
+		}
+		for i := range fn.ImplicitCalls {
+			b.indexCallDispatch(graph, callerKey, &fn.ImplicitCalls[i], idx)
+		}
+	}
+}
+
+func newDispatchIndexes(graph *CallGraph) dispatchIndexes {
 	hierarchy := newDispatchHierarchy(graph)
-	idx := dispatchIndexes{
+	return dispatchIndexes{
 		methodsByName:           indexMethodsByName(graph),
 		methodsByQualifiedArity: indexMethodsByQualifiedArity(graph),
 		subclassByTypeName:      indexSubclassByTypeName(graph),
@@ -989,13 +1004,36 @@ func (b *Builder) buildCallerIndex(graph *CallGraph) {
 		abstractDispatchMemo:    make(map[string][]interfaceDispatchAlias),
 		callerSeen:              make(map[string]map[string]struct{}),
 	}
+}
 
+// reindexPythonRetypedCalls indexes the calls whose receiver type was learned
+// after the caller index was built: the type-resolution passes rewrite
+// `s.scan()` to `Scanner.scan` in place, but the reverse index still holds the
+// pre-rewrite key, so the declared method would show no caller. A call is
+// re-indexed only when its rewritten target is a declaration the index does
+// not already credit to this caller; indexCallDispatch then adds the exact
+// edge and the same subclass and inherited expansions a parse-time typed call
+// receives.
+func (b *Builder) reindexPythonRetypedCalls(graph *CallGraph) {
+	var idx dispatchIndexes
+	built := false
 	for callerKey, fn := range graph.Functions {
-		for i := range fn.Calls {
-			b.indexCallDispatch(graph, callerKey, &fn.Calls[i], idx)
+		if !isPythonSourceFile(fn.FilePath) {
+			continue
 		}
-		for i := range fn.ImplicitCalls {
-			b.indexCallDispatch(graph, callerKey, &fn.ImplicitCalls[i], idx)
+		for i := range fn.Calls {
+			call := &fn.Calls[i]
+			if call.ResolvedReceiverType == "" {
+				continue
+			}
+			key := call.Callee.String()
+			if _, declared := graph.Functions[key]; !declared || slices.Contains(graph.Callers[key], callerKey) {
+				continue
+			}
+			if !built {
+				idx, built = newDispatchIndexes(graph), true
+			}
+			b.indexCallDispatch(graph, callerKey, call, idx)
 		}
 	}
 }
