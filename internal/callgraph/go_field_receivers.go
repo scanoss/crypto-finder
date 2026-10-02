@@ -49,8 +49,12 @@ func resolveGoFieldReceiverCall(graph *CallGraph, call *FunctionCall) {
 	}
 	owner := call.FieldReceiver.Owner
 	structKey := owner.Package + "." + strings.TrimLeft(owner.Type, "*")
-	ft, ok := graph.goStructFields[structKey][call.FieldReceiver.Name]
-	if !ok || ft.Type == "" {
+	field, ok := graph.goStructFields[structKey][call.FieldReceiver.Name]
+	if !ok {
+		return
+	}
+	ft := field.partType(call.FieldReceiver.Part)
+	if ft.Type == "" {
 		return
 	}
 	target := FunctionID{Package: ft.Package, Type: ft.Type, Name: call.Callee.Name}
