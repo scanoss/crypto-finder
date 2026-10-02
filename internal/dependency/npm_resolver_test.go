@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -220,41 +222,101 @@ func TestNpmResolver_MissingLockfileIsNamed(t *testing.T) {
 	}
 }
 
-// Dev dependencies are RESOLVED, matching CargoResolver, which runs bare
-// `cargo metadata` and appends every package, and PipResolver, which lists the
-// whole environment. The two Java resolvers narrow to compile scope, and
-// GoResolver to the modules imported by non-test packages.
-//
-// The reason is not consistency for its own sake. A crypto inventory that skips
-// dev dependencies cannot see cryptography that exists only there, and that is
-// not hypothetical: jsonwebtoken as a devDependency brings a jwa subtree calling
-// crypto.createHmac and crypto.createSign.
-func TestNpmResolver_DevDependenciesAreResolved(t *testing.T) {
-	root := writeTree(t, map[string]string{
+// npmDevTree is a v3 install holding production packages, dev-only packages
+// at the top level and nested under another dev package, and a devOptional
+// package, which npm installs without dev when an optional dependency needs it.
+func npmDevTree(t *testing.T) string {
+	t.Helper()
+	return writeTree(t, map[string]string{
 		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"node-forge":"^1.4.0"},"devDependencies":{"tap":"^16.0.0"}}`,
 		"package-lock.json": `{
 		  "name":"app","version":"1.0.0","lockfileVersion":3,
 		  "packages":{
-		    "":{"name":"app","version":"1.0.0"},
+		    "":{"name":"app","version":"1.0.0","dependencies":{"node-forge":"^1.4.0"},"devDependencies":{"tap":"^16.0.0"}},
 		    "node_modules/node-forge":{"version":"1.4.0"},
-		    "node_modules/tap":{"version":"16.0.0","dev":true}
+		    "node_modules/tap":{"version":"16.0.0","dev":true,"dependencies":{"jsonwebtoken":"^9.0.0"}},
+		    "node_modules/tap/node_modules/jsonwebtoken":{"version":"9.0.0","dev":true},
+		    "node_modules/fsevents":{"version":"2.3.3","devOptional":true,"optional":true}
 		  }
 		}`,
-		"node_modules/node-forge/package.json": `{"name":"node-forge","version":"1.4.0"}`,
-		"node_modules/tap/package.json":        `{"name":"tap","version":"16.0.0"}`,
+		"node_modules/node-forge/package.json":                    `{"name":"node-forge","version":"1.4.0"}`,
+		"node_modules/tap/package.json":                           `{"name":"tap","version":"16.0.0"}`,
+		"node_modules/tap/node_modules/jsonwebtoken/package.json": `{"name":"jsonwebtoken","version":"9.0.0"}`,
+		"node_modules/fsevents/package.json":                      `{"name":"fsevents","version":"2.3.3"}`,
 	})
+}
 
-	result, err := NewNpmResolver().Resolve(context.Background(), root)
+// The default inventory is the production tree, as for Go (the production
+// import closure) and Java (compile scope): an installed dev-only package is
+// build tooling and is neither scanned nor put in the graph.
+func TestNpmResolver_DevDependenciesExcludedByDefault(t *testing.T) {
+	result, err := NewNpmResolver().Resolve(context.Background(), npmDevTree(t))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	byMod := depsByModule(result)
-	if _, dev := byMod["tap"]; !dev {
-		t.Errorf("dev dependency tap was dropped: %+v", result.Dependencies)
+	if got, want := npmModules(result), []string{"fsevents", "node-forge"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("modules = %v, want %v", got, want)
 	}
-	if _, prod := byMod["node-forge"]; !prod {
-		t.Errorf("production dependency node-forge missing: %+v", result.Dependencies)
+	for node := range result.Graph {
+		if strings.Contains(node, "tap") || strings.Contains(node, "jsonwebtoken") {
+			t.Fatalf("dev package %q is in the graph: %v", node, result.Graph)
+		}
 	}
+}
+
+// WithNpmDevDependencies restores dev packages, so cryptography that exists
+// only there can still be inventoried: jsonwebtoken as a devDependency brings
+// a jwa subtree calling crypto.createHmac and crypto.createSign.
+func TestNpmResolver_WithDevDependenciesResolvesThem(t *testing.T) {
+	result, err := NewNpmResolver(WithNpmDevDependencies()).Resolve(context.Background(), npmDevTree(t))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got, want := npmModules(result), []string{"fsevents", "jsonwebtoken", "node-forge", "tap"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("modules = %v, want %v", got, want)
+	}
+}
+
+// A v1 lockfile nests a dev package's own dependencies under it; they are dev
+// too and leave with it.
+func TestNpmResolver_V1DevDependenciesExcludedByDefault(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json": `{"name":"app","version":"1.0.0","dependencies":{"node-forge":"^1.4.0"},"devDependencies":{"tap":"^16.0.0"}}`,
+		"package-lock.json": `{
+		  "name":"app","version":"1.0.0","lockfileVersion":1,
+		  "dependencies":{
+		    "node-forge":{"version":"1.4.0"},
+		    "tap":{"version":"16.0.0","dev":true,"dependencies":{"jsonwebtoken":{"version":"9.0.0","dev":true}}}
+		  }
+		}`,
+		"node_modules/node-forge/package.json":                    `{"name":"node-forge","version":"1.4.0"}`,
+		"node_modules/tap/package.json":                           `{"name":"tap","version":"16.0.0"}`,
+		"node_modules/tap/node_modules/jsonwebtoken/package.json": `{"name":"jsonwebtoken","version":"9.0.0"}`,
+	})
+	for _, tc := range []struct {
+		opts []NpmResolverOption
+		want []string
+	}{
+		{nil, []string{"node-forge"}},
+		{[]NpmResolverOption{WithNpmDevDependencies()}, []string{"jsonwebtoken", "node-forge", "tap"}},
+	} {
+		result, err := NewNpmResolver(tc.opts...).Resolve(context.Background(), root)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if got := npmModules(result); !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("modules with %d options = %v, want %v", len(tc.opts), got, tc.want)
+		}
+	}
+}
+
+func npmModules(result *ResolveResult) []string {
+	modules := make([]string, 0, len(result.Dependencies))
+	for _, dep := range result.Dependencies {
+		modules = append(modules, dep.Module)
+	}
+	sort.Strings(modules)
+	return modules
 }
 
 // An uninstalled dev package is ordinary: `npm install --omit=dev` is a normal
@@ -316,6 +378,8 @@ func TestNpmResolver_ScopedPackageResolves(t *testing.T) {
 // under node_modules carrying `"link": true` and no version. Reporting either as
 // a dependency attributes the user's own source to an external package, and the
 // link entry has no version to form a coordinate from at all.
+// A member stays a member when npm marks it dev: it is the project's own code,
+// not an installed package, so the dev filter does not apply to it.
 func TestNpmResolver_WorkspaceMembersAreNotDependencies(t *testing.T) {
 	root := writeTree(t, map[string]string{
 		"package.json": `{"name":"mono","version":"1.0.0","workspaces":["packages/*"],"dependencies":{"inner":"*","node-forge":"^1.4.0"}}`,
@@ -323,7 +387,7 @@ func TestNpmResolver_WorkspaceMembersAreNotDependencies(t *testing.T) {
 		  "name":"mono","version":"1.0.0","lockfileVersion":3,
 		  "packages":{
 		    "":{"name":"mono","version":"1.0.0","dependencies":{"inner":"*","node-forge":"^1.4.0"}},
-		    "packages/inner":{"name":"inner","version":"1.0.0"},
+		    "packages/inner":{"name":"inner","version":"1.0.0","dev":true},
 		    "node_modules/inner":{"resolved":"packages/inner","link":true},
 		    "node_modules/node-forge":{"version":"1.4.0"}
 		  }
