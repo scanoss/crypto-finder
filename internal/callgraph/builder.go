@@ -226,6 +226,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// Build the reverse caller index (includes interface dispatch and fluent fallback)
 	callerIndexStart := time.Now()
 	pruneGoPredeclaredCalls(graph, b.ecosystem)
+	resolveGoFieldReceiverCalls(graph, b.ecosystem)
 	b.buildCallerIndex(graph)
 	callerIndexDuration := time.Since(callerIndexStart)
 
@@ -495,6 +496,7 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 		}
 		b.applyEcosystemAnalysisHooks(graph, analysis, projectLocal)
 		mergeSourceSupertypes(graph, analysis.Supertypes)
+		mergeGoStructFields(graph, analysis.GoStructFields, analysis.PackagePath)
 		b.mergeAnalysisFunctions(graph, analysis)
 		mergeJavaStringConstants(graph, analysis)
 		graph.entryRefs = append(graph.entryRefs, analysis.EntryRefs...)

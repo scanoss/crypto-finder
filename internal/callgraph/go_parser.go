@@ -439,8 +439,9 @@ func (p *GoParser) extractInterfaceMethods(node *sitter.Node, src []byte, filePa
 		if typeNode == nil || nameNode == nil {
 			continue
 		}
-		if typeNode.Type() == "struct_type" {
+		if typeNode.Type() == goNodeStructType {
 			p.extractGoStructFuncFields(spec, src, filePath, packagePath, analysis)
+			p.recordGoStructFieldTypes(spec, src, analysis)
 			continue
 		}
 		if typeNode.Type() != "interface_type" {
@@ -500,7 +501,7 @@ func (p *GoParser) extractGoInterfaceMembers(typeNode *sitter.Node, src []byte, 
 func (p *GoParser) extractGoStructFuncFields(spec *sitter.Node, src []byte, filePath, packagePath string, analysis *FileAnalysis) {
 	typeNode := spec.ChildByFieldName(goFieldType)
 	nameNode := spec.ChildByFieldName("name")
-	if typeNode == nil || nameNode == nil || typeNode.Type() != "struct_type" {
+	if typeNode == nil || nameNode == nil || typeNode.Type() != goNodeStructType {
 		return
 	}
 	structName := strings.TrimSpace(nameNode.Content(src))
@@ -521,6 +522,54 @@ func (p *GoParser) extractGoStructFuncFields(spec *sitter.Node, src []byte, file
 			continue
 		}
 		p.declareGoFuncField(field, ft, src, filePath, packagePath, analysis, structName)
+	}
+}
+
+// recordGoStructFieldTypes records the declared type of each named field so a
+// call through the field (`r.cache.Get()`) can be typed. Embedded fields,
+// generic types and types with no nameable identity are left out: promotion
+// and instantiation are not modeled, so those calls stay unresolved.
+func (p *GoParser) recordGoStructFieldTypes(spec *sitter.Node, src []byte, analysis *FileAnalysis) {
+	typeNode := spec.ChildByFieldName(goFieldType)
+	nameNode := spec.ChildByFieldName("name")
+	if typeNode == nil || nameNode == nil || typeNode.Type() != goNodeStructType {
+		return
+	}
+	structName := strings.TrimSpace(nameNode.Content(src))
+	body := typeNode.NamedChild(0)
+	if structName == "" || body == nil {
+		return
+	}
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		if field := body.NamedChild(i); field.Type() == javaNodeFieldDeclaration {
+			recordGoFieldDeclaration(field, structName, src, analysis)
+		}
+	}
+}
+
+func recordGoFieldDeclaration(field *sitter.Node, structName string, src []byte, analysis *FileAnalysis) {
+	ft := field.ChildByFieldName(goFieldType)
+	if ft == nil {
+		return
+	}
+	typeText := strings.TrimSpace(ft.Content(src))
+	if strings.Contains(typeText, "[") {
+		return
+	}
+	pkg, typ, ok := goQualifyTypeText(typeText, analysis)
+	if !ok {
+		return
+	}
+	if analysis.GoStructFields == nil {
+		analysis.GoStructFields = make(map[string]map[string]GoFieldType)
+	}
+	if analysis.GoStructFields[structName] == nil {
+		analysis.GoStructFields[structName] = make(map[string]GoFieldType)
+	}
+	for j := 0; j < int(field.NamedChildCount()); j++ {
+		if n := field.NamedChild(j); n.Type() == goNodeFieldIdentifier {
+			analysis.GoStructFields[structName][strings.TrimSpace(n.Content(src))] = GoFieldType{Package: pkg, Type: typ}
+		}
 	}
 }
 
@@ -820,7 +869,7 @@ func (p *GoParser) goReturnSource(
 		return SourceNode{Type: "CALL_RESULT", CallTarget: &callee, Location: location}, true
 	case goNodeIdentifier:
 		return SourceNode{Type: "VARIABLE", Name: expr.Content(src), Location: location}, true
-	case "selector_expression":
+	case goNodeSelectorExpression:
 		return SourceNode{Type: "FIELD", Name: expr.Content(src), Location: location}, true
 	case "int_literal", "float_literal", "imaginary_literal", "rune_literal", "raw_string_literal", "interpreted_string_literal", javaNodeBoolLiteralTrue, javaNodeBoolLiteralFalse, "nil":
 		return SourceNode{Type: "VALUE", Value: expr.Content(src), Location: location}, true
@@ -1037,7 +1086,7 @@ func (p *GoParser) parseCallExpr(
 		// — is a real call whose body the walk already visits; the invocation
 		// itself carries the honest empty identity (there is nothing to name).
 		call = goHonestCall("<func-literal>", "func(){...}()", filePath, line, args)
-	case "selector_expression":
+	case goNodeSelectorExpression:
 		call = p.parseSelectorCall(funcNode, src, filePath, line, args, analysis, currentReceiverType, currentReceiverVar, varTypes)
 	case goNodeIdentifier:
 		call = p.parseBareCall(funcNode, src, filePath, line, args, analysis, currentReceiverVar, varTypes)
@@ -1247,6 +1296,10 @@ func (p *GoParser) parseSelectorCall(
 		}
 	}
 
+	if fieldCall := p.goFieldReceiverCall(node, operandNode, field, src, filePath, line, args, analysis, currentReceiverType, currentReceiverVar, varTypes); fieldCall != nil {
+		return fieldCall
+	}
+
 	if operandNode.Type() != goNodeIdentifier {
 		// Any other receiver shape — a field chain (`s.c.XORKeyStream(...)`),
 		// an index expression (`hs[i].Sum(...)`), a composite literal — is a
@@ -1306,6 +1359,49 @@ func (p *GoParser) parseSelectorCall(
 		FilePath:    filePath,
 		Line:        line,
 		Arguments:   args,
+	}
+}
+
+// goFieldReceiverCall types the one field shape this pass can name:
+// `<root>.<field>.M()` where root is the method receiver or a typed local.
+// The callee stays untyped (the field's type lives in the graph-wide struct
+// table) and carries the root's type and the field for the builder to retry.
+// A root that is an imported package, an untyped local or a longer chain
+// returns nil and takes the honest empty-callee path.
+func (p *GoParser) goFieldReceiverCall(
+	node, operandNode *sitter.Node,
+	method string,
+	src []byte,
+	filePath string,
+	line int,
+	args []string,
+	analysis *FileAnalysis,
+	currentReceiverType, currentReceiverVar string,
+	varTypes map[string]string,
+) *FunctionCall {
+	if operandNode.Type() != goNodeSelectorExpression {
+		return nil
+	}
+	rootNode := operandNode.ChildByFieldName(goFieldOperand)
+	fieldNode := operandNode.ChildByFieldName(goFieldField)
+	if rootNode == nil || fieldNode == nil || rootNode.Type() != goNodeIdentifier {
+		return nil
+	}
+	root := rootNode.Content(src)
+	if _, local := varTypes[root]; !local && root != currentReceiverVar {
+		return nil
+	}
+	pkg, typ := p.resolveSelectorReceiverType(root, analysis, currentReceiverType, currentReceiverVar, varTypes)
+	if typ == "" {
+		return nil
+	}
+	return &FunctionCall{
+		Callee:        FunctionID{Name: method},
+		FieldReceiver: &GoFieldReceiver{Owner: FunctionID{Package: pkg, Type: typ}, Name: fieldNode.Content(src)},
+		Raw:           node.Content(src),
+		FilePath:      filePath,
+		Line:          line,
+		Arguments:     args,
 	}
 }
 
@@ -1601,18 +1697,25 @@ func (p *GoParser) resolveSelectorReceiverType(
 		return "", ""
 	}
 
+	pkg, typ, _ := goQualifyTypeText(typeText, analysis)
+	return pkg, typ
+}
+
+// goQualifyTypeText spells a declared Go type as (package path, type) the way
+// method keys do: an import alias expands to its path, an unqualified name
+// takes the file's own package, and a pointer prefix stays on the type.
+func goQualifyTypeText(typeText string, analysis *FileAnalysis) (string, string, bool) {
 	trimmed, pointerPrefix, ok := goNormalizeReceiverType(typeText)
 	if !ok {
-		return "", ""
+		return "", "", false
 	}
-
 	if dot := strings.Index(trimmed, "."); dot > 0 {
 		if importPath, ok := analysis.Imports[trimmed[:dot]]; ok {
-			return importPath, pointerPrefix + trimmed[dot+1:]
+			return importPath, pointerPrefix + trimmed[dot+1:], true
 		}
+		return "", "", false
 	}
-
-	return analysis.PackagePath, pointerPrefix + trimmed
+	return analysis.PackagePath, pointerPrefix + trimmed, true
 }
 
 func (p *GoParser) extractParameterTypes(node *sitter.Node, src []byte) []FunctionParameter {

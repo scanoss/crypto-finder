@@ -299,6 +299,18 @@ type FunctionParameter struct {
 	Name string
 }
 
+// GoFieldReceiver names the struct field a Go method call goes through.
+type GoFieldReceiver struct {
+	Owner FunctionID
+	Name  string
+}
+
+// GoFieldType is a struct field's declared type, qualified by package path.
+type GoFieldType struct {
+	Package string
+	Type    string // pointer prefix kept, type arguments never present
+}
+
 // FunctionCall represents a call expression within a function body.
 type FunctionCall struct {
 	// StaticReceiver reports a call qualified by a type name
@@ -307,6 +319,11 @@ type FunctionCall struct {
 	StaticReceiver bool
 	// Callee is the resolved target function
 	Callee FunctionID
+	// FieldReceiver is set for a Go call through a struct field of a typed
+	// root, `r.cache.Get()`: Owner is the root's type (package and possibly
+	// pointer-spelled type) and Name the field. Callee stays untyped until the
+	// builder reads the field's declared type from the graph-wide struct table.
+	FieldReceiver *GoFieldReceiver
 	// ResolvedReceiverType is the concrete type inferred for a field receiver
 	// when its declaring class has one unambiguous constructor assignment.
 	// Empty means the receiver type is declared, unknown, or ambiguous.
@@ -480,6 +497,10 @@ type FileAnalysis struct {
 	// declares. A path segment that is not one of them, and not the standard
 	// library, cannot name a crate. Rust only.
 	rustDependencies map[string]bool
+	// GoStructFields maps each struct this Go file declares to its named
+	// fields' declared types. A field whose type cannot be named (func,
+	// map, slice, generic, anonymous struct) is absent.
+	GoStructFields map[string]map[string]GoFieldType
 }
 
 // CallGraph is the complete call graph across all analyzed packages.
@@ -541,6 +562,10 @@ type CallGraph struct {
 	// entryRefs collects FileAnalysis.EntryRefs while files are merged;
 	// resolveEntryRefs consumes it.
 	entryRefs []EntryRef
+	// goStructFields merges FileAnalysis.GoStructFields keyed by
+	// `package.Struct`; a field two declarations disagree on (build-tag
+	// variants) is stored with an empty Type and never resolves.
+	goStructFields map[string]map[string]GoFieldType
 }
 
 // EdgeKind classifies how confidently a caller->callee edge was resolved.
