@@ -91,6 +91,9 @@ type Builder struct {
 	// pythonProjectRoots are the nested Python project directories of the
 	// current project-local package (see discoverPythonProjectRoots).
 	pythonProjectRoots map[string]struct{}
+	// pythonDependencyNames are the top-level module names of the build's
+	// versioned (dependency) packages, which a vendored project may not claim.
+	pythonDependencyNames map[string]bool
 	// ecosystem identifies which embedded contract KB to load during BuildFromDirectories.
 	// Defaults to "java" for backward compatibility with NewBuilder.
 	ecosystem string
@@ -200,6 +203,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// Phase 1: Parse source files only for packages that need full analysis
 	sourceParseStart := time.Now()
 	b.resetPythonBuildState()
+	b.pythonDependencyNames = pythonDependencyTopLevelNames(packages)
 	b.artifacts = newArtifactScopeFor(b.ecosystem, b.artifactGraph)
 	graph.artifacts = b.artifacts
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
@@ -341,7 +345,7 @@ func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
 		defer func() { b.excludeDirs = nil }()
 	}
 	if b.ecosystem == ecosystemPython && pkg.Version == "" {
-		b.pythonProjectRoots = discoverPythonProjectRoots(b.packageRoot, b.skipWalkDirectory)
+		b.pythonProjectRoots = discoverPythonProjectRoots(b.packageRoot, b.pythonDependencyNames, b.skipWalkDirectory)
 	}
 	cloner, ok := b.parser.(ParserCloner)
 	workers := runtime.GOMAXPROCS(0)
@@ -4005,4 +4009,22 @@ func looksLikeQualifiedTypeSegment(part string) bool {
 
 func methodLookupName(name string) string {
 	return BaseFunctionName(name)
+}
+
+// pythonDependencyTopLevelNames is the set of top-level module names the
+// versioned packages define, by their directory contents and import path.
+func pythonDependencyTopLevelNames(packages []PackageDir) map[string]bool {
+	names := map[string]bool{}
+	for _, pkg := range packages {
+		if pkg.Version == "" {
+			continue
+		}
+		if top, _, _ := strings.Cut(pkg.ImportPath, "."); top != "" {
+			names[top] = true
+		}
+		for name := range pythonRootModuleNames(pkg.Dir, "") {
+			names[name] = true
+		}
+	}
+	return names
 }

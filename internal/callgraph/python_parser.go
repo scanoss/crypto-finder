@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rs/zerolog/log"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
 )
@@ -312,86 +311,6 @@ func (p *PythonParser) IsLayoutDir(dir string) bool {
 		if taken[name] {
 			return false
 		}
-	}
-	return true
-}
-
-var pythonProjectMarkers = []string{"pyproject.toml", "setup.py", "setup.cfg"}
-
-func hasPythonProjectMarker(dir string) bool {
-	for _, marker := range pythonProjectMarkers {
-		if info, err := os.Stat(filepath.Join(dir, marker)); err == nil && !info.IsDir() {
-			return true
-		}
-	}
-	return false
-}
-
-// pythonAuxiliaryModules are top-level names every project of a monorepo has
-// its own copy of and no import statement means to share (a project's tests
-// or docs). They never make two projects collide.
-var pythonAuxiliaryModules = map[string]bool{
-	"tests": true, "test": true, "docs": true, "doc": true, "examples": true,
-	"scripts": true, "benchmarks": true, "conftest": true, "setup": true,
-	"noxfile": true, "tasks": true, "build": true, "dist": true,
-}
-
-// discoverPythonProjectRoots finds the directories below root that are Python
-// projects of their own (a pyproject.toml, setup.py or setup.cfg beside the
-// code), as in a monorepo's `packages/<name>/src/<import_name>`. Such a project
-// is what `import` statements are relative to, so the directories between the
-// scan root and the project name nothing and its modules are keyed from the
-// project directory down.
-//
-// A project is claimed only when every top-level module it exposes (its own
-// modules and packages, with a src/lib layout directory replaced by what it
-// holds) is still unclaimed, walking in path order and starting from the scan
-// root's own modules. Two projects that define the same top-level name keep
-// the later one's directory prefix, so their declarations never share a key
-// and one is never silently replaced by the other. A directory that is itself
-// a package (`__init__.py`) is not a project root, and the walk does not enter
-// packages: what lies inside is spelled relative to the package.
-func discoverPythonProjectRoots(root string, skipDir func(path, name string) bool) map[string]struct{} {
-	claimed := pythonRootModuleNames(root, "")
-	roots := map[string]struct{}{}
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return filepath.SkipDir
-		}
-		if !entry.IsDir() || path == root {
-			return nil
-		}
-		if skipDir(path, entry.Name()) || isPythonPackage(path) {
-			return filepath.SkipDir
-		}
-		if claimPythonProject(path, claimed) {
-			roots[path] = struct{}{}
-		}
-		return nil
-	})
-	if err != nil {
-		log.Debug().Err(err).Str("dir", root).Msg("Python project discovery stopped early")
-	}
-	return roots
-}
-
-// claimPythonProject reports whether dir is a project whose top-level modules
-// are all unclaimed, and if so records them as claimed.
-func claimPythonProject(dir string, claimed map[string]bool) bool {
-	if !hasPythonProjectMarker(dir) {
-		return false
-	}
-	names := pythonRootModuleNames(dir, "")
-	if len(names) == 0 {
-		return false
-	}
-	for name := range names {
-		if claimed[name] && !pythonAuxiliaryModules[name] {
-			return false
-		}
-	}
-	for name := range names {
-		claimed[name] = true
 	}
 	return true
 }

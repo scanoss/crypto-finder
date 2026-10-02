@@ -77,7 +77,7 @@ func TestBuilder_PythonNestedProjectModulesKeyedByImportName(t *testing.T) {
 		{
 			name: "flat layout project with setup.cfg",
 			files: map[string]string{
-				"packages/app/setup.cfg":               "[metadata]\nname = app\n",
+				"packages/app/setup.cfg":               "[options]\npackages = find:\n",
 				"packages/app/app_scanner/__init__.py": "",
 				"packages/app/app_scanner/scanner.py":  nestedScannerSrc,
 				"packages/app/app_cli/main.py":         nestedCLISrc,
@@ -174,5 +174,160 @@ func TestBuilder_PythonNestedProjectsDoNotShareModuleKeys(t *testing.T) {
 	}
 	if graph.Functions["other.mod.call"] == nil {
 		t.Fatalf("independent project not re-rooted: %v", sortedFunctionKeys(graph.Functions))
+	}
+}
+
+func graphHasKey(g *CallGraph, key string) bool { return g.Functions[key] != nil }
+
+// A marker directory that does not say where its packages are, or whose own
+// directory path is spelled in an import, keeps the keys it always had, so an
+// import that resolves today still does.
+func TestBuilder_PythonMarkerDirectoryKeepsPrefixUnlessItIsAProjectRoot(t *testing.T) {
+	t.Parallel()
+
+	t.Run("setup.py tools directory imported from the root", func(t *testing.T) {
+		t.Parallel()
+		g := buildPythonTree(t, map[string]string{
+			"tools/x/setup.py": "",
+			"tools/x/mod.py":   "def f():\n    return 1\n",
+			"main.py":          "from tools.x import mod\n\n\ndef run():\n    return mod.f()\n",
+		}, "")
+		if !graphHasKey(g, "tools.x.mod.f") || graphHasKey(g, "mod.f") {
+			t.Fatalf("re-keyed: %v", sortedFunctionKeys(g.Functions))
+		}
+		if !slices.Contains(g.Callers["tools.x.mod.f"], "main.run") {
+			t.Errorf("edge lost: %v", g.Callers["tools.x.mod.f"])
+		}
+	})
+	t.Run("docs build with a pyproject", func(t *testing.T) {
+		t.Parallel()
+		g := buildPythonTree(t, map[string]string{
+			"website/pyproject.toml": "[project]\nname = \"docs\"\n",
+			"website/conf.py":        "def setup(app):\n    return app\n",
+		}, "")
+		if !graphHasKey(g, "website.conf.setup") || graphHasKey(g, "conf.setup") {
+			t.Fatalf("re-keyed: %v", sortedFunctionKeys(g.Functions))
+		}
+	})
+	t.Run("flat project whose manifest declares no packages", func(t *testing.T) {
+		t.Parallel()
+		g := buildPythonTree(t, map[string]string{
+			"packages/app/pyproject.toml":         "[project]\nname = \"app\"\n",
+			"packages/app/app_scanner/scanner.py": nestedScannerSrc,
+		}, "")
+		if graphHasKey(g, "app_scanner.scanner.(Scanner).scan") {
+			t.Fatalf("re-keyed: %v", sortedFunctionKeys(g.Functions))
+		}
+	})
+	t.Run("a file spells the directory prefix", func(t *testing.T) {
+		t.Parallel()
+		g := buildPythonTree(t, map[string]string{
+			"packages/app/pyproject.toml":             "",
+			"packages/app/src/app_scanner/scanner.py": nestedScannerSrc,
+			"main.py": "from packages.app.src.app_scanner.scanner import Scanner\n\n\ndef run():\n    return Scanner().scan(1)\n",
+		}, "")
+		key := "packages.app.src.app_scanner.scanner.(Scanner).scan"
+		if !graphHasKey(g, key) || !slices.Contains(g.Callers[key], "main.run") {
+			t.Fatalf("kept prefix broke: %v callers=%v", sortedFunctionKeys(g.Functions), g.Callers[key])
+		}
+	})
+	t.Run("manifest packages declaration is enough", func(t *testing.T) {
+		t.Parallel()
+		g := buildPythonTree(t, map[string]string{
+			"packages/app/pyproject.toml":         "[tool.poetry]\npackages = [{include = \"app_scanner\"}]\n",
+			"packages/app/app_scanner/scanner.py": nestedScannerSrc,
+		}, "")
+		if !graphHasKey(g, "app_scanner.scanner.(Scanner).scan") {
+			t.Fatalf("not re-rooted: %v", sortedFunctionKeys(g.Functions))
+		}
+	})
+}
+
+// A vendored copy of a scanned dependency's top-level name is not re-keyed
+// onto it.
+func TestBuilder_PythonVendoredProjectCannotClaimADependencyName(t *testing.T) {
+	t.Parallel()
+
+	project := writePythonTree(t, map[string]string{
+		"third_party/requests/pyproject.toml":      "",
+		"third_party/requests/src/requests/api.py": "def get():\n    return 1\n",
+	})
+	dep := writePythonTree(t, map[string]string{
+		"requests/__init__.py": "",
+		"requests/api.py":      "def get():\n    return 2\n",
+	})
+	g, err := NewBuilderForEcosystem("python", NewPythonParser()).BuildFromDirectories([]PackageDir{
+		{Dir: project},
+		{Dir: dep, ImportPath: "requests", Version: "2.0"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !graphHasKey(g, "third_party.requests.src.requests.api.get") || !graphHasKey(g, "requests.requests.api.get") {
+		t.Fatalf("vendored copy collided: %v", sortedFunctionKeys(g.Functions))
+	}
+}
+
+// A root that is a project itself, with nested projects below it: the root's
+// own modules are claimed first, nested hidden directories are skipped, and a
+// nested manifest's scripts resolve against the new keys.
+func TestBuilder_PythonRootProjectWithNestedProjects(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"pyproject.toml":                          "",
+		"rootmod.py":                              "def r():\n    return 1\n",
+		"packages/app/pyproject.toml":             "[project.scripts]\napp = \"app_cli.main:go\"\n",
+		"packages/app/src/app_scanner/scanner.py": nestedScannerSrc,
+		"packages/app/src/app_cli/main.py":        nestedCLISrc,
+		"packages/dup/pyproject.toml":             "",
+		"packages/dup/src/rootmod/x.py":           "def d():\n    return 1\n",
+		".venv/lib/pkg/pyproject.toml":            "",
+		".venv/lib/pkg/src/hidden/h.py":           "def h():\n    return 1\n",
+	}
+	g := buildPythonTree(t, files, "")
+	if !graphHasKey(g, "rootmod.r") || !graphHasKey(g, "app_cli.main.go") {
+		t.Fatalf("keys: %v", sortedFunctionKeys(g.Functions))
+	}
+	if g.Functions["app_cli.main.go"].EntryKind == "" {
+		t.Errorf("nested [project.scripts] did not mark app_cli.main.go")
+	}
+	if !graphHasKey(g, "packages.dup.src.rootmod.x.d") {
+		t.Errorf("project colliding with a root module was re-keyed: %v", sortedFunctionKeys(g.Functions))
+	}
+	for _, key := range sortedFunctionKeys(g.Functions) {
+		if key == "hidden.h.h" {
+			t.Errorf("hidden directory was treated as a project: %s", key)
+		}
+	}
+}
+
+// Projects that only share names every project has (tests) are both
+// re-rooted, and the result does not depend on the run.
+func TestBuilder_PythonNestedProjectsAuxiliaryOverlapIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"packages/a/pyproject.toml":  "",
+		"packages/a/src/alpha/m.py":  "def f():\n    return 1\n",
+		"packages/a/tests/test_a.py": "def t():\n    return 1\n",
+		"packages/b/pyproject.toml":  "",
+		"packages/b/src/beta/m.py":   "def f():\n    return 1\n",
+		"packages/b/tests/test_b.py": "def t():\n    return 1\n",
+		"packages/c/pyproject.toml":  "",
+		"packages/c/src/alpha/m.py":  "def f():\n    return 2\n",
+	}
+	var first []string
+	for i := 0; i < 5; i++ {
+		g := buildPythonTree(t, files, "")
+		keys := sortedFunctionKeys(g.Functions)
+		if !graphHasKey(g, "alpha.m.f") || !graphHasKey(g, "beta.m.f") || !graphHasKey(g, "packages.c.src.alpha.m.f") {
+			t.Fatalf("keys: %v", keys)
+		}
+		if first == nil {
+			first = keys
+		} else if !slices.Equal(first, keys) {
+			t.Fatalf("run %d differs: %v vs %v", i, keys, first)
+		}
 	}
 }
