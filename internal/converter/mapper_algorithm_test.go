@@ -515,6 +515,39 @@ func TestAlgorithmMapper_OIDUnknownAlgorithm(t *testing.T) {
 	}
 }
 
+func TestAlgorithmMapper_JavaPaddingProjection(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ input, want string }{
+		{"PKCS5Padding", "pkcs5"},
+		{"PKCS7Padding", "pkcs7"},
+		{"NoPadding", "raw"},
+		{"pkcs5", "pkcs5"},
+		{"pkcs7", "pkcs7"},
+		{"pkcs1v15", "pkcs1v15"},
+		{"oaep", "oaep"},
+		{"raw", "raw"},
+		{"other", "other"},
+		{"unknown", "unknown"},
+		{"  PkCs7PaDdInG  ", "pkcs7"},
+		{"unsupported-padding", "unsupported-padding"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			asset := &entities.CryptographicAsset{Metadata: map[string]string{
+				"assetType": "algorithm", "algorithmPrimitive": "block-cipher",
+				"algorithmFamily": "AES", "algorithmPadding": tc.input,
+			}}
+			component, err := NewAlgorithmMapper().MapToComponentWithEvidence(asset)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(component.CryptoProperties.AlgorithmProperties.Padding); got != tc.want {
+				t.Errorf("padding = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAlgorithmMapper_OIDFormat(t *testing.T) {
 	mapper := NewAlgorithmMapper()
 
