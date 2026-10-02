@@ -115,7 +115,9 @@ func newDispatchHierarchy(graph *CallGraph) *dispatchHierarchy {
 		h.record(normalizeHierarchyName(owner), bases, known)
 	}
 	for owner, bases := range simpleBases {
-		if h.recorded[owner] {
+		// A Node class's bases were resolved through its imports; a simple
+		// name could pick another module's class of the same name.
+		if h.recorded[owner] || graph.nodeClassOwners[owner] {
 			continue
 		}
 		resolved := make([]string, 0, len(bases))
@@ -153,6 +155,18 @@ func indexDeclaredOwners(graph *CallGraph) (typesBySimple map[string][]string, p
 		if len(decl.OwnerBases) > 0 && simpleBases[owner] == nil {
 			simpleBases[owner] = decl.OwnerBases
 		}
+	}
+	// A Node class that owns no declaration, an abstract class with only
+	// abstract methods, is still a type a simple base name can denote. Other
+	// ecosystems' source supertypes name no such type.
+	for owner := range graph.SourceSupertypes {
+		owner = normalizeHierarchyName(owner)
+		if known[owner] || !graph.nodeClassOwners[owner] {
+			continue
+		}
+		known[owner] = true
+		simple := simpleTypeName(owner)
+		typesBySimple[simple] = append(typesBySimple[simple], owner)
 	}
 	return typesBySimple, pkgByOwner, simpleBases, known
 }
@@ -457,6 +471,33 @@ func resolveSimpleBase(base, ownerPkg string, typesBySimple map[string][]string)
 		return candidates[0]
 	}
 	return ""
+}
+
+// importProvenSubtype reports whether sub reaches super through Node classes
+// whose bases the parser resolved by import, never by simple name.
+func (h *dispatchHierarchy) importProvenSubtype(sub, super string) bool {
+	sub, super = normalizeHierarchyName(sub), normalizeHierarchyName(super)
+	seen := map[string]bool{sub: true}
+	frontier := []string{sub}
+	for depth := 0; depth < hierarchyMaxDepth && len(frontier) > 0; depth++ {
+		var next []string
+		for _, current := range frontier {
+			if !h.graph.nodeClassOwners[current] {
+				continue
+			}
+			for _, parent := range h.parents[current] {
+				if parent == super {
+					return true
+				}
+				if !seen[parent] {
+					seen[parent] = true
+					next = append(next, parent)
+				}
+			}
+		}
+		frontier = next
+	}
+	return false
 }
 
 // isSubtype reports whether sub is super or transitively extends/implements it.

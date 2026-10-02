@@ -315,6 +315,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 func (b *Builder) indexCallers(graph *CallGraph) {
 	pruneGoPredeclaredCalls(graph, b.ecosystem)
 	resolveGoFieldReceiverCalls(graph, b.ecosystem)
+	resolveNodeTypedReceivers(graph)
 	b.buildCallerIndex(graph)
 }
 
@@ -508,6 +509,7 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 		b.mergeAnalysisFunctions(graph, analysis)
 		mergeJavaStringConstants(graph, analysis)
 		graph.entryRefs = append(graph.entryRefs, analysis.EntryRefs...)
+		mergeNodeFileFacts(graph, analysis)
 	}
 }
 
@@ -1620,7 +1622,7 @@ func (b *Builder) expandAbstractClassDispatch(
 	declaredType := interfaceDeclaredType(callee)
 	calleeOwner := declOwnerFQN(callee)
 	calleeComplete := idx.hierarchy.hierarchyComplete(calleeOwner)
-	c := classifyAbstractCandidates(targets, callee, idx.hierarchy, b.artifacts, calleeComplete)
+	c := classifyAbstractCandidates(targets, callee, idx.hierarchy, b.artifacts, calleeComplete, b.ecosystem == ecosystemNode)
 	overrides, heuristic := c.overrides, c.heuristic
 
 	own := ownOverloads(graph, callee, idx)
@@ -1664,8 +1666,10 @@ type abstractCandidates struct {
 // those the callee's class inherits (from classes and interfaces alike, an
 // interface's default or abstract method included), proven subtype overrides
 // and name_only candidates, noting whether any inherited one is an instance
-// method.
-func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hierarchy *dispatchHierarchy, artifacts *artifactScope, calleeComplete bool) abstractCandidates {
+// method. A Node module is one file, so a subclass often sits outside the
+// callee's namespace root; with moduleFiles a candidate there is kept only
+// when the hierarchy proves it a subtype.
+func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hierarchy *dispatchHierarchy, artifacts *artifactScope, calleeComplete, moduleFiles bool) abstractCandidates {
 	calleeOwner := declOwnerFQN(callee)
 	baseRoot := namespaceRoot(callee.Package)
 	arity := functionArity(callee.Name)
@@ -1678,10 +1682,11 @@ func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hier
 			c.nonStaticAncestor = c.nonStaticAncestor || !candidate.Static
 			continue
 		}
-		if !abstractCandidateShape(candidate, callee, arity) || namespaceRoot(candidate.ID.Package) != baseRoot {
+		sameRoot := namespaceRoot(candidate.ID.Package) == baseRoot
+		if !abstractCandidateShape(candidate, callee, arity) || (!sameRoot && !moduleFiles) {
 			continue
 		}
-		switch abstractCandidateKind(hierarchy, owner, calleeOwner, calleeComplete) {
+		switch abstractCandidateKindIn(hierarchy, owner, calleeOwner, calleeComplete, sameRoot) {
 		case EdgeKindInterfaceDispatch:
 			c.overrides = append(c.overrides, candidate.ID.String())
 		case EdgeKindNameOnly:
@@ -1695,6 +1700,21 @@ func classifyAbstractCandidates(targets []*FunctionDecl, callee FunctionID, hier
 		}
 	}
 	return c
+}
+
+// abstractCandidateKindIn is abstractCandidateKind for a candidate in or out
+// of the callee's namespace root. Out of it, only a subtype the hierarchy
+// proves through import-resolved bases counts: a name_only candidate there is
+// no more than a method that shares a name.
+func abstractCandidateKindIn(hierarchy *dispatchHierarchy, owner, calleeOwner string, calleeComplete, sameRoot bool) EdgeKind {
+	kind := abstractCandidateKind(hierarchy, owner, calleeOwner, calleeComplete)
+	if sameRoot {
+		return kind
+	}
+	if kind == EdgeKindInterfaceDispatch && hierarchy.importProvenSubtype(owner, calleeOwner) {
+		return kind
+	}
+	return ""
 }
 
 // abstractCandidateShape reports whether candidate is a class method of the
