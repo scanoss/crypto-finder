@@ -88,6 +88,12 @@ type Builder struct {
 	// per-package duration as excludeDirs so subImportPath can tell a layout
 	// directory directly under the root from a nested one of the same name.
 	packageRoot string
+	// pythonProjectRoots are the nested Python project directories of the
+	// current project-local package (see discoverPythonProjectRoots).
+	pythonProjectRoots map[string]struct{}
+	// pythonDependencyNames are the top-level module names of the build's
+	// versioned (dependency) packages, which a vendored project may not claim.
+	pythonDependencyNames map[string]bool
 	// ecosystem identifies which embedded contract KB to load during BuildFromDirectories.
 	// Defaults to "java" for backward compatibility with NewBuilder.
 	ecosystem string
@@ -197,6 +203,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// Phase 1: Parse source files only for packages that need full analysis
 	sourceParseStart := time.Now()
 	b.resetPythonBuildState()
+	b.pythonDependencyNames = pythonDependencyTopLevelNames(packages)
 	b.artifacts = newArtifactScopeFor(b.ecosystem, b.artifactGraph)
 	graph.artifacts = b.artifacts
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
@@ -329,12 +336,16 @@ func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
 	b.packageImportPath = pkg.ImportPath
 	b.currentArtifact = artifactNameFor(b.ecosystem, pkg)
 	b.excludeDirs = nil
+	b.pythonProjectRoots = nil
 	if len(pkg.ExcludeDirs) > 0 {
 		b.excludeDirs = make(map[string]struct{}, len(pkg.ExcludeDirs))
 		for _, dir := range pkg.ExcludeDirs {
 			b.excludeDirs[filepath.Clean(dir)] = struct{}{}
 		}
 		defer func() { b.excludeDirs = nil }()
+	}
+	if b.ecosystem == ecosystemPython && pkg.Version == "" {
+		b.pythonProjectRoots = discoverPythonProjectRoots(b.packageRoot, b.pythonDependencyNames, b.skipWalkDirectory)
 	}
 	cloner, ok := b.parser.(ParserCloner)
 	workers := runtime.GOMAXPROCS(0)
@@ -384,10 +395,23 @@ func (b *Builder) subImportPath(subDir, parentPath, dirName string) string {
 			return modulePath
 		}
 	}
-	if namer, ok := b.parser.(LayoutDirNamer); ok && filepath.Dir(subDir) == b.packageRoot && namer.IsLayoutDir(subDir) {
+	if _, ok := b.pythonProjectRoots[subDir]; ok {
+		return b.packageImportPath
+	}
+	if namer, ok := b.parser.(LayoutDirNamer); ok && b.isLayoutParent(filepath.Dir(subDir)) && namer.IsLayoutDir(subDir) {
 		return parentPath
 	}
 	return b.parser.SubPackagePath(parentPath, dirName)
+}
+
+// isLayoutParent reports whether dir is where a packaging layout directory may
+// sit: the package root, or a nested Python project's root.
+func (b *Builder) isLayoutParent(dir string) bool {
+	if dir == b.packageRoot {
+		return true
+	}
+	_, ok := b.pythonProjectRoots[dir]
+	return ok
 }
 
 // collectParseDirs reproduces analyzeDir's pre-order traversal (directory
@@ -3985,4 +4009,22 @@ func looksLikeQualifiedTypeSegment(part string) bool {
 
 func methodLookupName(name string) string {
 	return BaseFunctionName(name)
+}
+
+// pythonDependencyTopLevelNames is the set of top-level module names the
+// versioned packages define, by their directory contents and import path.
+func pythonDependencyTopLevelNames(packages []PackageDir) map[string]bool {
+	names := map[string]bool{}
+	for _, pkg := range packages {
+		if pkg.Version == "" {
+			continue
+		}
+		if top, _, _ := strings.Cut(pkg.ImportPath, "."); top != "" {
+			names[top] = true
+		}
+		for name := range pythonRootModuleNames(pkg.Dir, "") {
+			names[name] = true
+		}
+	}
+	return names
 }
