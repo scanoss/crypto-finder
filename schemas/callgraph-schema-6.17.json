@@ -144,7 +144,7 @@
             "no_callers",
             "depth_limit"
           ],
-          "description": "On a chain's first frame only, what that frame is: a program entry point (main), a method a framework calls (framework_entry), an application function no application code calls (no_callers; a graph root on a library scanned alone), or the frame where a depth limit stopped the walk (depth_limit). Live export only."
+          "description": "On a chain's first frame only, what that frame is: a program entry point (main), a method a framework calls (framework_entry), an application function no application code calls (no_callers; a graph root on a library scanned alone), or the frame where a depth limit stopped the walk (depth_limit). The stitched export writes it too when the fragments recorded entry kinds (graph-fragment-1.14), never depth_limit."
         }
       },
       "additionalProperties": true
@@ -453,7 +453,7 @@
         },
         "no_callers_only": {
           "type": "boolean",
-          "description": "Every root of the routes supporting the verdict has root_kind no_callers. Omitted when false. Live export only."
+          "description": "Every root of the routes supporting the verdict has root_kind no_callers. Omitted when false. The stitched export sets it only when the fragments recorded entry kinds (graph-fragment-1.14)."
         }
       }
     }

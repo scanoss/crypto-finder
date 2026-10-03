@@ -22,8 +22,16 @@ func (e *GraphFragmentExport) ToFragment(component ComponentKey) Fragment {
 		Module:           e.ScanMetadata.RootModule,
 		GraphAlgoVersion: e.ScanMetadata.GraphAlgoVersion,
 	}
+	if e.ScanMetadata.EntryKinds {
+		frag.EntryKinds = make(map[string]string)
+	}
 
 	appendFragmentFunctions(&frag, e.Functions)
+	for i := range e.Functions {
+		if kind := e.Functions[i].EntryKind; kind != "" && frag.EntryKinds != nil {
+			frag.EntryKinds[e.Functions[i].Key] = kind
+		}
+	}
 	functionKeys := graphFragmentFunctionKeys(e.Functions)
 	if len(e.CompactInternalEdges) > 0 {
 		appendCompactInternalEdges(&frag, functionKeys, e.InternalEdgeStrings, e.CompactInternalEdges)

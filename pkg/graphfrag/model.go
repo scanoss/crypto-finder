@@ -53,6 +53,14 @@ type Fragment struct {
 	// graph construction.
 	GraphAlgoVersion string
 
+	// EntryKinds maps a function signature to RootKindMain or
+	// RootKindFrameworkEntry for each function the producing scan recognized as
+	// an entry point (graph-fragment-1.14+). It is nil when the producer did not
+	// record entry kinds, and non-nil, even if empty, when it did: only the
+	// second lets the stitcher read a root with no entry kind as an application
+	// function nothing calls.
+	EntryKinds map[string]string
+
 	// RulesVersion is the rules_version of the crypto annotation attached to this
 	// fragment (the version under which CryptoOperations/SupportingCalls were
 	// computed). Empty for purely structural fragments (code graph with no
@@ -656,6 +664,10 @@ type Result struct {
 	// this instead of from the chains that survived the stitch, so a capped or
 	// collapsed traversal can no longer silently shrink the published surface.
 	reachByAnchor map[graphNode][]reachEntry
+
+	// rootKinds is the root_kind of each chain root (entry-rooted stitch only);
+	// a root absent from it has no kind to claim (see classifyRootKinds).
+	rootKinds map[graphNode]string
 
 	// unresolvedDispatchOps are the crypto-op nodes the root reaches only
 	// through a name_only edge. Such a finding reads unknown with

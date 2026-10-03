@@ -184,6 +184,7 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		// a signature naming nothing from one naming a composed entry point: the
 		// latter proves reachability through a dependency's mine-time index, which
 		// records a depth and no route, so no enumeration can confirm it.
+		out.rootKinds = classifyRootKinds(&rootFragment, roots)
 		composeDependencyEntryPoints(root, closure, fragments, adjacency, ambiguousCandidates, &out)
 		composedRoutes := make(map[string][]graphNode)
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots,

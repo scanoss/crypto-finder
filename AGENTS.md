@@ -146,7 +146,7 @@ contracts: identical entries across libraries are idempotent; the same
 Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
 INTERNAL to the loader; the partner-facing export schema is independent (currently
 `6.17` for default local CLI callgraph exports and `6.14` for zero-value SDK/stitch — `pkg/graphfrag.CallgraphSchemaVersion` — and
-`graph-fragment-1.13` for the fragment export — `pkg/graphfrag.SchemaVersion`).
+`graph-fragment-1.14` for the fragment export — `pkg/graphfrag.SchemaVersion`).
 
 To add a library:
 1. Drop a new YAML at `internal/callgraph/contracts/<ecosystem>/<library>.yaml`.
