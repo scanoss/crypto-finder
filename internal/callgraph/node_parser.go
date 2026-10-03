@@ -1018,32 +1018,41 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 		}
 		return call
 	case nodeMemberExpression:
-		object := function.ChildByFieldName("object")
-		property := function.ChildByFieldName("property")
-		if object == nil || property == nil {
-			return nil
-		}
-		name := property.Content(src)
-		objectText := object.Content(src)
-		call.Callee = FunctionID{Package: packagePath, Name: name}
-		first, suffix := splitNodeMemberObject(objectText)
-		binding, importedObject := imports.lookup(locals, first)
-		switch {
-		case object.Type() != nodeCallExpression && importedObject:
-			call.Callee.Package, _ = binding.qualify(suffix, name)
-			p.markImportedInstance(call, binding, first, suffix)
-		case object.Type() == "this" && owner != "":
-			call.Callee.Type = owner
-		case object.Type() == goNodeIdentifier && locals[objectText]:
-			call.ReceiverVar = objectText
-		}
-		p.typeNodeReceiver(call, object, src, owner, importedObject)
-		boundByImport := object.Type() != nodeCallExpression && importedObject
-		call.nodeUnboundMember = !boundByImport && call.Callee.Type == ""
-		return call
+		return p.parseNodeMemberCall(call, function, src, packagePath, owner, imports, locals)
 	default:
 		return nil
 	}
+}
+
+// parseNodeMemberCall completes a call whose callee is `<object>.<name>`. The
+// call binds through its receiver or not at all: an import, `this` in a class
+// and a typed value name the target, while a chained or unresolved receiver
+// leaves the callee unbound (nodeUnboundMember) so it never reaches a
+// same-named module function.
+func (p *NodeParser) parseNodeMemberCall(call *FunctionCall, function *sitter.Node, src []byte, packagePath, owner string, imports nodeBindings, locals map[string]bool) *FunctionCall {
+	object := function.ChildByFieldName("object")
+	property := function.ChildByFieldName("property")
+	if object == nil || property == nil {
+		return nil
+	}
+	name := property.Content(src)
+	objectText := object.Content(src)
+	call.Callee = FunctionID{Package: packagePath, Name: name}
+	first, suffix := splitNodeMemberObject(objectText)
+	binding, importedObject := imports.lookup(locals, first)
+	switch {
+	case object.Type() != nodeCallExpression && importedObject:
+		call.Callee.Package, _ = binding.qualify(suffix, name)
+		p.markImportedInstance(call, binding, first, suffix)
+	case object.Type() == "this" && owner != "":
+		call.Callee.Type = owner
+	case object.Type() == goNodeIdentifier && locals[objectText]:
+		call.ReceiverVar = objectText
+	}
+	p.typeNodeReceiver(call, object, src, owner, importedObject)
+	boundByImport := object.Type() != nodeCallExpression && importedObject
+	call.nodeUnboundMember = !boundByImport && call.Callee.Type == ""
+	return call
 }
 
 // unwrapNodeCallee sees through the parentheses and comma operator that
