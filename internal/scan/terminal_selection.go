@@ -3,6 +3,8 @@
 
 package scan
 
+import "math"
+
 // candidateView is the minimal per-call identity the position-based terminal
 // selection needs: the call expression's columns, its fluent-chain grouping, the
 // variable its result binds to, and the length of its raw expression. The live
@@ -46,6 +48,7 @@ func columnFilterIndices(views []candidateView, idxs []int, assetStartCol, asset
 	if assetStartCol <= 0 || assetEndCol <= 0 {
 		return idxs
 	}
+	views, assetEndCol = openMultiLineSpans(views, assetStartCol, assetEndCol)
 	filtered := make([]int, 0, len(idxs))
 	for _, i := range idxs {
 		v := views[i]
@@ -61,6 +64,35 @@ func columnFilterIndices(views []candidateView, idxs []int, assetStartCol, asset
 		return idxs
 	}
 	return tightestContainingIndices(views, filtered, assetStartCol, assetEndCol)
+}
+
+// openEndedCol stands for "the span ends on a later line" in a column compare.
+const openEndedCol = math.MaxInt32
+
+// openMultiLineSpans reads a span whose end column is not after its start
+// column as one that ends on a later line, because the end column then belongs
+// to that line and cannot be compared with a start column of the first. Without
+// it a call such as the second getInstance of a two-line ternary is dropped by
+// the intersection test and the asset falls back to a different call on the
+// same line. Spans with end > start are returned unchanged, so single-line
+// selection is unaffected.
+func openMultiLineSpans(views []candidateView, assetStartCol, assetEndCol int) ([]candidateView, int) {
+	if assetEndCol <= assetStartCol {
+		assetEndCol = openEndedCol
+	}
+	var out []candidateView
+	for i, v := range views {
+		if v.StartCol > 0 && v.EndCol > 0 && v.EndCol <= v.StartCol {
+			if out == nil {
+				out = append([]candidateView(nil), views...)
+			}
+			out[i].EndCol = openEndedCol
+		}
+	}
+	if out == nil {
+		return views, assetEndCol
+	}
+	return out, assetEndCol
 }
 
 func tightestContainingIndices(views []candidateView, idxs []int, assetStartCol, assetEndCol int) []int {
