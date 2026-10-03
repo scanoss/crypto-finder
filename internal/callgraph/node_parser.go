@@ -216,6 +216,7 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	modulePath := nodeModulePath(packagePath, filePath)
 	p.file = newNodeFileTypes(p, root, src, modulePath, bindings, projectImports)
 	defer func() { p.file, p.scope = nil, nil }()
+	p.file.filePath, p.file.pkgPath = filePath, packagePath
 	analysis.nodeInstances = p.file.instances
 	analysis.nodeDefaultClass = p.file.defaultClass
 	analysis.nodeAssignedProps = p.file.assignedProps
@@ -1018,30 +1019,62 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 		}
 		return call
 	case nodeMemberExpression:
-		object := function.ChildByFieldName("object")
-		property := function.ChildByFieldName("property")
-		if object == nil || property == nil {
-			return nil
-		}
-		name := property.Content(src)
-		objectText := object.Content(src)
-		call.Callee = FunctionID{Package: packagePath, Name: name}
-		first, suffix := splitNodeMemberObject(objectText)
-		binding, importedObject := imports.lookup(locals, first)
-		switch {
-		case object.Type() != nodeCallExpression && importedObject:
-			call.Callee.Package, _ = binding.qualify(suffix, name)
-			p.markImportedInstance(call, binding, first, suffix)
-		case object.Type() == "this" && owner != "":
-			call.Callee.Type = owner
-		case object.Type() == goNodeIdentifier && locals[objectText]:
-			call.ReceiverVar = objectText
-		}
-		p.typeNodeReceiver(call, object, src, owner, importedObject)
-		return call
+		return p.parseNodeMemberCall(call, function, src, packagePath, owner, imports, locals)
 	default:
 		return nil
 	}
+}
+
+// parseNodeMemberCall completes a call whose callee is `<object>.<name>`. The
+// call binds through its receiver or not at all: an import, `this` in a class
+// and a typed value name the target, while a chained or unresolved receiver
+// leaves the callee unbound (nodeUnboundMember) so it never reaches a
+// same-named module function.
+func (p *NodeParser) parseNodeMemberCall(call *FunctionCall, function *sitter.Node, src []byte, packagePath, owner string, imports nodeBindings, locals map[string]bool) *FunctionCall {
+	object := function.ChildByFieldName("object")
+	property := function.ChildByFieldName("property")
+	if object == nil || property == nil {
+		return nil
+	}
+	name := property.Content(src)
+	objectText := object.Content(src)
+	call.Callee = FunctionID{Package: packagePath, Name: name}
+	first, suffix := splitNodeMemberObject(objectText)
+	binding, importedObject := imports.lookup(locals, first)
+	required, requiredObject := p.requireReceiver(object, src)
+	switch {
+	case requiredObject:
+		call.Callee.Package, _ = required.qualify("", name)
+		importedObject = true
+	case object.Type() != nodeCallExpression && importedObject:
+		call.Callee.Package, _ = binding.qualify(suffix, name)
+		p.markImportedInstance(call, binding, first, suffix)
+	case object.Type() == "this" && owner != "":
+		call.Callee.Type = owner
+	case object.Type() == goNodeIdentifier && locals[objectText]:
+		call.ReceiverVar = objectText
+	}
+	p.typeNodeReceiver(call, object, src, owner, importedObject)
+	boundByImport := requiredObject || (object.Type() != nodeCallExpression && importedObject)
+	call.nodeUnboundMember = !boundByImport && call.Callee.Type == ""
+	return call
+}
+
+// requireReceiver reads a receiver written as `require('m')`, bare or wrapped
+// in an import interop helper, as the module it loads: the module resolves
+// exactly as the binding of `const m = require('m')` does.
+func (p *NodeParser) requireReceiver(object *sitter.Node, src []byte) (nodeBinding, bool) {
+	if p.file == nil || object.Type() != nodeCallExpression {
+		return nodeBinding{}, false
+	}
+	binding, ok := nodeRequireBinding(object, src)
+	if !ok || binding.member != "" {
+		return nodeBinding{}, false
+	}
+	if resolved, relative := resolveNodeRelativeModule(p.file.filePath, p.file.pkgPath, binding.module); relative {
+		binding.module = resolved
+	}
+	return binding, true
 }
 
 // unwrapNodeCallee sees through the parentheses and comma operator that

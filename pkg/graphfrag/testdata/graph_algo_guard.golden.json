@@ -26,9 +26,9 @@
       "external_calls": 10
     },
     "node": {
-      "sha256": "aeb2212d7e79246f0259727991c55dff1db4942467f77632f448fe27adcdb9c4",
+      "sha256": "151b2cae1e3ea531d68d5bb0089ae9db6d941461042b7d7c3345b9090b8360df",
       "functions": 8,
-      "internal_edges": 5,
+      "internal_edges": 3,
       "external_calls": 15
     },
     "python": {

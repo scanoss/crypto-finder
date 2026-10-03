@@ -1244,6 +1244,12 @@ func (idx dispatchIndexes) expandAbstractClassDispatchMemoized(b *Builder, calle
 // classification.
 func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *FunctionCall, idx dispatchIndexes) {
 	calleeKey := call.Callee.String()
+	if call.nodeUnboundMember && call.Callee.Type == "" && graph.Functions[calleeKey] != nil {
+		// `getThing().digest()` or `param.digest()`: no receiver binds the call
+		// to the module function of the same name.
+		b.indexFluentFallback(graph, callerKey, call, idx)
+		return
+	}
 	idx.addCallerIndexed(graph.Callers, calleeKey, callerKey)
 	recordCallEdgeResolution(graph, callerKey, calleeKey, EdgeKindExact, "", call)
 	if b.ecosystem == ecosystemPython {
@@ -1291,6 +1297,10 @@ func (b *Builder) indexCallDispatch(graph *CallGraph, callerKey string, call *Fu
 		recordCallEdgeResolution(graph, callerKey, alias.CalleeKey, alias.kind(), alias.DeclaredType, call)
 	}
 
+	b.indexFluentFallback(graph, callerKey, call, idx)
+}
+
+func (b *Builder) indexFluentFallback(graph *CallGraph, callerKey string, call *FunctionCall, idx dispatchIndexes) {
 	for _, alias := range b.expandFluentFallback(call, graph, idx.methodsByName) {
 		idx.addCallerIndexed(graph.Callers, alias, callerKey)
 		recordCallEdgeResolution(graph, callerKey, alias, EdgeKindNameOnly, "", call)
