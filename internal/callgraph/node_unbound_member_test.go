@@ -69,3 +69,46 @@ func TestNodeMemberCallOnUnresolvedReceiverBindsNoModuleFunction(t *testing.T) {
 		}
 	}
 }
+
+const requireReceiverModule = `const crypto = require('crypto')
+
+function digest(v) { return v }
+
+function viaRequire(v) { return require('./utils').digest(v) }
+function viaRequireMissing() { return require('./utils').missing() }
+function viaInterop(v) { return __importStar(require('./utils')).digest(v) }
+function stillUnbound(data) { return crypto.createHash('md5').update(data).digest('hex') }
+function stillUnboundCall() { return getThing().digest() }
+
+module.exports = { viaRequire, viaRequireMissing, viaInterop, stillUnbound, stillUnboundCall }
+`
+
+func TestNodeMemberCallOnInlineRequireBindsTheRequiredModule(t *testing.T) {
+	t.Parallel()
+	for _, ext := range []string{"js", "ts"} {
+		graph := buildNodeFiles(t, map[string]string{
+			"m." + ext:     requireReceiverModule,
+			"utils." + ext: unboundMemberUtils,
+		})
+		local, _ := graphFunction(t, graph, "app/m", "", "digest")
+		utilsDigest, _ := graphFunction(t, graph, "app/utils", "", "digest")
+
+		for _, name := range []string{"viaRequire", "viaInterop"} {
+			caller, _ := graphFunction(t, graph, "app/m", "", name)
+			if !hasCaller(graph, utilsDigest, caller) {
+				t.Errorf("%s: Callers[%s] = %v, want %s", ext, utilsDigest, graph.Callers[utilsDigest], caller)
+			}
+			if hasCaller(graph, local, caller) {
+				t.Errorf("%s: %s must not call the same-file digest", ext, name)
+			}
+		}
+		for _, name := range []string{"viaRequireMissing", "stillUnbound", "stillUnboundCall"} {
+			caller, _ := graphFunction(t, graph, "app/m", "", name)
+			for _, target := range []string{local, utilsDigest} {
+				if hasCaller(graph, target, caller) {
+					t.Errorf("%s: %s must not call %s", ext, name, target)
+				}
+			}
+		}
+	}
+}

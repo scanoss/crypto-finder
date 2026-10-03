@@ -70,7 +70,11 @@ func (f *nodeTypeFacts) poison(name string) {
 // nodeFileTypes holds what one file declares about types.
 type nodeFileTypes struct {
 	modulePath string
-	bindings   nodeBindings
+	// filePath and pkgPath locate the file, to resolve the relative specifier
+	// of an inline require.
+	filePath string
+	pkgPath  string
+	bindings nodeBindings
 	// project names the imports that resolve to a module of the scanned tree.
 	// A class from any other import is a library's, whose methods the contract
 	// resolver types.
