@@ -1248,7 +1248,8 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		passParent = "export"
 	}
 
-	if callGraphResult != nil && callGraphResult.CallGraph != nil {
+	graphPasses := callGraphResult != nil && callGraphResult.CallGraph != nil
+	if graphPasses {
 		if err := runRuleGraphPasses(progress, passParent, rulesManager, report, callGraphResult); err != nil {
 			return err
 		}
@@ -1256,7 +1257,8 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 
 	// Finalize all non-OID report metadata before preparation. The resolved
 	// object below is the sole report passed to OID-consuming projections.
-	needsFindingIDs := scanExportCallgraph != "" || scanExportGraphFragment != ""
+	// The graph passes add assets after a dependency scan assigned its ids.
+	needsFindingIDs := scanExportCallgraph != "" || scanExportGraphFragment != "" || graphPasses
 	if needsFindingIDs {
 		if err := runScanPhase(progress, "finding_ids", passParent, func() error {
 			engine.AssignFindingIDs(report)
