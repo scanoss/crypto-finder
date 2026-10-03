@@ -133,3 +133,13 @@ func (t *Tracer) hasExternalSupertype(typeName string, isUserType func(string) b
 	}
 	return false
 }
+
+// EntryKind reports whether decl is a recognized entry point (main or
+// framework_entry), the way a chain root is classified. userPackages is the
+// application's package set, or nil when the scan has no user code: types the
+// scan declares then count as the application's own. It lets a producer record
+// the kind next to the function, since only the scan that holds the entry-point
+// catalog match and the type hierarchy can tell.
+func (t *Tracer) EntryKind(decl *FunctionDecl, userPackages map[string]bool) (RootKind, bool) {
+	return t.entryRootKind(decl, func(typeName string) bool { return t.isUserType(typeName, userPackages) })
+}

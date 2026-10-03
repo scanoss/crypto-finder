@@ -43,7 +43,14 @@ import (
 // hierarchy stitching. 1.10 adds optional occurrence_key propagation for
 // canonical crypto annotations. 1.11 adds resolved key-length call evidence.
 // 1.12 adds the rule-vs-callgraph key-length conflict marker on that evidence.
-const SchemaVersion = "graph-fragment-1.13"
+//
+// 1.14 adds entry_kind on a function the producing scan recognized as an entry
+// point (main or framework_entry) and scan_metadata.entry_kinds, which says the
+// producer recorded entry kinds at all. The stitched export reads them to give
+// a chain root its root_kind and a finding its no_callers_only. A fragment
+// without scan_metadata.entry_kinds (1.13 and older) decodes with no entry
+// kinds and the stitcher claims neither for its functions.
+const SchemaVersion = "graph-fragment-1.14"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema
@@ -57,7 +64,11 @@ const SchemaVersion = "graph-fragment-1.13"
 // graph-algo-6: Go dependencies contribute only their imported packages, on
 // top of the Go, Node and Python call resolution and Go interface dispatch
 // changes merged since graph-algo-5.
-const GraphAlgoVersion = "graph-algo-6"
+//
+// graph-algo-7: functions carry the entry kind the scan recognized (main or
+// framework_entry), so a stitched export can give a chain root its root_kind.
+// A structural graph cached under graph-algo-6 has none.
+const GraphAlgoVersion = "graph-algo-7"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
@@ -177,29 +188,37 @@ type GraphFragmentScanMetadata struct {
 	CryptoOps         int    `json:"crypto_operation_count"`
 	SupportingCalls   int    `json:"supporting_call_count,omitempty"`
 	CryptoEntryPoints int    `json:"crypto_entry_point_count,omitempty"`
+	// EntryKinds (1.14+) is true when the producer recorded entry_kind on the
+	// functions it recognized as entry points. False means the fragment has no
+	// entry-kind data, which differs from data that names no entry point.
+	EntryKinds bool `json:"entry_kinds,omitempty"`
 }
 
 // GraphFragmentFunction is one function declaration included in a component's
 // graph-fragment export.
 type GraphFragmentFunction struct {
-	Key                           string          `json:"key"`
-	FunctionName                  string          `json:"function_name"`
-	CanonicalSignature            string          `json:"canonical_signature,omitempty"`
-	ErasedSignature               string          `json:"erased_signature,omitempty"`
-	CompatibleCanonicalSignatures []string        `json:"compatible_canonical_signatures,omitempty"`
-	Package                       string          `json:"package,omitempty"`
-	Type                          string          `json:"type,omitempty"`
-	Name                          string          `json:"name,omitempty"`
-	FilePath                      string          `json:"file_path,omitempty"`
-	StartLine                     int             `json:"start_line,omitempty"`
-	EndLine                       int             `json:"end_line,omitempty"`
-	ReturnType                    string          `json:"return_type,omitempty"`
-	ParameterTypes                []string        `json:"parameter_types,omitempty"`
-	Visibility                    string          `json:"visibility,omitempty"`
-	OwnerVisibility               string          `json:"owner_visibility,omitempty"`
-	DisplaySymbol                 string          `json:"display_symbol,omitempty"`
-	Aliases                       []string        `json:"aliases,omitempty"`
-	InferredReturn                json.RawMessage `json:"-"`
+	Key                           string   `json:"key"`
+	FunctionName                  string   `json:"function_name"`
+	CanonicalSignature            string   `json:"canonical_signature,omitempty"`
+	ErasedSignature               string   `json:"erased_signature,omitempty"`
+	CompatibleCanonicalSignatures []string `json:"compatible_canonical_signatures,omitempty"`
+	Package                       string   `json:"package,omitempty"`
+	Type                          string   `json:"type,omitempty"`
+	Name                          string   `json:"name,omitempty"`
+	FilePath                      string   `json:"file_path,omitempty"`
+	StartLine                     int      `json:"start_line,omitempty"`
+	EndLine                       int      `json:"end_line,omitempty"`
+	ReturnType                    string   `json:"return_type,omitempty"`
+	ParameterTypes                []string `json:"parameter_types,omitempty"`
+	Visibility                    string   `json:"visibility,omitempty"`
+	OwnerVisibility               string   `json:"owner_visibility,omitempty"`
+	DisplaySymbol                 string   `json:"display_symbol,omitempty"`
+	Aliases                       []string `json:"aliases,omitempty"`
+	// EntryKind (1.14+) is "main" or "framework_entry" for a function the
+	// producing scan recognized as an entry point: a program entry, or a method
+	// a framework or the runtime calls, which no call edge leads to.
+	EntryKind      string          `json:"entry_kind,omitempty"`
+	InferredReturn json.RawMessage `json:"-"`
 }
 
 // GraphFragmentCallSite carries the per-edge call-site invocation detail: the

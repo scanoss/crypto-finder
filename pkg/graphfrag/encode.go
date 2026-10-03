@@ -27,6 +27,7 @@ func EncodeFragment(frag Fragment) ([]byte, error) {
 		ScanMetadata: GraphFragmentScanMetadata{
 			RootModule:       frag.Module,
 			GraphAlgoVersion: frag.GraphAlgoVersion,
+			EntryKinds:       frag.EntryKinds != nil,
 		},
 	}
 
@@ -46,6 +47,7 @@ func EncodeFragment(frag Fragment) ([]byte, error) {
 			OwnerVisibility:    fn.OwnerVisibility,
 			DisplaySymbol:      fn.DisplaySymbol,
 			Aliases:            append([]string(nil), fn.Aliases...),
+			EntryKind:          frag.EntryKinds[fn.Signature],
 		})
 	}
 	for i := range frag.InternalEdges {

@@ -190,7 +190,8 @@ type ExportFindingAnalysis struct {
 	// verdict (those free of name_only edges, or all when none is) is an
 	// application function nothing in the application calls (root_kind
 	// no_callers): the crypto is reached only from code with no known callers.
-	// Live export only; stitched chains carry no root_kind.
+	// The stitched export sets it only when the root fragment recorded entry
+	// kinds (graph-fragment-1.14+); it never claims it otherwise.
 	NoCallersOnly bool `json:"no_callers_only,omitempty"`
 }
 
@@ -523,7 +524,9 @@ type ExportChainNode struct {
 	// listener annotation), `no_callers` (application code nothing in the
 	// application calls; on a library scanned alone, a graph root) or
 	// `depth_limit` (where a depth limit stopped the walk). Written by the live
-	// callgraph export; absent on the stitched export.
+	// callgraph export, and by the stitched export for a chain that starts at a
+	// root-component function whose fragment recorded entry kinds
+	// (graph-fragment-1.14+); absent otherwise.
 	RootKind string `json:"root_kind,omitempty"`
 	// CryptoCall is the matched crypto invocation, present only on the terminal frame.
 	CryptoCall *ExportCryptoCall `json:"crypto_call,omitempty"`
@@ -643,7 +646,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	var groupOrder []exportFindingKey
 
 	for i := range r.Chains {
-		groupOrder = ingestExportFindingChain(groupMap, groupOrder, &r.Chains[i], root, meta.Ecosystem)
+		groupOrder = ingestExportFindingChain(groupMap, groupOrder, &r.Chains[i], root, meta.Ecosystem, r.rootKinds)
 	}
 
 	sort.Slice(groupOrder, func(i, j int) bool {
@@ -682,6 +685,7 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 		r.upgradeComposedReachability(&fg, grp.anchorNode)
 		r.markUnresolvedDispatch(&fg, grp.anchorNode)
 		stampStitchedRouteEvidence(&fg)
+		fg.stampStitchedNoCallersOnly(r, grp.anchorNode)
 		out.FindingGraphs = append(out.FindingGraphs, fg)
 	}
 
@@ -748,8 +752,13 @@ func ingestExportFindingChain(
 	fc *FindingChain,
 	root ComponentKey,
 	ecosystem string,
+	rootKinds map[graphNode]string,
 ) []exportFindingKey {
 	nodes, resolvedFindingID := buildExportChain(fc, root, ecosystem)
+	if len(nodes) > 0 && len(fc.Frames) > 0 {
+		first := fc.Frames[0]
+		nodes[0].RootKind = rootKinds[graphNode{Component: first.Component, Function: first.Signature}]
+	}
 	// Use the resolved (potentially dep-prefixed) finding_id as the group key.
 	// For root-component ops the resolved ID equals the original; for dep ops it
 	// is recomputed with the "module@version/" prefix to match live --scan-dependencies.
@@ -1025,6 +1034,17 @@ func stampStitchedRouteEvidence(fg *ExportFindingGraph) {
 	case fg.Reachability == ReachabilityReachable:
 		fg.Analysis.RouteEvidence = bestChainEvidence(fg.CallChains)
 	}
+}
+
+// stampStitchedNoCallersOnly sets analysis.no_callers_only on a finding the root
+// reaches over a route (Result.noCallersOnly). A finding with no route, one
+// proven only by a dependency's index, or one reached only over a name_only
+// edge never claims it.
+func (fg *ExportFindingGraph) stampStitchedNoCallersOnly(r *Result, anchor graphNode) {
+	if fg.Analysis == nil || fg.Reachability != ReachabilityReachable || fg.Analysis.RouteEvidence == "" {
+		return
+	}
+	fg.Analysis.NoCallersOnly = r.noCallersOnly(anchor)
 }
 
 // bestChainEvidence is the evidence of the strongest chain with at least one

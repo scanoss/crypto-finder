@@ -496,6 +496,7 @@ func buildGraphFragmentScanMetadata(result *engine.DepScanResult) graphfrag.Grap
 		meta.ToolVersion = result.Report.Tool.Version
 		meta.RulesVersion = result.Report.Rules.Version
 	}
+	meta.EntryKinds = result.CallGraph != nil
 	return meta
 }
 
@@ -1205,6 +1206,9 @@ func buildGraphFragmentFunction(ctx *exportBuildContext, id callgraph.FunctionID
 		fn.FilePath = normalizeExportPath(ctx, decl.FilePath).FilePath
 		fn.StartLine = decl.StartLine
 		fn.EndLine = decl.EndLine
+		if kind, ok := ctx.sharedTracer().EntryKind(decl, ctx.userPackages); ok {
+			fn.EntryKind = string(kind)
+		}
 	}
 	return fn
 }
