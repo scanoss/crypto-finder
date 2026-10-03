@@ -34,6 +34,7 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 	if result == nil || result.Report == nil || result.CallGraph == nil {
 		return
 	}
+	engine.MarkSyntheticVariants(result.Report)
 	assignOccurrenceKeyGroups(groupOccurrenceKeyCandidates(occurrenceKeyCandidates(result)))
 }
 
@@ -59,11 +60,18 @@ func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandid
 				continue
 			}
 			terminal := findCryptoCallNode(ctx.graph, containing, *asset, asset.StartLine, asset.EndLine)
-			if terminal == nil || terminal.ASTKind == "" || terminal.NamedASTPath == "" {
-				continue
-			}
 			location := normalizeFindingPath(ctx, finding.FilePath, asset.DependencyInfo)
 			container := buildExportFunctionMetadata(ctx.graph, containing.ID, containing).CanonicalSignature
+			if terminal == nil || terminal.ASTKind == "" || terminal.NamedASTPath == "" {
+				// No call anchors the match: a library API declaration, or a
+				// type usage such as a cast or a declaration. Key it by the
+				// function that holds it and its position, so every asset a
+				// finding graph is built for can be joined by occurrence key.
+				hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, container, "", "", asset.ConditionedValue)
+				occurrence := strings.Join([]string{location.FilePath, strconv.Itoa(asset.StartLine), strconv.Itoa(asset.StartCol), strconv.Itoa(asset.EndCol)}, "\n")
+				candidates = append(candidates, occurrenceKeyCandidate{asset: asset, hash: hash, occurrence: occurrence})
+				continue
+			}
 			hash := occurrenceKeyHash(occurrenceSourceSubject(result, asset), location.FilePath, container, terminal.ASTKind, terminal.NamedASTPath, asset.ConditionedValue)
 			occurrence := strings.Join([]string{terminal.FilePath, strconv.Itoa(terminal.Line), strconv.Itoa(terminal.StartCol), strconv.Itoa(terminal.EndCol)}, "\n")
 			candidates = append(candidates, occurrenceKeyCandidate{asset: asset, hash: hash, occurrence: occurrence})

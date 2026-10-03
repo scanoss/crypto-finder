@@ -1337,6 +1337,7 @@ func AssignFindingIDs(report *entities.InterimReport) {
 		return
 	}
 
+	MarkSyntheticVariants(report)
 	for i := range report.Findings {
 		finding := &report.Findings[i]
 		for j := range finding.CryptographicAssets {
