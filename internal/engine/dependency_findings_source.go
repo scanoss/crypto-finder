@@ -66,17 +66,20 @@ func NewAPIFindingsSource(api componentFindingsAPI) *APIFindingsSource {
 }
 
 // Findings implements DependencyFindingsSource. Once the API refuses the
-// credentials, the source answers "none" without asking again, so a key
-// without access costs one request per scan, not one per dependency.
+// credentials, or does not offer the endpoint at all, the source answers
+// "none" without asking again, so either costs one request per scan, not one
+// per dependency. A component the API has not mined is a 200, not a 404.
 func (s *APIFindingsSource) Findings(ctx context.Context, purl, version string) (*entities.InterimReport, bool, error) {
 	if s.denied.Load() {
 		return nil, false, nil
 	}
 	answer, found, err := s.api.ComponentFindings(ctx, purl, version)
-	if errors.Is(err, apiclient.ErrUnauthorized) || errors.Is(err, apiclient.ErrForbidden) {
-		if !s.denied.Swap(true) {
-			log.Warn().Err(err).Msg("The SCANOSS API refused dependency findings for this API key; dependencies are scanned locally")
-		}
+	switch {
+	case errors.Is(err, apiclient.ErrUnauthorized) || errors.Is(err, apiclient.ErrForbidden):
+		s.stopAsking(err, "The SCANOSS API refused dependency findings for this API key; dependencies are scanned locally")
+		return nil, false, nil
+	case errors.Is(err, apiclient.ErrNotFound):
+		s.stopAsking(err, "The SCANOSS API does not offer dependency findings; dependencies are scanned locally")
 		return nil, false, nil
 	}
 	if err != nil || !found {
@@ -88,4 +91,11 @@ func (s *APIFindingsSource) Findings(ctx context.Context, purl, version string) 
 		Rules:    entities.RulesInfo{Source: apiRulesSource, Version: answer.RulesVersion},
 		Findings: answer.Findings,
 	}, true, nil
+}
+
+// stopAsking turns the source off for the rest of the scan and warns once.
+func (s *APIFindingsSource) stopAsking(err error, message string) {
+	if !s.denied.Swap(true) {
+		log.Warn().Err(err).Msg(message)
+	}
 }

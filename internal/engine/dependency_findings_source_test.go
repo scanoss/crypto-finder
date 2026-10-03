@@ -235,3 +235,19 @@ func TestDependencyScanner_FindingsSourceKeepsDependencyFilesUnderScopedDetectio
 		t.Errorf("report = %+v, want only the dependency's own file", res.report)
 	}
 }
+
+// An API deployment that does not offer the endpoint answers 404 for every
+// dependency; one answer is enough to scan the rest locally.
+func TestAPIFindingsSource_MissingEndpointStopsAsking(t *testing.T) {
+	api := &fakeComponentAPI{err: fmt.Errorf("%w: 404 page not found", apiclient.ErrNotFound)}
+	source := NewAPIFindingsSource(api)
+
+	for range 3 {
+		if _, found, err := source.Findings(context.Background(), "pkg:maven/a/b", "1.0"); found || err != nil {
+			t.Errorf("found %v, err %v; a missing endpoint must read as no findings", found, err)
+		}
+	}
+	if api.calls != 1 {
+		t.Errorf("API asked %d times, want once", api.calls)
+	}
+}
