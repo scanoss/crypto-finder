@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/scanoss/crypto-finder/pkg/schema"
 )
 
 // buildEnvelopeFixture returns a root+dep closure where BOTH the root and the
@@ -248,11 +250,13 @@ func TestToFindingsEnvelope_ParameterConditions(t *testing.T) {
 
 	env := ToFindingsEnvelope(app, DependencyGraph{}, fragments, meta)
 
-	if env.Version != "1.6" {
-		t.Errorf("envelope Version = %q, want %q", env.Version, "1.6")
+	// Consumers validate a scan's findings.json against this constant, so it
+	// is the interim report's version, not an older one.
+	if env.Version != schema.InterimFormatVersion {
+		t.Errorf("envelope Version = %q, want %q", env.Version, schema.InterimFormatVersion)
 	}
-	if FindingsSchemaVersion != "1.6" {
-		t.Errorf("FindingsSchemaVersion = %q, want %q", FindingsSchemaVersion, "1.6")
+	if FindingsSchemaVersion != schema.InterimFormatVersion {
+		t.Errorf("FindingsSchemaVersion = %q, want the interim format %q", FindingsSchemaVersion, schema.InterimFormatVersion)
 	}
 
 	if len(env.Findings) != 1 || len(env.Findings[0].CryptographicAssets) != 2 {

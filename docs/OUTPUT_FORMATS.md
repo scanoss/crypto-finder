@@ -424,7 +424,7 @@ supporting-call, and entrypoint metadata, `pkg/graphfrag` can render a stitched
   a callgraph (zero-value meta stamps inlined `6.14`; `ScanMeta.InternedFrames` selects `6.17`). Align the render and sample budget explicitly when comparing with local CLI exports. Dep-component findings get
   `module@version/`-prefixed `finding_id`s, matching live output.
 - **`ToFindingsEnvelope(root, deps, fragments, meta)`** — reconstructs the
-  findings.json v1.6 envelope (asset metadata, including direct `purl`). Its `finding_id`s are computed
+  findings.json v1.7 envelope (asset metadata, including direct `purl`). Its `finding_id`s are computed
   with the **same inputs** as `ToCallgraphExport`, so the two agree: consumers
   join assets (envelope) to call chains (callgraph) by `(finding_id, occurrence_key)` when the key is present,
   or by `finding_id` for legacy records without `occurrence_key`.
