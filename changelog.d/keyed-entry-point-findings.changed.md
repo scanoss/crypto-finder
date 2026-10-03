@@ -10,8 +10,9 @@
   and `PBKDF2-SHA-1` selected by the digest passed to the constructor) or by
   a variant such as `ECDSA` and `ECDSA-deterministic` used to give every
   variant one shared `finding_id`; each variant except the base now has its
-  own `finding_id` and `occurrence_key`. The base entry point keeps its
-  `finding_id`. Variants still share the function-level call chains of their
+  own `finding_id` and `occurrence_key`, derived from its `algorithmName`,
+  `algorithmHashFunction` and `parameterCondition`, so other edits to a
+  contract do not change them. The base entry point keeps its `finding_id`. Variants still share the function-level call chains of their
   declaration; per-type chain filtering is not applied. The identities of the
   keyless findings and of the variants change once, on the first scan with
   this release. No call graph algorithm changed, so `graph-algo-7` still

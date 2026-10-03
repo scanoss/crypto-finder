@@ -933,8 +933,10 @@ func languageForPath(path string) string {
 // (parameterCondition) or by a different algorithm name or hash function. They
 // share a file, a line and a rule id, so finding_id and occurrence_key would
 // merge them. The base block, the one with the fewest metadata keys, keeps the
-// identity it always had; every other block hashes its canonical metadata into
-// ConditionedValue, which both identities already include.
+// identity it always had; every other block hashes its algorithmName,
+// algorithmHashFunction and parameterCondition into ConditionedValue, which
+// both identities already include. Blocks that share those three fields hash
+// their whole metadata instead.
 //
 // It reads only data that survives a JSON round trip and is idempotent, so a
 // report read back from disk gets the same identities as the scan that wrote it.
@@ -983,12 +985,40 @@ func markSiteVariants(assets []*entities.CryptographicAsset) {
 			base = i
 		}
 	}
+	// The base is the block with the fewest metadata keys, which is the
+	// unspecialized one. When every block carries a parameterCondition or a
+	// variant field there is no unspecialized block; the smallest one still
+	// keeps the plain identity and every other block gets a variant value, so
+	// ids stay distinct.
+	narrow := make([]string, len(assets))
+	count := make(map[string]int)
 	for i, asset := range assets {
 		if i == base {
 			continue
 		}
-		asset.ConditionedValue = "variant:" + canon[i]
+		narrow[i] = narrowVariantValue(asset.Metadata)
+		count[narrow[i]]++
 	}
+	for i, asset := range assets {
+		switch {
+		case i == base:
+		case count[narrow[i]] == 1:
+			asset.ConditionedValue = narrow[i]
+		default:
+			// Two blocks share the narrow key: fall back to everything the
+			// block carries so their ids never collide.
+			asset.ConditionedValue = "variant-full:" + canon[i]
+		}
+	}
+}
+
+// narrowVariantValue is the identity of a variant: the fields that tell the
+// variants of one API apart in the knowledge base. A knowledge-base edit to any
+// other field of a variant leaves its ids unchanged.
+func narrowVariantValue(md map[string]string) string {
+	return "variant:algorithmName=" + md["algorithmName"] +
+		";algorithmHashFunction=" + md["algorithmHashFunction"] +
+		";parameterCondition=" + md["parameterCondition"]
 }
 
 func canonicalMetadata(md map[string]string) string {

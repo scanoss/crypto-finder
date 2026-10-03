@@ -205,3 +205,53 @@ func TestOccurrenceKeyAndFindingID_PlainAndPerValueRuleFindingsArePinned(t *test
 		}
 	}
 }
+
+func variantIdentities(t *testing.T, mutate func(assets []entities.CryptographicAsset)) map[string][2]string {
+	t.Helper()
+	result := syntheticVariantsResult()
+	mutate(result.Report.Findings[0].CryptographicAssets)
+	engine.AssignFindingIDs(result.Report)
+	AssignOccurrenceKeys(result)
+	out := map[string][2]string{}
+	for _, asset := range result.Report.Findings[0].CryptographicAssets {
+		out[asset.Metadata["algorithmName"]+"/"+asset.Metadata["note"]] = [2]string{asset.FindingID, asset.OccurrenceKey}
+	}
+	return out
+}
+
+// A knowledge-base edit to a field outside the variant key leaves ids alone.
+func TestSyntheticVariants_UnrelatedMetadataDoesNotChangeIdentity(t *testing.T) {
+	before := variantIdentities(t, func([]entities.CryptographicAsset) {})
+	after := variantIdentities(t, func(assets []entities.CryptographicAsset) {
+		for i := 1; i < len(assets); i++ {
+			assets[i].Metadata["iterations"] = "10000"
+		}
+	})
+	for name, want := range before {
+		if after[name] != want {
+			t.Errorf("%s identity changed with an unrelated field: %v, want %v", name, after[name], want)
+		}
+	}
+}
+
+// Variants that share the narrow key hash their whole metadata, so ids differ.
+func TestSyntheticVariants_SharedNarrowKeyFallsBackToFullMetadata(t *testing.T) {
+	ids := variantIdentities(t, func(assets []entities.CryptographicAsset) {
+		assets[1].Metadata["note"] = "a"
+		assets[2].Metadata["note"] = "b"
+		assets[2].Metadata["algorithmName"] = assets[1].Metadata["algorithmName"]
+		assets[2].Metadata["algorithmHashFunction"] = assets[1].Metadata["algorithmHashFunction"]
+		assets[2].Metadata["parameterCondition"] = assets[1].Metadata["parameterCondition"]
+		assets[2].ParameterConditions = assets[1].ParameterConditions
+	})
+	seen := map[[2]string]bool{}
+	for name, id := range ids {
+		if seen[id] {
+			t.Errorf("%s shares identity %v", name, id)
+		}
+		seen[id] = true
+	}
+	if len(seen) != 4 {
+		t.Errorf("got %d distinct identities, want 4", len(seen))
+	}
+}
