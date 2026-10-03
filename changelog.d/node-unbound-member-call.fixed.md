@@ -6,7 +6,7 @@
   `require('./x').digest(v)`, now binds to the function the required module
   declares, as an import binding does, instead of to a function of the calling
   file.
-  `graphfrag.GraphAlgoVersion` is now `graph-algo-7` (was `graph-algo-6`): the
-  structural graph of a Node scan loses those edges, so a consumer that caches
+  The structural graph of a Node scan loses those edges; `graphfrag.GraphAlgoVersion`
+  `graph-algo-7` of this release covers this change, so a consumer that caches
   structural graphs under `scan_metadata.graph_algo_version` must re-mine. The
   wire schema is unchanged.
