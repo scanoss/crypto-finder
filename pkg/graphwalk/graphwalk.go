@@ -476,7 +476,29 @@ func Routes[T comparable](r Reachable[T], c Condensed[T], budget int) [][]T {
 // A budget of 0 means unbounded.
 func Select[T comparable](r Reachable[T], c Condensed[T], budget int, terminalLess func(a, b T) bool) [][]T {
 	full := func(out [][]T) bool { return budget > 0 && len(out) >= budget }
+	out := TerminalRoutes(r, c, budget, terminalLess)
+	if full(out) {
+		return out
+	}
+	taken := make(map[string]bool, len(out))
+	for _, route := range out {
+		taken[routeKey(c, route)] = true
+	}
+	walkRoutes(r, c, componentRoutes(r, c), func(route []T) bool {
+		if key := routeKey(c, route); !taken[key] {
+			taken[key] = true
+			out = append(out, route)
+		}
+		return !full(out)
+	})
+	return out
+}
 
+// TerminalRoutes returns one shortest route to each reached terminal, in
+// terminalLess order and ordered target first like Routes, up to budget (0
+// means every terminal). Two terminals whose routes are the same trip yield
+// one route.
+func TerminalRoutes[T comparable](r Reachable[T], c Condensed[T], budget int, terminalLess func(a, b T) bool) [][]T {
 	terminals := make([]T, 0, len(r.Terminal))
 	for node, terminal := range r.Terminal {
 		if _, reached := r.Depth[node]; terminal && reached {
@@ -488,8 +510,8 @@ func Select[T comparable](r Reachable[T], c Condensed[T], budget int, terminalLe
 	var out [][]T
 	taken := map[string]bool{}
 	for _, terminal := range terminals {
-		if full(out) {
-			return out
+		if budget > 0 && len(out) >= budget {
+			break
 		}
 		route := r.Route(terminal)
 		if route == nil {
@@ -503,17 +525,131 @@ func Select[T comparable](r Reachable[T], c Condensed[T], budget int, terminalLe
 		taken[key] = true
 		out = append(out, route)
 	}
-	if full(out) {
-		return out
-	}
-	walkRoutes(r, c, componentRoutes(r, c), func(route []T) bool {
-		if key := routeKey(c, route); !taken[key] {
-			taken[key] = true
-			out = append(out, route)
-		}
-		return !full(out)
-	})
 	return out
+}
+
+// RouteKey identifies a route the way Count counts it, so a caller merging
+// routes from several selections can drop repeated trips.
+func RouteKey[T comparable](c Condensed[T], route []T) string { return routeKey(c, route) }
+
+// RouteClass is a route's sequence of groups (for a call graph, the libraries
+// its functions belong to), consecutive repeats collapsed.
+func RouteClass[T comparable](route []T, group func(T) string) string {
+	var b strings.Builder
+	last := ""
+	for i, node := range route {
+		g := group(node)
+		if i > 0 && g == last {
+			continue
+		}
+		last = g
+		b.WriteString(g)
+		b.WriteByte(0)
+	}
+	return b.String()
+}
+
+// GroupRoutes returns, for each group the walk reached, one route through the
+// group's node nearest the target, ordered target first like Routes. Groups
+// come in the order of their nearest node (depth, then terminalLess).
+//
+// Routes enumerates depth-first, so its first routes share everything but
+// their last frames: a small budget filled in that order shows variants of one
+// path through the same groups, and any bounded scan of it rarely leaves the
+// first cluster. Here each group's nearest node gets one route through it: the
+// shortest way from that node to the target, then the shortest way out to a
+// terminal. The work is one breadth-first pass plus one route per group,
+// however many routes the graph holds. A node whose route would revisit a node
+// is skipped in favor of the group's next nearest node.
+func GroupRoutes[T comparable](r Reachable[T], terminalLess func(a, b T) bool, group func(T) string) [][]T {
+	order := func(a, b T) bool {
+		if da, db := r.Depth[a], r.Depth[b]; da != db {
+			return da < db
+		}
+		return terminalLess != nil && terminalLess(a, b)
+	}
+	out := towardTerminal(r, order)
+	nodes := make([]T, 0, len(r.Depth))
+	for node := range r.Depth {
+		if _, ok := out[node]; ok {
+			nodes = append(nodes, node)
+		}
+	}
+	sortNodes(nodes, order)
+	seen := map[string]bool{}
+	var routes [][]T
+	for _, node := range nodes {
+		g := group(node)
+		if seen[g] {
+			continue
+		}
+		if route := routeThrough(r, out, node); route != nil {
+			seen[g] = true
+			routes = append(routes, route)
+		}
+	}
+	return routes
+}
+
+// routeThrough joins the shortest way from node to the target with the
+// shortest way out to a terminal, target first; nil when they share a node.
+func routeThrough[T comparable](r Reachable[T], out map[T]T, node T) []T {
+	route := r.Route(node)
+	if route == nil {
+		return nil
+	}
+	slices.Reverse(route) // target ... node
+	visited := make(map[T]bool, len(route))
+	for _, n := range route {
+		visited[n] = true
+	}
+	for current := node; !r.Terminal[current]; {
+		next := out[current]
+		if visited[next] {
+			return nil
+		}
+		visited[next] = true
+		route = append(route, next)
+		current = next
+	}
+	return route
+}
+
+// towardTerminal maps every node that leads to a terminal to its next hop on
+// one shortest way out to one: a caller, or the node itself for a terminal.
+// One breadth-first pass from all terminals over the reversed caller edges;
+// order breaks every tie, so map iteration never decides the way out.
+func towardTerminal[T comparable](r Reachable[T], order func(a, b T) bool) map[T]T {
+	callees := make(map[T][]T, len(r.Callers))
+	for callee, callers := range r.Callers {
+		for _, caller := range callers {
+			callees[caller] = append(callees[caller], callee)
+		}
+	}
+	for _, list := range callees {
+		sortNodes(list, order)
+	}
+	next := make(map[T]T, len(r.Depth))
+	var queue []T
+	for node, terminal := range r.Terminal {
+		if _, reached := r.Depth[node]; terminal && reached {
+			next[node] = node
+			queue = append(queue, node)
+		}
+	}
+	sortNodes(queue, order)
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		for _, callee := range callees[node] {
+			if _, done := next[callee]; done {
+				continue
+			}
+			next[callee] = node
+			queue = append(queue, callee)
+		}
+	}
+	return next
 }
 
 // routeKey identifies a route the way Count counts it: the components it

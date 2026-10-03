@@ -3752,6 +3752,17 @@ func structuralCallChains(
 func (ctx *exportBuildContext) sharedTracer() *callgraph.Tracer {
 	if ctx.tracer == nil {
 		ctx.tracer = callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
+		// Classify routes by the module each frame shows as dependency_info.
+		ctx.tracer.SetModuleFunc(func(key string) string {
+			decl := ctx.graph.Functions[key]
+			if decl == nil {
+				return ""
+			}
+			if info := normalizeExportPath(ctx, decl.FilePath).DependencyInfo; info != nil {
+				return info.Module
+			}
+			return ""
+		})
 	}
 	return ctx.tracer
 }
