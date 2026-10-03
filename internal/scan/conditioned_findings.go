@@ -277,9 +277,37 @@ func specializeAnchor(
 	if _, duplicate := existing[assetKey]; duplicate {
 		return true, false
 	}
+	// The specialized asset survives. A native match of a conditioned rule can
+	// state a pattern that covers several values ("~=^SHA-?(256|512)$"), so its
+	// call chains are those of every value the pattern accepts. The
+	// specialization's chains and verdict come from the routes that carry its
+	// own value, so the native asset it duplicates is dropped. A native asset
+	// whose value is not specialized here is not touched.
+	dropNativeDuplicates(finding, asset, rule.Rule.ID)
 	finding.CryptographicAssets = append(finding.CryptographicAssets, asset)
 	existing[assetKey] = struct{}{}
 	return true, true
+}
+
+// dropNativeDuplicates removes the scanner-reported assets that report the
+// same rule and algorithm as specialized at the same span. The scanner names a
+// rule by the dotted path of its rule file followed by the rule's own id
+// ("<path>.<id>"), while the catalog holds the bare id, so a native asset is
+// one whose rule id ends with ".<ruleID>". The parameter condition is not
+// compared: a scanner match states the rule's pattern where a specialization
+// states the value it resolved. An asset without an algorithm name is never
+// treated as a duplicate.
+func dropNativeDuplicates(finding *entities.Finding, specialized entities.CryptographicAsset, ruleID string) {
+	name := specialized.Metadata["algorithmName"]
+	if name == "" {
+		return
+	}
+	finding.CryptographicAssets = slices.DeleteFunc(finding.CryptographicAssets, func(asset entities.CryptographicAsset) bool {
+		return asset.StartLine == specialized.StartLine && asset.StartCol == specialized.StartCol &&
+			asset.EndLine == specialized.EndLine && asset.EndCol == specialized.EndCol &&
+			asset.Metadata["algorithmName"] == name && asset.Metadata["algorithmFamily"] == specialized.Metadata["algorithmFamily"] &&
+			slices.ContainsFunc(asset.Rules, func(rule entities.RuleInfo) bool { return strings.HasSuffix(rule.ID, "."+ruleID) })
+	})
 }
 
 func indexExistingFindingRules(report *entities.InterimReport) map[string]struct{} {
