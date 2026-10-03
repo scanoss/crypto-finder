@@ -213,7 +213,9 @@ func variantIdentities(t *testing.T, mutate func(assets []entities.Cryptographic
 	engine.AssignFindingIDs(result.Report)
 	AssignOccurrenceKeys(result)
 	out := map[string][2]string{}
-	for _, asset := range result.Report.Findings[0].CryptographicAssets {
+	assets := result.Report.Findings[0].CryptographicAssets
+	for i := range assets {
+		asset := &assets[i]
 		out[asset.Metadata["algorithmName"]+"/"+asset.Metadata["note"]] = [2]string{asset.FindingID, asset.OccurrenceKey}
 	}
 	return out
