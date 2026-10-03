@@ -120,13 +120,13 @@ func materializeConditionedAnchor(
 		anchor.ConditionedValuesIncomplete = true
 		markAnchorValuesIncomplete(finding, anchor)
 	}
-	added, unmatched := appendConditionedAssets(finding, anchor, rules, candidates, existing)
+	added, unmatched, nativeCovered := appendConditionedAssets(finding, anchor, rules, candidates, existing)
 	// The blank anchor is the only report entry for a route whose value is
 	// unknown, so it stays unless the per-value assets account for every route:
 	// every enumerated value resolved and matched a variant, no route is
 	// dynamic, and no caller value was cut off.
 	covered := !unresolvedRoute && unmatched == 0 && !truncated && !dynamicSelector(rules, terminal.Parameters, dynamic)
-	if added > 0 && covered {
+	if (added > 0 || nativeCovered > 0) && covered {
 		dropBlankAnchor(finding, anchor)
 	}
 	return added
@@ -212,29 +212,33 @@ func callContainsAnchorSpan(call *callgraph.FunctionCall, anchor entities.Crypto
 
 // appendConditionedAssets emits one asset per (rule, resolved condition) over
 // every candidate argument list of the terminal call. unmatched counts the
-// candidates no rule matched.
+// candidates no rule matched; nativeCovered counts the assets skipped because a
+// scanner match already reports the same rule and algorithm at the span.
 func appendConditionedAssets(
 	finding *entities.Finding,
 	anchor entities.CryptographicAsset,
 	rules []engine.RuleCryptoMetadata,
 	candidates [][]callGraphParameter,
 	existing map[string]struct{},
-) (added, unmatched int) {
+) (added, unmatched, nativeCovered int) {
 	seen := make(map[string]struct{})
 	for _, params := range candidates {
 		matchedAny := false
 		for i := range rules {
-			matched, appended := specializeAnchor(finding, anchor, rules[i], params, seen, existing)
+			matched, appended, native := specializeAnchor(finding, anchor, rules[i], params, seen, existing)
 			matchedAny = matchedAny || matched
 			if appended {
 				added++
+			}
+			if native {
+				nativeCovered++
 			}
 		}
 		if !matchedAny {
 			unmatched++
 		}
 	}
-	return added, unmatched
+	return added, unmatched, nativeCovered
 }
 
 func appendConditionedAsset(
@@ -244,42 +248,52 @@ func appendConditionedAsset(
 	params []callGraphParameter,
 	seen, existing map[string]struct{},
 ) bool {
-	_, appended := specializeAnchor(finding, anchor, rule, params, seen, existing)
+	_, appended, _ := specializeAnchor(finding, anchor, rule, params, seen, existing)
 	return appended
 }
 
 // specializeAnchor appends the asset rule yields for params. matched reports
-// that the rule's conditions held, whether or not the asset was new.
+// that the rule's conditions held, whether or not the asset was new. native
+// reports that the asset was skipped for a native scanner match.
 func specializeAnchor(
 	finding *entities.Finding,
 	anchor entities.CryptographicAsset,
 	rule engine.RuleCryptoMetadata,
 	params []callGraphParameter,
 	seen, existing map[string]struct{},
-) (matched, appended bool) {
+) (matched, appended, native bool) {
 	if rule.Rule.ID == "" {
-		return false, false
+		return false, false, false
 	}
 	conditionMatch, ok := matchParameterConditionsWithCaptureNames(rule.ParameterConditions, params, rule.CaptureNames)
 	if !ok {
-		return false, false
+		return false, false, false
 	}
 	key := rule.Rule.ID
 	for _, condition := range conditionMatch.conditions {
 		key += "\x00" + condition.Raw
 	}
 	if _, duplicate := seen[key]; duplicate {
-		return true, false
+		return true, false, false
 	}
 	seen[key] = struct{}{}
 	asset := cloneConditionedAsset(anchor, rule, conditionMatch)
 	assetKey := conditionedAssetKey(finding.FilePath, asset, rule.Rule.ID)
 	if _, duplicate := existing[assetKey]; duplicate {
-		return true, false
+		return true, false, false
+	}
+	// The native asset is already in the report with its identity, so it
+	// survives and the specialization is dropped. A scanner match of a
+	// conditioned rule carries the parameter conditions and the metadata the
+	// specialization would copy, and the export filters its call chains by
+	// those conditions the same way, so dropping the copy loses no value, no
+	// reachability, and leaves every other asset's identity untouched.
+	if _, native := existing[nativeAssetKey(finding.FilePath, asset, rule.Rule.ID)]; native {
+		return true, false, true
 	}
 	finding.CryptographicAssets = append(finding.CryptographicAssets, asset)
 	existing[assetKey] = struct{}{}
-	return true, true
+	return true, true, false
 }
 
 func indexExistingFindingRules(report *entities.InterimReport) map[string]struct{} {
@@ -290,10 +304,40 @@ func indexExistingFindingRules(report *entities.InterimReport) map[string]struct
 			asset := &finding.CryptographicAssets[assetIndex]
 			for _, rule := range asset.Rules {
 				existing[conditionedAssetKey(finding.FilePath, *asset, rule.ID)] = struct{}{}
+				indexNativeAsset(existing, finding.FilePath, *asset, rule.ID)
 			}
 		}
 	}
 	return existing
+}
+
+// indexNativeAsset records a scanner-reported asset under every rule ID it can
+// be a match of. The scanner reports a rule as the dotted path of its rule file
+// followed by the rule's own id ("<path>.<id>"), while the conditioned catalog
+// holds the bare id, so a native ID is indexed under each of its dot-separated
+// suffixes and the catalog id finds it with an exact lookup. A suffix equal to
+// the whole ID covers a scanner that reports the bare id.
+func indexNativeAsset(index map[string]struct{}, filePath string, asset entities.CryptographicAsset, nativeRuleID string) {
+	if asset.Metadata["algorithmName"] == "" {
+		return
+	}
+	for suffix := nativeRuleID; suffix != ""; {
+		index[nativeAssetKey(filePath, asset, suffix)] = struct{}{}
+		_, rest, found := strings.Cut(suffix, ".")
+		if !found {
+			break
+		}
+		suffix = rest
+	}
+}
+
+// nativeAssetKey identifies an asset by file, source span, rule and resolved
+// algorithm. It leaves the parameter condition out: a scanner match states the
+// rule's own pattern ("~=^SHA-?1?$") where a specialization states the value
+// it resolved ("==SHA-1"), and both name the same algorithm.
+func nativeAssetKey(filePath string, asset entities.CryptographicAsset, ruleID string) string {
+	return "native\x00" + filePath + "\x00" + ruleID + "\x00" + strconv.Itoa(asset.StartLine) + ":" + strconv.Itoa(asset.StartCol) + ":" + strconv.Itoa(asset.EndLine) + ":" + strconv.Itoa(asset.EndCol) +
+		"\x00" + asset.Metadata["algorithmName"] + "\x00" + asset.Metadata["algorithmFamily"]
 }
 
 func conditionedAssetKey(filePath string, asset entities.CryptographicAsset, ruleID string) string {
