@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -924,4 +925,120 @@ func languageForPath(path string) string {
 	default:
 		return ""
 	}
+}
+
+// MarkSyntheticVariants gives each variant of a synthesized entry point its
+// own identity. One library API can carry several metadata blocks at the same
+// declaration: the base algorithm, and variants specialized by an argument type
+// (parameterCondition) or by a different algorithm name or hash function. They
+// share a file, a line and a rule id, so finding_id and occurrence_key would
+// merge them. The base block, the one with the fewest metadata keys, keeps the
+// identity it always had; every other block hashes its algorithmName,
+// algorithmHashFunction and parameterCondition into ConditionedValue, which
+// both identities already include. Blocks that share those three fields hash
+// their whole metadata instead.
+//
+// It reads only data that survives a JSON round trip and is idempotent, so a
+// report read back from disk gets the same identities as the scan that wrote it.
+func MarkSyntheticVariants(report *entities.InterimReport) {
+	if report == nil {
+		return
+	}
+	type siteKey struct {
+		module, version string
+		line            int
+		api             string
+	}
+	for i := range report.Findings {
+		sites := make(map[siteKey][]*entities.CryptographicAsset)
+		var order []siteKey
+		for j := range report.Findings[i].CryptographicAssets {
+			asset := &report.Findings[i].CryptographicAssets[j]
+			if !isSyntheticEntryPointAsset(asset) {
+				continue
+			}
+			key := siteKey{line: asset.StartLine, api: asset.Metadata["api"]}
+			if asset.DependencyInfo != nil {
+				key.module, key.version = asset.DependencyInfo.Module, asset.DependencyInfo.Version
+			}
+			if _, seen := sites[key]; !seen {
+				order = append(order, key)
+			}
+			sites[key] = append(sites[key], asset)
+		}
+		for _, key := range order {
+			markSiteVariants(sites[key])
+		}
+	}
+}
+
+func markSiteVariants(assets []*entities.CryptographicAsset) {
+	if len(assets) < 2 {
+		return
+	}
+	canon := make([]string, len(assets))
+	base := 0
+	for i, asset := range assets {
+		canon[i] = canonicalMetadata(asset.Metadata)
+		if len(asset.Metadata) < len(assets[base].Metadata) ||
+			(len(asset.Metadata) == len(assets[base].Metadata) && canon[i] < canon[base]) {
+			base = i
+		}
+	}
+	// The base is the block with the fewest metadata keys, which is the
+	// unspecialized one. When every block carries a parameterCondition or a
+	// variant field there is no unspecialized block; the smallest one still
+	// keeps the plain identity and every other block gets a variant value, so
+	// ids stay distinct.
+	narrow := make([]string, len(assets))
+	count := make(map[string]int)
+	for i, asset := range assets {
+		if i == base {
+			continue
+		}
+		narrow[i] = narrowVariantValue(asset.Metadata)
+		count[narrow[i]]++
+	}
+	for i, asset := range assets {
+		switch {
+		case i == base:
+		case count[narrow[i]] == 1:
+			asset.ConditionedValue = narrow[i]
+		default:
+			// Two blocks share the narrow key: fall back to everything the
+			// block carries so their ids never collide.
+			asset.ConditionedValue = "variant-full:" + canon[i]
+		}
+	}
+}
+
+// narrowVariantValue is the identity of a variant: the fields that tell the
+// variants of one API apart in the knowledge base. A knowledge-base edit to any
+// other field of a variant leaves its ids unchanged.
+func narrowVariantValue(md map[string]string) string {
+	return "variant:algorithmName=" + md["algorithmName"] +
+		";algorithmHashFunction=" + md["algorithmHashFunction"] +
+		";parameterCondition=" + md["parameterCondition"]
+}
+
+func canonicalMetadata(md map[string]string) string {
+	keys := make([]string, 0, len(md))
+	for k := range md {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k + "=" + md[k] + ";")
+	}
+	return b.String()
+}
+
+func isSyntheticEntryPointAsset(asset *entities.CryptographicAsset) bool {
+	for _, r := range asset.Rules {
+		if r.ID == SyntheticEntryPointRuleID {
+			return true
+		}
+	}
+	return false
 }
