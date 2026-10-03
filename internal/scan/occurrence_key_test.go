@@ -173,3 +173,98 @@ func TestOccurrenceKeyGroupLess_UsesIdentityAfterLocation(t *testing.T) {
 		t.Fatal("tied locations must be ordered by occurrence identity")
 	}
 }
+
+// ternaryStatementResult models one Java statement spanning two lines that
+// holds two calls of the same API:
+//
+//	SSLContext ctx = provider == null ? SSLContext.getInstance(protocol)
+//	    : SSLContext.getInstance(protocol, provider);
+//
+// The first call ends on line 92; the second starts on line 92 and ends on
+// line 93, so its EndCol is a column of the later line.
+func ternaryStatementResult() *engine.DepScanResult {
+	const file = "/workspace/SSLUtils.java"
+	rule := []entities.RuleInfo{{ID: "java.jca.protocol.tls.sslcontext"}}
+	return &engine.DepScanResult{
+		RootModule:  "com.example:app",
+		ProjectRoot: "/workspace",
+		CallGraph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+			"com.example.SSLUtils.build#0": {
+				ID: callgraph.FunctionID{Package: "com.example", Type: "SSLUtils", Name: "build#0"}, FilePath: file, StartLine: 80, EndLine: 100,
+				Calls: []callgraph.FunctionCall{
+					{FilePath: file, Line: 92, StartCol: 45, EndCol: 77, ASTKind: "method_invocation", NamedASTPath: "block[0]/local_variable_declaration[0]/ternary_expression[0]/method_invocation[0]"},
+					{FilePath: file, Line: 92, StartCol: 80, EndCol: 45, ASTKind: "method_invocation", NamedASTPath: "block[0]/local_variable_declaration[0]/ternary_expression[0]/method_invocation[1]"},
+				},
+			},
+		}},
+		Report: &entities.InterimReport{Findings: []entities.Finding{{
+			FilePath: file,
+			CryptographicAssets: []entities.CryptographicAsset{
+				{StartLine: 92, EndLine: 92, StartCol: 45, EndCol: 77, Rules: rule},
+				{StartLine: 92, EndLine: 93, StartCol: 80, EndCol: 45, Rules: rule},
+			},
+		}}},
+	}
+}
+
+func TestAssignOccurrenceKeys_TwoCallsInOneStatementGetDistinctKeys(t *testing.T) {
+	result := ternaryStatementResult()
+	engine.AssignFindingIDs(result.Report)
+	AssignOccurrenceKeys(result)
+
+	assets := result.Report.Findings[0].CryptographicAssets
+	if assets[0].OccurrenceKey == "" || assets[1].OccurrenceKey == "" {
+		t.Fatalf("keys = %q, %q; want both set", assets[0].OccurrenceKey, assets[1].OccurrenceKey)
+	}
+	if assets[0].OccurrenceKey == assets[1].OccurrenceKey {
+		t.Fatalf("both calls share occurrence_key %q", assets[0].OccurrenceKey)
+	}
+
+	// finding_id is per file, line and rule, so the pair shares it; the
+	// (finding_id, occurrence_key) pair is what must stay unique.
+	export := buildCallGraphExportV2(result)
+	seen := map[string]bool{}
+	for _, graph := range export.FindingGraphs {
+		pair := graph.FindingID + "|" + graph.OccurrenceKey
+		if seen[pair] {
+			t.Fatalf("duplicate finding graph for %s", pair)
+		}
+		seen[pair] = true
+	}
+	for _, asset := range assets {
+		if !seen[asset.FindingID+"|"+asset.OccurrenceKey] {
+			t.Errorf("asset %s has no finding graph of its own; graphs: %v", asset.OccurrenceKey, seen)
+		}
+	}
+}
+
+func TestAssignOccurrenceKeys_TwoCallsInOneStatementAreDeterministic(t *testing.T) {
+	first, second := ternaryStatementResult(), ternaryStatementResult()
+	AssignOccurrenceKeys(first)
+	AssignOccurrenceKeys(second)
+	a, b := first.Report.Findings[0].CryptographicAssets, second.Report.Findings[0].CryptographicAssets
+	for i := range a {
+		if a[i].OccurrenceKey != b[i].OccurrenceKey {
+			t.Errorf("asset %d key differs between runs: %q vs %q", i, a[i].OccurrenceKey, b[i].OccurrenceKey)
+		}
+	}
+}
+
+// Keys are stored by consumers, so a call that never collided must keep the
+// exact key it had before two-line statements were told apart.
+func TestAssignOccurrenceKeys_NonCollidingKeysArePinned(t *testing.T) {
+	result := ternaryStatementResult()
+	AssignOccurrenceKeys(result)
+	if got, want := result.Report.Findings[0].CryptographicAssets[0].OccurrenceKey, "v1:8c9eb83dcd4f3cb7"; got != want {
+		t.Errorf("first call occurrence_key = %q, want pinned %q", got, want)
+	}
+
+	single := ternaryStatementResult()
+	fn := single.CallGraph.Functions["com.example.SSLUtils.build#0"]
+	fn.Calls = fn.Calls[:1]
+	single.Report.Findings[0].CryptographicAssets = single.Report.Findings[0].CryptographicAssets[:1]
+	AssignOccurrenceKeys(single)
+	if got, want := single.Report.Findings[0].CryptographicAssets[0].OccurrenceKey, "v1:8c9eb83dcd4f3cb7"; got != want {
+		t.Errorf("single call occurrence_key = %q, want pinned %q", got, want)
+	}
+}
