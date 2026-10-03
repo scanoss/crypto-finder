@@ -66,33 +66,39 @@ func nativeAsset(ruleID, algorithm, condition string) entities.CryptographicAsse
 	}
 }
 
-func TestMaterializeConditionedFindings_NativeTaintMatchSurvivesSpecialization(t *testing.T) {
+// wantSpecialized runs the materialization and expects the finding to hold the
+// specialized asset of algorithm alone: the native match is gone and the
+// materialization is idempotent.
+func wantSpecialized(t *testing.T, report *entities.InterimReport, result *engine.DepScanResult, rules, algorithm, condition string) {
+	t.Helper()
+	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 1 {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+	}
+	assets := report.Findings[0].CryptographicAssets
+	if len(assets) != 1 || assets[0].Metadata["algorithmName"] != algorithm || assets[0].Metadata["parameterCondition"] != condition || assets[0].FindingID == "native-"+algorithm {
+		t.Fatalf("assets = %#v, want the %s specialization alone", assets, algorithm)
+	}
+	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 0 || len(report.Findings[0].CryptographicAssets) != 1 {
+		t.Fatalf("second run = %d with %d assets, want idempotent", got, len(report.Findings[0].CryptographicAssets))
+	}
+}
+
+func TestMaterializeConditionedFindings_SpecializationSurvivesNativeTaintMatch(t *testing.T) {
 	t.Parallel()
 
 	native := nativeAsset("jca.algorithm.hash.md5.java.jca.algorithm.hash.md5", "MD5", "param[0]==MD5")
 	report, result, rules := nativeDedupFixture(t, `"MD5"`, native)
 
-	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 0 {
-		t.Fatalf("MaterializeConditionedFindings() = %d, want 0 for a value the scanner already reported", got)
-	}
-	assets := report.Findings[0].CryptographicAssets
-	if len(assets) != 1 || assets[0].FindingID != "native-MD5" {
-		t.Fatalf("assets = %#v, want the native asset alone, identity unchanged and the blank anchor dropped as before", assets)
-	}
+	wantSpecialized(t, report, result, rules, "MD5", "param[0]==MD5")
 }
 
-func TestMaterializeConditionedFindings_NativeRegexConditionDedupsResolvedValue(t *testing.T) {
+func TestMaterializeConditionedFindings_SpecializationSurvivesNativeRegexCondition(t *testing.T) {
 	t.Parallel()
 
 	native := nativeAsset("jca.algorithm.hash.sha1.java.jca.algorithm.hash.sha1", "SHA-1", "param[0]~=^SHA-?1?$")
 	report, result, rules := nativeDedupFixture(t, `"SHA-1"`, native)
 
-	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 0 {
-		t.Fatalf("MaterializeConditionedFindings() = %d, want 0", got)
-	}
-	if got := len(report.Findings[0].CryptographicAssets); got != 1 {
-		t.Fatalf("assets = %#v, want one asset for SHA-1", report.Findings[0].CryptographicAssets)
-	}
+	wantSpecialized(t, report, result, rules, "SHA-1", "param[0]==SHA-1")
 }
 
 func TestMaterializeConditionedFindings_KeepsDifferentValueAtSameLine(t *testing.T) {
@@ -131,15 +137,23 @@ func TestMaterializeConditionedFindings_KeepsNativeMatchOfAnotherRule(t *testing
 	}
 }
 
-func TestIndexNativeAsset_MatchesOnlyWholeDotSegments(t *testing.T) {
+func TestMaterializeConditionedFindings_KeepsNativeMatchWithoutSpecialization(t *testing.T) {
 	t.Parallel()
 
-	asset := nativeAsset("a.b.java.x.md5", "MD5", "")
-	index := map[string]struct{}{}
-	indexNativeAsset(index, "f.java", asset, "a.b.java.x.md5")
-	for id, want := range map[string]bool{"java.x.md5": true, "md5": true, "a.b.java.x.md5": true, "x.md5": true, "5": false, "ava.x.md5": false} {
-		if _, got := index[nativeAssetKey("f.java", asset, id)]; got != want {
-			t.Errorf("rule %q indexed = %v, want %v", id, got, want)
-		}
+	// The regex pattern of the native SHA-1 match also accepts other values,
+	// but the call resolves to MD5 only: the SHA-1 native asset has no
+	// specialization of its value and stays.
+	native := nativeAsset("jca.algorithm.hash.sha1.java.jca.algorithm.hash.sha1", "SHA-1", "param[0]~=^SHA-?1?$")
+	report, result, rules := nativeDedupFixture(t, `"MD5"`, native)
+
+	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 1 {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want the MD5 specialization", got)
+	}
+	var kept bool
+	for _, asset := range report.Findings[0].CryptographicAssets {
+		kept = kept || asset.FindingID == "native-SHA-1"
+	}
+	if !kept {
+		t.Fatalf("assets = %#v, want the unspecialized native SHA-1 asset kept", report.Findings[0].CryptographicAssets)
 	}
 }
