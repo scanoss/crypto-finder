@@ -70,13 +70,17 @@ The kept rules are then written to one merged file, which every dependency scan 
 flowchart TB
     Work["Deduplicated Deps"] --> Cache{"Findings cache<br/><i>per dependency</i>"}
     Cache -->|hit| R0["Cached report"]
-    Cache -->|miss| Shape["Batches<br/><i>balanced by source bytes,<br/>at most 16 roots each</i>"]
+    Cache -->|miss| API{"SCANOSS API<br/><i>findings published for the<br/>package version, with an API key</i>"}
+    API -->|published| RA["Published report"]
+    API -->|none| Shape["Batches<br/><i>balanced by source bytes,<br/>at most 16 roots each</i>"]
     Shape --> Pool["Worker Pool<br/><i>default: half the cores, max 8</i>"]
     Pool --> W1["Worker 1: one scanner process<br/>over roots A, B, C"] --> R1["Reports A, B, C"]
     Pool --> W2["Worker 2: one scanner process<br/>over roots D, E"] --> R2["Reports D, E"]
 ```
 
 Dependencies are deduplicated by `module@version` and processed in a stable order (`module`, `version`, `dir`) so repeated scans produce deterministic report and call graph inputs. The findings cache is consulted per dependency; the misses are then grouped into batches and each worker runs **one scanner process per batch**, over every root in it, instead of one process per dependency. OpenGrep loads the rules once per process, and that load is the dominant cost of scanning a small dependency (about 20 s for the JavaScript and TypeScript rules), so a 50-package npm project pays it a handful of times instead of 50. Each process gets `--jobs` sized to its share of the cores (see the `scannerJobs` log field).
+
+**With an API key, published findings stand in for a dependency's detection.** The SCANOSS mining service scans each package version once and publishes its findings. When an API key is configured, a dependency the findings cache does not hold is looked up by versionless purl and version (`POST /v3/cryptography/reachability/component`, purl and requirement only). The published findings are taken as they are, including the closest mined patch the API serves for that version and the rules version it was mined with, and are kept to the dependency's own files. The dependency is then not scanned. A dependency the API has not mined, a lookup error, a refused key, or an API that does not offer the endpoint (HTTP 404) scans the dependency locally; a refused key or a missing endpoint stops further lookups for that scan, with one warning. Published findings are not written to the findings cache. The call graph, conditioned findings and reachability are always built from the local sources, so findings derived from calls between dependencies are kept. Each lookup sends the package's purl and version to the API. `--no-dependency-findings-api` scans every dependency locally (`internal/engine/dependency_findings_source.go`).
 
 Each root's report is what a scan of that root alone produces. The OpenGrep adapter (`ScanRoots`, `internal/scanner/opengrep/batch.go`) attributes every result and error to the root holding its file (longest prefix) and runs the same transformation per root, with that root as the target, so paths, deduplication, rule IDs and finding IDs are unchanged. An error without a file, such as a memory limit reported for the whole process, marks every root in the batch incomplete. The dependency scanner then stamps the ruleset and enriches each report as it does for a single scan, and writes each dependency to the findings cache under its own key, still skipping a dependency whose scan stopped at a limit.
 
@@ -891,9 +895,9 @@ Key observations:
 
 ---
 
-## Interim Report Contract (v1.6)
+## Interim Report Contract (v1.7)
 
-Version 1.6 keeps the attribution fields needed to join findings to the separate reachability export and adds an optional AST-anchored structural identity when callgraph evidence is available. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for dependency module, version, and package URL. Direct findings may additionally expose a valid rule package URL at the asset-level `purl`; it is version-enriched only when one unambiguous direct dependency match exists.
+Version 1.7 keeps the attribution fields needed to join findings to the separate reachability export and adds an optional AST-anchored structural identity when callgraph evidence is available. Dependency-backed paths are dependency-root-relative; `dependency_info` remains the canonical place for dependency module, version, and package URL. Direct findings may additionally expose a valid rule package URL at the asset-level `purl`; it is version-enriched only when one unambiguous direct dependency match exists.
 
 | Field | Type | When Present | Description |
 |-------|------|--------------|-------------|
@@ -902,6 +906,8 @@ Version 1.6 keeps the attribution fields needed to join findings to the separate
 | `purl` | `string` | Direct findings with valid rule metadata | Canonical package identity, optionally enriched from the direct dependency graph |
 | `finding_id` | `string` | Always (when dependency scanning) | Short hash (SHA-256) for cross-referencing with the callgraph export |
 | `occurrence_key` | `string` | When a terminal AST anchor is available | Rule-independent `v1:<16 lowercase hex>` structural identity for the canonical finding |
+| `conditioned_value` | `string` | Per-value assets only | The resolved condition the asset was specialized for; part of its `finding_id` and `occurrence_key` (v1.7+) |
+| `terminal_start_col`, `terminal_end_col` | `integer` | Assets matched on an argument span | Columns of the enclosing call, used to locate the crypto call (v1.7+) |
 
 ## Call Graph Export
 

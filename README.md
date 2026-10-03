@@ -171,6 +171,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--scan-dependencies` | off | Recursively scan third-party dependencies (requires the deps image or local toolchains) |
 | `--dep-ecosystem <eco>` | `auto` | Dependency ecosystem: `auto`, `go`, `java`, `python`, `rust` |
 | `--dep-workers <n>` | `0` | Parallel dependency scan workers (0 = half of CPU cores, max 8; Java max 2). When two or more dependency scans run at once, each OpenGrep run gets `--jobs` set to the CPU cores divided by the number of scans |
+| `--no-dependency-findings-api` | off | Scan every dependency locally. Without it, and with an API key configured, a dependency the findings cache does not hold takes the findings the SCANOSS API publishes for its package version |
 | `--findings-cache <backend>` | `disk` | Dependency findings cache backend: `disk`, `none`, `postgres` (also via `SCANOSS_FINDINGS_CACHE_BACKEND`; postgres needs `SCANOSS_FINDINGS_CACHE_DSN`) |
 | `--progress` | off | Write scan lifecycle JSONL to stderr; findings remain on stdout or `--output`, and explicit `--error-format=text` is incompatible |
 | `--export-callgraph <file>` | — | Write the finding-centric crypto call graph (reachability slices) to `<file>` |

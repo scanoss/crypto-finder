@@ -27,7 +27,7 @@ import (
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.6"
+const InterimFormatVersion = "1.7"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -120,10 +120,11 @@ type CryptographicAsset struct {
 	EndCol int `json:"end_col,omitempty"`
 
 	// TerminalStartCol/TerminalEndCol retain the structurally selected enclosing
-	// call for in-process exports when a scanner focuses a nested argument span.
-	// They are routing state, not part of the public finding schema.
-	TerminalStartCol int `json:"-"`
-	TerminalEndCol   int `json:"-"`
+	// call when a scanner focuses a nested argument span. They locate the crypto
+	// call for exports and occurrence keys, also when a report published by one
+	// scan is read by another (v1.7+).
+	TerminalStartCol int `json:"terminal_start_col,omitempty"`
+	TerminalEndCol   int `json:"terminal_end_col,omitempty"`
 
 	// ConditionedValuesIncomplete records that the enumeration of the values
 	// reaching this asset's selector parameter hit its depth cap or value bound,
@@ -134,10 +135,9 @@ type CryptographicAsset struct {
 	// ConditionedValue is the exact resolved condition (for example
 	// "param[0]==SHA-256") a per-value asset was specialized for. Empty on every
 	// other asset. It keeps assets that one rule produced at one call distinct in
-	// FindingID and OccurrenceKey. In-process state, not public schema: it is
-	// lost in a JSON round-trip, so FindingID and OccurrenceKey must be assigned
-	// before the report is serialized and read back.
-	ConditionedValue string `json:"-"`
+	// FindingID and OccurrenceKey, also when a report published by one scan is
+	// read by another (v1.7+).
+	ConditionedValue string `json:"conditioned_value,omitempty"`
 
 	// Match is the actual code snippet that was matched
 	Match string `json:"match"`

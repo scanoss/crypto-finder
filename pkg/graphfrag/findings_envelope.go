@@ -18,15 +18,17 @@ import (
 
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 	"github.com/scanoss/crypto-finder/pkg/purl"
+	"github.com/scanoss/crypto-finder/pkg/schema"
 )
 
 // FindingsSchemaVersion is the findings.json envelope version emitted by
-// ToFindingsEnvelope. It matches the schema crypto-finder's scanner writes so
+// ToFindingsEnvelope. It is the schema crypto-finder's scanner writes, so
 // downstream consumers see a uniform `version` regardless of whether the
-// findings came from a live scan or were reconstructed from graph fragments.
-const FindingsSchemaVersion = "1.6"
+// findings came from a live scan or were reconstructed from graph fragments,
+// and can validate a scan's findings.json against it.
+const FindingsSchemaVersion = schema.InterimFormatVersion
 
-// FindingsEnvelope is the findings.json v1.6 envelope reconstructed from a
+// FindingsEnvelope is the findings.json envelope reconstructed from a
 // dependency closure of graph fragments. It is the asset-metadata companion to
 // ToCallgraphExport: consumers join assets (here) to call chains (callgraph
 // export) by finding_id, so the two MUST agree on finding_id — which they do by
@@ -65,7 +67,7 @@ type FindingAsset struct {
 	ParameterConditions []paramcondition.Condition `json:"parameter_conditions,omitempty"`
 }
 
-// ToFindingsEnvelope reconstructs the findings.json v1.6 envelope for the root
+// ToFindingsEnvelope reconstructs the findings.json envelope for the root
 // component and its transitive dependency closure, from the stored crypto
 // annotations in each fragment. Unlike ToCallgraphExport (which emits only
 // reachable findings), this emits EVERY crypto operation in the closure —
