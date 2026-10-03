@@ -418,6 +418,12 @@ type FunctionCall struct {
 	// nodeReturnOf names the project function whose result a Node call's
 	// receiver holds; the callee takes that function's declared return class.
 	nodeReturnOf FunctionID
+	// nodeUnboundMember marks a Node member call `<expr>.name(..)` whose
+	// receiver is neither an import, `this` in a class, nor a typed value. The
+	// callee keeps the bare name so contracts can still match it, but it names
+	// no function of the module: while Callee.Type stays empty the caller index
+	// draws no edge to a same-named module function.
+	nodeUnboundMember bool
 	// nodeUntyped is the callee before a receiver type that the builder still
 	// checks was applied: a default-imported class, or an unannotated field.
 	nodeUntyped FunctionID

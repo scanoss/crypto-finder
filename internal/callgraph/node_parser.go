@@ -1038,6 +1038,8 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 			call.ReceiverVar = objectText
 		}
 		p.typeNodeReceiver(call, object, src, owner, importedObject)
+		boundByImport := object.Type() != nodeCallExpression && importedObject
+		call.nodeUnboundMember = !boundByImport && call.Callee.Type == ""
 		return call
 	default:
 		return nil
