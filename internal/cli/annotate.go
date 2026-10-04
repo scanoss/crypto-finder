@@ -235,7 +235,7 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration) (*entities
 
 	langDetector := language.NewEnryDetector(skipMatcher)
 	scannerRegistry := scanner.NewRegistry()
-	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory())
+	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(opengrep.WithProbeCacheDir(opengrepProbeCacheDir())))
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)

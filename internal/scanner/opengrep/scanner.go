@@ -84,10 +84,32 @@ func NewScanner() *Scanner {
 	}
 }
 
+// FactoryOption configures NewScannerFactory.
+type FactoryOption func(*factoryOptions)
+
+type factoryOptions struct {
+	probeCacheDir string
+}
+
+// WithProbeCacheDir keeps the `opengrep --version` and `opengrep scan --help`
+// results in dir, so later processes running the same OpenGrep binary skip
+// those probes. An empty dir keeps them for this process only.
+func WithProbeCacheDir(dir string) FactoryOption {
+	return func(o *factoryOptions) { o.probeCacheDir = dir }
+}
+
 // NewScannerFactory creates fresh invocation adapters sharing immutable version and help discovery per run.
-func NewScannerFactory() func() scanner.Scanner {
-	cache := &discoveryCache{entries: make(map[string]*discovery), versionOnly: true}
-	help := &discoveryCache{entries: make(map[string]*discovery)}
+func NewScannerFactory(opts ...FactoryOption) func() scanner.Scanner {
+	var options factoryOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+	var store *probeStore
+	if options.probeCacheDir != "" {
+		store = &probeStore{dir: options.probeCacheDir}
+	}
+	cache := &discoveryCache{entries: make(map[string]*discovery), versionOnly: true, kind: "version", store: store}
+	help := &discoveryCache{entries: make(map[string]*discovery), kind: "scan-help", store: store}
 	return func() scanner.Scanner {
 		adapter := NewScanner()
 		adapter.discovery = cache
@@ -117,7 +139,10 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	s.executablePath = path
 
 	// Get opengrep version
-	s.version, err = s.discovery.get(ctx, s.executablePath, func() (string, error) { return s.detectVersion(ctx) })
+	s.version, err = s.discovery.get(ctx, s.executablePath, func() (string, bool, error) {
+		detected, detectErr := s.detectVersion(ctx)
+		return detected, true, detectErr
+	})
 	if err != nil {
 		if ctxErr := scanner.InitializationContextError(ctx, ScannerName); ctxErr != nil {
 			return ctxErr
@@ -367,14 +392,20 @@ func (s *Scanner) ignoreControlArgs(ctx context.Context, namedFiles bool) []stri
 	return args
 }
 
-// help returns the scan help text, discovered once per run.
+// help returns the scan help text, discovered once per run (or once per
+// binary with a probe cache directory).
 func (s *Scanner) help(ctx context.Context) (string, error) {
-	return s.helpDiscovery.get(ctx, s.executablePath, func() (string, error) {
+	return s.helpDiscovery.get(ctx, s.executablePath, func() (string, bool, error) {
 		output, probeErr := commandOutput(ctx, s.executablePath, "scan", "--help")
-		if probeErr != nil && ctx.Err() == nil {
+		if probeErr == nil {
+			return string(output), true, nil
+		}
+		if ctx.Err() == nil {
+			// The fallback answers this run only: the preferred probe may
+			// have failed for a transient reason.
 			output, probeErr = commandOutput(ctx, s.executablePath, "--help")
 		}
-		return string(output), probeErr
+		return string(output), false, probeErr
 	})
 }
 
