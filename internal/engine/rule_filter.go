@@ -18,6 +18,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/rules"
 )
 
 // ruleFile is a minimal representation of a semgrep rule file, used only to
@@ -27,6 +28,11 @@ type ruleFile struct {
 		Languages []string `yaml:"languages"`
 	} `yaml:"rules"`
 }
+
+// ruleLoadDocuments shares one YAML parse per rule file between the language
+// filter and the parameterCondition gate, which read the same ruleset while
+// rules load. It keeps only their small views.
+var ruleLoadDocuments = rules.NewDocuments(new(ruleFile), rules.ParameterConditionView())
 
 // ruleLanguages parses a rule YAML file and returns the set of languages it
 // targets. The second return is true when the file parsed successfully but
@@ -40,7 +46,7 @@ func ruleLanguages(path string) ([]string, bool) {
 	}
 
 	var rf ruleFile
-	if err := yaml.Unmarshal(data, &rf); err != nil {
+	if err := ruleLoadDocuments.Decode(path, data, &rf); err != nil {
 		log.Debug().Err(err).Str("path", path).Msg("Failed to parse rule file for language extraction")
 		return nil, false
 	}

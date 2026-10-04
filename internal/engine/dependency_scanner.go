@@ -459,7 +459,7 @@ func (ds *DependencyScanner) loadFilteredRules(ecosystem string, validator *rule
 	// Fail-fast validation against the raw loaded rules, before any
 	// language filtering — a malformed parameterCondition is a hard abort
 	// (resolved proposal decision), matching the same gate in Orchestrator.Scan.
-	if err := validator.Validate(allRules); err != nil {
+	if err := validator.ValidateDocuments(ruleLoadDocuments, allRules); err != nil {
 		return nil, func() {}, failure.WrapUnknown(
 			err,
 			failure.CodeRulesLoadFailed,
