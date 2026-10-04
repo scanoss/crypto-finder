@@ -127,22 +127,27 @@ func (c *discoveryCache) get(ctx context.Context, path string, run probe) (strin
 		entry := &discovery{ready: make(chan struct{})}
 		c.entries[key] = entry
 		c.mu.Unlock()
-		if value, ok := c.load(binary); ok {
-			c.mu.Lock()
-			entry.value = value
-			close(entry.ready)
-			c.mu.Unlock()
-			return value, nil
-		}
-		value, persist, err := run()
-		if c.finish(ctx, path, key, entry, value, err) && persist {
-			c.save(binary, value)
-		}
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		return value, err
+		return c.fill(ctx, path, key, binary, entry, run)
 	}
+}
+
+// fill resolves a new entry from the on-disk store, or else by probing.
+func (c *discoveryCache) fill(ctx context.Context, path, key, binary string, entry *discovery, run probe) (string, error) {
+	if value, ok := c.load(binary); ok {
+		c.mu.Lock()
+		entry.value = value
+		close(entry.ready)
+		c.mu.Unlock()
+		return value, nil
+	}
+	value, persist, err := run()
+	if c.finish(ctx, path, key, entry, value, err) && persist {
+		c.save(binary, value)
+	}
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	return value, err
 }
 
 // finish publishes a probe result to waiters and reports whether it was kept.

@@ -80,7 +80,7 @@ func (s *probeStore) save(kind, binary, value string) (err error) {
 	}
 	defer func() {
 		if err != nil {
-			_ = os.Remove(tmp.Name()) //nolint:errcheck // Best-effort cleanup of a temporary file.
+			_ = os.Remove(tmp.Name()) //nolint:errcheck,gosec // Best-effort cleanup of the temporary file CreateTemp made in the cache dir.
 		}
 	}()
 	_, err = tmp.Write(data)
@@ -90,6 +90,7 @@ func (s *probeStore) save(kind, binary, value string) (err error) {
 	if err != nil {
 		return fmt.Errorf("opengrep: write probe cache file: %w", err)
 	}
+	//nolint:gosec // Both paths are in the probe cache dir the CLI chose; kind is a constant and binary a hex digest.
 	if err = os.Rename(tmp.Name(), s.path(kind, binary)); err != nil {
 		return fmt.Errorf("opengrep: publish probe cache file: %w", err)
 	}

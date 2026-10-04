@@ -49,5 +49,5 @@ func resolveScannerJobs(flagSet bool, flagValue int, lookupEnv func(string) (str
 	if value < 0 || value > maxScannerJobs {
 		return 0, fmt.Errorf("%s must be between 0 and %d, got %d", source, maxScannerJobs, value)
 	}
-	return int32(value), nil //nolint:gosec // Bounded by maxScannerJobs above.
+	return int32(value), nil
 }

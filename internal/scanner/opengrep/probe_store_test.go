@@ -97,23 +97,7 @@ func TestProbeCacheFallsBackToProbing(t *testing.T) {
 			}
 			discoveryScan(t, initializedDiscovery(t, opengrep.NewScannerFactory(opengrep.WithProbeCacheDir(cacheDir)), config), dir)
 			if damage != "unwritable" {
-				entries, err := filepath.Glob(filepath.Join(cacheDir, "*.json"))
-				if err != nil || len(entries) != 2 {
-					t.Fatalf("entries %v, %v", entries, err)
-				}
-				for _, entry := range entries {
-					content := "{not json"
-					if damage == "invalid-version" {
-						data, readErr := os.ReadFile(entry)
-						if readErr != nil {
-							t.Fatal(readErr)
-						}
-						content = strings.ReplaceAll(string(data), `"1.29.0`, `"not-a-version`)
-					}
-					if err := os.WriteFile(entry, []byte(content), 0o600); err != nil {
-						t.Fatal(err)
-					}
-				}
+				damageProbeEntries(t, cacheDir, damage)
 			}
 			adapter := initializedDiscovery(t, opengrep.NewScannerFactory(opengrep.WithProbeCacheDir(cacheDir)), config)
 			discoveryScan(t, adapter, dir)
@@ -195,6 +179,29 @@ func TestProbeCacheConcurrentProcesses(t *testing.T) {
 	}
 }
 
+// damageProbeEntries overwrites both stored entries: with bytes that are not
+// JSON, or with a version entry whose value is not a version.
+func damageProbeEntries(t *testing.T, cacheDir, damage string) {
+	t.Helper()
+	entries, err := filepath.Glob(filepath.Join(cacheDir, "*.json"))
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("entries %v, %v", entries, err)
+	}
+	for _, entry := range entries {
+		data, err := os.ReadFile(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := "{not json"
+		if damage == "invalid-version" {
+			content = strings.ReplaceAll(string(data), `"1.29.0`, `"not-a-version`)
+		}
+		if err := os.WriteFile(entry, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // assertProbeEntries checks the directory holds want complete entries and no
 // temporary file left behind by a writer.
 func assertProbeEntries(t *testing.T, cacheDir string, want int) {
@@ -203,7 +210,7 @@ func assertProbeEntries(t *testing.T, cacheDir string, want int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
+	names := make([]string, 0, len(files))
 	for _, file := range files {
 		names = append(names, file.Name())
 	}

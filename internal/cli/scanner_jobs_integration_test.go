@@ -51,7 +51,7 @@ func TestScanScannerJobsReachOpenGrep(t *testing.T) {
 		{name: "flag wins over environment", flags: []string{"--scanner-jobs=4"}, env: "2", wantJobs: []string{"--jobs", "4"}},
 		{name: "invalid environment", env: "many", wantErr: "SCANOSS_SCANNER_JOBS must be a whole number of jobs"},
 	}
-	for _, command := range []string{"scan", "annotate"} {
+	for _, command := range []string{scanCmd.Name(), annotateCmd.Name()} {
 		for _, tt := range tests {
 			t.Run(command+"/"+tt.name, func(t *testing.T) {
 				runScannerJobsCase(t, binary, command, tt)
@@ -73,12 +73,12 @@ printf '%s\n' '{"results":[],"errors":[]}'`)
 	findings := filepath.Join(dir, "findings.json")
 
 	var args []string
-	if command == "scan" {
-		args = slices.Concat([]string{"scan"}, rules, []string{"--output", findings}, tt.flags, []string{dir})
+	if command == scanCmd.Name() {
+		args = slices.Concat([]string{command}, rules, []string{"--output", findings}, tt.flags, []string{dir})
 	} else {
 		// annotate re-annotates a fragment that a scan exported first.
 		fragment := filepath.Join(dir, "graph-fragment.json")
-		setup := exec.CommandContext(t.Context(), binary, slices.Concat([]string{"scan"}, rules, []string{"--output", findings, "--export-graph-fragment", fragment, dir})...)
+		setup := exec.CommandContext(t.Context(), binary, slices.Concat([]string{scanCmd.Name()}, rules, []string{"--output", findings, "--export-graph-fragment", fragment, dir})...)
 		setup.Env = env
 		if output, err := setup.CombinedOutput(); err != nil {
 			t.Fatalf("setup scan: %v\n%s", err, output)
@@ -86,7 +86,7 @@ printf '%s\n' '{"results":[],"errors":[]}'`)
 		if err := os.Remove(argvLog); err != nil {
 			t.Fatal(err)
 		}
-		args = slices.Concat([]string{"annotate"}, rules, []string{"--import-fragment", fragment, "--source", dir, "--output", filepath.Join(dir, "annotation.json")}, tt.flags)
+		args = slices.Concat([]string{command}, rules, []string{"--import-fragment", fragment, "--source", dir, "--output", filepath.Join(dir, "annotation.json")}, tt.flags)
 	}
 	cmd := exec.CommandContext(t.Context(), binary, args...)
 	cmd.Env = env

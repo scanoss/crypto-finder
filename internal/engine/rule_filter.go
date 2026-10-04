@@ -217,11 +217,11 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 			return nil, nil, fmt.Errorf("resolve relative rule path for %s: %w", ruleFile, err)
 		}
 
-		if rules, ok := mergeableRules(ruleFile, relPath); ok {
-			if len(rules) > 0 {
+		if fileRules, ok := mergeableRules(ruleFile, relPath); ok {
+			if len(fileRules) > 0 {
 				log.Debug().Str("path", ruleFile).Int("mergedLine", merged.nextLine()).Msg("Merged rule file into " + mergedRulesFileName)
 			}
-			for _, rule := range rules {
+			for _, rule := range fileRules {
 				merged.add(rule)
 			}
 			continue
@@ -303,16 +303,16 @@ func mergeableRules(path, relPath string) ([][]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
-	rules := plainRulesSequence(data)
-	if rules == nil {
+	sequence := plainRulesSequence(data)
+	if sequence == nil {
 		return nil, false
 	}
 	prefix := ""
 	if dir := filepath.Dir(relPath); dir != "." {
 		prefix = strings.ReplaceAll(filepath.ToSlash(dir), "/", ".") + "."
 	}
-	encoded := make([][]byte, 0, len(rules.Content))
-	for _, rule := range rules.Content {
+	encoded := make([][]byte, 0, len(sequence.Content))
+	for _, rule := range sequence.Content {
 		id := mappingValue(rule, "id")
 		if id == nil || id.Kind != yaml.ScalarNode || id.ShortTag() != yamlStrTag {
 			return nil, false
