@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-10-05
+### Added
+- `scan --scanner-jobs <n>` (or the `SCANOSS_SCANNER_JOBS` environment
+  variable) sets the parallel jobs of the primary scan's OpenGrep process.
+  The default `0` keeps OpenGrep's own default of one worker per detected
+  core, the flag wins over the variable, and a `--jobs` passed to the scanner
+  directly still wins over both. Set it when several scans share a host: with
+  8 concurrent scans on 16 cores, `--scanner-jobs 2` used about a fifth of the
+  CPU, finished about three times sooner, and kept findings that the default
+  lost to OpenGrep rule timeouts. Findings and cache keys do not change.
+- `annotate` accepts the same `--scanner-jobs <n>` flag and honors
+  `SCANOSS_SCANNER_JOBS` for its OpenGrep detection process, so a host that
+  exports the variable bounds both `scan` and `annotate`.
+### Changed
+- `scan` and `annotate` keep the results of the `opengrep --version` and
+  `opengrep scan --help` checks under `~/.scanoss/crypto-finder/cache/opengrep-probes`,
+  so a later run of the same OpenGrep binary skips them (about 1.5 s per run).
+  Entries are keyed by the binary's path, size, modification time and
+  contents, so an updated or replaced binary is checked again, and an
+  unusable entry or cache directory falls back to running the checks.
+- A scan parses each rule file once while loading rules and once for the rule
+  graph passes, instead of twice each, which saves about 0.5 s per run
+  with the default ruleset. Output is unchanged.
+
 ## [0.35.0] - 2026-10-04
 ### Added
 - With an API key configured, `scan --scan-dependencies` takes a dependency's findings from the SCANOSS API (`POST /v3/cryptography/reachability/component`) when the findings cache does not hold it, instead of scanning it: the findings the mining service published for that package version, as served, including the closest mined patch of the same minor version. Dependencies the API has not mined, or any API error, are scanned locally; a refused key or an API that does not offer the endpoint stops the lookups after the first answer. Call chains, conditioned findings and reachability are still computed from the local sources. Each lookup sends the dependency's purl and version to the API. `--no-dependency-findings-api` scans every dependency locally.
