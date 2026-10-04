@@ -171,6 +171,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--scan-dependencies` | off | Recursively scan third-party dependencies (requires the deps image or local toolchains) |
 | `--dep-ecosystem <eco>` | `auto` | Dependency ecosystem: `auto`, `go`, `java`, `python`, `rust` |
 | `--dep-workers <n>` | `0` | Parallel dependency scan workers (0 = half of CPU cores, max 8; Java max 2). When two or more dependency scans run at once, each OpenGrep run gets `--jobs` set to the CPU cores divided by the number of scans |
+| `--scanner-jobs <n>` | `0` | Parallel jobs for the primary scan's OpenGrep process (0 = OpenGrep's default, one per detected core; also via `SCANOSS_SCANNER_JOBS`, the flag wins). Lower it when several scans share a host, for example to the host's cores divided by the concurrent scans. Does not change findings or cache keys |
 | `--no-dependency-findings-api` | off | Scan every dependency locally. Without it, and with an API key configured, a dependency the findings cache does not hold takes the findings the SCANOSS API publishes for its package version |
 | `--findings-cache <backend>` | `disk` | Dependency findings cache backend: `disk`, `none`, `postgres` (also via `SCANOSS_FINDINGS_CACHE_BACKEND`; postgres needs `SCANOSS_FINDINGS_CACHE_DSN`) |
 | `--progress` | off | Write scan lifecycle JSONL to stderr; findings remain on stdout or `--output`, and explicit `--error-format=text` is incompatible |
@@ -193,7 +194,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--source <dir>` | required | Source directory to run crypto detection over |
 | `-o`, `--output <file>` | stdout | Output file for the annotation JSON |
 
-`annotate` also accepts the detection-related subset of `scan` flags: `--rules`, `--rules-dir`, `--no-remote-rules`, `--no-cache`, `--scanner`, `--timeout`, `--languages`, `--include-tests`, `--no-default-exclusions`, `--exclude`, `--api-key`, `--api-url`.
+`annotate` also accepts the detection-related subset of `scan` flags: `--rules`, `--rules-dir`, `--no-remote-rules`, `--no-cache`, `--scanner`, `--scanner-jobs` (and `SCANOSS_SCANNER_JOBS`), `--timeout`, `--languages`, `--include-tests`, `--no-default-exclusions`, `--exclude`, `--api-key`, `--api-url`.
 
 ## Language Coverage
 
@@ -236,7 +237,7 @@ crypto-finder configure --api-key YOUR_API_KEY
 crypto-finder configure --api-url https://custom.scanoss.com
 ```
 
-Environment variables: `SCANOSS_API_KEY`, `SCANOSS_API_URL`. Project-level skip patterns via `scanoss.json`:
+Environment variables: `SCANOSS_API_KEY`, `SCANOSS_API_URL`, `SCANOSS_SCANNER_JOBS` (see `--scanner-jobs`). Project-level skip patterns via `scanoss.json`:
 
 ```json
 {

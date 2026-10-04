@@ -29,6 +29,7 @@ import (
 	"sync"
 
 	"github.com/hashicorp/go-version"
+	"github.com/rs/zerolog/log"
 )
 
 type discovery struct {
@@ -39,49 +40,69 @@ type discoveryCache struct {
 	mu          sync.Mutex
 	versionOnly bool
 	entries     map[string]*discovery
+	// kind names the probe in the on-disk store; store is nil when results
+	// live only for this process.
+	kind  string
+	store *probeStore
 }
 
-// key fingerprints executable bytes and the ambient context actually used by probes.
+// probe runs one discovery. persist reports whether a successful value may
+// outlive the process: a fallback answer to a failed preferred probe may not.
+type probe func() (value string, persist bool, err error)
+
+// discoveryKeys fingerprints the executable once. binary covers the resolved
+// path, size, modification time, mode and bytes, which is what the on-disk
+// store trusts across processes. run also covers the invoked path, the working
+// directory and the environment, which in-process reuse keeps exact.
 // Config.Env and Config.WorkDir affect scans, not baseline version/help probes.
-func discoveryKey(path string) (string, error) {
+func discoveryKeys(path string) (run, binary string, err error) {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	if resolved, err = filepath.Abs(resolved); err != nil {
+		return "", "", err
 	}
 	file, err := os.Open(resolved)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer func() { _ = file.Close() }() //nolint:errcheck // Read-only close cannot change the fingerprint bytes.
 	info, err := file.Stat()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	env := os.Environ()
-	slices.Sort(env)
 	hash := sha256.New()
 	//nolint:errcheck // SHA-256 writes always succeed.
-	_, _ = fmt.Fprintf(hash, "%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%s\x00", path, resolved, cwd, info.Size(), info.ModTime().UnixNano(), info.Mode(), strings.Join(env, "\x00")) // #nosec G705 -- Writes SHA-256 digest bytes, not HTML.
+	_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%d\x00%d\x00", resolved, info.Size(), info.ModTime().UnixNano(), info.Mode()) // #nosec G705 -- Writes SHA-256 digest bytes, not HTML.
 	if _, err = io.Copy(hash, file); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return fmt.Sprintf("%x", hash.Sum(nil)), nil
+	binary = fmt.Sprintf("%x", hash.Sum(nil))
+	env := os.Environ()
+	slices.Sort(env)
+	runHash := sha256.New()
+	//nolint:errcheck // SHA-256 writes always succeed.
+	_, _ = fmt.Fprintf(runHash, "%s\x00%s\x00%s\x00%s\x00", binary, path, cwd, strings.Join(env, "\x00")) // #nosec G705 -- Writes SHA-256 digest bytes, not HTML.
+	return fmt.Sprintf("%x", runHash.Sum(nil)), binary, nil
 }
 
-func (c *discoveryCache) get(ctx context.Context, path string, probe func() (string, error)) (string, error) {
+func (c *discoveryCache) get(ctx context.Context, path string, run probe) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	if c == nil {
-		return probe()
+		value, _, err := run()
+		return value, err
 	}
-	key, err := discoveryKey(path)
+	key, binary, err := discoveryKeys(path)
 	if err != nil {
-		return probe()
+		value, _, probeErr := run()
+		return value, probeErr
 	}
 	for {
 		if err := ctx.Err(); err != nil {
@@ -106,27 +127,65 @@ func (c *discoveryCache) get(ctx context.Context, path string, probe func() (str
 		entry := &discovery{ready: make(chan struct{})}
 		c.entries[key] = entry
 		c.mu.Unlock()
-		value, err := probe()
-		c.finish(ctx, path, key, entry, value, err)
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		return value, err
+		return c.fill(ctx, path, key, binary, entry, run)
 	}
 }
 
-func (c *discoveryCache) finish(ctx context.Context, path, key string, entry *discovery, value string, err error) {
-	current, keyErr := discoveryKey(path)
-	var versionErr error
-	if c.versionOnly {
-		_, versionErr = version.NewVersion(value)
-	}
-	c.mu.Lock()
-	if versionErr != nil || err != nil || ctx.Err() != nil || keyErr != nil || current != key {
-		delete(c.entries, key)
-	} else {
+// fill resolves a new entry from the on-disk store, or else by probing.
+func (c *discoveryCache) fill(ctx context.Context, path, key, binary string, entry *discovery, run probe) (string, error) {
+	if value, ok := c.load(binary); ok {
+		c.mu.Lock()
 		entry.value = value
+		close(entry.ready)
+		c.mu.Unlock()
+		return value, nil
+	}
+	value, persist, err := run()
+	if c.finish(ctx, path, key, entry, value, err) && persist {
+		c.save(binary, value)
+	}
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	return value, err
+}
+
+// finish publishes a probe result to waiters and reports whether it was kept.
+func (c *discoveryCache) finish(ctx context.Context, path, key string, entry *discovery, value string, err error) bool {
+	current, _, keyErr := discoveryKeys(path)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	kept := c.valid(value) && err == nil && ctx.Err() == nil && keyErr == nil && current == key
+	if kept {
+		entry.value = value
+	} else {
+		delete(c.entries, key)
 	}
 	close(entry.ready)
-	c.mu.Unlock()
+	return kept
+}
+
+// valid reports whether value is a usable result for this cache's probe.
+func (c *discoveryCache) valid(value string) bool {
+	if !c.versionOnly {
+		return true
+	}
+	_, err := version.NewVersion(value)
+	return err == nil
+}
+
+// load returns a stored result for the binary. Any unreadable, foreign or
+// invalid entry is a miss, so the caller probes as before.
+func (c *discoveryCache) load(binary string) (string, bool) {
+	value, ok := c.store.load(c.kind, binary)
+	if !ok || !c.valid(value) {
+		return "", false
+	}
+	return value, true
+}
+
+func (c *discoveryCache) save(binary, value string) {
+	if err := c.store.save(c.kind, binary, value); err != nil {
+		log.Debug().Err(err).Str("probe", c.kind).Msg("failed to persist opengrep probe result; later runs will probe again")
+	}
 }

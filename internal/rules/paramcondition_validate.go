@@ -25,8 +25,6 @@ import (
 	"strings"
 	"sync"
 
-	"go.yaml.in/yaml/v3"
-
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
@@ -72,22 +70,34 @@ type ParameterConditionValidator struct {
 
 // Validate preserves the standalone gate's aggregated errors and path handling.
 func (v *ParameterConditionValidator) Validate(rulePaths []string) error {
+	return v.ValidateDocuments(nil, rulePaths)
+}
+
+// ParameterConditionView is the view the validator decodes, for a Documents
+// shared with other passes over the same rule files.
+func ParameterConditionView() any {
+	return new(paramConditionRuleFile)
+}
+
+// ValidateDocuments is Validate decoding each file through docs, so a pass
+// that registered ParameterConditionView shares its YAML parse.
+func (v *ParameterConditionValidator) ValidateDocuments(docs *Documents, rulePaths []string) error {
 	var errs []error
 	for _, path := range expandParamConditionRulePaths(rulePaths) {
-		if err := v.validateFile(path); err != nil {
+		if err := v.validateFile(docs, path); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (v *ParameterConditionValidator) validateFile(path string) error {
+func (v *ParameterConditionValidator) validateFile(docs *Documents, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read rule file %s: %w", path, err)
 	}
 	if v == nil {
-		return validateParameterConditionBytes(path, data)
+		return validateParameterConditionBytes(docs, path, data)
 	}
 	digest := sha256.Sum256(data)
 	v.mu.Lock()
@@ -95,7 +105,7 @@ func (v *ParameterConditionValidator) validateFile(path string) error {
 	if previous, ok := v.successful[path]; ok && previous == digest {
 		return nil
 	}
-	if err := validateParameterConditionBytes(path, data); err != nil {
+	if err := validateParameterConditionBytes(docs, path, data); err != nil {
 		return err
 	}
 	if v.successful == nil {
@@ -105,9 +115,9 @@ func (v *ParameterConditionValidator) validateFile(path string) error {
 	return nil
 }
 
-func validateParameterConditionBytes(path string, data []byte) error {
+func validateParameterConditionBytes(docs *Documents, path string, data []byte) error {
 	var parsed paramConditionRuleFile
-	if err := yaml.Unmarshal(data, &parsed); err != nil {
+	if err := docs.Decode(path, data, &parsed); err != nil {
 		return fmt.Errorf("parse rule file %s: %w", path, err)
 	}
 	var errs []error

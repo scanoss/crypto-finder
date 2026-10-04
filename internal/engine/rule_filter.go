@@ -18,6 +18,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/rules"
 )
 
 // ruleFile is a minimal representation of a semgrep rule file, used only to
@@ -27,6 +28,11 @@ type ruleFile struct {
 		Languages []string `yaml:"languages"`
 	} `yaml:"rules"`
 }
+
+// ruleLoadDocuments shares one YAML parse per rule file between the language
+// filter and the parameterCondition gate, which read the same ruleset while
+// rules load. It keeps only their small views.
+var ruleLoadDocuments = rules.NewDocuments(new(ruleFile), rules.ParameterConditionView())
 
 // ruleLanguages parses a rule YAML file and returns the set of languages it
 // targets. The second return is true when the file parsed successfully but
@@ -40,7 +46,7 @@ func ruleLanguages(path string) ([]string, bool) {
 	}
 
 	var rf ruleFile
-	if err := yaml.Unmarshal(data, &rf); err != nil {
+	if err := ruleLoadDocuments.Decode(path, data, &rf); err != nil {
 		log.Debug().Err(err).Str("path", path).Msg("Failed to parse rule file for language extraction")
 		return nil, false
 	}
@@ -211,11 +217,11 @@ func materializeRuleFiles(ruleFiles []string) ([]string, func(), error) {
 			return nil, nil, fmt.Errorf("resolve relative rule path for %s: %w", ruleFile, err)
 		}
 
-		if rules, ok := mergeableRules(ruleFile, relPath); ok {
-			if len(rules) > 0 {
+		if fileRules, ok := mergeableRules(ruleFile, relPath); ok {
+			if len(fileRules) > 0 {
 				log.Debug().Str("path", ruleFile).Int("mergedLine", merged.nextLine()).Msg("Merged rule file into " + mergedRulesFileName)
 			}
-			for _, rule := range rules {
+			for _, rule := range fileRules {
 				merged.add(rule)
 			}
 			continue
@@ -297,16 +303,16 @@ func mergeableRules(path, relPath string) ([][]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
-	rules := plainRulesSequence(data)
-	if rules == nil {
+	sequence := plainRulesSequence(data)
+	if sequence == nil {
 		return nil, false
 	}
 	prefix := ""
 	if dir := filepath.Dir(relPath); dir != "." {
 		prefix = strings.ReplaceAll(filepath.ToSlash(dir), "/", ".") + "."
 	}
-	encoded := make([][]byte, 0, len(rules.Content))
-	for _, rule := range rules.Content {
+	encoded := make([][]byte, 0, len(sequence.Content))
+	for _, rule := range sequence.Content {
 		id := mappingValue(rule, "id")
 		if id == nil || id.Kind != yaml.ScalarNode || id.ShortTag() != yamlStrTag {
 			return nil, false

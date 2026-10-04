@@ -26,11 +26,11 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
-	"go.yaml.in/yaml/v3"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 	"github.com/scanoss/crypto-finder/pkg/purl"
 )
@@ -578,6 +578,11 @@ func appendSyntheticAsset(
 
 // ruleFileCryptoYAML captures conditioned metadata plus the structural patterns
 // needed to identify the terminal call independently of informational api metadata.
+// ruleCryptoDocuments shares one YAML parse per rule file between the
+// entry-point synthesis and the conditioned-findings catalog, which decode the
+// same view of the same ruleset back to back.
+var ruleCryptoDocuments = rules.NewDocuments(new(ruleFileCryptoYAML))
+
 type ruleFileCryptoYAML struct {
 	Rules []ruleCryptoYAML `yaml:"rules"`
 }
@@ -657,7 +662,7 @@ func loadRuleCryptoMetadataFile(out map[string][]RuleCryptoMetadata, file string
 		return
 	}
 	var rf ruleFileCryptoYAML
-	if yaml.Unmarshal(data, &rf) != nil {
+	if ruleCryptoDocuments.Decode(file, data, &rf) != nil {
 		return
 	}
 	for i := range rf.Rules {
@@ -783,7 +788,7 @@ func addRuleCryptoFile(out map[string][]map[string]string, file, ecosystem strin
 	}
 
 	var rf ruleFileCryptoYAML
-	if yaml.Unmarshal(data, &rf) != nil {
+	if ruleCryptoDocuments.Decode(file, data, &rf) != nil {
 		return
 	}
 

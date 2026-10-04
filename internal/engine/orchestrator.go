@@ -369,7 +369,7 @@ func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths
 		*rulePaths, *cleanupRulePaths = preparedRulePaths, cleanup
 	}
 
-	if validationErr := validator.Validate(*rawRulePaths); validationErr != nil {
+	if validationErr := validator.ValidateDocuments(ruleLoadDocuments, *rawRulePaths); validationErr != nil {
 		return failure.WrapUnknown(validationErr, failure.CodeRulesLoadFailed, failure.StageRules, "invalid parameterCondition in ruleset")
 	}
 	return nil

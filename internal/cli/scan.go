@@ -112,6 +112,7 @@ var (
 	scanExportGraphFragment      string
 	scanExportGfFormat           string
 	scanDepWorkers               int
+	scanScannerJobs              int
 	scanJavaJDKMajor             string
 	scanJavaJDKHomes             []string
 	scanJavaCompiledArtifact     string
@@ -200,6 +201,9 @@ func init() {
 	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, node, python, rust")
 
 	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8; Java max 2); concurrent scans share the CPU cores")
+	scanCmd.Flags().IntVar(&scanScannerJobs, "scanner-jobs", 0,
+		"Parallel jobs for the OpenGrep process of the primary scan (default 0: OpenGrep's own default, one per detected core; "+
+			"can also be set via "+scannerJobsEnv+"). Lower it when several scans share a host. Dependency scans size their own jobs")
 	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
 	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
@@ -751,6 +755,11 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		)
 	}
 
+	scannerJobs, err := resolveScannerJobs(cmd.Flags().Changed("scanner-jobs"), scanScannerJobs, os.LookupEnv)
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
+	}
+
 	// Parse timeout
 	timeout, err := scanutil.ParseDuration(scanTimeout)
 	if err != nil {
@@ -994,7 +1003,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory())
+	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(opengrep.WithProbeCacheDir(opengrepProbeCacheDir())))
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
@@ -1010,6 +1019,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			SkipPatterns: skipPatterns,
 			DisableDedup: scanNoDedup,
 			Interfile:    scanInterfile,
+			Jobs:         scannerJobs,
 		},
 	}
 	if progress != nil {
