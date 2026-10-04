@@ -194,7 +194,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--source <dir>` | required | Source directory to run crypto detection over |
 | `-o`, `--output <file>` | stdout | Output file for the annotation JSON |
 
-`annotate` also accepts the detection-related subset of `scan` flags: `--rules`, `--rules-dir`, `--no-remote-rules`, `--no-cache`, `--scanner`, `--timeout`, `--languages`, `--include-tests`, `--no-default-exclusions`, `--exclude`, `--api-key`, `--api-url`.
+`annotate` also accepts the detection-related subset of `scan` flags: `--rules`, `--rules-dir`, `--no-remote-rules`, `--no-cache`, `--scanner`, `--scanner-jobs` (and `SCANOSS_SCANNER_JOBS`), `--timeout`, `--languages`, `--include-tests`, `--no-default-exclusions`, `--exclude`, `--api-key`, `--api-url`.
 
 ## Language Coverage
 

@@ -6,3 +6,6 @@
   8 concurrent scans on 16 cores, `--scanner-jobs 2` used about a fifth of the
   CPU, finished about three times sooner, and kept findings that the default
   lost to OpenGrep rule timeouts. Findings and cache keys do not change.
+- `annotate` accepts the same `--scanner-jobs <n>` flag and honors
+  `SCANOSS_SCANNER_JOBS` for its OpenGrep detection process, so a host that
+  exports the variable bounds both `scan` and `annotate`.
