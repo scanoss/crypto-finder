@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-10-04
+### Added
+- With an API key configured, `scan --scan-dependencies` takes a dependency's findings from the SCANOSS API (`POST /v3/cryptography/reachability/component`) when the findings cache does not hold it, instead of scanning it: the findings the mining service published for that package version, as served, including the closest mined patch of the same minor version. Dependencies the API has not mined, or any API error, are scanned locally; a refused key or an API that does not offer the endpoint stops the lookups after the first answer. Call chains, conditioned findings and reachability are still computed from the local sources. Each lookup sends the dependency's purl and version to the API. `--no-dependency-findings-api` scans every dependency locally.
+- Interim report format 1.7: a per-value asset, one a rule's parameter condition specialized to a resolved value such as `param[0]==HmacSHA256`, carries that value in the new optional `conditioned_value` field. The value is part of the asset's `finding_id` and `occurrence_key`, so findings published by one scan and read by another, such as dependency findings taken from the SCANOSS API, keep one identity per value instead of collapsing the values of one call into one. Every other asset omits the field. `pkg/graphfrag.FindingsSchemaVersion`, the version consumers validate a findings.json against, is now the interim format version and also moves to 1.7; the envelope it renders from graph fragments leaves the new fields out.
+- Interim report format 1.7 also carries `terminal_start_col` and `terminal_end_col` on an asset matched on an argument span, such as `new KeyParameter(key)` inside `cipher.init(...)`: the columns of the call that encloses it. A report read back by another scan then locates the same crypto call, so the asset keeps its `occurrence_key`. Every other asset omits them.
+- The stitched callgraph export now carries `root_kind` on the first frame of
+  each chain and `analysis.no_callers_only` on each finding, with the meaning
+  they have in the live export. A root reads `main` or `framework_entry` when
+  the scan that produced the fragment recognized it as an entry point, and
+  `no_callers` when it did not and nothing in the stitched graph calls it.
+  `no_callers_only` is `true` when every root that reaches the finding is a
+  `no_callers` root. The graph-fragment export records this: the schema is now
+  `graph-fragment-1.14`, with `entry_kind` on the functions a scan recognized as
+  entry points and `scan_metadata.entry_kinds` saying the scan recorded them. A
+  fragment from an earlier version (or one re-encoded without entry kinds)
+  still loads and stitches with the same verdicts, but its roots carry no
+  `root_kind` and its findings never claim `no_callers_only`, since a framework
+  entry the scan could not mark would otherwise read as `no_callers`.
+- `graphfrag.GraphAlgoVersion` is now `graph-algo-7` (was `graph-algo-6`): the
+  structural graph now holds each function's entry kind. A consumer that caches
+  structural graphs under `scan_metadata.graph_algo_version` must re-mine to get
+  `root_kind` and `no_callers_only` on the stitched export.
+### Changed
+- Every finding that has a call graph now carries an `occurrence_key`, so a
+  consumer that joins assets to finding graphs on `(finding_id,
+  occurrence_key)` can attach all of them. Findings synthesized from library
+  API contracts (rule id `crypto-finder.api-entry-point`) and rule matches
+  with no call to anchor, such as a cast or a declaration of a certificate
+  type, were left without one; they are now keyed by the function that holds
+  them and their position. Findings that already had a key keep it.
+- Variants of one library entry point are now separate findings. A contract
+  that specializes an API by an argument type (for example `PBKDF2-SHA-256`
+  and `PBKDF2-SHA-1` selected by the digest passed to the constructor) or by
+  a variant such as `ECDSA` and `ECDSA-deterministic` used to give every
+  variant one shared `finding_id`; each variant except the base now has its
+  own `finding_id` and `occurrence_key`, derived from its `algorithmName`,
+  `algorithmHashFunction` and `parameterCondition`, so other edits to a
+  contract do not change them. The base entry point keeps its `finding_id`. Variants still share the function-level call chains of their
+  declaration; per-type chain filtering is not applied. The identities of the
+  keyless findings and of the variants change once, on the first scan with
+  this release. No call graph algorithm changed, so `graph-algo-7` still
+  covers it.
+### Fixed
+- A call that a conditioned rule already matched is no longer reported twice.
+  When the scanner reports a rule and the resolved value specializes that
+  same rule at the same location, the per-value asset is kept and the
+  scanner's copy is dropped, so findings such as hash algorithms in Java and
+  Python no longer appear in duplicate. The per-value asset survives because
+  its call chains and verdict come from the routes that carry its own value,
+  where a scanner pattern covering several values mixes their routes. The
+  finding IDs of those duplicates change once. A scanner match whose value is
+  not specialized is kept.
+- `scan --scan-dependencies` now gives every asset a `finding_id`, as the interim contract states, also without `--export-callgraph` or `--export-graph-fragment`. Assets added after the dependency phase, such as library entry points and per-value assets, had none unless an export was requested. The `--progress` stream of such a scan now reports the `finding_ids` pass.
+- JavaScript and TypeScript call graph: a member call on a chained or
+  unresolved receiver, such as `crypto.createHash('md5').update(x).digest('hex')`
+  or `param.digest()`, is no longer bound to a module function of the same name.
+  That false edge made unrelated functions appear as callers of the function.
+  A call on an inline `require('./x')` receiver, such as
+  `require('./x').digest(v)`, now binds to the function the required module
+  declares, as an import binding does, instead of to a function of the calling
+  file.
+  The structural graph of a Node scan loses those edges; `graphfrag.GraphAlgoVersion`
+  `graph-algo-7` of this release covers this change, so a consumer that caches
+  structural graphs under `scan_metadata.graph_algo_version` must re-mine. The
+  wire schema is unchanged.
+- Two calls of the same API in one statement that spans lines, such as
+  `a ? SSLContext.getInstance(p) : SSLContext.getInstance(p, q)`, no longer
+  share an `occurrence_key`. The second call was matched to the first call's
+  position, so both assets carried one key and one call graph. Each call now
+  has its own key and finding graph. Only the keys of calls that collided
+  change, and only the later call of each pair; every other `occurrence_key`
+  is byte-identical. `finding_id` is unchanged: it hashes file, start line and
+  rule, so such a pair still shares it and is told apart by
+  `(finding_id, occurrence_key)`.
+
 ## [0.34.0] - 2026-10-03
 ### Added
 - `--progress` reports the passes between the dependency phase and the written report as phases of their own, each with `started` and `completed` events and `duration_ms`: `entry_points` and `conditioned_findings` when a call graph exists, `finding_ids` when an export is requested, `occurrence_keys`, `oid_projection`, and `output`, the write of the findings report. The five report passes are children of `export` when the export built its own call graph, and children of `scan` otherwise. `output` is a child of `scan`. Before, these passes ran without events, so on a large Go target the reported phases covered less than half of the scan's wall time. `schemas/scan-progress-schema.json` lists the new phase names. Phase names are now an open set within schema version `1`, as skip reasons already were, so a consumer must accept a phase it does not track. The hidden diagnostic flags `scan --cpuprofile <file>` and `--memprofile <file>` write a pprof CPU profile of the whole scan and a heap profile taken after a GC at its end. A path that cannot be created fails before the scan starts, with `output_write_failed`.
