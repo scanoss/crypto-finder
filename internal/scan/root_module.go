@@ -24,7 +24,7 @@ type pomRootParent struct {
 // DetectRootModule returns the module name a manifest at targetDir declares
 // for the scan root: the go.mod module path, the Cargo [package] name as the
 // crate identifier, the Maven groupId:artifactId or Gradle rootProject.name,
-// the pyproject [project] or [tool.poetry] name, or the package.json name.
+// or the package.json name. Python has none: see below.
 //
 // It is empty when no manifest names the module. An empty root module is a
 // state, not a failure: symbols are then rooted at the scan root itself, with
@@ -46,7 +46,9 @@ func DetectRootModule(targetDir, ecosystem string) string {
 		// contract can ever match.
 		return strings.ReplaceAll(detectSectionName(filepath.Join(targetDir, "Cargo.toml"), "[package]"), "-", "_")
 	case ecosystemPython:
-		return detectSectionName(filepath.Join(targetDir, "pyproject.toml"), "[project]", "[tool.poetry]")
+		// A pyproject name is the distribution name, which no import spells:
+		// the package directories already carry the import prefix.
+		return ""
 	case ecosystemNode:
 		// The package.json name is the prefix a consumer's `require("name/sub")`
 		// resolves to, and the same root NpmResolver reports on a dependency

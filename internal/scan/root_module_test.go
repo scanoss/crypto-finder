@@ -138,8 +138,8 @@ func TestDetectRootModule(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname = 'py-demo'\n"), 0o600); err != nil {
 			t.Fatalf("write pyproject.toml: %v", err)
 		}
-		if got := DetectRootModule(dir, "python"); got != "py-demo" {
-			t.Fatalf("DetectRootModule(python) = %q, want py-demo", got)
+		if got := DetectRootModule(dir, "python"); got != "" {
+			t.Fatalf("DetectRootModule(python) = %q, want empty", got)
 		}
 	})
 
@@ -148,8 +148,8 @@ func TestDetectRootModule(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[tool.poetry]\nname = 'poetry-demo'\n"), 0o600); err != nil {
 			t.Fatalf("write pyproject.toml: %v", err)
 		}
-		if got := DetectRootModule(dir, "python"); got != "poetry-demo" {
-			t.Fatalf("DetectRootModule(python poetry) = %q, want poetry-demo", got)
+		if got := DetectRootModule(dir, "python"); got != "" {
+			t.Fatalf("DetectRootModule(python poetry) = %q, want empty", got)
 		}
 	})
 
