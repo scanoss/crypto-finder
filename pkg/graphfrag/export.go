@@ -68,7 +68,9 @@ const SchemaVersion = "graph-fragment-1.14"
 // graph-algo-7: functions carry the entry kind the scan recognized (main or
 // framework_entry), so a stitched export can give a chain root its root_kind.
 // A structural graph cached under graph-algo-6 has none.
-const GraphAlgoVersion = "graph-algo-7"
+//
+// graph-algo-8: Python symbols are no longer prefixed with the pyproject name.
+const GraphAlgoVersion = "graph-algo-8"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is

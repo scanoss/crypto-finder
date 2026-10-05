@@ -65,15 +65,24 @@ func TestStandaloneCallGraph_ScanRootNameNeverNamesASymbol(t *testing.T) {
 			wantKeys: []string{"mypkg.core.run"},
 		},
 		{
-			name:      "python src layout is transparent under a pyproject name",
+			name:      "python pyproject name never prefixes a src layout",
 			ecosystem: "python",
 			files: map[string]string{
 				"pyproject.toml":        "[project]\nname = \"mylib\"\n",
 				"src/mylib/__init__.py": "",
 				"src/mylib/core.py":     "def run():\n    return 1\n",
 			},
-			rootModule: "mylib",
-			wantKeys:   []string{"mylib.mylib.core.run"},
+			wantKeys: []string{"mylib.core.run"},
+		},
+		{
+			name:      "python pyproject name never prefixes a flat layout",
+			ecosystem: "python",
+			files: map[string]string{
+				"pyproject.toml":    "[project]\nname = \"my-dist\"\n",
+				"mypkg/__init__.py": "",
+				"mypkg/core.py":     "def run():\n    return 1\n",
+			},
+			wantKeys: []string{"mypkg.core.run"},
 		},
 		{
 			name:      "python lib layout is transparent",
@@ -323,10 +332,8 @@ func TestStandaloneCallGraph_SameNameInSiblingRootModulesKeysByStem(t *testing.T
 	}
 }
 
-// A scan of a Python project whose pyproject name differs from its package
-// keys every symbol under that name, which no import statement spells, so a
-// call from one module to a function in another must still reach it: the
-// helper's chain has the cross-module caller.
+// A Python project whose pyproject name differs from its package keys symbols
+// by the package, and a call from one module to another still links.
 func TestStandaloneCallGraph_PythonCrossModuleCallerUnderAPyprojectName(t *testing.T) {
 	t.Parallel()
 
@@ -349,11 +356,11 @@ func TestStandaloneCallGraph_PythonCrossModuleCallerUnderAPyprojectName(t *testi
 	if err != nil {
 		t.Fatalf("build call graph: %v", err)
 	}
-	if result.RootModule != "probe" {
-		t.Fatalf("RootModule = %q, want probe", result.RootModule)
+	if result.RootModule != "" {
+		t.Fatalf("RootModule = %q, want empty", result.RootModule)
 	}
 
-	helper := callgraph.FunctionID{Package: "probe.app.digest", Name: "digest"}
+	helper := callgraph.FunctionID{Package: "app.digest", Name: "digest"}
 	chains, _ := callgraph.NewTracer(result.CallGraph, ".").TraceBackLimited(helper, nil, 8, 8)
 	got := make([][]string, 0, len(chains))
 	for _, chain := range chains {
@@ -363,7 +370,7 @@ func TestStandaloneCallGraph_PythonCrossModuleCallerUnderAPyprojectName(t *testi
 		}
 		got = append(got, keys)
 	}
-	want := [][]string{{"probe.app.main.caller", "probe.app.digest.digest"}}
+	want := [][]string{{"app.main.caller", "app.digest.digest"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("chains to %s = %v, want %v (functions %v)", helper, got, want, functionKeys(result.CallGraph.Functions))
 	}

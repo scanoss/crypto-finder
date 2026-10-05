@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.2] - 2026-10-05
+### Fixed
+- Python symbols are no longer prefixed with the `pyproject.toml` project name,
+  so they match their import path (`cryptography.fernet.Fernet.encrypt`).
+  Python components scanned with a `pyproject.toml` need a re-mine
+  (`graph-algo-8`).
+
 ## [0.35.1] - 2026-10-05
 ### Added
 - `scan --scanner-jobs <n>` (or the `SCANOSS_SCANNER_JOBS` environment
