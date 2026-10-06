@@ -145,6 +145,18 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 def f():
     return rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
 `
+	pythonECPositionalBackend = `from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import ec
+
+def f():
+    return ec.generate_private_key(ec.SECP384R1(), default_backend())
+`
+	pythonECKeywordBackend = `from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import ec
+
+def f():
+    return ec.generate_private_key(curve=ec.SECP521R1(), backend=default_backend())
+`
 	pythonDSAKeyPositional = `from cryptography.hazmat.primitives.asymmetric import dsa
 
 def f():
@@ -273,6 +285,8 @@ func TestTerminalKeyLength_ReachableThroughFindingSupportingCallIDs(t *testing.T
 		{name: "python rsa positional module constant", ecosystem: "python", file: "k.py", source: pythonRSAPositionalConstant, line: 6, match: "rsa.generate_private_key(65537, KEY_SIZE)", api: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantIndex: 1, wantBits: 3072},
 		{name: "python rsa positional backend", ecosystem: "python", file: "k.py", source: pythonRSAPositionalBackend, line: 5, match: "rsa.generate_private_key(65537, 2048, default_backend())", api: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantIndex: 1, wantBits: 2048},
 		{name: "python rsa keyword backend", ecosystem: "python", file: "k.py", source: pythonRSAKeywordBackend, line: 5, match: "rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())", api: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantIndex: 1, wantBits: 2048},
+		{name: "python ec positional backend", ecosystem: "python", file: "k.py", source: pythonECPositionalBackend, line: 5, match: "ec.generate_private_key(ec.SECP384R1(), default_backend())", api: "cryptography.hazmat.primitives.asymmetric.ec.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.ec.generate_private_key", wantIndex: 0, wantBits: 384},
+		{name: "python ec keyword backend", ecosystem: "python", file: "k.py", source: pythonECKeywordBackend, line: 5, match: "ec.generate_private_key(curve=ec.SECP521R1(), backend=default_backend())", api: "cryptography.hazmat.primitives.asymmetric.ec.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.ec.generate_private_key", wantIndex: 0, wantBits: 521},
 		{name: "python dsa.generate_private_key positional", ecosystem: "python", file: "k.py", source: pythonDSAKeyPositional, line: 4, match: "dsa.generate_private_key(2048)", api: "cryptography.hazmat.primitives.asymmetric.dsa.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.dsa.generate_private_key", wantIndex: 0, wantBits: 2048},
 		{name: "python dsa.generate_private_key positional backend", ecosystem: "python", file: "k.py", source: pythonDSAKeyPositionalBackend, line: 5, match: "dsa.generate_private_key(2048, default_backend())", api: "cryptography.hazmat.primitives.asymmetric.dsa.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.dsa.generate_private_key", wantIndex: 0, wantBits: 2048},
 		{name: "python dsa.generate_parameters positional backend", ecosystem: "python", file: "k.py", source: pythonDSAParamsBackend, line: 5, match: "dsa.generate_parameters(2048, default_backend())", api: "cryptography.hazmat.primitives.asymmetric.dsa.generate_parameters", wantFunc: "cryptography.hazmat.primitives.asymmetric.dsa.generate_parameters", wantIndex: 0, wantBits: 2048},

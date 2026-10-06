@@ -224,6 +224,23 @@ contracts:
         # ec.SECP384R1() names the curve; its field size is the key size.
         contributes: { property: keySize, derivation: argument_curve_bits }
 
+  # generate_private_key(curve, backend=None): before cryptography 3.1 callers
+  # pass the backend positionally, ec.generate_private_key(curve, default_backend()).
+  - method: cryptography.hazmat.primitives.asymmetric.ec.generate_private_key
+    arity: 2
+    parameter_types:
+      - cryptography.hazmat.primitives.asymmetric.ec.EllipticCurve
+      - typing.Any
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: curve
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+
   - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey.public_key
     arity: 0
     return:
