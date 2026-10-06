@@ -20,6 +20,7 @@ type GoParser struct {
 	parser       *sitter.Parser
 	includeTests bool
 	anchors      callAnchors
+	consts       goConstScopes
 }
 
 const (
@@ -85,6 +86,7 @@ func (p *GoParser) ParseFile(filePath, packagePath string) (*FileAnalysis, error
 	}
 	defer tree.Close()
 	defer p.anchors.reset()
+	defer p.consts.reset()
 
 	root := tree.RootNode()
 
@@ -1128,6 +1130,7 @@ func (p *GoParser) parseCallExpr(
 		call.ChainID, call.AssignedVar = goCallChainContext(node, src)
 		call.StartCol = int(node.StartPoint().Column) + 1
 		call.EndCol = int(node.EndPoint().Column) + 1
+		call.ArgumentSources = p.consts.argumentSources(node, src)
 	}
 	return call
 }
