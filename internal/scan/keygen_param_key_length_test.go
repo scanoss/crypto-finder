@@ -235,9 +235,8 @@ func TestKeygenParameterKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T
 
 		// Python cryptography EC: the curve constructor names the size.
 		{"python ec keyword curve", "python", "k.py", pythonECKeyword, 4, "ec.generate_private_key(curve=ec.SECP256R1())", pyEC, pyEC, 0, 256},
-		// The Python parser keeps no source for a local variable, so a curve bound
-		// to a name is not traced; the size stays absent.
-		{"python ec curve local variable", "python", "k.py", pythonECVariable, 5, "ec.generate_private_key(curve)", pyEC, pyEC, 0, 0},
+		// A curve bound once to a local name is traced to its constructor.
+		{"python ec curve local variable", "python", "k.py", pythonECVariable, 5, "ec.generate_private_key(curve)", pyEC, pyEC, 0, 521},
 		{"python ec curve parameter", "python", "k.py", pythonECUnresolved, 4, "ec.generate_private_key(curve)", pyEC, pyEC, 0, 0},
 	}...)
 	for _, curve := range []struct {
