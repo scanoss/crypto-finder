@@ -213,7 +213,8 @@ func TestKeygenParameterKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T
 		wantIndex int
 		wantBits  int
 	}
-	cases := []tc{
+	cases := make([]tc, 0, 64)
+	cases = append(cases, []tc{
 		// Java JCA EC: the spec constructor and the initialize call that
 		// receives it must agree, and neither may read the curve name as a size.
 		{"jca ec spec constructor", "java", "K.java", javaECSpec, 7, `new ECGenParameterSpec("secp256r1")`, ecInit, ecInit, 0, 256},
@@ -238,7 +239,7 @@ func TestKeygenParameterKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T
 		// to a name is not traced; the size stays absent.
 		{"python ec curve local variable", "python", "k.py", pythonECVariable, 5, "ec.generate_private_key(curve)", pyEC, pyEC, 0, 0},
 		{"python ec curve parameter", "python", "k.py", pythonECUnresolved, 4, "ec.generate_private_key(curve)", pyEC, pyEC, 0, 0},
-	}
+	}...)
 	for _, curve := range []struct {
 		name string
 		bits int
