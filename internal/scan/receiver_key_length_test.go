@@ -37,7 +37,7 @@ func TestReceiverKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T) {
 		wantFunc string
 		wantBits int
 	}
-	cases := make([]tc, 0, 16)
+	cases := make([]tc, 0, 24)
 	for _, curve := range []struct {
 		name string
 		bits int
@@ -48,9 +48,13 @@ func TestReceiverKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T) {
 	cases = append(cases,
 		tc{"new private key chain", "func f(b []byte) {\n\tecdh.P384().NewPrivateKey(b)\n}\n", "ecdh.P384().NewPrivateKey(b)", newPriv, 384},
 		tc{"local variable", "func f() {\n\tc := ecdh.P256()\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 256},
-		tc{"local variable assigned twice to one curve", "func f(x bool) {\n\tc := ecdh.P384()\n\tif x {\n\t\tc = ecdh.P384()\n\t}\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 384},
 		tc{"local variable of another curve is not read", "func f() {\n\tc := ecdh.P256()\n\td := ecdh.P521()\n\td.GenerateKey(rand.Reader)\n\t_ = c\n}\n", "d.GenerateKey(rand.Reader)", generate, 521},
 
+		tc{"assigned twice to one curve", "func f(x bool) {\n\tc := ecdh.P384()\n\tif x {\n\t\tc = ecdh.P384()\n\t}\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
+		tc{"package variable shadowed in a sibling block", "var c = ecdh.P384()\n\nfunc f(x bool) {\n\tif x {\n\t\tc := ecdh.P256()\n\t\t_ = c\n\t}\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
+		tc{"package variable shadowed in a closure", "var c = ecdh.P384()\n\nfunc f() {\n\tfunc() {\n\t\tc := ecdh.P256()\n\t\t_ = c\n\t}()\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
+		tc{"package variable", "var c = ecdh.P384()\n\nfunc f() {\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
+		tc{"bound in an enclosing block", "func f(x bool) {\n\tc := ecdh.P256()\n\tif x {\n\t\tc.GenerateKey(rand.Reader)\n\t}\n}\n", "c.GenerateKey(rand.Reader)", generate, 256},
 		tc{"curve parameter", "func f(c ecdh.Curve) {\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
 		tc{"reassigned to another curve", "func f() {\n\tc := ecdh.P256()\n\tc = ecdh.P521()\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
 		tc{"reassigned to a value that is not a call", "func f(o ecdh.Curve) {\n\tc := ecdh.P256()\n\tif o != nil {\n\t\tc = o\n\t}\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
@@ -119,5 +123,36 @@ func TestWithReceiverKeyLength_DisagreementPublishesNothing(t *testing.T) {
 	}
 	if got := withReceiverKeyLength(bits(128), nil); got == nil || *got.Bits != 128 {
 		t.Fatalf("no receiver = %#v, want the argument's 128", got)
+	}
+}
+
+// TestReceiverKeyLength_ReceiverIsNotAnExportedParameterRole pins that the
+// receiver contribution stays out of parameter_roles, whose entries are
+// argument positions: a receiver exported there would read as parameter 0.
+func TestReceiverKeyLength_ReceiverIsNotAnExportedParameterRole(t *testing.T) {
+	for _, method := range []string{"crypto/ecdh.Curve.GenerateKey", "crypto/ecdh.Curve.NewPrivateKey"} {
+		source := goECDHHeader + "func f(b []byte) {\n\tecdh.P256().GenerateKey(rand.Reader)\n\tecdh.P256().NewPrivateKey(b)\n}\n"
+		match := "ecdh.P256().GenerateKey(rand.Reader)"
+		line := 9
+		if strings.HasSuffix(method, "NewPrivateKey") {
+			match, line = "ecdh.P256().NewPrivateKey(b)", 10
+		}
+		exports := terminalExports(t, "go", "k.go", source, line, match, method, "")
+		found := false
+		for i := range exports.live.SupportingCalls {
+			call := exports.live.SupportingCalls[i].SupportingCall
+			if call == nil || call.FunctionName != method {
+				continue
+			}
+			found = true
+			for _, role := range call.ParameterRoles {
+				if role.Contributes != nil && role.Contributes.Derivation == "argument_curve_bits" {
+					t.Errorf("%s exports a receiver as parameter_roles entry %#v", method, role)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: no supporting call exported", method)
+		}
 	}
 }

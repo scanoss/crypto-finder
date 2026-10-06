@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestGoParser_ReceiverBindingsCountEveryBindingOfTheReceiver(t *testing.T) {
+func TestGoParser_ReceiverBoundOnceNeedsOneBindingInScope(t *testing.T) {
 	src := `package mypkg
 
 type T struct{}
@@ -59,6 +59,41 @@ func closureShadow() {
 }
 
 func take(*T) {}
+
+var pkg T
+
+func siblingBlock(x bool) {
+	if x {
+		pkg := T{}
+		_ = pkg
+	}
+	pkg.Use()
+}
+
+func closureOnly() {
+	func() {
+		c := T{}
+		_ = c
+	}()
+	c.Use()
+}
+
+func inBranchUsedInside(x bool) {
+	if x {
+		c := T{}
+		c.Use()
+	}
+}
+
+func switchCases(x int) {
+	switch x {
+	case 1:
+		c := T{}
+		_ = c
+	case 2:
+		c.Use()
+	}
+}
 `
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "k.go"), []byte(src), 0o600); err != nil {
@@ -68,26 +103,22 @@ func take(*T) {}
 	if err != nil {
 		t.Fatalf("ParseDirectory: %v", err)
 	}
-	want := map[string]int{
-		"once":                 1,
-		"parameter":            1,
-		"reassigned":           2,
-		"declaredThenAssigned": 2,
-		"addressTaken":         2,
-		"rangeBound":           1,
-		"closureShadow":        2,
+	want := map[string]bool{
+		"once": true, "inBranchUsedInside": true,
+		"parameter": true, "reassigned": false, "declaredThenAssigned": false, "addressTaken": false,
+		"rangeBound": true, "closureShadow": false, "siblingBlock": false, "closureOnly": false, "switchCases": false,
 	}
-	got := map[string]int{}
+	got := map[string]bool{}
 	for _, fn := range analyses[0].Functions {
 		for _, call := range fn.Calls {
-			if call.Callee.Name == "Use" && call.ReceiverVar == "c" {
-				got[fn.ID.Name] = call.ReceiverBindings
+			if call.Callee.Name == "Use" && (call.ReceiverVar == "c" || call.ReceiverVar == "pkg") {
+				got[fn.ID.Name] = call.ReceiverBoundOnce
 			}
 		}
 	}
-	for name, bindings := range want {
-		if got[name] != bindings {
-			t.Errorf("%s: ReceiverBindings = %d, want %d", name, got[name], bindings)
+	for name, bound := range want {
+		if got[name] != bound {
+			t.Errorf("%s: ReceiverBoundOnce = %v, want %v", name, got[name], bound)
 		}
 	}
 }

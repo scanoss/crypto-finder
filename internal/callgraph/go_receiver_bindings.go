@@ -4,19 +4,42 @@
 package callgraph
 
 import (
+	"math"
+
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
-// goReceiverBindings counts how many times the enclosing top-level function
-// binds name: as a parameter or result, by `:=`, `=` or `var`, as a range,
-// receive or type-switch variable, or by taking its address. A variable
-// bound exactly once, by the call that produced it, still holds that call's
-// value wherever it is read; any further binding means a reader cannot tell
-// which value reaches it. Closures count with the function they sit in, so a
-// binding inside one makes the name ambiguous too.
+// goCaseScopes are the clause nodes whose body is a scope without a block
+// node of its own.
+var goCaseScopes = map[string]bool{
+	"expression_case": true, "default_case": true, "type_case": true, "communication_case": true,
+}
+
+// goBinding is one place a function binds a name. The name is visible from
+// end, within [scopeStart, scopeEnd).
+type goBinding struct {
+	end, scopeStart, scopeEnd uint32
+}
+
+// goBindingIndexes indexes, once per top-level function, every binding of
+// every name, so a call asks "is this receiver bound once, above me?" without
+// walking the function again. Reset it when the tree is closed.
+type goBindingIndexes struct {
+	byFunction map[uintptr]map[string][]goBinding
+}
+
+func (g *goBindingIndexes) reset() { g.byFunction = nil }
+
+// boundOnce reports whether name, used by the call, is bound exactly once in
+// the enclosing top-level function and that binding is in scope at the call:
+// it precedes the call and its scope contains it. Anything else, including a
+// name the function does not bind (a package variable), is false: a reader
+// cannot tell which value reaches the call.
 //
-// The count is 0 when the call is not inside a function declaration.
-func goReceiverBindings(call *sitter.Node, name string, src []byte) int {
+// A binding is a parameter or result, `:=`, `=`, `var`, a range, receive or
+// type-switch variable, or an address-of. Closures count with the function
+// they sit in.
+func (g *goBindingIndexes) boundOnce(call *sitter.Node, name string, src []byte) bool {
 	var fn *sitter.Node
 	for n := call; n != nil; n = n.Parent() {
 		if t := n.Type(); t == goNodeFunctionDecl || t == goNodeMethodDecl {
@@ -24,59 +47,80 @@ func goReceiverBindings(call *sitter.Node, name string, src []byte) int {
 		}
 	}
 	if fn == nil {
-		return 0
+		return false
 	}
-	return countGoBindings(fn, name, src)
+	if g.byFunction == nil {
+		g.byFunction = make(map[uintptr]map[string][]goBinding)
+	}
+	index, ok := g.byFunction[fn.ID()]
+	if !ok {
+		index = make(map[string][]goBinding)
+		collectGoBindings(fn, fn, src, index)
+		g.byFunction[fn.ID()] = index
+	}
+	bindings := index[name]
+	if len(bindings) != 1 {
+		return false
+	}
+	b := bindings[0]
+	return b.end <= call.StartByte() && b.scopeStart <= call.StartByte() && call.EndByte() <= b.scopeEnd
 }
 
-func countGoBindings(node *sitter.Node, name string, src []byte) int {
-	count := 0
+func collectGoBindings(node, fn *sitter.Node, src []byte, index map[string][]goBinding) {
+	end := node.EndByte()
+	scope := fn
+	var names []*sitter.Node
 	switch node.Type() {
-	case goNodeShortVarDeclaration, goNodeAssignmentStmt:
-		count += countGoIdentifiers(node.ChildByFieldName(goFieldLeft), name, src)
-	case goNodeRangeClause, goNodeReceiveStatement:
-		count += countGoIdentifiers(node.ChildByFieldName(goFieldLeft), name, src)
-	case goNodeVarSpec, goNodeParameterDecl, goNodeVariadicParam:
-		for i := 0; i < int(node.NamedChildCount()); i++ {
-			child := node.NamedChild(i)
-			if child.Type() == goNodeIdentifier && child.Content(src) == name {
-				count++
-			}
-		}
+	case goNodeShortVarDeclaration, goNodeAssignmentStmt, goNodeRangeClause, goNodeReceiveStatement:
+		names = goIdentifiersIn(node.ChildByFieldName(goFieldLeft))
 	case goNodeTypeSwitch:
-		count += countGoIdentifiers(node.ChildByFieldName("alias"), name, src)
+		names = goIdentifiersIn(node.ChildByFieldName("alias"))
+	case goNodeVarSpec:
+		names = goIdentifiersIn(node)
+	case goNodeParameterDecl, goNodeVariadicParam:
+		names, end = goIdentifiersIn(node), 0
 	case goNodeUnaryExpression:
 		if op := node.ChildByFieldName("operator"); op != nil && op.Content(src) == "&" {
-			if operand := node.ChildByFieldName("operand"); operand != nil && operand.Type() == goNodeIdentifier && operand.Content(src) == name {
-				count++
-			}
+			names, end = goIdentifiersIn(node.ChildByFieldName("operand")), math.MaxUint32
 		}
+	}
+	if len(names) > 0 && end != math.MaxUint32 {
+		scope = goScopeOf(node, fn)
+	}
+	for _, name := range names {
+		text := name.Content(src)
+		index[text] = append(index[text], goBinding{end: end, scopeStart: scope.StartByte(), scopeEnd: scope.EndByte()})
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
-		count += countGoBindings(node.Child(i), name, src)
+		collectGoBindings(node.Child(i), fn, src, index)
 	}
-	return count
 }
 
-// countGoIdentifiers counts the bare identifiers named name directly in a
-// binding list (`a, b := ...`). A selector or index target is not a binding of
-// the name.
-func countGoIdentifiers(list *sitter.Node, name string, src []byte) int {
+// goIdentifiersIn returns the bare identifiers directly in a binding list, or
+// the node itself when it is one. A selector or index target binds nothing.
+func goIdentifiersIn(list *sitter.Node) []*sitter.Node {
 	if list == nil {
-		return 0
+		return nil
 	}
 	if list.Type() == goNodeIdentifier {
-		if list.Content(src) == name {
-			return 1
-		}
-		return 0
+		return []*sitter.Node{list}
 	}
-	count := 0
+	var out []*sitter.Node
 	for i := 0; i < int(list.NamedChildCount()); i++ {
-		child := list.NamedChild(i)
-		if child.Type() == goNodeIdentifier && child.Content(src) == name {
-			count++
+		if child := list.NamedChild(i); child.Type() == goNodeIdentifier {
+			out = append(out, child)
 		}
 	}
-	return count
+	return out
+}
+
+// goScopeOf returns the innermost scope a binding node sits in. A parameter
+// belongs to the function or literal that declares it.
+func goScopeOf(node, fn *sitter.Node) *sitter.Node {
+	for n := node.Parent(); n != nil; n = n.Parent() {
+		if t := n.Type(); goOpensScope(t) || goCaseScopes[t] || n == fn {
+			return n
+		}
+	}
+	return fn
 }

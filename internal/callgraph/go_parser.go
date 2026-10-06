@@ -21,6 +21,7 @@ type GoParser struct {
 	includeTests bool
 	anchors      callAnchors
 	consts       goConstScopes
+	bindings     goBindingIndexes
 }
 
 const (
@@ -87,6 +88,7 @@ func (p *GoParser) ParseFile(filePath, packagePath string) (*FileAnalysis, error
 	defer tree.Close()
 	defer p.anchors.reset()
 	defer p.consts.reset()
+	defer p.bindings.reset()
 
 	root := tree.RootNode()
 
@@ -1394,12 +1396,12 @@ func (p *GoParser) parseSelectorCall(
 			Type:    calleeType,
 			Name:    field,
 		},
-		ReceiverVar:      operand,
-		ReceiverBindings: goReceiverBindings(node, operand, src),
-		Raw:              raw,
-		FilePath:         filePath,
-		Line:             line,
-		Arguments:        args,
+		ReceiverVar:       operand,
+		ReceiverBoundOnce: p.bindings.boundOnce(node, operand, src),
+		Raw:               raw,
+		FilePath:          filePath,
+		Line:              line,
+		Arguments:         args,
 	}
 }
 

@@ -28,10 +28,11 @@ func receiverCurveRole(contract *contracts.Contract) *contracts.ParameterContrac
 //
 // It answers only when the receiver is unambiguous, and returns nil otherwise:
 //   - a fluent chain must hold exactly the terminal call and one producer;
-//   - a local variable must be bound once, by the call that produced it. A
-//     parameter, a reassignment, a branch that rebinds it, or a variable whose
-//     address is taken has more bindings than producing calls;
-//   - every producer must name the same curve.
+//   - a local variable must be bound once, by the call that produced it, and
+//     that binding must be in scope at the call. A parameter, a package
+//     variable, a reassignment, a binding in a sibling block or a closure, or
+//     a variable whose address is taken is not;
+//   - the producer must name a known curve.
 func resolvedKeyLengthFromReceiver(
 	ctx *exportBuildContext,
 	matches []contracts.Contract,
@@ -60,7 +61,7 @@ func receiverProducers(fn *callgraph.FunctionDecl, call *callgraph.FunctionCall)
 				producers = append(producers, candidate)
 			}
 		}
-		if call.ReceiverBindings != len(producers) {
+		if !call.ReceiverBoundOnce || len(producers) != 1 {
 			return nil
 		}
 	case call.ChainID != "":
