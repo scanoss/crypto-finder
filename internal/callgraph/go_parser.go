@@ -22,6 +22,9 @@ type GoParser struct {
 	anchors      callAnchors
 	consts       goConstScopes
 	bindings     goBindingIndexes
+	// pkgIndex is the package-level declaration index of the directory being
+	// parsed; nil outside ParseDirectorySelected.
+	pkgIndex *goPackageIndex
 }
 
 const (
@@ -100,6 +103,7 @@ func (p *GoParser) ParseFile(filePath, packagePath string) (*FileAnalysis, error
 
 	// Extract package name
 	analysis.PackageName = p.extractPackageName(root, src)
+	p.bindCrossFile(filePath, analysis.PackageName)
 
 	// Extract imports
 	p.extractImports(root, src, analysis)
@@ -123,6 +127,8 @@ func (p *GoParser) ParseDirectorySelected(dir, packagePath string, keep func(pat
 		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
 
+	p.pkgIndex = newGoPackageIndex(dir)
+	defer func() { p.pkgIndex = nil }()
 	analyses := make([]*FileAnalysis, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {

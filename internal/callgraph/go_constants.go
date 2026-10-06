@@ -53,9 +53,15 @@ type goDecl struct {
 // of every enclosing scope's statements. Reset it when the tree is closed.
 type goConstScopes struct {
 	byScope map[uintptr]map[string][]goDecl
+	// crossFile resolves a name no scope of the current file declares against
+	// the other files of its package. Nil when the file is parsed alone.
+	crossFile func(name string) (string, bool)
+	// work counts declarations visited while indexing scopes and compared
+	// while resolving names; tests bound it to pin near-linear cost.
+	work int
 }
 
-func (c *goConstScopes) reset() { c.byScope = nil }
+func (c *goConstScopes) reset() { c.byScope, c.crossFile = nil, nil }
 
 func (c *goConstScopes) index(scope *sitter.Node, src []byte) map[string][]goDecl {
 	if c.byScope == nil {
@@ -68,6 +74,7 @@ func (c *goConstScopes) index(scope *sitter.Node, src []byte) map[string][]goDec
 	idx := make(map[string][]goDecl)
 	goCollectBoundNames(scope, src, idx)
 	for i := 0; i < int(scope.NamedChildCount()); i++ {
+		c.work++
 		goCollectDecls(scope.NamedChild(i), src, idx)
 	}
 	c.byScope[id] = idx
@@ -121,6 +128,7 @@ func (c *goConstScopes) lookup(use *sitter.Node, name string, src []byte) (strin
 		var best *goDecl
 		decls := c.index(scope, src)[name]
 		for i := range decls {
+			c.work++
 			if decls[i].end <= position && (best == nil || decls[i].end >= best.end) {
 				best = &decls[i]
 			}
@@ -128,6 +136,9 @@ func (c *goConstScopes) lookup(use *sitter.Node, name string, src []byte) (strin
 		if best != nil {
 			return best.value, best.kind == goDeclLiteral
 		}
+	}
+	if c.crossFile != nil {
+		return c.crossFile(name)
 	}
 	return "", false
 }
@@ -252,10 +263,10 @@ func goWalk(n *sitter.Node, visit func(*sitter.Node)) {
 func goCollectBoundNames(scope *sitter.Node, src []byte, idx map[string][]goDecl) {
 	switch scope.Type() {
 	case nodeFunctionDeclaration, javaNodeMethodDeclaration, goNodeFuncLiteral:
-		for _, field := range []string{"receiver", "parameters", "result"} {
+		for _, field := range []string{"receiver", "parameters", "result", "type_parameters"} {
 			if list := scope.ChildByFieldName(field); list != nil {
 				goWalk(list, func(c *sitter.Node) {
-					if c.Type() == goNodeParameterDecl || c.Type() == goNodeVariadicParam {
+					if c.Type() == goNodeParameterDecl || c.Type() == goNodeVariadicParam || c.Type() == "type_parameter_declaration" {
 						goAddNames(c, 0, src, idx)
 					}
 				})

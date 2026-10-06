@@ -11,12 +11,12 @@ import (
 
 // constArgValue returns the literal the parser traced for argument index of
 // the call named callee, and false when the argument carries no source.
-func constArgValue(t *testing.T, analysis *FileAnalysis, callee string, index int) (string, bool) {
+func constArgValue(t *testing.T, analysis *FileAnalysis, index int) (string, bool) {
 	t.Helper()
 	for i := range analysis.Functions {
 		for j := range analysis.Functions[i].Calls {
 			call := &analysis.Functions[i].Calls[j]
-			if call.Callee.Name != callee {
+			if call.Callee.Name != "gen" {
 				continue
 			}
 			if index >= len(call.ArgumentSources) {
@@ -29,7 +29,7 @@ func constArgValue(t *testing.T, analysis *FileAnalysis, callee string, index in
 			return nodes[0].SourceNodes[0].Value, true
 		}
 	}
-	t.Fatalf("call %q not found", callee)
+	t.Fatal("call gen not found")
 	return "", false
 }
 
@@ -84,11 +84,11 @@ func TestGoParser_ConstArgumentSources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, ok := constArgValue(t, analysis, "gen", 1)
+			got, ok := constArgValue(t, analysis, 1)
 			if got != tt.want || ok != tt.ok {
 				t.Fatalf("argument 1 = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
 			}
-			if _, ok := constArgValue(t, analysis, "gen", 0); ok {
+			if _, ok := constArgValue(t, analysis, 0); ok {
 				t.Fatal("argument 0 (rand) must not resolve")
 			}
 		})
@@ -134,7 +134,7 @@ func TestCParser_DefineArgumentSources(t *testing.T) {
 			if err != nil || len(analyses) != 1 {
 				t.Fatalf("ParseDirectory = %d analyses, err %v", len(analyses), err)
 			}
-			got, ok := constArgValue(t, analyses[0], "gen", 1)
+			got, ok := constArgValue(t, analyses[0], 1)
 			if got != tt.want || ok != tt.ok {
 				t.Fatalf("argument 1 = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
 			}
@@ -144,7 +144,8 @@ func TestCParser_DefineArgumentSources(t *testing.T) {
 
 // TestGoParser_ConstLookupScalesLinearly pins the cost of resolving identifier
 // arguments in one function with thousands of statements, package consts and
-// calls. Rescanning every enclosing scope per argument took minutes here.
+// calls. Rescanning every enclosing scope per argument took minutes here. It
+// bounds the work done, not the wall clock, so machine load cannot flip it.
 func TestGoParser_ConstLookupScalesLinearly(t *testing.T) {
 	const n = 2000
 	var b strings.Builder
@@ -162,8 +163,9 @@ func TestGoParser_ConstLookupScalesLinearly(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	parser := NewGoParser()
 	start := time.Now()
-	analysis, err := NewGoParser().ParseFile(file, "example/main")
+	analysis, err := parser.ParseFile(file, "example/main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,8 +180,13 @@ func TestGoParser_ConstLookupScalesLinearly(t *testing.T) {
 	if resolved != n {
 		t.Fatalf("resolved %d of %d const arguments", resolved, n)
 	}
-	if elapsed > 20*time.Second {
+	// Linear is about 3n: the package consts and the body's statements are
+	// indexed once, and each argument compares the few declarations of its name.
+	if limit := 10 * 3 * n; parser.consts.work > limit {
+		t.Fatalf("const resolution did %d units of work for %d arguments, want at most %d", parser.consts.work, n, limit)
+	}
+	if elapsed > 60*time.Second {
 		t.Fatalf("parsing took %s, want near-linear time", elapsed)
 	}
-	t.Logf("parsed %d consts and %d calls in %s", n, n, elapsed)
+	t.Logf("parsed %d consts and %d calls with %d units of work in %s", n, n, parser.consts.work, elapsed)
 }

@@ -440,9 +440,21 @@ type terminalExportResult struct {
 // returns the live and stitched exports, the two shapes consumers read.
 func terminalExports(t *testing.T, ecosystem, file, source string, line int, match, api, declared string) terminalExportResult {
 	t.Helper()
+	return terminalExportsWithSiblings(t, ecosystem, file, source, nil, line, match, api, declared)
+}
+
+// terminalExportsWithSiblings is terminalExports for a call whose constant is
+// declared in other files of the same directory, given by name.
+func terminalExportsWithSiblings(t *testing.T, ecosystem, file, source string, siblings map[string]string, line int, match, api, declared string) terminalExportResult {
+	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, file), []byte(source), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	for name, content := range siblings {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	packageDir := callgraph.PackageDir{Dir: dir}
 	if ecosystem != "c" {
