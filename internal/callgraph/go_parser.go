@@ -1394,11 +1394,12 @@ func (p *GoParser) parseSelectorCall(
 			Type:    calleeType,
 			Name:    field,
 		},
-		ReceiverVar: operand,
-		Raw:         raw,
-		FilePath:    filePath,
-		Line:        line,
-		Arguments:   args,
+		ReceiverVar:      operand,
+		ReceiverBindings: goReceiverBindings(node, operand, src),
+		Raw:              raw,
+		FilePath:         filePath,
+		Line:             line,
+		Arguments:        args,
 	}
 }
 

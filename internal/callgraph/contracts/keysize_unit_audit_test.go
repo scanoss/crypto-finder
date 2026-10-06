@@ -113,12 +113,15 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	"go|crypto/des.NewTripleDESCipher|0":     unitMaterial,
 	"go|crypto/rc4.NewCipher|0":              unitMaterial,
 	"go|crypto/ecdh.(Curve).NewPrivateKey|0": unitMaterial,
-	"go|crypto/hmac.New|1":                   unitMaterial,
-	"go|crypto/rand.Prime|1":                 unitBits,
-	"go|crypto/rsa.GenerateKey|1":            unitBits,
-	"go|crypto/ecdsa.GenerateKey|0":          unitCurve,
-	"go|crypto/dsa.GenerateParameters|2":     unitParameterSet,
-	"go|crypto/rsa.GenerateMultiPrimeKey|2":  unitBits,
+	// A receiver role reads the curve the method is called on, never an argument.
+	"go|crypto/ecdh.(Curve).NewPrivateKey|receiver": unitCurve,
+	"go|crypto/ecdh.(Curve).GenerateKey|receiver":   unitCurve,
+	"go|crypto/hmac.New|1":                          unitMaterial,
+	"go|crypto/rand.Prime|1":                        unitBits,
+	"go|crypto/rsa.GenerateKey|1":                   unitBits,
+	"go|crypto/ecdsa.GenerateKey|0":                 unitCurve,
+	"go|crypto/dsa.GenerateParameters|2":            unitParameterSet,
+	"go|crypto/rsa.GenerateMultiPrimeKey|2":         unitBits,
 	// go/vault-sdk.yaml
 	"go|github.com/hashicorp/vault/sdk/helper/kdf.CounterMode|4": unitBits,
 	// c/gnutls.yaml
@@ -327,10 +330,14 @@ func TestKeySizeRolesAreUnitAudited(t *testing.T) {
 		for _, group := range kb.Contracts {
 			for _, contract := range group {
 				for _, parameter := range contract.Parameters {
-					if parameter.Index == nil || parameter.Contributes == nil || parameter.Contributes.Property != "keySize" {
+					if (parameter.Index == nil && !parameter.Receiver) || parameter.Contributes == nil || parameter.Contributes.Property != "keySize" {
 						continue
 					}
-					key := fmt.Sprintf("%s|%s|%d", ecosystem, contract.Method, *parameter.Index)
+					position := "receiver"
+					if !parameter.Receiver {
+						position = fmt.Sprint(*parameter.Index)
+					}
+					key := fmt.Sprintf("%s|%s|%s", ecosystem, contract.Method, position)
 					unit, ok := auditedKeySizeRoles[key]
 					if !ok {
 						t.Errorf("%s contributes keySize but is not in auditedKeySizeRoles: add it with the unit its library documents", key)

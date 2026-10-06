@@ -192,11 +192,16 @@ contracts:
     arity: 1
     return: { type: "*crypto/ecdh.PrivateKey", confidence: high }
     role: factory
+    parameters:
+      # The curve is the receiver: ecdh.P256().GenerateKey(rand.Reader).
+      - { receiver: true, role: operation-determining, contributes: { property: keySize, derivation: argument_curve_bits } }
   - method: crypto/ecdh.(Curve).NewPrivateKey
     arity: 1
     return: { type: "*crypto/ecdh.PrivateKey", confidence: high }
     role: factory
-    parameters: *key_material
+    parameters:
+      - { receiver: true, role: operation-determining, contributes: { property: keySize, derivation: argument_curve_bits } }
+      - { index: 0, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
   - method: crypto/ecdh.(Curve).NewPublicKey
     arity: 1
     return: { type: "*crypto/ecdh.PublicKey", confidence: high }

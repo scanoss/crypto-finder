@@ -49,7 +49,7 @@ func TestLoadEmbeddedGoIncludesStdlibCryptoContracts(t *testing.T) {
 
 	sort.Strings(inventory)
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(inventory, "\n"))))
-	if len(inventory) != 177 || roles["factory"] != 70 || roles["config"] != 9 || roles["operation"] != 72 || roles["output"] != 26 || parameterRoles != 213 || digest != "6b95d433f36ce894e91c653696f5b18b3d0188162e7dcd357a2f7dc59b23f781" {
+	if len(inventory) != 177 || roles["factory"] != 70 || roles["config"] != 9 || roles["operation"] != 72 || roles["output"] != 26 || parameterRoles != 215 || digest != "8016c6944d721d03a48fd4e916d0b893adbe831202242d68cd8129cd83656089" {
 		t.Fatalf("stdlib inventory = %d contracts, roles %#v, %d parameter roles, digest %s", len(inventory), roles, parameterRoles, digest)
 	}
 
