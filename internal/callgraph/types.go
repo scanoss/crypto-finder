@@ -373,6 +373,11 @@ type FunctionCall struct {
 	// C free-function call it is the handle variable passed first, as in
 	// `EVP_DigestUpdate(ctx, ...)` or `crypto_generichash_update(&state, ...)`.
 	ReceiverVar string
+	// ReceiverBoundOnce reports that ReceiverVar is bound exactly once in the
+	// enclosing function and that binding is in scope at this call (Go
+	// selector calls on a local only). Only then does the call that produced
+	// the variable say what value it holds here.
+	ReceiverBoundOnce bool
 	// AssignedVar is the local variable this call's result is bound to, e.g.
 	// "digest" in `SHA3Digest digest = new SHA3Digest(256)`. Empty when the call
 	// result is not assigned to a variable. For fluent chains only the chain root

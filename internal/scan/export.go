@@ -1419,6 +1419,10 @@ func parameterRolesFromContracts(matches []contracts.Contract) []callGraphParame
 		}
 		out := make([]callGraphParameterRole, 0, len(contract.Parameters))
 		for _, p := range contract.Parameters {
+			if p.Receiver {
+				// parameter_roles describe arguments; a receiver has no index.
+				continue
+			}
 			idx := 0
 			if p.Index != nil {
 				idx = *p.Index
@@ -1432,6 +1436,9 @@ func parameterRolesFromContracts(matches []contracts.Contract) []callGraphParame
 				}
 			}
 			out = append(out, pr)
+		}
+		if len(out) == 0 {
+			continue
 		}
 		return out
 	}
@@ -2731,7 +2738,10 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 	// Resolved key-length evidence belongs to the supporting-call entry. The
 	// terminal finding call's own CryptoCall stays a rule-selected operation;
 	// terminalKeySizeSupportingCall adds a separate entry when it fixes the key size.
-	sc.ResolvedKeyLength = resolvedKeyLengthFromContract(ctx, matches, call, sc.Parameters, sc.ParameterTypes)
+	sc.ResolvedKeyLength = withReceiverKeyLength(
+		resolvedKeyLengthFromContract(ctx, matches, call, sc.Parameters, sc.ParameterTypes),
+		resolvedKeyLengthFromReceiver(ctx, matches, containingFn, call),
+	)
 	return support
 }
 

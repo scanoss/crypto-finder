@@ -170,9 +170,16 @@ const (
 // Name identifies the parameter; Index is preferred (position-based,
 // matching parameter_types export ordering).
 type ParameterContract struct {
-	// Index is the 0-based parameter position; nil when identified by Name.
+	// Index is the 0-based parameter position; nil when identified by Name
+	// or when Receiver is set.
 	Index *int
 	Name  string
+	// Receiver marks the object the method is called on rather than one of
+	// its arguments: `ecdh.P256().GenerateKey(r)` takes its curve from the
+	// receiver. Only a keySize contribution derived with
+	// argument_curve_bits may sit on a receiver, and a consumer reads it from
+	// the call that produced the receiver, never from an argument position.
+	Receiver bool
 	// Role is one of "operation-determining", "metadata-contributing", "none".
 	Role string
 	// Contributes describes the property this parameter contributes and the
@@ -413,6 +420,7 @@ type yamlContract struct {
 type yamlParameterRole struct {
 	Index       *int              `yaml:"index,omitempty"`
 	Name        string            `yaml:"name,omitempty"`
+	Receiver    bool              `yaml:"receiver,omitempty"`
 	Role        string            `yaml:"role"`
 	Contributes *yamlContribution `yaml:"contributes,omitempty"`
 }
@@ -583,6 +591,27 @@ func validateCanonicalSignature(i int, c yamlContract) error {
 	return nil
 }
 
+// validateReceiverRole checks a parameter entry that marks the receiver: it
+// carries no index or name and contributes only an argument_curve_bits size.
+func validateReceiverRole(i int, method string, j int, p yamlParameterRole) error {
+	if !p.Receiver {
+		return nil
+	}
+	if p.Index != nil || p.Name != "" {
+		return fmt.Errorf(
+			"contracts: contract[%d] (%s): parameters[%d] sets receiver together with index or name",
+			i, method, j,
+		)
+	}
+	if p.Contributes == nil || p.Contributes.Derivation != string(DerivationArgumentCurveBits) {
+		return fmt.Errorf(
+			"contracts: contract[%d] (%s): parameters[%d] receiver must contribute with derivation %s",
+			i, method, j, DerivationArgumentCurveBits,
+		)
+	}
+	return nil
+}
+
 // validateParameters checks that the Parameters sub-schema entries of a
 // single YAML contract are well-formed, naming the method and field on
 // failure. Returns the parsed ParameterContract slice (nil when the contract
@@ -599,7 +628,10 @@ func validateParameters(i int, c yamlContract) ([]ParameterContract, error) {
 				i, c.Method, j, p.Role,
 			)
 		}
-		pc := ParameterContract{Index: p.Index, Name: p.Name, Role: p.Role}
+		if err := validateReceiverRole(i, c.Method, j, p); err != nil {
+			return nil, err
+		}
+		pc := ParameterContract{Index: p.Index, Name: p.Name, Receiver: p.Receiver, Role: p.Role}
 		if p.Contributes != nil {
 			if p.Contributes.Property == "" {
 				return nil, fmt.Errorf(
@@ -1029,6 +1061,9 @@ func parametersKey(params []ParameterContract) string {
 		idx := "-"
 		if p.Index != nil {
 			idx = strconv.Itoa(*p.Index)
+		}
+		if p.Receiver {
+			idx = "receiver"
 		}
 		contrib := ""
 		if p.Contributes != nil {

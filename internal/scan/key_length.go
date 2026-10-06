@@ -465,6 +465,9 @@ func ecCurveConstructorBits(value string) (int, bool) {
 	case qualifier == "elliptic" || strings.HasSuffix(qualifier, "crypto/elliptic"):
 		bits, ok := goEllipticCurveBits[name]
 		return bits, ok
+	case qualifier == "ecdh" || strings.HasSuffix(qualifier, "crypto/ecdh"):
+		bits, ok := goECDHCurveBits[name]
+		return bits, ok
 	default:
 		return 0, false
 	}
@@ -472,6 +475,11 @@ func ecCurveConstructorBits(value string) (int, bool) {
 
 // goEllipticCurveBits covers the constructors crypto/elliptic exports.
 var goEllipticCurveBits = map[string]int{"P224": 224, "P256": 256, "P384": 384, "P521": 521}
+
+// goECDHCurveBits covers the NIST curves crypto/ecdh exports. X25519 is left
+// out: no table here sizes a Montgomery or Edwards curve, so it stays absent
+// rather than inventing a convention.
+var goECDHCurveBits = map[string]int{"P256": 256, "P384": 384, "P521": 521}
 
 // dsaParameterSetBits maps crypto/dsa's ParameterSizes constants to the
 // modulus size L, the DSA key length. N is the subgroup order size and does not
