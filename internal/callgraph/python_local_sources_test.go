@@ -71,13 +71,14 @@ func TestPythonParser_LocalArgumentSourcesScaleLinearly(t *testing.T) {
 		}
 		return b.String()
 	}
-	measure := func(n int) (visits int, resolved int, elapsed time.Duration) {
+	measure := func(n int) (visits, work, resolved int, elapsed time.Duration) {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "big.py"), []byte(build(n)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		p := NewPythonParser()
 		p.visits = &visits
+		p.localWork = &work
 		start := time.Now()
 		analyses, err := p.ParseDirectory(dir, "pkg")
 		if err != nil {
@@ -93,11 +94,11 @@ func TestPythonParser_LocalArgumentSourcesScaleLinearly(t *testing.T) {
 				}
 			}
 		}
-		return visits, resolved, elapsed
+		return visits, work, resolved, elapsed
 	}
 	const small, large = 1000, 4000
-	smallVisits, smallResolved, _ := measure(small)
-	largeVisits, largeResolved, elapsed := measure(large)
+	smallVisits, smallWork, smallResolved, _ := measure(small)
+	largeVisits, largeWork, largeResolved, elapsed := measure(large)
 	if want := small - (small+3)/4; smallResolved != want {
 		t.Fatalf("resolved %d of %d unambiguous locals", smallResolved, want)
 	}
@@ -106,6 +107,9 @@ func TestPythonParser_LocalArgumentSourcesScaleLinearly(t *testing.T) {
 	}
 	if ratio := float64(largeVisits) / float64(smallVisits); ratio > 5 {
 		t.Fatalf("visits grew %.1fx for a 4x larger function, want about 4x", ratio)
+	}
+	if ratio := float64(largeWork) / float64(smallWork); smallWork == 0 || ratio > 5 {
+		t.Fatalf("index work grew %.1fx (%d to %d) for a 4x larger function, want about 4x", ratio, smallWork, largeWork)
 	}
 	if elapsed > 20*time.Second {
 		t.Fatalf("parsing %d locals took %s, want near-linear time", large, elapsed)

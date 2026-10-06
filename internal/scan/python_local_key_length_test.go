@@ -73,6 +73,14 @@ func TestPythonLocalKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T) {
 		{"curve reassigned in a branch", "", "def f(flag):\n    c = ec.SECP256R1()\n    if flag:\n        c = ec.SECP521R1()\n    return RSA\n", "ec.generate_private_key(c)", ecAPI, 0, 0},
 		{"local computed shadows a module constant", "BITS = 3072\n", "def f(n):\n    BITS = n\n    return RSA\n", rsaCall("BITS"), rsaAPI, 1, 0},
 		{"self attribute", "", "class K:\n    BITS = 2048\n    def f(self):\n        return RSA\n", rsaCall("self.BITS"), rsaAPI, 1, 0},
+		{"nested def binding does not leak to the enclosing function", "bits = 4096\n", "def f():\n    def g():\n        bits = 1024\n        return RSA\n    return g\n", rsaCall("bits"), rsaAPI, 1, 0},
+		{"sibling nested def binding does not leak", "bits = 4096\n", "def f():\n    def g():\n        bits = 1024\n    def h():\n        return RSA\n    return g, h\n", rsaCall("bits"), rsaAPI, 1, 0},
+		{"nested class binding does not leak", "bits = 4096\n", "def f():\n    class A:\n        bits = 2048\n        def m(self):\n            return RSA\n    return A\n", rsaCall("bits"), rsaAPI, 1, 0},
+		{"sibling nested def curve does not leak", "", "def f():\n    def g():\n        c = ec.SECP521R1()\n    def h():\n        return RSA\n    return g, h\n", "ec.generate_private_key(c)", ecAPI, 0, 0},
+		{"nested def curve binding does not leak", "", "def f():\n    def g():\n        c = ec.SECP521R1()\n        return RSA\n    return g\n", "ec.generate_private_key(c)", ecAPI, 0, 0},
+		{"module lambda parameter shadows a module constant", "bits = 4096\n", "f = lambda bits: RSA\n", rsaCall("bits"), rsaAPI, 1, 0},
+		{"lambda parameter shadows an enclosing local", "", "def f():\n    bits = 2048\n    return lambda bits: RSA\n", rsaCall("bits"), rsaAPI, 1, 0},
+		{"lambda parameter does not hide the module constant outside the lambda", "bits = 4096\n", "f = lambda bits: bits\n\ndef g():\n    return RSA\n", rsaCall("bits"), rsaAPI, 1, 4096},
 		{"binding in a sibling function does not leak", "", "def g():\n    bits = 2048\n\ndef f():\n    return RSA\n", rsaCall("bits"), rsaAPI, 1, 0},
 	}
 	for _, c := range cases {

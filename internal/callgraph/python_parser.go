@@ -27,6 +27,8 @@ type PythonParser struct {
 	// worker), so an instance field is race-free without synchronization.
 	// Production cost is a single nil-pointer compare per node.
 	visits *int
+	// localWork is the test hook for pythonLocalSources.work.
+	localWork *int
 }
 
 // countVisit increments p.visits when the visit-budget test hook is active
@@ -884,8 +886,24 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 		if pruned && !headerExecutesHere {
 			nextClassDirect = nil
 		}
+		childLayer = pythonLambdaParameterLayer(child, childSym, src, layer, childLayer)
 		p.pythonWalk(child, src, analysis, isInitPy, fw, childLayer, activeFunc, activeClassInfo, nextClassDirect, moduleDirect && (!pruned || headerExecutesHere), nil)
 	}
+}
+
+// pythonLambdaParameterLayer forks the binding layer on a lambda's parameter
+// list, so the parameters shadow outer names inside the lambda body only. The
+// "lambda" symbol itself is ambiguous in the grammar table, so the fork keys
+// on lambda_parameters, which precedes the body.
+func pythonLambdaParameterLayer(child *sitter.Node, childSym sitter.Symbol, src []byte, layer, childLayer *pythonBindingLayer) *pythonBindingLayer {
+	if childSym != pythonSyms.lambdaParameters || childLayer != layer {
+		return childLayer
+	}
+	forked := &pythonBindingLayer{parent: layer}
+	for _, name := range pythonParameterNames(child, src) {
+		forked.bind(name)
+	}
+	return forked
 }
 
 // pythonWalkFunctionChildren preserves Python's split execution scopes for an
@@ -1042,6 +1060,8 @@ func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw
 			scope.selfAlias = param0
 		}
 	}
+	scope.sources.root = node.StartByte()
+	scope.sources.work = p.localWork
 	fw.funcScopes[node.StartByte()] = scope
 	return scope
 }

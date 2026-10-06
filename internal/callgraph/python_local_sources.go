@@ -21,6 +21,19 @@ import sitter "github.com/smacker/go-tree-sitter"
 // (if/else, loop, try) cannot change the value, only whether it exists.
 type pythonLocalSources struct {
 	byName map[string]*pythonLocalSource
+	// root is the StartByte of the outermost function_definition this index
+	// belongs to. A binding under a nested def, class or lambda binds in THAT
+	// scope, not the function's, so it can only poison the name here.
+	root uint32
+	// work, when non-nil, counts every map probe and ancestor step the index
+	// takes, so a test can bound the cost per binding and per argument.
+	work *int
+}
+
+func (s *pythonLocalSources) tick() {
+	if s.work != nil {
+		*s.work++
+	}
 }
 
 type pythonLocalSource struct {
@@ -32,6 +45,7 @@ type pythonLocalSource struct {
 }
 
 func (s *pythonLocalSources) entry(name string) *pythonLocalSource {
+	s.tick()
 	if s.byName == nil {
 		s.byName = make(map[string]*pythonLocalSource)
 	}
@@ -78,6 +92,7 @@ func (s *pythonLocalSources) lookup(name string) (source *pythonLocalSource, kno
 	if s == nil {
 		return nil, false
 	}
+	s.tick()
 	e, ok := s.byName[name]
 	if !ok {
 		return nil, false
@@ -115,6 +130,22 @@ func (s *pythonLocalSources) observe(node *sitter.Node, sym sitter.Symbol, src [
 	}
 }
 
+// inNestedScope reports whether node sits under a def, class or lambda nested
+// inside the indexed function. The climb is bounded by the node's own
+// statement nesting depth.
+func (s *pythonLocalSources) inNestedScope(node *sitter.Node) bool {
+	for p := node.Parent(); p != nil; p = p.Parent() {
+		s.tick()
+		switch p.Symbol() {
+		case pythonSyms.functionDefinition:
+			return p.StartByte() != s.root
+		case pythonSyms.classDefinition, pythonSyms.lambda:
+			return true
+		}
+	}
+	return false
+}
+
 // observeClassName poisons a class statement's own name; pythonWalkClass
 // returns before observe sees the node.
 func (s *pythonLocalSources) observeClassName(node *sitter.Node, src []byte) {
@@ -131,7 +162,7 @@ func (s *pythonLocalSources) observeAssignment(node *sitter.Node, src []byte) {
 		return
 	}
 	name := left.Content(src)
-	if right != nil && isPythonLocalSourceValue(right) {
+	if right != nil && isPythonLocalSourceValue(right) && !s.inNestedScope(node) {
 		s.bind(name, right, right.Content(src))
 		return
 	}
