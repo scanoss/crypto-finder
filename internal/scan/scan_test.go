@@ -472,7 +472,7 @@ func TestBuildCallChains_EvictsCacheAfterLastUse(t *testing.T) {
 		t.Fatalf("callChainRemainingUses[%q] = %d, want 2", cacheKey, got)
 	}
 
-	containingFn := ctx.findContainingFunctionByFinding("src/main/java/me/zhengjie/CryptoService.java", nil, 40)
+	containingFn := ctx.findContainingFunctionByFinding("src/main/java/me/zhengjie/CryptoService.java", nil, 40, 0)
 	if containingFn == nil {
 		t.Fatal("expected containing function")
 	}

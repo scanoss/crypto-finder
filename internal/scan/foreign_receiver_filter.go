@@ -368,7 +368,7 @@ func foreignSourceReceiver(
 	if len(claimed) == 0 {
 		return "", false
 	}
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine, asset.StartCol)
 	if containingFn == nil {
 		return "", false
 	}

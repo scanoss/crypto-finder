@@ -786,6 +786,8 @@ func (p *JavaParser) parseClassInitDecl(
 		FilePath:        filePath,
 		StartLine:       int(body.StartPoint().Row) + 1,
 		EndLine:         int(body.EndPoint().Row) + 1,
+		StartCol:        int(body.StartPoint().Column) + 1,
+		EndCol:          int(body.EndPoint().Column) + 1,
 		OwnerType:       "class",
 		OwnerName:       className,
 		FunctionType:    functionTypeClassInit,
@@ -1040,6 +1042,8 @@ func (p *JavaParser) parseMethodDecl(
 		FilePath:        filePath,
 		StartLine:       javaDeclarationStartLine(node),
 		EndLine:         int(node.EndPoint().Row) + 1,
+		StartCol:        javaDeclarationStartCol(node),
+		EndCol:          int(node.EndPoint().Column) + 1,
 		OwnerType:       ownerType,
 		OwnerName:       ownerName,
 		FunctionType:    javaFunctionTypeMethod,
@@ -1116,6 +1120,8 @@ func (p *JavaParser) parseConstructorDecl(
 		FilePath:        filePath,
 		StartLine:       javaDeclarationStartLine(node),
 		EndLine:         int(node.EndPoint().Row) + 1,
+		StartCol:        javaDeclarationStartCol(node),
+		EndCol:          int(node.EndPoint().Column) + 1,
 		OwnerType:       "class",
 		OwnerName:       className,
 		FunctionType:    javaFunctionTypeConstructor,
@@ -1336,12 +1342,22 @@ func javaDeclarationStartLine(node *sitter.Node) int {
 	if node == nil {
 		return 0
 	}
+	return int(javaDeclarationStart(node).Row) + 1
+}
+
+// javaDeclarationStartCol is the 1-based column javaDeclarationStartLine's
+// line is measured at.
+func javaDeclarationStartCol(node *sitter.Node) int {
+	return int(javaDeclarationStart(node).Column) + 1
+}
+
+func javaDeclarationStart(node *sitter.Node) sitter.Point {
 	for i := 0; i < int(node.ChildCount()); i++ {
 		if child := node.Child(i); child.Type() != javaNodeModifiers {
-			return int(child.StartPoint().Row) + 1
+			return child.StartPoint()
 		}
 	}
-	return int(node.StartPoint().Row) + 1
+	return node.StartPoint()
 }
 
 func parseJavaMemberVisibility(node *sitter.Node, src []byte, ownerType, functionType string) string {

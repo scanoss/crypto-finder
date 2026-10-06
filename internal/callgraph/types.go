@@ -207,10 +207,16 @@ type InferredReturn struct {
 
 // FunctionDecl represents a function or method declaration with its location and outgoing calls.
 type FunctionDecl struct {
-	ID           FunctionID
-	FilePath     string
-	StartLine    int
-	EndLine      int
+	ID        FunctionID
+	FilePath  string
+	StartLine int
+	EndLine   int
+	// StartCol and EndCol are the 1-based columns of the span's first and
+	// first character on StartLine and one past the last on EndLine, read from the
+	// parser's node. Zero means the parser is not column-aware or the span is
+	// synthetic; containment then falls back to lines alone.
+	StartCol     int
+	EndCol       int
 	OwnerType    string
 	OwnerName    string
 	FunctionType string
