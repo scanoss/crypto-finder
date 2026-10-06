@@ -78,6 +78,89 @@ contracts:
         name: strength
         role: metadata-contributing
         contributes: { property: keySize, derivation: argument_value }
+  # Named-curve lookups. The curve name is the evidence: the field size comes
+  # from the name, and reaches ECDomainParameters / ECKeyGenerationParameters /
+  # ECKeyPairGenerator.init through the argument sources (p.getCurve(), p.getG(),
+  # the X9ECParameters variable). A name the curve table does not know, or one
+  # that is not a literal, resolves to nothing.
+  - method: org.bouncycastle.asn1.sec.SECNamedCurves.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.asn1.x9.X9ECParameters
+    return:
+      type: org.bouncycastle.asn1.x9.X9ECParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.asn1.nist.NISTNamedCurves.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.asn1.x9.X9ECParameters
+    return:
+      type: org.bouncycastle.asn1.x9.X9ECParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.asn1.teletrust.TeleTrusTNamedCurves.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.asn1.x9.X9ECParameters
+    return:
+      type: org.bouncycastle.asn1.x9.X9ECParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.crypto.ec.CustomNamedCurves.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.asn1.x9.X9ECParameters
+    return:
+      type: org.bouncycastle.asn1.x9.X9ECParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.jce.ECNamedCurveTable.getParameterSpec
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.jce.spec.ECNamedCurveParameterSpec
+    return:
+      type: org.bouncycastle.jce.spec.ECNamedCurveParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec
+    return:
+      type: org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
   - method: org.bouncycastle.crypto.params.DSAParameterGenerationParameters.<init>
     arity: 4
     parameter_types: [int, int, int, java.security.SecureRandom]
@@ -168,7 +251,13 @@ contracts:
   # X9ECParameters getters below attach as role: output (receiver == return type).
   - method: org.bouncycastle.asn1.x9.ECNamedCurveTable.getByName
     arity: 1
+    parameter_types: [java.lang.String]
     return: { type: org.bouncycastle.asn1.x9.X9ECParameters, confidence: high }
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
 
   # role: output — reads of the terminal's product (the X9ECParameters returned
   # by getByName). They attach as supporting calls to that terminal.
@@ -291,6 +380,10 @@ hierarchy:
     - org.bouncycastle.crypto.params.ECKeyParameters
   org.bouncycastle.crypto.params.ECPublicKeyParameters:
     - org.bouncycastle.crypto.params.ECKeyParameters
+  org.bouncycastle.jce.spec.ECNamedCurveParameterSpec:
+    - java.lang.Object
+  org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
   org.bouncycastle.asn1.x9.X9ECParameters:
     - java.lang.Object
   org.bouncycastle.math.ec.ECCurve:

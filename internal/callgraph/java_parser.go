@@ -2047,7 +2047,7 @@ func (p *JavaParser) resolveArgumentSources(args []string, analysis *FileAnalysi
 	return sources
 }
 
-const maxTraceDepth = 5
+const maxTraceDepth = 6
 
 // traceExpression resolves a single expression to its source nodes.
 func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) []SourceNode {

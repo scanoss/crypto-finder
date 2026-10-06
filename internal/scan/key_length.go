@@ -315,34 +315,56 @@ func resolvedKeyLengthFromParameterSources(
 	if ctx == nil || ctx.kb == nil {
 		return nil
 	}
+	var found []*graphfrag.ResolvedKeyLength
 	for i := range parameters {
-		if resolved := resolvedKeyLengthFromSourceNodes(ctx, parameters[i].SourceNodes, 0); resolved != nil {
-			return resolved
-		}
+		found = collectProducerKeyLengths(ctx, parameters[i].SourceNodes, 0, found)
 	}
-	return nil
+	return agreedKeyLength(found)
 }
 
-func resolvedKeyLengthFromSourceNodes(
+// collectProducerKeyLengths gathers every key-size producer behind an
+// argument. One object can be assembled from several lookups
+// (`new ECDomainParameters(a.getCurve(), b.getG(), ..)`), and the first of them
+// is not evidence of the key's size.
+func collectProducerKeyLengths(
 	ctx *exportBuildContext,
 	nodes []exportSourceNode,
 	depth int,
-) *graphfrag.ResolvedKeyLength {
+	found []*graphfrag.ResolvedKeyLength,
+) []*graphfrag.ResolvedKeyLength {
 	if depth >= maxKeyLengthSourceDepth {
-		return nil
+		return found
 	}
 	for i := range nodes {
 		node := &nodes[i]
 		if node.Type == sourceNodeTypeCallResult && node.CallTarget != "" {
 			if resolved := resolvedKeyLengthFromProducer(ctx, node); resolved != nil {
-				return resolved
+				found = append(found, resolved)
+				continue
 			}
 		}
-		if resolved := resolvedKeyLengthFromSourceNodes(ctx, node.SourceNodes, depth+1); resolved != nil {
-			return resolved
+		found = collectProducerKeyLengths(ctx, node.SourceNodes, depth+1, found)
+	}
+	return found
+}
+
+// agreedKeyLength returns the producers' common size. Producers that disagree,
+// or any one of them that resolves to no size, leave the size unknown: a
+// consumer that sees two sizes on one graph drops both.
+func agreedKeyLength(found []*graphfrag.ResolvedKeyLength) *graphfrag.ResolvedKeyLength {
+	if len(found) == 0 {
+		return nil
+	}
+	first := found[0]
+	for _, other := range found[1:] {
+		if first.Bits == nil || other.Bits == nil || *first.Bits != *other.Bits {
+			unknown := *first
+			unknown.Bits = nil
+			unknown.Provenance = keyLengthProvenanceUnknown
+			return &unknown
 		}
 	}
-	return nil
+	return first
 }
 
 // resolvedKeyLengthFromProducer reads the key size off a producing call whose
