@@ -22,7 +22,7 @@ func TestLoadEmbeddedGoIncludesSigstoreContracts(t *testing.T) {
 		arity                  int
 	}{
 		{"github.com/sigstore/sigstore/pkg/signature.LoadECDSASigner", "factory", "algorithm", 2},
-		{"github.com/sigstore/sigstore/pkg/signature.NewRSAPSSSignerVerifier", "factory", "", 3},
+		{"github.com/sigstore/sigstore/pkg/signature.NewRSAPSSSignerVerifier", "factory", "keySize", 3},
 		{"github.com/sigstore/sigstore/pkg/signature.LoadSigner", "factory", "keyMaterial", 2},
 		{"github.com/sigstore/sigstore/pkg/signature.(Signer).SignMessage", "operation", "", 2},
 		{"github.com/sigstore/sigstore/pkg/cryptoutils.UnmarshalPEMToPublicKey", "factory", "keyMaterial", 1},

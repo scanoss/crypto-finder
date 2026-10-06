@@ -29,7 +29,7 @@ const (
 // listed with a unit that disagrees with its derivation, fails the test, so a new
 // contract cannot ship its keySize unclassified. Where a unit was unclear the
 // keySize contribution was removed instead (wolfSSL and LibTomCrypt ECC sizes,
-// wc_ed448_make_key, sigstore RSA signer-verifier constructors).
+// wc_ed448_make_key).
 var auditedKeySizeRoles = map[string]keySizeUnit{
 	// go/crypto11.yaml
 	"go|github.com/ThalesIgnite/crypto11.(*Context).GenerateRSAKeyPair|1":               unitBits,
@@ -99,6 +99,9 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	"go|github.com/microsoft/go-crypto-openssl/openssl.ExpandTLS13KDF|1":      unitMaterial,
 	"go|github.com/microsoft/go-crypto-openssl/openssl.PBKDF2|3":              unitBytes,
 	"go|github.com/microsoft/go-crypto-openssl/openssl.NewRC4Cipher|0":        unitMaterial,
+	// go/sigstore.yaml
+	"go|github.com/sigstore/sigstore/pkg/signature.NewRSAPKCS1v15SignerVerifier|1": unitBits,
+	"go|github.com/sigstore/sigstore/pkg/signature.NewRSAPSSSignerVerifier|1":      unitBits,
 	// go/stdlib-crypto.yaml
 	"go|crypto/aes.NewCipher|0":              unitMaterial,
 	"go|crypto/des.NewCipher|0":              unitMaterial,
