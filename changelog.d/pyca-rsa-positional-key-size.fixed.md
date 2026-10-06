@@ -1,1 +1,0 @@
-- Python `rsa.generate_private_key(65537, 2048)` and `rsa.generate_private_key(65537, KEY_SIZE)` with positional arguments now report `resolved_key_length`; only keyword calls (`key_size=2048`) did before. (#716)
