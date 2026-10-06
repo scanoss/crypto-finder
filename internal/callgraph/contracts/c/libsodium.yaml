@@ -238,7 +238,7 @@ contracts:
       - index: 5
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: crypto_generichash_init
     arity: 4
     return: {type: int, confidence: high}
@@ -247,7 +247,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 3
         name: outlen
         role: metadata-contributing
@@ -754,7 +754,7 @@ contracts:
       - index: 5
         name: keySize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: crypto_generichash_blake2b_final
     arity: 3
     return: {type: "int", confidence: high}
@@ -772,7 +772,7 @@ contracts:
       - index: 2
         name: keySize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 3
         name: digestSize
         role: metadata-contributing

@@ -2236,11 +2236,6 @@ func applyRuleKeyLengthConflict(resolved *graphfrag.ResolvedKeyLength, declaredB
 	resolved.RuleConflict = true
 }
 
-// deriveRawSupportingCallsForFinding recovers a finding's supporting calls from
-// the call graph rather than from rule metadata. It locates the finding's
-// terminal crypto call, enumerates the lifecycle calls of the crypto object it
-// identifies (see deriveObjectLifecycleCalls), and renders each as a
-// supporting-call entry.
 // mergeRuleKeyLengthConflict folds a later claimant's conflict marker into the
 // evidence already kept for one supporting call. A supporting call is shared by
 // every finding that reaches the same crypto object, so its marker can only
@@ -2271,6 +2266,13 @@ func supportingCallKeyLength(call *callGraphSupportingCall) *graphfrag.ResolvedK
 	return call.SupportingCall.ResolvedKeyLength
 }
 
+// deriveRawSupportingCallsForFinding recovers a finding's supporting calls from
+// the call graph rather than from rule metadata. It locates the finding's
+// terminal crypto call, enumerates the lifecycle calls of the crypto object it
+// identifies (see deriveObjectLifecycleCalls), and renders each as a
+// supporting-call entry.
+// When the terminal call itself fixes the key size it is appended as one more
+// entry (see terminalKeySizeSupportingCall).
 func deriveRawSupportingCallsForFinding(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) []callGraphSupportingCall {
 	// Synthesized terminal entry points (library API boundary, no in-source call
 	// chain) get their fluent lifecycle methods from the contract KB by type

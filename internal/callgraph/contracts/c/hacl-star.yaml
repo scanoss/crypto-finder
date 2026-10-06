@@ -255,7 +255,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: EverCrypt_HMAC_compute_blake2s
     arity: 5
     return: {type: "void", confidence: high}
@@ -264,7 +264,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: EverCrypt_HMAC_compute_sha1
     arity: 5
     return: {type: "void", confidence: high}
@@ -273,7 +273,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: EverCrypt_HMAC_compute_sha2_256
     arity: 5
     return: {type: "void", confidence: high}
@@ -282,7 +282,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: EverCrypt_HMAC_compute_sha2_384
     arity: 5
     return: {type: "void", confidence: high}
@@ -291,7 +291,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: EverCrypt_HMAC_compute_sha2_512
     arity: 5
     return: {type: "void", confidence: high}
@@ -300,7 +300,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: EverCrypt_Hash_Incremental_create_in
     arity: 1
     return: {type: "Hacl_Streaming_Functor_state_s___EverCrypt_Hash_state_s____*", confidence: high}
@@ -627,7 +627,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: Hacl_HMAC_Blake2s_128_compute_blake2s_128
     arity: 5
     return: {type: "void", confidence: high}
@@ -636,7 +636,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: Hacl_HMAC_DRBG_create_in
     arity: 1
     return: {type: "Hacl_HMAC_DRBG_state", confidence: high}
@@ -661,7 +661,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: Hacl_HMAC_compute_blake2s_32
     arity: 5
     return: {type: "void", confidence: high}
@@ -670,7 +670,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: Hacl_HMAC_compute_sha2_256
     arity: 5
     return: {type: "void", confidence: high}
@@ -679,7 +679,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: Hacl_HMAC_compute_sha2_384
     arity: 5
     return: {type: "void", confidence: high}
@@ -688,7 +688,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: Hacl_HMAC_compute_sha2_512
     arity: 5
     return: {type: "void", confidence: high}
@@ -697,7 +697,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: Hacl_HMAC_legacy_compute_sha1
     arity: 5
     return: {type: "void", confidence: high}
@@ -706,7 +706,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: Hacl_HPKE_Curve51_CP128_SHA256_openBase
     arity: 7
     return: {type: "uint32_t", confidence: high}

@@ -77,6 +77,44 @@ void f(RSA *rsa, BIGNUM *e) {
     RSA_generate_key_ex(rsa, 2048, e, NULL);
 }
 `
+	cWolfAesSetKey = `#include <wolfssl/wolfcrypt/aes.h>
+
+void f(Aes *aes, const byte *key, const byte *iv) {
+    wc_AesSetKey(aes, key, 16, iv, AES_ENCRYPTION);
+}
+`
+	cWolfCurve25519 = `#include <wolfssl/wolfcrypt/curve25519.h>
+
+void f(WC_RNG *rng, curve25519_key *k) {
+    wc_curve25519_make_key(rng, 32, k);
+}
+`
+	cSodiumGenerichash = `#include <sodium.h>
+
+void f(unsigned char *o, const unsigned char *in, const unsigned char *k) {
+    crypto_generichash(o, 32, in, 10, k, 32);
+}
+`
+	cWolfEccMakeKey = `#include <wolfssl/wolfcrypt/ecc.h>
+
+void f(WC_RNG *rng, ecc_key *k) {
+    wc_ecc_make_key(rng, 66, k);
+}
+`
+	goFipsPBKDF2 = `package main
+
+import (
+	"crypto/sha256"
+
+	"github.com/golang-fips/openssl/v2"
+)
+
+func f(pw, salt []byte) {
+	openssl.PBKDF2(pw, salt, 1000, 32, sha256.New)
+}
+
+func main() { f(nil, nil) }
+`
 	cRSAKeygenBits = `#include <openssl/evp.h>
 
 void f(EVP_PKEY_CTX *ctx) {
@@ -115,6 +153,10 @@ func TestTerminalKeyLength_ReachableThroughFindingSupportingCallIDs(t *testing.T
 		{name: "go literal", ecosystem: "go", file: "k.go", source: goRSALiteral, line: 9, match: "rsa.GenerateKey(rand.Reader, 2048)", api: "crypto/rsa.GenerateKey", wantFunc: "crypto/rsa.GenerateKey", wantIndex: 1, wantBits: 2048},
 		{name: "c RSA_generate_key_ex", ecosystem: "c", file: "k.c", source: cRSAGenerateKeyEx, line: 4, match: "RSA_generate_key_ex(rsa, 2048, e, NULL);", api: "RSA_generate_key_ex", wantFunc: "RSA_generate_key_ex", wantIndex: 1, wantBits: 2048},
 		{name: "c EVP_PKEY_CTX_set_rsa_keygen_bits", ecosystem: "c", file: "k.c", source: cRSAKeygenBits, line: 4, match: "EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 3072);", api: "EVP_PKEY_CTX_set_rsa_keygen_bits", wantFunc: "EVP_PKEY_CTX_set_rsa_keygen_bits", wantIndex: 1, wantBits: 3072},
+		{name: "c byte-count key length is reported in bits (wc_AesSetKey 16 bytes)", ecosystem: "c", file: "k.c", source: cWolfAesSetKey, line: 4, match: "wc_AesSetKey(aes, key, 16, iv, AES_ENCRYPTION);", api: "wc_AesSetKey", wantFunc: "wc_AesSetKey", wantIndex: 2, wantBits: 128},
+		{name: "c byte-count key length is reported in bits (curve25519 32 bytes)", ecosystem: "c", file: "k.c", source: cWolfCurve25519, line: 4, match: "wc_curve25519_make_key(rng, 32, k);", api: "wc_curve25519_make_key", wantFunc: "wc_curve25519_make_key", wantIndex: 1, wantBits: 256},
+		{name: "c byte-count key length is reported in bits (crypto_generichash keylen 32)", ecosystem: "c", file: "k.c", source: cSodiumGenerichash, line: 4, match: "crypto_generichash(o, 32, in, 10, k, 32);", api: "crypto_generichash", wantFunc: "crypto_generichash", wantIndex: 5, wantBits: 256},
+		{name: "go byte-count key length is reported in bits (PBKDF2 keyLen 32)", ecosystem: "go", file: "k.go", source: goFipsPBKDF2, line: 10, match: "openssl.PBKDF2(pw, salt, 1000, 32, sha256.New)", api: "github.com/golang-fips/openssl/v2.PBKDF2", wantFunc: "github.com/golang-fips/openssl/v2.PBKDF2", wantIndex: 3, wantBits: 256},
 		{name: "rule agrees", ecosystem: "java", file: "K.java", source: javaRSALiteral, line: 6, match: "g.initialize(2048)", api: "java.security.KeyPairGenerator.initialize", wantFunc: "java.security.KeyPairGenerator.initialize", wantBits: 2048, declared: "2048"},
 		{name: "rule conflict keeps both values", ecosystem: "python", file: "k.py", source: pythonRSAKeyword, line: 4, match: "rsa.generate_private_key(public_exponent=65537, key_size=2048)", api: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantIndex: 1, wantBits: 2048, declared: "1024", wantConflict: true, wantDeclaredB: 1024},
 	} {
@@ -229,6 +271,40 @@ def f():
 	live := buildCallGraphExportV2(&engine.DepScanResult{Report: report, CallGraph: graph, ProjectRoot: dir, Ecosystem: "python"})
 	if len(live.SupportingCalls) != 0 {
 		t.Fatalf("supporting calls = %d, want none for a terminal that fixes no key size", len(live.SupportingCalls))
+	}
+}
+
+// TestTerminalKeyLength_UnclearUnitStaysAbsent pins that a keySize role whose
+// unit the audit could not establish (wolfSSL ECC key size, which is a byte
+// count that misstates P-521) reports nothing rather than a guessed size.
+func TestTerminalKeyLength_UnclearUnitStaysAbsent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "k.c"), []byte(cWolfEccMakeKey), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	graph, err := callgraph.NewBuilderForEcosystem("c", callgraph.NewCParser()).
+		BuildFromDirectories([]callgraph.PackageDir{{Dir: dir}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+	report := &entities.InterimReport{
+		Tool: entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath: "k.c", Language: "c",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 4, EndLine: 4, StartCol: 5, EndCol: 33, Match: "wc_ecc_make_key(rng, 66, k);",
+				Rules:    []entities.RuleInfo{{ID: "test.ecc.keygen"}},
+				Metadata: map[string]string{"api": "wc_ecc_make_key"},
+			}},
+		}},
+	}
+	engine.EnsureFindingSources(report)
+	engine.AssignFindingIDs(report)
+	live := buildCallGraphExportV2(&engine.DepScanResult{Report: report, CallGraph: graph, ProjectRoot: dir, Ecosystem: "c"})
+	for i := range live.SupportingCalls {
+		if call := live.SupportingCalls[i].SupportingCall; call != nil && call.ResolvedKeyLength != nil {
+			t.Fatalf("resolved_key_length = %#v, want absent for a key size of unclear unit", call.ResolvedKeyLength)
+		}
 	}
 }
 

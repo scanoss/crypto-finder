@@ -52,7 +52,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -65,7 +65,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -103,7 +103,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2b_process
     arity: 3
     return: {type: "int", confidence: high}
@@ -120,7 +120,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2bmac_init
     arity: 4
     return: {type: "int", confidence: high}
@@ -129,7 +129,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2bmac_memory
     arity: 6
     return: {type: "int", confidence: high}
@@ -138,7 +138,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2bmac_memory_multi
     arity: 7
     return: {type: "int", confidence: high}
@@ -147,7 +147,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2bmac_process
     arity: 3
     return: {type: "int", confidence: high}
@@ -185,7 +185,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2s_process
     arity: 3
     return: {type: "int", confidence: high}
@@ -202,7 +202,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2smac_init
     arity: 4
     return: {type: "int", confidence: high}
@@ -211,7 +211,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2smac_memory
     arity: 6
     return: {type: "int", confidence: high}
@@ -220,7 +220,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2smac_memory_multi
     arity: 7
     return: {type: "int", confidence: high}
@@ -229,7 +229,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: blake2smac_process
     arity: 3
     return: {type: "int", confidence: high}
@@ -250,7 +250,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -271,7 +271,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -292,7 +292,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -329,7 +329,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: num_rounds
         role: metadata-contributing
@@ -358,7 +358,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: ccm_memory
     arity: 14
     return: {type: "int", confidence: high}
@@ -371,7 +371,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 13
         name: direction
         role: operation-determining
@@ -421,7 +421,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: num_rounds
         role: metadata-contributing
@@ -466,7 +466,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: chacha20poly1305_memory
     arity: 12
     return: {type: "int", confidence: high}
@@ -475,7 +475,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 11
         name: direction
         role: operation-determining
@@ -508,7 +508,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 3
         name: rounds
         role: metadata-contributing
@@ -545,7 +545,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: num_rounds
         role: metadata-contributing
@@ -566,7 +566,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -587,7 +587,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -674,7 +674,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: eax_done
     arity: 3
     return: {type: "int", confidence: high}
@@ -695,7 +695,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: ecb_decrypt
     arity: 4
     return: {type: "int", confidence: high}
@@ -720,7 +720,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 3
         name: num_rounds
         role: metadata-contributing
@@ -745,11 +745,6 @@ contracts:
     arity: 4
     return: {type: "int", confidence: high}
     role: factory
-    parameters:
-      - index: 2
-        name: keysize
-        role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
   - method: ecc_make_key_ex
     arity: 4
     return: {type: "int", confidence: high}
@@ -851,7 +846,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: gcm_memory
     arity: 13
     return: {type: "int", confidence: high}
@@ -864,7 +859,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 12
         name: direction
         role: operation-determining
@@ -933,7 +928,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: hmac_init
     arity: 4
     return: {type: "int", confidence: high}
@@ -946,7 +941,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: hmac_memory
     arity: 7
     return: {type: "int", confidence: high}
@@ -959,7 +954,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: hmac_memory_multi
     arity: 8
     return: {type: "int", confidence: high}
@@ -972,7 +967,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: hmac_process
     arity: 3
     return: {type: "int", confidence: high}
@@ -993,7 +988,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -1073,7 +1068,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: ocb3_done
     arity: 3
     return: {type: "int", confidence: high}
@@ -1094,7 +1089,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: ocb3_encrypt_last
     arity: 4
     return: {type: "int", confidence: high}
@@ -1115,7 +1110,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: ocb_encrypt
     arity: 3
     return: {type: "int", confidence: high}
@@ -1132,7 +1127,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: ofb_decrypt
     arity: 4
     return: {type: "int", confidence: high}
@@ -1165,7 +1160,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: num_rounds
         role: metadata-contributing
@@ -1186,7 +1181,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: omac_init
     arity: 4
     return: {type: "int", confidence: high}
@@ -1199,7 +1194,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: omac_memory
     arity: 7
     return: {type: "int", confidence: high}
@@ -1212,7 +1207,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: omac_memory_multi
     arity: 8
     return: {type: "int", confidence: high}
@@ -1225,7 +1220,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: omac_process
     arity: 3
     return: {type: "int", confidence: high}
@@ -1285,7 +1280,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: pmac_init
     arity: 4
     return: {type: "int", confidence: high}
@@ -1298,7 +1293,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: pmac_memory
     arity: 7
     return: {type: "int", confidence: high}
@@ -1311,7 +1306,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: pmac_memory_multi
     arity: 8
     return: {type: "int", confidence: high}
@@ -1324,7 +1319,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: pmac_process
     arity: 3
     return: {type: "int", confidence: high}
@@ -1341,7 +1336,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: poly1305_init
     arity: 3
     return: {type: "int", confidence: high}
@@ -1350,7 +1345,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: poly1305_memory
     arity: 6
     return: {type: "int", confidence: high}
@@ -1359,7 +1354,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: poly1305_memory_multi
     arity: 7
     return: {type: "int", confidence: high}
@@ -1368,7 +1363,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: poly1305_process
     arity: 3
     return: {type: "int", confidence: high}
@@ -1389,7 +1384,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -1402,7 +1397,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 3
         name: num_rounds
         role: metadata-contributing
@@ -1419,7 +1414,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: rc5_ecb_decrypt
     arity: 3
     return: {type: "int", confidence: high}
@@ -1436,7 +1431,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -1457,7 +1452,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -1509,7 +1504,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -1522,7 +1517,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -1663,7 +1658,7 @@ contracts:
       - index: 2
         name: size
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: rsa_sign_hash
     arity: 9
     return: {type: "int", confidence: high}
@@ -1908,7 +1903,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -1929,7 +1924,7 @@ contracts:
       - index: 1
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 2
         name: num_rounds
         role: metadata-contributing
@@ -1967,7 +1962,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: xcbc_init
     arity: 4
     return: {type: "int", confidence: high}
@@ -1980,7 +1975,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: xcbc_memory
     arity: 7
     return: {type: "int", confidence: high}
@@ -1993,7 +1988,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: xcbc_memory_multi
     arity: 8
     return: {type: "int", confidence: high}
@@ -2006,7 +2001,7 @@ contracts:
       - index: 2
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: xcbc_process
     arity: 3
     return: {type: "int", confidence: high}
@@ -2035,7 +2030,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: num_rounds
         role: metadata-contributing
