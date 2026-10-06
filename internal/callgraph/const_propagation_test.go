@@ -1,9 +1,12 @@
 package callgraph
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // constArgValue returns the literal the parser traced for argument index of
@@ -56,6 +59,18 @@ func TestGoParser_ConstArgumentSources(t *testing.T) {
 		{"expression yields nothing", "const bits = 3 * 1024\nfunc f() { gen(rand, bits) }", "", false},
 		{"hex yields nothing", "const bits = 0xC00\nfunc f() { gen(rand, bits) }", "", false},
 		{"var is not a const", "var bits = 3072\nfunc f() { gen(rand, bits) }", "", false},
+		{"for clause := shadows const", "const bits = 3072\nfunc f() {\n\tfor bits := 0; bits < 2; bits++ {\n\t\tgen(rand, bits)\n\t}\n}", "", false},
+		{"for clause := shadows in the body", "const bits = 3072\nfunc f() {\n\tfor bits := 0; ; {\n\t\tgen(rand, bits)\n\t}\n}", "", false},
+		{"select receive := shadows const", "const bits = 3072\nfunc f(c chan int) {\n\tselect {\n\tcase bits := <-c:\n\t\tgen(rand, bits)\n\t}\n}", "", false},
+		{"select receive = does not shadow", "const bits = 3072\nfunc f(c chan int) {\n\tvar v int\n\tselect {\n\tcase v = <-c:\n\t\tgen(rand, bits)\n\t}\n}", "3072", true},
+		{"labeled := shadows const", "const bits = 3072\nfunc f() {\nL:\n\tbits := 1\n\tgen(rand, bits)\n\tgoto L\n}", "", false},
+		{"variadic parameter shadows const", "const bits = 3072\nfunc f(bits ...int) { gen(rand, bits) }", "", false},
+		{"func literal parameter shadows const", "const bits = 3072\nfunc f() {\n\th := func(bits int) { gen(rand, bits) }\n\t_ = h\n}", "", false},
+		{"type switch alias shadows const", "const bits = 3072\nfunc f(x any) {\n\tswitch bits := x.(type) {\n\tcase int:\n\t\tgen(rand, bits)\n\t}\n}", "", false},
+		{"if init shadows const", "const bits = 3072\nfunc f() {\n\tif bits := compute(); bits > 0 {\n\t\tgen(rand, bits)\n\t}\n}", "", false},
+		{"float typed const", "const bits float64 = 2\nfunc f() { gen(rand, bits) }", "", false},
+		{"named type const", "type B int\nconst bits B = 2\nfunc f() { gen(rand, bits) }", "", false},
+		{"integer typed const", "const bits uint16 = 3072\nfunc f() { gen(rand, bits) }", "3072", true},
 		{"unknown identifier", "func f() { gen(rand, bits) }", "", false},
 	}
 	for _, tt := range tests {
@@ -91,7 +106,14 @@ func TestCParser_DefineArgumentSources(t *testing.T) {
 		{"parenthesized with suffix and comment", "#define BITS (4096U) /* RSA modulus */\nvoid f(void) { gen(ctx, BITS); }", "4096", true},
 		{"string define", "#define NAME \"RSA\"\nvoid f(void) { gen(ctx, NAME); }", "\"RSA\"", true},
 		{"define inside a function body", "void f(void) {\n#define BITS 3072\n gen(ctx, BITS); }", "3072", true},
-		{"single definition under ifdef", "#ifdef BIG\n#define BITS 4096\n#endif\nvoid f(void) { gen(ctx, BITS); }", "4096", true},
+		{"ifdef block", "#ifdef BIG\n#define BITS 4096\n#endif\nvoid f(void) { gen(ctx, BITS); }", "", false},
+		{"ifndef default is overridable", "#ifndef BITS\n#define BITS 2048\n#endif\nvoid f(void) { gen(ctx, BITS); }", "", false},
+		{"dead #if 0", "#if 0\n#define BITS 2048\n#endif\nvoid f(void) { gen(ctx, BITS); }", "", false},
+		{"nested under #else", "#if X\n#else\n#define BITS 2048\n#endif\nvoid f(void) { gen(ctx, BITS); }", "", false},
+		{"include guarded file", "#ifndef CFG_H\n#define CFG_H\n#define BITS 4096\nvoid f(void) { gen(ctx, BITS); }\n#endif", "4096", true},
+		{"include guard with leading comment", "/* cfg */\n#ifndef CFG_H\n#define CFG_H\n#define BITS 4096\nvoid f(void) { gen(ctx, BITS); }\n#endif", "4096", true},
+		{"conditional inside an include guard", "#ifndef CFG_H\n#define CFG_H\n#ifndef BITS\n#define BITS 2048\n#endif\nvoid f(void) { gen(ctx, BITS); }\n#endif", "", false},
+		{"guard with other top-level code is not a file guard", "int x;\n#ifndef BITS\n#define BITS 2048\n#endif\nvoid f(void) { gen(ctx, BITS); }", "", false},
 		{"function-like macro", "#define BITS(x) 4096\nvoid f(void) { gen(ctx, BITS); }", "", false},
 		{"function-like call is not an argument identifier", "#define BITS(x) 4096\nvoid f(void) { gen(ctx, BITS(1)); }", "", false},
 		{"defined twice under ifdef", "#ifdef BIG\n#define BITS 4096\n#else\n#define BITS 2048\n#endif\nvoid f(void) { gen(ctx, BITS); }", "", false},
@@ -118,4 +140,46 @@ func TestCParser_DefineArgumentSources(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGoParser_ConstLookupScalesLinearly pins the cost of resolving identifier
+// arguments in one function with thousands of statements, package consts and
+// calls. Rescanning every enclosing scope per argument took minutes here.
+func TestGoParser_ConstLookupScalesLinearly(t *testing.T) {
+	const n = 2000
+	var b strings.Builder
+	b.WriteString("package main\n\n")
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "const c%d = %d\n", i, i+1)
+	}
+	b.WriteString("\nfunc f() {\n")
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "\tx%d := %d\n\tgen(rand, c%d)\n", i, i, i)
+	}
+	b.WriteString("}\n")
+	file := filepath.Join(t.TempDir(), "big.go")
+	if err := os.WriteFile(file, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	analysis, err := NewGoParser().ParseFile(file, "example/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	elapsed := time.Since(start)
+
+	resolved := 0
+	for _, call := range analysis.Functions[0].Calls {
+		if call.Callee.Name == "gen" && len(call.ArgumentSources) == 2 && len(call.ArgumentSources[1]) == 1 {
+			resolved++
+		}
+	}
+	if resolved != n {
+		t.Fatalf("resolved %d of %d const arguments", resolved, n)
+	}
+	if elapsed > 20*time.Second {
+		t.Fatalf("parsing took %s, want near-linear time", elapsed)
+	}
+	t.Logf("parsed %d consts and %d calls in %s", n, n, elapsed)
 }
