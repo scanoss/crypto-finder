@@ -439,8 +439,9 @@ type ExportParameterRole struct {
 // ExportContribution names the property a parameter contributes to and the
 // derivation strategy a downstream consumer applies.
 type ExportContribution struct {
-	Property   string `json:"property,omitempty"`
-	Derivation string `json:"derivation,omitempty"`
+	Property         string `json:"property,omitempty"`
+	Derivation       string `json:"derivation,omitempty"`
+	ArgumentProperty string `json:"argument_property,omitempty"`
 }
 
 // ExportParameter is the schema-6.0 callGraphParameter shape.
@@ -1220,8 +1221,9 @@ func exportParameterRoles(src []ParameterRole) []ExportParameterRole {
 		}
 		if src[i].Contributes != nil {
 			out[i].Contributes = &ExportContribution{
-				Property:   src[i].Contributes.Property,
-				Derivation: src[i].Contributes.Derivation,
+				Property:         src[i].Contributes.Property,
+				Derivation:       src[i].Contributes.Derivation,
+				ArgumentProperty: src[i].Contributes.ArgumentProperty,
 			}
 		}
 	}

@@ -119,6 +119,60 @@ func TestSupportingParameterRolesSurviveDecodeStitchAndExport(t *testing.T) {
 	}
 }
 
+// TestContributionArgumentPropertySurvivesDecodeStitchAndExport pins that the
+// options-object property a Node role reads is carried through every
+// contribution shape, so a consumer sees which property the derivation read.
+func TestContributionArgumentPropertySurvivesDecodeStitchAndExport(t *testing.T) {
+	t.Parallel()
+
+	root := ComponentKey{Purl: "pkg:npm/acme", Version: "1.0.0"}
+	const fragmentJSON = `{
+	  "schema_version": "graph-fragment-1.8",
+	  "functions": [{"key": "acme.run#0", "function_name": "acme.run"}],
+	  "crypto_annotations": [{
+	    "function_key": "acme.run#0",
+	    "finding_id": "finding-1",
+	    "rule_id": "javascript.crypto.keygen.rsa",
+	    "symbol": "crypto.generateKeyPairSync",
+	    "supporting_call_ids": ["support-1"]
+	  }],
+	  "supporting_calls": [{
+	    "supporting_id": "support-1",
+	    "function_key": "acme.run#0",
+	    "supporting_call": {
+	      "function_name": "crypto.generateKeyPairSync",
+	      "parameter_roles": [{
+	        "index": 1,
+	        "role": "metadata-contributing",
+	        "contributes": {"property": "keySize", "derivation": "argument_value", "argument_property": "modulusLength"}
+	      }]
+	    }
+	  }]
+	}`
+	fragment, err := DecodeFragment(root, []byte(fragmentJSON))
+	if err != nil {
+		t.Fatalf("DecodeFragment: %v", err)
+	}
+	if got := fragment.SupportingCalls[0].SupportingCall.ParameterRoles[0].Contributes.ArgumentProperty; got != "modulusLength" {
+		t.Fatalf("decoded ArgumentProperty = %q, want modulusLength", got)
+	}
+	result, err := StitchWithOptions(root, DependencyGraph{root: nil}, map[ComponentKey]Fragment{root: fragment}, StitchOptions{EntryRootedOnly: true})
+	if err != nil {
+		t.Fatalf("StitchWithOptions: %v", err)
+	}
+	exported := result.ToCallgraphExport(root, ScanMeta{})
+	if len(exported.SupportingCalls) != 1 {
+		t.Fatalf("exported supporting calls = %#v, want 1", exported.SupportingCalls)
+	}
+	encoded, err := json.Marshal(exported.SupportingCalls[0].SupportingCall.ParameterRoles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encoded, []byte(`"argument_property":"modulusLength"`)) {
+		t.Fatalf("exported parameter_roles = %s, want argument_property modulusLength", encoded)
+	}
+}
+
 // TestStitch_ContractFKSupportingCallsSurviveNonRootStitch guards REQ-8.1:
 // a supporting call that is referenced by a finding's SupportingCallIDs FK but
 // is NOT on any backward BFS chain from the terminal (the terminal has in-degree 0)

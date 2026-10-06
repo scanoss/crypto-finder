@@ -93,7 +93,7 @@ func resolvedKeyLengthFromContract(
 		return nil
 	}
 	switch ctx.kb.Ecosystem {
-	case ecosystemPython, ecosystemGo, ecosystemC:
+	case ecosystemPython, ecosystemGo, ecosystemC, ecosystemNode:
 		// Step 3b (design.md §5.2) is additive ONLY for these ecosystems: it
 		// resolves a purely positional constant with NO call-site declared-type
 		// evidence at all, a precondition every other ecosystem's own
@@ -101,7 +101,9 @@ func resolvedKeyLengthFromContract(
 		// resolver-unresolved variable at the keySize index) — see
 		// TestResolvedKeyLength_JavaUnchangedByKeywordPath (G7, PR #310
 		// phase-2 review). Gating on ecosystem keeps every other
-		// ecosystem's resolution byte-identical to before row C.
+		// ecosystem's resolution byte-identical to before row C. Node joins
+		// them because its contracts carry no parameter_types either: a
+		// call-site literal is the only evidence of the options object.
 		return resolvedKeyLengthFromPositionalConstant(matches, call, parameters, parameterTypes, ctx.kb.Ecosystem != ecosystemPython)
 	default:
 		return nil
@@ -172,6 +174,13 @@ func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call 
 		if role == nil || (len(contract.ParameterTypes) == 0 && !allowUntypedContract) {
 			continue
 		}
+		if role.Contributes.ArgumentProperty != "" && len(matchingConditionalContracts([]contracts.Contract{*contract}, call)) == 0 {
+			// The property a conditional contract names belongs to its own
+			// key type only. exactConditionalContracts hands back every
+			// contract when none matched, which for a key type held in a
+			// variable would read modulusLength off a call that may be EC.
+			continue
+		}
 		index := *role.Index
 		if index >= len(parameters) {
 			continue
@@ -193,7 +202,7 @@ func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call 
 			// name and must never be reinterpreted positionally.
 			continue
 		}
-		bits, ok := resolveContractKeyBits(contractArgumentValue(&parameters[index], parameters[index].ResolvedValue, role.Contributes.Derivation), role.Contributes.Derivation)
+		bits, ok := resolveContractKeyBits(roleArgumentValue(parameters, &parameters[index], parameters[index].ResolvedValue, role), role.Contributes.Derivation)
 		if !ok {
 			continue
 		}
@@ -257,7 +266,7 @@ func resolvedKeyLengthForRole(
 		if parameter.ParameterIndex != *role.Index {
 			continue
 		}
-		if bits, ok := resolveContractKeyBits(contractArgumentValue(parameter, parameter.ResolvedValue, role.Contributes.Derivation), role.Contributes.Derivation); ok {
+		if bits, ok := resolveContractKeyBits(roleArgumentValue(parameters, parameter, parameter.ResolvedValue, role), role.Contributes.Derivation); ok {
 			resolved.Bits = &bits
 			resolved.Provenance = keyLengthProvenanceConstant
 		}
@@ -472,6 +481,89 @@ var dsaParameterSetBits = map[string]int{
 	"dsa.L2048N224": 2048,
 	"dsa.L2048N256": 2048,
 	"dsa.L3072N256": 3072,
+}
+
+// roleArgumentValue returns the text a keySize role's derivation reads. A role
+// that names an argument property reads it from the object literal the call
+// passes, and nothing when the argument is not an object literal that states
+// the property outright (a variable, a spread, a computed key) or when Node
+// would not accept the value for the call's key type. Any other role reads the
+// argument itself.
+func roleArgumentValue(parameters []callGraphParameter, parameter *callGraphParameter, resolved string, role *contracts.ParameterContract) string {
+	property := role.Contributes.ArgumentProperty
+	if property == "" {
+		return contractArgumentValue(parameter, resolved, role.Contributes.Derivation)
+	}
+	value, ok := callgraph.NodeObjectLiteralProperty(parameter.ArgumentExpression, property)
+	if !ok {
+		return ""
+	}
+	keyType := ""
+	for i := range parameters {
+		if parameters[i].ParameterIndex == 0 {
+			keyType, _ = unquoteLiteral(parameters[i].ArgumentExpression)
+		}
+	}
+	if !validNodeOptionValue(keyType, property, value) {
+		return ""
+	}
+	return value
+}
+
+// Node accepts a modulusLength or primeLength up to an unsigned 32-bit count,
+// and an HMAC length up to 2^31-1 bits.
+const (
+	maxNodeKeyBits    = 1<<32 - 1
+	maxNodeHMACLength = 1<<31 - 1
+)
+
+// validNodeOptionValue reports whether Node accepts value for property when
+// generating a key of keyType, per nodejs/node doc/api/crypto.md. A value Node
+// rejects or rewrites would otherwise be reported as the size of a key that was
+// never generated: an AES length outside 128, 192 and 256 throws, an HMAC
+// length that is not a multiple of 8 is truncated to floor(length / 8) bytes, a
+// modulus above 32 bits does not fit, and a curve name must match exactly.
+func validNodeOptionValue(keyType, property, value string) bool {
+	switch property {
+	case "modulusLength", "primeLength":
+		n, err := strconv.ParseUint(value, 10, 64)
+		return err == nil && n >= 1 && n <= maxNodeKeyBits
+	case "length":
+		n, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			return false
+		}
+		switch keyType {
+		case "aes":
+			return n == 128 || n == 192 || n == 256
+		case "hmac":
+			return n >= 8 && n%8 == 0 && n <= maxNodeHMACLength
+		}
+		return false
+	case "namedCurve":
+		name, ok := unquoteLiteral(value)
+		return ok && isNodeCurveName(name)
+	}
+	return false
+}
+
+// isNodeCurveName reports whether name is spelled exactly as OpenSSL names a
+// curve Node accepts: lowercase for the SEC and X9.62 names, an upper-case
+// letter for the NIST aliases (P-256, B-163, K-163) and for brainpoolP...
+// Surrounding whitespace or any other case makes Node throw.
+func isNodeCurveName(name string) bool {
+	key := strings.ToLower(name)
+	if _, ok := ecCurveBits[key]; !ok || strings.HasPrefix(key, "nistp") {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(key, "p-"), strings.HasPrefix(key, "b-"), strings.HasPrefix(key, "k-"):
+		return name == strings.ToUpper(key[:1])+key[1:]
+	case strings.HasPrefix(key, "brainpoolp"):
+		return name == "brainpoolP"+key[len("brainpoolp"):]
+	default:
+		return name == key
+	}
 }
 
 // contractArgumentValue returns the text a derivation reads from one argument.

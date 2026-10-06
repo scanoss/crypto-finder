@@ -340,8 +340,9 @@ type GraphFragmentParameterRole struct {
 // GraphFragmentContribution names the property a parameter contributes to
 // and the derivation strategy a downstream consumer applies.
 type GraphFragmentContribution struct {
-	Property   string `json:"property,omitempty"`
-	Derivation string `json:"derivation,omitempty"`
+	Property         string `json:"property,omitempty"`
+	Derivation       string `json:"derivation,omitempty"`
+	ArgumentProperty string `json:"argument_property,omitempty"`
 }
 
 // GraphFragmentMatchedOp records the matched operation kind, symbol, and

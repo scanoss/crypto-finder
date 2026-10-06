@@ -1870,8 +1870,9 @@ func toGraphFragmentParameterRoles(src []callGraphParameterRole) []graphfrag.Gra
 		out[i] = graphfrag.GraphFragmentParameterRole{Index: p.Index, Name: p.Name, Role: p.Role}
 		if p.Contributes != nil {
 			out[i].Contributes = &graphfrag.GraphFragmentContribution{
-				Property:   p.Contributes.Property,
-				Derivation: p.Contributes.Derivation,
+				Property:         p.Contributes.Property,
+				Derivation:       p.Contributes.Derivation,
+				ArgumentProperty: p.Contributes.ArgumentProperty,
 			}
 		}
 	}

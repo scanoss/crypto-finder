@@ -286,8 +286,9 @@ type ParameterRole struct {
 // Contribution names the property a parameter contributes to and the
 // derivation strategy a downstream consumer applies.
 type Contribution struct {
-	Property   string
-	Derivation string
+	Property         string
+	Derivation       string
+	ArgumentProperty string
 }
 
 // MatchedOp records the matched operation kind, symbol, and expression for a

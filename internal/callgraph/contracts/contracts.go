@@ -7,6 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -186,6 +187,11 @@ type ParameterContract struct {
 type Contribution struct {
 	Property   string
 	Derivation string
+	// ArgumentProperty, when set, names the property of an object-literal
+	// argument that holds the value: `modulusLength` reads 2048 out of
+	// `{ modulusLength: 2048 }`. Node only. The derivation then applies to that
+	// property's literal value instead of to the argument itself.
+	ArgumentProperty string
 }
 
 // Condition constrains when this contract applies based on an argument value.
@@ -412,8 +418,9 @@ type yamlParameterRole struct {
 }
 
 type yamlContribution struct {
-	Property   string `yaml:"property"`
-	Derivation string `yaml:"derivation"`
+	Property         string `yaml:"property"`
+	Derivation       string `yaml:"derivation"`
+	ArgumentProperty string `yaml:"argument_property,omitempty"`
 }
 
 type yamlWhen struct {
@@ -446,6 +453,11 @@ var validParameterRole = map[string]struct{}{
 	"metadata-contributing": {},
 	"none":                  {},
 }
+
+// validArgumentProperty is the shape of a contributes.argument_property: a
+// plain JavaScript identifier, the only key spelling the object-literal reader
+// accepts.
+var validArgumentProperty = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 
 // validDerivation is the whitelist for Contribution.Derivation.
 var validDerivation = map[string]struct{}{
@@ -601,7 +613,17 @@ func validateParameters(i int, c yamlContract) ([]ParameterContract, error) {
 					i, c.Method, j, p.Contributes.Derivation,
 				)
 			}
-			pc.Contributes = &Contribution{Property: p.Contributes.Property, Derivation: p.Contributes.Derivation}
+			if p.Contributes.ArgumentProperty != "" && !validArgumentProperty.MatchString(p.Contributes.ArgumentProperty) {
+				return nil, fmt.Errorf(
+					"contracts: contract[%d] (%s): parameters[%d].contributes.argument_property %q is not a plain identifier",
+					i, c.Method, j, p.Contributes.ArgumentProperty,
+				)
+			}
+			pc.Contributes = &Contribution{
+				Property:         p.Contributes.Property,
+				Derivation:       p.Contributes.Derivation,
+				ArgumentProperty: p.Contributes.ArgumentProperty,
+			}
 		}
 		out = append(out, pc)
 	}
@@ -620,6 +642,13 @@ func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 		params, err := validateParameters(i, c)
 		if err != nil {
 			return err
+		}
+		if raw.Ecosystem != ecosystemNode {
+			for _, p := range params {
+				if p.Contributes != nil && p.Contributes.ArgumentProperty != "" {
+					return fmt.Errorf("contracts: contract[%d] (%s): contributes.argument_property reads a JavaScript object literal and is valid only in the node ecosystem", i, c.Method)
+				}
+			}
 		}
 		key := fmt.Sprintf("%s#%d", c.Method, c.Arity)
 		// Reject duplicate unconditional contracts for the same key.
@@ -1003,7 +1032,7 @@ func parametersKey(params []ParameterContract) string {
 		}
 		contrib := ""
 		if p.Contributes != nil {
-			contrib = p.Contributes.Property + ":" + p.Contributes.Derivation
+			contrib = p.Contributes.Property + ":" + p.Contributes.Derivation + ":" + p.Contributes.ArgumentProperty
 		}
 		parts[i] = idx + "|" + p.Name + "|" + p.Role + "|" + contrib
 	}
