@@ -89,18 +89,23 @@ func resolvedKeyLengthFromContract(
 	if resolved := resolvedKeyLengthFromParameterSources(ctx, parameters); resolved != nil {
 		return resolved
 	}
-	if ctx == nil || ctx.kb == nil || ctx.kb.Ecosystem != ecosystemPython {
-		// Step 3b (design.md §5.2) is additive ONLY for Python: it resolves
-		// a purely positional constant with NO call-site declared-type
-		// evidence at all, a precondition every non-Python ecosystem's own
+	if ctx == nil || ctx.kb == nil {
+		return nil
+	}
+	switch ctx.kb.Ecosystem {
+	case ecosystemPython, ecosystemGo, ecosystemC:
+		// Step 3b (design.md §5.2) is additive ONLY for these ecosystems: it
+		// resolves a purely positional constant with NO call-site declared-type
+		// evidence at all, a precondition every other ecosystem's own
 		// extractCallArguments can already satisfy accidentally (e.g. a
 		// resolver-unresolved variable at the keySize index) — see
 		// TestResolvedKeyLength_JavaUnchangedByKeywordPath (G7, PR #310
 		// phase-2 review). Gating on ecosystem keeps every other
 		// ecosystem's resolution byte-identical to before row C.
+		return resolvedKeyLengthFromPositionalConstant(matches, call, parameters, parameterTypes, ctx.kb.Ecosystem != ecosystemPython)
+	default:
 		return nil
 	}
-	return resolvedKeyLengthFromPositionalConstant(matches, call, parameters, parameterTypes)
 }
 
 // resolvedKeyLengthFromKeywordName implements step 3a (design.md §5.2): a
@@ -149,7 +154,9 @@ func resolvedKeyLengthFromKeywordName(matches []contracts.Contract, call *callgr
 
 // resolvedKeyLengthFromPositionalConstant implements step 3b (design.md
 // §5.2): a contract that declares parameter_types (asserting one
-// unambiguous signature) but whose call site supplies NO declared-type
+// unambiguous signature), or, for Go and C where contracts carry no
+// parameter_types and the exact arity lookup already fixes the signature, an
+// untyped contract, but whose call site supplies NO declared-type
 // evidence at the keySize index — neither a call-site SourceNode.DeclaredType
 // nor a resolver-supplied parameterTypes[index] — still resolves when the
 // raw positional argument itself is a constant. This is what makes a
@@ -158,11 +165,11 @@ func resolvedKeyLengthFromKeywordName(matches []contracts.Contract, call *callgr
 // 3a already had their chance and found nothing, so silence on an
 // unresolved value is correct — a false "unknown" record would be new
 // noise, not new evidence.
-func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call *callgraph.FunctionCall, parameters []callGraphParameter, parameterTypes []string) *graphfrag.ResolvedKeyLength {
+func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call *callgraph.FunctionCall, parameters []callGraphParameter, parameterTypes []string, allowUntypedContract bool) *graphfrag.ResolvedKeyLength {
 	for i := range matches {
 		contract := &matches[i]
 		role := keySizeParameterRole(contract)
-		if role == nil || len(contract.ParameterTypes) == 0 {
+		if role == nil || (len(contract.ParameterTypes) == 0 && !allowUntypedContract) {
 			continue
 		}
 		index := *role.Index

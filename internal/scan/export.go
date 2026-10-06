@@ -266,7 +266,9 @@ type callGraphCalledFunction struct {
 	// supporting-call declaration; index-aligned with ParameterTypes.
 	ParameterRoles []callGraphParameterRole `json:"parameter_roles,omitempty"`
 	// ResolvedKeyLength is emitted only when this declaration is nested under a
-	// structurally derived supporting call. Terminal crypto calls never carry it.
+	// structurally derived supporting call. A terminal crypto call carries it
+	// only through its own supporting-call entry, emitted when the call fixes
+	// the key size itself.
 	ResolvedKeyLength *graphfrag.ResolvedKeyLength `json:"resolved_key_length,omitempty"`
 }
 
@@ -2295,7 +2297,26 @@ func deriveRawSupportingCallsForFinding(ctx *exportBuildContext, finding entitie
 	for _, c := range lifecycle {
 		out = append(out, buildDerivedSupportingCall(ctx, containingFn, c))
 	}
+	if own := terminalKeySizeSupportingCall(ctx, containingFn, terminal); own != nil {
+		out = append(out, *own)
+	}
 	return out
+}
+
+// terminalKeySizeSupportingCall renders the terminal crypto call as a
+// supporting call when it is itself the call that fixes the key size
+// (rsa.generate_private_key(key_size=2048), KeyPairGenerator.initialize(2048),
+// new RSAKeyGenParameterSpec(3072, F4)). Rules select that call as the finding,
+// so no lifecycle sibling carries the size. Emitting it under the same
+// supporting-call shape lets consumers that join finding_graphs[].supporting_call_ids
+// to supporting_calls[].supporting_call.resolved_key_length read it unchanged.
+// A terminal call that contributes no key size is not echoed as a supporting call.
+func terminalKeySizeSupportingCall(ctx *exportBuildContext, containingFn *callgraph.FunctionDecl, terminal *callgraph.FunctionCall) *callGraphSupportingCall {
+	own := buildDerivedSupportingCall(ctx, containingFn, terminal)
+	if own.SupportingCall == nil || own.SupportingCall.ResolvedKeyLength == nil {
+		return nil
+	}
+	return &own
 }
 
 // isSyntheticEntryPoint reports whether an asset was produced by the rule-derived
@@ -2631,9 +2652,9 @@ func buildDerivedSupportingCall(ctx *exportBuildContext, containingFn *callgraph
 		// deriveSupportingCallsForFinding.
 		sc.ParameterRoles = parameterRolesFromContracts(matches)
 	}
-	// Resolved key-length evidence belongs to the structurally derived
-	// supporting call. The terminal finding call must remain a rule-selected
-	// operation, not a configuration-call finding.
+	// Resolved key-length evidence belongs to the supporting-call entry. The
+	// terminal finding call's own CryptoCall stays a rule-selected operation;
+	// terminalKeySizeSupportingCall adds a separate entry when it fixes the key size.
 	sc.ResolvedKeyLength = resolvedKeyLengthFromContract(ctx, matches, call, sc.Parameters, sc.ParameterTypes)
 	return support
 }
