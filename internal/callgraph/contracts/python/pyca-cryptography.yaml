@@ -192,10 +192,17 @@ contracts:
 
   - method: cryptography.hazmat.primitives.asymmetric.ec.generate_private_key
     arity: 1
+    parameter_types: [cryptography.hazmat.primitives.asymmetric.ec.EllipticCurve]
     return:
       type: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey
       confidence: high
     role: factory
+    parameters:
+      - index: 0
+        name: curve
+        role: metadata-contributing
+        # ec.SECP384R1() names the curve; its field size is the key size.
+        contributes: { property: keySize, derivation: argument_curve_bits }
 
   - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey.public_key
     arity: 0

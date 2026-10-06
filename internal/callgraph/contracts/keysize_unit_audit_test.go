@@ -22,6 +22,11 @@ const (
 	unitBytes keySizeUnit = "argument_byte_length"
 	// unitMaterial is the key material itself; its size is measured, not read.
 	unitMaterial keySizeUnit = "argument_bit_length"
+	// unitCurve is a curve name or constructor (elliptic.P256()); the size is the
+	// curve's field size, looked up rather than read.
+	unitCurve keySizeUnit = "argument_curve_bits"
+	// unitParameterSet is a DSA (L, N) constant; the size is its modulus L.
+	unitParameterSet keySizeUnit = "argument_parameter_set_bits"
 )
 
 // auditedKeySizeRoles classifies every Go, C and C++ contract parameter that
@@ -111,6 +116,8 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	"go|crypto/hmac.New|1":                   unitMaterial,
 	"go|crypto/rand.Prime|1":                 unitBits,
 	"go|crypto/rsa.GenerateKey|1":            unitBits,
+	"go|crypto/ecdsa.GenerateKey|0":          unitCurve,
+	"go|crypto/dsa.GenerateParameters|2":     unitParameterSet,
 	"go|crypto/rsa.GenerateMultiPrimeKey|2":  unitBits,
 	// go/vault-sdk.yaml
 	"go|github.com/hashicorp/vault/sdk/helper/kdf.CounterMode|4": unitBits,

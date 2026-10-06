@@ -61,6 +61,69 @@ contracts:
     arity: 1
     return: { type: int, confidence: high }
     role: config
+  # Key-generation parameter objects. The size lives on the parameter object a
+  # generator's init(params) receives, so it reaches the generator through the
+  # argument sources, as the JCA spec constructors do. Every strength below is a
+  # count of bits (RSA modulus, DSA/DH/ElGamal prime), never bytes.
+  - method: org.bouncycastle.crypto.params.RSAKeyGenerationParameters.<init>
+    arity: 4
+    parameter_types: [java.math.BigInteger, java.security.SecureRandom, int, int]
+    canonical_return_type: org.bouncycastle.crypto.params.RSAKeyGenerationParameters
+    return:
+      type: org.bouncycastle.crypto.params.RSAKeyGenerationParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 2
+        name: strength
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.DSAParameterGenerationParameters.<init>
+    arity: 4
+    parameter_types: [int, int, int, java.security.SecureRandom]
+    canonical_return_type: org.bouncycastle.crypto.params.DSAParameterGenerationParameters
+    return:
+      type: org.bouncycastle.crypto.params.DSAParameterGenerationParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: L
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.crypto.generators.DSAParametersGenerator.init
+    arity: 3
+    parameter_types: [int, int, java.security.SecureRandom]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.crypto.generators.DHParametersGenerator.init
+    arity: 3
+    parameter_types: [int, int, java.security.SecureRandom]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.crypto.generators.ElGamalParametersGenerator.init
+    arity: 3
+    parameter_types: [int, int, java.security.SecureRandom]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
   - method: org.bouncycastle.crypto.generators.RSAKeyPairGenerator.init
     arity: 1
     return: { type: void, confidence: high }
@@ -211,6 +274,10 @@ contracts:
 
 hierarchy:
   org.bouncycastle.crypto.generators.ECKeyPairGenerator:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.RSAKeyGenerationParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.DSAParameterGenerationParameters:
     - java.lang.Object
   org.bouncycastle.crypto.AsymmetricCipherKeyPair:
     - java.lang.Object

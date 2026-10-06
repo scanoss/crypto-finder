@@ -151,6 +151,10 @@ const (
 	// argument names a curve rather than carrying the size itself, so neither
 	// argument_value nor argument_bit_length models it.
 	DerivationArgumentCurveBits Derivation = "argument_curve_bits"
+	// DerivationArgumentParameterSetBits reads a DSA parameter-set constant
+	// (Go's dsa.L2048N256) and yields its modulus size L in bits. The constant
+	// names a standardized (L, N) pair rather than carrying a size.
+	DerivationArgumentParameterSetBits Derivation = "argument_parameter_set_bits"
 	// DerivationArgumentByteLength reads an integer argument expressed in
 	// BYTES (e.g. Python KDF `dklen`/`length`/`hash_len` parameters — see
 	// python-parser-parity-2 row C) and yields bits = bytes * 8. Distinct
@@ -445,11 +449,12 @@ var validParameterRole = map[string]struct{}{
 
 // validDerivation is the whitelist for Contribution.Derivation.
 var validDerivation = map[string]struct{}{
-	string(DerivationArgumentValue):      {},
-	string(DerivationArgumentBitLength):  {},
-	string(DerivationArgumentType):       {},
-	string(DerivationArgumentCurveBits):  {},
-	string(DerivationArgumentByteLength): {},
+	string(DerivationArgumentValue):            {},
+	string(DerivationArgumentBitLength):        {},
+	string(DerivationArgumentType):             {},
+	string(DerivationArgumentCurveBits):        {},
+	string(DerivationArgumentParameterSetBits): {},
+	string(DerivationArgumentByteLength):       {},
 }
 
 // Load parses and validates a YAML knowledge base payload.
@@ -592,7 +597,7 @@ func validateParameters(i int, c yamlContract) ([]ParameterContract, error) {
 			}
 			if _, ok := validDerivation[p.Contributes.Derivation]; !ok {
 				return nil, fmt.Errorf(
-					"contracts: contract[%d] (%s): parameters[%d].contributes.derivation %q not in {argument_value, argument_bit_length, argument_type, argument_curve_bits, argument_byte_length}",
+					"contracts: contract[%d] (%s): parameters[%d].contributes.derivation %q not in {argument_value, argument_bit_length, argument_type, argument_curve_bits, argument_parameter_set_bits, argument_byte_length}",
 					i, c.Method, j, p.Contributes.Derivation,
 				)
 			}
