@@ -36,6 +36,11 @@ func kgSource(params, body string) string {
 		"        KeyGenerator kg = KeyGenerator.getInstance(\"AES\");\n" + body + "    }\n}\n"
 }
 
+// kgSourceCalled is kgSource with a caller that passes args to f.
+func kgSourceCalled(params, body, args string) string {
+	return strings.TrimSuffix(kgSource(params, body), "}\n") + "    void caller() throws Exception { f(" + args + "); }\n}\n"
+}
+
 func kpgSource(body string) string {
 	return javaKPGHeader + "    void f() throws Exception {\n" +
 		"        KeyPairGenerator g = KeyPairGenerator.getInstance(\"EC\");\n" + body + "    }\n}\n"
@@ -65,7 +70,9 @@ func TestJavaLocalKeyLength_OnlyASingleSourceResolves(t *testing.T) {
 		{"reassigned in a loop", kgSource("", "        int n = 128;\n        for (int i = 0; i < 2; i++) { n = 256; }\n        kg.init(n);\n"), kgMatch, jcaKGGet, jcaKG, 0},
 		{"compound assignment", kgSource("", "        int n = 128;\n        n += 128;\n        kg.init(n);\n"), kgMatch, jcaKGGet, jcaKG, 0},
 		{"increment", kgSource("", "        int n = 127;\n        n++;\n        kg.init(n);\n"), kgMatch, jcaKGGet, jcaKG, 0},
-		{"reassigned parameter", kgSource("int n", "        n = 256;\n        kg.init(n);\n"), kgMatch, jcaKGGet, jcaKG, 0},
+		{"parameter passed a literal", kgSourceCalled("int n, boolean b", "        kg.init(n);\n", "128, true"), kgMatch, jcaKGGet, jcaKG, 128},
+		{"parameter reassigned in a branch", kgSourceCalled("int n, boolean b", "        if (b) { n = 256; }\n        kg.init(n);\n", "128, true"), kgMatch, jcaKGGet, jcaKG, 0},
+		{"parameter incremented", kgSourceCalled("int n, boolean b", "        n++;\n        kg.init(n);\n", "127, true"), kgMatch, jcaKGGet, jcaKG, 0},
 		{"ternary", kgSource("boolean b", "        kg.init(b ? 128 : 256);\n"), kgMatch, jcaKGGet, jcaKG, 0},
 		{
 			"declared in a nested block and reassigned",

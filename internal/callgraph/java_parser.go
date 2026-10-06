@@ -1978,7 +1978,13 @@ func collectJavaWrittenNames(node *sitter.Node, src []byte, written map[string]s
 		}
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
-		collectJavaWrittenNames(node.Child(i), src, written)
+		child := node.Child(i)
+		if child.Type() == "class_body" {
+			// An anonymous or local class cannot write the enclosing method's
+			// locals; a same-named write inside it is its own variable.
+			continue
+		}
+		collectJavaWrittenNames(child, src, written)
 	}
 }
 

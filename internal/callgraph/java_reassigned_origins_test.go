@@ -54,6 +54,7 @@ func TestJavaParser_ReassignedLocalHasNoSource(t *testing.T) {
 		{"compound", "        int n = 128;\n        n *= 2;\n        kg.init(n);\n", false},
 		{"increment", "        int n = 128;\n        n++;\n        kg.init(n);\n", false},
 		{"prefix decrement", "        int n = 128;\n        --n;\n        kg.init(n);\n", false},
+		{"same name written in an anonymous class", "        int n = 256;\n        Object o = new Object() { void g() { int n = 1; n = 2; n++; } };\n        kg.init(n);\n", true},
 		{"parameter", "        p = 5;\n        kg.init(p);\n", false},
 		{"unwritten parameter", "        kg.init(p);\n", true},
 	} {
