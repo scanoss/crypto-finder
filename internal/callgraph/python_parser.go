@@ -523,6 +523,8 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 		classInfo:   make(map[uint32]*pythonClassInfo),
 		classDirect: make(map[uint32]*pythonScope),
 	}
+	fw.moduleSources.module = true
+	fw.moduleSources.work = p.localWork
 	p.pythonWalk(root, src, analysis, isInitPy, fw, fw.moduleScope.locals, nil, nil, nil, true, nil)
 
 	// Extract function and class declarations, resolving each scope's
@@ -729,12 +731,11 @@ type pythonFileWalk struct {
 	funcScopes  map[uint32]*pythonScope
 	classInfo   map[uint32]*pythonClassInfo
 	classDirect map[uint32]*pythonScope
-	// moduleConsts maps a module-level integer constant's name to its raw
-	// literal text (e.g. "KEY_LEN" -> "32"), recorded ONLY for a
-	// moduleDirect `identifier = integer` assignment (row 20 C(iii),
-	// python-parser-parity-2). Consulted by pythonArgumentSourceFor to
-	// resolve a bare-identifier call argument bound to such a constant.
-	moduleConsts map[string]string
+	// moduleSources indexes the names the file binds at module level, plus
+	// every name a `global` statement anywhere in the file rebinds. A module
+	// name resolves as a call argument only when all those bindings are the
+	// same integer literal or zero-argument call (python_local_sources.go).
+	moduleSources pythonLocalSources
 	// classesWithDunderCall records, by class NAME (not node identity —
 	// resolution only ever has the callee's Type string to key on), every
 	// in-file class that declares its own __call__ method anywhere in its
@@ -816,10 +817,11 @@ func (p *PythonParser) pythonWalkSideEffects(node *sitter.Node, sym sitter.Symbo
 		if funcNode := node.Child(0); funcNode != nil {
 			p.pythonMaybeRecordDynamicImport(node, funcNode, src, analysis)
 		}
-	case pythonSyms.assignment:
-		if moduleDirect {
-			recordPythonModuleConst(node, src, fw)
-		}
+	case pythonSyms.globalStatement:
+		fw.moduleSources.poisonIdentifiers(node, src)
+	}
+	if moduleDirect {
+		fw.moduleSources.observe(node, sym, src)
 	}
 }
 
@@ -887,7 +889,17 @@ func (p *PythonParser) pythonWalk(node *sitter.Node, src []byte, analysis *FileA
 			nextClassDirect = nil
 		}
 		childLayer = pythonLambdaParameterLayer(child, childSym, src, layer, childLayer)
+		fw.observeModuleClassName(child, childSym, moduleDirect, src)
 		p.pythonWalk(child, src, analysis, isInitPy, fw, childLayer, activeFunc, activeClassInfo, nextClassDirect, moduleDirect && (!pruned || headerExecutesHere), nil)
+	}
+}
+
+// observeModuleClassName poisons a module-level class statement's name. The
+// walk prunes moduleDirect at the class boundary before the class node is
+// visited, so the statement is recorded from its parent's loop.
+func (fw *pythonFileWalk) observeModuleClassName(child *sitter.Node, childSym sitter.Symbol, moduleDirect bool, src []byte) {
+	if moduleDirect && childSym == pythonSyms.classDefinition {
+		fw.moduleSources.observeClassName(child, src)
 	}
 }
 
@@ -953,6 +965,7 @@ func (p *PythonParser) pythonWalkDecorated(node *sitter.Node, src []byte, analys
 		if pruned && !headerExecutesHere {
 			nextClassDirect = nil
 		}
+		fw.observeModuleClassName(child, childSym, moduleDirect, src)
 		var childInfo *pythonDecoratorInfo
 		if child == definition {
 			childInfo = &info
@@ -1085,33 +1098,6 @@ func recordPythonPendingCall(node *sitter.Node, layer *pythonBindingLayer, fw *p
 	case moduleDirect:
 		fw.moduleScope.pending = append(fw.moduleScope.pending, pc)
 	}
-}
-
-// recordPythonModuleConst records a moduleDirect `identifier = integer`
-// assignment into fw.moduleConsts (row 20 C(iii)): the module constant's
-// name mapped to its raw literal text (e.g. "KEY_LEN" -> "32"). A tuple
-// unpacking or other non-identifier target is silently ignored — no
-// fabrication. A LATER moduleDirect assignment of the SAME name to a
-// non-integer value (G6, PR #310 phase-2 review) deletes any earlier
-// recorded entry: `KEY_LEN = 32` followed by `KEY_LEN = compute_len()`
-// must never leave the stale "32" attributed to the now-rebound name.
-func recordPythonModuleConst(node *sitter.Node, src []byte, fw *pythonFileWalk) {
-	left := node.ChildByFieldName("left")
-	right := node.ChildByFieldName("right")
-	if left == nil || right == nil || left.Symbol() != pythonSyms.identifier {
-		return
-	}
-	name := left.Content(src)
-	if right.Symbol() != pythonSyms.integer {
-		if fw.moduleConsts != nil {
-			delete(fw.moduleConsts, name)
-		}
-		return
-	}
-	if fw.moduleConsts == nil {
-		fw.moduleConsts = make(map[string]string)
-	}
-	fw.moduleConsts[name] = right.Content(src)
 }
 
 // recordPythonWalkBinder applies pythonWalk's binder detection for one
@@ -2839,7 +2825,7 @@ func pythonNameLocallyShadowed(bindings pythonBindings, fw *pythonFileWalk, name
 // (row 20, design.md §4): a nested call resolves through the SAME
 // parseCallExpr path as a top-level call (recursing into its own
 // arguments up to pythonArgProvenanceMaxDepth); a bare identifier bound to
-// a module-level integer constant (fw.moduleConsts) resolves to a
+// a module-level integer constant (fw.moduleSources) resolves to a
 // VARIABLE wrapping a VALUE; an integer/string literal resolves directly
 // to a VALUE. A keyword argument's wrapped value is unwrapped first.
 // Anything else emits nothing — no fabrication.
@@ -2886,17 +2872,8 @@ func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte,
 			// fabricate provenance for an unrelated local.
 			return nil
 		}
-		value, ok := fw.moduleConsts[name]
-		if !ok {
-			return nil
-		}
-		return []SourceNode{{
-			Type: "VARIABLE",
-			Name: name,
-			SourceNodes: []SourceNode{
-				{Type: "VALUE", Value: value},
-			},
-		}}
+		module, _ := fw.moduleSources.lookup(name)
+		return p.pythonLocalArgumentSource(name, module, src, filePath, analysis, bindings, fw, depth)
 	case pythonSyms.integer, pythonSyms.string:
 		return []SourceNode{{Type: "VALUE", Value: argNode.Content(src)}}
 	default:

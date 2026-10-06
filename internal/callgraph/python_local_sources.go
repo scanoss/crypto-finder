@@ -28,6 +28,10 @@ type pythonLocalSources struct {
 	// work, when non-nil, counts every map probe and ancestor step the index
 	// takes, so a test can bound the cost per binding and per argument.
 	work *int
+	// module marks the file-level index: comprehension targets, lambda
+	// parameters and a def's parameters bind in their own scope there, so only
+	// a def's name poisons.
+	module bool
 }
 
 func (s *pythonLocalSources) tick() {
@@ -108,7 +112,11 @@ func (s *pythonLocalSources) observe(node *sitter.Node, sym sitter.Symbol, src [
 	switch sym {
 	case pythonSyms.assignment:
 		s.observeAssignment(node, src)
-	case pythonSyms.augmentedAssignment, pythonSyms.forStatement, pythonSyms.forInClause:
+	case pythonSyms.forInClause:
+		if !s.module {
+			s.poisonTarget(node.ChildByFieldName("left"), src)
+		}
+	case pythonSyms.augmentedAssignment, pythonSyms.forStatement:
 		s.poisonTarget(node.ChildByFieldName("left"), src)
 	case pythonSyms.namedExpression:
 		s.poisonIdentifiers(node.ChildByFieldName("name"), src)
@@ -120,9 +128,13 @@ func (s *pythonLocalSources) observe(node *sitter.Node, sym sitter.Symbol, src [
 		}
 	case pythonSyms.functionDefinition:
 		s.poisonIdentifiers(node.ChildByFieldName("name"), src)
-		s.poisonIdentifiers(node.ChildByFieldName("parameters"), src)
+		if !s.module {
+			s.poisonIdentifiers(node.ChildByFieldName("parameters"), src)
+		}
 	case pythonSyms.lambdaParameters:
-		s.poisonIdentifiers(node, src)
+		if !s.module {
+			s.poisonIdentifiers(node, src)
+		}
 	case pythonSyms.importStatement, pythonSyms.importFromStatement,
 		pythonSyms.globalStatement, pythonSyms.nonlocalStatement, pythonSyms.deleteStatement,
 		pythonSyms.casePattern, pythonSyms.typeAliasStatement:
