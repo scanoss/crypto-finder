@@ -93,7 +93,7 @@ func resolvedKeyLengthFromContract(
 		return nil
 	}
 	switch ctx.kb.Ecosystem {
-	case ecosystemPython, ecosystemGo, ecosystemC:
+	case ecosystemPython, ecosystemGo, ecosystemC, ecosystemNode:
 		// Step 3b (design.md §5.2) is additive ONLY for these ecosystems: it
 		// resolves a purely positional constant with NO call-site declared-type
 		// evidence at all, a precondition every other ecosystem's own
@@ -101,7 +101,9 @@ func resolvedKeyLengthFromContract(
 		// resolver-unresolved variable at the keySize index) — see
 		// TestResolvedKeyLength_JavaUnchangedByKeywordPath (G7, PR #310
 		// phase-2 review). Gating on ecosystem keeps every other
-		// ecosystem's resolution byte-identical to before row C.
+		// ecosystem's resolution byte-identical to before row C. Node joins
+		// them because its contracts carry no parameter_types either: a
+		// call-site literal is the only evidence of the options object.
 		return resolvedKeyLengthFromPositionalConstant(matches, call, parameters, parameterTypes, ctx.kb.Ecosystem != ecosystemPython)
 	default:
 		return nil
@@ -172,6 +174,13 @@ func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call 
 		if role == nil || (len(contract.ParameterTypes) == 0 && !allowUntypedContract) {
 			continue
 		}
+		if role.Contributes.ArgumentProperty != "" && len(matchingConditionalContracts([]contracts.Contract{*contract}, call)) == 0 {
+			// The property a conditional contract names belongs to its own
+			// key type only. exactConditionalContracts hands back every
+			// contract when none matched, which for a key type held in a
+			// variable would read modulusLength off a call that may be EC.
+			continue
+		}
 		index := *role.Index
 		if index >= len(parameters) {
 			continue
@@ -193,7 +202,7 @@ func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call 
 			// name and must never be reinterpreted positionally.
 			continue
 		}
-		bits, ok := resolveContractKeyBits(contractArgumentValue(&parameters[index], parameters[index].ResolvedValue, role.Contributes.Derivation), role.Contributes.Derivation)
+		bits, ok := resolveContractKeyBits(roleArgumentValue(&parameters[index], parameters[index].ResolvedValue, role), role.Contributes.Derivation)
 		if !ok {
 			continue
 		}
@@ -257,7 +266,7 @@ func resolvedKeyLengthForRole(
 		if parameter.ParameterIndex != *role.Index {
 			continue
 		}
-		if bits, ok := resolveContractKeyBits(contractArgumentValue(parameter, parameter.ResolvedValue, role.Contributes.Derivation), role.Contributes.Derivation); ok {
+		if bits, ok := resolveContractKeyBits(roleArgumentValue(parameter, parameter.ResolvedValue, role), role.Contributes.Derivation); ok {
 			resolved.Bits = &bits
 			resolved.Provenance = keyLengthProvenanceConstant
 		}
@@ -472,6 +481,19 @@ var dsaParameterSetBits = map[string]int{
 	"dsa.L2048N224": 2048,
 	"dsa.L2048N256": 2048,
 	"dsa.L3072N256": 3072,
+}
+
+// roleArgumentValue returns the text a keySize role's derivation reads. A role
+// that names an argument property reads it from the object literal the call
+// passes, and nothing when the argument is not an object literal that states
+// the property outright (a variable, a spread, a computed key). Any other role
+// reads the argument itself.
+func roleArgumentValue(parameter *callGraphParameter, resolved string, role *contracts.ParameterContract) string {
+	if property := role.Contributes.ArgumentProperty; property != "" {
+		value, _ := callgraph.NodeObjectLiteralProperty(parameter.ArgumentExpression, property)
+		return value
+	}
+	return contractArgumentValue(parameter, resolved, role.Contributes.Derivation)
 }
 
 // contractArgumentValue returns the text a derivation reads from one argument.

@@ -58,7 +58,7 @@ while the terminal `crypto_call` remains the rule-selected operation. Which
 calls carry a key size is contract data, not code: a contract marks the
 contributing parameter with `contributes: {property: keySize, derivation: ...}`,
 and the evaluator reads it either from the supporting call's own argument or
-from the parameter-spec constructor whose result was passed into it. When a
+from the parameter-spec constructor whose result was passed into it. A Node contract can name an object property with `argument_property` (`contributes: {property: keySize, derivation: argument_value, argument_property: modulusLength}`), which the evaluator reads from an object-literal argument only. When a
 detection rule declares a static key length that disagrees with the resolved
 one, the resolved value stays primary and the rule value is preserved as
 `rule_declared_bits` behind a `rule_conflict` marker, so the boundary still
