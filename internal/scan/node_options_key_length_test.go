@@ -4,9 +4,11 @@
 package scan
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
@@ -41,6 +43,10 @@ func TestNodeOptionsKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T) {
 		{"destructured name", `generateKeyPairSync('rsa', { modulusLength: 2560, publicExponent: 65537 });`, "node:crypto.generateKeyPairSync", 2560},
 		{"async form with a named callback", `generateKeyPair('rsa', { modulusLength: 3584 }, onKey);`, "node:crypto.generateKeyPair", 3584},
 		{"async ec with a named callback", `crypto.generateKeyPair('ec', { namedCurve: 'P-256' }, onKey);`, "crypto.generateKeyPair", 256},
+		{"aes 192", `crypto.generateKeySync('aes', { length: 192 });`, "crypto.generateKeySync", 192},
+		{"hmac multiple of 8", `crypto.generateKeySync('hmac', { length: 8 });`, "crypto.generateKeySync", 8},
+		{"brainpool curve spelling", `crypto.generateKeyPairSync('ec', { namedCurve: 'brainpoolP256r1' });`, "crypto.generateKeyPairSync", 256},
+		{"largest modulusLength", `crypto.generateKeyPairSync('rsa', { modulusLength: 4294967295 });`, "crypto.generateKeyPairSync", 4294967295},
 		{"aes secret key", `crypto.generateKeySync('aes', { length: 256 });`, "crypto.generateKeySync", 256},
 		{"hmac secret key", `generateKeySync('hmac', { length: 512 });`, "node:crypto.generateKeySync", 512},
 		{"aes secret key with a named callback", `crypto.generateKey('aes', { length: 128 }, onKey);`, "crypto.generateKey", 128},
@@ -93,6 +99,19 @@ func TestNodeOptionsKeyLength_UnresolvableStaysAbsent(t *testing.T) {
 		{"secret key spread", `crypto.generateKeySync('aes', { ...sharedOptions });`},
 		{"secret key length variable", `crypto.generateKeySync('hmac', { length: bits });`},
 		{"secret key type variable", `crypto.generateKeySync(keyType, { length: 256 });`},
+		{"escaped duplicate key", `crypto.generateKeyPairSync('rsa', { modulusLength: 2048, "modulus\u004Cength": 4096 });`},
+		{"aes length Node rejects", `crypto.generateKeySync('aes', { length: 100 });`},
+		{"aes length 512", `crypto.generateKeySync('aes', { length: 512 });`},
+		{"hmac length not a multiple of 8", `crypto.generateKeySync('hmac', { length: 12 });`},
+		{"hmac length zero", `crypto.generateKeySync('hmac', { length: 0 });`},
+		{"hmac length above 2^31-1", `crypto.generateKeySync('hmac', { length: 2147483656 });`},
+		{"modulusLength above uint32", `crypto.generateKeyPairSync('rsa', { modulusLength: 4294967296 });`},
+		{"modulusLength zero", `crypto.generateKeyPairSync('rsa', { modulusLength: 0 });`},
+		{"primeLength above uint32", `crypto.generateKeyPairSync('dh', { primeLength: 99999999999 });`},
+		{"curve with surrounding spaces", `crypto.generateKeyPairSync('ec', { namedCurve: ' P-256 ' });`},
+		{"NIST curve in lower case", `crypto.generateKeyPairSync('ec', { namedCurve: 'p-256' });`},
+		{"SEC curve in upper case", `crypto.generateKeyPairSync('ec', { namedCurve: 'PRIME256V1' });`},
+		{"ssh curve alias", `crypto.generateKeyPairSync('ec', { namedCurve: 'nistp256' });`},
 		{"async options variable", `crypto.generateKeyPair('rsa', sharedOptions, onKey);`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -154,5 +173,30 @@ func TestNodeOptionsKeyLength_ImportForms(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestNodeOptionsKeyLength_ContributionExportsArgumentProperty pins that a
+// Node role's parameter_roles entry names the options property it reads, on
+// both the live and the graph-fragment shapes.
+func TestNodeOptionsKeyLength_ContributionExportsArgumentProperty(t *testing.T) {
+	kb, err := contracts.LoadEmbedded("node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles := parameterRolesFromContracts(kb.Contracts["crypto.generateKeyPairSync#2"][:1])
+	if len(roles) == 0 || roles[0].Contributes == nil || roles[0].Contributes.ArgumentProperty == "" {
+		t.Fatalf("live parameter role = %#v, want a contribution naming its argument property", roles)
+	}
+	want := roles[0].Contributes.ArgumentProperty
+	if got := toGraphFragmentParameterRoles(roles)[0].Contributes.ArgumentProperty; got != want {
+		t.Fatalf("fragment ArgumentProperty = %q, want %q", got, want)
+	}
+	encoded, err := json.Marshal(roles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"argument_property":"`+want+`"`) {
+		t.Fatalf("live parameter_roles JSON = %s, want argument_property %s", encoded, want)
 	}
 }

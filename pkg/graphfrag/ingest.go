@@ -272,8 +272,9 @@ func toParameterRoles(src []GraphFragmentParameterRole) []ParameterRole {
 		}
 		if src[i].Contributes != nil {
 			out[i].Contributes = &Contribution{
-				Property:   src[i].Contributes.Property,
-				Derivation: src[i].Contributes.Derivation,
+				Property:         src[i].Contributes.Property,
+				Derivation:       src[i].Contributes.Derivation,
+				ArgumentProperty: src[i].Contributes.ArgumentProperty,
 			}
 		}
 	}

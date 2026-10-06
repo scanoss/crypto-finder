@@ -246,8 +246,9 @@ type callGraphParameterRole struct {
 // callGraphContribution names the property a parameter contributes to and
 // the derivation strategy a downstream consumer applies.
 type callGraphContribution struct {
-	Property   string `json:"property,omitempty"`
-	Derivation string `json:"derivation,omitempty"`
+	Property         string `json:"property,omitempty"`
+	Derivation       string `json:"derivation,omitempty"`
+	ArgumentProperty string `json:"argument_property,omitempty"`
 }
 
 type callGraphCalledFunction struct {
@@ -1425,8 +1426,9 @@ func parameterRolesFromContracts(matches []contracts.Contract) []callGraphParame
 			pr := callGraphParameterRole{Index: idx, Name: p.Name, Role: p.Role}
 			if p.Contributes != nil {
 				pr.Contributes = &callGraphContribution{
-					Property:   p.Contributes.Property,
-					Derivation: p.Contributes.Derivation,
+					Property:         p.Contributes.Property,
+					Derivation:       p.Contributes.Derivation,
+					ArgumentProperty: p.Contributes.ArgumentProperty,
 				}
 			}
 			out = append(out, pr)

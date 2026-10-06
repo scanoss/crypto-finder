@@ -142,23 +142,7 @@ func nodeObjectEntryKey(entry string) (key, value string, hasValue, ok bool) {
 		return "", "", false, false
 	}
 	if entry[0] == '\'' || entry[0] == '"' {
-		end := closingQuote(entry)
-		if end < 0 {
-			return "", "", false, false
-		}
-		literal, ok := canonicalNodeStringLiteral(entry[:end+1])
-		if !ok {
-			return "", "", false, false
-		}
-		unquoted, err := strconv.Unquote(literal)
-		if err != nil {
-			return "", "", false, false
-		}
-		rest := strings.TrimSpace(entry[end+1:])
-		if !strings.HasPrefix(rest, ":") {
-			return unquoted, "", false, true
-		}
-		return unquoted, strings.TrimSpace(rest[1:]), true, true
+		return nodeQuotedEntryKey(entry)
 	}
 	end := identifierPrefixLength(entry)
 	if end == 0 {
@@ -189,6 +173,29 @@ func identifierPrefixLength(text string) int {
 		end++
 	}
 	return end
+}
+
+// nodeQuotedEntryKey reads an entry whose key is a quoted string. A key written
+// with an escape is refused: the escape can spell a name the text does not
+// show, so a duplicate of the property asked for could go unseen.
+func nodeQuotedEntryKey(entry string) (key, value string, hasValue, ok bool) {
+	end := closingQuote(entry)
+	if end < 0 || strings.Contains(entry[:end+1], `\`) {
+		return "", "", false, false
+	}
+	literal, ok := canonicalNodeStringLiteral(entry[:end+1])
+	if !ok {
+		return "", "", false, false
+	}
+	unquoted, err := strconv.Unquote(literal)
+	if err != nil {
+		return "", "", false, false
+	}
+	rest := strings.TrimSpace(entry[end+1:])
+	if !strings.HasPrefix(rest, ":") {
+		return unquoted, "", false, true
+	}
+	return unquoted, strings.TrimSpace(rest[1:]), true, true
 }
 
 func isNodeIdentifierByte(c byte) bool {

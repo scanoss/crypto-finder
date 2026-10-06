@@ -202,7 +202,7 @@ func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call 
 			// name and must never be reinterpreted positionally.
 			continue
 		}
-		bits, ok := resolveContractKeyBits(roleArgumentValue(&parameters[index], parameters[index].ResolvedValue, role), role.Contributes.Derivation)
+		bits, ok := resolveContractKeyBits(roleArgumentValue(parameters, &parameters[index], parameters[index].ResolvedValue, role), role.Contributes.Derivation)
 		if !ok {
 			continue
 		}
@@ -266,7 +266,7 @@ func resolvedKeyLengthForRole(
 		if parameter.ParameterIndex != *role.Index {
 			continue
 		}
-		if bits, ok := resolveContractKeyBits(roleArgumentValue(parameter, parameter.ResolvedValue, role), role.Contributes.Derivation); ok {
+		if bits, ok := resolveContractKeyBits(roleArgumentValue(parameters, parameter, parameter.ResolvedValue, role), role.Contributes.Derivation); ok {
 			resolved.Bits = &bits
 			resolved.Provenance = keyLengthProvenanceConstant
 		}
@@ -486,14 +486,84 @@ var dsaParameterSetBits = map[string]int{
 // roleArgumentValue returns the text a keySize role's derivation reads. A role
 // that names an argument property reads it from the object literal the call
 // passes, and nothing when the argument is not an object literal that states
-// the property outright (a variable, a spread, a computed key). Any other role
-// reads the argument itself.
-func roleArgumentValue(parameter *callGraphParameter, resolved string, role *contracts.ParameterContract) string {
-	if property := role.Contributes.ArgumentProperty; property != "" {
-		value, _ := callgraph.NodeObjectLiteralProperty(parameter.ArgumentExpression, property)
-		return value
+// the property outright (a variable, a spread, a computed key) or when Node
+// would not accept the value for the call's key type. Any other role reads the
+// argument itself.
+func roleArgumentValue(parameters []callGraphParameter, parameter *callGraphParameter, resolved string, role *contracts.ParameterContract) string {
+	property := role.Contributes.ArgumentProperty
+	if property == "" {
+		return contractArgumentValue(parameter, resolved, role.Contributes.Derivation)
 	}
-	return contractArgumentValue(parameter, resolved, role.Contributes.Derivation)
+	value, ok := callgraph.NodeObjectLiteralProperty(parameter.ArgumentExpression, property)
+	if !ok {
+		return ""
+	}
+	keyType := ""
+	for i := range parameters {
+		if parameters[i].ParameterIndex == 0 {
+			keyType, _ = unquoteLiteral(parameters[i].ArgumentExpression)
+		}
+	}
+	if !validNodeOptionValue(keyType, property, value) {
+		return ""
+	}
+	return value
+}
+
+// Node accepts a modulusLength or primeLength up to an unsigned 32-bit count,
+// and an HMAC length up to 2^31-1 bits.
+const (
+	maxNodeKeyBits    = 1<<32 - 1
+	maxNodeHMACLength = 1<<31 - 1
+)
+
+// validNodeOptionValue reports whether Node accepts value for property when
+// generating a key of keyType, per nodejs/node doc/api/crypto.md. A value Node
+// rejects or rewrites would otherwise be reported as the size of a key that was
+// never generated: an AES length outside 128, 192 and 256 throws, an HMAC
+// length that is not a multiple of 8 is truncated to floor(length / 8) bytes, a
+// modulus above 32 bits does not fit, and a curve name must match exactly.
+func validNodeOptionValue(keyType, property, value string) bool {
+	switch property {
+	case "modulusLength", "primeLength":
+		n, err := strconv.ParseUint(value, 10, 64)
+		return err == nil && n >= 1 && n <= maxNodeKeyBits
+	case "length":
+		n, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			return false
+		}
+		switch keyType {
+		case "aes":
+			return n == 128 || n == 192 || n == 256
+		case "hmac":
+			return n >= 8 && n%8 == 0 && n <= maxNodeHMACLength
+		}
+		return false
+	case "namedCurve":
+		name, ok := unquoteLiteral(value)
+		return ok && isNodeCurveName(name)
+	}
+	return false
+}
+
+// isNodeCurveName reports whether name is spelled exactly as OpenSSL names a
+// curve Node accepts: lowercase for the SEC and X9.62 names, an upper-case
+// letter for the NIST aliases (P-256, B-163, K-163) and for brainpoolP...
+// Surrounding whitespace or any other case makes Node throw.
+func isNodeCurveName(name string) bool {
+	key := strings.ToLower(name)
+	if _, ok := ecCurveBits[key]; !ok || strings.HasPrefix(key, "nistp") {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(key, "p-"), strings.HasPrefix(key, "b-"), strings.HasPrefix(key, "k-"):
+		return name == strings.ToUpper(key[:1])+key[1:]
+	case strings.HasPrefix(key, "brainpoolp"):
+		return name == "brainpoolP"+key[len("brainpoolp"):]
+	default:
+		return name == key
+	}
 }
 
 // contractArgumentValue returns the text a derivation reads from one argument.

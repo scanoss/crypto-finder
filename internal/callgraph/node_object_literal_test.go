@@ -53,6 +53,8 @@ func TestNodeObjectLiteralProperty(t *testing.T) {
 		{"unbalanced", `{ modulusLength: 2048`, "modulusLength", "", false},
 		{"property name is a prefix", `{ modulusLengthBits: 2048 }`, "modulusLength", "", false},
 		{"nested property is not top level", `{ opts: { modulusLength: 2048 } }`, "modulusLength", "", false},
+		{"escaped duplicate key", `{ modulusLength: 2048, "modulus\u004Cength": 4096 }`, "modulusLength", "", false},
+		{"escaped key alone", `{ "modulus\u004Cength": 4096 }`, "modulusLength", "", false},
 		{"empty entry", `{ modulusLength: 2048,, publicExponent: 3 }`, "modulusLength", "", false},
 	}
 	for _, tc := range tests {
