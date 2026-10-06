@@ -338,3 +338,60 @@ func TestKeygenParameterKeyLength_SpecOverloadIsNotTypedAsInt(t *testing.T) {
 		t.Fatal("no initialize supporting call exported")
 	}
 }
+
+const javaJCARandom = `package demo;
+import java.security.KeyPairGenerator;
+import java.security.SecureRandom;
+public class K {
+    void f() throws Exception {
+        KeyPairGenerator g = KeyPairGenerator.getInstance("RSA");
+        g.initialize(2048, new SecureRandom());
+    }
+}
+`
+
+// TestKeygenParameterKeyLength_RandomPassedToKeygenCarriesNoKeyLength pins that
+// a SecureRandom handed to a key generator is its own object: the key size of
+// the generator never lands on the SecureRandom finding's graph, while the
+// generator's own graph still carries it.
+func TestKeygenParameterKeyLength_RandomPassedToKeygenCarriesNoKeyLength(t *testing.T) {
+	const bcInit = "org.bouncycastle.crypto.generators.RSAKeyPairGenerator.init"
+	for _, tc := range []struct {
+		name      string
+		source    string
+		line      int
+		keygen    string
+		keygenAPI string
+		keygenFn  string
+		random    string
+	}{
+		{"bouncycastle", javaBCRSA, 9, "g.init(new RSAKeyGenerationParameters(BigInteger.valueOf(65537), new SecureRandom(), 3072, 80))", bcInit, bcInit, "new SecureRandom()"},
+		{"jca", javaJCARandom, 7, "g.initialize(2048, new SecureRandom())", "java.security.KeyPairGenerator.initialize", "java.security.KeyPairGenerator.initialize", "new SecureRandom()"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wantBits := 3072
+			if tc.name == "jca" {
+				wantBits = 2048
+			}
+			keygen := terminalExports(t, "java", "K.java", tc.source, tc.line, tc.keygen, tc.keygenAPI, "")
+			if got := keyLengthViaSupportingCallIDs(t, keygen.live.FindingGraphs, keygen.live.SupportingCalls, keygen.findingID, tc.keygenFn); got == nil || got.Bits == nil || *got.Bits != wantBits {
+				t.Fatalf("keygen graph: resolved_key_length = %#v, want %d bits", got, wantBits)
+			}
+			random := terminalExports(t, "java", "K.java", tc.source, tc.line, tc.random, "java.security.SecureRandom.<init>", "")
+			for i := range random.live.FindingGraphs {
+				graph := &random.live.FindingGraphs[i]
+				if graph.FindingID != random.findingID {
+					continue
+				}
+				for _, id := range graph.SupportingCallIDs {
+					for j := range random.live.SupportingCalls {
+						call := random.live.SupportingCalls[j]
+						if call.SupportingID == id && call.SupportingCall != nil && call.SupportingCall.ResolvedKeyLength != nil {
+							t.Fatalf("SecureRandom graph carries key length from %s: %#v", call.SupportingCall.FunctionName, call.SupportingCall.ResolvedKeyLength)
+						}
+					}
+				}
+			}
+		})
+	}
+}
