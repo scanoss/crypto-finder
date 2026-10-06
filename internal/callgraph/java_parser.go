@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/java"
@@ -64,6 +65,7 @@ const (
 	javaFieldName                  = "name"
 	javaFieldType                  = "type"
 	javaNodeAssignmentExpression   = "assignment_expression"
+	javaNodeUpdateExpression       = "update_expression"
 	javaSourceTypeParameter        = "PARAMETER"
 	javaVarOriginKindField         = "field"
 	javaVarOriginKindParameter     = "parameter"
@@ -1074,6 +1076,7 @@ func (p *JavaParser) parseMethodDecl(
 		}
 		p.collectParameterOrigins(node, src, filePath, varOrigins)
 		p.collectScopeVarOrigins(body, src, filePath, varOrigins)
+		markReassignedOrigins(body, src, varOrigins)
 
 		p.extractReturnSources(body, src, analysis, ownerName, varTypes, varOrigins, decl)
 	}
@@ -1139,6 +1142,7 @@ func (p *JavaParser) parseConstructorDecl(
 		}
 		p.collectParameterOrigins(node, src, filePath, varOrigins)
 		p.collectScopeVarOrigins(body, src, filePath, varOrigins)
+		markReassignedOrigins(body, src, varOrigins)
 
 		p.extractReturnSources(body, src, analysis, className, varTypes, varOrigins, decl)
 	}
@@ -1430,6 +1434,7 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 	}
 	p.collectParameterOrigins(methodNode, src, filePath, varOrigins)
 	p.collectScopeVarOrigins(body, src, filePath, varOrigins)
+	markReassignedOrigins(body, src, varOrigins)
 
 	var calls []FunctionCall
 	p.walkForCalls(body, src, filePath, analysis, currentClass, varTypes, varOrigins, &calls)
@@ -1459,6 +1464,7 @@ type varOrigin struct {
 	paramIndex           int              // for parameters: which param (0-based), -1 otherwise
 	constructorParam     *fieldAssignment // for fields: which constructor param assigned this field
 	resolvedReceiverType string           // concrete type assigned to a field, when unambiguous
+	reassigned           bool             // a local or parameter written again after its declaration: no single source
 }
 
 // extractFieldAssignments scans a constructor body for field assignments from
@@ -1717,6 +1723,12 @@ func (p *JavaParser) javaScopedVarOrigins(node *sitter.Node, src []byte, filePat
 		scoped[k] = v
 	}
 	p.collectScopeVarOrigins(node, src, filePath, scoped)
+	for name, origin := range scoped {
+		if outerOrigin, ok := outer[name]; !ok || outerOrigin.line != origin.line {
+			markReassignedOrigins(node, src, scoped)
+			break
+		}
+	}
 	return scoped
 }
 
@@ -1920,6 +1932,62 @@ func javaCatchDeclaredVar(node *sitter.Node, src []byte) (string, string) {
 	return name, typeName
 }
 
+// javaAssignmentScans counts markReassignedOrigins walks; a test pins that a
+// method costs one walk however many call arguments it traces.
+var javaAssignmentScans atomic.Int64
+
+// markReassignedOrigins withdraws the source of every local or parameter that
+// scope writes again after its declaration, by plain, compound or increment
+// assignment, in any branch, loop or lambda. Such a name has no single source:
+// the declaration's initializer is only one of its values, so a tracer that
+// follows it reports a size the program may never use. The scope is walked
+// once; the origins are then marked from the collected names.
+func markReassignedOrigins(scope *sitter.Node, src []byte, origins map[string]varOrigin) {
+	if scope == nil {
+		return
+	}
+	javaAssignmentScans.Add(1)
+	written := make(map[string]struct{})
+	collectJavaWrittenNames(scope, src, written)
+	for name := range written {
+		origin, ok := origins[name]
+		if !ok || origin.kind == javaVarOriginKindField {
+			continue
+		}
+		if origin.kind == javaVarOriginKindParameter || origin.initializer != "" {
+			origin.initializer = ""
+			origin.reassigned = true
+			origins[name] = origin
+		}
+	}
+}
+
+// collectJavaWrittenNames adds to written every identifier node writes by
+// assignment, compound assignment or increment/decrement.
+func collectJavaWrittenNames(node *sitter.Node, src []byte, written map[string]struct{}) {
+	switch node.Type() {
+	case javaNodeAssignmentExpression:
+		if left := node.ChildByFieldName("left"); left != nil && left.Type() == javaNodeIdentifier {
+			written[left.Content(src)] = struct{}{}
+		}
+	case javaNodeUpdateExpression:
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			if operand := node.NamedChild(i); operand.Type() == javaNodeIdentifier {
+				written[operand.Content(src)] = struct{}{}
+			}
+		}
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() == "class_body" {
+			// An anonymous or local class cannot write the enclosing method's
+			// locals; a same-named write inside it is its own variable.
+			continue
+		}
+		collectJavaWrittenNames(child, src, written)
+	}
+}
+
 // collectParameterOrigins records method parameter origins for data flow tracing.
 func (p *JavaParser) collectParameterOrigins(node *sitter.Node, src []byte, filePath string, origins map[string]varOrigin) {
 	if origins == nil || node == nil {
@@ -2047,7 +2115,7 @@ func (p *JavaParser) resolveArgumentSources(args []string, analysis *FileAnalysi
 	return sources
 }
 
-const maxTraceDepth = 5
+const maxTraceDepth = 6
 
 // traceExpression resolves a single expression to its source nodes.
 func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) []SourceNode {
@@ -2109,6 +2177,10 @@ func (p *JavaParser) traceOriginExpression(
 		Name:         expr,
 		DeclaredType: qualifyJavaSourceType(info.typeName, analysis),
 		Location:     &SourceLocation{FilePath: info.filePath, Line: info.line},
+	}
+	if info.reassigned {
+		node.Type = kindToSourceType("local_variable")
+		return []SourceNode{node}
 	}
 	if info.kind == javaVarOriginKindParameter {
 		node.ParameterIndex = info.paramIndex
@@ -4063,6 +4135,10 @@ func (p *JavaParser) traceIdentifierNode(
 		Name:         varName,
 		DeclaredType: qualifyJavaSourceType(info.typeName, analysis),
 		Location:     &SourceLocation{FilePath: info.filePath, Line: info.line},
+	}
+	if info.reassigned {
+		sn.Type = kindToSourceType("local_variable")
+		return []SourceNode{sn}
 	}
 	if info.kind == javaVarOriginKindParameter {
 		sn.ParameterIndex = info.paramIndex
