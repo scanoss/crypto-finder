@@ -739,6 +739,33 @@ contracts:
         name: bits
         role: metadata-contributing
         contributes: {property: keySize, derivation: argument_value}
+  - method: EVP_PKEY_CTX_set_dh_paramgen_prime_len
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: DH_generate_parameters_ex
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: prime_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: DH_generate_parameters
+    arity: 4
+    return: {type: "DH*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: prime_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
   - method: DSA_generate_parameters_ex
     arity: 7
     return: {type: "int", confidence: high}
