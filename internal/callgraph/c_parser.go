@@ -25,6 +25,7 @@ type CParser struct {
 	parser       *sitter.Parser
 	includeTests bool
 	anchors      callAnchors
+	defines      map[string]cDefine
 }
 
 // NewCParser creates a C source parser backed by tree-sitter.
@@ -87,6 +88,8 @@ func (p *CParser) parseFile(filePath, packagePath string) (*FileAnalysis, error)
 		Imports:     make(map[string]string),
 	}
 	root := tree.RootNode()
+	p.defines = collectCDefines(root, src)
+	defer func() { p.defines = nil }()
 	staticFunctions := make(map[string]bool)
 	collectCStaticFunctions(root, src, staticFunctions)
 	p.walkFile(root, src, filePath, packagePath, staticFunctions, analysis)
@@ -278,6 +281,7 @@ func (p *CParser) parseCall(node *sitter.Node, src []byte, filePath, packagePath
 		AssignedVar: cAssignedVar(node, src),
 		Arguments:   cCallArguments(node, src),
 	}
+	call.ArgumentSources = cArgumentSources(node, src, p.defines)
 
 	switch function.Type() {
 	case cNodeIdentifier:

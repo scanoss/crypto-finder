@@ -1128,6 +1128,7 @@ func (p *GoParser) parseCallExpr(
 		call.ChainID, call.AssignedVar = goCallChainContext(node, src)
 		call.StartCol = int(node.StartPoint().Column) + 1
 		call.EndCol = int(node.EndPoint().Column) + 1
+		call.ArgumentSources = goArgumentSources(node, src)
 	}
 	return call
 }
