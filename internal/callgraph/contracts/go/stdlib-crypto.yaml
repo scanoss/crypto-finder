@@ -147,6 +147,8 @@ contracts:
     parameters:
       - { index: 0, role: metadata-contributing, contributes: { property: parameters, derivation: argument_value } }
       - { index: 2, role: operation-determining, contributes: { property: parameterSet, derivation: argument_value } }
+      # The (L, N) constant fixes the modulus size L, the DSA key length.
+      - { index: 2, role: operation-determining, contributes: { property: keySize, derivation: argument_parameter_set_bits } }
   - method: crypto/dsa.GenerateKey
     arity: 2
     return: { type: error, confidence: high }
@@ -243,6 +245,8 @@ contracts:
     role: factory
     parameters:
       - { index: 0, role: operation-determining, contributes: { property: curve, derivation: argument_value } }
+      # elliptic.P256() and friends name the curve; its field size is the key size.
+      - { index: 0, role: operation-determining, contributes: { property: keySize, derivation: argument_curve_bits } }
   - method: crypto/ecdsa.ParseRawPrivateKey
     arity: 2
     return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }

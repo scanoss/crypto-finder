@@ -142,7 +142,7 @@ func resolvedKeyLengthFromKeywordName(matches []contracts.Contract, call *callgr
 					ParameterIndex: *role.Index,
 				},
 			}
-			if bits, ok := resolveContractKeyBits(value, role.Contributes.Derivation); ok {
+			if bits, ok := resolveContractKeyBits(contractArgumentValue(parameter, value, role.Contributes.Derivation), role.Contributes.Derivation); ok {
 				resolved.Bits = &bits
 				resolved.Provenance = keyLengthProvenanceConstant
 			}
@@ -193,7 +193,7 @@ func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call 
 			// name and must never be reinterpreted positionally.
 			continue
 		}
-		bits, ok := resolveContractKeyBits(parameters[index].ResolvedValue, role.Contributes.Derivation)
+		bits, ok := resolveContractKeyBits(contractArgumentValue(&parameters[index], parameters[index].ResolvedValue, role.Contributes.Derivation), role.Contributes.Derivation)
 		if !ok {
 			continue
 		}
@@ -257,7 +257,7 @@ func resolvedKeyLengthForRole(
 		if parameter.ParameterIndex != *role.Index {
 			continue
 		}
-		if bits, ok := resolveContractKeyBits(parameter.ResolvedValue, role.Contributes.Derivation); ok {
+		if bits, ok := resolveContractKeyBits(contractArgumentValue(parameter, parameter.ResolvedValue, role.Contributes.Derivation), role.Contributes.Derivation); ok {
 			resolved.Bits = &bits
 			resolved.Provenance = keyLengthProvenanceConstant
 		}
@@ -391,6 +391,9 @@ func resolveContractKeyBits(value, derivation string) (int, bool) {
 		return keyMaterialBits(value)
 	case string(contracts.DerivationArgumentCurveBits):
 		return ecCurveFieldBits(value)
+	case string(contracts.DerivationArgumentParameterSetBits):
+		bits, ok := dsaParameterSetBits[value]
+		return bits, ok
 	case string(contracts.DerivationArgumentByteLength):
 		// A Python KDF's dklen/length/hash_len argument is expressed in
 		// BYTES (row C, python-parser-parity-2), unlike argument_value
@@ -423,15 +426,99 @@ func keyMaterialBits(value string) (int, bool) {
 }
 
 // ecCurveFieldBits maps a standard elliptic-curve name to its field size in
-// bits. Only names this table knows resolve; an unlisted or non-standard curve
-// stays unresolved rather than being guessed from the digits in its name.
+// bits. The name is a quoted literal (ECGenParameterSpec("secp256r1")) or a
+// curve constructor (Python ec.SECP384R1(), Go elliptic.P256()). Only names
+// these tables know resolve; an unlisted or non-standard curve stays
+// unresolved rather than being guessed from the digits in its name.
 func ecCurveFieldBits(value string) (int, bool) {
-	name, ok := unquoteLiteral(value)
-	if !ok {
+	if name, ok := unquoteLiteral(value); ok {
+		bits, ok := ecCurveBits[strings.ToLower(strings.TrimSpace(name))]
+		return bits, ok
+	}
+	return ecCurveConstructorBits(value)
+}
+
+// ecCurveConstructorBits resolves a curve constructor expression or call
+// target. The qualifier must be the curve package itself, so a user type that
+// happens to share a curve's name resolves to nothing.
+func ecCurveConstructorBits(value string) (int, bool) {
+	value = strings.TrimSpace(value)
+	value = strings.TrimSuffix(value, "()")
+	dot := strings.LastIndex(value, ".")
+	if dot <= 0 || strings.ContainsAny(value, "() \t\n\"") {
 		return 0, false
 	}
-	bits, ok := ecCurveBits[strings.ToLower(strings.TrimSpace(name))]
-	return bits, ok
+	qualifier, name := value[:dot], value[dot+1:]
+	switch {
+	case qualifier == "ec" || strings.HasSuffix(qualifier, ".asymmetric.ec"):
+		bits, ok := ecCurveBits[strings.ToLower(name)]
+		return bits, ok
+	case qualifier == "elliptic" || strings.HasSuffix(qualifier, "crypto/elliptic"):
+		bits, ok := goEllipticCurveBits[name]
+		return bits, ok
+	default:
+		return 0, false
+	}
+}
+
+// goEllipticCurveBits covers the constructors crypto/elliptic exports.
+var goEllipticCurveBits = map[string]int{"P224": 224, "P256": 256, "P384": 384, "P521": 521}
+
+// dsaParameterSetBits maps crypto/dsa's ParameterSizes constants to the
+// modulus size L, the DSA key length. N is the subgroup order size and does not
+// change the key length.
+var dsaParameterSetBits = map[string]int{
+	"dsa.L1024N160": 1024,
+	"dsa.L2048N224": 2048,
+	"dsa.L2048N256": 2048,
+	"dsa.L3072N256": 3072,
+}
+
+// contractArgumentValue returns the text a derivation reads from one argument.
+// A curve constructor carries no resolved value, so the curve is read from the
+// call that produced the argument, or from the argument expression itself when
+// the graph kept no source for it. Several producers that disagree resolve to
+// nothing.
+func contractArgumentValue(parameter *callGraphParameter, resolved, derivation string) string {
+	if derivation != string(contracts.DerivationArgumentCurveBits) || parameter == nil {
+		return resolved
+	}
+	if _, ok := unquoteLiteral(resolved); ok {
+		return resolved
+	}
+	candidates := curveConstructorCandidates(parameter.SourceNodes, 0)
+	if len(candidates) == 0 {
+		if strings.TrimSpace(resolved) != "" {
+			return resolved
+		}
+		return strings.TrimSpace(parameter.ArgumentExpression)
+	}
+	for _, candidate := range candidates[1:] {
+		if candidate != candidates[0] {
+			return ""
+		}
+	}
+	return candidates[0]
+}
+
+// curveConstructorCandidates collects the call targets that produce an
+// argument, following variable and field hops but never descending into a
+// call's own arguments.
+func curveConstructorCandidates(nodes []exportSourceNode, depth int) []string {
+	if depth >= maxKeyLengthSourceDepth {
+		return nil
+	}
+	var out []string
+	for i := range nodes {
+		if nodes[i].Type == sourceNodeTypeCallResult {
+			if nodes[i].CallTarget != "" {
+				out = append(out, nodes[i].CallTarget)
+			}
+			continue
+		}
+		out = append(out, curveConstructorCandidates(nodes[i].SourceNodes, depth+1)...)
+	}
+	return out
 }
 
 // ecCurveBits covers the SEC, NIST and Brainpool curve names accepted by

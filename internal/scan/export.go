@@ -1518,6 +1518,78 @@ func canonicalContractsForCall(matches []contracts.Contract, call *callgraph.Fun
 	return unconditional
 }
 
+// compatibleCanonicalContracts drops contracts whose declared primitive
+// parameter is passed an object. A contract names one signature per arity, but
+// the JDK overloads KeyPairGenerator.initialize(int) and
+// initialize(AlgorithmParameterSpec) on one arity, so stamping the contract's
+// int onto initialize(new ECGenParameterSpec(..)) would type the spec overload
+// as the int one and read the spec's curve name as a key size. Left unfilled,
+// the argument is typed by its own source instead.
+func compatibleCanonicalContracts(matches []contracts.Contract, call *callgraph.FunctionCall) []contracts.Contract {
+	out := make([]contracts.Contract, 0, len(matches))
+	for i := range matches {
+		if !contractPrimitiveParametersContradicted(&matches[i], call) {
+			out = append(out, matches[i])
+		}
+	}
+	return out
+}
+
+func contractPrimitiveParametersContradicted(contract *contracts.Contract, call *callgraph.FunctionCall) bool {
+	for index, expected := range contract.ParameterTypes {
+		if index >= len(call.ArgumentSources) || !isPrimitiveTypeName(expected) {
+			continue
+		}
+		if sourcesAreObjectReferences(call.ArgumentSources[index], 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// sourcesAreObjectReferences reports whether any source of an argument is an
+// object: a constructor result or a value declared with a reference type. A
+// call's own arguments are not followed, since they say nothing about its
+// result type.
+func sourcesAreObjectReferences(nodes []callgraph.SourceNode, depth int) bool {
+	if depth >= maxKeyLengthSourceDepth {
+		return false
+	}
+	for i := range nodes {
+		node := &nodes[i]
+		if node.Type == sourceNodeTypeCallResult {
+			if node.CallTarget != nil && strings.HasSuffix(fullFunctionName(*node.CallTarget), ".<init>") {
+				return true
+			}
+			continue
+		}
+		if declared := strings.TrimSpace(node.DeclaredType); declared != "" && !isPrimitiveTypeName(declared) && !isBoxedPrimitiveTypeName(declared) {
+			return true
+		}
+		if sourcesAreObjectReferences(node.SourceNodes, depth+1) {
+			return true
+		}
+	}
+	return false
+}
+
+var primitiveTypeNames = map[string]struct{}{
+	"int": {}, "long": {}, "short": {}, "byte": {}, "char": {}, "boolean": {}, "float": {}, "double": {},
+}
+
+func isPrimitiveTypeName(name string) bool {
+	_, ok := primitiveTypeNames[name]
+	return ok
+}
+
+func isBoxedPrimitiveTypeName(name string) bool {
+	switch strings.TrimPrefix(name, "java.lang.") {
+	case "Integer", "Long", "Short", "Byte", "Character", "Boolean", "Float", "Double":
+		return true
+	}
+	return false
+}
+
 func matchingConditionalContracts(matches []contracts.Contract, call *callgraph.FunctionCall) []contracts.Contract {
 	exact := make([]contracts.Contract, 0, len(matches))
 	for i := range matches {
@@ -4504,7 +4576,7 @@ func buildCallExportFunctionMetadata(
 	if len(matches) == 0 {
 		return meta, nil
 	}
-	canonicalMatches := canonicalContractsForCall(matches, call)
+	canonicalMatches := compatibleCanonicalContracts(canonicalContractsForCall(matches, call), call)
 	if len(canonicalMatches) == 0 {
 		return meta, matches
 	}

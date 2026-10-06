@@ -161,56 +161,8 @@ func TestTerminalKeyLength_ReachableThroughFindingSupportingCallIDs(t *testing.T
 		{name: "rule conflict keeps both values", ecosystem: "python", file: "k.py", source: pythonRSAKeyword, line: 4, match: "rsa.generate_private_key(public_exponent=65537, key_size=2048)", api: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantIndex: 1, wantBits: 2048, declared: "1024", wantConflict: true, wantDeclaredB: 1024},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, tc.file), []byte(tc.source), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			packageDir := callgraph.PackageDir{Dir: dir}
-			if tc.ecosystem != "c" {
-				packageDir.ImportPath = "ladder"
-			}
-			graph, err := callgraph.NewBuilderForEcosystem(tc.ecosystem, callgraph.NewParserForEcosystem(tc.ecosystem)).
-				BuildFromDirectories([]callgraph.PackageDir{packageDir}, nil)
-			if err != nil {
-				t.Fatalf("BuildFromDirectories: %v", err)
-			}
-			startCol := 1 + strings.Index(strings.Split(tc.source, "\n")[tc.line-1], tc.match[:strings.IndexAny(tc.match+"(", "(")])
-			metadata := map[string]string{"api": tc.api}
-			if tc.declared != "" {
-				metadata["keyLength"] = tc.declared
-			}
-			report := &entities.InterimReport{
-				Tool: entities.ToolInfo{Name: "crypto-finder", Version: "test"},
-				Findings: []entities.Finding{{
-					FilePath: tc.file,
-					Language: tc.ecosystem,
-					CryptographicAssets: []entities.CryptographicAsset{{
-						StartLine: tc.line, EndLine: tc.line, StartCol: startCol, EndCol: startCol + len(tc.match), Match: tc.match,
-						Rules:    []entities.RuleInfo{{ID: "test.rsa.keygen"}},
-						Metadata: metadata,
-					}},
-				}},
-			}
-			engine.EnsureFindingSources(report)
-			engine.AssignFindingIDs(report)
-			findingID := report.Findings[0].CryptographicAssets[0].FindingID
-			result := &engine.DepScanResult{Report: report, CallGraph: graph, ProjectRoot: dir, Ecosystem: tc.ecosystem}
-
-			live := buildCallGraphExportV2(result)
-			fragmentBytes, err := json.Marshal(buildGraphFragmentExport(result))
-			if err != nil {
-				t.Fatal(err)
-			}
-			component := graphfrag.ComponentKey{Purl: "pkg:generic/terminal-key-length", Version: "1.0.0"}
-			fragment, err := graphfrag.DecodeFragment(component, fragmentBytes)
-			if err != nil {
-				t.Fatalf("DecodeFragment: %v", err)
-			}
-			stitched, err := graphfrag.Stitch(component, graphfrag.DependencyGraph{component: nil}, map[graphfrag.ComponentKey]graphfrag.Fragment{component: fragment})
-			if err != nil {
-				t.Fatalf("Stitch: %v", err)
-			}
-			stitchedExport := stitched.ToCallgraphExport(component, graphfrag.ScanMeta{Ecosystem: tc.ecosystem})
+			exports := terminalExports(t, tc.ecosystem, tc.file, tc.source, tc.line, tc.match, tc.api, tc.declared)
+			live, stitchedExport, findingID := exports.live, exports.stitched, exports.findingID
 
 			for name, got := range map[string]*graphfrag.ResolvedKeyLength{
 				"live":     keyLengthViaSupportingCallIDs(t, live.FindingGraphs, live.SupportingCalls, findingID, tc.wantFunc),
@@ -241,10 +193,10 @@ func TestTerminalKeyLength_ReachableThroughFindingSupportingCallIDs(t *testing.T
 // echoing every terminal call as a supporting call: a terminal with no keySize
 // contribution must keep its previous supporting-call list.
 func TestTerminalKeyLength_NonKeySizeTerminalAddsNoSupportingCall(t *testing.T) {
-	const source = `from cryptography.hazmat.primitives.asymmetric import ec
+	const source = `from cryptography.hazmat.primitives.asymmetric import ed25519
 
 def f():
-    return ec.generate_private_key(ec.SECP384R1())
+    return ed25519.Ed25519PrivateKey.generate()
 `
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "k.py"), []byte(source), 0o600); err != nil {
@@ -260,9 +212,9 @@ def f():
 		Findings: []entities.Finding{{
 			FilePath: "k.py", Language: "python",
 			CryptographicAssets: []entities.CryptographicAsset{{
-				StartLine: 4, EndLine: 4, Match: "ec.generate_private_key(ec.SECP384R1())",
-				Rules:    []entities.RuleInfo{{ID: "test.ec.keygen"}},
-				Metadata: map[string]string{"api": "cryptography.hazmat.primitives.asymmetric.ec.generate_private_key"},
+				StartLine: 4, EndLine: 4, Match: "ed25519.Ed25519PrivateKey.generate()",
+				Rules:    []entities.RuleInfo{{ID: "test.ed25519.keygen"}},
+				Metadata: map[string]string{"api": "cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey.generate"},
 			}},
 		}},
 	}
@@ -306,6 +258,70 @@ func TestTerminalKeyLength_UnclearUnitStaysAbsent(t *testing.T) {
 			t.Fatalf("resolved_key_length = %#v, want absent for a key size of unclear unit", call.ResolvedKeyLength)
 		}
 	}
+}
+
+type terminalExportResult struct {
+	live      callGraphExportV2
+	stitched  graphfrag.CallgraphExport
+	findingID string
+}
+
+// terminalExports scans one source file with a finding on the given call and
+// returns the live and stitched exports, the two shapes consumers read.
+func terminalExports(t *testing.T, ecosystem, file, source string, line int, match, api, declared string) terminalExportResult {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	packageDir := callgraph.PackageDir{Dir: dir}
+	if ecosystem != "c" {
+		packageDir.ImportPath = "ladder"
+	}
+	graph, err := callgraph.NewBuilderForEcosystem(ecosystem, callgraph.NewParserForEcosystem(ecosystem)).
+		BuildFromDirectories([]callgraph.PackageDir{packageDir}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+	startCol := 1 + strings.Index(strings.Split(source, "\n")[line-1], match[:strings.IndexAny(match+"(", "(")])
+	metadata := map[string]string{"api": api}
+	if declared != "" {
+		metadata["keyLength"] = declared
+	}
+	report := &entities.InterimReport{
+		Tool: entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath: file,
+			Language: ecosystem,
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: line, EndLine: line, StartCol: startCol, EndCol: startCol + len(match), Match: match,
+				Rules:    []entities.RuleInfo{{ID: "test.rsa.keygen"}},
+				Metadata: metadata,
+			}},
+		}},
+	}
+	engine.EnsureFindingSources(report)
+	engine.AssignFindingIDs(report)
+	findingID := report.Findings[0].CryptographicAssets[0].FindingID
+	result := &engine.DepScanResult{Report: report, CallGraph: graph, ProjectRoot: dir, Ecosystem: ecosystem}
+
+	live := buildCallGraphExportV2(result)
+	fragmentBytes, err := json.Marshal(buildGraphFragmentExport(result))
+	if err != nil {
+		t.Fatal(err)
+	}
+	component := graphfrag.ComponentKey{Purl: "pkg:generic/terminal-key-length", Version: "1.0.0"}
+	fragment, err := graphfrag.DecodeFragment(component, fragmentBytes)
+	if err != nil {
+		t.Fatalf("DecodeFragment: %v", err)
+	}
+	stitched, err := graphfrag.Stitch(component, graphfrag.DependencyGraph{component: nil}, map[graphfrag.ComponentKey]graphfrag.Fragment{component: fragment})
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	stitchedExport := stitched.ToCallgraphExport(component, graphfrag.ScanMeta{Ecosystem: ecosystem})
+
+	return terminalExportResult{live: live, stitched: stitchedExport, findingID: findingID}
 }
 
 func keyLengthViaSupportingCallIDs(t *testing.T, graphs []callGraphExportFinding, supporting []callGraphSupportingCall, findingID, function string) *graphfrag.ResolvedKeyLength {
