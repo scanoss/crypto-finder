@@ -37,7 +37,7 @@ func TestReceiverKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T) {
 		wantFunc string
 		wantBits int
 	}
-	cases := make([]tc, 0, 24)
+	cases := make([]tc, 0, 32)
 	for _, curve := range []struct {
 		name string
 		bits int
@@ -54,6 +54,11 @@ func TestReceiverKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T) {
 		tc{"package variable shadowed in a sibling block", "var c = ecdh.P384()\n\nfunc f(x bool) {\n\tif x {\n\t\tc := ecdh.P256()\n\t\t_ = c\n\t}\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
 		tc{"package variable shadowed in a closure", "var c = ecdh.P384()\n\nfunc f() {\n\tfunc() {\n\t\tc := ecdh.P256()\n\t\t_ = c\n\t}()\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
 		tc{"package variable", "var c = ecdh.P384()\n\nfunc f() {\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
+		tc{"package variable assigned after a goto", "var c = ecdh.P384()\n\nfunc f() {\n\tgoto L\n\tc = ecdh.P256()\nL:\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
+		tc{"package variable assigned, goto skips it in a loop", "var c = ecdh.P384()\n\nfunc f(n int) {\n\tfor i := 0; i < n; i++ {\n\t\tif i > 0 {\n\t\t\tgoto L\n\t\t}\n\t\tc = ecdh.P256()\n\tL:\n\t\tc.GenerateKey(rand.Reader)\n\t}\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
+		tc{"package variable assigned then used in a deferred closure", "var c = ecdh.P384()\nvar hooks []func()\n\nfunc f() {\n\tc = ecdh.P256()\n\thooks = append(hooks, func() {\n\t\tc.GenerateKey(rand.Reader)\n\t})\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
+		tc{"package variable assigned straight-line", "var c = ecdh.P384()\n\nfunc f() {\n\tc = ecdh.P256()\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
+		tc{"declared then reassigned later", "func f() {\n\tc := ecdh.P256()\n\tc = ecdh.P521()\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
 		tc{"bound in an enclosing block", "func f(x bool) {\n\tc := ecdh.P256()\n\tif x {\n\t\tc.GenerateKey(rand.Reader)\n\t}\n}\n", "c.GenerateKey(rand.Reader)", generate, 256},
 		tc{"curve parameter", "func f(c ecdh.Curve) {\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},
 		tc{"reassigned to another curve", "func f() {\n\tc := ecdh.P256()\n\tc = ecdh.P521()\n\tc.GenerateKey(rand.Reader)\n}\n", "c.GenerateKey(rand.Reader)", generate, 0},

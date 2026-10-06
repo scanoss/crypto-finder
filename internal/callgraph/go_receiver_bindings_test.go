@@ -85,6 +85,24 @@ func inBranchUsedInside(x bool) {
 	}
 }
 
+func assignOnly() {
+	pkg = T{}
+	pkg.Use()
+}
+
+func declaredThenAssignedLater() {
+	c := T{}
+	c = T{}
+	c.Use()
+}
+
+func rangeAssign(all []T) {
+	var c T
+	for _, c = range all {
+		c.Use()
+	}
+}
+
 func switchCases(x int) {
 	switch x {
 	case 1:
@@ -106,7 +124,7 @@ func switchCases(x int) {
 	want := map[string]bool{
 		"once": true, "inBranchUsedInside": true,
 		"parameter": true, "reassigned": false, "declaredThenAssigned": false, "addressTaken": false,
-		"rangeBound": true, "closureShadow": false, "siblingBlock": false, "closureOnly": false, "switchCases": false,
+		"rangeBound": true, "assignOnly": false, "declaredThenAssignedLater": false, "rangeAssign": false, "closureShadow": false, "siblingBlock": false, "closureOnly": false, "switchCases": false,
 	}
 	got := map[string]bool{}
 	for _, fn := range analyses[0].Functions {

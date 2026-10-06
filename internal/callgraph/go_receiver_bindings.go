@@ -19,6 +19,9 @@ var goCaseScopes = map[string]bool{
 // end, within [scopeStart, scopeEnd).
 type goBinding struct {
 	end, scopeStart, scopeEnd uint32
+	// declares is false for a plain `=`, which writes a variable declared
+	// elsewhere (possibly outside the function) rather than introducing one.
+	declares bool
 }
 
 // goBindingIndexes indexes, once per top-level function, every binding of
@@ -36,9 +39,12 @@ func (g *goBindingIndexes) reset() { g.byFunction = nil }
 // name the function does not bind (a package variable), is false: a reader
 // cannot tell which value reaches the call.
 //
-// A binding is a parameter or result, `:=`, `=`, `var`, a range, receive or
-// type-switch variable, or an address-of. Closures count with the function
-// they sit in.
+// Only a declaring binding makes the name local: a parameter or result, `:=`,
+// `var`, a range or receive variable declared with `:=`, or a type-switch
+// variable. A plain `=` and an address-of still count as bindings, so they
+// poison a declared name, but a name whose only binding is `=` belongs to an
+// outer scope and its value at the call is unknown. Closures count with the
+// function they sit in.
 func (g *goBindingIndexes) boundOnce(call *sitter.Node, name string, src []byte) bool {
 	var fn *sitter.Node
 	for n := call; n != nil; n = n.Parent() {
@@ -63,16 +69,18 @@ func (g *goBindingIndexes) boundOnce(call *sitter.Node, name string, src []byte)
 		return false
 	}
 	b := bindings[0]
-	return b.end <= call.StartByte() && b.scopeStart <= call.StartByte() && call.EndByte() <= b.scopeEnd
+	return b.declares && b.end <= call.StartByte() && b.scopeStart <= call.StartByte() && call.EndByte() <= b.scopeEnd
 }
 
 func collectGoBindings(node, fn *sitter.Node, src []byte, index map[string][]goBinding) {
 	end := node.EndByte()
 	scope := fn
+	declares := true
 	var names []*sitter.Node
 	switch node.Type() {
 	case goNodeShortVarDeclaration, goNodeAssignmentStmt, goNodeRangeClause, goNodeReceiveStatement:
 		names = goIdentifiersIn(node.ChildByFieldName(goFieldLeft))
+		declares = goHasShortDeclaration(node)
 	case goNodeTypeSwitch:
 		names = goIdentifiersIn(node.ChildByFieldName("alias"))
 	case goNodeVarSpec:
@@ -81,7 +89,7 @@ func collectGoBindings(node, fn *sitter.Node, src []byte, index map[string][]goB
 		names, end = goIdentifiersIn(node), 0
 	case goNodeUnaryExpression:
 		if op := node.ChildByFieldName("operator"); op != nil && op.Content(src) == "&" {
-			names, end = goIdentifiersIn(node.ChildByFieldName("operand")), math.MaxUint32
+			names, end, declares = goIdentifiersIn(node.ChildByFieldName("operand")), math.MaxUint32, false
 		}
 	}
 	if len(names) > 0 && end != math.MaxUint32 {
@@ -89,11 +97,22 @@ func collectGoBindings(node, fn *sitter.Node, src []byte, index map[string][]goB
 	}
 	for _, name := range names {
 		text := name.Content(src)
-		index[text] = append(index[text], goBinding{end: end, scopeStart: scope.StartByte(), scopeEnd: scope.EndByte()})
+		index[text] = append(index[text], goBinding{end: end, scopeStart: scope.StartByte(), scopeEnd: scope.EndByte(), declares: declares})
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
 		collectGoBindings(node.Child(i), fn, src, index)
 	}
+}
+
+// goHasShortDeclaration reports whether a binding statement declares with
+// `:=`, as opposed to assigning with `=`.
+func goHasShortDeclaration(node *sitter.Node) bool {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if node.Child(i).Type() == ":=" {
+			return true
+		}
+	}
+	return false
 }
 
 // goIdentifiersIn returns the bare identifiers directly in a binding list, or
