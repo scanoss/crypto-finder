@@ -243,12 +243,15 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	// c/opensc.yaml
 	"c|sc_pkcs15init_generate_key|3": unitBits,
 	// c/openssl-evp.yaml
-	"c|EVP_RSA_gen|0":                        unitBits,
-	"c|EVP_PKEY_CTX_set_rsa_keygen_bits|1":   unitBits,
-	"c|EVP_PKEY_CTX_set_dsa_paramgen_bits|1": unitBits,
-	"c|RSA_generate_key_ex|1":                unitBits,
-	"c|RSA_generate_key|0":                   unitBits,
-	"c|DSA_generate_parameters_ex|1":         unitBits,
+	"c|EVP_RSA_gen|0":                            unitBits,
+	"c|EVP_PKEY_CTX_set_rsa_keygen_bits|1":       unitBits,
+	"c|EVP_PKEY_CTX_set_dsa_paramgen_bits|1":     unitBits,
+	"c|RSA_generate_key_ex|1":                    unitBits,
+	"c|RSA_generate_key|0":                       unitBits,
+	"c|DSA_generate_parameters_ex|1":             unitBits,
+	"c|EVP_PKEY_CTX_set_dh_paramgen_prime_len|1": unitBits,
+	"c|DH_generate_parameters_ex|1":              unitBits,
+	"c|DH_generate_parameters|0":                 unitBits,
 	// c/rnp.yaml
 	"c|rnp_op_generate_set_bits|1": unitBits,
 	"c|rnp_generate_key_rsa|1":     unitBits,
