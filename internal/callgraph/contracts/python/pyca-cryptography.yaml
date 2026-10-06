@@ -169,6 +169,23 @@ contracts:
         contributes:
           property: keySize
           derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+      - typing.Any
+    parameters:
+      - index: 1
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
 
   - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey.public_key
     arity: 0
@@ -605,6 +622,24 @@ contracts:
       type: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey
       confidence: high
     role: factory
+    parameter_types:
+      - builtins.int
+    parameters:
+      - index: 0
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.generate_private_key
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - typing.Any
     parameters:
       - index: 0
         name: key_size
@@ -631,6 +666,22 @@ contracts:
         contributes:
           property: keySize
           derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.generate_parameters
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dsa.DSAParameters
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - typing.Any
+    parameters:
+      - index: 0
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
   - method: cryptography.hazmat.primitives.asymmetric.dh.generate_parameters
     arity: 2
     return:
@@ -640,6 +691,23 @@ contracts:
     parameter_types:
       - builtins.int
       - builtins.int
+    parameters:
+      - index: 1
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.dh.generate_parameters
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dh.DHParameters
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+      - typing.Any
     parameters:
       - index: 1
         name: key_size
