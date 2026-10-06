@@ -755,7 +755,7 @@ func streamFindingGraphs(
 		if buildEntryPointIndex && (fg.Reachable == nil || *fg.Reachable) {
 			// The index comes from reverse reachability, not from the chains that
 			// happened to be exported (issue #249).
-			containingFn := ctx.findContainingFunctionByFinding(item.finding.FilePath, item.asset.DependencyInfo, item.asset.StartLine)
+			containingFn := ctx.findContainingFunctionByFinding(item.finding.FilePath, item.asset.DependencyInfo, item.asset.StartLine, item.asset.StartCol)
 			addFindingGraphReachSetToEntryPointIndex(ctx, index, &fg, containingFn, supportingByID, referencedSupporting)
 			// The walk's terminals ARE the 6.8 root definition — the first
 			// root-module caller, or an in-degree-zero graph root — and it knows
@@ -956,6 +956,7 @@ func buildCallGraphExportV2WithMaxChains(result *engine.DepScanResult, maxChains
 		filePath   string
 		dependency *entities.DependencyInfo
 		startLine  int
+		startCol   int
 	}
 	var sites []findingSite
 
@@ -969,6 +970,7 @@ func buildCallGraphExportV2WithMaxChains(result *engine.DepScanResult, maxChains
 				filePath:   finding.FilePath,
 				dependency: asset.DependencyInfo,
 				startLine:  asset.StartLine,
+				startCol:   asset.StartCol,
 			})
 			if log.Debug().Enabled() {
 				log.Debug().
@@ -1010,7 +1012,7 @@ func buildCallGraphExportV2WithMaxChains(result *engine.DepScanResult, maxChains
 	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx, out.FindingGraphs, out.SupportingCalls, func(findingID string) *callgraph.FunctionDecl {
 		for i := range sites {
 			if sites[i].findingID == findingID {
-				return ctx.findContainingFunctionByFinding(sites[i].filePath, sites[i].dependency, sites[i].startLine)
+				return ctx.findContainingFunctionByFinding(sites[i].filePath, sites[i].dependency, sites[i].startLine, sites[i].startCol)
 			}
 		}
 		return nil
@@ -1890,7 +1892,7 @@ func (ctx *exportBuildContext) contractDeclKeys(id callgraph.FunctionID) []strin
 
 func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) callGraphExportFinding {
 	start := time.Now()
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine, asset.StartCol)
 	matchedOperation := buildMatchedOperation(asset)
 
 	fg := callGraphExportFinding{
@@ -2361,7 +2363,7 @@ func deriveRawSupportingCallsForFinding(ctx *exportBuildContext, finding entitie
 	if isSyntheticEntryPoint(asset) {
 		return deriveContractSupportingCalls(ctx, asset)
 	}
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine, asset.StartCol)
 	if containingFn == nil {
 		return nil
 	}
@@ -4176,7 +4178,7 @@ func (ctx *exportBuildContext) populateCallChainUsageCounts(findings []entities.
 	for _, finding := range findings {
 		for i := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[i]
-			containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
+			containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine, asset.StartCol)
 			if containingFn == nil {
 				continue
 			}
@@ -5293,8 +5295,10 @@ func dependencyContextFromEntity(depInfo *entities.DependencyInfo, ecosystem str
 }
 
 // findContainingFunctionByFinding returns the graph function whose span holds
-// line in the file a finding names; depInfo is the finding asset's dependency.
-func (ctx *exportBuildContext) findContainingFunctionByFinding(findingPath string, depInfo *entities.DependencyInfo, line int) *callgraph.FunctionDecl {
+// the finding's start position (line and 1-based column) in the file it names;
+// depInfo is the finding asset's dependency. A zero col means the finding
+// carries no column and only the line decides.
+func (ctx *exportBuildContext) findContainingFunctionByFinding(findingPath string, depInfo *entities.DependencyInfo, line, col int) *callgraph.FunctionDecl {
 	file, ok := ctx.findingFile(findingPath, depInfo)
 	if !ok {
 		return nil
@@ -5302,7 +5306,7 @@ func (ctx *exportBuildContext) findContainingFunctionByFinding(findingPath strin
 	if ctx.functionsByFile == nil {
 		ctx.functionsByFile = newFunctionFileIndex(&ctx.exportArtifacts, ctx.graph.Functions)
 	}
-	return ctx.functionsByFile.containing(file, line)
+	return ctx.functionsByFile.containing(file, line, col)
 }
 
 func isSimpleIdentifier(expr string) bool {

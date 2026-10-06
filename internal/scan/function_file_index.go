@@ -140,13 +140,20 @@ func newFunctionFileIndex(artifacts *exportArtifacts, functions map[string]*call
 	return idx
 }
 
-// containing returns the function of file whose span holds line. Spans nest
-// (a synthetic <clinit> may cover the whole class around the real method), so
-// the tightest span wins, with the function key as a deterministic tie-break.
-func (idx *functionFileIndex) containing(file string, line int) *callgraph.FunctionDecl {
+// containing returns the innermost function of file whose span holds the
+// position (line, col). Spans nest (a synthetic <clinit> may cover the whole
+// class around the real method, a JS callback sits inside its caller), so the
+// tightest span wins, with the function key as a deterministic tie-break.
+//
+// Containment is column-aware: a function that starts later on the finding's
+// own line, as the arrow function passed to `generateKeyPair(..., (e) => {`,
+// does not hold a finding that starts before it. A zero col, or a function
+// whose parser records no columns, is judged by lines alone, which is the
+// behavior for every line a single function covers.
+func (idx *functionFileIndex) containing(file string, line, col int) *callgraph.FunctionDecl {
 	var best *callgraph.FunctionDecl
 	for _, fn := range idx.byFile[file] {
-		if line < fn.StartLine || line > fn.EndLine {
+		if !spanHolds(fn, line, col) {
 			continue
 		}
 		if best == nil || tighterSpan(fn, best) {
@@ -156,14 +163,36 @@ func (idx *functionFileIndex) containing(file string, line int) *callgraph.Funct
 	return best
 }
 
-// tighterSpan reports whether a encloses fewer lines than b (or, on equal
-// spans, sorts first by function key) so the containing-function choice is
-// stable across map iteration orders.
+func spanHolds(fn *callgraph.FunctionDecl, line, col int) bool {
+	if line < fn.StartLine || line > fn.EndLine {
+		return false
+	}
+	if col <= 0 {
+		return true
+	}
+	if line == fn.StartLine && fn.StartCol > 0 && col < fn.StartCol {
+		return false
+	}
+	if line == fn.EndLine && fn.EndCol > 0 && col >= fn.EndCol {
+		return false
+	}
+	return true
+}
+
+// tighterSpan reports whether a is nested inside b: fewer lines, else later
+// start, else (on equal spans) first by function key, so the choice is stable
+// across map iteration orders.
 func tighterSpan(a, b *callgraph.FunctionDecl) bool {
 	spanA := a.EndLine - a.StartLine
 	spanB := b.EndLine - b.StartLine
 	if spanA != spanB {
 		return spanA < spanB
+	}
+	if a.StartLine != b.StartLine {
+		return a.StartLine > b.StartLine
+	}
+	if a.StartCol != b.StartCol {
+		return a.StartCol > b.StartCol
 	}
 	return a.ID.String() < b.ID.String()
 }

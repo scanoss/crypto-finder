@@ -87,7 +87,7 @@ func materializeConditionedAnchor(
 	if len(anchor.ParameterConditions) > 0 {
 		return 0
 	}
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, anchor.DependencyInfo, anchor.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, anchor.DependencyInfo, anchor.StartLine, anchor.StartCol)
 	if containingFn == nil {
 		return 0
 	}

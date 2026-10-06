@@ -1207,7 +1207,7 @@ func TestFindContainingFunctionByFinding_PicksTightestSpan(t *testing.T) {
 
 	for i := 0; i < 50; i++ {
 		ctx.functionsByFile = nil
-		got := ctx.findContainingFunctionByFinding("com/password4j/PBKDF2Function.java", nil, 130)
+		got := ctx.findContainingFunctionByFinding("com/password4j/PBKDF2Function.java", nil, 130, 0)
 		if got == nil {
 			t.Fatalf("iteration %d: got nil, want internalHash", i)
 		}

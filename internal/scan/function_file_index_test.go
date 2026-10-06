@@ -109,7 +109,7 @@ func TestFindContainingFunctionByFinding_ResolvesRelativeRoots(t *testing.T) {
 				ProjectRoot: tc.projectRoot,
 				CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{fn.ID.String(): fn}},
 			})
-			if got := ctx.findContainingFunctionByFinding("src/seal.go", nil, 10); got != fn {
+			if got := ctx.findContainingFunctionByFinding("src/seal.go", nil, 10, 0); got != fn {
 				t.Fatalf("findContainingFunctionByFinding = %v, want %s", got, fn.FilePath)
 			}
 		})
@@ -125,7 +125,7 @@ func TestFindContainingFunctionByFinding_DependencyWithoutSourceBindsNothing(t *
 		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{fn.ID.String(): fn}},
 	})
 	dep := &entities.DependencyInfo{Module: "example.com/unscanned", Version: "v1.0.0"}
-	if got := ctx.findContainingFunctionByFinding("util/seal.go", dep, 10); got != nil {
+	if got := ctx.findContainingFunctionByFinding("util/seal.go", dep, 10, 0); got != nil {
 		t.Fatalf("finding of an unscanned dependency bound to %s", got.FilePath)
 	}
 }

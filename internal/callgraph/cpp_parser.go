@@ -280,6 +280,8 @@ func (p *CPPParser) parseFunction(node *sitter.Node, src []byte, filePath, packa
 		FilePath:     filePath,
 		StartLine:    int(node.StartPoint().Row) + 1,
 		EndLine:      int(node.EndPoint().Row) + 1,
+		StartCol:     int(node.StartPoint().Column) + 1,
+		EndCol:       int(node.EndPoint().Column) + 1,
 		OwnerType:    "module",
 		OwnerName:    packagePath,
 		FunctionType: "function",

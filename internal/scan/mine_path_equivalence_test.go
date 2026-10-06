@@ -146,7 +146,7 @@ func oracleFragmentEntryPointChains(
 	finding entities.Finding,
 	asset entities.CryptographicAsset,
 ) [][]callGraphChainNode {
-	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine)
+	containingFn := ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine, asset.StartCol)
 	if containingFn == nil {
 		return nil
 	}

@@ -994,6 +994,8 @@ func (p *RustParser) parseFunctionItemWithGenerics(node *sitter.Node, src []byte
 		FilePath:     filePath,
 		StartLine:    int(node.StartPoint().Row) + 1,
 		EndLine:      int(node.EndPoint().Row) + 1,
+		StartCol:     int(node.StartPoint().Column) + 1,
+		EndCol:       int(node.EndPoint().Column) + 1,
 		OwnerType:    ownerType,
 		OwnerName:    ownerName,
 		FunctionType: functionType,

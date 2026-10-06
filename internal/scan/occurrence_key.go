@@ -50,7 +50,7 @@ func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandid
 			asset.OccurrenceKey = ""
 			var containing *callgraph.FunctionDecl
 			if file, ok := ctx.findingFile(finding.FilePath, asset.DependencyInfo); ok {
-				containing = functions.containing(file, asset.StartLine)
+				containing = functions.containing(file, asset.StartLine, asset.StartCol)
 			}
 			if containing == nil {
 				location := normalizeFindingPath(ctx, finding.FilePath, asset.DependencyInfo)
