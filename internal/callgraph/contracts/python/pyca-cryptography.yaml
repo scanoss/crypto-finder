@@ -159,6 +159,9 @@ contracts:
       type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey
       confidence: high
     role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
     parameters:
       - index: 1
         name: key_size

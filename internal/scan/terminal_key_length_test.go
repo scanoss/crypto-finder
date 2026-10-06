@@ -121,6 +121,18 @@ void f(EVP_PKEY_CTX *ctx) {
     EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 3072);
 }
 `
+	pythonRSAPositional = `from cryptography.hazmat.primitives.asymmetric import rsa
+
+def f():
+    return rsa.generate_private_key(65537, 2048)
+`
+	pythonRSAPositionalConstant = `from cryptography.hazmat.primitives.asymmetric import rsa
+
+KEY_SIZE = 3072
+
+def f():
+    return rsa.generate_private_key(65537, KEY_SIZE)
+`
 	pythonDHKeyword = `from cryptography.hazmat.primitives.asymmetric import dh
 
 def f():
@@ -216,6 +228,8 @@ func TestTerminalKeyLength_ReachableThroughFindingSupportingCallIDs(t *testing.T
 		{name: "c byte-count key length is reported in bits (curve25519 32 bytes)", ecosystem: "c", file: "k.c", source: cWolfCurve25519, line: 4, match: "wc_curve25519_make_key(rng, 32, k);", api: "wc_curve25519_make_key", wantFunc: "wc_curve25519_make_key", wantIndex: 1, wantBits: 256},
 		{name: "c byte-count key length is reported in bits (crypto_generichash keylen 32)", ecosystem: "c", file: "k.c", source: cSodiumGenerichash, line: 4, match: "crypto_generichash(o, 32, in, 10, k, 32);", api: "crypto_generichash", wantFunc: "crypto_generichash", wantIndex: 5, wantBits: 256},
 		{name: "go byte-count key length is reported in bits (PBKDF2 keyLen 32)", ecosystem: "go", file: "k.go", source: goFipsPBKDF2, line: 10, match: "openssl.PBKDF2(pw, salt, 1000, 32, sha256.New)", api: "github.com/golang-fips/openssl/v2.PBKDF2", wantFunc: "github.com/golang-fips/openssl/v2.PBKDF2", wantIndex: 3, wantBits: 256},
+		{name: "python rsa positional literal", ecosystem: "python", file: "k.py", source: pythonRSAPositional, line: 4, match: "rsa.generate_private_key(65537, 2048)", api: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantIndex: 1, wantBits: 2048},
+		{name: "python rsa positional module constant", ecosystem: "python", file: "k.py", source: pythonRSAPositionalConstant, line: 6, match: "rsa.generate_private_key(65537, KEY_SIZE)", api: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantFunc: "cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key", wantIndex: 1, wantBits: 3072},
 		{name: "python dh.generate_parameters keyword", ecosystem: "python", file: "k.py", source: pythonDHKeyword, line: 4, match: "dh.generate_parameters(generator=2, key_size=2048)", api: "cryptography.hazmat.primitives.asymmetric.dh.generate_parameters", wantFunc: "cryptography.hazmat.primitives.asymmetric.dh.generate_parameters", wantIndex: 1, wantBits: 2048},
 		{name: "python dh.generate_parameters positional", ecosystem: "python", file: "k.py", source: pythonDHPositional, line: 4, match: "dh.generate_parameters(2, 3072)", api: "cryptography.hazmat.primitives.asymmetric.dh.generate_parameters", wantFunc: "cryptography.hazmat.primitives.asymmetric.dh.generate_parameters", wantIndex: 1, wantBits: 3072},
 		{name: "python dh.generate_parameters module constant", ecosystem: "python", file: "k.py", source: pythonDHConstant, line: 6, match: "dh.generate_parameters(generator=2, key_size=DH_BITS)", api: "cryptography.hazmat.primitives.asymmetric.dh.generate_parameters", wantFunc: "cryptography.hazmat.primitives.asymmetric.dh.generate_parameters", wantIndex: 1, wantBits: 4096},
