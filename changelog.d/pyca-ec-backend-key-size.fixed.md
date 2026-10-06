@@ -1,0 +1,1 @@
+- Legacy pyca `cryptography` `ec.generate_private_key(curve, default_backend())` (backend passed positionally, required before 3.1) now reports the curve's key size, like the one-argument and `curve=..., backend=...` forms. The supporting call's `canonical_signature` for the two-argument form is the typed `(EllipticCurve, typing.Any)` shape. (#716)
