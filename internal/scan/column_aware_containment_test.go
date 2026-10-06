@@ -4,10 +4,14 @@
 package scan
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/crypto-finder/internal/engine"
+	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
@@ -201,5 +205,58 @@ func TestColumnAwareContainment_Index(t *testing.T) {
 				t.Fatalf("containing(%d, %d) = %v, want %v", tc.line, tc.col, got, tc.want)
 			}
 		})
+	}
+}
+
+const javaModifierStart = `import javax.crypto.Cipher;
+
+public class K {
+    public byte[] encrypt(byte[] in) throws Exception {
+        Cipher c = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        return c.doFinal(in);
+    }
+}
+`
+
+// TestColumnAwareContainment_MatchStartingAtModifier pins that a finding whose
+// match begins at the `public` modifier of a method, left of the return type,
+// keeps its containing function and its occurrence key. The span of a Java
+// method starts at its first modifier on the signature line, not at the type.
+func TestColumnAwareContainment_MatchStartingAtModifier(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "K.java"), []byte(javaModifierStart), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	graph, err := callgraph.NewBuilderForEcosystem("java", callgraph.NewParserForEcosystem("java")).
+		BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "ladder"}}, nil)
+	if err != nil {
+		t.Fatalf("BuildFromDirectories: %v", err)
+	}
+	signature := "    public byte[] encrypt(byte[] in) throws Exception {"
+	report := &entities.InterimReport{
+		Tool: entities.ToolInfo{Name: "crypto-finder", Version: "test"},
+		Findings: []entities.Finding{{
+			FilePath: "K.java", Language: "java",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 4, EndLine: 6, StartCol: 5, EndCol: 6, Match: signature,
+				Rules:    []entities.RuleInfo{{ID: "test.aes.cbc"}},
+				Metadata: map[string]string{"api": "javax.crypto.Cipher.getInstance"},
+			}},
+		}},
+	}
+	engine.EnsureFindingSources(report)
+	engine.AssignFindingIDs(report)
+	result := &engine.DepScanResult{Report: report, CallGraph: graph, ProjectRoot: dir, Ecosystem: "java"}
+	live := buildCallGraphExportV2(result)
+	if len(live.FindingGraphs) != 1 {
+		t.Fatalf("finding graphs = %d, want 1", len(live.FindingGraphs))
+	}
+	if got := live.FindingGraphs[0].UnresolvedReason; got == "no_containing_function" {
+		t.Fatalf("unresolved_reason = %q, want the method that holds the match", got)
+	}
+	// Measured on origin/main, which resolves containment by line.
+	const wantKey = "v1:94515a0dd9bf1b59"
+	if got := report.Findings[0].CryptographicAssets[0].OccurrenceKey; got != wantKey {
+		t.Fatalf("occurrence_key = %q, want %q", got, wantKey)
 	}
 }

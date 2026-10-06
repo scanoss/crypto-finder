@@ -1345,10 +1345,29 @@ func javaDeclarationStartLine(node *sitter.Node) int {
 	return int(javaDeclarationStart(node).Row) + 1
 }
 
-// javaDeclarationStartCol is the 1-based column javaDeclarationStartLine's
-// line is measured at.
+// javaDeclarationStartCol is the 1-based column of the earliest token of the
+// declaration on javaDeclarationStartLine's line, so a modifier or annotation
+// that shares the signature's line (`public byte[] encrypt(..) {`) is inside the
+// span a rule match starting at it falls in. Modifiers on earlier lines do not
+// move it.
 func javaDeclarationStartCol(node *sitter.Node) int {
-	return int(javaDeclarationStart(node).Column) + 1
+	start := javaDeclarationStart(node)
+	col := start.Column
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() != javaNodeModifiers {
+			break
+		}
+		for j := 0; j < int(child.ChildCount()); j++ {
+			if m := child.Child(j).StartPoint(); m.Row == start.Row {
+				if m.Column < col {
+					col = m.Column
+				}
+				break
+			}
+		}
+	}
+	return int(col) + 1
 }
 
 func javaDeclarationStart(node *sitter.Node) sitter.Point {
