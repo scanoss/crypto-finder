@@ -142,7 +142,7 @@ contracts:
       - index: 3
         name: key_size
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: crypto_blake2b_general_init
     arity: 4
     return: {type: "void", confidence: high}
@@ -155,7 +155,7 @@ contracts:
       - index: 3
         name: key_size
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: crypto_blake2b_init
     arity: 1
     return: {type: "void", confidence: high}
@@ -181,7 +181,7 @@ contracts:
       - index: 3
         name: key_size
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: crypto_blake2b_keyed_init
     arity: 4
     return: {type: "void", confidence: high}
@@ -194,7 +194,7 @@ contracts:
       - index: 3
         name: key_size
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: crypto_blake2b_update
     arity: 3
     return: {type: "void", confidence: high}

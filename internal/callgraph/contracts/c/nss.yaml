@@ -173,7 +173,7 @@ contracts:
       - index: 6
         name: keySize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: PK11_GenerateRandom
     arity: 2
     return: {type: "SECStatus", confidence: high}
@@ -193,7 +193,7 @@ contracts:
       - index: 3
         name: keySize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: PK11_TokenKeyGen
     arity: 7
     return: {type: "PK11SymKey*", confidence: high}
@@ -206,7 +206,7 @@ contracts:
       - index: 3
         name: keySize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: PK11_GenerateKeyPair
     arity: 7
     return: {type: "SECKEYPrivateKey*", confidence: high}
@@ -276,7 +276,7 @@ contracts:
       - index: 5
         name: keySize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: PK11_CreatePBEV2AlgorithmID
     arity: 6
     return: {type: "SECAlgorithmID*", confidence: high}
@@ -297,7 +297,7 @@ contracts:
       - index: 3
         name: keyLength
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: iteration
         role: metadata-contributing

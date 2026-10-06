@@ -89,15 +89,20 @@ func TestLibsodiumParameterRoles(t *testing.T) {
 			if len(got) != 1 {
 				t.Fatalf("ContractsFor(%q, %d) = %d, want 1", tt.method, tt.arity, len(got))
 			}
+			wantDerivation := "argument_value"
+			if tt.property == "keySize" && tt.method != "wc_MakeRsaKey" {
+				// keySize arguments of these libraries are byte counts.
+				wantDerivation = "argument_byte_length"
+			}
 			for _, parameter := range got[0].Parameters {
 				if parameter.Index != nil && *parameter.Index == tt.index && parameter.Role == tt.role &&
 					parameter.Contributes != nil && parameter.Contributes.Property == tt.property &&
-					parameter.Contributes.Derivation == "argument_value" {
+					parameter.Contributes.Derivation == wantDerivation {
 					return
 				}
 			}
-			t.Fatalf("parameters = %#v, want index=%d role=%s contribution=%s/argument_value",
-				got[0].Parameters, tt.index, tt.role, tt.property)
+			t.Fatalf("parameters = %#v, want index=%d role=%s contribution=%s/%s",
+				got[0].Parameters, tt.index, tt.role, tt.property, wantDerivation)
 		})
 	}
 }

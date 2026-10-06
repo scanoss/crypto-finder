@@ -73,7 +73,7 @@ contracts:
       - index: 2
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_AesCcmSetNonce
     arity: 3
     return: {type: int, confidence: high}
@@ -95,7 +95,7 @@ contracts:
       - index: 2
         name: len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: dir
         role: operation-determining
@@ -120,7 +120,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 6
         name: nonceSz
         role: metadata-contributing
@@ -145,7 +145,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 6
         name: nonceSz
         role: metadata-contributing
@@ -175,7 +175,7 @@ contracts:
       - index: 2
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: nonceSz
         role: metadata-contributing
@@ -315,7 +315,7 @@ contracts:
       - index: 2
         name: len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_AesGcmSetKey_ex
     arity: 4
     return: {type: int, confidence: high}
@@ -324,7 +324,7 @@ contracts:
       - index: 2
         name: len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_AesGetKeySize
     arity: 2
     return: {type: int, confidence: high}
@@ -349,7 +349,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 5
         name: outSz
         role: metadata-contributing
@@ -371,7 +371,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 5
         name: outSz
         role: metadata-contributing
@@ -397,7 +397,7 @@ contracts:
       - index: 2
         name: len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: dir
         role: operation-determining
@@ -410,7 +410,7 @@ contracts:
       - index: 2
         name: len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: dir
         role: operation-determining
@@ -423,7 +423,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 5
         name: nonceSz
         role: metadata-contributing
@@ -436,7 +436,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 5
         name: nonceSz
         role: metadata-contributing
@@ -449,7 +449,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 5
         name: nonceSz
         role: metadata-contributing
@@ -462,7 +462,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 5
         name: nonceSz
         role: metadata-contributing
@@ -527,7 +527,7 @@ contracts:
       - index: 2
         name: len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 3
         name: dir
         role: operation-determining
@@ -540,7 +540,7 @@ contracts:
       - index: 2
         name: len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 3
         name: dir
         role: operation-determining
@@ -553,7 +553,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 3
         name: ivSz
         role: metadata-contributing
@@ -570,7 +570,7 @@ contracts:
       - index: 2
         name: len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_GmacUpdate
     arity: 7
     return: {type: int, confidence: high}
@@ -592,7 +592,7 @@ contracts:
       - index: 1
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 3
         name: ivSz
         role: metadata-contributing
@@ -619,7 +619,7 @@ contracts:
       - index: 2
         name: length
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
 
   # ascon.h
   - method: wc_AsconAEAD128_DecryptFinal
@@ -685,7 +685,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_Blake2bHmacUpdate
     arity: 3
     return: {type: int, confidence: high}
@@ -706,7 +706,7 @@ contracts:
       - index: 2
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_Blake2sHmacUpdate
     arity: 3
     return: {type: int, confidence: high}
@@ -736,7 +736,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_InitBlake2s
     arity: 2
     return: {type: int, confidence: high}
@@ -758,7 +758,7 @@ contracts:
       - index: 3
         name: keylen
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
 
   # camellia.h
   - method: wc_CamelliaCbcDecrypt
@@ -789,7 +789,7 @@ contracts:
       - index: 2
         name: len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
 
   # chacha.h
   - method: wc_Chacha_Process
@@ -808,7 +808,7 @@ contracts:
       - index: 2
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_XChacha_SetKey
     arity: 6
     return: {type: int, confidence: high}
@@ -817,7 +817,7 @@ contracts:
       - index: 2
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: nonceSz
         role: metadata-contributing
@@ -869,7 +869,7 @@ contracts:
       - index: 9
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_XChaCha20Poly1305_Encrypt
     arity: 10
     return: {type: int, confidence: high}
@@ -882,7 +882,7 @@ contracts:
       - index: 9
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_XChaCha20Poly1305_Init
     arity: 8
     return: {type: int, confidence: high}
@@ -895,7 +895,7 @@ contracts:
       - index: 6
         name: key_len
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 7
         name: isEncrypt
         role: operation-determining
@@ -910,7 +910,7 @@ contracts:
       - index: 5
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_AesCmacGenerate_ex
     arity: 9
     return: {type: int, confidence: high}
@@ -919,7 +919,7 @@ contracts:
       - index: 6
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_AesCmacVerify
     arity: 6
     return: {type: int, confidence: high}
@@ -928,7 +928,7 @@ contracts:
       - index: 5
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_AesCmacVerify_ex
     arity: 9
     return: {type: int, confidence: high}
@@ -937,7 +937,7 @@ contracts:
       - index: 6
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_CmacFinal
     arity: 3
     return: {type: int, confidence: high}
@@ -958,7 +958,7 @@ contracts:
       - index: 2
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_InitCmac_Id
     arity: 9
     return: {type: int, confidence: high}
@@ -967,7 +967,7 @@ contracts:
       - index: 2
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_InitCmac_Label
     arity: 8
     return: {type: int, confidence: high}
@@ -976,7 +976,7 @@ contracts:
       - index: 2
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_InitCmac_ex
     arity: 7
     return: {type: int, confidence: high}
@@ -985,7 +985,7 @@ contracts:
       - index: 2
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
 
   # curve25519.h
   - method: wc_curve25519_export_key_raw
@@ -1060,7 +1060,7 @@ contracts:
       - index: 1
         name: keysize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_curve25519_make_priv
     arity: 3
     return: {type: int, confidence: high}
@@ -1069,7 +1069,7 @@ contracts:
       - index: 1
         name: keysize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_curve25519_make_pub
     arity: 4
     return: {type: int, confidence: high}
@@ -1156,7 +1156,7 @@ contracts:
       - index: 1
         name: keysize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_curve448_make_pub
     arity: 4
     return: {type: int, confidence: high}
@@ -1590,20 +1590,11 @@ contracts:
     arity: 3
     return: {type: int, confidence: high}
     role: factory
-    parameters:
-      - index: 1
-        name: keysize
-        role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
   - method: wc_ecc_make_key_ex
     arity: 4
     return: {type: int, confidence: high}
     role: factory
     parameters:
-      - index: 1
-        name: keysize
-        role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
       - index: 3
         name: curve_id
         role: operation-determining
@@ -1613,10 +1604,6 @@ contracts:
     return: {type: int, confidence: high}
     role: factory
     parameters:
-      - index: 1
-        name: keysize
-        role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
       - index: 3
         name: curve_id
         role: operation-determining
@@ -1638,10 +1625,6 @@ contracts:
     return: {type: int, confidence: high}
     role: config
     parameters:
-      - index: 1
-        name: keysize
-        role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
       - index: 2
         name: curve_id
         role: operation-determining
@@ -1775,7 +1758,7 @@ contracts:
       - index: 1
         name: keysize
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_ed25519_make_public
     arity: 3
     return: {type: int, confidence: high}
@@ -1977,11 +1960,6 @@ contracts:
     arity: 3
     return: {type: int, confidence: high}
     role: factory
-    parameters:
-      - index: 1
-        name: keysize
-        role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
   - method: wc_ed448_make_public
     arity: 3
     return: {type: int, confidence: high}
@@ -2392,7 +2370,7 @@ contracts:
       - index: 2
         name: inKeySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: saltSz
         role: metadata-contributing
@@ -2417,7 +2395,7 @@ contracts:
       - index: 2
         name: inKeySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: infoSz
         role: metadata-contributing
@@ -2438,7 +2416,7 @@ contracts:
       - index: 2
         name: inKeySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: infoSz
         role: metadata-contributing
@@ -2463,7 +2441,7 @@ contracts:
       - index: 4
         name: inKeySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_HKDF_Extract_ex
     arity: 8
     return: {type: int, confidence: high}
@@ -2480,7 +2458,7 @@ contracts:
       - index: 4
         name: inKeySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_HKDF_ex
     arity: 11
     return: {type: int, confidence: high}
@@ -2493,7 +2471,7 @@ contracts:
       - index: 2
         name: inKeySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         name: saltSz
         role: metadata-contributing
@@ -2538,7 +2516,7 @@ contracts:
       - index: 3
         name: length
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_HmacSetKey_Software
     arity: 4
     return: {type: int, confidence: high}
@@ -2551,7 +2529,7 @@ contracts:
       - index: 3
         name: keySz
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_HmacSetKey_ex
     arity: 5
     return: {type: int, confidence: high}
@@ -2564,7 +2542,7 @@ contracts:
       - index: 3
         name: length
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
   - method: wc_HmacUpdate
     arity: 3
     return: {type: int, confidence: high}
@@ -2864,7 +2842,7 @@ contracts:
       - index: 2
         name: length
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
 
   # ripemd.h
   - method: wc_InitRipeMd

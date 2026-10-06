@@ -200,7 +200,7 @@ contracts:
         contributes: {property: iterations, derivation: argument_value}
       - index: 3
         role: metadata-contributing
-        contributes: {property: keySize, derivation: argument_value}
+        contributes: {property: keySize, derivation: argument_byte_length}
       - index: 4
         role: operation-determining
         contributes: {property: algorithm, derivation: argument_type}

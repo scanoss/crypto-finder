@@ -58,7 +58,7 @@ func TestLoadEmbeddedCIncludesWolfSSLContracts(t *testing.T) {
 	}
 	sort.Strings(inventory)
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(inventory, "\n"))))
-	if digest != "978aa8fb72a2d580a5b28e0d31d37a28de16df5e36ce5393698f7c9804dc83ed" {
+	if digest != "d85f13cc4618a34f38dfc561cfc6d280434d1aa8b599c97aec3915c7eeed5e8d" {
 		t.Fatalf("wolfSSL inventory digest = %s; update only after auditing the pinned rules and headers", digest)
 	}
 
@@ -147,15 +147,20 @@ func TestWolfSSLParameterDerivations(t *testing.T) {
 			if len(got) != 1 {
 				t.Fatalf("ContractsFor(%q, %d) = %d, want 1", tt.method, tt.arity, len(got))
 			}
+			wantDerivation := "argument_value"
+			if tt.property == "keySize" && tt.method != "wc_MakeRsaKey" {
+				// keySize arguments of these libraries are byte counts.
+				wantDerivation = "argument_byte_length"
+			}
 			for _, parameter := range got[0].Parameters {
 				if parameter.Index != nil && *parameter.Index == tt.index && parameter.Role == tt.role &&
 					parameter.Contributes != nil && parameter.Contributes.Property == tt.property &&
-					parameter.Contributes.Derivation == "argument_value" {
+					parameter.Contributes.Derivation == wantDerivation {
 					return
 				}
 			}
-			t.Fatalf("parameters = %#v, want index=%d role=%s contribution=%s/argument_value",
-				got[0].Parameters, tt.index, tt.role, tt.property)
+			t.Fatalf("parameters = %#v, want index=%d role=%s contribution=%s/%s",
+				got[0].Parameters, tt.index, tt.role, tt.property, wantDerivation)
 		})
 	}
 }
