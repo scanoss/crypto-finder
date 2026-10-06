@@ -288,3 +288,37 @@ func TestGoParser_OversizedSiblingMakesThePackageUnknown(t *testing.T) {
 		t.Fatalf("argument 1 = %q, want none beside an oversized sibling", got)
 	}
 }
+
+// TestCParser_OversizedHeaderMakesTheDefineUnknown pins that a header too large
+// to parse may undo a define, so a define followed by it gives no value.
+func TestCParser_OversizedHeaderMakesTheDefineUnknown(t *testing.T) {
+	old := cHeaderMaxBytes
+	cHeaderMaxBytes = 64
+	t.Cleanup(func() { cHeaderMaxBytes = old })
+	big := "#undef BITS\n#define BITS 64\n/* " + strings.Repeat("x", 128) + " */\n"
+	use := "void f(void) { gen(ctx, BITS); }\n"
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  string
+		ok    bool
+	}{
+		{"after the define in the including file", map[string]string{"a.c": "#include \"a.h\"\n#include \"big.h\"\n" + use, "a.h": "#define BITS 128\n", "big.h": big}, "", false},
+		{"included by a header after the define", map[string]string{"a.c": "#include \"a.h\"\n" + use, "a.h": "#define BITS 128\n#include \"big.h\"\n", "big.h": big}, "", false},
+		{"before the define", map[string]string{"a.c": "#include \"big.h\"\n#include \"a.h\"\n" + use, "a.h": "#define BITS 128\n", "big.h": big}, "128", true},
+		{"reached twice", map[string]string{"a.c": "#include \"a.h\"\n#include \"x.h\"\n#include \"big.h\"\n" + use, "a.h": "#define BITS 128\n", "x.h": "#include \"big.h\"\n", "big.h": big}, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeTree(t, tt.files)
+			analyses, err := NewCParser().ParseDirectory(dir, "example/c")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, ok := constArgValue(t, analysisFor(t, analyses, dir, "a.c"), 1)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("argument 1 = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}

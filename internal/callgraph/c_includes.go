@@ -9,12 +9,14 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
+// cHeaderMaxBytes keeps one huge generated header from being parsed. A header
+// over it counts as an unresolved include. A variable so tests can lower it.
+var cHeaderMaxBytes int64 = 2 << 20
+
 const (
 	// cIncludeDepth bounds how deep a chain of local includes is followed. A
 	// chain that runs past it leaves every header define unresolved.
 	cIncludeDepth = 8
-	// cHeaderMaxBytes keeps one huge generated header from being parsed.
-	cHeaderMaxBytes = 2 << 20
 	// cHeaderCacheMax bounds the parsed-header cache of one parser.
 	cHeaderCacheMax = 4096
 
@@ -166,6 +168,9 @@ type cIncludedFile struct {
 	// active is set while the file's includes are being followed, so a cycle
 	// back to it counts as unknown.
 	active bool
+	// unreadable is set when the file exists but was too large, unreadable or
+	// unparsable: it counts as an unresolved include at the line that names it.
+	unreadable bool
 	// dirtyLines are the lines of the header at which an include it makes, or
 	// anything reachable through one, names no file: a define of the header
 	// at or before such a line may have been undone.
@@ -215,11 +220,14 @@ func (s *cIncludeScope) visit(parser *sitter.Parser, cache *cHeaderCache, path s
 			file.unconditional, file.line, improved = true, line, true
 		}
 		if !improved {
-			return len(file.dirtyLines) > 0
+			return file.unreadable || len(file.dirtyLines) > 0
 		}
 	}
 	if file.header == nil {
-		return false
+		// The file exists but could not be read in full: whatever it defines
+		// or undefines is unknown.
+		file.unreadable = true
+		return true
 	}
 	file.active = true
 	file.dirtyLines = append([]int(nil), file.header.unresolved...)
