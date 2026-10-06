@@ -90,10 +90,12 @@ func (p *CParser) parseFile(filePath, packagePath string) (*FileAnalysis, error)
 	}
 	root := tree.RootNode()
 	scan := collectCDefines(root, src)
+	includes, unresolved := cLocalIncludes(root, src, filePath)
 	p.defines = &cDefines{
-		own:      scan.literals,
-		ownTouch: scan.touched,
-		includes: newCIncludeScope(p.parser, &p.headers, cLocalIncludes(root, src, filePath)),
+		own:        scan.literals,
+		ownTouch:   scan.touched,
+		includes:   newCIncludeScope(p.parser, &p.headers, includes),
+		unresolved: unresolved,
 	}
 	defer func() { p.defines = nil }()
 	staticFunctions := make(map[string]bool)

@@ -28,6 +28,8 @@ type cDefines struct {
 	own      map[string]cDefine
 	ownTouch map[string]int
 	includes *cIncludeScope
+	// unresolved are the lines of the file's quoted includes that name no file.
+	unresolved cUnresolved
 }
 
 // resolve returns the define name denotes at line. A name any local header also
@@ -43,7 +45,7 @@ func (d *cDefines) resolve(name string, line int) (cDefine, bool) {
 			define, ok = d.includes.literal(name, d.ownTouch[name])
 		}
 	}
-	if !ok || define.line >= line || (define.until != 0 && line >= define.until) {
+	if !ok || define.line >= line || (define.until != 0 && line >= define.until) || d.unresolved.kills(define.line, line) {
 		return cDefine{}, false
 	}
 	return define, true

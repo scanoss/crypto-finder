@@ -2,12 +2,18 @@ package callgraph
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
 )
+
+// goSourceMaxBytes bounds one sibling file read for the package index.
+const goSourceMaxBytes = 2 << 20
+
+var errSourceTooLarge = errors.New("go source file too large")
 
 const (
 	goNodePackageClause = "package_clause"
@@ -45,12 +51,17 @@ type goPackageEntry struct {
 // first time an identifier argument resolves to nothing in its own file, so a
 // directory that never needs it is never read twice.
 type goPackageIndex struct {
-	dir       string
-	built     bool
+	dir   string
+	built bool
+	// unknown is set when a sibling could not be read in full: it may declare
+	// any name, so nothing resolves against the package.
+	unknown   bool
 	byPackage map[string]map[string][]goPackageEntry
 }
 
-func newGoPackageIndex(dir string) *goPackageIndex { return &goPackageIndex{dir: dir} }
+func newGoPackageIndex(dir string) *goPackageIndex {
+	return &goPackageIndex{dir: filepath.Clean(dir)}
+}
 
 // lookup resolves name, used in file (declared in package pkg), to a literal
 // declared by another file of the package. It answers only when exactly one
@@ -62,6 +73,9 @@ func newGoPackageIndex(dir string) *goPackageIndex { return &goPackageIndex{dir:
 func (x *goPackageIndex) lookup(parser *sitter.Parser, file, pkg string, test bool, name string) (string, bool) {
 	if !x.built {
 		x.build(parser)
+	}
+	if x.unknown {
+		return "", false
 	}
 	var found *goPackageEntry
 	entries := x.byPackage[pkg][name]
@@ -94,17 +108,31 @@ func (x *goPackageIndex) build(parser *sitter.Parser) {
 			continue
 		}
 		path := filepath.Join(x.dir, name)
-		src, err := os.ReadFile(path)
+		src, err := readBounded(path)
 		if err != nil {
-			continue
+			x.unknown = true
+			return
 		}
 		tree, err := parser.ParseCtx(context.TODO(), nil, src)
 		if err != nil {
-			continue
+			x.unknown = true
+			return
 		}
 		x.addFile(path, name, tree.RootNode(), src)
 		tree.Close()
 	}
+}
+
+// readBounded reads a source file no larger than goSourceMaxBytes.
+func readBounded(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > goSourceMaxBytes {
+		return nil, errSourceTooLarge
+	}
+	return os.ReadFile(path)
 }
 
 func (x *goPackageIndex) addFile(path, name string, root *sitter.Node, src []byte) {

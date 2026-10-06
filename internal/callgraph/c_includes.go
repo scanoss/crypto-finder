@@ -36,6 +36,22 @@ type cHeader struct {
 	includes []cLocalInclude
 }
 
+// cUnresolved lists the lines of the quoted includes that name no readable
+// file in the repo (an absolute path, a generated header not on disk). Such a
+// header may redefine or #undef anything, so a define cannot be trusted past one.
+type cUnresolved []int
+
+// kills reports whether an unresolved include sits strictly between a define
+// and a use.
+func (u cUnresolved) kills(defineLine, useLine int) bool {
+	for _, line := range u {
+		if defineLine < line && line < useLine {
+			return true
+		}
+	}
+	return false
+}
+
 // cHeaderCache parses each header at most once per parser, however many files
 // include it.
 type cHeaderCache struct {
@@ -64,18 +80,29 @@ func (c *cHeaderCache) load(parser *sitter.Parser, path string) *cHeader {
 	}
 	defer tree.Close()
 	root := tree.RootNode()
-	h := &cHeader{scan: collectCDefines(root, src), includes: cLocalIncludes(root, src, path)}
+	includes, unresolved := cLocalIncludes(root, src, path)
+	h := &cHeader{scan: collectCDefines(root, src), includes: includes}
+	// An unresolved include at or after a header define may undo it.
+	for name, define := range h.scan.literals {
+		for _, line := range unresolved {
+			if line >= define.line {
+				delete(h.scan.literals, name)
+				break
+			}
+		}
+	}
 	c.byPath[path] = h
 	return h
 }
 
 // cLocalIncludes lists the quoted includes of a file that resolve, relative to
-// the including file's directory, to a regular file. Angle-bracket includes
-// name system headers and are out of scope, and so is a quoted include no file
-// answers to.
-func cLocalIncludes(root *sitter.Node, src []byte, file string) []cLocalInclude {
+// the including file's directory, to a regular file, and the lines of the
+// quoted includes that resolve to none. Angle-bracket includes name system
+// headers and are out of scope.
+func cLocalIncludes(root *sitter.Node, src []byte, file string) ([]cLocalInclude, cUnresolved) {
 	guard := cIncludeGuard(root, src)
 	var includes []cLocalInclude
+	var unresolved cUnresolved
 	walkCNodes(root, func(n *sitter.Node) {
 		if n.Type() != cNodePreprocInclude {
 			return
@@ -84,21 +111,24 @@ func cLocalIncludes(root *sitter.Node, src []byte, file string) []cLocalInclude 
 		if path == nil || path.Type() != cNodeStringLiteral {
 			return
 		}
+		line := int(n.StartPoint().Row) + 1
 		rel := strings.Trim(strings.TrimSpace(path.Content(src)), `"`)
-		if rel == "" || strings.ContainsAny(rel, `\`) {
+		target := filepath.Join(filepath.Dir(file), rel)
+		if rel == "" || strings.ContainsAny(rel, `\`) || filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") {
+			unresolved = append(unresolved, line)
 			return
 		}
-		target := filepath.Join(filepath.Dir(file), rel)
 		if info, err := os.Stat(target); err != nil || !info.Mode().IsRegular() {
+			unresolved = append(unresolved, line)
 			return
 		}
 		includes = append(includes, cLocalInclude{
 			path:        target,
-			line:        int(n.StartPoint().Row) + 1,
+			line:        line,
 			conditional: cConditional(n, guard),
 		})
 	})
-	return includes
+	return includes, unresolved
 }
 
 // cIncludedFile is one header reached from the including file. line is the

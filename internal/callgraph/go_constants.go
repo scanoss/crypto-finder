@@ -258,10 +258,10 @@ func goWalk(n *sitter.Node, visit func(*sitter.Node)) {
 func goCollectBoundNames(scope *sitter.Node, src []byte, idx map[string][]goDecl) {
 	switch scope.Type() {
 	case nodeFunctionDeclaration, javaNodeMethodDeclaration, goNodeFuncLiteral:
-		for _, field := range []string{"receiver", "parameters", "result"} {
+		for _, field := range []string{"receiver", "parameters", "result", "type_parameters"} {
 			if list := scope.ChildByFieldName(field); list != nil {
 				goWalk(list, func(c *sitter.Node) {
-					if c.Type() == goNodeParameterDecl || c.Type() == goNodeVariadicParam {
+					if c.Type() == goNodeParameterDecl || c.Type() == goNodeVariadicParam || c.Type() == "type_parameter_declaration" {
 						goAddNames(c, 0, src, idx)
 					}
 				})

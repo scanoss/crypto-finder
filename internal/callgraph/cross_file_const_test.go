@@ -72,6 +72,13 @@ func TestGoParser_CrossFileConstArgumentSources(t *testing.T) {
 		{"test file sees a test const", map[string]string{"use_test.go": goUse, "a_test.go": "package main\n\nconst bits = 3072\n"}, true, "use_test.go", "3072", true},
 		{"test file const colliding with a non-test const", map[string]string{"use_test.go": goUse, "a_test.go": "package main\n\nconst bits = 1\n", "a.go": "package main\n\nconst bits = 2\n"}, true, "use_test.go", "", false},
 		{"non-test use ignores a colliding test declaration", map[string]string{"use.go": goUse, "a_test.go": "package main\n\nvar bits = 1\n", "a.go": "package main\n\nconst bits = 2\n"}, true, "use.go", "2", true},
+		{"cgo sibling", map[string]string{"use.go": goUse, "c.go": "package main\n\n// #include <x.h>\nimport \"C\"\n\nconst bits = 2048\n"}, false, "use.go", "2048", true},
+		{"generic type parameter shadows", map[string]string{"use.go": "package main\n\nfunc f[bits any]() { gen(rand, bits) }\n", "c.go": "package main\n\nconst bits = 2048\n"}, false, "use.go", "", false},
+		{"closure parameter shadows", map[string]string{"use.go": "package main\n\nvar g = func(bits int) { gen(rand, bits) }\n", "c.go": "package main\n\nconst bits = 2048\n"}, false, "use.go", "", false},
+		{"alias const stays unresolved", map[string]string{"use.go": goUse, "c.go": "package main\n\nconst bits = other\nconst other = 5\n"}, false, "use.go", "", false},
+		{"build line after a copyright header", map[string]string{"use.go": goUse, "c.go": "// Copyright\n\n//go:build linux\n\npackage main\n\nconst bits = 2048\n"}, false, "use.go", "", false},
+		{"external test package const", map[string]string{"use.go": goUse, "c_test.go": "package main_test\n\nconst bits = 2048\n"}, true, "use.go", "", false},
+		{"method of the same name is not a package name", map[string]string{"use.go": goUse, "c.go": "package main\n\nconst bits = 2048\ntype T struct{}\nfunc (T) bits() {}\n"}, false, "use.go", "2048", true},
 		{"nil is not a const", map[string]string{"use.go": "package main\n\nfunc f() { gen(rand, nil) }\n", "a.go": "package main\n\nconst nil = 1\n"}, false, "use.go", "", false},
 	}
 	for _, tt := range tests {
@@ -128,6 +135,17 @@ func TestCParser_CrossFileDefineArgumentSources(t *testing.T) {
 		{"undef'd in the including file before the call", map[string]string{"a.c": use("#include \"b.h\"\n#undef BITS\n"), "b.h": "#define BITS 4096\n"}, "", false},
 		{"defined in the including file before the include", map[string]string{"a.c": use("#define BITS 1024\n#include \"b.h\"\n"), "b.h": "#define BITS 4096\n"}, "", false},
 		{"redefined in the including file after the call", map[string]string{"a.c": "#include \"b.h\"\nvoid f(void) { gen(ctx, BITS); }\n#undef BITS\n#define BITS 1024\n", "b.h": "#define BITS 4096\n"}, "4096", true},
+		{"absolute quoted include is not joined onto the directory", map[string]string{"a.c": use("#include \"/abs/b.h\"\n"), "abs/b.h": "#define BITS 128\n"}, "", false},
+		{"missing include after a header define", map[string]string{"a.c": use("#include \"b.h\"\n#include \"config_gen.h\"\n"), "b.h": "#define BITS 128\n"}, "", false},
+		{"missing include before a header include", map[string]string{"a.c": use("#include \"config_gen.h\"\n#include \"b.h\"\n"), "b.h": "#define BITS 128\n"}, "128", true},
+		{"missing include after the call", map[string]string{"a.c": "#include \"b.h\"\nvoid f(void) { gen(ctx, BITS); }\n#include \"config_gen.h\"\n", "b.h": "#define BITS 128\n"}, "128", true},
+		{"missing include after an own define", map[string]string{"a.c": use("#define BITS 128\n#include \"config.h\"\n")}, "", false},
+		{"missing include before an own define", map[string]string{"a.c": use("#include \"config.h\"\n#define BITS 128\n")}, "128", true},
+		{"missing include after the define inside a header", map[string]string{"a.c": use("#include \"b.h\"\n"), "b.h": "#define BITS 128\n#include \"gen.h\"\n"}, "", false},
+		{"missing include before the define inside a header", map[string]string{"a.c": use("#include \"b.h\"\n"), "b.h": "#include \"gen.h\"\n#define BITS 128\n"}, "128", true},
+		{"undef in a second included header", map[string]string{"a.c": use("#include \"b.h\"\n#include \"c.h\"\n"), "b.h": "#define BITS 128\n", "c.h": "#undef BITS\n"}, "", false},
+		{"conditional own redefine after the include", map[string]string{"a.c": use("#include \"b.h\"\n#ifdef X\n#undef BITS\n#define BITS 1\n#endif\n"), "b.h": "#define BITS 128\n"}, "", false},
+		{"pragma once header", map[string]string{"a.c": use("#include \"b.h\"\n"), "b.h": "#pragma once\n#define BITS 128\n"}, "128", true},
 		{"own define unaffected by an unrelated header", map[string]string{"a.c": use("#include \"b.h\"\n#define BITS 1024\n"), "b.h": "#define OTHER 4096\n"}, "1024", true},
 	}
 	for _, tt := range tests {
@@ -227,4 +245,37 @@ func TestCParser_CrossFileDefineScalesLinearly(t *testing.T) {
 		t.Fatalf("parsing took %s, want near-linear time", elapsed)
 	}
 	t.Logf("resolved %d header defines in %s", files, elapsed)
+}
+
+// TestGoParser_CrossFileIndexBuiltOncePerDirectory pins that a directory given
+// with a trailing slash still shares one package index across its files.
+func TestGoParser_CrossFileIndexBuiltOncePerDirectory(t *testing.T) {
+	tree := map[string]string{"consts.go": "package main\n\nconst bits = 3072\n"}
+	for i := 0; i < 5; i++ {
+		tree[fmt.Sprintf("u%d.go", i)] = goUse
+	}
+	dir := writeTree(t, tree)
+	p := NewGoParser()
+	p.pkgIndex = newGoPackageIndex(dir + string(filepath.Separator))
+	shared := p.pkgIndex
+	for i := 0; i < 5; i++ {
+		if _, err := p.ParseFile(filepath.Join(dir, fmt.Sprintf("u%d.go", i)), "example/main"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !shared.built {
+		t.Fatal("the shared index was never used: each file built a private one")
+	}
+}
+
+func TestGoParser_OversizedSiblingMakesThePackageUnknown(t *testing.T) {
+	big := "package main\n\nvar x = 1\n// " + strings.Repeat("x", goSourceMaxBytes) + "\n"
+	dir := writeTree(t, map[string]string{"use.go": goUse, "c.go": "package main\n\nconst bits = 3072\n", "zz_big.go": big})
+	analyses, err := NewGoParser().ParseDirectory(dir, "example/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := constArgValue(t, analysisFor(t, analyses, dir, "use.go"), 1); ok {
+		t.Fatalf("argument 1 = %q, want none beside an oversized sibling", got)
+	}
 }
