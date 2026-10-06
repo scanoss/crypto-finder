@@ -91,10 +91,14 @@ func (p *CParser) parseFile(filePath, packagePath string) (*FileAnalysis, error)
 	root := tree.RootNode()
 	scan := collectCDefines(root, src)
 	includes, unresolved := cLocalIncludes(root, src, filePath)
+	scope := newCIncludeScope(p.parser, &p.headers, includes)
+	if scope != nil {
+		unresolved = append(unresolved, scope.dirtyTop...)
+	}
 	p.defines = &cDefines{
 		own:        scan.literals,
 		ownTouch:   scan.touched,
-		includes:   newCIncludeScope(p.parser, &p.headers, includes),
+		includes:   scope,
 		unresolved: unresolved,
 	}
 	defer func() { p.defines = nil }()

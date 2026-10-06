@@ -10,6 +10,7 @@ import (
 const (
 	cNodePreprocDef         = "preproc_def"
 	cNodePreprocFunctionDef = "preproc_function_def"
+	cNodePreprocCall        = "preproc_call"
 )
 
 // cDefine is an object-like #define whose replacement list is one integer or
@@ -120,7 +121,7 @@ func cMacroName(n *sitter.Node, src []byte) string {
 		if name := n.ChildByFieldName("name"); name != nil {
 			return name.Content(src)
 		}
-	case "preproc_call":
+	case cNodePreprocCall:
 		return cUndefName(n, src)
 	}
 	return ""
@@ -129,7 +130,7 @@ func cMacroName(n *sitter.Node, src []byte) string {
 // cMacroWeight is how much a directive counts against a name staying a single
 // literal definition: an #undef alone disqualifies it.
 func cMacroWeight(nodeType string) int {
-	if nodeType == "preproc_call" {
+	if nodeType == cNodePreprocCall {
 		return 2
 	}
 	return 1

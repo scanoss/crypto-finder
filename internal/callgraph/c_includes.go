@@ -32,8 +32,9 @@ type cLocalInclude struct {
 // cHeader is what one parsed header contributes: its define scan and the local
 // headers it includes in turn.
 type cHeader struct {
-	scan     cDefineScan
-	includes []cLocalInclude
+	scan       cDefineScan
+	includes   []cLocalInclude
+	unresolved cUnresolved
 }
 
 // cUnresolved lists the lines of the quoted includes that name no readable
@@ -81,16 +82,7 @@ func (c *cHeaderCache) load(parser *sitter.Parser, path string) *cHeader {
 	defer tree.Close()
 	root := tree.RootNode()
 	includes, unresolved := cLocalIncludes(root, src, path)
-	h := &cHeader{scan: collectCDefines(root, src), includes: includes}
-	// An unresolved include at or after a header define may undo it.
-	for name, define := range h.scan.literals {
-		for _, line := range unresolved {
-			if line >= define.line {
-				delete(h.scan.literals, name)
-				break
-			}
-		}
-	}
+	h := &cHeader{scan: collectCDefines(root, src), includes: includes, unresolved: unresolved}
 	c.byPath[path] = h
 	return h
 }
@@ -104,14 +96,29 @@ func cLocalIncludes(root *sitter.Node, src []byte, file string) ([]cLocalInclude
 	var includes []cLocalInclude
 	var unresolved cUnresolved
 	walkCNodes(root, func(n *sitter.Node) {
+		line := int(n.StartPoint().Row) + 1
+		if cOpaqueIncludeDirective(n, src) {
+			unresolved = append(unresolved, line)
+			return
+		}
 		if n.Type() != cNodePreprocInclude {
 			return
 		}
 		path := n.ChildByFieldName("path")
-		if path == nil || path.Type() != cNodeStringLiteral {
+		if path == nil {
+			unresolved = append(unresolved, line)
 			return
 		}
-		line := int(n.StartPoint().Row) + 1
+		switch path.Type() {
+		case cNodeStringLiteral:
+		case "system_lib_string":
+			return
+		default:
+			// #include MACRO and other computed includes name a file the
+			// scan cannot know.
+			unresolved = append(unresolved, line)
+			return
+		}
 		rel := strings.Trim(strings.TrimSpace(path.Content(src)), `"`)
 		target := filepath.Join(filepath.Dir(file), rel)
 		if rel == "" || strings.ContainsAny(rel, `\`) || filepath.IsAbs(rel) || strings.HasPrefix(rel, "/") {
@@ -131,6 +138,24 @@ func cLocalIncludes(root *sitter.Node, src []byte, file string) ([]cLocalInclude
 	return includes, unresolved
 }
 
+// cOpaqueIncludeDirective reports whether n is an #include_next or #import,
+// which the grammar parses as a generic directive: the file they name is not
+// followed, so whatever it defines is unknown.
+func cOpaqueIncludeDirective(n *sitter.Node, src []byte) bool {
+	if n.Type() != cNodePreprocCall {
+		return false
+	}
+	directive := n.ChildByFieldName("directive")
+	if directive == nil {
+		return false
+	}
+	switch strings.TrimSpace(directive.Content(src)) {
+	case "#include_next", "#import":
+		return true
+	}
+	return false
+}
+
 // cIncludedFile is one header reached from the including file. line is the
 // earliest line of the including file from which its defines are visible, and
 // unconditional is false when every path to it sits under a conditional.
@@ -138,6 +163,13 @@ type cIncludedFile struct {
 	header        *cHeader
 	line          int
 	unconditional bool
+	// active is set while the file's includes are being followed, so a cycle
+	// back to it counts as unknown.
+	active bool
+	// dirtyLines are the lines of the header at which an include it makes, or
+	// anything reachable through one, names no file: a define of the header
+	// at or before such a line may have been undone.
+	dirtyLines []int
 }
 
 // cIncludeScope is the transitive closure of the local headers a file
@@ -145,6 +177,9 @@ type cIncludedFile struct {
 type cIncludeScope struct {
 	files     map[string]*cIncludedFile
 	truncated bool
+	// dirtyTop are the lines of the including file whose include leads to an
+	// unresolved include anywhere beneath it.
+	dirtyTop cUnresolved
 }
 
 func newCIncludeScope(parser *sitter.Parser, cache *cHeaderCache, includes []cLocalInclude) *cIncludeScope {
@@ -153,35 +188,48 @@ func newCIncludeScope(parser *sitter.Parser, cache *cHeaderCache, includes []cLo
 	}
 	scope := &cIncludeScope{files: make(map[string]*cIncludedFile)}
 	for _, inc := range includes {
-		scope.visit(parser, cache, inc.path, inc.line, !inc.conditional, 1)
+		if scope.visit(parser, cache, inc.path, inc.line, !inc.conditional, 1) {
+			scope.dirtyTop = append(scope.dirtyTop, inc.line)
+		}
 	}
 	return scope
 }
 
-func (s *cIncludeScope) visit(parser *sitter.Parser, cache *cHeaderCache, path string, line int, unconditional bool, depth int) {
+// visit follows one include and reports whether an unresolved include sits
+// anywhere beneath it.
+func (s *cIncludeScope) visit(parser *sitter.Parser, cache *cHeaderCache, path string, line int, unconditional bool, depth int) bool {
 	if depth > cIncludeDepth {
 		s.truncated = true
-		return
+		return true
 	}
 	file, seen := s.files[path]
 	if !seen {
 		file = &cIncludedFile{header: cache.load(parser, path), line: line, unconditional: unconditional}
 		s.files[path] = file
 	} else {
+		if file.active {
+			return true
+		}
 		improved := false
 		if unconditional && (!file.unconditional || line < file.line) {
 			file.unconditional, file.line, improved = true, line, true
 		}
 		if !improved {
-			return
+			return len(file.dirtyLines) > 0
 		}
 	}
 	if file.header == nil {
-		return
+		return false
 	}
+	file.active = true
+	file.dirtyLines = append([]int(nil), file.header.unresolved...)
 	for _, inc := range file.header.includes {
-		s.visit(parser, cache, inc.path, file.line, file.unconditional && !inc.conditional, depth+1)
+		if s.visit(parser, cache, inc.path, file.line, file.unconditional && !inc.conditional, depth+1) {
+			file.dirtyLines = append(file.dirtyLines, inc.line)
+		}
 	}
+	file.active = false
+	return len(file.dirtyLines) > 0
 }
 
 // touches counts the distinct included files that define, redefine or #undef
@@ -213,7 +261,7 @@ func (s *cIncludeScope) literal(name string, ownTouch int) (cDefine, bool) {
 			continue
 		}
 		define, ok := file.header.scan.literals[name]
-		if !ok {
+		if !ok || file.undoneAfter(define.line) {
 			continue
 		}
 		if ownTouch != 0 && ownTouch < file.line {
@@ -222,4 +270,14 @@ func (s *cIncludeScope) literal(name string, ownTouch int) (cDefine, bool) {
 		return cDefine{value: define.value, line: file.line, until: ownTouch}, true
 	}
 	return cDefine{}, false
+}
+
+// undoneAfter reports whether an unresolved include may run at or after line.
+func (f *cIncludedFile) undoneAfter(line int) bool {
+	for _, dirty := range f.dirtyLines {
+		if dirty >= line {
+			return true
+		}
+	}
+	return false
 }

@@ -144,7 +144,8 @@ func TestCParser_DefineArgumentSources(t *testing.T) {
 
 // TestGoParser_ConstLookupScalesLinearly pins the cost of resolving identifier
 // arguments in one function with thousands of statements, package consts and
-// calls. Rescanning every enclosing scope per argument took minutes here.
+// calls. Rescanning every enclosing scope per argument took minutes here. It
+// bounds the work done, not the wall clock, so machine load cannot flip it.
 func TestGoParser_ConstLookupScalesLinearly(t *testing.T) {
 	const n = 2000
 	var b strings.Builder
@@ -162,8 +163,9 @@ func TestGoParser_ConstLookupScalesLinearly(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	parser := NewGoParser()
 	start := time.Now()
-	analysis, err := NewGoParser().ParseFile(file, "example/main")
+	analysis, err := parser.ParseFile(file, "example/main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,8 +180,13 @@ func TestGoParser_ConstLookupScalesLinearly(t *testing.T) {
 	if resolved != n {
 		t.Fatalf("resolved %d of %d const arguments", resolved, n)
 	}
-	if elapsed > 20*time.Second {
+	// Linear is about 3n: the package consts and the body's statements are
+	// indexed once, and each argument compares the few declarations of its name.
+	if limit := 10 * 3 * n; parser.consts.work > limit {
+		t.Fatalf("const resolution did %d units of work for %d arguments, want at most %d", parser.consts.work, n, limit)
+	}
+	if elapsed > 60*time.Second {
 		t.Fatalf("parsing took %s, want near-linear time", elapsed)
 	}
-	t.Logf("parsed %d consts and %d calls in %s", n, n, elapsed)
+	t.Logf("parsed %d consts and %d calls with %d units of work in %s", n, n, parser.consts.work, elapsed)
 }

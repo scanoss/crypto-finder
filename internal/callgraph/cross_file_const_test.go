@@ -146,6 +146,15 @@ func TestCParser_CrossFileDefineArgumentSources(t *testing.T) {
 		{"undef in a second included header", map[string]string{"a.c": use("#include \"b.h\"\n#include \"c.h\"\n"), "b.h": "#define BITS 128\n", "c.h": "#undef BITS\n"}, "", false},
 		{"conditional own redefine after the include", map[string]string{"a.c": use("#include \"b.h\"\n#ifdef X\n#undef BITS\n#define BITS 1\n#endif\n"), "b.h": "#define BITS 128\n"}, "", false},
 		{"pragma once header", map[string]string{"a.c": use("#include \"b.h\"\n"), "b.h": "#pragma once\n#define BITS 128\n"}, "128", true},
+		{"computed include may undo the define", map[string]string{"a.c": "#include \"a.h\"\n#define HEADER \"b.h\"\n#include HEADER\nvoid f(void) { gen(ctx, BITS); }\n", "a.h": "#define BITS 128\n", "b.h": "#undef BITS\n#define BITS 64\n"}, "", false},
+		{"include_next may undo the define", map[string]string{"a.c": use("#include \"b.h\"\n#include_next \"c.h\"\n"), "b.h": "#define BITS 128\n", "c.h": "#undef BITS\n"}, "", false},
+		{"import may undo the define", map[string]string{"a.c": use("#include \"b.h\"\n#import \"c.h\"\n"), "b.h": "#define BITS 128\n", "c.h": "#undef BITS\n"}, "", false},
+		{"computed include before the define is harmless", map[string]string{"a.c": use("#define HEADER \"c.h\"\n#include HEADER\n#include \"b.h\"\n"), "b.h": "#define BITS 128\n", "c.h": "\n"}, "128", true},
+		{"missing include in a later header", map[string]string{"a.c": use("#include \"a.h\"\n#include \"b.h\"\n"), "a.h": "#define BITS 128\n", "b.h": "#include \"gen.h\"\n"}, "", false},
+		{"missing include in a header included after the define", map[string]string{"a.c": use("#include \"a.h\"\n"), "a.h": "#define BITS 128\n#include \"b.h\"\n", "b.h": "#include \"gen.h\"\n"}, "", false},
+		{"missing include in a header included before the define", map[string]string{"a.c": use("#include \"a.h\"\n"), "a.h": "#include \"b.h\"\n#define BITS 128\n", "b.h": "#include \"gen.h\"\n"}, "128", true},
+		{"missing include deep in a later header chain", map[string]string{"a.c": use("#include \"a.h\"\n#include \"b.h\"\n"), "a.h": "#define BITS 128\n", "b.h": "#include \"c.h\"\n", "c.h": "#include \"gen.h\"\n"}, "", false},
+		{"later header without a missing include", map[string]string{"a.c": use("#include \"a.h\"\n#include \"b.h\"\n"), "a.h": "#define BITS 128\n", "b.h": "#define OTHER 1\n"}, "128", true},
 		{"own define unaffected by an unrelated header", map[string]string{"a.c": use("#include \"b.h\"\n#define BITS 1024\n"), "b.h": "#define OTHER 4096\n"}, "1024", true},
 	}
 	for _, tt := range tests {
