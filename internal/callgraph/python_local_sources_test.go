@@ -115,3 +115,41 @@ func TestPythonParser_LocalArgumentSourcesScaleLinearly(t *testing.T) {
 		t.Fatalf("parsing %d locals took %s, want near-linear time", large, elapsed)
 	}
 }
+
+// TestPythonParser_LocalConstructorCallRootMustBeAnImport pins that a stored
+// zero-argument call resolves only through a dotted name rooted at an import
+// that no local name hides.
+func TestPythonParser_LocalConstructorCallRootMustBeAnImport(t *testing.T) {
+	src := `import threading
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.ec import SECP384R1
+
+imported = ec.SECP521R1()
+threaded = threading.local()
+unimported = missing.SECP521R1()
+bare = SECP384R1()
+made = object()
+
+
+def f():
+    use(imported, threaded, unimported, bare, made)
+
+
+def g(ec):
+    use(imported)
+`
+	fns := parsePythonInline(t, src)
+	call := findPythonCallByMethod(findPythonFuncByName(fns, "f"), "use")
+	if call == nil || len(call.ArgumentSources) != 5 {
+		t.Fatalf("use call = %+v", call)
+	}
+	for i, want := range []bool{true, true, false, false, false} {
+		if got := call.ArgumentSources[i] != nil; got != want {
+			t.Errorf("argument %d resolved = %v, want %v: %+v", i, got, want, call.ArgumentSources[i])
+		}
+	}
+	shadowed := findPythonCallByMethod(findPythonFuncByName(fns, "g"), "use")
+	if shadowed == nil || len(shadowed.ArgumentSources) != 1 || shadowed.ArgumentSources[0] != nil {
+		t.Errorf("a parameter named like the import root must hide the constructor: %+v", shadowed)
+	}
+}

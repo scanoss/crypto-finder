@@ -1,6 +1,10 @@
 package callgraph
 
-import sitter "github.com/smacker/go-tree-sitter"
+import (
+	"strings"
+
+	sitter "github.com/smacker/go-tree-sitter"
+)
 
 // pythonLocalSources indexes, for ONE outermost function scope, every name the
 // function can bind, in the same descent pythonWalk already makes, so a call
@@ -32,6 +36,9 @@ type pythonLocalSources struct {
 	// parameters and a def's parameters bind in their own scope there, so only
 	// a def's name poisons.
 	module bool
+	// all poisons every name in the file-level index: the file rebinds names
+	// dynamically (exec, globals(), setattr on the module).
+	all bool
 }
 
 func (s *pythonLocalSources) tick() {
@@ -43,8 +50,11 @@ func (s *pythonLocalSources) tick() {
 type pythonLocalSource struct {
 	// value is the right-hand side node shared by every binding, kept so the
 	// use site resolves it in its own binding layer.
-	value    *sitter.Node
-	text     string
+	value *sitter.Node
+	text  string
+	// root is the leading name of a dotted constructor call (`ec` in
+	// `ec.SECP521R1()`), empty for an integer literal.
+	root     string
 	poisoned bool
 }
 
@@ -61,12 +71,12 @@ func (s *pythonLocalSources) entry(name string) *pythonLocalSource {
 	return e
 }
 
-func (s *pythonLocalSources) bind(name string, value *sitter.Node, text string) {
+func (s *pythonLocalSources) bind(name string, value *sitter.Node, text, root string) {
 	e := s.entry(name)
 	switch {
 	case e.poisoned:
 	case e.value == nil && e.text == "":
-		e.value, e.text = value, text
+		e.value, e.text, e.root = value, text, root
 	case e.text != text:
 		e.poisoned = true
 	}
@@ -97,6 +107,9 @@ func (s *pythonLocalSources) lookup(name string) (source *pythonLocalSource, kno
 		return nil, false
 	}
 	s.tick()
+	if s.all {
+		return nil, true
+	}
 	e, ok := s.byName[name]
 	if !ok {
 		return nil, false
@@ -135,6 +148,8 @@ func (s *pythonLocalSources) observe(node *sitter.Node, sym sitter.Symbol, src [
 		if !s.module {
 			s.poisonIdentifiers(node, src)
 		}
+	case pythonSyms.wildcardImport:
+		s.poisonExisting()
 	case pythonSyms.importStatement, pythonSyms.importFromStatement,
 		pythonSyms.globalStatement, pythonSyms.nonlocalStatement, pythonSyms.deleteStatement,
 		pythonSyms.casePattern, pythonSyms.typeAliasStatement:
@@ -174,9 +189,11 @@ func (s *pythonLocalSources) observeAssignment(node *sitter.Node, src []byte) {
 		return
 	}
 	name := left.Content(src)
-	if right != nil && isPythonLocalSourceValue(right) && !s.inNestedScope(node) {
-		s.bind(name, right, right.Content(src))
-		return
+	if right != nil && !s.inNestedScope(node) {
+		if root, ok := pythonLocalSourceRoot(right, src); ok {
+			s.bind(name, right, right.Content(src), root)
+			return
+		}
 	}
 	s.poison(name)
 }
@@ -193,34 +210,72 @@ func (s *pythonLocalSources) poisonTarget(target *sitter.Node, src []byte) {
 	s.poisonIdentifiers(target, src)
 }
 
-// isPythonLocalSourceValue admits the two value shapes a key size can come
-// from: an integer literal and a zero-argument call through a dotted name (a
-// curve constructor such as ec.SECP521R1()).
-func isPythonLocalSourceValue(value *sitter.Node) bool {
+// pythonLocalSourceRoot admits the two value shapes a key size can come from:
+// an integer literal (empty root) and a zero-argument call through a dotted
+// name (a curve constructor such as ec.SECP521R1()), whose leading name is
+// returned so the use site can require it to be an import.
+func pythonLocalSourceRoot(value *sitter.Node, src []byte) (root string, ok bool) {
 	switch value.Symbol() {
 	case pythonSyms.integer:
-		return true
+		return "", true
 	case pythonSyms.call:
 		args := value.ChildByFieldName("arguments")
-		return args != nil && args.NamedChildCount() == 0 && isPythonDottedName(value.ChildByFieldName("function"))
+		if args == nil || args.NamedChildCount() != 0 {
+			return "", false
+		}
+		fn := value.ChildByFieldName("function")
+		if fn == nil || fn.Symbol() != pythonSyms.attribute {
+			return "", false
+		}
+		return pythonDottedRoot(fn, src)
 	default:
-		return false
+		return "", false
 	}
 }
 
-func isPythonDottedName(node *sitter.Node) bool {
+func pythonDottedRoot(node *sitter.Node, src []byte) (string, bool) {
 	for node != nil {
 		switch node.Symbol() {
 		case pythonSyms.identifier:
-			return true
+			return node.Content(src), true
 		case pythonSyms.attribute:
 			if attr := node.ChildByFieldName("attribute"); attr == nil || attr.Symbol() != pythonSyms.identifier {
-				return false
+				return "", false
 			}
 			node = node.ChildByFieldName("object")
 		default:
-			return false
+			return "", false
 		}
 	}
-	return false
+	return "", false
+}
+
+// poisonExisting poisons every name bound so far: `from m import *` can
+// rebind any of them, while a name bound after it overrides the import.
+func (s *pythonLocalSources) poisonExisting() {
+	for _, e := range s.byName {
+		s.tick()
+		e.poisoned = true
+	}
+}
+
+// observeDynamicBinding poisons the whole file-level index when a call can
+// bind module names by string: exec, globals()/vars()/locals() (a module-level
+// locals() is the module dict) and setattr on the module object.
+func (s *pythonLocalSources) observeDynamicBinding(call *sitter.Node, src []byte) {
+	fn := call.ChildByFieldName("function")
+	if fn == nil || fn.Symbol() != pythonSyms.identifier {
+		return
+	}
+	switch string(src[fn.StartByte():fn.EndByte()]) {
+	case "exec", "globals", "vars", "locals":
+		s.all = true
+	case "setattr":
+		if args := call.ChildByFieldName("arguments"); args != nil {
+			text := args.Content(src)
+			if strings.Contains(text, "sys.modules") || strings.Contains(text, "__name__") || strings.Contains(text, "globals") {
+				s.all = true
+			}
+		}
+	}
 }

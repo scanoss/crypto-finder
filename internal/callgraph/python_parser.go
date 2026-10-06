@@ -806,6 +806,7 @@ func (p *PythonParser) pythonWalkSideEffects(node *sitter.Node, sym sitter.Symbo
 			p.recordPythonReExportsFromStatement(node, src, analysis)
 		}
 	case pythonSyms.call:
+		fw.moduleSources.observeDynamicBinding(node, src)
 		recordPythonPendingCall(node, layer, fw, activeFunc, activeClassDirect, moduleDirect)
 		// Row 7's dynamic-import registration (G5, PR #310 phase-2 review)
 		// must happen during THIS single descent, not at deferred
@@ -2888,6 +2889,11 @@ func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte,
 func (p *PythonParser) pythonLocalArgumentSource(name string, local *pythonLocalSource, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, fw *pythonFileWalk, depth int) []SourceNode {
 	if local == nil {
 		return nil
+	}
+	if local.root != "" {
+		if _, imported := analysis.Imports[local.root]; !imported || pythonNameLocallyShadowed(bindings, fw, local.root) {
+			return nil
+		}
 	}
 	value := p.pythonArgumentSourceFor(local.value, src, filePath, analysis, bindings, fw, depth)
 	if value == nil {

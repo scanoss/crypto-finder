@@ -30,6 +30,10 @@ func TestPythonModuleKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T) {
 		{"lambda parameter does not poison", intBase + "ident = lambda bits: bits\n", useRSA, rsaUse, rsaAPI, 1, 4096},
 		{"local of another function does not poison", intBase + "def other():\n    bits = 1\n    return bits\n", useRSA, rsaUse, rsaAPI, 1, 4096},
 	}...)
+	cases = append(cases, []pythonKeyLengthCase{
+		{"wildcard import before the constant is harmless", "from os import *\nbits = 4096\n", useRSA, rsaUse, rsaAPI, 1, 4096},
+		{"wildcard import before a curve constant is harmless", "from os import *\nc = ec.SECP521R1()\n", useRSA, ecUse, ecAPI, 0, 521},
+	}...)
 	type binder struct{ name, code, curveCode string }
 	for _, b := range []binder{
 		{"reassignment", "bits = 1024\n", "c = ec.SECP256R1()\n"},
@@ -50,6 +54,15 @@ func TestPythonModuleKeyLength_ExactBitsThroughSupportingCallIDs(t *testing.T) {
 		{"except target", "try:\n    pass\nexcept Exception as bits:\n    pass\n", "try:\n    pass\nexcept Exception as c:\n    pass\n"},
 		{"annotation without a value", "bits: int\n", "c: int\n"},
 		{"global rebinding in a function", "def setter():\n    global bits\n    bits = 1024\n", "def setter():\n    global c\n    c = ec.SECP256R1()\n"},
+		{"wildcard import after the constant", "from os import *\n", "from os import *\n"},
+		{"module exec", "exec('bits = 1')\n", "exec('c = 1')\n"},
+		{"module globals item assignment", "globals()['bits'] = 1024\n", "globals()['c'] = 1\n"},
+		{"module globals update", "globals().update(bits=1024)\n", "globals().update(c=1)\n"},
+		{"module vars", "vars()['bits'] = 1024\n", "vars()['c'] = 1\n"},
+		{"module locals", "locals()['bits'] = 1024\n", "locals()['c'] = 1\n"},
+		{"setattr on the module", "import sys\nsetattr(sys.modules[__name__], 'bits', 1024)\n", "import sys\nsetattr(sys.modules[__name__], 'c', 1)\n"},
+		{"globals() in a function", "def mutate():\n    globals()['bits'] = 1024\n", "def mutate():\n    globals()['c'] = 1\n"},
+		{"exec in a function", "def mutate():\n    exec('global bits; bits = 1024', globals())\n", "def mutate():\n    exec('global c; c = 1', globals())\n"},
 		{"global declaration in a method", "class K:\n    def setter(self):\n        global bits\n        bits = 1024\n", "class K:\n    def setter(self):\n        global c\n        c = ec.SECP256R1()\n"},
 	} {
 		cases = append(cases,
