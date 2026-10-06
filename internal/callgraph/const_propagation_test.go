@@ -11,12 +11,12 @@ import (
 
 // constArgValue returns the literal the parser traced for argument index of
 // the call named callee, and false when the argument carries no source.
-func constArgValue(t *testing.T, analysis *FileAnalysis, callee string, index int) (string, bool) {
+func constArgValue(t *testing.T, analysis *FileAnalysis, index int) (string, bool) {
 	t.Helper()
 	for i := range analysis.Functions {
 		for j := range analysis.Functions[i].Calls {
 			call := &analysis.Functions[i].Calls[j]
-			if call.Callee.Name != callee {
+			if call.Callee.Name != "gen" {
 				continue
 			}
 			if index >= len(call.ArgumentSources) {
@@ -29,7 +29,7 @@ func constArgValue(t *testing.T, analysis *FileAnalysis, callee string, index in
 			return nodes[0].SourceNodes[0].Value, true
 		}
 	}
-	t.Fatalf("call %q not found", callee)
+	t.Fatal("call gen not found")
 	return "", false
 }
 
@@ -84,11 +84,11 @@ func TestGoParser_ConstArgumentSources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, ok := constArgValue(t, analysis, "gen", 1)
+			got, ok := constArgValue(t, analysis, 1)
 			if got != tt.want || ok != tt.ok {
 				t.Fatalf("argument 1 = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
 			}
-			if _, ok := constArgValue(t, analysis, "gen", 0); ok {
+			if _, ok := constArgValue(t, analysis, 0); ok {
 				t.Fatal("argument 0 (rand) must not resolve")
 			}
 		})
@@ -134,7 +134,7 @@ func TestCParser_DefineArgumentSources(t *testing.T) {
 			if err != nil || len(analyses) != 1 {
 				t.Fatalf("ParseDirectory = %d analyses, err %v", len(analyses), err)
 			}
-			got, ok := constArgValue(t, analyses[0], "gen", 1)
+			got, ok := constArgValue(t, analyses[0], 1)
 			if got != tt.want || ok != tt.ok {
 				t.Fatalf("argument 1 = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
 			}

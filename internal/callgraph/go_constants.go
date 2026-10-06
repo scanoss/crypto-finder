@@ -53,9 +53,12 @@ type goDecl struct {
 // of every enclosing scope's statements. Reset it when the tree is closed.
 type goConstScopes struct {
 	byScope map[uintptr]map[string][]goDecl
+	// crossFile resolves a name no scope of the current file declares against
+	// the other files of its package. Nil when the file is parsed alone.
+	crossFile func(name string) (string, bool)
 }
 
-func (c *goConstScopes) reset() { c.byScope = nil }
+func (c *goConstScopes) reset() { c.byScope, c.crossFile = nil, nil }
 
 func (c *goConstScopes) index(scope *sitter.Node, src []byte) map[string][]goDecl {
 	if c.byScope == nil {
@@ -128,6 +131,9 @@ func (c *goConstScopes) lookup(use *sitter.Node, name string, src []byte) (strin
 		if best != nil {
 			return best.value, best.kind == goDeclLiteral
 		}
+	}
+	if c.crossFile != nil {
+		return c.crossFile(name)
 	}
 	return "", false
 }

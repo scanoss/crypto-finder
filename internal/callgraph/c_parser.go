@@ -25,7 +25,8 @@ type CParser struct {
 	parser       *sitter.Parser
 	includeTests bool
 	anchors      callAnchors
-	defines      map[string]cDefine
+	defines      *cDefines
+	headers      cHeaderCache
 }
 
 // NewCParser creates a C source parser backed by tree-sitter.
@@ -88,7 +89,12 @@ func (p *CParser) parseFile(filePath, packagePath string) (*FileAnalysis, error)
 		Imports:     make(map[string]string),
 	}
 	root := tree.RootNode()
-	p.defines = collectCDefines(root, src)
+	scan := collectCDefines(root, src)
+	p.defines = &cDefines{
+		own:      scan.literals,
+		ownTouch: scan.touched,
+		includes: newCIncludeScope(p.parser, &p.headers, cLocalIncludes(root, src, filePath)),
+	}
 	defer func() { p.defines = nil }()
 	staticFunctions := make(map[string]bool)
 	collectCStaticFunctions(root, src, staticFunctions)
