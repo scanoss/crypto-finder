@@ -1359,6 +1359,9 @@ func traceBackward(
 	// are not downstream of any of them; skipping the walk for those is what
 	// turns an O(operations × graph size) worst case back into O(graph size).
 	reachableFromChainEntry := forwardReachableSet(adjacency, chainEntrySet)
+	// A request naming anything keeps unreached operations in the index; one
+	// naming nothing yields nothing.
+	keepIndex := len(chainEntries) > 0 || composedFindings != nil
 
 	for _, opNode := range sortedNodes(opsByNode) {
 		// Enumerate the routes over the collapsed graph, so the served chains
@@ -1387,11 +1390,7 @@ func traceBackward(
 				// operation. The self-chain fallback below exists for a crypto call
 				// nothing calls at all; synthesizing it here would assert the
 				// operation is reachable from an entry that does not reach it.
-				// The carrier keeps the operation in the entry-point index while
-				// the request names anything; one naming nothing yields nothing.
-				if len(chainEntries) > 0 || composedFindings != nil {
-					emitIndexOnlyFindings(opNode, opsByNode, fragments, functionsByNode, out)
-				}
+				emitIndexOnlyFindings(keepIndex, opNode, opsByNode, fragments, functionsByNode, out)
 				continue
 			}
 			// The op node's own frame is the terminal frame of the self-chain
@@ -1465,14 +1464,19 @@ func emitUnattributedFindings(
 }
 
 // emitIndexOnlyFindings records each crypto op on opNode as an IndexOnly
-// carrier: the index needs the finding's served identity, not a route.
+// carrier when keep is set: the index needs the finding's served identity,
+// not a route.
 func emitIndexOnlyFindings(
+	keep bool,
 	opNode graphNode,
 	opsByNode map[graphNode][]CryptoOperation,
 	fragments map[ComponentKey]Fragment,
 	functionsByNode map[graphNode]Function,
 	out *Result,
 ) {
+	if !keep {
+		return
+	}
 	frame := buildFrame(opNode, inbound{}, fragments, functionsByNode)
 	for i := range opsByNode[opNode] {
 		opCopy := opsByNode[opNode][i]
