@@ -716,6 +716,11 @@ type FindingChain struct {
 	// identity-less frame cannot be expressed in the interned form -- its
 	// catalog entry would hold nothing to hydrate from.
 	Unattributed bool
+
+	// IndexOnly marks a finding carrier for an operation a restricted chain
+	// enumeration (StitchOptions.ChainEntrySignatures) skipped: it feeds the
+	// entry-point index, which stays complete, but is not exported as a finding.
+	IndexOnly bool
 }
 
 // SuppressedEdge is one call edge (or grouped call site) the stitcher declined

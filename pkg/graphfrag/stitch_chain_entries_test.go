@@ -211,3 +211,127 @@ func TestStitchChainEntrySignatures_NilKeepsEveryEntry(t *testing.T) {
 		t.Errorf("chains = %d with an empty slice, want %d (no restriction)", len(empty.Chains), len(base.Chains))
 	}
 }
+
+// twoOpChainEntryFixture is chainEntryFixture plus an unrelated root (gamma)
+// reaching a second operation, so a restriction to one entry leaves an
+// operation it does not reach.
+func twoOpChainEntryFixture() (ComponentKey, DependencyGraph, map[ComponentKey]Fragment) {
+	root, deps, fragments := chainEntryFixture()
+	frag := fragments[root]
+	frag.Functions = append(frag.Functions,
+		Function{Signature: "gamma#0", FunctionName: "com.acme.App.gamma", CanonicalSignature: "com.acme.App.gamma(): void", FilePath: "App.java"},
+		Function{Signature: "other#0", FunctionName: "com.acme.App.other", CanonicalSignature: "com.acme.App.other(): void", ErasedSignature: "com.acme.App.other()", FilePath: "Other.java"},
+	)
+	frag.InternalEdges = append(frag.InternalEdges, InternalEdge{Caller: "gamma#0", Callee: "other#0", Resolution: ResolutionExact})
+	frag.CryptoOperations = append(frag.CryptoOperations, CryptoOperation{Function: "other#0", FindingID: "f-other", RuleID: "r", Symbol: "Crypto.other", FilePath: "Other.java", StartLine: 9})
+	fragments[root] = frag
+	return root, deps, fragments
+}
+
+// TestStitchChainEntrySignatures_NonRootEntryResolves pins that every published
+// entry point is a usable filter value, not only the roots: mid is published
+// (it reaches the crypto) but has callers, so it is no root.
+func TestStitchChainEntrySignatures_NonRootEntryResolves(t *testing.T) {
+	t.Parallel()
+
+	root, deps, fragments := chainEntryFixture()
+	module := fragments[root].Module
+	frag := fragments[root]
+	frag.EntryKinds = map[string]string{} // recorded: the roots read no_callers
+	fragments[root] = frag
+
+	res, err := StitchWithOptions(root, deps, fragments, StitchOptions{
+		EntryRootedOnly:      true,
+		ChainEntrySignatures: []string{"com.acme.App.mid(): void"},
+	})
+	if err != nil {
+		t.Fatalf("StitchWithOptions: %v", err)
+	}
+	if got := rootFrameSignatures(res); len(got) != 1 || got[0] != "mid#0" {
+		t.Errorf("chain heads = %v, want only mid#0", got)
+	}
+	export := res.ToCallgraphExport(root, ScanMeta{RootModule: module, Ecosystem: "java"})
+	if got := exportFindingFiles(&export); len(got) != 1 || got["App.java"] != ReachabilityReachable {
+		t.Fatalf("findings = %v, want f-sink reachable", got)
+	}
+	// mid has callers, so it is no root and its chain claims no root_kind.
+	for _, chain := range export.FindingGraphs[0].CallChains {
+		if chain[0].RootKind != "" {
+			t.Errorf("head %s root_kind = %q, want none", chain[0].FunctionKey, chain[0].RootKind)
+		}
+	}
+	var midListsSink bool
+	for i := range export.CryptoEntryPoints {
+		ep := &export.CryptoEntryPoints[i]
+		if ep.CanonicalSignature != "com.acme.App.mid(): void" {
+			continue
+		}
+		for _, rf := range ep.ReachableFindings {
+			midListsSink = midListsSink || rf.FindingID == export.FindingGraphs[0].FindingID
+		}
+	}
+	if !midListsSink {
+		t.Errorf("index = %+v, want mid listing f-sink", export.CryptoEntryPoints)
+	}
+}
+
+// TestStitchChainEntrySignatures_ErasedSignatureResolves accepts the erased
+// spelling the index also publishes.
+func TestStitchChainEntrySignatures_ErasedSignatureResolves(t *testing.T) {
+	t.Parallel()
+
+	root, deps, fragments := twoOpChainEntryFixture()
+
+	res, err := StitchWithOptions(root, deps, fragments, StitchOptions{
+		EntryRootedOnly:      true,
+		ChainEntrySignatures: []string{"com.acme.App.other()"},
+	})
+	if err != nil {
+		t.Fatalf("StitchWithOptions: %v", err)
+	}
+	if got := reachableFindingIDs(res); len(got) != 1 || got[0] != "f-other" {
+		t.Errorf("findings = %v, want f-other", got)
+	}
+}
+
+// TestStitchChainEntrySignatures_IndexStaysCompleteForUnreachedOps pins that an
+// operation the requested entry does not reach still has its entry points
+// published, although it gets no finding graph.
+func TestStitchChainEntrySignatures_IndexStaysCompleteForUnreachedOps(t *testing.T) {
+	t.Parallel()
+
+	root, deps, fragments := twoOpChainEntryFixture()
+	module := fragments[root].Module
+
+	all, err := StitchWithOptions(root, deps, fragments, StitchOptions{EntryRootedOnly: true})
+	if err != nil {
+		t.Fatalf("StitchWithOptions (unrestricted): %v", err)
+	}
+	only, err := StitchWithOptions(root, deps, fragments, StitchOptions{
+		EntryRootedOnly:      true,
+		ChainEntrySignatures: []string{"com.acme.App.alpha(): void"},
+	})
+	if err != nil {
+		t.Fatalf("StitchWithOptions (restricted): %v", err)
+	}
+
+	export := only.ToCallgraphExport(root, ScanMeta{RootModule: module, Ecosystem: "java"})
+	if got := exportFindingFiles(&export); len(got) != 1 || got["App.java"] == "" {
+		t.Errorf("finding graphs = %v, want only f-sink", got)
+	}
+	if len(only.SupportingCalls) != len(all.SupportingCalls) {
+		t.Errorf("supporting calls = %d, want %d", len(only.SupportingCalls), len(all.SupportingCalls))
+	}
+
+	allExport := all.ToCallgraphExport(root, ScanMeta{RootModule: module, Ecosystem: "java"})
+	if len(allExport.CryptoEntryPoints) != len(export.CryptoEntryPoints) {
+		t.Fatalf("index changed with the restriction:\n unrestricted %+v\n restricted   %+v",
+			allExport.CryptoEntryPoints, export.CryptoEntryPoints)
+	}
+	for i := range allExport.CryptoEntryPoints {
+		want, got := allExport.CryptoEntryPoints[i], export.CryptoEntryPoints[i]
+		if want.FunctionKey != got.FunctionKey || len(want.ReachableFindings) != len(got.ReachableFindings) || want.Root != got.Root {
+			t.Errorf("entry %d = %+v, want %+v", i, got, want)
+		}
+	}
+}

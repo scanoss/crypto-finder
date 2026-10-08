@@ -661,6 +661,9 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	// reachability sets are keyed by that node, not by finding_id, because
 	// dependency finding_ids are recomputed with a module prefix here.
 	anchorByFinding := make(map[string]graphNode, len(groupOrder))
+	// indexOnly are the findings a restricted enumeration skipped: published in
+	// the index, not exported.
+	var indexOnly []ExportFindingGraph
 
 	for _, key := range groupOrder {
 		grp := groupMap[key]
@@ -673,6 +676,10 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 			CallChains:        grp.callChains,
 		}
 		anchorByFinding[grp.findingID] = grp.anchorNode
+		if grp.indexOnly {
+			indexOnly = append(indexOnly, fg)
+			continue
+		}
 		fg.Dependency = r.findingDependency(root, grp.anchorNode.Component, meta)
 		// An unattributed op keeps its frame so its component-derived identity
 		// survives, which also makes its anchor resolvable — but live has no
@@ -694,9 +701,13 @@ func (r *Result) ToCallgraphExport(root ComponentKey, meta ScanMeta) CallgraphEx
 	// The reachability-derived index already knows every reaching function and
 	// which of them are roots, so it needs neither a chain fold nor a chain-head
 	// root scan (issue #249).
+	indexed := out.FindingGraphs
+	if len(indexOnly) > 0 {
+		indexed = append(append(make([]ExportFindingGraph, 0, len(out.FindingGraphs)+len(indexOnly)), out.FindingGraphs...), indexOnly...)
+	}
 	out.CryptoEntryPoints = buildEntryPointsFromReach(
 		r.reachByAnchor, anchorByFinding, root, meta.Ecosystem,
-		out.FindingGraphs, out.SupportingCalls)
+		indexed, out.SupportingCalls)
 	out.CryptoEntryPoints = mergeOperationEntryPoints(out.CryptoEntryPoints, r.operationEntryPoints)
 	out.CryptoEntryPoints = appendComposedEntryPoints(out.CryptoEntryPoints, r.composedEntryPoints, r.composedRoots)
 	for i := range out.CryptoEntryPoints {
@@ -742,6 +753,8 @@ type exportChainGroup struct {
 	pathCountTruncated bool
 	// chainsTruncated mirrors FindingChain.ChainsTruncated (#334).
 	chainsTruncated bool
+	// indexOnly is set while every chain of the group is an IndexOnly carrier.
+	indexOnly bool
 }
 
 // ingestExportFindingChain merges one FindingChain into the export grouping map.
@@ -777,6 +790,7 @@ func ingestExportFindingChain(
 			matchedOp:         chainMatchedOp(fc),
 			supportingCallIDs: chainSupportingCallIDs(fc),
 			purl:              directFindingPURL(fc, root),
+			indexOnly:         fc.IndexOnly,
 		}
 		if last := len(fc.Frames) - 1; last >= 0 {
 			grp.anchorNode = graphNode{
@@ -793,6 +807,10 @@ func ingestExportFindingChain(
 		grp.supportingCallIDs = chainSupportingCallIDs(fc)
 	}
 	mergeDirectFindingPURL(&grp.purl, &grp.purlConflict, directFindingPURL(fc, root))
+	if fc.IndexOnly {
+		return groupOrder
+	}
+	grp.indexOnly = false
 	if fc.Unattributed {
 		// The frame exists only to carry component-derived identity; exporting
 		// it as a chain would publish a node with no identity.

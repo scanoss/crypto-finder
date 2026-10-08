@@ -42,10 +42,11 @@ type StitchOptions struct {
 	MaxForwardEdgesPerAnchor int
 
 	// ChainEntrySignatures restricts CALL-CHAIN enumeration to routes that
-	// terminate at one of the named entry points, matched on
-	// Function.CanonicalSignature — the spelling crypto_entry_points publishes,
-	// so a consumer can feed a published entry point straight back in. It
-	// carries the served request's `entry_point_signatures`.
+	// terminate at one of the named functions, matched on
+	// Function.CanonicalSignature or ErasedSignature — the spellings
+	// crypto_entry_points publishes, so a consumer can feed any published entry
+	// point straight back in, root or not. It carries the served request's
+	// `entry_point_signatures`.
 	//
 	// It does NOT touch the entry-point index, which stays complete. The two
 	// answer different questions: the index says which functions reach the
@@ -60,8 +61,8 @@ type StitchOptions struct {
 	// Naming it here spends the whole budget on routes that reach it.
 	//
 	// Zero value (nil) enumerates from every entry, so the default serving path
-	// is unchanged. A signature naming no entry contributes nothing rather than
-	// becoming a synthetic entry, and a function carrying no canonical signature
+	// is unchanged. A signature naming no function contributes nothing rather
+	// than becoming a synthetic entry, and a function carrying neither signature
 	// cannot be named.
 	ChainEntrySignatures []string
 
@@ -187,8 +188,9 @@ func StitchWithOptions(root ComponentKey, deps DependencyGraph, fragments map[Co
 		out.rootKinds = classifyRootKinds(&rootFragment, roots)
 		composeDependencyEntryPoints(root, closure, fragments, adjacency, ambiguousCandidates, &out)
 		composedRoutes := make(map[string][]graphNode)
+		chainEntries := chainEntryNodes(functionsByNode, opts.ChainEntrySignatures)
 		traceBackward(adjacency, opsByNode, supportingByNode, fragments, functionsByNode, roots,
-			chainEntryNodes(roots, functionsByNode, opts.ChainEntrySignatures),
+			chainEntries,
 			composedChainEntryFindings(root, &out, functionsByNode, opts.ChainEntrySignatures, composedRoutes),
 			composedRoutes, ambiguousCandidates, ResolveMaxChains(opts.MaxChains), &out)
 		attachAnnotationSupportingCalls(closure, fragments, &out)
@@ -281,7 +283,7 @@ func attachMissingAnnotationSupportingCalls(
 ) {
 	for i := range out.Chains {
 		op := out.Chains[i].CryptoOp
-		if op == nil {
+		if op == nil || out.Chains[i].IndexOnly {
 			continue
 		}
 		appendMissingSupportingCalls(op.SupportingCallIDs, byID, seen, out)
@@ -1268,19 +1270,14 @@ type backwardChain struct {
 	inbounds []inbound
 }
 
-// traceBackward mirrors internal/callgraph.Tracer.TraceBackLimited: for each
-// crypto-op node it runs a backward BFS over a reverse adjacency with a PER-OP
-// graph-global frontier set (each function enqueued at most once -> O(V+E)).
-// Re-convergent (diamond) branches collapse to the first caller reached; distinct
-// entries are preserved (one chain per entry). This replaces the old forward DFS
-// that enumerated all simple paths (O(paths)) and emitted the extra re-convergent
-// chains live never produces.
-// chainEntryNodes resolves StitchOptions.ChainEntrySignatures to the subset of
-// roots they name. It returns nil when no signature was supplied — the signal to
-// enumerate from every entry, keeping the default path unchanged — and an empty
-// (non-nil) set when signatures were supplied but none names a root, which
-// correctly yields no chains rather than falling back to all of them.
-func chainEntryNodes(roots []graphNode, functionsByNode map[graphNode]Function, signatures []string) map[graphNode]bool {
+// chainEntryNodes resolves StitchOptions.ChainEntrySignatures to the functions
+// they name, on either spelling the index publishes. Any function can be named,
+// not only a root: the index publishes every function that reaches the crypto.
+// It returns nil when no signature was supplied — the signal to enumerate from
+// every entry, keeping the default path unchanged — and an empty (non-nil) set
+// when signatures were supplied but none names a function, which correctly
+// yields no chains rather than falling back to all of them.
+func chainEntryNodes(functionsByNode map[graphNode]Function, signatures []string) map[graphNode]bool {
 	if len(signatures) == 0 {
 		return nil
 	}
@@ -1291,14 +1288,23 @@ func chainEntryNodes(roots []graphNode, functionsByNode map[graphNode]Function, 
 		}
 	}
 	out := make(map[graphNode]bool, len(wanted))
-	for _, r := range roots {
-		if sig := functionsByNode[r].CanonicalSignature; sig != "" && wanted[sig] {
-			out[r] = true
+	for node := range functionsByNode {
+		fn := functionsByNode[node]
+		if (fn.CanonicalSignature != "" && wanted[fn.CanonicalSignature]) ||
+			(fn.ErasedSignature != "" && wanted[fn.ErasedSignature]) {
+			out[node] = true
 		}
 	}
 	return out
 }
 
+// traceBackward mirrors internal/callgraph.Tracer.TraceBackLimited: for each
+// crypto-op node it runs a backward BFS over a reverse adjacency with a PER-OP
+// graph-global frontier set (each function enqueued at most once -> O(V+E)).
+// Re-convergent (diamond) branches collapse to the first caller reached; distinct
+// entries are preserved (one chain per entry). This replaces the old forward DFS
+// that enumerated all simple paths (O(paths)) and emitted the extra re-convergent
+// chains live never produces.
 func traceBackward(
 	adjacency map[graphNode][]adjacencyEdge,
 	opsByNode map[graphNode][]CryptoOperation,
@@ -1381,6 +1387,11 @@ func traceBackward(
 				// operation. The self-chain fallback below exists for a crypto call
 				// nothing calls at all; synthesizing it here would assert the
 				// operation is reachable from an entry that does not reach it.
+				// The carrier keeps the operation in the entry-point index while
+				// the request names anything; one naming nothing yields nothing.
+				if len(chainEntries) > 0 || composedFindings != nil {
+					emitIndexOnlyFindings(opNode, opsByNode, fragments, functionsByNode, out)
+				}
 				continue
 			}
 			// The op node's own frame is the terminal frame of the self-chain
@@ -1449,6 +1460,30 @@ func emitUnattributedFindings(
 			Confidence:   ConfidenceHigh,
 			CryptoOp:     &opCopy,
 			Unattributed: true,
+		})
+	}
+}
+
+// emitIndexOnlyFindings records each crypto op on opNode as an IndexOnly
+// carrier: the index needs the finding's served identity, not a route.
+func emitIndexOnlyFindings(
+	opNode graphNode,
+	opsByNode map[graphNode][]CryptoOperation,
+	fragments map[ComponentKey]Fragment,
+	functionsByNode map[graphNode]Function,
+	out *Result,
+) {
+	frame := buildFrame(opNode, inbound{}, fragments, functionsByNode)
+	for i := range opsByNode[opNode] {
+		opCopy := opsByNode[opNode][i]
+		out.Chains = append(out.Chains, FindingChain{
+			FindingID:  opCopy.FindingID,
+			RuleID:     opCopy.RuleID,
+			Symbol:     opCopy.Symbol,
+			Frames:     []CallFrame{frame},
+			Confidence: ConfidenceHigh,
+			CryptoOp:   &opCopy,
+			IndexOnly:  true,
 		})
 	}
 }
