@@ -297,3 +297,33 @@ func TestToFindingsEnvelope_ParameterConditions(t *testing.T) {
 		t.Errorf("marshaled asset without a predicate unexpectedly contains parameter_conditions: %s", b)
 	}
 }
+
+// TestToFindingsEnvelope_LanguagePerFile pins that bundled C/C++ sources in a
+// package of another ecosystem report their own language, not the package's.
+func TestToFindingsEnvelope_LanguagePerFile(t *testing.T) {
+	t.Parallel()
+
+	root := ComponentKey{Purl: "pkg:pypi/acme-argon", Version: "1.0"}
+	ops := []CryptoOperation{}
+	for i, path := range []string{"acme/hash.py", "extras/argon2/src/core.c", "extras/argon2/include/argon2.h", "extras/blake/blake.cpp", "extras/blake/blake.HPP"} {
+		ops = append(ops, CryptoOperation{RuleID: "rule", FilePath: path, StartLine: i + 1, EndLine: i + 1})
+	}
+	fragments := map[ComponentKey]Fragment{root: {Component: root, Module: "acme-argon", CryptoOperations: ops}}
+
+	env := ToFindingsEnvelope(root, DependencyGraph{}, fragments, ScanMeta{Ecosystem: "python"})
+	want := map[string]string{
+		"acme/hash.py":                   "python",
+		"extras/argon2/src/core.c":       "c",
+		"extras/argon2/include/argon2.h": "c", // without content a header reads as C
+		"extras/blake/blake.cpp":         "c++",
+		"extras/blake/blake.HPP":         "c++",
+	}
+	if len(env.Findings) != len(want) {
+		t.Fatalf("findings = %d, want %d", len(env.Findings), len(want))
+	}
+	for _, f := range env.Findings {
+		if f.Language != want[f.FilePath] {
+			t.Errorf("%s: language = %q, want %q", f.FilePath, f.Language, want[f.FilePath])
+		}
+	}
+}

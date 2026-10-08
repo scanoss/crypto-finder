@@ -14,7 +14,10 @@ package graphfrag
 
 import (
 	"encoding/json"
+	"path"
 	"strings"
+
+	"github.com/go-enry/go-enry/v2"
 
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 	"github.com/scanoss/crypto-finder/pkg/purl"
@@ -176,10 +179,22 @@ func assembleEnvelope(meta ScanMeta, order []string, byPath map[string][]Finding
 	env := FindingsEnvelope{Version: FindingsSchemaVersion}
 	for _, p := range order {
 		env.Findings = append(env.Findings, FindingFile{
-			Language:            meta.Ecosystem,
+			Language:            fileLanguage(p, meta.Ecosystem),
 			FilePath:            p,
 			CryptographicAssets: byPath[p],
 		})
 	}
 	return env
+}
+
+// fileLanguage is the language of one finding file: a package may bundle C or
+// C++ sources, which must not report the package's ecosystem. The file content
+// is not stored, so a header reads as a live scan reads it without content.
+func fileLanguage(filePath, ecosystem string) string {
+	switch lang := strings.ToLower(enry.GetLanguage(path.Base(filePath), nil)); lang {
+	case "c", "c++":
+		return lang
+	default:
+		return ecosystem
+	}
 }
