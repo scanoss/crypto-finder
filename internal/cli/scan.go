@@ -408,6 +408,15 @@ func applyTestSkipPatterns(patterns []string, includeTests bool) []string {
 	return skip.WithDefaultTestPatterns(patterns)
 }
 
+// applyCTestSkipPatterns adds the bundled C/C++ test-source patterns when the
+// target holds other C/C++ product sources they leave in the scan.
+func applyCTestSkipPatterns(patterns []string, targetDir string, includeTests bool) []string {
+	if includeTests {
+		return patterns
+	}
+	return append(patterns, skip.CTestPatternsFor(targetDir)...)
+}
+
 // buildSkipPatterns assembles skip patterns from the configured sources,
 // honoring the --no-default-exclusions and --exclude CLI flags. Returns the
 // merged, deduplicated pattern list plus a human-readable label for logging.
@@ -804,6 +813,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	// Load skip patterns from multiple sources, honoring --no-default-exclusions and --exclude.
 	skipPatterns, skipSrcLabel := buildSkipPatterns(targetDir, scanNoDefaultExclusions, scanExcludePatterns)
 	skipPatterns = applyTestSkipPatterns(skipPatterns, scanIncludeTests)
+	skipPatterns = applyCTestSkipPatterns(skipPatterns, targetDir, scanIncludeTests)
 
 	if len(skipPatterns) > 0 {
 		log.Info().Msgf("Using %d skip patterns from %s", len(skipPatterns), skipSrcLabel)

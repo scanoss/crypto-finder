@@ -79,6 +79,21 @@ var DefaultSkippedTestPatterns = []string{
 	"**/test_*.py",
 }
 
+// DefaultSkippedCTestPatterns are C/C++ test, benchmark and known-answer
+// generator sources a vendored library ships beside its product code but never
+// compiles into it. They apply only through CTestPatternsFor.
+var DefaultSkippedCTestPatterns = []string{
+	"**/test.c", "**/tests.c", "**/test_*.c",
+	"**/*_test.c", "**/*_tests.c", "**/bench.c",
+	"**/bench_*.c", "**/*_bench.c", "**/genkat.c",
+	"**/test.cc", "**/tests.cc", "**/test_*.cc",
+	"**/*_test.cc", "**/*_tests.cc", "**/bench.cc",
+	"**/bench_*.cc", "**/*_bench.cc", "**/genkat.cc",
+	"**/test.cpp", "**/tests.cpp", "**/test_*.cpp",
+	"**/*_test.cpp", "**/*_tests.cpp", "**/bench.cpp",
+	"**/bench_*.cpp", "**/*_bench.cpp", "**/genkat.cpp",
+}
+
 // defaultDirMatcher is the shared matcher for DefaultSkippedDirs. Directory
 // walks (language detection, callgraph, crate indexing) consult this instead
 // of per-language skip lists. File-level generated-stub policy lives on

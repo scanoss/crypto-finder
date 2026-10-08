@@ -221,6 +221,7 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 
 	skipPatterns, _ := buildSkipPatterns(targetDir, annotateNoDefaultExclude, annotateExcludePatterns)
 	skipPatterns = applyTestSkipPatterns(skipPatterns, annotateIncludeTests)
+	skipPatterns = applyCTestSkipPatterns(skipPatterns, targetDir, annotateIncludeTests)
 	skipMatcher := skip.NewMatcher(skipPatterns, !annotateNoDefaultExclude)
 
 	if len(languages) == 0 {
