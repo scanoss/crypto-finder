@@ -17,6 +17,8 @@
 package skip
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -254,4 +256,88 @@ func containsPattern(patterns []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestDefaultTestPatternsSkipBundledCTestSources pins the C/C++ test, bench and
+// known-answer generator sources a vendored library ships but never compiles,
+// and that product sources with similar names stay in the scan.
+func TestDefaultTestPatternsSkipBundledCTestSources(t *testing.T) {
+	t.Parallel()
+
+	matcher := NewGitIgnoreMatcher(DefaultSkippedCTestPatterns)
+	skipped := []string{
+		"extras/libargon2/src/test.c",
+		"extras/libargon2/src/bench.c",
+		"extras/libargon2/src/genkat.c",
+		"lib/tests.c",
+		"lib/test_vectors.c",
+		"lib/aes_test.c",
+		"lib/aes_tests.cc",
+		"lib/bench_sha.cpp",
+		"lib/sha_bench.c",
+		"lib/test.cpp",
+		"genkat.cc",
+	}
+	for _, p := range skipped {
+		if !matcher.ShouldSkip(p, false) {
+			t.Errorf("ShouldSkip(%q) = false, want true", p)
+		}
+	}
+	kept := []string{
+		"extras/libargon2/src/core.c",
+		"extras/libargon2/src/argon2.c",
+		"lib/attest.c",
+		"lib/testing.c",
+		"lib/benchmark.c",
+		"lib/contest_util.cpp",
+		"lib/test.h",
+		"lib/latest.c",
+	}
+	for _, p := range kept {
+		if matcher.ShouldSkip(p, false) {
+			t.Errorf("ShouldSkip(%q) = true, want false", p)
+		}
+	}
+}
+
+// TestCTestPatternsFor_OnlyBesideProductSources pins the #490 rule for the C
+// test patterns: they never exclude the only C/C++ source a package has.
+func TestCTestPatternsFor_OnlyBesideProductSources(t *testing.T) {
+	t.Parallel()
+
+	write := func(t *testing.T, root string, files ...string) {
+		t.Helper()
+		for _, f := range files {
+			path := filepath.Join(root, filepath.FromSlash(f))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("int x;\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	bundled := t.TempDir()
+	write(t, bundled, "pkg/hash.py", "extras/argon2/src/core.c", "extras/argon2/src/test.c", "extras/argon2/src/genkat.c")
+	if got := CTestPatternsFor(bundled); len(got) == 0 {
+		t.Errorf("CTestPatternsFor(bundled) = nil, want the patterns beside core.c")
+	}
+
+	onlyTests := t.TempDir()
+	write(t, onlyTests, "pkg/hash.py", "src/test.c", "src/bench.c")
+	if got := CTestPatternsFor(onlyTests); got != nil {
+		t.Errorf("CTestPatternsFor(onlyTests) = %v, want nil: test.c is the only C source", got)
+	}
+
+	// Product sources the scan never reads do not count.
+	hidden := t.TempDir()
+	write(t, hidden, "src/test.c", "node_modules/dep/core.c", "tests/helper.c")
+	if got := CTestPatternsFor(hidden); got != nil {
+		t.Errorf("CTestPatternsFor(hidden) = %v, want nil", got)
+	}
+
+	if got := cTestPatternsFor(bundled, 1); got != nil {
+		t.Errorf("cTestPatternsFor past the cap = %v, want nil", got)
+	}
 }
