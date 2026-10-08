@@ -46,7 +46,8 @@ func cTestPatternsFor(targetDir string, maxEntries int) []string {
 		if err != nil {
 			return nil //nolint:nilerr // an unreadable entry is no product source
 		}
-		if seen++; seen > maxEntries {
+		seen++
+		if seen > maxEntries {
 			return fs.SkipAll
 		}
 		name := d.Name()
@@ -61,7 +62,10 @@ func cTestPatternsFor(targetDir string, maxEntries int) []string {
 			return nil
 		}
 		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil || cTestMatcher.ShouldSkip(filepath.ToSlash(rel), false) {
+		if relErr != nil {
+			return nil //nolint:nilerr // a path outside the root is no product source
+		}
+		if cTestMatcher.ShouldSkip(filepath.ToSlash(rel), false) {
 			return nil
 		}
 		return errFoundCProduct

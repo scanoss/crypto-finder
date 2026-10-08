@@ -304,8 +304,9 @@ func TestToFindingsEnvelope_LanguagePerFile(t *testing.T) {
 	t.Parallel()
 
 	root := ComponentKey{Purl: "pkg:pypi/acme-argon", Version: "1.0"}
-	ops := []CryptoOperation{}
-	for i, path := range []string{"acme/hash.py", "extras/argon2/src/core.c", "extras/argon2/include/argon2.h", "extras/blake/blake.cpp", "extras/blake/blake.HPP"} {
+	files := []string{"acme/hash.py", "extras/argon2/src/core.c", "extras/argon2/include/argon2.h", "extras/blake/blake.cpp", "extras/blake/blake.HPP"}
+	ops := make([]CryptoOperation, 0, len(files))
+	for i, path := range files {
 		ops = append(ops, CryptoOperation{RuleID: "rule", FilePath: path, StartLine: i + 1, EndLine: i + 1})
 	}
 	fragments := map[ComponentKey]Fragment{root: {Component: root, Module: "acme-argon", CryptoOperations: ops}}
