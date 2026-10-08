@@ -15,7 +15,9 @@ import (
 func reachableFindingIDs(res *Result) []string {
 	seen := map[string]bool{}
 	for _, chain := range res.Chains {
-		seen[chain.FindingID] = true
+		if !chain.IndexOnly {
+			seen[chain.FindingID] = true
+		}
 	}
 	out := make([]string, 0, len(seen))
 	for id := range seen {
@@ -30,7 +32,7 @@ func reachableFindingIDs(res *Result) []string {
 func rootFrameSignatures(res *Result) []string {
 	seen := map[string]bool{}
 	for _, chain := range res.Chains {
-		if len(chain.Frames) == 0 {
+		if len(chain.Frames) == 0 || chain.IndexOnly {
 			continue
 		}
 		seen[chain.Frames[0].Signature] = true
@@ -123,4 +125,19 @@ func TestStitch_DefaultRootsEveryFunction(t *testing.T) {
 	if len(roots) != 3 {
 		t.Fatalf("default Stitch root frames = %v, want 3 (entry#0, mid#0, sink#0)", roots)
 	}
+}
+
+// exportFindingFiles returns the finding graphs of an export keyed by the file
+// of their crypto call, with their reachability label.
+func exportFindingFiles(export *CallgraphExport) map[string]string {
+	out := make(map[string]string, len(export.FindingGraphs))
+	for i := range export.FindingGraphs {
+		fg := &export.FindingGraphs[i]
+		file := ""
+		if n := len(fg.CallChains); n > 0 && len(fg.CallChains[0]) > 0 {
+			file = fg.CallChains[0][len(fg.CallChains[0])-1].FilePath
+		}
+		out[file] = fg.Reachability
+	}
+	return out
 }
