@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-10-09
+### Fixed
+- C and C++ findings in a component of another language now report `c` or
+  `c++`, so C code bundled in a Python package no longer reads `python`.
+- C and C++ test, benchmark and known-answer generator sources (`test.c`,
+  `test_*.c`, `*_test.c`, `bench.c`, `genkat.c` and the `.cc`/`.cpp` forms) are
+  skipped when the target has other C or C++ sources, so a library's self-tests
+  are no longer reported as its cryptography. A target whose only C sources
+  match these names is scanned in full.
+- `StitchOptions.ChainEntrySignatures` now accepts every function the
+  `crypto_entry_points` index publishes, root or not, in its canonical or
+  erased spelling. Previously a published entry point that was not a root
+  produced no chains, so filtering on it returned no findings.
+- A stitch restricted by `ChainEntrySignatures` keeps the entry-point index
+  complete for operations the restriction leaves without chains.
+- The container images pin pydantic below 2.14, so the bundled semgrep
+  1.145.0 starts again. With pydantic 2.14 it failed on startup with an
+  `ImportError`.
+
 ## [0.36.0] - 2026-10-06
 ### Added
 - Go package-level `const` declarations in another file of the same package, and C object-like `#define` literals in a locally included header (`#include "bits.h"`, nested up to eight levels), now carry `resolved_value` into the call graph, so a key size declared away from its call site resolves to `resolved_key_length`. Anything the build could bind differently (a name declared under two build tags or also as a `var`, `func` or `type`, a constrained file, a name defined in two headers, a conditional define or include, an include cycle past the bound, a redefinition in the including file) stays unresolved. A header that is only `#ifndef X / #define X 2048 / #endif` is now treated as an overridable default and gives no value. (#716)
