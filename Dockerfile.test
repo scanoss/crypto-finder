@@ -20,7 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install semgrep (pinned version for reproducibility)
-RUN pip3 install --no-cache-dir semgrep==1.145.0 --break-system-packages
+# semgrep's mcp dependency imports a private pydantic API removed in 2.14.
+RUN pip3 install --no-cache-dir semgrep==1.145.0 "pydantic<2.14" --break-system-packages
 
 # Install the pinned opengrep release directly. This avoids the installer's
 # live releases API lookup while retaining binary integrity verification.
