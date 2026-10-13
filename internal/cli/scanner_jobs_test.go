@@ -36,7 +36,7 @@ func TestResolveScannerJobs(t *testing.T) {
 		flagSet   bool
 		flagValue int
 		lookup    func(string) (string, bool)
-		want      int32
+		want      int16
 		wantErr   string
 	}{
 		{name: "unset keeps the scanner default", lookup: env("", false), want: 0},

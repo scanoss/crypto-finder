@@ -195,7 +195,7 @@ func loadImportedFragment(path string) (graphfrag.Fragment, error) {
 // over --source and returns the interim report. It mirrors the detection setup
 // of the scan command but stops at orchestrator.Scan — deliberately skipping the
 // callgraph/inference work that annotate exists to avoid.
-func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJobs int32) (*entities.InterimReport, error) {
+func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJobs int16) (*entities.InterimReport, error) {
 	target := annotateSource
 
 	normalizedLanguages, err := scanutil.ValidateFlags(target, scanutil.ValidationOptions{

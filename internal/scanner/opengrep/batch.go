@@ -63,14 +63,9 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths
 			return nil, err
 		}
 	}
-	parsed := &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
-	for _, targets := range scanner.RootTargetBatches(roots) {
-		batch, _, _, err := s.run(ctx, s.buildCommand(ctx, targets, rulePaths, scoped), rulePaths, nil)
-		if err != nil {
-			return nil, err
-		}
-		parsed.Results = append(parsed.Results, batch.Results...)
-		parsed.Errors = append(parsed.Errors, batch.Errors...)
+	parsed, err := s.collect(ctx, roots, rulePaths, scoped)
+	if err != nil {
+		return nil, err
 	}
 	semgrep.LogSemgrepCompatibleErrors(parsed.Errors)
 

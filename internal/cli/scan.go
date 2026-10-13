@@ -113,6 +113,8 @@ var (
 	scanExportGfFormat           string
 	scanDepWorkers               int
 	scanScannerJobs              int
+	scanOpengrepMode             string
+	scanRulePrefilter            string
 	scanJavaJDKMajor             string
 	scanJavaJDKHomes             []string
 	scanJavaCompiledArtifact     string
@@ -204,6 +206,13 @@ func init() {
 	scanCmd.Flags().IntVar(&scanScannerJobs, "scanner-jobs", 0,
 		"Parallel jobs for the OpenGrep process of the primary scan (default 0: OpenGrep's own default, one per detected core; "+
 			"can also be set via "+scannerJobsEnv+"). Lower it when several scans share a host. Dependency scans size their own jobs")
+	scanCmd.Flags().StringVar(&scanOpengrepMode, "opengrep-mode", "cli",
+		"How the OpenGrep scanner runs: cli (the opengrep command) or core (opengrep-core directly, skipping the Python wrapper's "+
+			"startup and rule loading; falls back to cli whenever it cannot run, and is only used with OpenGrep versions it was verified against). "+
+			"Can also be set via "+opengrepModeEnv)
+	scanCmd.Flags().StringVar(&scanRulePrefilter, "rule-prefilter", "off",
+		"Drop, per scanned unit (the project and each dependency batch), the rules whose library its sources never import: off or imports. "+
+			"Rules whose import requirement is unknown are always kept. OpenGrep scanner only. Can also be set via "+rulePrefilterEnv)
 	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
 	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
@@ -768,6 +777,17 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	if err != nil {
 		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
+	opengrepMode, err := resolveOpengrepMode(cmd.Flags().Changed("opengrep-mode"), scanOpengrepMode, os.LookupEnv)
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
+	}
+	rulePrefilter, err := resolveRulePrefilter(cmd.Flags().Changed("rule-prefilter"), scanRulePrefilter, os.LookupEnv)
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
+	}
+	if scanScanner != opengrep.ScannerName && (opengrepMode != scanner.OpengrepModeCLI || rulePrefilter != scanner.RulePrefilterOff) {
+		log.Warn().Str("scanner", scanScanner).Msg("--opengrep-mode and --rule-prefilter apply to the opengrep scanner only; ignoring them")
+	}
 
 	// Parse timeout
 	timeout, err := scanutil.ParseDuration(scanTimeout)
@@ -1013,7 +1033,10 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(opengrep.WithProbeCacheDir(opengrepProbeCacheDir())))
+	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(
+		opengrep.WithProbeCacheDir(opengrepProbeCacheDir()),
+		opengrep.WithCoreRulesCacheDir(opengrepCoreRulesCacheDir()),
+	))
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
@@ -1025,11 +1048,13 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		JavaRuntime:           javaRuntime,
 		JavaRuntimeCacheToken: javaRuntime.CacheKeyToken(),
 		ScannerConfig: scanner.Config{
-			Timeout:      timeout,
-			SkipPatterns: skipPatterns,
-			DisableDedup: scanNoDedup,
-			Interfile:    scanInterfile,
-			Jobs:         scannerJobs,
+			Timeout:       timeout,
+			SkipPatterns:  skipPatterns,
+			DisableDedup:  scanNoDedup,
+			Interfile:     scanInterfile,
+			Jobs:          scannerJobs,
+			OpengrepMode:  opengrepMode,
+			RulePrefilter: rulePrefilter,
 		},
 	}
 	if progress != nil {

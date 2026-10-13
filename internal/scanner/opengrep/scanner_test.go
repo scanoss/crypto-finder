@@ -480,7 +480,7 @@ func TestBuildCommand_JobsComposeWithExtraArgs(t *testing.T) {
 	rule, target := "/rules/node.yaml", "/deps/eta"
 	for _, tt := range []struct {
 		name      string
-		jobs      int32
+		jobs      int16
 		extra     []string
 		want      []string
 		certified bool

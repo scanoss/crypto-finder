@@ -142,8 +142,22 @@ type Config struct {
 	// scans set it so concurrent scans share the cores. Only the OpenGrep
 	// adapter applies it, and a jobs flag in ExtraArgs takes precedence.
 	// The small fields after the flags fit the flags' padding, so scan
-	// options stay under the by-value size limit the linter enforces.
-	Jobs int32
+	// options stay under the by-value size limit the linter enforces: the
+	// flags, RuleTimeoutSeconds, Jobs, OpengrepMode and RulePrefilter share
+	// one 8-byte word. Jobs is an int16 to leave room for the two modes; the
+	// CLI caps it at 1024.
+	Jobs int16
+
+	// OpengrepMode selects how the OpenGrep adapter runs the engine. The zero
+	// value runs the opengrep CLI; OpengrepModeCore runs opengrep-core
+	// directly and falls back to the CLI whenever it cannot. Other adapters
+	// ignore it. Omitted from JSON when zero, so cache identities that encode
+	// the configuration stay what they were.
+	OpengrepMode OpengrepMode `json:",omitempty"`
+
+	// RulePrefilter drops, per scanned unit, the rules whose library the
+	// unit cannot use. Only the OpenGrep adapter applies it.
+	RulePrefilter RulePrefilter `json:",omitempty"`
 }
 
 // Info contains metadata about a scanner implementation.

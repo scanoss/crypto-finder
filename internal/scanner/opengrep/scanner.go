@@ -69,11 +69,16 @@ type Scanner struct {
 	extraArgs         []string
 	skipPatterns      []string
 	includeGitIgnored bool
-	jobs              int32
+	jobs              int16
 	ruleTimeout       uint8
 	disableDedup      bool
+	mode              scanner.OpengrepMode
+	prefilter         scanner.RulePrefilter
 	discovery         *discoveryCache
 	helpDiscovery     *discoveryCache
+	// coreRulesCacheDir keeps the rules files core mode hands opengrep-core;
+	// empty writes a temporary file per scan.
+	coreRulesCacheDir string
 }
 
 // NewScanner creates a new OpenGrep adapter with default settings.
@@ -88,7 +93,8 @@ func NewScanner() *Scanner {
 type FactoryOption func(*factoryOptions)
 
 type factoryOptions struct {
-	probeCacheDir string
+	probeCacheDir     string
+	coreRulesCacheDir string
 }
 
 // WithProbeCacheDir keeps the `opengrep --version` and `opengrep scan --help`
@@ -96,6 +102,14 @@ type factoryOptions struct {
 // those probes. An empty dir keeps them for this process only.
 func WithProbeCacheDir(dir string) FactoryOption {
 	return func(o *factoryOptions) { o.probeCacheDir = dir }
+}
+
+// WithCoreRulesCacheDir keeps the rules files core mode (--opengrep-mode
+// core) writes for opengrep-core in dir, keyed by their content and the
+// OpenGrep version, so later scans with the same rules reuse them. An empty
+// dir writes a temporary file per scan.
+func WithCoreRulesCacheDir(dir string) FactoryOption {
+	return func(o *factoryOptions) { o.coreRulesCacheDir = dir }
 }
 
 // NewScannerFactory creates fresh invocation adapters sharing immutable version and help discovery per run.
@@ -114,6 +128,7 @@ func NewScannerFactory(opts ...FactoryOption) func() scanner.Scanner {
 		adapter := NewScanner()
 		adapter.discovery = cache
 		adapter.helpDiscovery = help
+		adapter.coreRulesCacheDir = options.coreRulesCacheDir
 		return adapter
 	}
 }
@@ -181,6 +196,8 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	s.jobs = config.Jobs
 	s.ruleTimeout = config.RuleTimeoutSeconds
 	s.disableDedup = config.DisableDedup
+	s.mode = config.OpengrepMode
+	s.prefilter = config.RulePrefilter
 
 	return nil
 }
@@ -226,17 +243,26 @@ func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.Detect
 		}
 	}
 
-	opengrepResults := &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
-	for _, targets := range scanner.TargetBatches(target, scope) {
-		args := s.buildCommand(ctx, targets, rulePaths, scope != nil)
-		batch, output, stderr, err := s.run(ctx, args, rulePaths, outcome)
+	var opengrepResults *entities.SemgrepOutput
+	if outcome == nil {
+		var err error
+		opengrepResults, err = s.collect(ctx, []scanner.Root{{Dir: target, Scope: scope}}, rulePaths, scope != nil)
 		if err != nil {
 			return nil, err
 		}
-		opengrepResults.Results = append(opengrepResults.Results, batch.Results...)
-		opengrepResults.Errors = append(opengrepResults.Errors, batch.Errors...)
+	} else {
+		// Certification evidence describes one CLI invocation, so an outcome
+		// scan always runs the CLI with the rules as given.
+		opengrepResults = &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
+		for _, targets := range scanner.TargetBatches(target, scope) {
+			args := s.buildCommand(ctx, targets, rulePaths, scope != nil)
+			batch, output, stderr, err := s.run(ctx, args, rulePaths, outcome)
+			if err != nil {
+				return nil, err
+			}
+			opengrepResults.Results = append(opengrepResults.Results, batch.Results...)
+			opengrepResults.Errors = append(opengrepResults.Errors, batch.Errors...)
 
-		if outcome != nil {
 			outcome.Reason = "unknown-exit"
 			// Certification proves a whole-target scan; a detection-scoped
 			// scan never claims it.
@@ -455,25 +481,7 @@ func (s *Scanner) execute(ctx context.Context, args []string, outcome *scanner.O
 	}
 
 	if ctx.Err() != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			log.Error().
-				Dur("duration", duration).
-				Msg("opengrep execution timed out")
-			return nil, stderr, failure.New(
-				failure.CodeScannerTimeout,
-				failure.StageScan,
-				fmt.Sprintf("opengrep execution timed out after %v", s.timeout),
-				failure.WithRetryable(true),
-				failure.WithDetail("scanner", ScannerName),
-			)
-		}
-		return nil, stderr, failure.Wrap(
-			ctx.Err(),
-			failure.CodeScannerCancelled,
-			failure.StageScan,
-			"opengrep execution canceled",
-			failure.WithDetail("scanner", ScannerName),
-		)
+		return nil, stderr, s.contextFailure(ctx, duration)
 	}
 
 	// OpenGrep exit codes (same as Semgrep):
@@ -507,6 +515,30 @@ func (s *Scanner) execute(ctx context.Context, args []string, outcome *scanner.O
 		Msgf("opengrep completed in %.2fs (exit code: %d)", duration.Seconds(), exitCode)
 
 	return stdout, stderr, nil
+}
+
+// contextFailure reports a scan its context stopped: a timeout or a
+// cancellation.
+func (s *Scanner) contextFailure(ctx context.Context, duration time.Duration) error {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		log.Error().
+			Dur("duration", duration).
+			Msg("opengrep execution timed out")
+		return failure.New(
+			failure.CodeScannerTimeout,
+			failure.StageScan,
+			fmt.Sprintf("opengrep execution timed out after %v", s.timeout),
+			failure.WithRetryable(true),
+			failure.WithDetail("scanner", ScannerName),
+		)
+	}
+	return failure.Wrap(
+		ctx.Err(),
+		failure.CodeScannerCancelled,
+		failure.StageScan,
+		"opengrep execution canceled",
+		failure.WithDetail("scanner", ScannerName),
+	)
 }
 
 // mapToEnvSlice converts a map to KEY=VALUE environment variable slice.

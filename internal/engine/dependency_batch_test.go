@@ -380,7 +380,7 @@ func TestDependencyScanner_BatchIncompletenessIsPerDependency(t *testing.T) {
 // the scanner analyzes that many files at a time, so n roots consume about
 // n / jobs single-scan budgets of wall time.
 func TestBatchScanOptions_ScalesTheProcessTimeoutWithRoots(t *testing.T) {
-	member := func(dir string, jobs int32) ScanOptions {
+	member := func(dir string, jobs int16) ScanOptions {
 		return ScanOptions{Target: dir, ScannerConfig: scanner.Config{
 			Timeout: 10 * time.Minute, Jobs: jobs, SkipPatterns: []string{"test/", filepath.ToSlash(dir) + "/node_modules/"},
 		}}
@@ -388,7 +388,7 @@ func TestBatchScanOptions_ScalesTheProcessTimeoutWithRoots(t *testing.T) {
 	tests := []struct {
 		name  string
 		roots int
-		jobs  int32
+		jobs  int16
 		want  time.Duration
 	}{
 		{"one root keeps the single-scan timeout", 1, 4, 10 * time.Minute},

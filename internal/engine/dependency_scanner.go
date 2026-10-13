@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -485,11 +486,11 @@ func dependencyScanWorkers(configured int, ecosystem string) int {
 
 // dependencyScanJobs sizes each scanner process so concurrent dependency
 // scans share the cores. A lone scan keeps the scanner's own default.
-func dependencyScanJobs(workers int) int32 {
+func dependencyScanJobs(workers int) int16 {
 	if workers <= 1 {
 		return 0
 	}
-	return int32(max(1, runtime.NumCPU()/workers)) //nolint:gosec // A core count fits in int32.
+	return int16(min(max(1, runtime.NumCPU()/workers), math.MaxInt16)) //nolint:gosec // Bounded by MaxInt16.
 }
 
 // scanDependenciesParallel scans all dependencies concurrently using a worker pool.
@@ -531,7 +532,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		Int("deps", len(orderedDeps)).
 		Int("scannableDeps", len(work)).
 		Int("workers", workers).
-		Int32("scannerJobs", opts.ScanOptions.ScannerConfig.Jobs).
+		Int16("scannerJobs", opts.ScanOptions.ScannerConfig.Jobs).
 		Msg("Starting parallel dependency scanning")
 
 	if len(work) == 0 {
