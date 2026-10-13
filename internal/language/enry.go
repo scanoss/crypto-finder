@@ -156,10 +156,14 @@ func orderLanguagesByDominance(counts map[string]int) []string {
 
 // detectFile detects the programming language of a single file.
 func (d *EnryDetector) detectFile(path string) (string, error) {
-	// First try detection by filename
-	lang := enry.GetLanguage(filepath.Base(path), nil)
-	if lang != "" && !enry.IsVendor(path) && !enry.IsDocumentation(path) && !enry.IsConfiguration(path) {
-		return lang, nil
+	// First try detection by filename. An extension several languages share
+	// (.rs is Rust, RenderScript and XML) needs the content: the filename
+	// alone yields an arbitrary candidate, and lib.rs read as XML hides Rust.
+	if candidates := enry.GetLanguages(filepath.Base(path), nil); len(candidates) == 1 {
+		lang := candidates[0]
+		if lang != "" && !enry.IsVendor(path) && !enry.IsDocumentation(path) && !enry.IsConfiguration(path) {
+			return lang, nil
+		}
 	}
 
 	// If filename detection failed, read file content
@@ -169,7 +173,7 @@ func (d *EnryDetector) detectFile(path string) (string, error) {
 	}
 
 	// Detect by filename and content
-	lang = enry.GetLanguage(filepath.Base(path), content)
+	lang := enry.GetLanguage(filepath.Base(path), content)
 
 	// Filter out non-programming languages
 	if lang != "" && enry.GetLanguageType(lang) == enry.Programming {

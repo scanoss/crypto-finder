@@ -141,52 +141,64 @@ func TestModeParityOnFixtures(t *testing.T) {
 				t.Skipf("no rules for %s", lang)
 			}
 			rulePath := mergeRulesLikeMaterializer(t, ruleDir)
-			target := filepath.Join(fixturesDir, lang)
-			var baseline map[string]int
-			for _, combo := range []struct {
-				mode scanner.OpengrepMode
-				pf   scanner.RulePrefilter
-			}{
-				{scanner.OpengrepModeCLI, scanner.RulePrefilterOff},
-				{scanner.OpengrepModeCore, scanner.RulePrefilterOff},
-				{scanner.OpengrepModeCLI, scanner.RulePrefilterImports},
-				{scanner.OpengrepModeCore, scanner.RulePrefilterImports},
-			} {
-				name := combo.mode.String() + "/" + combo.pf.String()
-				s := NewScanner()
-				config := scanner.Config{Jobs: 2, Timeout: 30 * time.Minute, OpengrepMode: combo.mode, RulePrefilter: combo.pf, SkipPatterns: skip.DefaultPatterns()}
-				if err := s.Initialize(ctx, config); err != nil {
-					t.Fatalf("%s: initialize: %v", name, err)
-				}
-				if combo.mode == scanner.OpengrepModeCore {
-					if _, err := s.coreBinary(ctx); err != nil {
-						t.Skipf("opengrep-core unavailable: %v", err)
-					}
-				}
-				started := time.Now()
-				report, err := s.Scan(ctx, target, []string{rulePath}, entities.ToolInfo{Name: "crypto-finder"})
-				if err != nil {
-					t.Fatalf("%s: scan: %v", name, err)
-				}
-				keys := findingKeys(t, report)
-				t.Logf("%s %s: %d findings in %.1fs", lang, name, len(keys), time.Since(started).Seconds())
-				if baseline == nil {
-					baseline = keys
-					if len(baseline) == 0 {
-						t.Fatalf("%s: the CLI found nothing; the fixtures do not exercise the rules", lang)
-					}
-					continue
-				}
-				missing, extra := diffKeys(baseline, keys)
-				for _, key := range missing {
-					t.Errorf("%s misses %s", name, key)
-				}
-				for _, key := range extra {
-					t.Errorf("%s adds %s", name, key)
-				}
+			if requireModeParity(ctx, t, filepath.Join(fixturesDir, lang), rulePath) == 0 {
+				t.Fatalf("%s: the CLI found nothing; the fixtures do not exercise the rules", lang)
 			}
 		})
 	}
+}
+
+// requireModeParity scans target with the CLI and opengrep-core, with and
+// without the import prefilter, fails on any finding the four reports do not
+// share, and returns the CLI's finding count. The default exclusions apply,
+// as in a project scan.
+func requireModeParity(ctx context.Context, t *testing.T, target, rulePath string) int {
+	t.Helper()
+	var baseline map[string]int
+	for _, combo := range []struct {
+		mode scanner.OpengrepMode
+		pf   scanner.RulePrefilter
+	}{
+		{scanner.OpengrepModeCLI, scanner.RulePrefilterOff},
+		{scanner.OpengrepModeCore, scanner.RulePrefilterOff},
+		{scanner.OpengrepModeCLI, scanner.RulePrefilterImports},
+		{scanner.OpengrepModeCore, scanner.RulePrefilterImports},
+	} {
+		name := combo.mode.String() + "/" + combo.pf.String()
+		s := NewScanner()
+		config := scanner.Config{Jobs: 2, Timeout: 30 * time.Minute, OpengrepMode: combo.mode, RulePrefilter: combo.pf, SkipPatterns: skip.DefaultPatterns()}
+		if err := s.Initialize(ctx, config); err != nil {
+			t.Fatalf("%s: initialize: %v", name, err)
+		}
+		if combo.mode == scanner.OpengrepModeCore {
+			if _, err := s.coreBinary(ctx); err != nil {
+				t.Skipf("opengrep-core unavailable: %v", err)
+			}
+		}
+		started := time.Now()
+		report, err := s.Scan(ctx, target, []string{rulePath}, entities.ToolInfo{Name: "crypto-finder"})
+		if err != nil {
+			t.Fatalf("%s: scan: %v", name, err)
+		}
+		keys := findingKeys(t, report)
+		t.Logf("%s %s: %d findings in %.1fs", filepath.Base(target), name, len(keys), time.Since(started).Seconds())
+		if baseline == nil {
+			baseline = keys
+			continue
+		}
+		missing, extra := diffKeys(baseline, keys)
+		for _, key := range missing {
+			t.Errorf("%s misses %s", name, key)
+		}
+		for _, key := range extra {
+			t.Errorf("%s adds %s", name, key)
+		}
+	}
+	total := 0
+	for _, n := range baseline {
+		total += n
+	}
+	return total
 }
 
 // TestCoreModeHonorsNosemgrepLikeCLI pins the nosemgrep comments the CLI

@@ -34,9 +34,25 @@ import (
 // (the run with the retry's 30 s limit) reports the match.
 func timeoutEngine(t *testing.T, id string) *fakeEngine {
 	t.Helper()
+	return limitEngine(t, id, `{"code":2,"level":"warn","type":"Timeout","rule_id":"`+id+
+		`","message":"Timeout when running `+id+` on %s:\\n ","path":"%s"}`)
+}
+
+// interruptedParseEngine is timeoutEngine for a first scan whose time limit
+// interrupted the parse of the target, which the CLI reports as a syntax
+// error naming no rule.
+func interruptedParseEngine(t *testing.T, id string) *fakeEngine {
+	t.Helper()
+	return limitEngine(t, id, `{"code":2,"level":"warn","type":"Other syntax error",`+
+		`"message":"Other syntax error at line %s:1:\\n Memprof_limits.Limit_reached: token set","path":"%s"}`)
+}
+
+// limitEngine is a fake opengrep CLI whose first scan reports firstError (a
+// format taking the target twice) and whose retry reports the match of id.
+func limitEngine(t *testing.T, id, firstError string) *fakeEngine {
+	t.Helper()
 	f := newFakeEngine(t, "unused", "")
-	timeoutJSON := `{"results":[],"errors":[{"code":2,"level":"warn","type":"Timeout","rule_id":"` + id +
-		`","message":"Timeout when running ` + id + ` on %s:\\n ","path":"%s"}]}`
+	timeoutJSON := `{"results":[],"errors":[` + firstError + `]}`
 	matchJSON := `{"results":[{"check_id":"tmp.crypto-finder-prefilter-9.` + prefilteredIDMarker + id +
 		`","path":"%s","start":{"line":5,"col":12,"offset":45},"end":{"line":5,"col":24,"offset":57},"extra":{"message":"m","metadata":{},"metavars":{},"severity":"INFO","lines":"x"}}],"errors":[]}`
 	script := "#!/bin/sh\necho \"cli $*\" >> " + f.log + "\n" +
@@ -93,6 +109,72 @@ func TestRuleTimeoutIsRetriedWithLongerLimit(t *testing.T) {
 				t.Errorf("retry must run the timed-out rule on the file with a 30 s limit, got %s", retry)
 			}
 		})
+	}
+}
+
+// TestInterruptedParseIsRetried pins a file whose parse the time limit cut
+// short: no rule ran on it and the error names none, yet the retry must run
+// every rule on it, or a busy host silently loses all of its findings.
+func TestInterruptedParseIsRetried(t *testing.T) {
+	target, rules := fixtureProject(t)
+	cwd, err := physicalDir("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := configPrefix(filepath.Join(rules, "merged-rules.yaml"), cwd) + "std.sha"
+	for _, mode := range []struct {
+		name string
+		pf   scanner.RulePrefilter
+	}{{"cli", scanner.RulePrefilterOff}, {"prefilter", scanner.RulePrefilterImports}} {
+		t.Run(mode.name, func(t *testing.T) {
+			f := interruptedParseEngine(t, id)
+			s := fakeScanner(t, f, "1.30.2", scanner.OpengrepModeCLI, mode.pf)
+			report, err := s.Scan(context.Background(), target, []string{rules}, entities.ToolInfo{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.Findings) != 1 || report.Findings[0].CryptographicAssets[0].Rules[0].ID != "std.sha" {
+				t.Fatalf("findings = %+v, want std.sha recovered by the retry", report.Findings)
+			}
+			if len(report.IncompleteFiles) != 0 {
+				t.Errorf("a recovered parse must not leave the file incomplete: %v", report.IncompleteFiles)
+			}
+			calls := strings.Split(strings.TrimSpace(f.calls(t)), "\n")
+			if len(calls) != 2 || !strings.Contains(calls[1], "--timeout 30") || !strings.HasSuffix(calls[1], filepath.Join(target, "a.go")) {
+				t.Fatalf("want the scan and one retry of the file with a 30 s limit, calls:\n%s", strings.Join(calls, "\n"))
+			}
+		})
+	}
+}
+
+func TestTimeoutsListInterruptedParses(t *testing.T) {
+	interrupted := entities.SemgrepError{Type: "Other syntax error", Path: "/a.c", Message: "Other syntax error at line /a.c:1:\n Memprof_limits.Limit_reached: token set"}
+	syntax := entities.SemgrepError{Type: "Syntax error", Path: "/b.c", Message: "Syntax error at line /b.c:3"}
+	got := timeouts([]entities.SemgrepError{
+		{Type: "Timeout", RuleID: "p.a", Path: "/a.c"},
+		interrupted,
+		{Type: "Timeout", RuleID: "p.b", Path: "/a.c"},
+		syntax,
+		{Type: "Timeout", RuleID: "p.a", Path: "/c.c"},
+	})
+	want := timedOut{"/a.c": {}, "/c.c": {"p.a": true}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("timeouts = %v, want %v: an interrupted parse reruns the whole file, other syntax errors nothing", got, want)
+	}
+	a := &coreRule{ruleBase: &ruleBase{baseID: "a"}, id: "p.a"}
+	b := &coreRule{ruleBase: &ruleBase{baseID: "b"}, id: "p.b"}
+	plan := planRetry(got, []*coreRule{a, b})
+	if !plan.whole["/a.c"] || plan.whole["/c.c"] || len(plan.rules) != 2 {
+		t.Fatalf("plan = %+v, want /a.c whole and every rule", plan)
+	}
+	output := &entities.SemgrepOutput{Errors: []entities.SemgrepError{interrupted, syntax}}
+	merged, _, still := mergeRetry(output, &entities.SemgrepOutput{}, plan)
+	if still != 0 || len(merged.Errors) != 1 || merged.Errors[0].Path != "/b.c" {
+		t.Errorf("errors = %+v still %d: the retry's errors replace the interrupted parse, other errors stay", merged.Errors, still)
+	}
+	merged, _, still = mergeRetry(output, &entities.SemgrepOutput{Errors: []entities.SemgrepError{interrupted}}, plan)
+	if still != 1 || len(merged.Errors) != 2 {
+		t.Errorf("errors = %+v still %d: a parse interrupted again stays reported", merged.Errors, still)
 	}
 }
 

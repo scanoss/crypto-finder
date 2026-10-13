@@ -19,6 +19,7 @@ package opengrep
 import (
 	"context"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -40,17 +41,30 @@ const (
 	// files than this retries the first ones in path order.
 	maxRetryFiles    = 64
 	timeoutErrorType = "Timeout"
+	// parseInterrupted is in the message of the syntax error OpenGrep reports,
+	// naming no rule, when a time limit stopped the parse of a file: no rule
+	// ran on it. Parsing counts against the first rule's limit, and a large C
+	// or C++ file takes seconds to parse on a busy host.
+	parseInterrupted = "Memprof_limits.Limit_reached"
 )
 
-// timedOut is the files a rule timed out on, with the rules per file.
+// timedOut is the files a rule timed out on, with the rules per file. A file
+// whose parse a time limit interrupted has no rules: all of them must run.
 type timedOut map[string]map[string]bool
 
-// timeouts collects the Timeout errors of output by file and rule.
+// timeouts collects the Timeout errors of output by file and rule, and the
+// files whose parse a time limit interrupted.
 func timeouts(errs []entities.SemgrepError) timedOut {
 	out := timedOut{}
+	interrupted := map[string]bool{}
 	for i := range errs {
 		e := &errs[i]
-		if e.Path == "" || e.RuleID == "" || errorTypeName(e.Type) != timeoutErrorType {
+		if interruptedParse(e) {
+			interrupted[e.Path] = true
+			out[e.Path] = map[string]bool{}
+			continue
+		}
+		if e.Path == "" || e.RuleID == "" || errorTypeName(e.Type) != timeoutErrorType || interrupted[e.Path] {
 			continue
 		}
 		if out[e.Path] == nil {
@@ -59,6 +73,21 @@ func timeouts(errs []entities.SemgrepError) timedOut {
 		out[e.Path][e.RuleID] = true
 	}
 	return out
+}
+
+// interruptedParse reports whether e is the error of a parse a time limit
+// stopped.
+func interruptedParse(e *entities.SemgrepError) bool {
+	return e.Path != "" && e.RuleID == "" && strings.Contains(e.Message, parseInterrupted)
+}
+
+// retriedError reports whether e is a limit error of a pair or file plan
+// reruns, which the retry's own errors replace.
+func retriedError(e *entities.SemgrepError, plan *retryPlan) bool {
+	if errorTypeName(e.Type) == timeoutErrorType {
+		return plan.covers(e.Path, e.RuleID)
+	}
+	return plan.whole[e.Path] && interruptedParse(e)
 }
 
 // errorTypeName is the name of an error type, which the CLI writes as a
@@ -91,9 +120,10 @@ func (s *Scanner) retryRuleTimeout() int {
 // rule on the same file finishes in milliseconds on an idle host and
 // overruns 5 s when the host is busy, so without a retry a busy scan
 // silently reports fewer findings. A file where OpenGrep gave up after
-// cliTimeoutThreshold timeouts runs every rule of the scan again, since the
-// rules it skipped report nothing. ran is the rules the scan ran; nil loads
-// them from rulePaths. Any failure keeps the output as it was.
+// cliTimeoutThreshold timeouts, or whose parse the limit interrupted, runs
+// every rule of the scan again, since the rules it skipped report nothing.
+// ran is the rules the scan ran; nil loads them from rulePaths. Any failure
+// keeps the output as it was.
 func (s *Scanner) retryTimeouts(ctx context.Context, output *entities.SemgrepOutput, ran []*coreRule, rulePaths []string) *entities.SemgrepOutput {
 	pending := timeouts(output.Errors)
 	if len(pending) == 0 {
@@ -179,9 +209,10 @@ func planRetry(pending timedOut, ran []*coreRule) *retryPlan {
 }
 
 // add plans the retry of path, where the rules ids timed out, and marks the
-// rules it needs in wanted. Rules the scan did not run are skipped.
+// rules it needs in wanted. Rules the scan did not run are skipped. No ids
+// means the parse was interrupted, so every rule runs again.
 func (p *retryPlan) add(path string, ids map[string]bool, byID map[string]*coreRule, ran []*coreRule, wanted map[string]bool) {
-	if len(ids) >= cliTimeoutThreshold {
+	if len(ids) == 0 || len(ids) >= cliTimeoutThreshold {
 		p.whole[path] = true
 		p.files = append(p.files, path)
 		for _, rule := range ran {
@@ -257,14 +288,14 @@ func mergeRetry(output, retried *entities.SemgrepOutput, plan *retryPlan) (merge
 	merged.Errors = make([]entities.SemgrepError, 0, len(output.Errors))
 	for i := range output.Errors {
 		e := &output.Errors[i]
-		if errorTypeName(e.Type) == timeoutErrorType && (plan.whole[e.Path] || plan.pairs[e.Path][e.RuleID]) {
+		if retriedError(e, plan) {
 			continue
 		}
 		merged.Errors = append(merged.Errors, *e)
 	}
 	for i := range retried.Errors {
 		e := &retried.Errors[i]
-		if errorTypeName(e.Type) == timeoutErrorType && plan.covers(e.Path, e.RuleID) {
+		if retriedError(e, plan) {
 			merged.Errors = append(merged.Errors, *e)
 			still++
 		}
