@@ -291,3 +291,106 @@ func TestRelated(t *testing.T) {
 		}
 	}
 }
+
+// TestJavaImportShapesKeepEveryRuleOpenGrepMatches runs Java import guards
+// and qualified names over the import shapes real code uses and requires
+// the prefilter to keep every rule OpenGrep matches. The matches were pinned
+// with opengrep 1.30.2 on these exact sources: a wildcard import satisfies a
+// qualified name but not a metavariable guard, an import of a nested class
+// satisfies its outer class's guard, a static import satisfies a qualified
+// method name, and same-package code satisfies only unguarded rules. Keeping
+// more than OpenGrep matches is allowed; dropping a match is the defect.
+func TestJavaImportShapesKeepEveryRuleOpenGrepMatches(t *testing.T) {
+	guard := func(id, imp string) string {
+		return `{"id": "` + id + `", "languages": ["java"], "message": "m", "severity": "INFO",
+		  "patterns": [{"pattern-inside": "import ` + imp + `;\n...\n"}, {"pattern": "new PBEKeySpec(...)"}]}`
+	}
+	rules := map[string]map[string]any{
+		"g-explicit": mustRule(t, guard("g-explicit", "javax.crypto.spec.PBEKeySpec")),
+		"g-wild":     mustRule(t, guard("g-wild", "javax.crypto.spec.*")),
+		"g-metavar":  mustRule(t, guard("g-metavar", "javax.crypto.spec.$X")),
+		"q-ctor":     mustRule(t, `{"id": "q-ctor", "languages": ["java"], "message": "m", "severity": "INFO", "pattern": "new javax.crypto.spec.PBEKeySpec(...)"}`),
+		"q-static":   mustRule(t, `{"id": "q-static", "languages": ["java"], "message": "m", "severity": "INFO", "pattern": "javax.crypto.Cipher.getInstance(...)"}`),
+		"plain":      mustRule(t, `{"id": "plain", "languages": ["java"], "message": "m", "severity": "INFO", "pattern": "new PBEKeySpec(...)"}`),
+	}
+	body := `class A { void f(char[] p) { Object k = new PBEKeySpec(p); Cipher.getInstance("AES"); } }`
+	cases := []struct {
+		name, source string
+		openGrep     []string
+	}{
+		{
+			"explicit", "package p;\nimport javax.crypto.spec.PBEKeySpec;\nimport javax.crypto.Cipher;\n" + body,
+			[]string{"g-explicit", "g-metavar", "plain", "q-ctor", "q-static"},
+		},
+		{
+			"wildcard", "package p;\nimport javax.crypto.spec.*;\nimport javax.crypto.*;\n" + body,
+			[]string{"g-wild", "plain", "q-ctor", "q-static"},
+		},
+		{
+			"fully qualified", "package p;\nclass A { void f(char[] p) { Object k = new javax.crypto.spec.PBEKeySpec(p); javax.crypto.Cipher.getInstance(\"AES\"); } }",
+			[]string{"q-ctor", "q-static"},
+		},
+		{
+			"same package", "package javax.crypto.spec;\nclass A { void f(char[] p) { Object k = new PBEKeySpec(p); } }",
+			[]string{"plain"},
+		},
+		{
+			"static import", "package p;\nimport static javax.crypto.Cipher.getInstance;\nimport static javax.crypto.spec.*;\nclass A { void f() { getInstance(\"AES\"); } }",
+			[]string{"q-static"},
+		},
+		{
+			"nested class import", "package p;\nimport javax.crypto.spec.PBEKeySpec.Inner;\nclass A { void f(char[] p) { Object k = new PBEKeySpec(p); } }",
+			[]string{"g-explicit", "g-metavar", "plain"},
+		},
+		{"no import", "package p;\n" + body, []string{"plain"}},
+	}
+	for _, c := range cases {
+		ev := evidenceOf("java", c.source)
+		for _, id := range c.openGrep {
+			if !keeps(t, rules[id], []string{"java"}, ev) {
+				t.Errorf("%s: OpenGrep matches %s, the prefilter must keep it", c.name, id)
+			}
+		}
+	}
+}
+
+// TestJJWTPbkdf2RulesAreKept covers jjwt 0.12.6's Pbes2HsAkwAlgorithm, where
+// one benchmark run lacked pbkdf2-detailed with the prefilter on. Neither
+// PBKDF2 rule names an import or a qualified name, so both are kept for any
+// Java unit: the prefilter cannot have dropped the finding.
+func TestJJWTPbkdf2RulesAreKept(t *testing.T) {
+	plain := mustRule(t, `{"id": "java.jca.algorithm.kdf.pbkdf2", "languages": ["java"], "message": "m", "severity": "INFO",
+	  "patterns": [{"pattern-either": [{"pattern": "new PBEKeySpec($PASSWORD, $SALT, $ITERATIONS)"},
+	    {"pattern": "new PBEKeySpec($PASSWORD, $SALT, $ITERATIONS, $KEY_LENGTH)"}]}]}`)
+	detailed := mustRule(t, `{"id": "java.jca.algorithm.kdf.pbkdf2-detailed", "languages": ["java"], "message": "m", "severity": "INFO",
+	  "mode": "taint", "options": {"interfile": true},
+	  "pattern-sources": [{"patterns": [{"pattern": "$KEYLEN"}, {"metavariable-regex": {"metavariable": "$KEYLEN", "regex": "(?<keysize>\\d+)"}}]}],
+	  "pattern-sinks": [{"patterns": [{"pattern": "new PBEKeySpec($PASSWORD, $SALT, $ITERATIONS, $KEYLEN)"}, {"focus-metavariable": "$KEYLEN"}]}]}`)
+	jjwt := `package io.jsonwebtoken.impl.security;
+
+import io.jsonwebtoken.security.KeyAlgorithm;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
+
+public class Pbes2HsAkwAlgorithm {
+    private final int DERIVED_KEY_BIT_LENGTH;
+    public Pbes2HsAkwAlgorithm(int hashBitLength) { this.DERIVED_KEY_BIT_LENGTH = hashBitLength / 2; }
+    protected SecretKey deriveKey(SecretKeyFactory factory, final char[] password, final byte[] rfcSalt, int iterations) throws Exception {
+        PBEKeySpec spec = new PBEKeySpec(password, rfcSalt, iterations, DERIVED_KEY_BIT_LENGTH);
+        return new SecretKeySpec(factory.generateSecret(spec).getEncoded(), "AES");
+    }
+}
+`
+	for name, rule := range map[string]map[string]any{"pbkdf2": plain, "pbkdf2-detailed": detailed} {
+		if req := Requirement(rule, []string{"java"}); req.known() {
+			t.Errorf("%s: requirement must be unknown (no import or qualified name), got %#v", name, req)
+		}
+		for _, source := range []string{jjwt, "package x;\nclass B {}\n"} {
+			if !keeps(t, rule, []string{"java"}, evidenceOf("java", source)) {
+				t.Errorf("%s must be kept for every Java unit", name)
+			}
+		}
+	}
+}

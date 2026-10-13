@@ -18,6 +18,7 @@ package opengrep
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -88,7 +89,7 @@ func TestConvertCoreOutputLikeCLI(t *testing.T) {
 	for _, r := range out.Results {
 		got = append(got, r.CheckID+"@"+r.Extra.Message+"|"+r.Extra.Severity+"|"+r.Extra.Lines)
 	}
-	// Ordered by rule, then location; the nosemgrep-silenced match is gone;
+	// Ordered by location, then rule id; the nosemgrep-silenced match is gone;
 	// an empty message falls back to the rule's.
 	want := []string{"p.a@first|WARNING|x2", "p.a@rule a|WARNING|\tk := f(k)", "p.b@uses k|INFO|\tk := f(k)\n  g()"}
 	if !reflect.DeepEqual(got, want) {
@@ -120,6 +121,53 @@ func TestConvertCoreOutputLikeCLI(t *testing.T) {
 	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(out, entities.ToolInfo{}, dir, []string{dir}, false)
 	if !reflect.DeepEqual(report.IncompleteFiles, []string{path}) {
 		t.Errorf("incomplete files = %v", report.IncompleteFiles)
+	}
+}
+
+// TestConvertCoreOutputOrdersByLocationNotRuleOrder pins the CLI's order:
+// every result by path, start, end and then rule id, whatever the order of
+// the rules. Two rules matching one span (DES.java's ISO9797Alg3Mac, matched
+// by a broad and a DES-specific rule) must come out by id, so the
+// deduplicated asset lists the same rule first in both modes.
+func TestConvertCoreOutputOrdersByLocationNotRuleOrder(t *testing.T) {
+	rules := []*coreRule{
+		testRule(t, `{"id":"mac-des","message":"m","severity":"INFO","languages":["java"],"pattern":"f()"}`),
+		testRule(t, `{"id":"mac-broad","message":"m","severity":"INFO","languages":["java"],"pattern":"f()"}`),
+	}
+	match := func(id, path string, line, col, endCol int) string {
+		return fmt.Sprintf(`{"check_id":%q,"path":%q,"start":{"line":%d,"col":%d,"offset":%d},"end":{"line":%d,"col":%d,"offset":%d},"extra":{"metavars":{},"message":"m","metadata":{}}}`,
+			id, path, line, col, line*100+col, line, endCol, line*100+endCol)
+	}
+	// opengrep-core reports by rule, then file; -j makes even that order a
+	// matter of scheduling.
+	stdout := `{"version":"1.30.2","results":[` + strings.Join([]string{
+		match("mac-des", "b/DES.java", 145, 19, 54),
+		match("mac-des", "a/AES.java", 9, 1, 5),
+		match("mac-broad", "b/DES.java", 145, 38, 53),
+		match("mac-broad", "b/DES.java", 145, 19, 54),
+		match("mac-broad", "a/AES.java", 3, 1, 5),
+	}, ",") + `],"errors":[]}`
+	parsed, err := parseCoreOutput([]byte(stdout))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := convertCoreOutput(parsed, rules, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(out.Results))
+	for _, r := range out.Results {
+		got = append(got, fmt.Sprintf("%s:%d:%d %s", r.Path, r.Start.Line, r.Start.Col, r.CheckID))
+	}
+	want := []string{
+		"a/AES.java:3:1 p.mac-broad",
+		"a/AES.java:9:1 p.mac-des",
+		"b/DES.java:145:19 p.mac-broad",
+		"b/DES.java:145:19 p.mac-des",
+		"b/DES.java:145:38 p.mac-broad",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("results =\n%q\nwant\n%q", got, want)
 	}
 }
 

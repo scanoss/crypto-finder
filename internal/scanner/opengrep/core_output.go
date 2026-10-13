@@ -94,7 +94,7 @@ func parseCoreOutput(stdout []byte) (*coreOutput, error) {
 // convertCoreOutput turns core output into what the CLI prints for the same
 // scan: matches a nosemgrep comment silences are dropped, each result gains
 // its rule's severity, its rule metadata and the source lines it spans, and
-// results are ordered as the CLI orders them, by rule and then by location.
+// results are ordered as the CLI orders them, by location and then by rule id.
 // useBase says opengrep-core knew the rules by their base ids; results then
 // get the prefixed ids the CLI reports.
 func convertCoreOutput(core *coreOutput, rules []*coreRule, useBase bool) (*entities.SemgrepOutput, error) {
@@ -110,7 +110,6 @@ func convertCoreOutput(core *coreOutput, rules []*coreRule, useBase bool) (*enti
 	}
 	lines := newLineReader()
 	out := &entities.SemgrepOutput{Results: make([]entities.SemgrepResult, 0, len(core.Results)), Errors: make([]entities.SemgrepError, 0, len(core.Errors))}
-	order := make([]int, 0, len(core.Results))
 	for i := range core.Results {
 		match := &core.Results[i]
 		if match.Extra.IsIgnored {
@@ -127,9 +126,8 @@ func convertCoreOutput(core *coreOutput, rules []*coreRule, useBase bool) (*enti
 			return nil, err
 		}
 		out.Results = append(out.Results, result)
-		order = append(order, ruleIndex)
 	}
-	sortLikeCLI(out.Results, order)
+	sortLikeCLI(out.Results)
 	for i := range core.Errors {
 		coreErr := core.Errors[i]
 		if ruleIndex, ok := index[coreErr.RuleID]; ok && coreErr.RuleID != "" {
@@ -185,18 +183,14 @@ func convertMatch(match *coreMatch, rule *coreRule, lines *lineReader) (entities
 	}, nil
 }
 
-// sortLikeCLI orders results by rule, in the CLI's rule order, then by the
-// CLI's ordering key: path, start, end, rule id and message.
-func sortLikeCLI(results []entities.SemgrepResult, ruleOrder []int) {
-	idx := make([]int, len(results))
-	for i := range idx {
-		idx[i] = i
-	}
-	less := func(a, b int) bool {
-		if ruleOrder[a] != ruleOrder[b] {
-			return ruleOrder[a] < ruleOrder[b]
-		}
-		ra, rb := &results[a], &results[b]
+// sortLikeCLI orders results by the CLI's ordering key: path, start, end,
+// rule id and message. The CLI sorts every result by that key whatever the
+// order of its rules, so two rules matching the same span come out by id;
+// ordering by rule first instead changes which rule a deduplicated asset
+// lists first.
+func sortLikeCLI(results []entities.SemgrepResult) {
+	sort.SliceStable(results, func(i, j int) bool {
+		ra, rb := &results[i], &results[j]
 		if ra.Path != rb.Path {
 			return ra.Path < rb.Path
 		}
@@ -210,13 +204,7 @@ func sortLikeCLI(results []entities.SemgrepResult, ruleOrder []int) {
 			return ra.CheckID < rb.CheckID
 		}
 		return ra.Extra.Message < rb.Extra.Message
-	}
-	sort.SliceStable(idx, func(i, j int) bool { return less(idx[i], idx[j]) })
-	sorted := make([]entities.SemgrepResult, len(results))
-	for i, j := range idx {
-		sorted[i] = results[j]
-	}
-	copy(results, sorted)
+	})
 }
 
 func comparePosition(a, b entities.SemgrepLocation) int {
@@ -241,6 +229,7 @@ func convertCoreError(e *coreError) entities.SemgrepError {
 		Type:    errorType,
 		Level:   e.Severity,
 		Message: cliErrorMessage(e, kind, label),
+		RuleID:  e.RuleID,
 	}
 	switch {
 	case e.Severity == "info":

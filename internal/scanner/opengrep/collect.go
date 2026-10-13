@@ -44,30 +44,39 @@ const prefilteredIDMarker = "crypto-finder-prefiltered."
 // for them. With a rule prefilter or core mode it first reads the rules and
 // enumerates the targets as the CLI would; whenever that or opengrep-core
 // fails it runs the CLI with every rule, so a failure costs time, never
-// findings.
+// findings. Rules that hit OpenGrep's time limit on a file run once more
+// with a longer limit (retryTimeouts).
 func (s *Scanner) collect(ctx context.Context, roots []scanner.Root, rulePaths []string, scoped bool) (*entities.SemgrepOutput, error) {
 	if s.mode == scanner.OpengrepModeCore || s.prefilter == scanner.RulePrefilterImports {
-		output, handled, err := s.collectPlanned(ctx, roots, rulePaths, scoped)
+		output, ran, handled, err := s.collectPlanned(ctx, roots, rulePaths, scoped)
 		if handled {
-			return output, err
+			if err != nil {
+				return nil, err
+			}
+			return s.retryTimeouts(ctx, output, ran, rulePaths), nil
 		}
 	}
-	return s.collectCLI(ctx, roots, rulePaths, scoped, nil)
+	output, err := s.collectCLI(ctx, roots, rulePaths, scoped, nil)
+	if err != nil {
+		return nil, err
+	}
+	return s.retryTimeouts(ctx, output, nil, rulePaths), nil
 }
 
 // collectPlanned is collect for the modes that plan the scan themselves.
-// handled is false when the plain CLI scan must run instead.
-func (s *Scanner) collectPlanned(ctx context.Context, roots []scanner.Root, rulePaths []string, scoped bool) (output *entities.SemgrepOutput, handled bool, err error) {
+// handled is false when the plain CLI scan must run instead; ran is the
+// rules the scan ran.
+func (s *Scanner) collectPlanned(ctx context.Context, roots []scanner.Root, rulePaths []string, scoped bool) (output *entities.SemgrepOutput, ran []*coreRule, handled bool, err error) {
 	started := time.Now()
 	cwd, err := physicalDir(s.workDir)
 	if err != nil {
 		s.fallback("working directory unavailable", err)
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 	ruleset, err := loadCoreRuleset(rulePaths, cwd)
 	if err != nil {
 		s.fallback("rules unreadable for core mode or the prefilter", err)
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 	plan, err := enumerateTargets(ctx, targetOptions{
 		targets:           targetStrings(roots),
@@ -79,10 +88,10 @@ func (s *Scanner) collectPlanned(ctx context.Context, roots []scanner.Root, rule
 	}, languagesOf(ruleset.rules))
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, true, s.contextFailure(ctx, time.Since(started))
+			return nil, nil, true, s.contextFailure(ctx, time.Since(started))
 		}
 		s.fallback("targets need the opengrep CLI", err)
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 
 	inspection := inspectTargets(plan, s.prefilter == scanner.RulePrefilterImports)
@@ -94,29 +103,29 @@ func (s *Scanner) collectPlanned(ctx context.Context, roots []scanner.Root, rule
 	if s.mode == scanner.OpengrepModeCore {
 		output, err := s.collectCore(ctx, ruleset, rules, plan, inspection.nosem)
 		if err == nil {
-			return output, true, nil
+			return output, rules, true, nil
 		}
 		if ctx.Err() != nil {
-			return nil, true, s.contextFailure(ctx, time.Since(started))
+			return nil, nil, true, s.contextFailure(ctx, time.Since(started))
 		}
 		s.fallback("opengrep-core did not run", err)
 	}
 
 	if len(rules) == len(ruleset.rules) {
 		output, err := s.collectCLI(ctx, roots, rulePaths, scoped, nil)
-		return output, true, err
+		return output, rules, true, err
 	}
 	if len(rules) == 0 {
-		return &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}, true, nil
+		return &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}, rules, true, nil
 	}
 	filtered, cleanup, err := writePrefilteredRules(rules)
 	if err != nil {
 		s.fallback("prefiltered rules could not be written", err)
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 	defer cleanup()
 	output, err = s.collectCLI(ctx, roots, []string{filtered}, scoped, restorePrefilteredID)
-	return output, true, err
+	return output, rules, true, err
 }
 
 // collectCore runs opengrep-core when core mode supports the scan. nosem
@@ -155,7 +164,7 @@ func (p *targetPlan) forLanguages(langs []*language) *targetPlan {
 }
 
 // collectCLI runs the opengrep CLI over roots, one process per share of the
-// command-line budget. rewriteID, when set, maps each reported check_id.
+// command-line budget. rewriteID, when set, maps each reported rule id.
 func (s *Scanner) collectCLI(ctx context.Context, roots []scanner.Root, rulePaths []string, scoped bool, rewriteID func(string) string) (*entities.SemgrepOutput, error) {
 	parsed := &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
 	for _, targets := range scanner.RootTargetBatches(roots) {
@@ -167,9 +176,7 @@ func (s *Scanner) collectCLI(ctx context.Context, roots []scanner.Root, rulePath
 		parsed.Errors = append(parsed.Errors, batch.Errors...)
 	}
 	if rewriteID != nil {
-		for i := range parsed.Results {
-			parsed.Results[i].CheckID = rewriteID(parsed.Results[i].CheckID)
-		}
+		restoreIDs(parsed, rewriteID)
 	}
 	return parsed, nil
 }
