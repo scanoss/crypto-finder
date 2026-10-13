@@ -2,23 +2,20 @@ package engine
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
-	"go.yaml.in/yaml/v3"
 
 	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/rules"
+	"github.com/scanoss/crypto-finder/internal/rules/rulejson"
 )
 
 // ruleFile is a minimal representation of a semgrep rule file, used only to
@@ -296,191 +293,18 @@ func (m *mergedRules) bytes() []byte {
 // so check_id, the cleaned rule ID and the separation between equal IDs from
 // different directories stay what they were with one file per rule file.
 func mergeableRules(path, relPath string) ([][]byte, bool) {
-	if !scannerLoadsAsPlainRuleFile(relPath) {
+	if !rulejson.LoadsAsPlainRuleFile(relPath) {
 		return nil, false
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false
 	}
-	sequence := plainRulesSequence(data)
-	if sequence == nil {
-		return nil, false
-	}
 	prefix := ""
 	if dir := filepath.Dir(relPath); dir != "." {
 		prefix = strings.ReplaceAll(filepath.ToSlash(dir), "/", ".") + "."
 	}
-	encoded := make([][]byte, 0, len(sequence.Content))
-	for _, rule := range sequence.Content {
-		id := mappingValue(rule, "id")
-		if id == nil || id.Kind != yaml.ScalarNode || id.ShortTag() != yamlStrTag {
-			return nil, false
-		}
-		id.Value = prefix + id.Value
-		var out bytes.Buffer
-		if !appendRuleJSON(&out, rule) {
-			return nil, false
-		}
-		encoded = append(encoded, out.Bytes())
-	}
-	return encoded, true
-}
-
-// jsonNumber matches the numbers JSON can spell. A YAML number written any
-// other way (0x10, 0o17, 017, 1_000, +5, .5, 1.) has no literal JSON form
-// with the value OpenGrep reads, so its file is not merged.
-var jsonNumber = regexp.MustCompile(`^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$`)
-
-const yamlStrTag = "!!str"
-
-// appendRuleJSON writes node as JSON with the meaning OpenGrep's YAML parser
-// gives it, and reports false for anything it cannot write that way: aliases,
-// merge keys, repeated or non-string keys, and tags other than the core ones.
-// Numbers keep their literal text, so metadata such as 2.0 reaches OpenGrep
-// as written.
-func appendRuleJSON(out *bytes.Buffer, node *yaml.Node) bool {
-	switch node.Kind {
-	case yaml.MappingNode:
-		return appendMappingJSON(out, node)
-	case yaml.SequenceNode:
-		return appendSequenceJSON(out, node)
-	case yaml.ScalarNode:
-		return appendScalarJSON(out, node)
-	case yaml.DocumentNode, yaml.AliasNode:
-		return false
-	default:
-		return false
-	}
-}
-
-func appendMappingJSON(out *bytes.Buffer, node *yaml.Node) bool {
-	out.WriteByte('{')
-	seen := make(map[string]struct{}, len(node.Content)/2)
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		key := node.Content[i]
-		if key.Kind != yaml.ScalarNode || key.ShortTag() != yamlStrTag {
-			return false
-		}
-		if _, dup := seen[key.Value]; dup {
-			return false
-		}
-		seen[key.Value] = struct{}{}
-		if i > 0 {
-			out.WriteByte(',')
-		}
-		if !appendJSONString(out, key.Value) {
-			return false
-		}
-		out.WriteByte(':')
-		if !appendRuleJSON(out, node.Content[i+1]) {
-			return false
-		}
-	}
-	out.WriteByte('}')
-	return true
-}
-
-func appendSequenceJSON(out *bytes.Buffer, node *yaml.Node) bool {
-	out.WriteByte('[')
-	for i, item := range node.Content {
-		if i > 0 {
-			out.WriteByte(',')
-		}
-		if !appendRuleJSON(out, item) {
-			return false
-		}
-	}
-	out.WriteByte(']')
-	return true
-}
-
-func appendScalarJSON(out *bytes.Buffer, node *yaml.Node) bool {
-	switch node.ShortTag() {
-	case yamlStrTag, "!!timestamp":
-		return appendJSONString(out, node.Value)
-	case "!!int", "!!float":
-		if !jsonNumber.MatchString(node.Value) {
-			return false
-		}
-		out.WriteString(node.Value)
-		return true
-	case "!!bool":
-		switch node.Value {
-		case "true", "True", "TRUE":
-			out.WriteString("true")
-		case "false", "False", "FALSE":
-			out.WriteString("false")
-		default:
-			return false
-		}
-		return true
-	default:
-		return false
-	}
-}
-
-func appendJSONString(out *bytes.Buffer, value string) bool {
-	encoder := json.NewEncoder(out)
-	encoder.SetEscapeHTML(false)
-	if encoder.Encode(value) != nil {
-		return false
-	}
-	out.Truncate(out.Len() - 1) // Encode ends each value with a newline.
-	return true
-}
-
-// plainRulesSequence returns the rules sequence of a file that is one YAML
-// document holding nothing but a top-level rules sequence, or nil.
-func plainRulesSequence(data []byte) *yaml.Node {
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	var doc yaml.Node
-	if decoder.Decode(&doc) != nil || !errors.Is(decoder.Decode(new(yaml.Node)), io.EOF) || len(doc.Content) != 1 {
-		return nil
-	}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode || len(root.Content) != 2 || root.Content[0].Value != "rules" || root.Content[1].Kind != yaml.SequenceNode {
-		return nil
-	}
-	return root.Content[1]
-}
-
-// scannerLoadsAsPlainRuleFile reports whether a scanner walking a rules
-// directory loads this file like any other. OpenGrep 1.29 only loads
-// lowercase .yaml/.yml names there and skips *.test.* and *.fixed.* fixtures;
-// hidden paths are copied too, so each scanner keeps its own treatment of
-// them.
-func scannerLoadsAsPlainRuleFile(relPath string) bool {
-	name := filepath.Base(relPath)
-	if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
-		return false
-	}
-	stem := strings.TrimSuffix(strings.TrimSuffix(name, ".yaml"), ".yml")
-	if strings.HasSuffix(stem, ".test") || strings.HasSuffix(stem, ".fixed") {
-		return false
-	}
-	for _, part := range strings.Split(filepath.ToSlash(relPath), "/") {
-		if strings.HasPrefix(part, ".") {
-			return false
-		}
-	}
-	return true
-}
-
-func mappingValue(node *yaml.Node, key string) *yaml.Node {
-	if node.Kind != yaml.MappingNode {
-		return nil
-	}
-	var value *yaml.Node
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			if value != nil {
-				return nil
-			}
-			value = node.Content[i+1]
-		}
-	}
-	return value
+	return rulejson.EncodeYAMLRules(data, prefix)
 }
 
 func writeMergedRules(path string, data []byte) error {
