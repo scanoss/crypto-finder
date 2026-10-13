@@ -36,6 +36,14 @@ type traceBFSItem struct {
 	chain []CallChainStep
 }
 
+// Fork returns a tracer over t's graph that may trace concurrently with t and
+// with other forks: it shares t's edge index, built now and read-only from
+// then on, and classifies modules with moduleOf, which must be safe for
+// concurrent use and answer as t's module function does.
+func (t *Tracer) Fork(moduleOf func(key string) string) *Tracer {
+	return &Tracer{graph: t.graph, pkgSep: t.pkgSep, edgeIdx: t.edges(), moduleOf: moduleOf}
+}
+
 // NewTracer creates a new backward tracer for the given call graph.
 // pkgSep is the package path separator ("/" for Go, "." for Java).
 func NewTracer(graph *CallGraph, pkgSep string) *Tracer {

@@ -15,6 +15,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
+	"github.com/scanoss/crypto-finder/internal/perf"
 	"github.com/scanoss/crypto-finder/internal/utils"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
@@ -106,16 +107,22 @@ func (w *graphFragmentJSONWriter) writeResolvedResult(result *engine.DepScanResu
 	}
 	ctx := newExportBuildContextWithFindings(result, report.Findings, 0)
 	meta := buildResolvedGraphFragmentScanMetadata(result, report)
+	span := perf.Start("export.graph_fragment.functions")
 	functionIndex, count, err := w.writeFunctions(ctx)
+	span.End()
 	if err != nil {
 		return err
 	}
 	meta.FunctionCount = count
+	span = perf.Start("export.graph_fragment.edges")
 	meta.InternalEdges, meta.ExternalCalls, err = w.writeEdges(ctx, functionIndex)
+	span.End()
 	if err != nil {
 		return err
 	}
+	span = perf.Start("export.graph_fragment.crypto")
 	annotations, supporting, entries := materializeGraphFragmentCryptoFromFindings(ctx, result, report.Findings, functionIndex)
+	span.End()
 	meta.CryptoOps = len(annotations)
 	if err := writeGraphFragmentArrayField(w, "crypto_annotations", annotations, true); err != nil {
 		return err
@@ -1433,6 +1440,7 @@ func materializeGraphFragmentCryptoFromFindings(
 	supportingSeen := make(map[string]bool)
 	entries := make(map[string]*graphFragmentEntryPointData)
 
+	prewarmTracebacks(ctx, findingContainingFunctions(ctx, findings))
 	for _, finding := range findings {
 		for i := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[i]
@@ -1513,6 +1521,19 @@ func fragmentEntryPointChains(
 		matchedCall = ruleMatchedCall(ctx, containingFn, asset)
 	}
 	return filterConditionedCallChains(chains, asset.ParameterConditions, matchedCall)
+}
+
+// findingContainingFunctions lists the function holding each asset of findings,
+// nil where none does, as fragmentEntryPointChains finds it.
+func findingContainingFunctions(ctx *exportBuildContext, findings []entities.Finding) []*callgraph.FunctionDecl {
+	var fns []*callgraph.FunctionDecl
+	for _, finding := range findings {
+		for i := range finding.CryptographicAssets {
+			asset := &finding.CryptographicAssets[i]
+			fns = append(fns, ctx.findContainingFunctionByFinding(finding.FilePath, asset.DependencyInfo, asset.StartLine, asset.StartCol))
+		}
+	}
+	return fns
 }
 
 // fragmentSupportingFromInternal maps an internal call-graph supporting-call
