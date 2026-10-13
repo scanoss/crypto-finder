@@ -4,6 +4,8 @@
 package callgraph
 
 import (
+	"strings"
+
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph/entrypoints"
@@ -53,15 +55,35 @@ func (s *goEntryScope) callbackReferences(root *sitter.Node, packagePath string)
 	walk(root)
 }
 
-func (s *goEntryScope) callbackReference(call *sitter.Node, packagePath string) {
-	function := call.ChildByFieldName(goFieldFunction)
-	args := call.ChildByFieldName("arguments")
-	if function == nil || args == nil || function.Type() != goNodeSelectorExpression {
-		return
+// goCallbackAPINames holds the function and method names of goCallbackAPIs,
+// so a call naming anything else is skipped before its operand is resolved.
+var goCallbackAPINames = func() map[string]bool {
+	names := make(map[string]bool, len(goCallbackAPIs))
+	for key := range goCallbackAPIs {
+		names[key[strings.LastIndex(key, ".")+1:]] = true
 	}
-	operand := function.ChildByFieldName(goFieldOperand)
-	field := function.ChildByFieldName(goFieldField)
-	if operand == nil || field == nil {
+	return names
+}()
+
+// callbackSelector splits a call written x.Name(args) whose Name is one of
+// goCallbackAPINames.
+func (s *goEntryScope) callbackSelector(call *sitter.Node) (operand, field, args *sitter.Node, ok bool) {
+	function := call.ChildByFieldName(goFieldFunction)
+	args = call.ChildByFieldName("arguments")
+	if function == nil || args == nil || function.Type() != goNodeSelectorExpression {
+		return nil, nil, nil, false
+	}
+	operand = function.ChildByFieldName(goFieldOperand)
+	field = function.ChildByFieldName(goFieldField)
+	if operand == nil || field == nil || !goCallbackAPINames[field.Content(s.src)] {
+		return nil, nil, nil, false
+	}
+	return operand, field, args, true
+}
+
+func (s *goEntryScope) callbackReference(call *sitter.Node, packagePath string) {
+	operand, field, args, ok := s.callbackSelector(call)
+	if !ok {
 		return
 	}
 	var pkg string

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	sitter "github.com/smacker/go-tree-sitter"
 )
@@ -50,8 +51,12 @@ type goPackageEntry struct {
 // files of one directory declare. It is built at most once per directory, the
 // first time an identifier argument resolves to nothing in its own file, so a
 // directory that never needs it is never read twice.
+//
+// The index is safe for concurrent lookups: the first one builds it, with its
+// caller's parser, and the others wait for it.
 type goPackageIndex struct {
 	dir   string
+	once  sync.Once
 	built bool
 	// unknown is set when a sibling could not be read in full: it may declare
 	// any name, so nothing resolves against the package.
@@ -71,9 +76,7 @@ func newGoPackageIndex(dir string) *goPackageIndex {
 // or declared in a conditionally built file is unknown. A _test.go file's
 // declarations are visible only from a _test.go file.
 func (x *goPackageIndex) lookup(parser *sitter.Parser, file, pkg string, test bool, name string) (string, bool) {
-	if !x.built {
-		x.build(parser)
-	}
+	x.once.Do(func() { x.build(parser) })
 	if x.unknown {
 		return "", false
 	}

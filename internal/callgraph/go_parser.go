@@ -122,27 +122,48 @@ func (p *GoParser) ParseDirectory(dir, packagePath string) ([]*FileAnalysis, err
 
 // ParseDirectorySelected implements SelectiveParser.
 func (p *GoParser) ParseDirectorySelected(dir, packagePath string, keep func(path string) bool) ([]*FileAnalysis, error) {
+	files, index, err := p.SplitDirectory(dir, keep)
+	if err != nil {
+		return nil, err
+	}
+	return p.ParseSplitFiles(dir, packagePath, files, index), nil
+}
+
+// SplitDirectory implements directoryFileSplitter: the files
+// ParseDirectorySelected would parse, in its order, and the package index
+// they share.
+func (p *GoParser) SplitDirectory(dir string, keep func(path string) bool) ([]string, any, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
+		return nil, nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
-
-	p.pkgIndex = newGoPackageIndex(dir)
-	defer func() { p.pkgIndex = nil }()
-	analyses := make([]*FileAnalysis, 0, len(entries))
+	files := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") || (!p.includeTests && strings.HasSuffix(name, "_test.go")) {
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || (!p.includeTests && strings.HasSuffix(name, "_test.go")) {
 			continue
 		}
-
 		fullPath := filepath.Join(dir, name)
 		if keep != nil && !keep(fullPath) {
 			continue
 		}
+		files = append(files, fullPath)
+	}
+	return files, newGoPackageIndex(dir), nil
+}
+
+// ParseSplitFiles implements directoryFileSplitter: it parses files of dir
+// as ParseDirectorySelected does, against the package index SplitDirectory
+// returned, which may be shared by parsers running concurrently.
+func (p *GoParser) ParseSplitFiles(dir, packagePath string, files []string, shared any) []*FileAnalysis {
+	index, ok := shared.(*goPackageIndex)
+	if !ok {
+		index = newGoPackageIndex(dir)
+	}
+	p.pkgIndex = index
+	defer func() { p.pkgIndex = nil }()
+	analyses := make([]*FileAnalysis, 0, len(files))
+	for _, fullPath := range files {
 		analysis, err := p.ParseFile(fullPath, packagePath)
 		if err != nil {
 			log.Error().Err(err).Str("file", fullPath).Str("package", packagePath).Msg("failed to parse file")
@@ -150,8 +171,7 @@ func (p *GoParser) ParseDirectorySelected(dir, packagePath string, keep func(pat
 		}
 		analyses = append(analyses, analysis)
 	}
-
-	return analyses, nil
+	return analyses
 }
 
 // SkipsDirNamed mirrors the go tool: testdata and directories whose names

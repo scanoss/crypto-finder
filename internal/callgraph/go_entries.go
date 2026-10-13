@@ -66,6 +66,41 @@ type goEntryScope struct {
 	packageVars map[string]*sitter.Node
 	// packagePath is the import path of the file's package.
 	packagePath string
+	// bodies indexes, per function, literal or method node, the names its
+	// body binds, built by one walk the first time a name is looked up in it.
+	// Walking the body once per lookup instead is quadratic in its size.
+	bodies map[goScopeNode]*goBodyIndex
+}
+
+// goScopeNode identifies one function, literal or method node of the file.
+type goScopeNode struct {
+	start, end uint32
+	kind       string
+}
+
+// goBodyIndex holds what bodyDeclaration and otherBinding would find for each
+// name in one function body: decls the first declaration in walk order, and
+// bound the names a range clause or type switch binds.
+type goBodyIndex struct {
+	decls map[string]goLocalDecl
+	bound map[string]bool
+}
+
+type goLocalDecl struct {
+	node *sitter.Node
+}
+
+func (s *goEntryScope) bodyIndex(fn *sitter.Node) *goBodyIndex {
+	key := goScopeNode{start: fn.StartByte(), end: fn.EndByte(), kind: fn.Type()}
+	if index, ok := s.bodies[key]; ok {
+		return index
+	}
+	index := &goBodyIndex{decls: make(map[string]goLocalDecl), bound: make(map[string]bool)}
+	body := fn.ChildByFieldName("body")
+	s.indexBodyDeclarations(body, index)
+	s.indexOtherBindings(body, index)
+	s.bodies[key] = index
+	return index
 }
 
 // applyGoEntryRules marks the file's entry points: init functions and package
@@ -93,7 +128,13 @@ func applyGoEntryRules(root *sitter.Node, src []byte, packagePath string, analys
 }
 
 func newGoEntryScope(root *sitter.Node, src []byte, analysis *FileAnalysis) *goEntryScope {
-	s := &goEntryScope{analysis: analysis, src: src, fields: make(map[string]map[string]*sitter.Node), packageVars: make(map[string]*sitter.Node)}
+	s := &goEntryScope{
+		analysis:    analysis,
+		src:         src,
+		fields:      make(map[string]map[string]*sitter.Node),
+		packageVars: make(map[string]*sitter.Node),
+		bodies:      make(map[goScopeNode]*goBodyIndex),
+	}
 	for i := 0; i < int(root.NamedChildCount()); i++ {
 		decl := root.NamedChild(i)
 		for j := 0; j < int(decl.NamedChildCount()); j++ {
@@ -261,33 +302,30 @@ func (s *goEntryScope) otherBinding(fn *sitter.Node, name string) bool {
 	if _, ok := s.parameterType(fn.ChildByFieldName("result"), name); ok {
 		return true
 	}
-	var walk func(node *sitter.Node) bool
-	walk = func(node *sitter.Node) bool {
-		if node == nil {
-			return false
-		}
-		var list *sitter.Node
-		switch node.Type() {
-		case goNodeFuncLiteral:
-			return false
-		case "range_clause":
-			list = node.ChildByFieldName(goFieldLeft)
-		case "type_switch_statement":
-			list = node.ChildByFieldName("alias")
-		}
-		for i := 0; list != nil && i < int(list.NamedChildCount()); i++ {
-			if list.NamedChild(i).Content(s.src) == name {
-				return true
-			}
-		}
-		for i := 0; i < int(node.NamedChildCount()); i++ {
-			if walk(node.NamedChild(i)) {
-				return true
-			}
-		}
-		return false
+	return s.bodyIndex(fn).bound[name]
+}
+
+// indexOtherBindings records the names the range clauses and type switches
+// of a body bind, outside the function literals it holds.
+func (s *goEntryScope) indexOtherBindings(node *sitter.Node, index *goBodyIndex) {
+	if node == nil {
+		return
 	}
-	return walk(fn.ChildByFieldName("body"))
+	var list *sitter.Node
+	switch node.Type() {
+	case goNodeFuncLiteral:
+		return
+	case "range_clause":
+		list = node.ChildByFieldName(goFieldLeft)
+	case "type_switch_statement":
+		list = node.ChildByFieldName("alias")
+	}
+	for i := 0; list != nil && i < int(list.NamedChildCount()); i++ {
+		index.bound[list.NamedChild(i).Content(s.src)] = true
+	}
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		s.indexOtherBindings(node.NamedChild(i), index)
+	}
 }
 
 // localDeclaration finds name among a function's receiver, parameters and
@@ -298,38 +336,43 @@ func (s *goEntryScope) localDeclaration(fn *sitter.Node, name string) (*sitter.N
 			return typ, true
 		}
 	}
-	return s.bodyDeclaration(fn.ChildByFieldName("body"), name)
+	decl, ok := s.bodyIndex(fn).decls[name]
+	return decl.node, ok
 }
 
-// bodyDeclaration finds a variable a function body declares, outside the
-// function literals it holds, and returns its value or type.
-func (s *goEntryScope) bodyDeclaration(node *sitter.Node, name string) (*sitter.Node, bool) {
+// indexBodyDeclarations records each variable a function body declares,
+// outside the function literals it holds, with its value or type. The first
+// declaration of a name in walk order wins, as a search for it would stop
+// there.
+func (s *goEntryScope) indexBodyDeclarations(node *sitter.Node, index *goBodyIndex) {
 	if node == nil {
-		return nil, false
+		return
+	}
+	declare := func(name string, value *sitter.Node) {
+		if _, seen := index.decls[name]; !seen {
+			index.decls[name] = goLocalDecl{node: value}
+		}
 	}
 	switch node.Type() {
 	case goNodeShortVarDeclaration:
 		left := node.ChildByFieldName(goFieldLeft)
 		for i := 0; left != nil && i < int(left.NamedChildCount()); i++ {
-			if left.NamedChild(i).Content(s.src) == name {
-				return goListElement(node.ChildByFieldName(goFieldRight), i), true
-			}
+			declare(left.NamedChild(i).Content(s.src), goListElement(node.ChildByFieldName(goFieldRight), i))
 		}
 	case goNodeVarSpec:
 		vars := make(map[string]*sitter.Node)
 		s.recordVarSpec(node, vars)
-		if value, declared := vars[name]; declared {
-			return value, true
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			if name := node.NamedChild(i).Content(s.src); vars[name] != nil {
+				declare(name, vars[name])
+			}
 		}
 	case goNodeFuncLiteral:
-		return nil, false
+		return
 	}
 	for i := 0; i < int(node.NamedChildCount()); i++ {
-		if value, found := s.bodyDeclaration(node.NamedChild(i), name); found {
-			return value, true
-		}
+		s.indexBodyDeclarations(node.NamedChild(i), index)
 	}
-	return nil, false
 }
 
 func (s *goEntryScope) parameterType(params *sitter.Node, name string) (*sitter.Node, bool) {

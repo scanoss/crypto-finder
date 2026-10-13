@@ -23,6 +23,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/crypto-finder/internal/perf"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/skip"
@@ -168,7 +169,9 @@ func (ds *DependencyScanner) ScanWithDependencies(
 	pipelineStart := time.Now()
 
 	validator := &rules.ParameterConditionValidator{}
+	prepareSpan := perf.Start("dependencies.resolve")
 	resolved, filteredRulePaths, rulesHash, cleanupRulePaths, err := ds.prepareDependencyScan(ctx, opts, validator)
+	prepareSpan.End()
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +185,9 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return ds.emptyDependencyScanResult(userReport, resolved, opts), nil
 	}
 
+	scanSpan := perf.Start("dependencies.scan")
 	depResults, err := ds.scanDependenciesParallel(ctx, resolved.Dependencies, filteredRulePaths, rulesHash, opts, validator)
+	scanSpan.End()
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +197,9 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return nil, err
 	}
 
+	graphSpan := perf.Start("dependencies.callgraph")
 	graph, parsed, err := ds.buildDependencyCallGraph(opts.ScanOptions.Target, resolved, depResults)
+	graphSpan.End()
 	if err != nil {
 		if progressErr := ds.reportProgress(opts, progressStatusFailed, err); progressErr != nil {
 			return nil, progressErr
@@ -208,10 +215,12 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return nil, err
 	}
 
+	attributeSpan := perf.Start("dependencies.attribute")
 	tracer := callgraph.NewTracer(graph, ds.cgBuilder.PackageSeparator())
 	userPackages := ds.buildUserPackages(resolved)
 	ds.attributeDependencyResults(depResults, opts.ScanOptions.Target, tracer, userPackages)
 	result := ds.mergeReports(userReport, depResults)
+	attributeSpan.End()
 
 	pipelineDuration := time.Since(pipelineStart)
 	log.Info().
@@ -427,7 +436,9 @@ func (ds *DependencyScanner) buildDependencyCallGraph(
 	resolved *dependency.ResolveResult,
 	depResults []depScanResult,
 ) (*callgraph.CallGraph, map[string]bool, error) {
+	setsSpan := perf.Start("dependencies.callgraph.package_sets")
 	sets := ds.collectPackageSets(userTarget, resolved, depResults)
+	setsSpan.End()
 	ds.cgBuilder.SetArtifactDependencies(resolved.Graph)
 	graph, err := ds.cgBuilder.BuildFromDirectories(sets.graphPackages, sets.typeOnlyPackages)
 	return graph, sets.parsedModules, err
@@ -558,8 +569,11 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	var mu sync.Mutex
 	var misses []depWork
 	batchable := false
+	lookupSpan := perf.Start("dependencies.scan.cache_lookup")
 	forEachParallel(workers, work, func(item depWork) {
+		itemSpan := perf.StartQuiet("dependencies.scan.cache_lookup.item")
 		result, hit := ds.lookupDependency(depCtx, &item, rulePaths, rulesHash, opts)
+		itemSpan.End()
 		if hit {
 			outcomes[item.index] = result
 			return
@@ -573,6 +587,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		batchable = batchable || canBatch
 		mu.Unlock()
 	})
+	lookupSpan.End()
 	sort.Slice(misses, func(i, j int) bool { return misses[i].index < misses[j].index })
 
 	var batches []scanBatch
@@ -584,6 +599,8 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		}
 	}
 	log.Info().Int("cacheMisses", len(misses)).Int("batches", len(batches)).Msg("Scanning dependencies the findings cache does not hold")
+	missSpan := perf.Start("dependencies.scan.misses")
+	defer missSpan.End()
 	forEachParallel(workers, batches, func(batch scanBatch) {
 		results := ds.scanBatch(depCtx, batch, validator)
 		for i := range results {
