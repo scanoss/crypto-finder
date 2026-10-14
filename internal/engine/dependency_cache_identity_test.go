@@ -18,12 +18,14 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -32,83 +34,135 @@ import (
 	"github.com/scanoss/crypto-finder/internal/perf"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 )
 
-func TestCacheIdentityEnvironmentDropsNonSemanticVariables(t *testing.T) {
-	got := cacheIdentityEnvironment([]string{
-		"SCANOSS_PHASE_TIMINGS=/out/run1.phases",
-		"PATH=/bin",
-		"OLDPWD=/somewhere",
-		"_=/usr/bin/time",
-		"SEMGREP_SETTINGS_FILE=/s.yml",
-		"SSH_CONNECTION=10.0.0.1 51234 10.0.0.2 22",
-		"SCANOSS_OPENGREP_CORE=/opt/opengrep-core",
-		"SCANOSS_SCANNER_JOBS=8",
-		"SCANOSS_CPUPROFILE=/tmp/cpu",
-		"HOME=/home/u",
-		"SHLVL=2",
-		"PWD=/w",
-		// Prefix of an excluded name: still keyed.
-		"PWDX=1",
-	})
-	want := []string{
-		"HOME=/home/u",
-		"PATH=/bin",
-		"PWDX=1",
-		"SCANOSS_OPENGREP_CORE=/opt/opengrep-core",
-		"SEMGREP_SETTINGS_FILE=/s.yml",
+// sessionNoise is what differs between two machines or sessions that run
+// the same scan: none of it may split the findings cache.
+var sessionNoise = map[string][2]string{
+	"HOSTNAME":              {"runner-a", "runner-b"},
+	"PATH":                  {"/opt/opengrep/bin:/usr/local/bin:/usr/bin:/bin", "/usr/bin:/opt/opengrep/bin:/bin:/usr/local/bin:/nonexistent"},
+	"HOME":                  {"/home/alice", "/root"},
+	"USER":                  {"alice", "root"},
+	"SSH_CONNECTION":        {"10.0.0.1 51234 10.0.0.2 22", "10.0.0.9 40000 10.0.0.2 22"},
+	"SSH_CLIENT":            {"10.0.0.1 51234 22", "10.0.0.9 40000 22"},
+	"SSH_AUTH_SOCK":         {"/tmp/ssh-AbC/agent.1", "/tmp/ssh-XyZ/agent.2"},
+	"SSH_TTY":               {"/dev/pts/1", "/dev/pts/7"},
+	"GITHUB_RUN_ID":         {"1001", "1002"},
+	"GITHUB_RUN_NUMBER":     {"7", "8"},
+	"CI_JOB_ID":             {"55", "56"},
+	"CI_PIPELINE_ID":        {"9", "10"},
+	"BUILD_NUMBER":          {"300", "301"},
+	"SCANOSS_PHASE_TIMINGS": {"/out/run1.phases", "/out/run2.phases"},
+	"SCANOSS_SCANNER_JOBS":  {"8", "4"},
+	"OLDPWD":                {"/a", "/b"},
+	"PWD":                   {"/w", "/w"},
+	"SHLVL":                 {"1", "3"},
+	"_":                     {"/usr/bin/time", "/usr/bin/env"},
+	"TERM_SESSION_ID":       {"w0t0p0", "w1t0p0"},
+	"XDG_SESSION_ID":        {"3", "4"},
+	"TMUX_PANE":             {"%1", "%2"},
+}
+
+func sessionEnv(which int) []string {
+	env := make([]string, 0, len(sessionNoise))
+	for name, values := range sessionNoise {
+		env = append(env, name+"="+values[which])
 	}
+	return env
+}
+
+func TestCacheIdentityEnvironmentKeepsOnlyScanVariables(t *testing.T) {
+	env := append(sessionEnv(0), "LC_ALL=C", "SEMGREP_FIXTURE=1", "LANG=en_US.UTF-8", "SEMGREP_CORE_EXTRA=-fast", "XDG_CONFIG_HOME=/c", "TMPDIR=/t")
+	got := cacheIdentityEnvironment(opengrep.ScannerName, env)
+	want := []string{"LANG=en_US.UTF-8", "LC_ALL=C", "SEMGREP_CORE_EXTRA=-fast"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("cacheIdentityEnvironment = %q, want %q", got, want)
 	}
 }
 
-// TestDependencyCacheIdentityKeyEncodingUnchanged pins the key material: an
-// environment without excluded variables keys exactly as before the
-// identity got a named type, so those caches stay warm.
-func TestDependencyCacheIdentityKeyEncodingUnchanged(t *testing.T) {
-	config := scanner.Config{Timeout: 3, SkipPatterns: []string{"test/"}, RuleTimeoutSeconds: 30, OpengrepMode: scanner.OpengrepModeCore, RulePrefilter: scanner.RulePrefilterImports}
-	info := scanner.Info{Name: "opengrep", Version: "1.30.2"}
-	env := []string{"HOME=/h", "PATH=/bin"}
-	scope := &scanner.DetectionScope{Paths: []string{"a.go"}}
-	for _, scope := range []*scanner.DetectionScope{nil, scope} {
-		legacy, err := json.Marshal(struct {
-			Package       string
-			RulesHash     string
-			JavaRuntime   string
-			Name          string
-			Scanner       scanner.Info
-			FinderVersion string
-			Config        scanner.Config
-			Languages     []string
-			Environment   []string
-			CWD           string
-			Scope         *scanner.DetectionScope `json:",omitempty"`
-		}{"m@v1", "rh", "jdk-21", "opengrep", info, "0.9.0", config, []string{"go"}, env, "/w", scope})
-		if err != nil {
-			t.Fatal(err)
-		}
-		id := dependencyCacheIdentity{
-			Package: "m@v1", RulesHash: "rh", JavaRuntime: "jdk-21", Name: "opengrep", Scanner: info,
-			FinderVersion: "0.9.0", Config: config, Languages: []string{"go"},
-			Environment: cacheIdentityEnvironment(env), CWD: "/w", Scope: scope,
-		}
-		got, err := id.key()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if want := fmt.Sprintf("dependency-findings-v2:%x", sha256.Sum256(legacy)); got != want {
-			t.Fatalf("key = %s, want legacy %s", got, want)
-		}
+// TestCacheIdentityEnvironmentUnauditedScannerKeepsDenylist pins the
+// fallback for a scanner whose environment reads were not audited: every
+// variable but crypto-finder's diagnostics and shell/login bookkeeping.
+func TestCacheIdentityEnvironmentUnauditedScannerKeepsDenylist(t *testing.T) {
+	got := cacheIdentityEnvironment("semgrep", []string{
+		"SCANOSS_PHASE_TIMINGS=/out/run1.phases",
+		"PATH=/bin",
+		"OLDPWD=/somewhere",
+		"_=/usr/bin/time",
+		"SSH_CONNECTION=10.0.0.1 51234 10.0.0.2 22",
+		"HOSTNAME=runner-a",
+		"SHLVL=2",
+		// Prefix of an excluded name: still keyed.
+		"PWDX=1",
+	})
+	want := []string{"HOSTNAME=runner-a", "PATH=/bin", "PWDX=1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cacheIdentityEnvironment = %q, want %q", got, want)
 	}
 }
 
-// TestDependencyCacheWarmAcrossPerRunDiagnostics runs the same dependency
-// scan the way a benchmark does, with a timings file and a previous
-// directory named per run: the second run must reuse the first run's
-// findings, byte-identical, while a variable a scanner may read still
-// partitions the cache.
-func TestDependencyCacheWarmAcrossPerRunDiagnostics(t *testing.T) {
+// TestDependencyCacheKeyIgnoresSessionAndKeysScanInputs simulates two
+// machines or sessions running the same scan: the key must be equal. Every
+// allowlisted variable, the engine build and the dependency root must still
+// change it.
+func TestDependencyCacheKeyIgnoresSessionAndKeysScanInputs(t *testing.T) {
+	keyOf := func(env []string, mutate func(*dependencyCacheIdentity)) string {
+		t.Helper()
+		id := dependencyCacheIdentity{
+			Package: "m@v1", RulesHash: "rh", JavaRuntime: "jdk-21", Name: opengrep.ScannerName,
+			Scanner:       scanner.Info{Name: "opengrep", Version: "1.30.2"},
+			FinderVersion: "0.9.0", Config: scanner.Config{RuleTimeoutSeconds: 30, OpengrepMode: scanner.OpengrepModeCore},
+			Languages: []string{"go"}, Environment: cacheIdentityEnvironment(opengrep.ScannerName, env), CWD: "/w",
+			Engine: "e1", Root: "/cache/m/v1",
+		}
+		if mutate != nil {
+			mutate(&id)
+		}
+		key, err := id.key()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return key
+	}
+	base := keyOf(sessionEnv(0), nil)
+	if got := keyOf(sessionEnv(1), nil); got != base {
+		t.Fatal("another machine or session must share the key")
+	}
+	for name := range opengrepEnvironment {
+		set := keyOf(append(sessionEnv(0), name+"=x"), nil)
+		if set == base {
+			t.Errorf("setting %s must change the key", name)
+		}
+		if keyOf(append(sessionEnv(0), name+"=y"), nil) == set {
+			t.Errorf("changing %s must change the key", name)
+		}
+		if keyOf(append(sessionEnv(1), name+"=x"), nil) != set {
+			t.Errorf("session noise must not split keys with %s set", name)
+		}
+	}
+	if keyOf(sessionEnv(0), func(id *dependencyCacheIdentity) { id.Engine = "e2" }) == base {
+		t.Error("another engine build must change the key")
+	}
+	if keyOf(sessionEnv(0), func(id *dependencyCacheIdentity) { id.Root = "/other/m/v1" }) == base {
+		t.Error("another dependency root must change the key")
+	}
+}
+
+// fingerprintedScanner is a mockScanner that fingerprints its engine.
+type fingerprintedScanner struct {
+	*mockScanner
+	fingerprint func() (string, error)
+}
+
+func (s *fingerprintedScanner) EngineFingerprint() (string, error) { return s.fingerprint() }
+
+// TestDependencyCacheWarmAcrossMachinesAndSessions runs the same dependency
+// scan the way two hosts or CI runs do: the second must reuse the first's
+// findings byte-identical, with no rescan, while each allowlisted variable,
+// the engine build and the dependency root still partition the cache, and
+// every cached output equals the cache-disabled output.
+func TestDependencyCacheWarmAcrossMachinesAndSessions(t *testing.T) {
 	dir := t.TempDir()
 	rule := filepath.Join(dir, "rule.yaml")
 	if err := os.WriteFile(rule, []byte("rules:\n- id: fixture\n  languages: [go]\n  pattern: $X\n  message: fixture\n  severity: WARNING\n"), 0o600); err != nil {
@@ -120,20 +174,40 @@ func TestDependencyCacheWarmAcrossPerRunDiagnostics(t *testing.T) {
 	}
 	// Open the timings sink before the variable changes, as one process does.
 	perf.Enabled()
+	names := make([]string, 0, len(opengrepEnvironment))
+	for name := range opengrepEnvironment {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 	calls := 0
+	engine, engineErr := "build-1", error(nil)
 	registry := scanner.NewRegistry()
 	registry.RegisterFactory("fixture", func() scanner.Scanner {
-		return &mockScanner{
-			getInfoFunc: func() scanner.Info { return scanner.Info{Name: "fixture", Version: "1"} },
-			scanFunc: func(_ context.Context, target string, _ []string, info entities.ToolInfo) (*entities.InterimReport, error) {
-				calls++
-				return &entities.InterimReport{Version: "1.0", Tool: info, Findings: []entities.Finding{{FilePath: filepath.Join(target, "dep.go"), CryptographicAssets: []entities.CryptographicAsset{{Metadata: map[string]string{"assetType": "algorithm", "algorithmFamily": "SHA", "engineKnob": os.Getenv("OPENGREP_FIXTURE_KNOB")}}}}}}, nil
+		return &fingerprintedScanner{
+			mockScanner: &mockScanner{
+				getInfoFunc: func() scanner.Info { return scanner.Info{Name: opengrep.ScannerName, Version: "1"} },
+				scanFunc: func(_ context.Context, target string, _ []string, info entities.ToolInfo) (*entities.InterimReport, error) {
+					calls++
+					// What the engine sees: its build and every variable it reads.
+					seen := map[string]string{"assetType": "algorithm", "algorithmFamily": "SHA", "engine": engine}
+					for _, name := range names {
+						if value, ok := os.LookupEnv(name); ok {
+							seen[name] = value
+						}
+					}
+					return &entities.InterimReport{Version: "1.0", Tool: info, Findings: []entities.Finding{{FilePath: filepath.Join(target, "dep.go"), CryptographicAssets: []entities.CryptographicAsset{{Metadata: seen}}}}}, nil
+				},
 			},
+			fingerprint: func() (string, error) { return engine, engineErr },
 		}
 	})
 	orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) { return []string{rule}, nil }}), registry)
+	depDir := filepath.Join(dir, "sources", "dep", "1")
+	if err := os.MkdirAll(depDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
 	resolver := &fakeResolver{ecosystem: "go", resolveFn: func(context.Context, string) (*dependency.ResolveResult, error) {
-		return &dependency.ResolveResult{RootModule: "app", Dependencies: []dependency.Dependency{{Module: "dep", Version: "1", Dir: dir}}}, nil
+		return &dependency.ResolveResult{RootModule: "app", Dependencies: []dependency.Dependency{{Module: "dep", Version: "1", Dir: depDir}}}, nil
 	}}
 	run := func(backend FindingsCache) string {
 		t.Helper()
@@ -148,31 +222,79 @@ func TestDependencyCacheWarmAcrossPerRunDiagnostics(t *testing.T) {
 		}
 		return string(data)
 	}
-	perRun := func(name string) {
-		t.Setenv("SCANOSS_PHASE_TIMINGS", filepath.Join(dir, name+".phases"))
-		t.Setenv("OLDPWD", filepath.Join(dir, name))
-		t.Setenv("_", "/usr/bin/"+name)
+	session := func(which int) {
+		for name, values := range sessionNoise {
+			if name == "PATH" {
+				// Keep the toolchain reachable; only the order changes.
+				parts := filepath.SplitList(os.Getenv("PATH"))
+				if which == 1 {
+					slices.Reverse(parts)
+				}
+				t.Setenv(name, strings.Join(parts, string(os.PathListSeparator)))
+				continue
+			}
+			t.Setenv(name, values[which])
+		}
+	}
+	// expectMiss checks that the current state is scanned once, matches the
+	// cache-disabled output, and is then served from the cache.
+	expectMiss := func(what string) string {
+		t.Helper()
+		uncached := run(nil)
+		count := calls
+		if got := run(cache); got != uncached || calls != count+1 {
+			t.Fatalf("%s: must rescan once and match the cache-disabled output (rescans=%d identical=%v)", what, calls-count, got == uncached)
+		}
+		count = calls
+		if got := run(cache); got != uncached || calls != count {
+			t.Fatalf("%s: second run must be served from the cache", what)
+		}
+		return uncached
 	}
 
-	perRun("cold")
-	uncached := run(nil)
-	cold := run(cache)
-	if cold != uncached {
-		t.Fatal("cold cache differs from disabled")
+	for _, name := range names {
+		t.Setenv(name, "") // Restores the original value after the test.
+		os.Unsetenv(name)
 	}
+	session(0)
+	cold := expectMiss("cold")
+	session(1)
 	count := calls
-	perRun("warm")
 	if warm := run(cache); warm != cold || calls != count {
-		t.Fatalf("per-run diagnostics must not split the cache: rescans=%d identical=%v", calls-count, warm == cold)
+		t.Fatalf("another machine or session must not split the cache: rescans=%d identical=%v", calls-count, warm == cold)
 	}
 
-	t.Setenv("OPENGREP_FIXTURE_KNOB", "on")
-	knob := run(nil)
-	if knob == cold {
-		t.Fatal("engine variable must change uncached output")
+	for _, name := range names {
+		t.Setenv(name, "fixture-"+name)
+		if expectMiss(name) == cold {
+			t.Fatalf("%s must change the fixture engine's output", name)
+		}
+		os.Unsetenv(name)
 	}
-	if got := run(cache); got != knob {
-		t.Fatal("engine variable reused stale findings")
+	count = calls
+	if got := run(cache); got != cold || calls != count {
+		t.Fatal("restoring the variables must reuse the first entry")
+	}
+
+	engine = "build-2"
+	if expectMiss("engine build") == cold {
+		t.Fatal("the engine build must change the fixture engine's output")
+	}
+	engine, engineErr = "build-1", errors.New("unreadable engine")
+	count = calls
+	if got := run(cache); got != cold || calls != count+1 {
+		t.Fatal("an engine that cannot be fingerprinted must bypass the cache")
+	}
+	engineErr = nil
+
+	// The same package extracted under another root (another HOME's source
+	// cache): its findings name other paths.
+	depDir = filepath.Join(dir, "other-home", "sources", "dep", "1")
+	if err := os.MkdirAll(depDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if moved := expectMiss("dependency root"); moved == cold || !strings.Contains(moved, depDir) {
+		t.Fatal("findings under another root must name that root")
 	}
 }
 

@@ -5,7 +5,8 @@
   variables (`SSH_*` session, `GPG_TTY`, `TERM_SESSION_ID`, `WINDOWID`, `TMUX_PANE`,
   `XDG_SESSION_ID`). Before, a timings file named per run made every dependency a
   cache miss. Findings are unchanged. Every other environment variable still
-  partitions the cache. Cache entries written by earlier versions are rescanned once.
+  partitions the cache for scanners whose environment reads were not audited. Cache
+  entries written by earlier versions are rescanned once.
 - Dependency scans log the findings-cache outcome per lookup and store (hit, absent,
   disabled, no identity, read error, stored, not stored because incomplete) at the end
   of the dependency scan, and `SCANOSS_PHASE_TIMINGS` writes them as a

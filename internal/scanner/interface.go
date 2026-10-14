@@ -184,3 +184,12 @@ type Info struct {
 type BatchScanner interface {
 	ScanRoots(ctx context.Context, roots []Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error)
 }
+
+// EngineFingerprinter is implemented by scanners that can identify the
+// engine build they run by its content. Info.Version cannot tell two builds
+// of one version apart, and the executable's path would tell apart identical
+// builds installed in different places, so caches of scan results key on the
+// fingerprint instead of either.
+type EngineFingerprinter interface {
+	EngineFingerprint() (string, error)
+}

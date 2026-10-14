@@ -674,6 +674,7 @@ func (ds *DependencyScanner) lookupDependency(
 		// The job count tunes the host, not the scan. Keying on it would split
 		// the cache by core count and by how many dependencies run at once.
 		config.Jobs = 0
+		engine, engineErr := engineFingerprint(initializedScanner)
 		identity := dependencyCacheIdentity{
 			Package:       item.key,
 			RulesHash:     rulesHash,
@@ -683,13 +684,15 @@ func (ds *DependencyScanner) lookupDependency(
 			FinderVersion: version.Version,
 			Config:        config,
 			Languages:     item.opts.LanguageHint,
-			Environment:   cacheIdentityEnvironment(os.Environ()),
+			Environment:   cacheIdentityEnvironment(info.Name, os.Environ()),
 			CWD:           cwd,
 			Scope:         item.scope,
+			Engine:        engine,
+			Root:          dep.Dir,
 		}
 		key, encodeErr := identity.key()
 		// Unavailable context/identity disables caching, never scanner validation.
-		if encodeErr == nil && cwdErr == nil && info.Version != "" && info.Version != "unknown" {
+		if encodeErr == nil && cwdErr == nil && engineErr == nil && info.Version != "" && info.Version != "unknown" {
 			item.cacheKey = key
 		}
 		defer func() { identity.logComponents(dep.Module, dep.Version, item.cacheState) }()
