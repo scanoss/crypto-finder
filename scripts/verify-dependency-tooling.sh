@@ -15,7 +15,7 @@ readonly RUSTUP_AMD64_SHA256="dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc
 readonly RUSTUP_ARM64_SHA256="15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433"
 readonly RUSTUP_AMD64_URL="https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init"
 readonly RUSTUP_ARM64_URL="https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/aarch64-unknown-linux-gnu/rustup-init"
-readonly CURL_DEB13_VERSION="8.14.1-2+deb13u5"
+readonly CURL_DEB13_VERSION="8.14.1-2+deb13u7"
 
 DOCKERFILES=(
   Dockerfile
