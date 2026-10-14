@@ -135,12 +135,15 @@ func (s *Scanner) retryRuleTimeouts() []int {
 // silently reports fewer findings. A file where OpenGrep gave up after
 // cliTimeoutThreshold timeouts, or whose parse the limit interrupted, runs
 // every rule of the scan again, since the rules it skipped report nothing.
-// ran is the rules the scan ran; nil loads them from rulePaths. Any failure
-// keeps the output as it was.
-func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.SemgrepOutput, ran []*coreRule, rulePaths []string) *entities.SemgrepOutput {
+// ran is the rules the scan ran; nil loads them from rulePaths. A retry the
+// scan's context stopped (a timeout or a cancellation) fails the scan, as
+// the first run would have: the caller must not take the output of a scan
+// that was cut short for the whole. Any other failure keeps the output as
+// it was.
+func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.SemgrepOutput, ran []*coreRule, rulePaths []string) (*entities.SemgrepOutput, error) {
 	pending := timeouts(output.Errors)
 	if len(pending) == 0 {
-		return output
+		return output, nil
 	}
 	if ran == nil {
 		cwd, err := physicalDir(s.workDir)
@@ -153,7 +156,7 @@ func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.
 		}
 		if err != nil {
 			log.Debug().Err(err).Msg("OpenGrep rule timeouts cannot be retried: rules unreadable")
-			return output
+			return output, nil
 		}
 	}
 	for round, limit := range s.retryRuleTimeouts() {
@@ -164,6 +167,9 @@ func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.
 		started := time.Now()
 		retried, err := s.runRetry(ctx, st, plan, limit)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, err
+			}
 			log.Warn().Err(err).Int("files", len(plan.files)).Msg("Retrying OpenGrep rule timeouts failed; keeping the findings of the earlier runs")
 			break
 		}
@@ -183,7 +189,7 @@ func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.
 		}
 		pending = within(timeouts(output.Errors), plan.files)
 	}
-	return output
+	return output, nil
 }
 
 // within keeps the files of pending that files lists.
@@ -296,8 +302,12 @@ func (s *Scanner) runRetry(ctx context.Context, st *site, plan *retryPlan, timeo
 }
 
 // mergeRetry adds the retry's new matches of the planned pairs to output
-// and replaces the Timeout errors of those pairs by the retry's. It returns
-// the merged output, the matches it added and the pairs still timed out.
+// and replaces the Timeout errors of those pairs by the retry's. A planned
+// file the retry's output names nowhere, neither among its scanned paths
+// nor in a result or an error, keeps its errors: the CLI did not scan it (a
+// file it skipped or could not read), so its limit errors still stand and
+// the file stays incomplete. It returns the merged output, the matches it
+// added and the pairs still timed out.
 func mergeRetry(output, retried *entities.SemgrepOutput, plan *retryPlan) (merged *entities.SemgrepOutput, recovered, still int) {
 	type matchKey struct {
 		checkID, path string
@@ -310,9 +320,19 @@ func mergeRetry(output, retried *entities.SemgrepOutput, plan *retryPlan) (merge
 	for i := range output.Results {
 		seen[keyOf(&output.Results[i])] = true
 	}
+	named := make(map[string]bool, len(plan.files))
+	if retried.Paths != nil {
+		for _, path := range retried.Paths.Scanned {
+			named[path] = true
+		}
+	}
+	for i := range retried.Errors {
+		named[retried.Errors[i].Path] = true
+	}
 	merged = &entities.SemgrepOutput{Results: slices.Clone(output.Results)}
 	for i := range retried.Results {
 		r := &retried.Results[i]
+		named[r.Path] = true
 		if !plan.covers(r.Path, r.CheckID) || seen[keyOf(r)] {
 			continue
 		}
@@ -327,7 +347,10 @@ func mergeRetry(output, retried *entities.SemgrepOutput, plan *retryPlan) (merge
 	for i := range output.Errors {
 		e := &output.Errors[i]
 		if retriedError(e, plan) {
-			continue
+			if named[e.Path] {
+				continue
+			}
+			still++
 		}
 		merged.Errors = append(merged.Errors, *e)
 	}

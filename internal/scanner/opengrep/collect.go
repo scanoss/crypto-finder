@@ -64,14 +64,14 @@ func (s *Scanner) collect(ctx context.Context, base string, roots []scanner.Root
 			if err != nil {
 				return nil, err
 			}
-			return s.retryTimeouts(ctx, &st, output, ran, rulePaths), nil
+			return s.retryTimeouts(ctx, &st, output, ran, rulePaths)
 		}
 	}
 	output, err := s.collectCLI(ctx, &st, st.configs, scoped, st.rewriteID)
 	if err != nil {
 		return nil, err
 	}
-	return s.retryTimeouts(ctx, &st, output, nil, rulePaths), nil
+	return s.retryTimeouts(ctx, &st, output, nil, rulePaths)
 }
 
 // collectPlanned is collect for the modes that plan the scan themselves.

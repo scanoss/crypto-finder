@@ -25,8 +25,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 
@@ -178,6 +180,149 @@ func TestRetryEscalatesForFilesStillCutShort(t *testing.T) {
 	}
 }
 
+// timeoutThenEngine is a fake opengrep CLI whose first scan reports a
+// Timeout for rule id on the target and whose retries run retryCase, a shell
+// case body, instead.
+func timeoutThenEngine(t *testing.T, id, retryCase string) *fakeEngine {
+	t.Helper()
+	f := newFakeEngine(t, "unused", "")
+	script := "#!/bin/sh\necho \"cli $*\" >> " + f.log + "\n" +
+		"case \"$*\" in *--timeout*) " + retryCase + ";;\n" +
+		"*) printf '{\"results\":[],\"errors\":[" + timeoutError(id) + "]}' \"$FAKE_TARGET\" \"$FAKE_TARGET\";; esac\nexit 0\n"
+	if err := os.WriteFile(f.cli, []byte(script), 0o700); err != nil { // Executable test fixture.
+		t.Fatal(err)
+	}
+	return f
+}
+
+// TestRetryStoppedByContextFailsTheScan pins a scan whose context ends
+// while a retry runs (a batch timeout or Ctrl-C): the scan must fail with
+// the typed error, as it does when the first run is stopped. Returning the
+// first run's output instead reports success for a scan cut short, and the
+// engine neither fails the batch nor rescans its dependencies one by one.
+func TestRetryStoppedByContextFailsTheScan(t *testing.T) {
+	target, rules := fixtureProject(t)
+	cwd, err := physicalDir("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := configPrefix(filepath.Join(rules, "merged-rules.yaml"), cwd) + "std.sha"
+	f := timeoutThenEngine(t, id, "sleep 60")
+	s := fakeScanner(t, f, "1.30.2", scanner.OpengrepModeCLI, scanner.RulePrefilterOff)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+			// The log appears with the first call; until then there is nothing to read.
+			if data, _ := os.ReadFile(f.log); strings.Contains(string(data), "--timeout 30") {
+				cancel()
+				return
+			}
+		}
+	}()
+	report, err := s.Scan(ctx, target, []string{rules}, entities.ToolInfo{})
+	structured, ok := failure.As(err)
+	if !ok || structured.Code != failure.CodeScannerCancelled {
+		t.Fatalf("err = %v, report = %+v; want %s: a retry the context stopped must fail the scan", err, report, failure.CodeScannerCancelled)
+	}
+}
+
+// TestRetryKeepsLimitErrorsOfFilesTheRetryDoesNotName pins a retry whose
+// output names the file nowhere: not among the paths it scanned (the CLI
+// skipped it, as it reports an explicitly named file --exclude drops under
+// --force-exclude), and in no result or error. The first run's timeout
+// stands and the file stays incomplete. Dropping it reports the file
+// complete, and a dependency cache would store the truncated report for
+// good. An output without scanned paths at all gives no evidence either.
+func TestRetryKeepsLimitErrorsOfFilesTheRetryDoesNotName(t *testing.T) {
+	for name, retried := range map[string]string{
+		"skipped":  `{"results":[],"errors":[],"paths":{"scanned":[]}}`,
+		"no-paths": `{"results":[],"errors":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			target, rules := fixtureProject(t)
+			cwd, err := physicalDir("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := configPrefix(filepath.Join(rules, "merged-rules.yaml"), cwd) + "std.sha"
+			f := timeoutThenEngine(t, id, "printf '"+retried+"'")
+			s := fakeScanner(t, f, "1.30.2", scanner.OpengrepModeCLI, scanner.RulePrefilterOff)
+			report, err := s.Scan(context.Background(), target, []string{rules}, entities.ToolInfo{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := []string{filepath.Join(target, "a.go")}; !reflect.DeepEqual(report.IncompleteFiles, want) {
+				t.Errorf("incomplete files = %v, want %v: the retry never named the file, so its timeout stands", report.IncompleteFiles, want)
+			}
+			calls := strings.Split(strings.TrimSpace(f.calls(t)), "\n")
+			if len(calls) != 3 || !strings.Contains(calls[1], "--timeout 30") || !strings.Contains(calls[2], "--timeout 120") {
+				t.Errorf("want the scan and both retry rounds, since the file is still cut short, calls:\n%s", strings.Join(calls, "\n"))
+			}
+		})
+	}
+}
+
+// TestRetryScannedFileWithoutFindingsIsComplete pins the common success of
+// a retry: the CLI scanned the file within the longer limit and found
+// nothing, so its output has no result and no error, only the file among
+// paths.scanned (opengrep 1.29.0 and 1.30.2 report it without --verbose),
+// named relative to the directory the engine ran in. The file is complete.
+func TestRetryScannedFileWithoutFindingsIsComplete(t *testing.T) {
+	target, rules := fixtureProject(t)
+	cwd, err := physicalDir("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := configPrefix(filepath.Join(rules, "merged-rules.yaml"), cwd) + "std.sha"
+	f := timeoutThenEngine(t, id, `printf '{"results":[],"errors":[],"paths":{"scanned":["a.go"]}}'`)
+	s := fakeScanner(t, f, "1.30.2", scanner.OpengrepModeCLI, scanner.RulePrefilterOff)
+	report, err := s.Scan(context.Background(), target, []string{rules}, entities.ToolInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 0 || len(report.IncompleteFiles) != 0 {
+		t.Errorf("findings = %+v incomplete = %v, want none: the retry scanned the file and found nothing", report.Findings, report.IncompleteFiles)
+	}
+	if calls := strings.Split(strings.TrimSpace(f.calls(t)), "\n"); len(calls) != 2 {
+		t.Errorf("want the scan and one retry, nothing being cut short any more, calls:\n%s", strings.Join(calls, "\n"))
+	}
+}
+
+func TestMergeRetryKeepsErrorsOfFilesTheRetryDoesNotName(t *testing.T) {
+	timeout := func(path string) entities.SemgrepError {
+		return entities.SemgrepError{Type: "Timeout", Level: "warn", RuleID: "p.a", Path: path}
+	}
+	output := &entities.SemgrepOutput{Errors: []entities.SemgrepError{timeout("/a.java"), timeout("/b.java")}}
+	plan := &retryPlan{files: []string{"/a.java", "/b.java"}, whole: map[string]bool{}, pairs: timedOut{"/a.java": {"p.a": true}, "/b.java": {"p.a": true}}}
+	errorsOf := func(retried *entities.SemgrepOutput) (errs []string, recovered, still int) {
+		merged, recovered, still := mergeRetry(output, retried, plan)
+		for _, e := range merged.Errors {
+			errs = append(errs, errorTypeName(e.Type)+"@"+e.Path)
+		}
+		return errs, recovered, still
+	}
+	// The retry names /a.java in an error only: it was scanned, and its
+	// timeout is gone (the error itself is no limit error, so it is not
+	// carried over). It names /b.java nowhere: its timeout stays.
+	retried := &entities.SemgrepOutput{Errors: []entities.SemgrepError{{Type: "PartialParsing", Path: "/a.java"}}}
+	if errs, recovered, still := errorsOf(retried); !reflect.DeepEqual(errs, []string{"Timeout@/b.java"}) || recovered != 0 || still != 1 {
+		t.Errorf("errors = %v recovered %d still %d, want [Timeout@/b.java] 0 1", errs, recovered, still)
+	}
+	// Listed among the scanned paths, /b.java was scanned clean.
+	retried.Paths = &entities.SemgrepPaths{Scanned: []string{"/b.java"}}
+	if errs, recovered, still := errorsOf(retried); len(errs) != 0 || recovered != 0 || still != 0 {
+		t.Errorf("errors = %v recovered %d still %d, want none 0 0", errs, recovered, still)
+	}
+}
+
 func TestRetryRuleTimeouts(t *testing.T) {
 	for configured, want := range map[uint8][]int{0: {30, 120}, 30: {120, 255}, 100: {255}} {
 		if got := (&Scanner{ruleTimeout: configured}).retryRuleTimeouts(); !reflect.DeepEqual(got, want) {
@@ -207,9 +352,10 @@ func TestTimeoutsListInterruptedParses(t *testing.T) {
 		t.Fatalf("plan = %+v, want /a.c whole and every rule", plan)
 	}
 	output := &entities.SemgrepOutput{Errors: []entities.SemgrepError{interrupted, syntax}}
-	merged, _, still := mergeRetry(output, &entities.SemgrepOutput{}, plan)
-	if still != 0 || len(merged.Errors) != 1 || merged.Errors[0].Path != "/b.c" {
-		t.Errorf("errors = %+v still %d: the retry's errors replace the interrupted parse, other errors stay", merged.Errors, still)
+	parsed := &entities.SemgrepOutput{Results: []entities.SemgrepResult{{CheckID: "p.a", Path: "/a.c"}}}
+	merged, recovered, still := mergeRetry(output, parsed, plan)
+	if recovered != 1 || still != 0 || len(merged.Errors) != 1 || merged.Errors[0].Path != "/b.c" {
+		t.Errorf("errors = %+v recovered %d still %d: a retry that parsed the file replaces the interrupted parse, other errors stay", merged.Errors, recovered, still)
 	}
 	merged, _, still = mergeRetry(output, &entities.SemgrepOutput{Errors: []entities.SemgrepError{interrupted}}, plan)
 	if still != 1 || len(merged.Errors) != 2 {

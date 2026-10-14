@@ -20,6 +20,14 @@ package entities
 type SemgrepOutput struct {
 	Results []SemgrepResult `json:"results"`
 	Errors  []SemgrepError  `json:"errors"`
+	// Paths is the CLI's account of the files it scanned; nil when the
+	// output carries none (opengrep-core's, or a merged one).
+	Paths *SemgrepPaths `json:"paths,omitempty"`
+}
+
+// SemgrepPaths lists the files a scan covered, as the CLI names them.
+type SemgrepPaths struct {
+	Scanned []string `json:"scanned"`
 }
 
 // SemgrepResult represents a single finding from Semgrep.

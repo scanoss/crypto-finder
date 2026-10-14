@@ -101,7 +101,7 @@ func (s *Scanner) siteFor(base string, roots []scanner.Root, rulePaths []string)
 	if err == nil {
 		var named string
 		if named, err = filepath.Abs(fsPath(s.workDir, base)); err == nil {
-			excludes, err = rootExcludes(s.skipPatterns, pyPath(filepath.ToSlash(named)), filepath.ToSlash(dir))
+			excludes, err = rootExcludes(s.skipPatterns, s.workDir, pyPath(filepath.ToSlash(named)), filepath.ToSlash(dir))
 		}
 	}
 	if err != nil {
@@ -140,30 +140,40 @@ func lexicallyHolds(base, path string) bool {
 
 // rootExcludes returns the exclude patterns for an engine running in the
 // base, which matches them against paths relative to it. A pattern naming
-// an absolute path below the base, as the npm dependency scan anchors the
-// dependency's own node_modules, names it relative to the base; it then
-// also matches below other directories of that name in the base, which
-// only the base itself can hold when it is a root. Other patterns are kept:
-// matched against the paths the engine reports, now relative to the base,
-// they no longer match the base's ancestors, as they did when a directory
-// named like one of them (build, test, vendor...) held the root. A pattern
-// naming an absolute path elsewhere fails: it would match nothing, where it
-// excluded the whole root or nothing before.
-func rootExcludes(patterns []string, named, dir string) ([]string, error) {
+// a path below the base, absolute as the npm dependency scan anchors the
+// dependency's own node_modules, or relative to workDir as a user writes
+// `--exclude proj/vendor` for a scan of ./proj, names it relative to the
+// base; it then also matches below other directories of that name in the
+// base, which only the base itself can hold when it is a root. Other
+// relative patterns are kept: matched against the paths the engine reports,
+// now relative to the base, they no longer match the base's ancestors, as
+// they did when a directory named like one of them (build, test, vendor...)
+// held the root. A pattern naming an absolute path elsewhere fails: it
+// would match nothing, where it excluded the whole root or nothing before.
+func rootExcludes(patterns []string, workDir, named, dir string) ([]string, error) {
 	out := make([]string, len(patterns))
 	for i, pattern := range patterns {
 		out[i] = pattern
-		if !strings.HasPrefix(pattern, "/") {
-			continue
+		anchored := strings.HasPrefix(pattern, "/")
+		path := pattern
+		if !anchored {
+			resolved, err := filepath.Abs(fsPath(workDir, pattern))
+			if err != nil {
+				return nil, fmt.Errorf("opengrep: exclude pattern %s: %w", pattern, err)
+			}
+			path = pyPath(filepath.ToSlash(resolved))
+			if strings.HasSuffix(pattern, "/") {
+				path += "/"
+			}
 		}
 		translated := false
 		for _, base := range []string{named, dir} {
-			if rest, ok := strings.CutPrefix(pattern, strings.TrimSuffix(base, "/")+"/"); ok && strings.Trim(rest, "/") != "" {
+			if rest, ok := strings.CutPrefix(path, strings.TrimSuffix(base, "/")+"/"); ok && strings.Trim(rest, "/") != "" {
 				out[i], translated = rest, true
 				break
 			}
 		}
-		if !translated {
+		if anchored && !translated {
 			return nil, fmt.Errorf("opengrep: exclude pattern %s lies outside the target", pattern)
 		}
 	}
@@ -231,6 +241,11 @@ func (st *site) nameOutput(output *entities.SemgrepOutput) {
 		output.Errors[i].Path = st.named(output.Errors[i].Path)
 		for j := range output.Errors[i].Spans {
 			output.Errors[i].Spans[j].File = st.named(output.Errors[i].Spans[j].File)
+		}
+	}
+	if output.Paths != nil {
+		for i := range output.Paths.Scanned {
+			output.Paths.Scanned[i] = st.named(output.Paths.Scanned[i])
 		}
 	}
 }
