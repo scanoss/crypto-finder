@@ -33,6 +33,10 @@ type depWork struct {
 	// scope limits the scan to the files of the dependency's imported
 	// packages; nil scans the whole dependency.
 	scope *scanner.DetectionScope
+	// cacheState is the findings-cache lookup outcome (depCacheHit, ...).
+	cacheState string
+	// cacheStats counts the scan's cache outcomes; nil counts nothing.
+	cacheStats *depCacheStats
 }
 
 // scanBatch is one scanner process over several dependency roots.

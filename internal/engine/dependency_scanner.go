@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -517,6 +515,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 
 	outcomes := make([]depScanResult, len(orderedDeps))
 	work := make([]depWork, 0, len(orderedDeps))
+	cacheStats := newDepCacheStats()
 	for i, dep := range orderedDeps {
 		key := dependencyKey(dep)
 		if dep.Dir == "" {
@@ -533,7 +532,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 			continue
 		}
 
-		work = append(work, depWork{index: i, key: key, dep: dep})
+		work = append(work, depWork{index: i, key: key, dep: dep, cacheStats: cacheStats})
 	}
 
 	workers := min(dependencyScanWorkers(opts.Workers, ds.resolver.Ecosystem()), len(work))
@@ -574,6 +573,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		itemSpan := perf.StartQuiet("dependencies.scan.cache_lookup.item")
 		result, hit := ds.lookupDependency(depCtx, &item, rulePaths, rulesHash, opts)
 		itemSpan.End()
+		cacheStats.lookup(item.cacheState)
 		if hit {
 			outcomes[item.index] = result
 			return
@@ -600,13 +600,14 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	}
 	log.Info().Int("cacheMisses", len(misses)).Int("batches", len(batches)).Msg("Scanning dependencies the findings cache does not hold")
 	missSpan := perf.Start("dependencies.scan.misses")
-	defer missSpan.End()
 	forEachParallel(workers, batches, func(batch scanBatch) {
 		results := ds.scanBatch(depCtx, batch, validator)
 		for i := range results {
 			outcomes[results[i].index] = results[i]
 		}
 	})
+	missSpan.End()
+	cacheStats.report(log.Info(), "Dependency findings cache outcomes")
 
 	for i := range outcomes {
 		if outcomes[i].err != nil {
@@ -656,6 +657,7 @@ func (ds *DependencyScanner) lookupDependency(
 	item.opts = ds.buildDepScanOptions(dep, rulePaths, opts)
 	initializedScanner, err := ds.orchestrator.initializeScanner(ctx, item.opts)
 	if err != nil {
+		item.cacheState = depCacheScannerFailed
 		return depScanResult{index: item.index, key: item.key, dep: item.dep, status: depScanStatusFailed, err: err}, true
 	}
 	item.scanner = initializedScanner
@@ -663,48 +665,58 @@ func (ds *DependencyScanner) lookupDependency(
 	if _, scoped := initializedScanner.(scanner.ScopedScanner); scoped && dep.Files != nil {
 		item.scope = sourceScope(dep)
 	}
+	item.cacheState = depCacheDisabled
 	if ds.findingsCache != nil && rulesHash != "" {
-		env := os.Environ()
-		sort.Strings(env)
+		item.cacheState = depCacheNoIdentity
 		cwd, cwdErr := os.Getwd()
 		info := initializedScanner.GetInfo()
 		config := item.opts.ScannerConfig
 		// The job count tunes the host, not the scan. Keying on it would split
 		// the cache by core count and by how many dependencies run at once.
 		config.Jobs = 0
-		identity, encodeErr := json.Marshal(struct {
-			Package       string
-			RulesHash     string
-			JavaRuntime   string
-			Name          string
-			Scanner       scanner.Info
-			FinderVersion string
-			Config        scanner.Config
-			Languages     []string
-			Environment   []string
-			CWD           string
-			// Omitted for a whole-module scan, so those keys stay as they were.
-			Scope *scanner.DetectionScope `json:",omitempty"`
-		}{item.key, rulesHash, item.opts.JavaRuntimeCacheToken, item.opts.ScannerName, info, version.Version, config, item.opts.LanguageHint, env, cwd, item.scope})
+		identity := dependencyCacheIdentity{
+			Package:       item.key,
+			RulesHash:     rulesHash,
+			JavaRuntime:   item.opts.JavaRuntimeCacheToken,
+			Name:          item.opts.ScannerName,
+			Scanner:       info,
+			FinderVersion: version.Version,
+			Config:        config,
+			Languages:     item.opts.LanguageHint,
+			Environment:   cacheIdentityEnvironment(os.Environ()),
+			CWD:           cwd,
+			Scope:         item.scope,
+		}
+		key, encodeErr := identity.key()
 		// Unavailable context/identity disables caching, never scanner validation.
 		if encodeErr == nil && cwdErr == nil && info.Version != "" && info.Version != "unknown" {
-			item.cacheKey = fmt.Sprintf("dependency-findings-v2:%x", sha256.Sum256(identity))
+			item.cacheKey = key
 		}
+		defer func() { identity.logComponents(dep.Module, dep.Version, item.cacheState) }()
 	}
 
 	if item.cacheKey != "" {
 		report, ok, err := ds.findingsCache.Get(ctx, item.cacheKey)
-		if err != nil {
+		switch {
+		case err != nil:
+			item.cacheState = depCacheReadError
 			log.Warn().Err(err).Str("module", dep.Module).Msg("Cache read error, scanning normally")
-		} else if ok {
+		case ok:
+			item.cacheState = depCacheHit
 			log.Info().
 				Str("module", dep.Module).
 				Str("version", dep.Version).
 				Msg("Cache hit for dependency scan")
 			return depScanResult{index: item.index, key: item.key, dep: item.dep, report: dependencyReportWithFindings(item.ownFindings(report)), status: depScanStatusScanned}, true
+		default:
+			item.cacheState = depCacheAbsent
 		}
 	}
-	return ds.lookupFindingsSource(ctx, item)
+	result, hit = ds.lookupFindingsSource(ctx, item)
+	if hit {
+		item.cacheState = depCacheFindingsSource
+	}
+	return result, hit
 }
 
 // lookupFindingsSource answers item from the findings source, when one is
@@ -748,7 +760,9 @@ func (ds *DependencyScanner) scanDepAlone(ctx context.Context, item *depWork, va
 
 	incomplete := false
 	if err == nil {
-		incomplete = !ds.cacheIfComplete(ctx, dep, item.cacheKey, report)
+		incomplete = !ds.cacheIfComplete(ctx, item, report)
+	} else {
+		item.cacheStats.store(depCacheScanFailed)
 	}
 
 	return depScanResult{
@@ -804,7 +818,7 @@ func (ds *DependencyScanner) scanBatch(ctx context.Context, batch scanBatch, val
 	}
 	for i := range batch.items {
 		item := &batch.items[i]
-		incomplete := !ds.cacheIfComplete(ctx, &item.dep, item.cacheKey, reports[i])
+		incomplete := !ds.cacheIfComplete(ctx, item, reports[i])
 		results[i] = depScanResult{
 			index:      item.index,
 			key:        item.key,
@@ -821,8 +835,10 @@ func (ds *DependencyScanner) scanBatch(ctx context.Context, batch scanBatch, val
 // cacheIfComplete stores a dependency's report under cacheKey, when caching
 // is on, unless a time or memory limit cut the scan short. It reports whether
 // the scan was complete and warns, naming the files, when it was not.
-func (ds *DependencyScanner) cacheIfComplete(ctx context.Context, dep *dependency.Dependency, cacheKey string, report *entities.InterimReport) bool {
+func (ds *DependencyScanner) cacheIfComplete(ctx context.Context, item *depWork, report *entities.InterimReport) bool {
+	dep := &item.dep
 	if len(report.IncompleteFiles) > 0 {
+		item.cacheStats.store(depCacheIncomplete)
 		log.Warn().
 			Str("module", dep.Module).
 			Str("version", dep.Version).
@@ -830,11 +846,16 @@ func (ds *DependencyScanner) cacheIfComplete(ctx context.Context, dep *dependenc
 			Msg("Dependency scan stopped at a time or memory limit in these files; its findings may be incomplete and are not cached")
 		return false
 	}
-	if cacheKey != "" {
-		if putErr := ds.findingsCache.Put(ctx, cacheKey, report); putErr != nil {
-			log.Warn().Err(putErr).Str("module", dep.Module).Msg("Failed to cache scan result")
-		}
+	if item.cacheKey == "" {
+		item.cacheStats.store(depCacheNoKey)
+		return true
 	}
+	if putErr := ds.findingsCache.Put(ctx, item.cacheKey, report); putErr != nil {
+		item.cacheStats.store(depCachePutError)
+		log.Warn().Err(putErr).Str("module", dep.Module).Msg("Failed to cache scan result")
+		return true
+	}
+	item.cacheStats.store(depCacheStored)
 	return true
 }
 
