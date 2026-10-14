@@ -6,8 +6,10 @@
   Opt out with `--opengrep-mode cli` or `SCANOSS_OPENGREP_MODE=cli`. `annotate`
   gains the same `--opengrep-mode` flag, so its annotations keep matching
   `scan --export-graph-fragment`.
-- Dependency findings cache keys change once: the OpenGrep mode is recorded in
-  the key only when it is not `cli`, so keys written by earlier versions (CLI
-  mode) no longer match. The first `--scan-dependencies` run after upgrading
+- Dependency findings cache keys change once, in every OpenGrep mode: the key
+  now records the engine that runs, the dependency's place in its package store
+  and an allowlist of environment variables, and core-mode keys also record the
+  mode. Entries written by earlier versions no longer match, including for
+  `--opengrep-mode cli`, so the first `--scan-dependencies` run after upgrading
   scans every dependency again with a cold cache; later runs hit the cache as
-  before. Runs with `--opengrep-mode cli` keep using the existing entries.
+  before.

@@ -29,8 +29,7 @@ import (
 
 // The rule prefilter changes the rules a dependency is scanned with, so its
 // findings cache key must change with it; core mode is keyed too. The
-// default modes add nothing to the key, so caches written before these
-// options existed stay valid.
+// CLI mode and no prefilter add nothing to the key.
 func TestDependencyCacheKeySplitsByOpengrepModeAndPrefilter(t *testing.T) {
 	reg := scanner.NewRegistry()
 	reg.Register("fixture", &mockScanner{getInfoFunc: func() scanner.Info { return scanner.Info{Name: "fixture", Version: "1.0.0"} }})

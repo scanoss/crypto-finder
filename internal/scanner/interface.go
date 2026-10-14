@@ -152,8 +152,7 @@ type Config struct {
 	// value runs the opengrep CLI; OpengrepModeCore, the crypto-finder CLI's
 	// default, runs opengrep-core directly and falls back to the CLI whenever
 	// it cannot. Other adapters ignore it. Omitted from JSON when zero, so
-	// cache identities of CLI-mode scans stay what they were before the mode
-	// existed; core-mode identities differ from them.
+	// only core-mode scans carry it in their cache identity.
 	OpengrepMode OpengrepMode `json:",omitempty"`
 
 	// RulePrefilter drops, per scanned unit, the rules whose library the
