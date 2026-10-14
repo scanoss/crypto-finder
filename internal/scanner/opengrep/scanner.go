@@ -246,7 +246,7 @@ func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.Detect
 	var opengrepResults *entities.SemgrepOutput
 	if outcome == nil {
 		var err error
-		opengrepResults, err = s.collect(ctx, []scanner.Root{{Dir: target, Scope: scope}}, rulePaths, scope != nil)
+		opengrepResults, err = s.collect(ctx, scanner.Root{Dir: target, Scope: scope}, rulePaths)
 		if err != nil {
 			return nil, err
 		}
@@ -256,7 +256,7 @@ func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.Detect
 		opengrepResults = &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
 		for _, targets := range scanner.TargetBatches(target, scope) {
 			args := s.buildCommand(ctx, targets, rulePaths, scope != nil)
-			batch, output, stderr, err := s.run(ctx, args, rulePaths, outcome)
+			batch, output, stderr, err := s.run(ctx, s.workDir, args, rulePaths, outcome)
 			if err != nil {
 				return nil, err
 			}
@@ -280,10 +280,10 @@ func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.Detect
 	return report, nil
 }
 
-// run executes one opengrep process and parses its JSON output, which uses
-// the Semgrep format.
-func (s *Scanner) run(ctx context.Context, args, rulePaths []string, outcome *scanner.Outcome) (parsed *entities.SemgrepOutput, output []byte, stderr string, err error) {
-	output, stderr, err = s.execute(ctx, args, outcome)
+// run executes one opengrep process in dir and parses its JSON output,
+// which uses the Semgrep format.
+func (s *Scanner) run(ctx context.Context, dir string, args, rulePaths []string, outcome *scanner.Outcome) (parsed *entities.SemgrepOutput, output []byte, stderr string, err error) {
+	output, stderr, err = s.execute(ctx, dir, args, outcome)
 	if err != nil {
 		log.Debug().
 			Strs("configs", rulePaths).
@@ -451,13 +451,10 @@ func (s *Scanner) requireForceExclude(ctx context.Context) error {
 	)
 }
 
-// execute runs the opengrep command and captures stdout/stderr.
-func (s *Scanner) execute(ctx context.Context, args []string, outcome *scanner.Outcome) (stdout []byte, stderr string, err error) {
+// execute runs the opengrep command in dir and captures stdout/stderr.
+func (s *Scanner) execute(ctx context.Context, dir string, args []string, outcome *scanner.Outcome) (stdout []byte, stderr string, err error) {
 	cmd := scanner.CommandContext(ctx, s.executablePath, args...)
-
-	if s.workDir != "" {
-		cmd.Dir = s.workDir
-	}
+	cmd.Dir = dir
 
 	if len(s.env) > 0 {
 		cmd.Env = append(cmd.Environ(), mapToEnvSlice(s.env)...)

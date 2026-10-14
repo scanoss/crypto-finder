@@ -89,8 +89,8 @@ func TestRuleTimeoutIsRetriedWithLongerLimit(t *testing.T) {
 			}
 			retry := calls[1]
 			if !strings.Contains(retry, "--timeout 30") || !strings.Contains(retry, "crypto-finder-prefilter-") ||
-				!strings.HasSuffix(retry, filepath.Join(target, "a.go")) {
-				t.Errorf("retry must run the timed-out rule on the file with a 30 s limit, got %s", retry)
+				!strings.HasSuffix(retry, " a.go") {
+				t.Errorf("retry must run the timed-out rule on the file, relative to the target, with a 30 s limit, got %s", retry)
 			}
 		})
 	}

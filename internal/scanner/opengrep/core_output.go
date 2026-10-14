@@ -96,8 +96,8 @@ func parseCoreOutput(stdout []byte) (*coreOutput, error) {
 // its rule's severity, its rule metadata and the source lines it spans, and
 // results are ordered as the CLI orders them, by location and then by rule id.
 // useBase says opengrep-core knew the rules by their base ids; results then
-// get the prefixed ids the CLI reports.
-func convertCoreOutput(core *coreOutput, rules []*coreRule, useBase bool) (*entities.SemgrepOutput, error) {
+// get the prefixed ids the CLI reports. Relative paths lie in dir.
+func convertCoreOutput(core *coreOutput, rules []*coreRule, useBase bool, dir string) (*entities.SemgrepOutput, error) {
 	index := make(map[string]int, len(rules))
 	for i, rule := range rules {
 		key := rule.id
@@ -108,7 +108,7 @@ func convertCoreOutput(core *coreOutput, rules []*coreRule, useBase bool) (*enti
 			index[key] = i
 		}
 	}
-	lines := newLineReader()
+	lines := newLineReader(dir)
 	out := &entities.SemgrepOutput{Results: make([]entities.SemgrepResult, 0, len(core.Results)), Errors: make([]entities.SemgrepError, 0, len(core.Errors))}
 	for i := range core.Results {
 		match := &core.Results[i]
@@ -321,10 +321,12 @@ func partialParsingSpans(errorType any) []entities.SemgrepErrorSpan {
 // them: decoded with replacement of invalid UTF-8, universal newlines.
 type lineReader struct {
 	files map[string][]string
+	// dir is the directory relative paths lie in.
+	dir string
 }
 
-func newLineReader() *lineReader {
-	return &lineReader{files: make(map[string][]string)}
+func newLineReader(dir string) *lineReader {
+	return &lineReader{files: make(map[string][]string), dir: dir}
 }
 
 // span joins lines start..end (1-based, inclusive) of path without their
@@ -332,7 +334,7 @@ func newLineReader() *lineReader {
 func (r *lineReader) span(path string, start, end int) string {
 	lines, ok := r.files[path]
 	if !ok {
-		data, err := os.ReadFile(path) // #nosec G304 G703 -- a target file opengrep-core just scanned.
+		data, err := os.ReadFile(fsPath(r.dir, path)) // #nosec G304 G703 -- a target file opengrep-core just scanned.
 		if err == nil {
 			text := strings.ToValidUTF8(string(data), "\uFFFD")
 			text = strings.ReplaceAll(text, "\r\n", "\n")

@@ -61,6 +61,14 @@ type targetPlan struct {
 	targets []coreTarget
 	// analyzers lists, per selected file, the analyzers it is scanned with.
 	analyzers map[string][]string
+	// dir is the directory relative target paths lie in: the working
+	// directory of the engine process.
+	dir string
+}
+
+// file is the path of target as crypto-finder opens it.
+func (p *targetPlan) file(target string) string {
+	return fsPath(p.dir, target)
 }
 
 // targetOptions are the CLI options that select targets.
@@ -71,6 +79,18 @@ type targetOptions struct {
 	forceExclude      bool
 	maxTargetBytes    int64
 	env               []string
+	// dir is the working directory of the engine process, which relative
+	// targets lie in; empty is crypto-finder's own.
+	dir string
+}
+
+// fsPath is path, as an engine running in dir names it, for crypto-finder
+// to open.
+func fsPath(dir, path string) string {
+	if dir == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(dir, path)
 }
 
 // enumerateTargets selects the files the opengrep CLI would hand
@@ -88,11 +108,12 @@ func enumerateTargets(ctx context.Context, opts targetOptions, langs []*language
 		excludes:  newExcludeMatcher(opts.skipPatterns),
 		always:    newExcludeMatcher(alwaysSkipped),
 		maxBytes:  opts.maxTargetBytes,
+		dir:       opts.dir,
 		shebangs:  make(map[string]string),
 		filtered:  make(map[string]bool),
 		forceExcl: opts.forceExclude,
 	}
-	plan := &targetPlan{analyzers: make(map[string][]string)}
+	plan := &targetPlan{analyzers: make(map[string][]string), dir: opts.dir}
 	for _, lang := range langs {
 		kept := sel.keep(lang, files, explicit)
 		for _, path := range files {
@@ -112,8 +133,8 @@ func collectFiles(ctx context.Context, opts targetOptions) (files, explicit []st
 	all := make(map[string]bool)
 	for _, target := range opts.targets {
 		path := pyPath(target)
-		info, err := os.Lstat(path)
-		if err != nil || info.Mode()&fs.ModeSymlink != 0 || !readable(path) {
+		info, err := os.Lstat(fsPath(opts.dir, path))
+		if err != nil || info.Mode()&fs.ModeSymlink != 0 || !readable(fsPath(opts.dir, path)) {
 			// The CLI refuses a missing, unreadable or symlinked target.
 			return nil, nil, fmt.Errorf("%w: target %s", errTargetsUnsupported, target)
 		}
@@ -146,13 +167,15 @@ type selector struct {
 	// size filters.
 	filtered  map[string]bool
 	forceExcl bool
+	// dir is the directory relative paths lie in.
+	dir string
 }
 
 // keep returns the files the CLI scans with lang.
 func (sel *selector) keep(lang *language, files, explicit []string) map[string]bool {
 	kept := make(map[string]bool)
 	for _, path := range files {
-		if selectsLanguage(path, lang, sel.shebangs) && sel.passes(path) {
+		if selectsLanguage(path, fsPath(sel.dir, path), lang, sel.shebangs) && sel.passes(path) {
 			kept[path] = true
 		}
 	}
@@ -160,7 +183,7 @@ func (sel *selector) keep(lang *language, files, explicit []string) map[string]b
 		// Explicitly named files bypass the exclude, permission and size
 		// filters; only their language must fit.
 		for _, path := range explicit {
-			if selectsLanguage(path, lang, sel.shebangs) {
+			if selectsLanguage(path, fsPath(sel.dir, path), lang, sel.shebangs) {
 				kept[path] = true
 			}
 		}
@@ -171,7 +194,8 @@ func (sel *selector) keep(lang *language, files, explicit []string) map[string]b
 func (sel *selector) passes(path string) bool {
 	ok, seen := sel.filtered[path]
 	if !seen {
-		ok = !sel.excludes.matches(path) && !sel.always.matches(path) && readable(path) && withinSize(path, sel.maxBytes)
+		file := fsPath(sel.dir, path)
+		ok = !sel.excludes.matches(path) && !sel.always.matches(path) && readable(file) && withinSize(file, sel.maxBytes)
 		sel.filtered[path] = ok
 	}
 	return ok
@@ -180,11 +204,11 @@ func (sel *selector) passes(path string) bool {
 // directoryFiles lists the regular files below dir as the CLI's Target.files
 // does, pruning excluded directories during the walk.
 func directoryFiles(ctx context.Context, dir string, prune *excludeMatcher, opts targetOptions) []string {
-	walked := walkFiles(dir, prune)
+	walked := walkFiles(opts.dir, dir, prune)
 	if opts.includeGitIgnored {
 		return walked
 	}
-	tracked, ok := gitFiles(ctx, dir, opts.env)
+	tracked, ok := gitFiles(ctx, opts.dir, dir, opts.env)
 	if !ok {
 		// Not a Git work tree, or no git: the CLI scans all files.
 		return walked
@@ -201,12 +225,13 @@ func directoryFiles(ctx context.Context, dir string, prune *excludeMatcher, opts
 // walkFiles mirrors os.walk(followlinks=False) with directory pruning: a
 // subdirectory whose path relative to root matches a prune pattern is not
 // entered, symlinks are never followed and only regular files that are not
-// symlinks are kept. Unreadable directories are skipped silently.
-func walkFiles(root string, prune *excludeMatcher) []string {
+// symlinks are kept. Unreadable directories are skipped silently. Paths
+// are named as root is, and relative ones lie in base.
+func walkFiles(base, root string, prune *excludeMatcher) []string {
 	var files []string
 	var walk func(dir, rel string)
 	walk = func(dir, rel string) {
-		entries, err := os.ReadDir(dir)
+		entries, err := os.ReadDir(fsPath(base, dir))
 		if err != nil {
 			return
 		}
@@ -238,9 +263,9 @@ func walkFiles(root string, prune *excludeMatcher) []string {
 
 // gitFiles returns the files `git ls-files` lists below dir, tracked or
 // untracked but not ignored, joined onto dir as the CLI joins them, and false
-// when git cannot list them.
-func gitFiles(ctx context.Context, dir string, env []string) (map[string]bool, bool) {
-	resolved, err := filepath.EvalSymlinks(dir)
+// when git cannot list them. A relative dir lies in base.
+func gitFiles(ctx context.Context, base, dir string, env []string) (map[string]bool, bool) {
+	resolved, err := filepath.EvalSymlinks(fsPath(base, dir))
 	if err != nil {
 		return nil, false
 	}
@@ -262,7 +287,7 @@ func gitFiles(ctx context.Context, dir string, env []string) (map[string]bool, b
 				continue
 			}
 			path := pyJoin(dir, string(elem))
-			info, err := os.Lstat(path)
+			info, err := os.Lstat(fsPath(base, path))
 			if err != nil || info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
 				continue
 			}
@@ -274,8 +299,8 @@ func gitFiles(ctx context.Context, dir string, env []string) (map[string]bool, b
 
 // selectsLanguage reports whether the CLI assigns path to lang: by name
 // suffix, or by a shebang line of an executable file ending in one of the
-// language's interpreters.
-func selectsLanguage(path string, lang *language, shebangs map[string]string) bool {
+// language's interpreters. file is path as crypto-finder opens it.
+func selectsLanguage(path, file string, lang *language, shebangs map[string]string) bool {
 	for _, ext := range lang.exts {
 		if strings.HasSuffix(path, ext) {
 			return true
@@ -286,7 +311,7 @@ func selectsLanguage(path string, lang *language, shebangs map[string]string) bo
 	}
 	line, ok := shebangs[path]
 	if !ok {
-		line = shebangLine(path)
+		line = shebangLine(file)
 		shebangs[path] = line
 	}
 	if line == "" {

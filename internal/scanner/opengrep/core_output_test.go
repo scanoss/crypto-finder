@@ -67,7 +67,7 @@ func TestConvertCoreOutputLikeCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := convertCoreOutput(parsed, rules, false)
+	out, err := convertCoreOutput(parsed, rules, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestConvertCoreOutputLikeCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outBase, err := convertCoreOutput(parsedBase, rules, true)
+	outBase, err := convertCoreOutput(parsedBase, rules, true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestConvertCoreOutputOrdersByLocationNotRuleOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := convertCoreOutput(parsed, rules, true)
+	out, err := convertCoreOutput(parsed, rules, true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestConvertCoreOutputOrdersByLocationNotRuleOrder(t *testing.T) {
 
 func TestConvertCoreOutputRejectsUnknownRule(t *testing.T) {
 	parsed := &coreOutput{Results: []coreMatch{{CheckID: "nope"}}}
-	if _, err := convertCoreOutput(parsed, nil, true); err == nil {
+	if _, err := convertCoreOutput(parsed, nil, true, ""); err == nil {
 		t.Error("a result for a rule the adapter did not pass must fail the conversion")
 	}
 }

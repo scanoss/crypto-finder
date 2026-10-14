@@ -94,7 +94,7 @@ func (s *Scanner) retryRuleTimeout() int {
 // cliTimeoutThreshold timeouts runs every rule of the scan again, since the
 // rules it skipped report nothing. ran is the rules the scan ran; nil loads
 // them from rulePaths. Any failure keeps the output as it was.
-func (s *Scanner) retryTimeouts(ctx context.Context, output *entities.SemgrepOutput, ran []*coreRule, rulePaths []string) *entities.SemgrepOutput {
+func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.SemgrepOutput, ran []*coreRule, rulePaths []string) *entities.SemgrepOutput {
 	pending := timeouts(output.Errors)
 	if len(pending) == 0 {
 		return output
@@ -118,7 +118,7 @@ func (s *Scanner) retryTimeouts(ctx context.Context, output *entities.SemgrepOut
 		return output
 	}
 	started := time.Now()
-	retried, err := s.runRetry(ctx, plan)
+	retried, err := s.runRetry(ctx, st, plan)
 	if err != nil {
 		log.Warn().Err(err).Int("files", len(plan.files)).Msg("Retrying OpenGrep rule timeouts failed; keeping the findings of the first run")
 		return output
@@ -204,9 +204,10 @@ func (p *retryPlan) add(path string, ids map[string]bool, byID map[string]*coreR
 	}
 }
 
-// runRetry runs the CLI over the plan with the retry's limit. The rules go
-// through a prefiltered rules file, so results keep the ids of the first run.
-func (s *Scanner) runRetry(ctx context.Context, plan *retryPlan) (*entities.SemgrepOutput, error) {
+// runRetry runs the CLI over the plan with the retry's limit, where the
+// first run ran. The rules go through a prefiltered rules file, so results
+// keep the ids of the first run.
+func (s *Scanner) runRetry(ctx context.Context, st *site, plan *retryPlan) (*entities.SemgrepOutput, error) {
 	path, cleanup, err := writePrefilteredRules(plan.rules)
 	if err != nil {
 		return nil, err
@@ -217,12 +218,17 @@ func (s *Scanner) runRetry(ctx context.Context, plan *retryPlan) (*entities.Semg
 	if int(retry.jobs) > len(plan.files) {
 		retry.jobs = int16(len(plan.files)) //nolint:gosec // Bounded by jobs.
 	}
+	files := make([]string, len(plan.files))
+	for i, file := range plan.files {
+		files[i] = st.relative(file)
+	}
 	// The files were scan targets already, so named-file excludes keep them.
-	out, _, _, err := retry.run(ctx, retry.buildCommand(ctx, plan.files, []string{path}, true), []string{path}, nil)
+	out, _, _, err := retry.run(ctx, st.workDir(s), retry.buildCommand(ctx, files, []string{path}, true), []string{path}, nil)
 	if err != nil {
 		return nil, err
 	}
 	restoreIDs(out, restorePrefilteredID)
+	st.nameOutput(out)
 	return out, nil
 }
 

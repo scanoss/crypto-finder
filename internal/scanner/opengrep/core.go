@@ -213,8 +213,9 @@ func (s *Scanner) runCore(ctx context.Context, binary string, rules []*coreRule,
 
 	args := s.coreArgs(rulesFile, targetsFile)
 	cmd := scanner.CommandContext(ctx, binary, args...)
-	if s.workDir != "" {
-		cmd.Dir = s.workDir
+	cmd.Dir = s.workDir
+	if plan.dir != "" {
+		cmd.Dir = plan.dir
 	}
 	if len(s.env) > 0 {
 		cmd.Env = append(cmd.Environ(), mapToEnvSlice(s.env)...)
@@ -234,7 +235,7 @@ func (s *Scanner) runCore(ctx context.Context, binary string, rules []*coreRule,
 	if err != nil {
 		return nil, err
 	}
-	converted, err := convertCoreOutput(parsed, rules, useBase)
+	converted, err := convertCoreOutput(parsed, rules, useBase, plan.dir)
 	if err != nil {
 		return nil, err
 	}

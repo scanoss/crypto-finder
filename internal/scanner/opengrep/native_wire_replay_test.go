@@ -69,6 +69,10 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	if os.Args[len(os.Args)-1] == "." {
+		// Run in the target over ".", the engine names files relative to it.
+		data = bytes.ReplaceAll(data, []byte("@TARGET@/"), nil)
+	}
 	data = bytes.ReplaceAll(data, []byte("@TARGET@"), target[1:len(target)-1])
 	var wire map[string]json.RawMessage
 	if err := json.Unmarshal(data, &wire); err != nil {
@@ -347,7 +351,13 @@ func testNativeWireReplay(t *testing.T, adapter, mode string) {
 	if readErr != nil || json.Unmarshal(invocation, &actualArgs) != nil {
 		t.Fatal("actual public scanner argv missing")
 	}
-	if len(actualArgs) == 0 || actualArgs[len(actualArgs)-1] != target || !strings.Contains(strings.Join(actualArgs, " "), "--config "+filepath.Join(fixture, "digest.yaml")) {
+	// The opengrep adapter runs the engine in the target, over "."; certified
+	// outcome scans and the semgrep adapter name the target.
+	wantTarget := target
+	if adapter == "opengrep" {
+		wantTarget = "."
+	}
+	if len(actualArgs) == 0 || actualArgs[len(actualArgs)-1] != wantTarget || !strings.Contains(strings.Join(actualArgs, " "), "--config "+filepath.Join(fixture, "digest.yaml")) {
 		t.Fatal("native replay must receive actual rule and target")
 	}
 	if mode == "exit2" || mode == "malformed" || mode == "x-timeout" {

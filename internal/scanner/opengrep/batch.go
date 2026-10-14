@@ -18,9 +18,7 @@ package opengrep
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -29,13 +27,14 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
 
-// ScanRoots runs one OpenGrep process over every root, or one per share of
-// the command-line budget when scoped roots name many files, and reports
-// each root as a scan of that root alone would: its results and errors are
-// the ones in its files, with paths relative to it. Roots must not nest or
-// repeat unless they are disjoint (scanner.Disjoint): a walk of the outer
-// root covers the inner one's files and its exclusions could hide them, and
-// OpenGrep scans a repeated target once.
+// ScanRoots reports each root as a scan of that root alone does, in the
+// order of roots: its results and errors, with paths relative to it. Each
+// root runs in its own OpenGrep process (one per share of the command-line
+// budget when scoped) in the root's directory (site). One process over
+// several roots would hand the engine paths that name a common ancestor of
+// the batch, and OpenGrep's results depend on those path strings, so a
+// dependency's findings would change with the dependencies scanned beside
+// it and with where they lie. The rules are read once per run.
 func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, failure.New(
@@ -44,9 +43,6 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths
 			"no rule paths provided",
 			failure.WithDetail("scanner", ScannerName),
 		)
-	}
-	if err := refuseNestedRoots(roots); err != nil {
-		return nil, err
 	}
 	scoped := false
 	for _, root := range roots {
@@ -63,100 +59,16 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths
 			return nil, err
 		}
 	}
-	parsed, err := s.collect(ctx, roots, rulePaths, scoped)
-	if err != nil {
-		return nil, err
-	}
-	semgrep.LogSemgrepCompatibleErrors(parsed.Errors)
-
-	parts, err := partitionByRoot(parsed, roots)
-	if err != nil {
-		return nil, err
-	}
 	reports := make([]*entities.InterimReport, len(roots))
-	for i, part := range parts {
-		reports[i] = semgrep.TransformSemgrepCompatibleOutputToInterimFormat(part, toolInfo, roots[i].Dir, rulePaths, s.disableDedup)
+	for i, root := range roots {
+		parsed, err := s.collect(ctx, root, rulePaths)
+		if err != nil {
+			return nil, err
+		}
+		semgrep.LogSemgrepCompatibleErrors(parsed.Errors)
+		reports[i] = semgrep.TransformSemgrepCompatibleOutputToInterimFormat(parsed, toolInfo, root.Dir, rulePaths, s.disableDedup)
 	}
 	return reports, nil
-}
-
-// refuseNestedRoots fails when two roots nest or repeat and are not
-// disjoint.
-func refuseNestedRoots(roots []scanner.Root) error {
-	for i := range roots {
-		for j := range roots {
-			if i != j && holds(filepath.Clean(roots[j].Dir), filepath.Clean(roots[i].Dir)) && !scanner.Disjoint(roots[i], roots[j]) {
-				return failure.New(
-					failure.CodeInvalidArguments,
-					failure.StageInput,
-					fmt.Sprintf("roots %s and %s cannot share one opengrep process: they nest or repeat", roots[j].Dir, roots[i].Dir),
-					failure.WithDetail("scanner", ScannerName),
-				)
-			}
-		}
-	}
-	return nil
-}
-
-// partitionByRoot splits results and errors by the root holding their file:
-// the root whose scope names it, else the innermost root below which it
-// lies. A result outside every root (a symlinked root reported by its real
-// path, say) cannot be attributed, so the whole scan fails rather than lose
-// it. An error without a file, or with one outside every root, goes to every
-// root: a limit it reports may have cut any of them short.
-func partitionByRoot(output *entities.SemgrepOutput, scanRoots []scanner.Root) ([]*entities.SemgrepOutput, error) {
-	parts := make([]*entities.SemgrepOutput, len(scanRoots))
-	roots := make([]string, len(scanRoots))
-	named := make(map[string]int)
-	for i := range scanRoots {
-		parts[i] = &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
-		roots[i] = filepath.Clean(scanRoots[i].Dir)
-		if scope := scanRoots[i].Scope; scope != nil {
-			for _, rel := range scope.Paths {
-				named[filepath.Join(roots[i], rel)] = i
-			}
-		}
-	}
-	rootOf := func(path string) int {
-		if i, ok := named[filepath.Clean(path)]; ok {
-			return i
-		}
-		return innermostRoot(path, roots)
-	}
-	for r := range output.Results {
-		i := rootOf(output.Results[r].Path)
-		if i < 0 {
-			return nil, failure.New(
-				failure.CodeScannerOutputParseFailed,
-				failure.StageScan,
-				fmt.Sprintf("opengrep reported %s, which lies under none of the scanned roots", output.Results[r].Path),
-				failure.WithDetail("scanner", ScannerName),
-			)
-		}
-		parts[i].Results = append(parts[i].Results, output.Results[r])
-	}
-	for _, e := range output.Errors {
-		if i := rootOf(e.Path); i >= 0 {
-			parts[i].Errors = append(parts[i].Errors, e)
-			continue
-		}
-		for _, part := range parts {
-			part.Errors = append(part.Errors, e)
-		}
-	}
-	return parts, nil
-}
-
-// innermostRoot returns the index of the root holding path, the longest one
-// when roots nest, or -1.
-func innermostRoot(path string, roots []string) int {
-	best, bestLen := -1, -1
-	for i, root := range roots {
-		if len(root) > bestLen && holds(root, path) {
-			best, bestLen = i, len(root)
-		}
-	}
-	return best
 }
 
 // holds reports whether path is root or lies below it at a separator.
@@ -164,4 +76,14 @@ func holds(root, path string) bool {
 	return strings.HasPrefix(path, root) && (len(path) == len(root) || os.IsPathSeparator(path[len(root)]))
 }
 
-var _ scanner.BatchScanner = (*Scanner)(nil)
+// ScansRootRelative reports whether scans run in the root over relative
+// paths (site): unless extra scanner arguments, which may name paths
+// relative to crypto-finder's working directory, are set.
+func (s *Scanner) ScansRootRelative() bool {
+	return len(s.extraArgs) == 0
+}
+
+var (
+	_ scanner.BatchScanner        = (*Scanner)(nil)
+	_ scanner.RootRelativeScanner = (*Scanner)(nil)
+)

@@ -1,0 +1,36 @@
+rules:
+  - id: kdf.pbkdf2
+    message: PBKDF2 key specification
+    severity: INFO
+    languages: [java]
+    pattern: new PBEKeySpec($PASSWORD, $SALT, $ITERATIONS, $KEYLEN)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: PBKDF2
+        algorithmPrimitive: kdf
+  # A taint source that reaches the sink only through a field one of two
+  # constructors sets: opengrep 1.30.2 reports it or not depending on the
+  # order it analyzes the constructors in, which follows a hash of the
+  # target's path string.
+  - id: kdf.pbkdf2-keylength
+    message: PBKDF2 key length
+    severity: INFO
+    mode: taint
+    languages: [java]
+    pattern-sources:
+      - patterns:
+          - pattern: $KEYLEN
+          - metavariable-regex:
+              metavariable: $KEYLEN
+              regex: '(?<keysize>\d+)'
+    pattern-sinks:
+      - patterns:
+          - pattern: new PBEKeySpec($PASSWORD, $SALT, $ITERATIONS, $KEYLEN)
+          - focus-metavariable: $KEYLEN
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: PBKDF2
+        algorithmPrimitive: kdf
+        algorithmParameterSetIdentifier: $keysize

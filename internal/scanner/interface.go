@@ -178,11 +178,21 @@ type Info struct {
 }
 
 // BatchScanner is implemented by scanners that can scan several root
-// directories in one process. Each root's report is what a scan of that root
-// alone produces, whole or limited to its scope; reports are in the order of
-// roots.
+// directories in one call, sharing the rules they load. Each root's report
+// is what a scan of that root alone produces, whole or limited to its
+// scope; reports are in the order of roots.
 type BatchScanner interface {
 	ScanRoots(ctx context.Context, roots []Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error)
+}
+
+// RootRelativeScanner is implemented by scanners that can scan a root
+// through paths relative to it, so that where the root lies changes
+// neither what they find nor the paths they report, which are relative to
+// the root. ScansRootRelative reports whether the scanner, as initialized,
+// does: a configuration that names paths relative to crypto-finder's
+// working directory may keep it from doing so.
+type RootRelativeScanner interface {
+	ScansRootRelative() bool
 }
 
 // EngineFingerprinter is implemented by scanners that can identify the
