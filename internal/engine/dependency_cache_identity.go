@@ -162,15 +162,19 @@ type dependencyCacheIdentity struct {
 	Config        scanner.Config
 	Languages     []string
 	Environment   []string
-	CWD           string
+	// CWD is crypto-finder's working directory when the scan's results can
+	// depend on it (cacheCWD), else empty.
+	CWD string
 	// Omitted for a whole-module scan.
 	Scope *scanner.DetectionScope `json:",omitempty"`
 	// Engine is the engine's content fingerprint; empty for a scanner that
 	// cannot give one.
 	Engine string `json:",omitempty"`
-	// Root is the dependency's source directory. Cached findings name files
-	// by absolute path under it, and opengrep's taint results can depend on
-	// that path string, so a dependency extracted elsewhere is scanned again.
+	// Root is where the dependency's source lies (cacheRoot): its place in
+	// a store of published package versions when the scanner scans it
+	// through paths relative to it, else its directory. Cached reports name
+	// files relative to the dependency's directory, so an entry keyed by a
+	// place serves every directory holding that place.
 	Root string
 }
 
@@ -234,6 +238,7 @@ const (
 	depCacheNoKey      = "not_stored_no_key"
 	depCachePutError   = "not_stored_put_error"
 	depCacheScanFailed = "not_stored_scan_failed"
+	depCacheUnportable = "not_stored_unportable"
 )
 
 // depCacheStats counts one scan's findings-cache lookups and stores by

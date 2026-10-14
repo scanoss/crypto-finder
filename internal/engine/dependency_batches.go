@@ -37,6 +37,9 @@ type depWork struct {
 	cacheState string
 	// cacheStats counts the scan's cache outcomes; nil counts nothing.
 	cacheStats *depCacheStats
+	// portable says the cache key leaves out where the dependency lies, so
+	// only a report naming files relative to it may be stored.
+	portable bool
 }
 
 // scanBatch is one scanner process over several dependency roots.

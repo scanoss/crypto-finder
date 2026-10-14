@@ -668,33 +668,7 @@ func (ds *DependencyScanner) lookupDependency(
 	item.cacheState = depCacheDisabled
 	if ds.findingsCache != nil && rulesHash != "" {
 		item.cacheState = depCacheNoIdentity
-		cwd, cwdErr := os.Getwd()
-		info := initializedScanner.GetInfo()
-		config := item.opts.ScannerConfig
-		// The job count tunes the host, not the scan. Keying on it would split
-		// the cache by core count and by how many dependencies run at once.
-		config.Jobs = 0
-		engine, engineErr := engineFingerprint(initializedScanner)
-		identity := dependencyCacheIdentity{
-			Package:       item.key,
-			RulesHash:     rulesHash,
-			JavaRuntime:   item.opts.JavaRuntimeCacheToken,
-			Name:          item.opts.ScannerName,
-			Scanner:       info,
-			FinderVersion: version.Version,
-			Config:        config,
-			Languages:     item.opts.LanguageHint,
-			Environment:   cacheIdentityEnvironment(info.Name, os.Environ()),
-			CWD:           cwd,
-			Scope:         item.scope,
-			Engine:        engine,
-			Root:          dep.Dir,
-		}
-		key, encodeErr := identity.key()
-		// Unavailable context/identity disables caching, never scanner validation.
-		if encodeErr == nil && cwdErr == nil && engineErr == nil && info.Version != "" && info.Version != "unknown" {
-			item.cacheKey = key
-		}
+		identity := item.cacheIdentity(rulePaths, rulesHash)
 		defer func() { identity.logComponents(dep.Module, dep.Version, item.cacheState) }()
 	}
 
@@ -720,6 +694,47 @@ func (ds *DependencyScanner) lookupDependency(
 		item.cacheState = depCacheFindingsSource
 	}
 	return result, hit
+}
+
+// cacheIdentity sets item's findings-cache key, unless its identity cannot
+// be known, and returns the identity.
+func (item *depWork) cacheIdentity(rulePaths []string, rulesHash string) *dependencyCacheIdentity {
+	dep := &item.dep
+	cwd, cwdErr := os.Getwd()
+	info := item.scanner.GetInfo()
+	config := item.opts.ScannerConfig
+	// The job count tunes the host, not the scan. Keying on it would split
+	// the cache by core count and by how many dependencies run at once.
+	config.Jobs = 0
+	root := cacheRoot(item.scanner, dep.Dir)
+	if root != dep.Dir {
+		// Where the dependency lies is not keyed, so neither are the
+		// patterns anchored at it: they name the same files anywhere.
+		config.SkipPatterns = rootAnchoredPatterns(config.SkipPatterns, dep.Dir)
+	}
+	engine, engineErr := engineFingerprint(item.scanner)
+	identity := &dependencyCacheIdentity{
+		Package:       item.key,
+		RulesHash:     rulesHash,
+		JavaRuntime:   item.opts.JavaRuntimeCacheToken,
+		Name:          item.opts.ScannerName,
+		Scanner:       info,
+		FinderVersion: version.Version,
+		Config:        config,
+		Languages:     item.opts.LanguageHint,
+		Environment:   cacheIdentityEnvironment(info.Name, os.Environ()),
+		CWD:           cacheCWD(item.scanner, cwd, rulePaths),
+		Scope:         item.scope,
+		Engine:        engine,
+		Root:          root,
+	}
+	item.portable = root != dep.Dir
+	key, encodeErr := identity.key()
+	// Unavailable context/identity disables caching, never scanner validation.
+	if encodeErr == nil && cwdErr == nil && engineErr == nil && info.Version != "" && info.Version != "unknown" {
+		item.cacheKey = key
+	}
+	return identity
 }
 
 // lookupFindingsSource answers item from the findings source, when one is
@@ -853,6 +868,11 @@ func (ds *DependencyScanner) cacheIfComplete(ctx context.Context, item *depWork,
 		item.cacheStats.store(depCacheNoKey)
 		return true
 	}
+	if item.portable && !rootRelativeReport(report) {
+		item.cacheStats.store(depCacheUnportable)
+		log.Debug().Str("module", dep.Module).Str("version", dep.Version).Msg("Dependency report names files outside its root; not cached")
+		return true
+	}
 	if putErr := ds.findingsCache.Put(ctx, item.cacheKey, report); putErr != nil {
 		item.cacheStats.store(depCachePutError)
 		log.Warn().Err(putErr).Str("module", dep.Module).Msg("Failed to cache scan result")
@@ -893,7 +913,8 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	depOpts.ScannerConfig.RuleTimeoutSeconds = dependencyRuleTimeoutSeconds
 	if ds.resolver.Ecosystem() == npmEcosystem {
 		// Anchor below this artifact, not every node_modules ancestor: the
-		// dependency target itself usually lives inside node_modules.
+		// dependency target itself usually lives inside node_modules. A
+		// scanner running in the root names it relative to the root.
 		depOpts.ScannerConfig.SkipPatterns = append(depOpts.ScannerConfig.SkipPatterns, filepath.ToSlash(filepath.Join(dep.Dir, "node_modules"))+"/")
 	}
 	return depOpts
