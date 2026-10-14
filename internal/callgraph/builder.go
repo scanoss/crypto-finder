@@ -651,7 +651,7 @@ type parseTask struct {
 // skipped. It returns one error per package.
 func (b *Builder) analyzePackagesParallel(packages []PackageDir, graph *CallGraph, cloner ParserCloner, workers int) []error {
 	work, tasks := b.planPackageParses(packages)
-	wait := b.startParsePool(work, tasks, cloner, workers)
+	merged, wait := b.startParsePool(work, tasks, cloner, workers)
 	defer wait()
 
 	errs := make([]error, len(packages))
@@ -659,6 +659,7 @@ func (b *Builder) analyzePackagesParallel(packages []PackageDir, graph *CallGrap
 		<-w.done
 		errs[i] = b.mergePackageParse(graph, packages[i], w)
 		w.results = nil
+		merged()
 	}
 	return errs
 }
@@ -691,12 +692,21 @@ func (b *Builder) planPackageParses(packages []PackageDir) ([]*parsePackageWork,
 	return work, tasks
 }
 
+// parsePackageWindow bounds, per worker, how many packages may be handed to
+// the parse pool ahead of the one being merged, so one slow early package
+// holds back the parse of the rest instead of letting all their analyses
+// pile up unmerged.
+const parsePackageWindow = 4
+
 // startParsePool parses tasks on up to workers goroutines, closing a package's
-// done channel when its last unit is parsed. The returned wait blocks until
-// every worker has exited.
-func (b *Builder) startParsePool(work []*parsePackageWork, tasks []parseTask, cloner ParserCloner, workers int) (wait func()) {
-	var next atomic.Int64
-	next.Store(-1)
+// done channel when its last unit is parsed. The caller merges the packages in
+// order and calls merged after each; the pool hands out the tasks of at most
+// parsePackageWindow packages per worker ahead of the merge. The returned wait
+// stops handing out tasks and blocks until every worker has exited.
+func (b *Builder) startParsePool(work []*parsePackageWork, tasks []parseTask, cloner ParserCloner, workers int) (merged, wait func()) {
+	window := make(chan struct{}, workers*parsePackageWindow)
+	stop := make(chan struct{})
+	jobs := dispatchParseTasks(len(work), tasks, window, stop)
 	var wg sync.WaitGroup
 	for range min(workers, len(tasks)) {
 		wg.Add(1)
@@ -704,12 +714,7 @@ func (b *Builder) startParsePool(work []*parsePackageWork, tasks []parseTask, cl
 			defer wg.Done()
 			var parser Parser
 			lastPackage := -1
-			for {
-				i := int(next.Add(1))
-				if i >= len(tasks) {
-					return
-				}
-				task := tasks[i]
+			for task := range jobs {
 				if task.pkg != lastPackage {
 					parser, lastPackage = cloner.CloneParser(), task.pkg
 				}
@@ -717,7 +722,37 @@ func (b *Builder) startParsePool(work []*parsePackageWork, tasks []parseTask, cl
 			}
 		}()
 	}
-	return wg.Wait
+	merged = func() { <-window }
+	wait = func() {
+		close(stop)
+		wg.Wait()
+	}
+	return merged, wait
+}
+
+// dispatchParseTasks hands out tasks in order, those of a package only once
+// it takes a token in window, until stop is closed.
+func dispatchParseTasks(packages int, tasks []parseTask, window, stop chan struct{}) <-chan parseTask {
+	jobs := make(chan parseTask)
+	go func() {
+		defer close(jobs)
+		next := 0
+		for pkg := range packages {
+			select {
+			case window <- struct{}{}:
+			case <-stop:
+				return
+			}
+			for ; next < len(tasks) && tasks[next].pkg == pkg; next++ {
+				select {
+				case jobs <- tasks[next]:
+				case <-stop:
+					return
+				}
+			}
+		}
+	}()
+	return jobs
 }
 
 // parseTask parses unit of w with parser and records its result.
