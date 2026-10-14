@@ -165,8 +165,8 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanne
 	return o.finishScan(report, prepared.languages, opts.Target)
 }
 
-// scanRoots scans several roots in one scanner process and reports each as
-// its own scan. The instance must implement scanner.BatchScanner.
+// scanRoots scans several roots in one scanner call and reports each as its
+// own scan. The instance must implement scanner.BatchScanner.
 func (o *Orchestrator) scanRoots(ctx context.Context, opts ScanOptions, roots []scanner.Root, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) ([]*entities.InterimReport, error) {
 	batchScanner, ok := scannerInstance.(scanner.BatchScanner)
 	if !ok {

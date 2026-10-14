@@ -17,9 +17,11 @@ import (
 )
 
 // fakeOpengrep writes an executable that answers version and help probes,
-// records the arguments of a scan into argv.txt and prints output as the
-// scan's JSON with exit status 1 (findings).
-func fakeOpengrep(t *testing.T, dir, output string) string {
+// appends the working directory and arguments of a scan to calls.txt, one
+// call per line, and prints outputs[name] as the scan's JSON with exit
+// status 1 (findings), where name is the base name of its working
+// directory. A name outputs lacks prints no results.
+func fakeOpengrep(t *testing.T, dir string, outputs map[string]string) string {
 	t.Helper()
 	if testing.Short() || runtime.GOOS == "windows" {
 		t.Skip("requires POSIX scanner fixture subprocesses")
@@ -29,27 +31,43 @@ case "$1" in
  --version) echo 1.12.1; exit 0;;
  scan|--help) echo '--x-ignore-semgrepignore-files --force-exclude'; exit 0;;
 esac
-printf '%%s\n' "$@" > '%s/argv.txt'
-cat '%s/output.json'
+here=$(pwd -P)
+echo "$here|$*" >> '%[1]s/calls.txt'
+out='%[1]s/out/'"${here##*/}"'.json'
+if [ -f "$out" ]; then cat "$out"; else echo '{"version":"1.12.1","results":[],"errors":[]}'; fi
 exit 1
-`, dir, dir)
+`, dir)
 	exe := filepath.Join(dir, "opengrep")
 	if err := os.WriteFile(exe, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "output.json"), []byte(output), 0o600); err != nil {
-		t.Fatal(err)
+	for name, output := range outputs {
+		writeTree(t, filepath.Join(dir, "out"), map[string]string{name + ".json": output})
 	}
 	return exe
 }
 
-func recordedArgv(t *testing.T, dir string) []string {
+// call is one recorded scan: its working directory and arguments.
+type call struct {
+	dir  string
+	argv []string
+}
+
+func recordedCalls(t *testing.T, dir string) []call {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(dir, "argv.txt"))
+	data, err := os.ReadFile(filepath.Join(dir, "calls.txt"))
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		t.Fatal(err)
 	}
-	return strings.Split(strings.TrimSpace(string(data)), "\n")
+	var calls []call
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		cwd, args, _ := strings.Cut(line, "|")
+		calls = append(calls, call{dir: cwd, argv: strings.Fields(args)})
+	}
+	return calls
 }
 
 func result(path string) string {
@@ -76,20 +94,66 @@ func findingPaths(report *entities.InterimReport) []string {
 	return paths
 }
 
-// One process scans every root; each root's report is what a scan of that
-// root alone produces: paths relative to it, and only its own limit errors.
-func TestScanRoots_ReportsEachRootAsItsOwnScan(t *testing.T) {
+// mkdirs creates dirs and returns their physical paths.
+func mkdirs(t *testing.T, dirs ...string) []string {
+	t.Helper()
+	physical := make([]string, len(dirs))
+	for i, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		physical[i] = resolved
+	}
+	return physical
+}
+
+// rulesFixture writes a rules file in dir and returns the rule paths of a
+// scan with it.
+func rulesFixture(t *testing.T, dir string) []string {
+	t.Helper()
+	writeTree(t, dir, map[string]string{"rules.yaml": `rules: []`})
+	return []string{filepath.Join(dir, "rules.yaml")}
+}
+
+func dirRoots(dirs ...string) []scanner.Root {
+	roots := make([]scanner.Root, len(dirs))
+	for i, dir := range dirs {
+		roots[i] = scanner.Root{Dir: dir}
+	}
+	return roots
+}
+
+func excludesOf(argv []string) []string {
+	excludes := []string{}
+	for i, arg := range argv {
+		if arg == "--exclude" && i+1 < len(argv) {
+			excludes = append(excludes, argv[i+1])
+		}
+	}
+	return excludes
+}
+
+// Each root runs in its own process, in its own directory, over ".": the
+// engine sees the same relative paths wherever the root lies. Each report is
+// what a scan of that root alone produces: paths relative to it and only its
+// own limit errors, named under the root as the caller names it.
+func TestScanRoots_EachRootRunsInItsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
-	output := fmt.Sprintf(`{"version":"1.12.1","results":[%s,%s,%s],"errors":[
- {"type":"Timeout","level":"warn","message":"Timeout when running fixture.hash on %s","path":%q},
- {"type":"SemgrepError","level":"warn","message":"a notice without a file","path":""}]}`,
-		result(filepath.Join(b, "lib", "x.js")), result(filepath.Join(a, "index.js")), result(filepath.Join(a, "index.js")),
-		filepath.Join(b, "lib", "big.js"), filepath.Join(b, "lib", "big.js"))
-	exe := fakeOpengrep(t, dir, output)
-	s := batchScanner(t, exe, "test/", filepath.ToSlash(a)+"/node_modules/", filepath.ToSlash(b)+"/node_modules/")
+	physical := mkdirs(t, a, b)
+	exe := fakeOpengrep(t, dir, map[string]string{
+		"a": fmt.Sprintf(`{"version":"1.12.1","results":[%s,%s],"errors":[{"type":"SemgrepError","level":"warn","message":"a notice without a file","path":""}]}`,
+			result("index.js"), result("index.js")),
+		"b": fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[{"type":"Timeout","level":"warn","message":"Timeout when running fixture.hash on lib/big.js","path":"lib/big.js"}]}`,
+			result("lib/x.js")),
+	})
+	s := batchScanner(t, exe, "test/", "node_modules/")
 
-	reports, err := s.ScanRoots(context.Background(), dirRoots(a, b), []string{filepath.Join(dir, "rules.yaml")}, entities.ToolInfo{Name: "fixture", Version: "1"})
+	reports, err := s.ScanRoots(context.Background(), dirRoots(a, b), rulesFixture(t, dir), entities.ToolInfo{Name: "fixture", Version: "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +170,7 @@ func TestScanRoots_ReportsEachRootAsItsOwnScan(t *testing.T) {
 		t.Errorf("root a: incomplete files = %v, want none", reports[0].IncompleteFiles)
 	}
 	if want := []string{filepath.Join(b, "lib", "big.js")}; !reflect.DeepEqual(reports[1].IncompleteFiles, want) {
-		t.Errorf("root b: incomplete files = %v, want %v", reports[1].IncompleteFiles, want)
+		t.Errorf("root b: incomplete files = %v, want %v named under the root", reports[1].IncompleteFiles, want)
 	}
 	for i, report := range reports {
 		if report.Tool.Name != "fixture" || report.Findings[0].CryptographicAssets[0].Rules[0].ID != "fixture.hash" {
@@ -114,93 +178,138 @@ func TestScanRoots_ReportsEachRootAsItsOwnScan(t *testing.T) {
 		}
 	}
 
-	argv := recordedArgv(t, dir)
-	if len(argv) < 2 || argv[len(argv)-2] != a || argv[len(argv)-1] != b {
-		t.Errorf("argv = %v, want it to end with both roots", argv)
+	calls := recordedCalls(t, dir)
+	if len(calls) != 2 {
+		t.Fatalf("calls = %v, want one process per root", calls)
 	}
-	excludes := []string{}
-	for i, arg := range argv {
-		if arg == "--exclude" && i+1 < len(argv) {
-			excludes = append(excludes, argv[i+1])
+	for i, c := range calls {
+		if c.dir != physical[i] {
+			t.Errorf("call %d ran in %s, want the root %s", i, c.dir, physical[i])
 		}
-	}
-	if want := []string{"test/", filepath.ToSlash(a) + "/node_modules/", filepath.ToSlash(b) + "/node_modules/"}; !reflect.DeepEqual(excludes, want) {
-		t.Errorf("excludes = %v, want %v", excludes, want)
-	}
-	if strings.Contains(strings.Join(argv, " "), "--force-exclude") {
-		t.Errorf("argv = %v: directory roots must not be scanned as named files", argv)
+		if c.argv[len(c.argv)-1] != "." {
+			t.Errorf("call %d: argv = %v, want it to end with the root as \".\"", i, c.argv)
+		}
+		if want := []string{"test/", "node_modules/"}; !reflect.DeepEqual(excludesOf(c.argv), want) {
+			t.Errorf("call %d: excludes = %v, want %v", i, excludesOf(c.argv), want)
+		}
+		if slices.Contains(c.argv, "--force-exclude") {
+			t.Errorf("call %d: argv = %v: directory roots must not be scanned as named files", i, c.argv)
+		}
+		if config := c.argv[slices.Index(c.argv, "--config")+1]; !filepath.IsAbs(config) {
+			t.Errorf("call %d: config %s must be absolute: the engine runs elsewhere", i, config)
+		}
 	}
 }
 
-// A limit error the scanner reports without a file cannot be attributed, so
-// every root in the process is treated as incomplete, as a single scan treats
-// its own target.
-func TestScanRoots_UnattributedLimitErrorMarksEveryRootIncomplete(t *testing.T) {
+// A limit error the scanner reports without a file marks the root of its
+// process incomplete, as a single scan treats its own target.
+func TestScanRoots_LimitErrorWithoutFileMarksItsRootIncomplete(t *testing.T) {
 	dir := t.TempDir()
 	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
-	exe := fakeOpengrep(t, dir, `{"version":"1.12.1","results":[],"errors":[{"type":"Out of memory","level":"warn","message":"out of memory","path":""}]}`)
+	mkdirs(t, a, b)
+	exe := fakeOpengrep(t, dir, map[string]string{"a": `{"version":"1.12.1","results":[],"errors":[{"type":"Out of memory","level":"warn","message":"out of memory","path":""}]}`})
 	s := batchScanner(t, exe)
 
-	reports, err := s.ScanRoots(context.Background(), dirRoots(a, b), []string{filepath.Join(dir, "rules.yaml")}, entities.ToolInfo{Name: "fixture"})
+	reports, err := s.ScanRoots(context.Background(), dirRoots(a, b), rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(reports[0].IncompleteFiles, []string{a}) || !reflect.DeepEqual(reports[1].IncompleteFiles, []string{b}) {
-		t.Errorf("incomplete files = %v and %v, want each root marked", reports[0].IncompleteFiles, reports[1].IncompleteFiles)
+	if !reflect.DeepEqual(reports[0].IncompleteFiles, []string{a}) || len(reports[1].IncompleteFiles) != 0 {
+		t.Errorf("incomplete files = %v and %v, want only root a marked", reports[0].IncompleteFiles, reports[1].IncompleteFiles)
 	}
 }
 
-// A root nested under another root would be hidden by the outer root's
-// exclusions and a repeated root is scanned once, so neither can share a
-// process; refusing them keeps attribution exact.
-func TestScanRoots_RefusesNestedOrRepeatedRoots(t *testing.T) {
+// Nested roots of different bases run in processes of their own, so each
+// is scanned whole, as alone. Roots of one base still share a process, so a
+// repeated root is refused, as a nested one would be.
+func TestScanRoots_NestedRootsOfOwnBasesScanAlone(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a")
-	exe := fakeOpengrep(t, dir, `{"version":"1.12.1","results":[],"errors":[]}`)
+	inner := filepath.Join(a, "node_modules", "b")
+	mkdirs(t, a, inner)
+	exe := fakeOpengrep(t, dir, map[string]string{
+		"a": fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[]}`, result("index.js")),
+		"b": fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[]}`, result("lib/y.js")),
+	})
 	s := batchScanner(t, exe)
-	for _, roots := range [][]string{
-		{a, filepath.Join(a, "node_modules", "b")},
-		{filepath.Join(a, "node_modules", "b"), a},
-		{a, a},
-	} {
-		if _, err := s.ScanRoots(context.Background(), dirRoots(roots...), []string{filepath.Join(dir, "rules.yaml")}, entities.ToolInfo{Name: "fixture"}); err == nil {
-			t.Errorf("roots %v: want an error", roots)
-		}
+	reports, err := s.ScanRoots(context.Background(), dirRoots(a, inner), rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "argv.txt")); err == nil {
-		t.Error("the scanner ran for refused roots")
+	got := [][]string{findingPaths(reports[0]), findingPaths(reports[1])}
+	if want := [][]string{{"index.js"}, {"lib/y.js"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("findings per root = %v, want %v", got, want)
+	}
+	if _, err := s.ScanRoots(context.Background(), dirRoots(a, a), rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"}); err == nil {
+		t.Error("a repeated root must be refused")
+	}
+	nested := []scanner.Root{{Dir: a, Base: dir}, {Dir: inner, Base: dir}}
+	if _, err := s.ScanRoots(context.Background(), nested, rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"}); err == nil {
+		t.Error("nested roots of one base must be refused")
 	}
 }
 
-// A result the scanner reports outside every root cannot be attributed; a
-// single scan would keep it, so the batch fails instead of losing it.
-func TestScanRoots_FailsOnAResultOutsideEveryRoot(t *testing.T) {
+// Roots sharing a base, the package store their dependencies were installed
+// into, share one process in the base: the engine names their files by
+// their place in the store, and each result goes to the root holding it,
+// named under the root as the caller names it. A root of that base scanned
+// alone runs the same way, so the engine sees the same paths batched or not.
+func TestScanRoots_RootsOfOneBaseShareAProcessInTheBase(t *testing.T) {
 	dir := t.TempDir()
-	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
-	exe := fakeOpengrep(t, dir, fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[]}`, result(filepath.Join(dir, "elsewhere", "index.js"))))
-	s := batchScanner(t, exe)
-	if _, err := s.ScanRoots(context.Background(), dirRoots(a, b), []string{filepath.Join(dir, "rules.yaml")}, entities.ToolInfo{Name: "fixture"}); err == nil {
-		t.Fatal("want an error for a result under none of the roots")
+	store := filepath.Join(dir, "home", ".scanoss", "sources")
+	a, b := filepath.Join(store, "org.example-a", "1.0"), filepath.Join(store, "org.example-b", "2.0")
+	physical := mkdirs(t, a, b)
+	storePhysical := filepath.Dir(filepath.Dir(physical[0]))
+	exe := fakeOpengrep(t, dir, map[string]string{
+		"sources": fmt.Sprintf(`{"version":"1.12.1","results":[%s,%s],"errors":[{"type":"Timeout","level":"warn","message":"m","path":"org.example-b/2.0/Big.java"}]}`,
+			result("org.example-b/2.0/b/B.java"), result("org.example-a/1.0/a/A.java")),
+	})
+	s := batchScanner(t, exe, "test/", filepath.ToSlash(a)+"/node_modules/")
+	roots := []scanner.Root{{Dir: a, Base: store}, {Dir: b, Base: store}}
+	reports, err := s.ScanRoots(context.Background(), roots, rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := [][]string{findingPaths(reports[0]), findingPaths(reports[1])}, [][]string{{"a/A.java"}, {"b/B.java"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("findings per root = %v, want %v", got, want)
+	}
+	if len(reports[0].IncompleteFiles) != 0 || !reflect.DeepEqual(reports[1].IncompleteFiles, []string{filepath.Join(b, "Big.java")}) {
+		t.Errorf("incomplete files = %v and %v, want only b's file, named under b", reports[0].IncompleteFiles, reports[1].IncompleteFiles)
+	}
+	calls := recordedCalls(t, dir)
+	if len(calls) != 1 || calls[0].dir != storePhysical {
+		t.Fatalf("calls = %v, want one process in the store %s", calls, storePhysical)
+	}
+	argv := calls[0].argv
+	if !reflect.DeepEqual(argv[len(argv)-2:], []string{"org.example-a/1.0", "org.example-b/2.0"}) {
+		t.Errorf("argv = %v, want it to end with the roots' places in the store", argv)
+	}
+	if want := []string{"test/", "org.example-a/1.0/node_modules/"}; !reflect.DeepEqual(excludesOf(argv), want) {
+		t.Errorf("excludes = %v, want %v: anchored patterns named relative to the base", excludesOf(argv), want)
+	}
+
+	writeTree(t, filepath.Join(dir, "out"), map[string]string{"sources.json": fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[]}`, result("org.example-a/1.0/a/A.java"))})
+	if _, err := s.ScanRoots(context.Background(), roots[:1], rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	calls = recordedCalls(t, dir)
+	if alone := calls[len(calls)-1]; alone.dir != storePhysical || alone.argv[len(alone.argv)-1] != "org.example-a/1.0" {
+		t.Errorf("alone: call %v, want the batched invocation's directory and target", alone)
 	}
 }
 
-func dirRoots(dirs ...string) []scanner.Root {
-	roots := make([]scanner.Root, len(dirs))
-	for i, dir := range dirs {
-		roots[i] = scanner.Root{Dir: dir}
-	}
-	return roots
-}
-
-// A scoped root is scanned as its named files, with --force-exclude so the
-// skip patterns still apply to them, and its report keeps paths relative to
-// the root, as a scoped scan of that root alone does. A root whose scope is
-// empty runs nothing and reports nothing.
+// A scoped root is scanned as its named files, relative to the root, with
+// --force-exclude so the skip patterns still apply to them, and its report
+// keeps paths relative to the root, as a scoped scan of that root alone
+// does. A root whose scope is empty runs nothing and reports nothing.
 func TestScanRoots_ScopedRootsScanTheirFilesOnly(t *testing.T) {
 	dir := t.TempDir()
 	a, b, c := filepath.Join(dir, "a"), filepath.Join(dir, "b"), filepath.Join(dir, "c")
-	exe := fakeOpengrep(t, dir, fmt.Sprintf(`{"version":"1.12.1","results":[%s,%s],"errors":[]}`,
-		result(filepath.Join(a, "pkg", "x.go")), result(filepath.Join(b, "y.go"))))
+	mkdirs(t, a, b, c)
+	exe := fakeOpengrep(t, dir, map[string]string{
+		"a": fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[]}`, result("pkg/x.go")),
+		"b": fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[]}`, result("y.go")),
+	})
 	s := batchScanner(t, exe, "*_test.go")
 
 	roots := []scanner.Root{
@@ -208,7 +317,7 @@ func TestScanRoots_ScopedRootsScanTheirFilesOnly(t *testing.T) {
 		{Dir: b, Scope: &scanner.DetectionScope{Paths: []string{"y.go"}}},
 		{Dir: c, Scope: &scanner.DetectionScope{}},
 	}
-	reports, err := s.ScanRoots(context.Background(), roots, []string{filepath.Join(dir, "rules.yaml")}, entities.ToolInfo{Name: "fixture"})
+	reports, err := s.ScanRoots(context.Background(), roots, rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,86 +325,43 @@ func TestScanRoots_ScopedRootsScanTheirFilesOnly(t *testing.T) {
 	if want := [][]string{{"pkg/x.go"}, {"y.go"}, {}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("findings per root = %v, want %v", got, want)
 	}
-	argv := recordedArgv(t, dir)
-	if want := []string{filepath.Join(a, "pkg", "x.go"), filepath.Join(a, "pkg", "x_test.go"), filepath.Join(b, "y.go")}; !reflect.DeepEqual(argv[len(argv)-3:], want) {
-		t.Errorf("argv = %v, want it to end with the scoped files %v", argv, want)
+	calls := recordedCalls(t, dir)
+	if len(calls) != 2 {
+		t.Fatalf("calls = %v, want one per root with files", calls)
 	}
-	if !slices.Contains(argv, "--force-exclude") {
-		t.Errorf("argv = %v, want --force-exclude so the skip patterns apply to named files", argv)
+	if argv := calls[0].argv; !reflect.DeepEqual(argv[len(argv)-2:], []string{"pkg/x.go", "pkg/x_test.go"}) || !slices.Contains(argv, "--force-exclude") {
+		t.Errorf("argv = %v, want the scoped files relative to the root and --force-exclude", argv)
+	}
+	if argv := calls[1].argv; argv[len(argv)-1] != "y.go" {
+		t.Errorf("argv = %v, want it to end with y.go", argv)
 	}
 }
 
-// Distributions installed into one namespace directory are roots with the
-// same Dir and disjoint scopes: they share a process and each result goes to
-// the root whose scope names its file. Overlapping or unscoped siblings would
-// scan a file once for two roots, so they are refused.
-func TestScanRoots_DisjointSiblingsShareAProcess(t *testing.T) {
+// Extra scanner arguments may name paths relative to crypto-finder's
+// working directory, so such a scan keeps running there over the root as
+// named; absolute paths the engine reports stay as they are.
+func TestScanRoots_ExtraArgumentsKeepTheWorkingDirectory(t *testing.T) {
 	dir := t.TempDir()
-	ns := filepath.Join(dir, "google")
-	exe := fakeOpengrep(t, dir, fmt.Sprintf(`{"version":"1.12.1","results":[%s,%s],"errors":[]}`,
-		result(filepath.Join(ns, "b", "y.py")), result(filepath.Join(ns, "a", "x.py"))))
-	s := batchScanner(t, exe)
-	rules := []string{filepath.Join(dir, "rules.yaml")}
-	scoped := func(paths ...string) *scanner.DetectionScope { return &scanner.DetectionScope{Paths: paths} }
-
-	reports, err := s.ScanRoots(context.Background(), []scanner.Root{
-		{Dir: ns, Scope: scoped(filepath.Join("a", "x.py"))},
-		{Dir: ns, Scope: scoped(filepath.Join("b", "y.py"))},
-	}, rules, entities.ToolInfo{Name: "fixture"})
+	a := filepath.Join(dir, "a")
+	mkdirs(t, a)
+	cwd, err := physicalDir("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := [][]string{findingPaths(reports[0]), findingPaths(reports[1])}, [][]string{{"a/x.py"}, {"b/y.py"}}; !reflect.DeepEqual(got, want) {
-		t.Errorf("findings per sibling = %v, want %v", got, want)
+	exe := fakeOpengrep(t, dir, map[string]string{filepath.Base(cwd): fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[]}`, result(filepath.Join(a, "x.go")))})
+	s := NewScanner()
+	if err := s.Initialize(context.Background(), scanner.Config{ExecutablePath: exe, Timeout: time.Second, ExtraArgs: []string{"--no-rewrite-rule-ids"}}); err != nil {
+		t.Fatal(err)
 	}
-
-	for name, roots := range map[string][]scanner.Root{
-		"overlapping":     {{Dir: ns, Scope: scoped("a/x.py")}, {Dir: ns, Scope: scoped("a/x.py", "b/y.py")}},
-		"unscoped":        {{Dir: ns, Scope: scoped("a/x.py")}, {Dir: ns}},
-		"holder names it": {{Dir: dir, Scope: scoped(filepath.Join("google", "a", "x.py"))}, {Dir: ns}},
-	} {
-		if _, err := s.ScanRoots(context.Background(), roots, rules, entities.ToolInfo{Name: "fixture"}); err == nil {
-			t.Errorf("%s siblings: want an error", name)
-		}
-	}
-}
-
-// A scoped root holding another root's directory, as a Python distribution
-// rooted at site-packages holds the packages below it, shares its process
-// when it names none of the inner root's files: each result goes to the root
-// whose scope names it, or else to the innermost root.
-func TestScanRoots_ScopedHolderSharesAProcessWithTheRootsBelowIt(t *testing.T) {
-	site := t.TempDir()
-	solo := filepath.Join(site, "solo")
-	exe := fakeOpengrep(t, site, fmt.Sprintf(`{"version":"1.12.1","results":[%s,%s,%s],"errors":[]}`,
-		result(filepath.Join(solo, "y.py")), result(filepath.Join(site, "validate", "x.py")), result(filepath.Join(site, "six.py"))))
-	s := batchScanner(t, exe)
-
-	reports, err := s.ScanRoots(context.Background(), []scanner.Root{
-		{Dir: site, Scope: &scanner.DetectionScope{Paths: []string{filepath.Join("validate", "x.py"), "six.py"}}},
-		{Dir: solo},
-	}, []string{filepath.Join(site, "rules.yaml")}, entities.ToolInfo{Name: "fixture"})
+	reports, err := s.ScanRoots(context.Background(), dirRoots(a), rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := [][]string{findingPaths(reports[0]), findingPaths(reports[1])}, [][]string{{"six.py", "validate/x.py"}, {"y.py"}}; !reflect.DeepEqual(got, want) {
-		t.Errorf("findings per root = %v, want %v", got, want)
+	if got := findingPaths(reports[0]); !reflect.DeepEqual(got, []string{"x.go"}) {
+		t.Errorf("findings = %v, want [x.go]", got)
 	}
-}
-
-func TestInnermostRoot(t *testing.T) {
-	roots := []string{filepath.FromSlash("/x/a"), filepath.FromSlash("/x/ab")}
-	tests := map[string]int{
-		filepath.FromSlash("/x/ab/i.js"):  1,
-		filepath.FromSlash("/x/a/i.js"):   0,
-		filepath.FromSlash("/x/a"):        0,
-		filepath.FromSlash("/x/abc/i.js"): -1,
-		filepath.FromSlash("/y/i.js"):     -1,
-		"":                                -1,
-	}
-	for path, want := range tests {
-		if got := innermostRoot(path, roots); got != want {
-			t.Errorf("innermostRoot(%q) = %d, want %d", path, got, want)
-		}
+	calls := recordedCalls(t, dir)
+	if len(calls) != 1 || calls[0].dir != cwd || calls[0].argv[len(calls[0].argv)-1] != a {
+		t.Errorf("calls = %v, want one run in %s over %s", calls, cwd, a)
 	}
 }

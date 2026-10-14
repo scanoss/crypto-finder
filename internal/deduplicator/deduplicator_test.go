@@ -5,6 +5,9 @@
 package deduplicator
 
 import (
+	"fmt"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -503,23 +506,23 @@ func TestDeduplicateInterimReport_DifferentAssetTypesSameLine(t *testing.T) {
 		t.Fatalf("Expected 2 separate assets (different types), got %d", len(assets))
 	}
 
-	// Verify first asset is related-crypto-material
-	if assets[0].Metadata["assetType"] != "related-crypto-material" {
-		t.Errorf("First asset should be related-crypto-material, got %s", assets[0].Metadata["assetType"])
+	// Assets come out ordered by location, then rule id: the algorithm
+	// rule's id sorts before the related-crypto-material rule's.
+	if assets[0].Metadata["assetType"] != "algorithm" {
+		t.Errorf("First asset should be algorithm, got %s", assets[0].Metadata["assetType"])
 	}
-	if assets[0].Metadata["materialType"] != "initialization-vector" {
-		t.Errorf("First asset should have materialType")
+	if assets[0].Metadata["algorithmFamily"] != "AES" {
+		t.Errorf("First asset should have algorithmFamily")
 	}
 	if len(assets[0].Rules) != 1 {
 		t.Errorf("First asset should have 1 rule, got %d", len(assets[0].Rules))
 	}
 
-	// Verify second asset is algorithm
-	if assets[1].Metadata["assetType"] != "algorithm" {
-		t.Errorf("Second asset should be algorithm, got %s", assets[1].Metadata["assetType"])
+	if assets[1].Metadata["assetType"] != "related-crypto-material" {
+		t.Errorf("Second asset should be related-crypto-material, got %s", assets[1].Metadata["assetType"])
 	}
-	if assets[1].Metadata["algorithmFamily"] != "AES" {
-		t.Errorf("Second asset should have algorithmFamily")
+	if assets[1].Metadata["materialType"] != "initialization-vector" {
+		t.Errorf("Second asset should have materialType")
 	}
 	if len(assets[1].Rules) != 1 {
 		t.Errorf("Second asset should have 1 rule, got %d", len(assets[1].Rules))
@@ -891,4 +894,82 @@ func TestDeduplicateInterimReport_PURLMergePolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDeduplicateInterimReport_IndependentOfInputOrder pins that dedup output
+// does not depend on the order the scanner reported results in. Two rules
+// matching one span (DES.java's ISO9797Alg3Mac: a broad and a DES-specific
+// rule) merge into one asset listing the rules by id, with the first-wins
+// match of the rule whose id sorts first, for every permutation of the
+// input.
+func TestDeduplicateInterimReport_IndependentOfInputOrder(t *testing.T) {
+	mac := func(ruleID, match string) entities.CryptographicAsset {
+		metadata := map[string]string{"assetType": "algorithm", "algorithmName": "ISO9797-Alg3", "algorithmPrimitive": "mac"}
+		return entities.CryptographicAsset{
+			StartLine: 145, EndLine: 145, StartCol: 19, EndCol: 54,
+			Match:    match,
+			Rules:    []entities.RuleInfo{{ID: ruleID, Message: "mac", Severity: "INFO"}},
+			Metadata: metadata,
+		}
+	}
+	des := entities.CryptographicAsset{
+		StartLine: 145, EndLine: 145, StartCol: 38, EndCol: 53,
+		Match:    "new DESEngine()",
+		Rules:    []entities.RuleInfo{{ID: "bc.des-lightweight", Message: "des", Severity: "INFO"}},
+		Metadata: map[string]string{"assetType": "algorithm", "algorithmName": "DES", "algorithmFamily": "DES"},
+	}
+	early := entities.CryptographicAsset{
+		StartLine: 133, EndLine: 133, StartCol: 19, EndCol: 54,
+		Rules:    []entities.RuleInfo{{ID: "bc.zz-late-id", Message: "x", Severity: "INFO"}},
+		Metadata: map[string]string{"assetType": "algorithm", "algorithmName": "X"},
+	}
+	inputs := []entities.CryptographicAsset{
+		mac("bc.iso9797alg3-des-lightweight", "des match"),
+		mac("bc.iso9797alg3-broad-lightweight", "broad match"),
+		des,
+		early,
+	}
+	render := func(assets []entities.CryptographicAsset) []string {
+		out := make([]string, 0, len(assets))
+		for _, a := range assets {
+			ids := make([]string, 0, len(a.Rules))
+			for _, r := range a.Rules {
+				ids = append(ids, r.ID)
+			}
+			out = append(out, fmt.Sprintf("%d:%d %v %q", a.StartLine, a.StartCol, ids, a.Match))
+		}
+		return out
+	}
+	want := []string{
+		`133:19 [bc.zz-late-id] ""`,
+		`145:19 [bc.iso9797alg3-broad-lightweight bc.iso9797alg3-des-lightweight] "broad match"`,
+		`145:38 [bc.des-lightweight] "new DESEngine()"`,
+	}
+	for _, perm := range permutations(len(inputs)) {
+		assets := make([]entities.CryptographicAsset, 0, len(inputs))
+		for _, i := range perm {
+			asset := inputs[i]
+			asset.Metadata = maps.Clone(asset.Metadata)
+			assets = append(assets, asset)
+		}
+		report := &entities.InterimReport{Findings: []entities.Finding{{FilePath: "DES.java", CryptographicAssets: assets}}}
+		got := render(DeduplicateInterimReport(report).Findings[0].CryptographicAssets)
+		if !slices.Equal(got, want) {
+			t.Fatalf("input order %v: got\n%q\nwant\n%q", perm, got, want)
+		}
+	}
+}
+
+func permutations(n int) [][]int {
+	if n == 0 {
+		return [][]int{{}}
+	}
+	var out [][]int
+	for _, rest := range permutations(n - 1) {
+		for at := 0; at <= len(rest); at++ {
+			perm := slices.Insert(slices.Clone(rest), at, n-1)
+			out = append(out, perm)
+		}
+	}
+	return out
 }

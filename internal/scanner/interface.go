@@ -142,8 +142,22 @@ type Config struct {
 	// scans set it so concurrent scans share the cores. Only the OpenGrep
 	// adapter applies it, and a jobs flag in ExtraArgs takes precedence.
 	// The small fields after the flags fit the flags' padding, so scan
-	// options stay under the by-value size limit the linter enforces.
-	Jobs int32
+	// options stay under the by-value size limit the linter enforces: the
+	// flags, RuleTimeoutSeconds, Jobs, OpengrepMode and RulePrefilter share
+	// one 8-byte word. Jobs is an int16 to leave room for the two modes; the
+	// CLI caps it at 1024.
+	Jobs int16
+
+	// OpengrepMode selects how the OpenGrep adapter runs the engine. The zero
+	// value runs the opengrep CLI; OpengrepModeCore, the crypto-finder CLI's
+	// default, runs opengrep-core directly and falls back to the CLI whenever
+	// it cannot. Other adapters ignore it. Omitted from JSON when zero, so
+	// only core-mode scans carry it in their cache identity.
+	OpengrepMode OpengrepMode `json:",omitempty"`
+
+	// RulePrefilter drops, per scanned unit, the rules whose library the
+	// unit cannot use. Only the OpenGrep adapter applies it.
+	RulePrefilter RulePrefilter `json:",omitempty"`
 }
 
 // Info contains metadata about a scanner implementation.
@@ -164,9 +178,29 @@ type Info struct {
 }
 
 // BatchScanner is implemented by scanners that can scan several root
-// directories in one process. Each root's report is what a scan of that root
-// alone produces, whole or limited to its scope; reports are in the order of
-// roots.
+// directories in one call, sharing the rules they load. Each root's report
+// is what a scan of that root alone produces, whole or limited to its
+// scope; reports are in the order of roots.
 type BatchScanner interface {
 	ScanRoots(ctx context.Context, roots []Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error)
+}
+
+// RootRelativeScanner is implemented by scanners that can scan a root
+// through paths relative to it, so that where the root lies changes
+// neither what they find nor the paths they report, which are relative to
+// the root. ScansRootRelative reports whether the scanner, as initialized,
+// does: a configuration that names paths relative to crypto-finder's
+// working directory may keep it from doing so.
+type RootRelativeScanner interface {
+	ScansRootRelative() bool
+}
+
+// EngineFingerprinter is implemented by scanners that can identify the
+// engine build they run by its content. Info.Version cannot tell two builds
+// of one version apart, and the executable's path would tell apart identical
+// builds installed in different places, so caches of scan results key on the
+// fingerprint instead of either. Resolving which binary will run may probe
+// it, hence the context.
+type EngineFingerprinter interface {
+	EngineFingerprint(ctx context.Context) (string, error)
 }

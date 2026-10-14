@@ -87,8 +87,17 @@ func rootDirs(roots []scanner.Root) []string {
 	return dirs
 }
 
-func (a *batchAdapter) ScanRoots(_ context.Context, scanRoots []scanner.Root, _ []string, info entities.ToolInfo) ([]*entities.InterimReport, error) {
+// ScanRoots records a dependency scanned alone from its package store, which
+// comes with one root, as a single scan.
+func (a *batchAdapter) ScanRoots(ctx context.Context, scanRoots []scanner.Root, rulePaths []string, info entities.ToolInfo) ([]*entities.InterimReport, error) {
 	roots := rootDirs(scanRoots)
+	if len(roots) == 1 {
+		report, err := a.Scan(ctx, roots[0], rulePaths, info)
+		if err != nil {
+			return nil, err
+		}
+		return []*entities.InterimReport{report}, nil
+	}
 	a.mu.Lock()
 	a.batches = append(a.batches, recordedBatch{roots: append([]string(nil), roots...), config: a.config})
 	a.mu.Unlock()
@@ -380,7 +389,7 @@ func TestDependencyScanner_BatchIncompletenessIsPerDependency(t *testing.T) {
 // the scanner analyzes that many files at a time, so n roots consume about
 // n / jobs single-scan budgets of wall time.
 func TestBatchScanOptions_ScalesTheProcessTimeoutWithRoots(t *testing.T) {
-	member := func(dir string, jobs int32) ScanOptions {
+	member := func(dir string, jobs int16) ScanOptions {
 		return ScanOptions{Target: dir, ScannerConfig: scanner.Config{
 			Timeout: 10 * time.Minute, Jobs: jobs, SkipPatterns: []string{"test/", filepath.ToSlash(dir) + "/node_modules/"},
 		}}
@@ -388,7 +397,7 @@ func TestBatchScanOptions_ScalesTheProcessTimeoutWithRoots(t *testing.T) {
 	tests := []struct {
 		name  string
 		roots int
-		jobs  int32
+		jobs  int16
 		want  time.Duration
 	}{
 		{"one root keeps the single-scan timeout", 1, 4, 10 * time.Minute},

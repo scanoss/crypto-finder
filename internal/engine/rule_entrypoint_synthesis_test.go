@@ -9,9 +9,11 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -939,6 +941,49 @@ func TestSyntheticFindingLocation_NamespaceSiblingsOwnTheirFiles(t *testing.T) {
 		got, info, ok := syntheticFindingLocation(result, filepath.Join(ns, filepath.FromSlash(rel)))
 		if !ok || info == nil || info.Module != want || got != rel {
 			t.Errorf("syntheticFindingLocation(%q) = %q, %+v, %v; want %q under %q", rel, got, info, ok, rel, want)
+		}
+	}
+}
+
+// TestSynthesize_AppendsAssetsInAPIOrder pins that the synthetic assets of
+// several apis in one file come out in the same, api-sorted order on every
+// run, not in map iteration order.
+func TestSynthesize_AppendsAssetsInAPIOrder(t *testing.T) {
+	dir := t.TempDir()
+	var body strings.Builder
+	body.WriteString("rules:\n")
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}}
+	want := make([]string, 0, 12)
+	for i := range 12 {
+		name := fmt.Sprintf("with%02d", i)
+		api := "com.example.Builder." + name
+		want = append(want, api)
+		fmt.Fprintf(&body, "  - id: test.rule%d\n    metadata:\n      crypto:\n        assetType: algorithm\n        algorithmPrimitive: kdf\n        algorithmFamily: bcrypt\n        operation: keyderive\n        api: %s\n", i, api)
+		decl := &callgraph.FunctionDecl{
+			ID:        callgraph.FunctionID{Package: "com.example", Type: "Builder", Name: name},
+			FilePath:  "src/main/java/com/example/Builder.java",
+			StartLine: 100 - i,
+			EndLine:   100 - i,
+		}
+		graph.Functions[decl.ID.String()] = decl
+	}
+	rule := filepath.Join(dir, "rules.yaml")
+	if err := os.WriteFile(rule, []byte(body.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 5 {
+		report := &entities.InterimReport{}
+		if n := SynthesizeRuleCryptoEntryPoints(report, graph, []string{rule}, ""); n != len(want) {
+			t.Fatalf("synthesized %d assets, want %d", n, len(want))
+		}
+		var got []string
+		for _, finding := range report.Findings {
+			for _, asset := range finding.CryptographicAssets {
+				got = append(got, asset.Metadata["api"])
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("asset order = %v, want %v", got, want)
 		}
 	}
 }

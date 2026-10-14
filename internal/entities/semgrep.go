@@ -20,6 +20,14 @@ package entities
 type SemgrepOutput struct {
 	Results []SemgrepResult `json:"results"`
 	Errors  []SemgrepError  `json:"errors"`
+	// Paths is the CLI's account of the files it scanned; nil when the
+	// output carries none (opengrep-core's, or a merged one).
+	Paths *SemgrepPaths `json:"paths,omitempty"`
+}
+
+// SemgrepPaths lists the files a scan covered, as the CLI names them.
+type SemgrepPaths struct {
+	Scanned []string `json:"scanned"`
 }
 
 // SemgrepResult represents a single finding from Semgrep.
@@ -97,12 +105,13 @@ type MetavarPropagatedValue struct {
 
 // SemgrepError represents an error from Semgrep execution.
 type SemgrepError struct {
-	Code    int                `json:"code,omitempty"`  // Error code
-	Type    any                `json:"type"`            // Error type (string or [string, locations])
-	Level   string             `json:"level"`           // Error level
-	Message string             `json:"message"`         // Error message
-	Path    string             `json:"path"`            // File path (if applicable)
-	Spans   []SemgrepErrorSpan `json:"spans,omitempty"` // Error spans
+	Code    int                `json:"code,omitempty"`    // Error code
+	Type    any                `json:"type"`              // Error type (string or [string, locations])
+	Level   string             `json:"level"`             // Error level
+	Message string             `json:"message"`           // Error message
+	Path    string             `json:"path"`              // File path (if applicable)
+	RuleID  string             `json:"rule_id,omitempty"` // Rule the error concerns (if applicable), e.g. a timed-out rule
+	Spans   []SemgrepErrorSpan `json:"spans,omitempty"`   // Error spans
 }
 
 // SemgrepErrorSpan represents a location span in a Semgrep error.

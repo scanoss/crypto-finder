@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -243,7 +244,9 @@ func synthesizeRuleCryptoAssets(
 	result *DepScanResult,
 ) int {
 	added := 0
-	for api, metas := range apiCrypto {
+	// Sorted, so the synthetic assets are appended in the same order on every run.
+	for _, api := range slices.Sorted(maps.Keys(apiCrypto)) {
+		metas := apiCrypto[api]
 		decls := declsByFQN[api]
 		if ecosystem == ecosystemRust {
 			decls = declsByFQN[rustSynthesisKey(api)]

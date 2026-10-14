@@ -43,6 +43,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/output"
+	"github.com/scanoss/crypto-finder/internal/perf"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner"
@@ -113,6 +114,8 @@ var (
 	scanExportGfFormat           string
 	scanDepWorkers               int
 	scanScannerJobs              int
+	scanOpengrepMode             string
+	scanRulePrefilter            string
 	scanJavaJDKMajor             string
 	scanJavaJDKHomes             []string
 	scanJavaCompiledArtifact     string
@@ -120,6 +123,7 @@ var (
 	scanProgress                 bool
 	scanCPUProfile               string
 	scanMemProfile               string
+	scanTraceProfile             string
 )
 
 var scanCmd = &cobra.Command{
@@ -204,6 +208,13 @@ func init() {
 	scanCmd.Flags().IntVar(&scanScannerJobs, "scanner-jobs", 0,
 		"Parallel jobs for the OpenGrep process of the primary scan (default 0: OpenGrep's own default, one per detected core; "+
 			"can also be set via "+scannerJobsEnv+"). Lower it when several scans share a host. Dependency scans size their own jobs")
+	scanCmd.Flags().StringVar(&scanOpengrepMode, "opengrep-mode", "core",
+		"How the OpenGrep scanner runs: core (the default: opengrep-core directly, skipping the Python wrapper's "+
+			"startup and rule loading; falls back to cli whenever it cannot run, and is only used with OpenGrep versions it was verified against) "+
+			"or cli (the opengrep command; opts out of core). Can also be set via "+opengrepModeEnv)
+	scanCmd.Flags().StringVar(&scanRulePrefilter, "rule-prefilter", "off",
+		"Drop, per scanned unit (the project and each dependency batch), the rules whose library its sources never import: off or imports. "+
+			"Rules whose import requirement is unknown are always kept. OpenGrep scanner only. Can also be set via "+rulePrefilterEnv)
 	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
 	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
@@ -223,7 +234,8 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanProgress, "progress", false, "Write structured scan progress JSONL to stderr")
 	scanCmd.Flags().StringVar(&scanCPUProfile, "cpuprofile", "", "Write a pprof CPU profile of the whole scan to this file")
 	scanCmd.Flags().StringVar(&scanMemProfile, "memprofile", "", "Write a pprof heap profile, taken after a GC at the end of the scan, to this file")
-	for _, name := range []string{"cpuprofile", "memprofile"} {
+	scanCmd.Flags().StringVar(&scanTraceProfile, "trace", "", "Write a Go execution trace of the whole scan to this file")
+	for _, name := range []string{"cpuprofile", "memprofile", "trace"} {
 		if err := scanCmd.Flags().MarkHidden(name); err != nil {
 			panic(err)
 		}
@@ -768,6 +780,17 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	if err != nil {
 		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
+	opengrepMode, err := resolveOpengrepMode(cmd.Flags().Changed("opengrep-mode"), scanOpengrepMode, os.LookupEnv)
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
+	}
+	rulePrefilter, err := resolveRulePrefilter(cmd.Flags().Changed("rule-prefilter"), scanRulePrefilter, os.LookupEnv)
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
+	}
+	if scanScanner != opengrep.ScannerName && (opengrepModeExplicit(cmd.Flags().Changed("opengrep-mode"), os.LookupEnv) || rulePrefilter != scanner.RulePrefilterOff) {
+		log.Warn().Str("scanner", scanScanner).Msg("--opengrep-mode and --rule-prefilter apply to the opengrep scanner only; ignoring them")
+	}
 
 	// Parse timeout
 	timeout, err := scanutil.ParseDuration(scanTimeout)
@@ -781,7 +804,11 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		)
 	}
 
-	stopProfiles, err := startScanProfiles(scanCPUProfile, scanMemProfile)
+	stopProfiles, err := startScanProfiles(scanProfilePaths{
+		CPU:   scanCPUProfile,
+		Mem:   scanMemProfile,
+		Trace: scanTraceProfile,
+	}.withEnvDefaults(os.LookupEnv))
 	if err != nil {
 		return err
 	}
@@ -1013,7 +1040,10 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(opengrep.WithProbeCacheDir(opengrepProbeCacheDir())))
+	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(
+		opengrep.WithProbeCacheDir(opengrepProbeCacheDir()),
+		opengrep.WithCoreRulesCacheDir(opengrepCoreRulesCacheDir()),
+	))
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
@@ -1025,11 +1055,13 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		JavaRuntime:           javaRuntime,
 		JavaRuntimeCacheToken: javaRuntime.CacheKeyToken(),
 		ScannerConfig: scanner.Config{
-			Timeout:      timeout,
-			SkipPatterns: skipPatterns,
-			DisableDedup: scanNoDedup,
-			Interfile:    scanInterfile,
-			Jobs:         scannerJobs,
+			Timeout:       timeout,
+			SkipPatterns:  skipPatterns,
+			DisableDedup:  scanNoDedup,
+			Interfile:     scanInterfile,
+			Jobs:          scannerJobs,
+			OpengrepMode:  opengrepMode,
+			RulePrefilter: rulePrefilter,
 		},
 	}
 	if progress != nil {
@@ -1039,7 +1071,9 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 
 	log.Info().Msgf("Starting scan of %s with scanner '%s'...", target, scanScanner)
 
+	detectSpan := perf.Start("scan")
 	report, err := orchestrator.ScanScoped(ctx, scanOpts, detectionScope)
+	detectSpan.End()
 	if err != nil {
 		return err
 	}
@@ -1159,7 +1193,9 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 						if progress != nil {
 							depOptions.ScanOptions.Progress = newProgressReporter(progress, "dependencies")
 						}
+						depSpan := perf.Start("dependencies")
 						depResult, depErr := depScanner.ScanWithDependencies(ctx, report, depOptions)
+						depSpan.End()
 						if depErr != nil {
 							return failure.WrapUnknown(
 								depErr,
@@ -1234,7 +1270,9 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				return progressWriteFailure(err)
 			}
 		}
+		standaloneSpan := perf.Start("callgraph.standalone")
 		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, skipMatcher, true)
+		standaloneSpan.End()
 		if err != nil {
 			if progress != nil {
 				var progressErr error
@@ -1317,7 +1355,10 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				return err
 			}
 		}
-		attachAdditionalEcosystemGraphs(target, report, callGraphResult, javaRuntime, scanIncludeTests, skipMatcher)
+		perf.Time("callgraph.additional_ecosystems", func() {
+			attachAdditionalEcosystemGraphs(target, report, callGraphResult, javaRuntime, scanIncludeTests, skipMatcher)
+		})
+		exportSpan := perf.Start("export.callgraph")
 		exportStart := time.Now()
 		log.Info().
 			Str("file", scanExportCallgraph).
@@ -1336,6 +1377,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				"failed to export call graph",
 			)
 		}
+		exportSpan.End()
 		log.Info().
 			Str("file", scanExportCallgraph).
 			Dur("duration", time.Since(exportStart)).
@@ -1343,6 +1385,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	}
 
 	if scanExportGraphFragment != "" {
+		exportSpan := perf.Start("export.graph_fragment")
 		exportStart := time.Now()
 		log.Info().
 			Str("file", scanExportGraphFragment).
@@ -1356,6 +1399,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				"failed to export graph fragment",
 			)
 		}
+		exportSpan.End()
 		log.Info().
 			Str("file", scanExportGraphFragment).
 			Dur("duration", time.Since(exportStart)).
@@ -1469,6 +1513,8 @@ func writeScanOutput(resolved *oid.ResolvedReport) error {
 // runScanPhase reports run as one progress phase under parent. A failure of run
 // closes the phase as failed or canceled and is returned unchanged.
 func runScanPhase(progress *scanutil.ProgressWriter, phase, parent string, run func() error) error {
+	span := perf.Start(phase)
+	defer span.End()
 	if progress == nil {
 		return run()
 	}

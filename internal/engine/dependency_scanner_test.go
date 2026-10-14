@@ -782,7 +782,7 @@ func TestDependencyScanJobs_ConcurrentScansShareTheCores(t *testing.T) {
 
 func TestDependencyScanner_ScanDependenciesParallel_SplitsCoresAcrossConcurrentScans(t *testing.T) {
 	var mu sync.Mutex
-	var seen []int32
+	var seen []int16
 	registry := scanner.NewRegistry()
 	registry.Register("test-scanner", &mockScanner{initializeFunc: func(_ context.Context, config scanner.Config) error {
 		mu.Lock()
@@ -792,7 +792,7 @@ func TestDependencyScanner_ScanDependenciesParallel_SplitsCoresAcrossConcurrentS
 	}})
 	orch := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) { return []string{"/rules/go.yaml"}, nil }}), registry)
 	ds := &DependencyScanner{orchestrator: orch, resolver: &fakeResolver{ecosystem: "go"}}
-	scan := func(workers int, modules ...string) []int32 {
+	scan := func(workers int, modules ...string) []int16 {
 		seen = nil
 		deps := make([]dependency.Dependency, 0, len(modules))
 		for _, module := range modules {
@@ -805,14 +805,14 @@ func TestDependencyScanner_ScanDependenciesParallel_SplitsCoresAcrossConcurrentS
 		return seen
 	}
 
-	half := int32(max(1, runtime.NumCPU()/2))
-	if got := scan(2, "a", "b", "c"); !reflect.DeepEqual(got, []int32{half, half, half}) {
+	half := int16(max(1, runtime.NumCPU()/2))
+	if got := scan(2, "a", "b", "c"); !reflect.DeepEqual(got, []int16{half, half, half}) {
 		t.Fatalf("two workers: scanner jobs = %v, want %d each", got, half)
 	}
-	if got := scan(maxWorkers, "a", "b"); !reflect.DeepEqual(got, []int32{half, half}) {
+	if got := scan(maxWorkers, "a", "b"); !reflect.DeepEqual(got, []int16{half, half}) {
 		t.Fatalf("two dependencies under %d workers: scanner jobs = %v, want %d each", maxWorkers, got, half)
 	}
-	if got := scan(maxWorkers, "a"); !reflect.DeepEqual(got, []int32{0}) {
+	if got := scan(maxWorkers, "a"); !reflect.DeepEqual(got, []int16{0}) {
 		t.Fatalf("a lone dependency: scanner jobs = %v, want [0]", got)
 	}
 }
@@ -824,7 +824,7 @@ func TestDependencyScanner_FindingsCacheKeyIgnoresJobs(t *testing.T) {
 	orch := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) { return []string{"/rules/go.yaml"}, nil }}), registry)
 	ds := &DependencyScanner{orchestrator: orch, resolver: &fakeResolver{ecosystem: "go"}, findingsCache: cache}
 	dep := dependency.Dependency{Module: "a", Version: "1", Dir: t.TempDir()}
-	keyFor := func(jobs int32) string {
+	keyFor := func(jobs int16) string {
 		opts := DepScanOptions{ScanOptions: ScanOptions{ScannerName: "test-scanner", ScannerConfig: scanner.Config{Jobs: jobs}}}
 		if res := ds.scanSingleDep(context.Background(), dep, "a@1", []string{"/rules/go.yaml"}, opts); res.err != nil {
 			t.Fatal(res.err)

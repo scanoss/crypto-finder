@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/crypto-finder/internal/perf"
 	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
@@ -58,6 +59,17 @@ type SelectiveParser interface {
 	// ParseDirectorySelected is ParseDirectory limited to the files keep
 	// accepts, by absolute path. A nil keep accepts every file.
 	ParseDirectorySelected(dir string, packagePath string, keep func(path string) bool) ([]*FileAnalysis, error)
+}
+
+// directoryFileSplitter is a parser whose directory parse is the concatenation,
+// in order, of the parses of its files against context shared by the whole
+// directory, so a directory's files can be parsed concurrently.
+type directoryFileSplitter interface {
+	// SplitDirectory lists the files of dir the directory parse would read,
+	// limited to keep when non-nil, and the context they share.
+	SplitDirectory(dir string, keep func(path string) bool) (files []string, shared any, err error)
+	// ParseSplitFiles parses files of dir against shared.
+	ParseSplitFiles(dir, packagePath string, files []string, shared any) []*FileAnalysis
 }
 
 // ParserCloner is implemented by parsers that can produce an independent
@@ -189,6 +201,10 @@ type pythonInitImport struct {
 	pkg, local, module, original, root string
 }
 
+// slowParseNote is the parse time from which a directory is named in the
+// phase timings.
+const slowParseNote = 2 * time.Second
+
 // NewBuilder creates a new call graph builder with the given parser.
 // Uses the "java" ecosystem KB for backward compatibility.
 // An optional TypeResolver can be set via SetTypeResolver for language-native
@@ -257,17 +273,13 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 
 	// Phase 1: Parse source files only for packages that need full analysis
 	sourceParseStart := time.Now()
+	parseSpan := perf.Start("callgraph.build.parse")
 	b.resetPythonBuildState()
 	b.pythonDependencyNames = pythonDependencyTopLevelNames(packages)
 	b.artifacts = newArtifactScopeFor(b.ecosystem, b.artifactGraph)
 	graph.artifacts = b.artifacts
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
-	for i := range packages {
-		if err := b.analyzePackage(packages[i], graph); err != nil {
-			log.Debug().Err(err).Str("package", packages[i].ImportPath).Msg("Failed to analyze package")
-			continue
-		}
-	}
+	b.analyzePackages(packages, graph)
 	if b.ecosystem == ecosystemCPP {
 		markCPPProjectLocalCalls(graph)
 	}
@@ -281,13 +293,14 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	if provider, ok := b.parser.(publicTypePathProvider); ok {
 		graph.PublicTypePaths = provider.PublicTypePaths()
 	}
+	parseSpan.End()
 	sourceParseDuration := time.Since(sourceParseStart)
 
 	log.Info().Int("functions", len(graph.Functions)).Msg("Source parsing complete, building caller index")
 
 	// Build the reverse caller index (includes interface dispatch and fluent fallback)
 	callerIndexStart := time.Now()
-	b.indexCallers(graph)
+	perf.Time("callgraph.build.caller_index", func() { b.indexCallers(graph) })
 	callerIndexDuration := time.Since(callerIndexStart)
 
 	// Phase 2: Type resolution from bytecode — index ALL packages (including type-only)
@@ -298,19 +311,20 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 		allPackages = append(allPackages, packages...)
 		allPackages = append(allPackages, typeOnlyPackages...)
 		log.Info().Int("typePackages", len(allPackages)).Msg("Resolving types from bytecode")
-		typeResolutionStart := time.Now()
-		if err := b.typeResolver.ResolveTypes(graph, allPackages); err != nil {
+		typeSpan := perf.Start("callgraph.build.type_resolution")
+		err := b.typeResolver.ResolveTypes(graph, allPackages)
+		typeResolutionDuration = typeSpan.End()
+		if err != nil {
 			if strictResolver, ok := b.typeResolver.(StrictResolver); ok && strictResolver.StrictFailure() {
 				return nil, fmt.Errorf("type resolver failed: %w", err)
 			}
 			log.Warn().Err(err).Msg("Type resolver encountered errors (continuing with partial resolution)")
 		}
-		typeResolutionDuration = time.Since(typeResolutionStart)
 	}
 
 	// Resolve fluent chain calls using return type propagation (benefits from type resolver enrichment)
 	fluentResolutionStart := time.Now()
-	resolveFluentChainsByReturnType(graph)
+	perf.Time("callgraph.build.fluent_return_types", func() { resolveFluentChainsByReturnType(graph) })
 	fluentResolutionDuration := time.Since(fluentResolutionStart)
 
 	// Post-build pass: infer semantic return types using the embedded JCA/JCE KB.
@@ -318,16 +332,21 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// In v1, only the Java parser populates ReturnSources; for other ecosystems the
 	// pass is a no-op since no function will have ReturnSources set.
 	inferenceStart := time.Now()
+	kbSpan := perf.Start("callgraph.build.kb_load")
 	kb, err := contracts.LoadEmbedded(b.ecosystem)
+	kbSpan.End()
 	if err != nil {
 		return nil, fmt.Errorf("callgraph: load embedded %s KB: %w", b.ecosystem, err)
 	}
 	// Fold Java String constants named across classes before inference, so
 	// it sees "SHA-1" where the source wrote MessageDigestAlgorithms.SHA_1.
 	if b.ecosystem == ecosystemJava {
-		foldJavaStringConstants(graph)
+		perf.Time("callgraph.build.java_string_constants", func() { foldJavaStringConstants(graph) })
 	}
-	if err := InferReturnTypes(graph, kb); err != nil {
+	inferSpan := perf.Start("callgraph.build.infer_return_types")
+	err = InferReturnTypes(graph, kb)
+	inferSpan.End()
+	if err != nil {
 		return nil, fmt.Errorf("callgraph: infer return types: %w", err)
 	}
 	// Correct fluent-chain link callees using KB return-type propagation. Runs
@@ -336,14 +355,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// links through the contract KB instead of mis-guessing against wildcard
 	// imports. resolveFluentChainsByReturnType (above) only propagates in-graph
 	// return types and runs before the KB is available.
-	resolveFluentChainCalleesByContract(graph, kb)
-	if b.ecosystem == ecosystemPython {
-		propagatePythonTypesThroughChains(graph, kb)
-		b.reindexPythonRetypedCalls(graph)
-	}
-	resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
-	resolveNodeAssignedVarCallees(graph, kb)
-	respellGoPointerReceivers(graph, b.ecosystem)
+	b.resolveCalleesByContract(graph, kb)
 
 	// Resolve single-argument pass-through dispatch: a call site whose
 	// interface-typed parameter is used, unmodified, as the sole receiver of an
@@ -354,7 +366,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	// dispatch call site itself is shared by every caller of the callee. Runs
 	// after inference so both declared and KB-inferred return types are
 	// available. See resolveParameterPassthroughDispatch for the full contract.
-	resolveParameterPassthroughDispatch(graph)
+	perf.Time("callgraph.build.passthrough_dispatch", func() { resolveParameterPassthroughDispatch(graph) })
 	inferenceDuration := time.Since(inferenceStart)
 
 	log.Info().
@@ -369,6 +381,23 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 		Msg("Built call graph")
 
 	return graph, nil
+}
+
+// resolveCalleesByContract corrects call targets with the KB's return types:
+// fluent-chain links, Python chains, and Go/Node assigned-variable receivers.
+func (b *Builder) resolveCalleesByContract(graph *CallGraph, kb *contracts.KnowledgeBase) {
+	perf.Time("callgraph.build.fluent_contract", func() { resolveFluentChainCalleesByContract(graph, kb) })
+	if b.ecosystem == ecosystemPython {
+		perf.Time("callgraph.build.python_chains", func() {
+			propagatePythonTypesThroughChains(graph, kb)
+			b.reindexPythonRetypedCalls(graph)
+		})
+	}
+	perf.Time("callgraph.build.assigned_var_callees", func() {
+		resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
+		resolveNodeAssignedVarCallees(graph, kb)
+		respellGoPointerReceivers(graph, b.ecosystem)
+	})
 }
 
 // indexCallers runs the passes that settle call targets from the parsed
@@ -387,29 +416,88 @@ func (b *Builder) indexCallers(graph *CallGraph) {
 // concurrently; results are merged in the exact serial traversal order so the
 // collision handling in addAnalyses behaves identically either way.
 func (b *Builder) analyzePackage(pkg PackageDir, graph *CallGraph) error {
-	b.packageRoot = filepath.Clean(pkg.Dir)
-	b.packageImportPath = pkg.ImportPath
-	b.currentArtifact = artifactNameFor(b.ecosystem, pkg)
-	b.excludeDirs = nil
-	b.pythonProjectRoots = nil
-	if len(pkg.ExcludeDirs) > 0 {
-		b.excludeDirs = make(map[string]struct{}, len(pkg.ExcludeDirs))
-		for _, dir := range pkg.ExcludeDirs {
-			b.excludeDirs[filepath.Clean(dir)] = struct{}{}
-		}
-		defer func() { b.excludeDirs = nil }()
-	}
-	if b.ecosystem == ecosystemPython && pkg.Version == "" {
-		b.pythonProjectRoots = discoverPythonProjectRoots(b.packageRoot, b.pythonDependencyNames, b.skipWalkDirectory)
-	}
-	b.include = newIncludeScope(pkg.Dir, pkg.IncludeFiles)
-	defer func() { b.include = nil }()
+	b.restorePackageState(b.enterPackage(pkg))
+	defer b.leavePackage()
 	cloner, ok := b.parser.(ParserCloner)
 	workers := runtime.GOMAXPROCS(0)
 	if !ok || workers <= 1 {
 		return b.analyzeDir(pkg.Dir, pkg.ImportPath, graph, pkg.Version == "")
 	}
-	return b.analyzePackageParallel(pkg, graph, cloner, workers)
+	return b.analyzePackagesParallel([]PackageDir{pkg}, graph, cloner, workers)[0]
+}
+
+// analyzePackages parses every package into graph, in order. With a cloneable
+// parser and more than one CPU, the directories of all packages share one
+// worker pool, so a package with few directories no longer waits for the
+// previous one, and are merged in the serial order.
+func (b *Builder) analyzePackages(packages []PackageDir, graph *CallGraph) {
+	cloner, ok := b.parser.(ParserCloner)
+	workers := runtime.GOMAXPROCS(0)
+	var errs []error
+	if ok && workers > 1 {
+		errs = b.analyzePackagesParallel(packages, graph, cloner, workers)
+	} else {
+		errs = make([]error, len(packages))
+		for i := range packages {
+			errs[i] = b.analyzePackage(packages[i], graph)
+		}
+	}
+	for i, err := range errs {
+		if err != nil {
+			log.Debug().Err(err).Str("package", packages[i].ImportPath).Msg("Failed to analyze package")
+		}
+	}
+}
+
+// packageState is the per-package builder state a package's walk and merge
+// read: set by enterPackage, cleared by leavePackage.
+type packageState struct {
+	root               string
+	importPath         string
+	artifact           string
+	excludeDirs        map[string]struct{}
+	pythonProjectRoots map[string]struct{}
+	include            *includeScope
+}
+
+// enterPackage computes pkg's state. It sets the builder's exclusions while
+// it discovers the Python project roots, whose walk honors them, and leaves
+// the builder without package state.
+func (b *Builder) enterPackage(pkg PackageDir) packageState {
+	state := packageState{
+		root:       filepath.Clean(pkg.Dir),
+		importPath: pkg.ImportPath,
+		artifact:   artifactNameFor(b.ecosystem, pkg),
+	}
+	if len(pkg.ExcludeDirs) > 0 {
+		state.excludeDirs = make(map[string]struct{}, len(pkg.ExcludeDirs))
+		for _, dir := range pkg.ExcludeDirs {
+			state.excludeDirs[filepath.Clean(dir)] = struct{}{}
+		}
+	}
+	if b.ecosystem == ecosystemPython && pkg.Version == "" {
+		b.restorePackageState(packageState{root: state.root, importPath: state.importPath, artifact: state.artifact, excludeDirs: state.excludeDirs})
+		state.pythonProjectRoots = discoverPythonProjectRoots(state.root, b.pythonDependencyNames, b.skipWalkDirectory)
+		b.leavePackage()
+	}
+	state.include = newIncludeScope(pkg.Dir, pkg.IncludeFiles)
+	return state
+}
+
+func (b *Builder) restorePackageState(state packageState) {
+	b.packageRoot = state.root
+	b.packageImportPath = state.importPath
+	b.currentArtifact = state.artifact
+	b.excludeDirs = state.excludeDirs
+	b.pythonProjectRoots = state.pythonProjectRoots
+	b.include = state.include
+}
+
+// leavePackage clears the state that must not outlive a package's analysis.
+// The root, import path and artifact stay, as they always have.
+func (b *Builder) leavePackage() {
+	b.excludeDirs = nil
+	b.include = nil
 }
 
 // parseDirWork is one directory to parse: the unit of parallelism.
@@ -526,57 +614,212 @@ func (b *Builder) collectParseDirs(dir, importPath string) []parseDirWork {
 	return work
 }
 
-// analyzePackageParallel fans directory parsing out over a pool of workers,
-// each owning its own cloned parser instance, then merges the results in
-// serial traversal order. Mirrors the serial path's error contract: a failure
-// on the package's root directory aborts the package with that error (nothing
-// merged), while subdirectory failures are logged and skipped.
-func (b *Builder) analyzePackageParallel(pkg PackageDir, graph *CallGraph, cloner ParserCloner, workers int) error {
-	work := slices.DeleteFunc(b.collectParseDirs(pkg.Dir, pkg.ImportPath), func(w parseDirWork) bool { return !b.parsesDir(w.dir) })
-	if len(work) == 0 {
-		return nil
-	}
-	if workers > len(work) {
-		workers = len(work)
-	}
+// parsePackageWork is one package of a parallel parse: its state, its
+// directories in serial traversal order and, per directory, the parse result.
+type parsePackageWork struct {
+	state packageState
+	dirs  []parseDirWork
+	// units are the package's parse units in serial order: a whole
+	// directory, or one file of a directory a directoryFileSplitter split.
+	units   []parseUnit
+	results [][]*FileAnalysis
+	errs    []error
+	pending atomic.Int64
+	done    chan struct{}
+}
 
-	results := make([][]*FileAnalysis, len(work))
-	errs := make([]error, len(work))
-	var next atomic.Int64
-	next.Store(-1)
+// parseUnit is one directory, or one file of a directory, of one package: the
+// unit of parallelism.
+type parseUnit struct {
+	pkg, dir int
+	// file is set for one file of a split directory, parsed against shared.
+	file   string
+	shared any
+}
+
+// parseTask is one unit of one package in the pool's queue.
+type parseTask struct {
+	pkg, unit int
+}
+
+// analyzePackagesParallel fans the directory parsing of all packages out over
+// one pool of workers and merges each package, in order, as soon as all its
+// directories are parsed. A worker clones a fresh parser for each package it
+// moves to, as a per-package pool did. Mirrors the serial path's error
+// contract: a failure on a package's root directory aborts that package with
+// that error (nothing merged), while subdirectory failures are logged and
+// skipped. It returns one error per package.
+func (b *Builder) analyzePackagesParallel(packages []PackageDir, graph *CallGraph, cloner ParserCloner, workers int) []error {
+	work, tasks := b.planPackageParses(packages)
+	merged, wait := b.startParsePool(work, tasks, cloner, workers)
+	defer wait()
+
+	errs := make([]error, len(packages))
+	for i, w := range work {
+		<-w.done
+		errs[i] = b.mergePackageParse(graph, packages[i], w)
+		w.results = nil
+		merged()
+	}
+	return errs
+}
+
+// planPackageParses walks each package with its state in place and lists its
+// parse units, then every unit of every package as one task queue in order.
+func (b *Builder) planPackageParses(packages []PackageDir) ([]*parsePackageWork, []parseTask) {
+	work := make([]*parsePackageWork, len(packages))
+	var tasks []parseTask
+	for i := range packages {
+		state := b.enterPackage(packages[i])
+		b.restorePackageState(state)
+		dirs := slices.DeleteFunc(b.collectParseDirs(packages[i].Dir, packages[i].ImportPath), func(w parseDirWork) bool { return !b.parsesDir(w.dir) })
+		b.leavePackage()
+		w := &parsePackageWork{state: state, dirs: dirs, done: make(chan struct{})}
+		for j := range dirs {
+			w.units = append(w.units, b.splitParseDir(i, j, dirs[j].dir, state.include)...)
+		}
+		w.results = make([][]*FileAnalysis, len(w.units))
+		w.errs = make([]error, len(w.units))
+		w.pending.Store(int64(len(w.units)))
+		if len(w.units) == 0 {
+			close(w.done)
+		}
+		work[i] = w
+		for j := range w.units {
+			tasks = append(tasks, parseTask{pkg: i, unit: j})
+		}
+	}
+	return work, tasks
+}
+
+// parsePackageWindow bounds, per worker, how many packages may be handed to
+// the parse pool ahead of the one being merged, so one slow early package
+// holds back the parse of the rest instead of letting all their analyses
+// pile up unmerged.
+const parsePackageWindow = 4
+
+// startParsePool parses tasks on up to workers goroutines, closing a package's
+// done channel when its last unit is parsed. The caller merges the packages in
+// order and calls merged after each; the pool hands out the tasks of at most
+// parsePackageWindow packages per worker ahead of the merge. The returned wait
+// stops handing out tasks and blocks until every worker has exited.
+func (b *Builder) startParsePool(work []*parsePackageWork, tasks []parseTask, cloner ParserCloner, workers int) (merged, wait func()) {
+	window := make(chan struct{}, workers*parsePackageWindow)
+	stop := make(chan struct{})
+	jobs := dispatchParseTasks(len(work), tasks, window, stop)
 	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
+	for range min(workers, len(tasks)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			parser := cloner.CloneParser()
-			for {
-				i := int(next.Add(1))
-				if i >= len(work) {
-					return
+			var parser Parser
+			lastPackage := -1
+			for task := range jobs {
+				if task.pkg != lastPackage {
+					parser, lastPackage = cloner.CloneParser(), task.pkg
 				}
-				results[i], errs[i] = b.parseDirectory(parser, work[i].dir, work[i].importPath)
+				b.parseTask(parser, work[task.pkg], task.unit)
 			}
 		}()
 	}
-	wg.Wait()
-
-	if errs[0] != nil && work[0].dir == pkg.Dir {
-		return errs[0]
+	merged = func() { <-window }
+	wait = func() {
+		close(stop)
+		wg.Wait()
 	}
-	for i := range work {
-		if errs[i] != nil {
-			log.Debug().Err(errs[i]).Str("dir", work[i].dir).Msg("Failed to analyze subdirectory")
+	return merged, wait
+}
+
+// dispatchParseTasks hands out tasks in order, those of a package only once
+// it takes a token in window, until stop is closed.
+func dispatchParseTasks(packages int, tasks []parseTask, window, stop chan struct{}) <-chan parseTask {
+	jobs := make(chan parseTask)
+	go func() {
+		defer close(jobs)
+		next := 0
+		for pkg := range packages {
+			select {
+			case window <- struct{}{}:
+			case <-stop:
+				return
+			}
+			for ; next < len(tasks) && tasks[next].pkg == pkg; next++ {
+				select {
+				case jobs <- tasks[next]:
+				case <-stop:
+					return
+				}
+			}
+		}
+	}()
+	return jobs
+}
+
+// parseTask parses unit of w with parser and records its result.
+func (b *Builder) parseTask(parser Parser, w *parsePackageWork, unitIndex int) {
+	unit := w.units[unitIndex]
+	dir := w.dirs[unit.dir]
+	started := time.Now()
+	if splitter, ok := parser.(directoryFileSplitter); ok && unit.file != "" {
+		w.results[unitIndex] = splitter.ParseSplitFiles(dir.dir, dir.importPath, []string{unit.file}, unit.shared)
+	} else {
+		w.results[unitIndex], w.errs[unitIndex] = b.parseDirectory(parser, w.state.include, dir.dir, dir.importPath)
+	}
+	if took := time.Since(started); took >= slowParseNote {
+		perf.Note("slow_parse package=%s dir=%s file=%s wall_ms=%d", w.state.importPath, dir.dir, filepath.Base(unit.file), took.Milliseconds())
+	}
+	if w.pending.Add(-1) == 0 {
+		close(w.done)
+	}
+}
+
+// mergePackageParse adds a parsed package's analyses to graph in serial
+// order, or returns its root directory's parse error.
+func (b *Builder) mergePackageParse(graph *CallGraph, pkg PackageDir, w *parsePackageWork) error {
+	if len(w.units) > 0 && w.errs[0] != nil && w.dirs[w.units[0].dir].dir == pkg.Dir {
+		return w.errs[0]
+	}
+	b.restorePackageState(w.state)
+	defer b.leavePackage()
+	for j := range w.units {
+		if w.errs[j] != nil {
+			log.Debug().Err(w.errs[j]).Str("dir", w.dirs[w.units[j].dir].dir).Msg("Failed to analyze subdirectory")
 			continue
 		}
-		b.addAnalyses(graph, results[i], pkg.Version == "")
+		b.addAnalyses(graph, w.results[j], pkg.Version == "")
 	}
 	return nil
 }
 
+// splitParseDir returns the parse units of directory dir (index dirIndex) of
+// package pkg: one per file when the parser splits directories, else the whole
+// directory. A directory the split cannot list stays whole, so its parse
+// reports the error as before.
+func (b *Builder) splitParseDir(pkg, dirIndex int, dir string, include *includeScope) []parseUnit {
+	whole := []parseUnit{{pkg: pkg, dir: dirIndex}}
+	splitter, ok := b.parser.(directoryFileSplitter)
+	if !ok {
+		return whole
+	}
+	var keep func(path string) bool
+	if include != nil {
+		files := include.files
+		keep = func(path string) bool { return files[path] }
+	}
+	files, shared, err := splitter.SplitDirectory(dir, keep)
+	if err != nil {
+		return whole
+	}
+	units := make([]parseUnit, 0, len(files))
+	for _, file := range files {
+		units = append(units, parseUnit{pkg: pkg, dir: dirIndex, file: file, shared: shared})
+	}
+	return units
+}
+
 func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph, projectLocal bool) error {
 	if b.parsesDir(dir) {
-		analyses, err := b.parseDirectory(b.parser, dir, importPath)
+		analyses, err := b.parseDirectory(b.parser, b.include, dir, importPath)
 		if err != nil {
 			return err
 		}
@@ -588,12 +831,12 @@ func (b *Builder) analyzeDir(dir, importPath string, graph *CallGraph, projectLo
 
 // parseDirectory parses dir with parser, reading only the current package's
 // listed files when the parser can skip the others.
-func (b *Builder) parseDirectory(parser Parser, dir, importPath string) ([]*FileAnalysis, error) {
+func (b *Builder) parseDirectory(parser Parser, include *includeScope, dir, importPath string) ([]*FileAnalysis, error) {
 	selective, ok := parser.(SelectiveParser)
-	if b.include == nil || !ok {
+	if include == nil || !ok {
 		return parser.ParseDirectory(dir, importPath)
 	}
-	files := b.include.files
+	files := include.files
 	return selective.ParseDirectorySelected(dir, importPath, func(path string) bool { return files[path] })
 }
 

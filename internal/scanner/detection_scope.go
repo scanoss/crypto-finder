@@ -72,6 +72,12 @@ func TargetBatches(target string, scope *DetectionScope) [][]string {
 type Root struct {
 	Dir   string
 	Scope *DetectionScope
+	// Base, when set, is a directory lexically holding Dir, or Dir itself,
+	// that a scanner scanning roots through relative paths
+	// (RootRelativeScanner) names Dir's files from: the store a dependency
+	// was installed into, so the names are the same on every host and roots
+	// in one store can share a process. Empty names them from Dir.
+	Base string
 }
 
 // Disjoint reports whether no file a scan of a reads is one a scan of b

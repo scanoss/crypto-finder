@@ -4,8 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
-	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,6 +21,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/crypto-finder/internal/perf"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/skip"
@@ -167,7 +167,9 @@ func (ds *DependencyScanner) ScanWithDependencies(
 	pipelineStart := time.Now()
 
 	validator := &rules.ParameterConditionValidator{}
+	prepareSpan := perf.Start("dependencies.resolve")
 	resolved, filteredRulePaths, rulesHash, cleanupRulePaths, err := ds.prepareDependencyScan(ctx, opts, validator)
+	prepareSpan.End()
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +183,9 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return ds.emptyDependencyScanResult(userReport, resolved, opts), nil
 	}
 
+	scanSpan := perf.Start("dependencies.scan")
 	depResults, err := ds.scanDependenciesParallel(ctx, resolved.Dependencies, filteredRulePaths, rulesHash, opts, validator)
+	scanSpan.End()
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +195,9 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return nil, err
 	}
 
+	graphSpan := perf.Start("dependencies.callgraph")
 	graph, parsed, err := ds.buildDependencyCallGraph(opts.ScanOptions.Target, resolved, depResults)
+	graphSpan.End()
 	if err != nil {
 		if progressErr := ds.reportProgress(opts, progressStatusFailed, err); progressErr != nil {
 			return nil, progressErr
@@ -207,10 +213,12 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		return nil, err
 	}
 
+	attributeSpan := perf.Start("dependencies.attribute")
 	tracer := callgraph.NewTracer(graph, ds.cgBuilder.PackageSeparator())
 	userPackages := ds.buildUserPackages(resolved)
 	ds.attributeDependencyResults(depResults, opts.ScanOptions.Target, tracer, userPackages)
 	result := ds.mergeReports(userReport, depResults)
+	attributeSpan.End()
 
 	pipelineDuration := time.Since(pipelineStart)
 	log.Info().
@@ -426,7 +434,9 @@ func (ds *DependencyScanner) buildDependencyCallGraph(
 	resolved *dependency.ResolveResult,
 	depResults []depScanResult,
 ) (*callgraph.CallGraph, map[string]bool, error) {
+	setsSpan := perf.Start("dependencies.callgraph.package_sets")
 	sets := ds.collectPackageSets(userTarget, resolved, depResults)
+	setsSpan.End()
 	ds.cgBuilder.SetArtifactDependencies(resolved.Graph)
 	graph, err := ds.cgBuilder.BuildFromDirectories(sets.graphPackages, sets.typeOnlyPackages)
 	return graph, sets.parsedModules, err
@@ -485,11 +495,11 @@ func dependencyScanWorkers(configured int, ecosystem string) int {
 
 // dependencyScanJobs sizes each scanner process so concurrent dependency
 // scans share the cores. A lone scan keeps the scanner's own default.
-func dependencyScanJobs(workers int) int32 {
+func dependencyScanJobs(workers int) int16 {
 	if workers <= 1 {
 		return 0
 	}
-	return int32(max(1, runtime.NumCPU()/workers)) //nolint:gosec // A core count fits in int32.
+	return int16(min(max(1, runtime.NumCPU()/workers), math.MaxInt16)) //nolint:gosec // Bounded by MaxInt16.
 }
 
 // scanDependenciesParallel scans all dependencies concurrently using a worker pool.
@@ -505,6 +515,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 
 	outcomes := make([]depScanResult, len(orderedDeps))
 	work := make([]depWork, 0, len(orderedDeps))
+	cacheStats := newDepCacheStats()
 	for i, dep := range orderedDeps {
 		key := dependencyKey(dep)
 		if dep.Dir == "" {
@@ -521,7 +532,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 			continue
 		}
 
-		work = append(work, depWork{index: i, key: key, dep: dep})
+		work = append(work, depWork{index: i, key: key, dep: dep, cacheStats: cacheStats})
 	}
 
 	workers := min(dependencyScanWorkers(opts.Workers, ds.resolver.Ecosystem()), len(work))
@@ -531,7 +542,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		Int("deps", len(orderedDeps)).
 		Int("scannableDeps", len(work)).
 		Int("workers", workers).
-		Int32("scannerJobs", opts.ScanOptions.ScannerConfig.Jobs).
+		Int16("scannerJobs", opts.ScanOptions.ScannerConfig.Jobs).
 		Msg("Starting parallel dependency scanning")
 
 	if len(work) == 0 {
@@ -557,8 +568,12 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 	var mu sync.Mutex
 	var misses []depWork
 	batchable := false
+	lookupSpan := perf.Start("dependencies.scan.cache_lookup")
 	forEachParallel(workers, work, func(item depWork) {
+		itemSpan := perf.StartQuiet("dependencies.scan.cache_lookup.item")
 		result, hit := ds.lookupDependency(depCtx, &item, rulePaths, rulesHash, opts)
+		itemSpan.End()
+		cacheStats.lookup(item.cacheState)
 		if hit {
 			outcomes[item.index] = result
 			return
@@ -572,6 +587,7 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		batchable = batchable || canBatch
 		mu.Unlock()
 	})
+	lookupSpan.End()
 	sort.Slice(misses, func(i, j int) bool { return misses[i].index < misses[j].index })
 
 	var batches []scanBatch
@@ -583,12 +599,15 @@ func (ds *DependencyScanner) scanDependenciesParallel(
 		}
 	}
 	log.Info().Int("cacheMisses", len(misses)).Int("batches", len(batches)).Msg("Scanning dependencies the findings cache does not hold")
+	missSpan := perf.Start("dependencies.scan.misses")
 	forEachParallel(workers, batches, func(batch scanBatch) {
 		results := ds.scanBatch(depCtx, batch, validator)
 		for i := range results {
 			outcomes[results[i].index] = results[i]
 		}
 	})
+	missSpan.End()
+	cacheStats.report(log.Info(), "Dependency findings cache outcomes")
 
 	for i := range outcomes {
 		if outcomes[i].err != nil {
@@ -636,8 +655,10 @@ func (ds *DependencyScanner) lookupDependency(
 ) (result depScanResult, hit bool) {
 	dep := &item.dep
 	item.opts = ds.buildDepScanOptions(dep, rulePaths, opts)
+	item.base = storeBase(dep.Dir)
 	initializedScanner, err := ds.orchestrator.initializeScanner(ctx, item.opts)
 	if err != nil {
+		item.cacheState = depCacheScannerFailed
 		return depScanResult{index: item.index, key: item.key, dep: item.dep, status: depScanStatusFailed, err: err}, true
 	}
 	item.scanner = initializedScanner
@@ -645,48 +666,85 @@ func (ds *DependencyScanner) lookupDependency(
 	if _, scoped := initializedScanner.(scanner.ScopedScanner); scoped && dep.Files != nil {
 		item.scope = sourceScope(dep)
 	}
+	item.cacheState = depCacheDisabled
 	if ds.findingsCache != nil && rulesHash != "" {
-		env := os.Environ()
-		sort.Strings(env)
-		cwd, cwdErr := os.Getwd()
-		info := initializedScanner.GetInfo()
-		config := item.opts.ScannerConfig
-		// The job count tunes the host, not the scan. Keying on it would split
-		// the cache by core count and by how many dependencies run at once.
-		config.Jobs = 0
-		identity, encodeErr := json.Marshal(struct {
-			Package       string
-			RulesHash     string
-			JavaRuntime   string
-			Name          string
-			Scanner       scanner.Info
-			FinderVersion string
-			Config        scanner.Config
-			Languages     []string
-			Environment   []string
-			CWD           string
-			// Omitted for a whole-module scan, so those keys stay as they were.
-			Scope *scanner.DetectionScope `json:",omitempty"`
-		}{item.key, rulesHash, item.opts.JavaRuntimeCacheToken, item.opts.ScannerName, info, version.Version, config, item.opts.LanguageHint, env, cwd, item.scope})
-		// Unavailable context/identity disables caching, never scanner validation.
-		if encodeErr == nil && cwdErr == nil && info.Version != "" && info.Version != "unknown" {
-			item.cacheKey = fmt.Sprintf("dependency-findings-v2:%x", sha256.Sum256(identity))
-		}
+		item.cacheState = depCacheNoIdentity
+		identity := item.cacheIdentity(ctx, rulePaths, rulesHash)
+		defer func() { identity.logComponents(dep.Module, dep.Version, item.cacheState) }()
 	}
 
 	if item.cacheKey != "" {
 		report, ok, err := ds.findingsCache.Get(ctx, item.cacheKey)
-		if err != nil {
+		switch {
+		case err != nil:
+			item.cacheState = depCacheReadError
 			log.Warn().Err(err).Str("module", dep.Module).Msg("Cache read error, scanning normally")
-		} else if ok {
+		case ok:
+			item.cacheState = depCacheHit
 			log.Info().
 				Str("module", dep.Module).
 				Str("version", dep.Version).
 				Msg("Cache hit for dependency scan")
 			return depScanResult{index: item.index, key: item.key, dep: item.dep, report: dependencyReportWithFindings(item.ownFindings(report)), status: depScanStatusScanned}, true
+		default:
+			item.cacheState = depCacheAbsent
 		}
 	}
-	return ds.lookupFindingsSource(ctx, item)
+	result, hit = ds.lookupFindingsSource(ctx, item)
+	if hit {
+		item.cacheState = depCacheFindingsSource
+	}
+	return result, hit
+}
+
+// cacheIdentity sets item's findings-cache key, unless its identity cannot
+// be known, and returns the identity.
+func (item *depWork) cacheIdentity(ctx context.Context, rulePaths []string, rulesHash string) *dependencyCacheIdentity {
+	dep := &item.dep
+	cwd, cwdErr := os.Getwd()
+	info := item.scanner.GetInfo()
+	config := item.opts.ScannerConfig
+	// The job count tunes the host, not the scan. Keying on it would split
+	// the cache by core count and by how many dependencies run at once.
+	config.Jobs = 0
+	root := cacheRoot(item.scanner, dep.Dir)
+	item.portable = root != dep.Dir
+	var source string
+	var sourceErr error
+	if item.portable {
+		// Where the dependency lies is not keyed, so neither are the
+		// patterns anchored at it: they name the same files anywhere.
+		config.SkipPatterns = rootAnchoredPatterns(config.SkipPatterns, dep.Dir)
+		if !storeVerifiesContent(dep.Dir) {
+			// The place names a version, not what was installed under its
+			// name, so the content is keyed: two installs of the same
+			// version that differ never share an entry.
+			source, sourceErr = sourceDigest(dep.Dir, dep.Files, rootAnchoredDirs(item.opts.ScannerConfig.SkipPatterns, dep.Dir))
+		}
+	}
+	engine, engineErr := engineFingerprint(ctx, item.scanner)
+	identity := &dependencyCacheIdentity{
+		Package:       item.key,
+		RulesHash:     rulesHash,
+		JavaRuntime:   item.opts.JavaRuntimeCacheToken,
+		Name:          item.opts.ScannerName,
+		Scanner:       info,
+		FinderVersion: version.Version,
+		Config:        config,
+		Languages:     item.opts.LanguageHint,
+		Environment:   cacheIdentityEnvironment(info.Name, os.Environ()),
+		CWD:           cacheCWD(item.scanner, cwd, rulePaths),
+		Scope:         item.scope,
+		Engine:        engine,
+		Root:          root,
+		Source:        source,
+	}
+	key, encodeErr := identity.key()
+	// Unavailable context/identity disables caching, never scanner validation.
+	if encodeErr == nil && cwdErr == nil && engineErr == nil && sourceErr == nil && info.Version != "" && info.Version != "unknown" {
+		item.cacheKey = key
+	}
+	return identity
 }
 
 // lookupFindingsSource answers item from the findings source, when one is
@@ -721,7 +779,18 @@ func (ds *DependencyScanner) scanDepAlone(ctx context.Context, item *depWork, va
 	dep := &item.dep
 	log.Info().Str("module", dep.Module).Str("version", dep.Version).Msg("Scanning dependency")
 
-	report, err := ds.orchestrator.scan(ctx, item.opts, item.scope, item.scanner, validator)
+	var report *entities.InterimReport
+	var err error
+	if _, batches := item.scanner.(scanner.BatchScanner); batches && item.base != "" {
+		// Named from its package store, as when it shares a process with
+		// other dependencies of that store, so it finds the same either way.
+		var reports []*entities.InterimReport
+		if reports, err = ds.orchestrator.scanRoots(ctx, item.opts, []scanner.Root{item.root()}, item.scanner, validator); err == nil {
+			report = reports[0]
+		}
+	} else {
+		report, err = ds.orchestrator.scan(ctx, item.opts, item.scope, item.scanner, validator)
+	}
 	report = item.ownFindings(report)
 	log.Info().
 		Str("module", dep.Module).
@@ -730,7 +799,9 @@ func (ds *DependencyScanner) scanDepAlone(ctx context.Context, item *depWork, va
 
 	incomplete := false
 	if err == nil {
-		incomplete = !ds.cacheIfComplete(ctx, dep, item.cacheKey, report)
+		incomplete = !ds.cacheIfComplete(ctx, item, report)
+	} else {
+		item.cacheStats.store(depCacheScanFailed)
 	}
 
 	return depScanResult{
@@ -757,7 +828,7 @@ func (ds *DependencyScanner) scanBatch(ctx context.Context, batch scanBatch, val
 	modules := make([]string, 0, len(batch.items))
 	for i := range batch.items {
 		members = append(members, batch.items[i].opts)
-		roots = append(roots, scanner.Root{Dir: batch.items[i].dep.Dir, Scope: batch.items[i].scope})
+		roots = append(roots, batch.items[i].root())
 		modules = append(modules, batch.items[i].key)
 	}
 	batchOpts := batchScanOptions(members)
@@ -786,7 +857,7 @@ func (ds *DependencyScanner) scanBatch(ctx context.Context, batch scanBatch, val
 	}
 	for i := range batch.items {
 		item := &batch.items[i]
-		incomplete := !ds.cacheIfComplete(ctx, &item.dep, item.cacheKey, reports[i])
+		incomplete := !ds.cacheIfComplete(ctx, item, reports[i])
 		results[i] = depScanResult{
 			index:      item.index,
 			key:        item.key,
@@ -803,8 +874,10 @@ func (ds *DependencyScanner) scanBatch(ctx context.Context, batch scanBatch, val
 // cacheIfComplete stores a dependency's report under cacheKey, when caching
 // is on, unless a time or memory limit cut the scan short. It reports whether
 // the scan was complete and warns, naming the files, when it was not.
-func (ds *DependencyScanner) cacheIfComplete(ctx context.Context, dep *dependency.Dependency, cacheKey string, report *entities.InterimReport) bool {
+func (ds *DependencyScanner) cacheIfComplete(ctx context.Context, item *depWork, report *entities.InterimReport) bool {
+	dep := &item.dep
 	if len(report.IncompleteFiles) > 0 {
+		item.cacheStats.store(depCacheIncomplete)
 		log.Warn().
 			Str("module", dep.Module).
 			Str("version", dep.Version).
@@ -812,11 +885,21 @@ func (ds *DependencyScanner) cacheIfComplete(ctx context.Context, dep *dependenc
 			Msg("Dependency scan stopped at a time or memory limit in these files; its findings may be incomplete and are not cached")
 		return false
 	}
-	if cacheKey != "" {
-		if putErr := ds.findingsCache.Put(ctx, cacheKey, report); putErr != nil {
-			log.Warn().Err(putErr).Str("module", dep.Module).Msg("Failed to cache scan result")
-		}
+	if item.cacheKey == "" {
+		item.cacheStats.store(depCacheNoKey)
+		return true
 	}
+	if item.portable && !rootRelativeReport(report) {
+		item.cacheStats.store(depCacheUnportable)
+		log.Debug().Str("module", dep.Module).Str("version", dep.Version).Msg("Dependency report names files outside its root; not cached")
+		return true
+	}
+	if putErr := ds.findingsCache.Put(ctx, item.cacheKey, report); putErr != nil {
+		item.cacheStats.store(depCachePutError)
+		log.Warn().Err(putErr).Str("module", dep.Module).Msg("Failed to cache scan result")
+		return true
+	}
+	item.cacheStats.store(depCacheStored)
 	return true
 }
 
@@ -851,7 +934,8 @@ func (ds *DependencyScanner) buildDepScanOptions(dep *dependency.Dependency, rul
 	depOpts.ScannerConfig.RuleTimeoutSeconds = dependencyRuleTimeoutSeconds
 	if ds.resolver.Ecosystem() == npmEcosystem {
 		// Anchor below this artifact, not every node_modules ancestor: the
-		// dependency target itself usually lives inside node_modules.
+		// dependency target itself usually lives inside node_modules. A
+		// scanner running in the root names it relative to the root.
 		depOpts.ScannerConfig.SkipPatterns = append(depOpts.ScannerConfig.SkipPatterns, filepath.ToSlash(filepath.Join(dep.Dir, "node_modules"))+"/")
 	}
 	return depOpts

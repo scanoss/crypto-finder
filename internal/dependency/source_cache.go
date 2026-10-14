@@ -23,13 +23,23 @@ func sanitizeSourceCacheKey(key string) string {
 	return strings.ReplaceAll(key, ":", "-")
 }
 
-// NewSourceCache creates a new source cache under ~/.crypto-finder/cache/sources/.
-func NewSourceCache() (*SourceCache, error) {
+// SourceCacheDir is the directory the source cache extracts dependency
+// sources into, one directory per coordinate and version:
+// ~/.scanoss/crypto-finder/cache/sources.
+func SourceCacheDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("cannot determine home directory: %w", err)
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
-	baseDir := filepath.Join(home, ".scanoss", "crypto-finder", "cache", "sources")
+	return filepath.Join(home, ".scanoss", "crypto-finder", "cache", "sources"), nil
+}
+
+// NewSourceCache creates a new source cache in SourceCacheDir.
+func NewSourceCache() (*SourceCache, error) {
+	baseDir, err := SourceCacheDir()
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(baseDir, 0o750); err != nil {
 		return nil, fmt.Errorf("cannot create source cache dir: %w", err)
 	}

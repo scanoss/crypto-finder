@@ -35,7 +35,7 @@ func checkOpengrepAvailable(t *testing.T) {
 	t.Helper()
 	path, err := exec.LookPath("opengrep")
 	if err != nil {
-		t.Skip("opengrep not found in PATH - skipping integration test (install v1.12.1 from https://github.com/opengrep/opengrep/releases/tag/v1.12.1)")
+		t.Skip("opengrep not found in PATH - skipping integration test (install v1.30.2 from https://github.com/opengrep/opengrep/releases/tag/v1.30.2)")
 	}
 
 	cmd := exec.CommandContext(context.Background(), path, "--version")

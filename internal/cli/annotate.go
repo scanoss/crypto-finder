@@ -51,6 +51,7 @@ var (
 	annotateScanner          string
 	annotateTimeout          string
 	annotateScannerJobs      int
+	annotateOpengrepMode     string
 	annotateNoRemoteRules    bool
 	annotateNoCache          bool
 	annotateAPIKey           string
@@ -94,6 +95,9 @@ func init() {
 	annotateCmd.Flags().IntVar(&annotateScannerJobs, "scanner-jobs", 0,
 		"Parallel jobs for the OpenGrep detection process (default 0: OpenGrep's own default, one per detected core; "+
 			"can also be set via "+scannerJobsEnv+"). Lower it when several scans share a host")
+	annotateCmd.Flags().StringVar(&annotateOpengrepMode, "opengrep-mode", "core",
+		"How the OpenGrep scanner runs, as for scan: core (the default; falls back to cli whenever it cannot run) "+
+			"or cli (opts out of core). Can also be set via "+opengrepModeEnv)
 	annotateCmd.Flags().BoolVar(&annotateNoRemoteRules, "no-remote-rules", false, "Disable the default remote ruleset")
 	annotateCmd.Flags().BoolVar(&annotateNoCache, "no-cache", false, "Force fresh download of remote rules, bypass cache")
 	annotateCmd.Flags().StringVar(&annotateAPIKey, "api-key", "", "SCANOSS API key")
@@ -128,10 +132,14 @@ func runAnnotate(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
+	opengrepMode, err := resolveOpengrepMode(cmd.Flags().Changed("opengrep-mode"), annotateOpengrepMode, os.LookupEnv)
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	report, err := runAnnotateDetection(ctx, timeout, scannerJobs)
+	report, err := runAnnotateDetection(ctx, timeout, scannerJobs, opengrepMode)
 	if err != nil {
 		return err
 	}
@@ -195,7 +203,7 @@ func loadImportedFragment(path string) (graphfrag.Fragment, error) {
 // over --source and returns the interim report. It mirrors the detection setup
 // of the scan command but stops at orchestrator.Scan — deliberately skipping the
 // callgraph/inference work that annotate exists to avoid.
-func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJobs int32) (*entities.InterimReport, error) {
+func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJobs int16, opengrepMode scanner.OpengrepMode) (*entities.InterimReport, error) {
 	target := annotateSource
 
 	normalizedLanguages, err := scanutil.ValidateFlags(target, scanutil.ValidationOptions{
@@ -244,7 +252,10 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 
 	langDetector := language.NewEnryDetector(skipMatcher)
 	scannerRegistry := scanner.NewRegistry()
-	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(opengrep.WithProbeCacheDir(opengrepProbeCacheDir())))
+	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(
+		opengrep.WithProbeCacheDir(opengrepProbeCacheDir()),
+		opengrep.WithCoreRulesCacheDir(opengrepCoreRulesCacheDir()),
+	))
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
@@ -258,6 +269,7 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 			Timeout:      timeout,
 			SkipPatterns: skipPatterns,
 			Jobs:         scannerJobs,
+			OpengrepMode: opengrepMode,
 		},
 	})
 	if err != nil {

@@ -32,11 +32,18 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 	"github.com/scanoss/crypto-finder/internal/skip"
 	"github.com/scanoss/crypto-finder/internal/version"
 )
 
 func TestDependencyCachePartitionsEffectiveArguments(t *testing.T) {
+	// A variable the scan path reads (scanEnvironment) partitions the cache;
+	// one it does not read must not.
+	const engineVariable, ambientVariable = "LC_ALL", "DEPENDENCY_SCAN_TOKEN"
+	if !opengrepEnvironment[engineVariable] || opengrepEnvironment[ambientVariable] {
+		t.Fatalf("fixture expects %s keyed and %s not", engineVariable, ambientVariable)
+	}
 	dir := t.TempDir()
 	rule := filepath.Join(dir, "rule.yaml")
 	if err := os.WriteFile(rule, []byte("rules:\n- id: fixture\n  languages: [go]\n  pattern: $X\n  message: fixture\n  severity: WARNING\n"), 0o600); err != nil {
@@ -59,13 +66,15 @@ func TestDependencyCachePartitionsEffectiveArguments(t *testing.T) {
 	factory := func() scanner.Scanner {
 		var config scanner.Config
 		return &mockScanner{
-			getInfoFunc:    func() scanner.Info { return scanner.Info{Name: selectedName, Version: reportedVersion} },
+			// The engine is opengrep, whose environment reads were audited,
+			// whichever name the scan selects it by.
+			getInfoFunc:    func() scanner.Info { return scanner.Info{Name: opengrep.ScannerName, Version: reportedVersion} },
 			initializeFunc: func(_ context.Context, cfg scanner.Config) error { config = cfg; return initializationErr },
 			scanFunc: func(_ context.Context, target string, _ []string, info entities.ToolInfo) (*entities.InterimReport, error) {
 				calls++
 				env := config.Env["TOKEN"]
 				if env == "" {
-					env = os.Getenv("DEPENDENCY_SCAN_TOKEN")
+					env = os.Getenv(engineVariable)
 				}
 				cwd := config.WorkDir
 				if cwd == "" {
@@ -124,13 +133,19 @@ func TestDependencyCachePartitionsEffectiveArguments(t *testing.T) {
 		t.Fatal("changed scanner version reused stale findings")
 	}
 
-	t.Setenv("DEPENDENCY_SCAN_TOKEN", "changed")
+	t.Setenv(engineVariable, "changed")
 	newEnvironment := run("after", nil)
 	if newEnvironment == newVersion {
-		t.Fatal("ambient environment must change uncached output")
+		t.Fatal("engine environment must change uncached output")
 	}
 	if got := run("after", cache); got != newEnvironment {
-		t.Fatal("ambient environment reused stale findings")
+		t.Fatal("engine environment reused stale findings")
+	}
+	count = calls
+	t.Setenv(ambientVariable, "changed")
+	t.Setenv("HOSTNAME", "another-host")
+	if got := run("after", cache); got != newEnvironment || calls != count {
+		t.Fatal("variables no scanner reads must not partition the cache")
 	}
 
 	for _, change := range []string{"environment", "workdir", "interfile", "dedup", "tests", "scanner"} {

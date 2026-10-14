@@ -32,7 +32,7 @@ const maxScannerJobs = 1024
 // resolveScannerJobs returns the OpenGrep job count for the primary scan. An
 // explicit --scanner-jobs wins over SCANOSS_SCANNER_JOBS; an empty or unset
 // variable keeps the default. Zero keeps OpenGrep's own default.
-func resolveScannerJobs(flagSet bool, flagValue int, lookupEnv func(string) (string, bool)) (int32, error) {
+func resolveScannerJobs(flagSet bool, flagValue int, lookupEnv func(string) (string, bool)) (int16, error) {
 	source, value := "--scanner-jobs", flagValue
 	if !flagSet {
 		raw, ok := lookupEnv(scannerJobsEnv)
@@ -49,5 +49,5 @@ func resolveScannerJobs(flagSet bool, flagValue int, lookupEnv func(string) (str
 	if value < 0 || value > maxScannerJobs {
 		return 0, fmt.Errorf("%s must be between 0 and %d, got %d", source, maxScannerJobs, value)
 	}
-	return int32(value), nil
+	return int16(value), nil
 }

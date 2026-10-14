@@ -29,13 +29,17 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
 
-// ScanRoots runs one OpenGrep process over every root, or one per share of
-// the command-line budget when scoped roots name many files, and reports
-// each root as a scan of that root alone would: its results and errors are
-// the ones in its files, with paths relative to it. Roots must not nest or
-// repeat unless they are disjoint (scanner.Disjoint): a walk of the outer
-// root covers the inner one's files and its exclusions could hide them, and
-// OpenGrep scans a repeated target once.
+// ScanRoots reports each root as a scan of that root alone does, in the
+// order of roots: its results and errors, with paths relative to it. Roots
+// sharing a base (Root.Base, else Dir) run in one OpenGrep process, or one
+// per share of the command-line budget when scoped, in the base directory
+// over paths relative to it (site), and each result goes to the root that
+// holds its file. Roots of different bases run in processes of their own:
+// OpenGrep's results depend on the path strings it is given, which must
+// not depend on the roots scanned beside a root. Roots of one base must not
+// nest or repeat unless they are disjoint (scanner.Disjoint): a walk of the
+// outer root covers the inner one's files and its exclusions could hide
+// them, and OpenGrep scans a repeated target once.
 func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error) {
 	if len(rulePaths) == 0 {
 		return nil, failure.New(
@@ -45,8 +49,11 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths
 			failure.WithDetail("scanner", ScannerName),
 		)
 	}
-	if err := refuseNestedRoots(roots); err != nil {
-		return nil, err
+	groups := groupByBase(roots)
+	for _, group := range groups {
+		if err := refuseNestedRoots(group.roots); err != nil {
+			return nil, err
+		}
 	}
 	scoped := false
 	for _, root := range roots {
@@ -63,26 +70,47 @@ func (s *Scanner) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths
 			return nil, err
 		}
 	}
-	parsed := &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}
-	for _, targets := range scanner.RootTargetBatches(roots) {
-		batch, _, _, err := s.run(ctx, s.buildCommand(ctx, targets, rulePaths, scoped), rulePaths, nil)
+	reports := make([]*entities.InterimReport, len(roots))
+	for _, group := range groups {
+		parsed, err := s.collect(ctx, group.base, group.roots, rulePaths)
 		if err != nil {
 			return nil, err
 		}
-		parsed.Results = append(parsed.Results, batch.Results...)
-		parsed.Errors = append(parsed.Errors, batch.Errors...)
-	}
-	semgrep.LogSemgrepCompatibleErrors(parsed.Errors)
-
-	parts, err := partitionByRoot(parsed, roots)
-	if err != nil {
-		return nil, err
-	}
-	reports := make([]*entities.InterimReport, len(roots))
-	for i, part := range parts {
-		reports[i] = semgrep.TransformSemgrepCompatibleOutputToInterimFormat(part, toolInfo, roots[i].Dir, rulePaths, s.disableDedup)
+		semgrep.LogSemgrepCompatibleErrors(parsed.Errors)
+		parts, err := partitionByRoot(parsed, group.roots)
+		if err != nil {
+			return nil, err
+		}
+		for i, part := range parts {
+			reports[group.index[i]] = semgrep.TransformSemgrepCompatibleOutputToInterimFormat(part, toolInfo, group.roots[i].Dir, rulePaths, s.disableDedup)
+		}
 	}
 	return reports, nil
+}
+
+// rootGroup is the roots of one base, with their indexes in the scan.
+type rootGroup struct {
+	base  string
+	roots []scanner.Root
+	index []int
+}
+
+// groupByBase groups roots by base, in the order the bases first appear.
+func groupByBase(roots []scanner.Root) []*rootGroup {
+	var groups []*rootGroup
+	byBase := make(map[string]*rootGroup)
+	for i, root := range roots {
+		base := baseOf(root)
+		group := byBase[base]
+		if group == nil {
+			group = &rootGroup{base: base}
+			byBase[base] = group
+			groups = append(groups, group)
+		}
+		group.roots = append(group.roots, root)
+		group.index = append(group.index, i)
+	}
+	return groups
 }
 
 // refuseNestedRoots fails when two roots nest or repeat and are not
@@ -169,4 +197,14 @@ func holds(root, path string) bool {
 	return strings.HasPrefix(path, root) && (len(path) == len(root) || os.IsPathSeparator(path[len(root)]))
 }
 
-var _ scanner.BatchScanner = (*Scanner)(nil)
+// ScansRootRelative reports whether scans run in the roots' base over
+// relative paths (site): unless extra scanner arguments, which may name
+// paths relative to crypto-finder's working directory, are set.
+func (s *Scanner) ScansRootRelative() bool {
+	return len(s.extraArgs) == 0
+}
+
+var (
+	_ scanner.BatchScanner        = (*Scanner)(nil)
+	_ scanner.RootRelativeScanner = (*Scanner)(nil)
+)
