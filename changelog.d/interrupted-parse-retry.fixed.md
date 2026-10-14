@@ -8,7 +8,8 @@
   example the Diffie-Hellman and ECDH findings in OpenSSH's `dh.c`, `ssh-sk.c`
   and `regress/misc/sk-dummy/sk-dummy.c`), with or without `--opengrep-mode core`
   and `--rule-prefilter imports`.
-- A file the timeout retry still cannot finish runs once more with four times
-  the retry's limit (120 s by default), only for those files. On a very busy
-  host the 30 s retry could still be too short to parse a large C++ file
+- A file the timeout retry still cannot finish runs once more, only for those
+  files, with a longer per-rule limit: project scans retry at 30 s and then
+  120 s; dependency scans retry at 120 s and then 255 s. On a very busy host
+  the 30 s retry could still be too short to parse a large C++ file
   (Crypto++ `donna_64.cpp`), so its 72 findings came and went between runs.
