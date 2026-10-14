@@ -90,7 +90,7 @@ func explicitImports(metadata map[string]any, family Family) Expr {
 		if !ok || strings.TrimSpace(module) == "" {
 			return nil
 		}
-		alternatives = append(alternatives, &importAtom{family: family, literal: strings.TrimSpace(module)})
+		alternatives = append(alternatives, &importAtom{family: family, literal: strings.TrimSpace(module), declared: true})
 	}
 	return or(alternatives)
 }

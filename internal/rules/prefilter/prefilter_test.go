@@ -394,3 +394,80 @@ public class Pbes2HsAkwAlgorithm {
 		}
 	}
 }
+
+// TestImportsBeyondLineStartKeepEveryRuleOpenGrepMatches pins import shapes
+// the line-anchored import patterns once missed: an import after another
+// statement, a brace, a Rust attribute or a block comment on the same line,
+// and an import on a first line behind a UTF-8 byte order mark. OpenGrep
+// 1.29.0 matches each rule on its sources, so the prefilter must keep it.
+func TestImportsBeyondLineStartKeepEveryRuleOpenGrepMatches(t *testing.T) {
+	const bom = "\uFEFF"
+	rules := map[string]map[string]any{
+		"java": mustRule(t, `{"id": "java", "languages": ["java"], "message": "m", "severity": "INFO",
+		  "patterns": [{"pattern-inside": "import io.jsonwebtoken.SignatureAlgorithm;\n...\n"}, {"pattern": "SignatureAlgorithm.$X"}]}`),
+		"rust": mustRule(t, `{"id": "rust", "languages": ["rust"], "message": "m", "severity": "INFO",
+		  "patterns": [{"pattern-inside": "use $IMPORT;\n...\n"},
+		    {"metavariable-regex": {"metavariable": "$IMPORT", "regex": "^aes_gcm(?:::|$)"}},
+		    {"pattern": "Aes256Gcm::new(...)"}]}`),
+		"python": mustRule(t, `{"id": "python", "languages": ["python"], "message": "m", "severity": "INFO",
+		  "patterns": [{"pattern-inside": "import jwt\n...\n"}, {"pattern": "jwt.decode(...)"}]}`),
+		"python-from": mustRule(t, `{"id": "python-from", "languages": ["python"], "message": "m", "severity": "INFO",
+		  "patterns": [{"pattern-inside": "from jose import jwe\n...\n"}, {"pattern": "jwe.encrypt(...)"}]}`),
+		"c": mustRule(t, `{"id": "c", "languages": ["c"], "message": "m", "severity": "INFO",
+		  "patterns": [{"pattern-inside": "#include <sodium.h>\n...\n"}, {"pattern": "crypto_secretbox_easy(...)"}]}`),
+	}
+	javaBody := "\nclass A { Object a = SignatureAlgorithm.HS256; }\n"
+	rustBody := "\nfn f(k: &[u8]) { let c = Aes256Gcm::new(k); }\n"
+	cBody := "\nvoid f(void) { crypto_secretbox_easy(c, m, l, n, k); }\n"
+	cases := []struct {
+		name, rule, analyzer, source string
+	}{
+		{"java after another import", "java", "java", "import java.util.List; import io.jsonwebtoken.SignatureAlgorithm;" + javaBody},
+		{"java after a block comment", "java", "java", "/* header */ import io.jsonwebtoken.SignatureAlgorithm;" + javaBody},
+		{"java behind a BOM", "java", "java", bom + "import io.jsonwebtoken.SignatureAlgorithm;" + javaBody},
+		{"rust after an attribute", "rust", "rust", `#[cfg(feature = "gcm")] use aes_gcm::Aes256Gcm;` + rustBody},
+		{"rust inside a module", "rust", "rust", "mod m { use aes_gcm::Aes256Gcm; fn f(k: &[u8]) { let c = Aes256Gcm::new(k); } }\n"},
+		{"rust behind a BOM", "rust", "rust", bom + "use aes_gcm::Aes256Gcm;" + rustBody},
+		{"python import after a semicolon", "python", "python", "import os; import jwt\ndef f(t): return jwt.decode(t)\n"},
+		{"python from-import after a semicolon", "python-from", "python", "import os; from jose import jwe\ndef f(b, k): return jwe.encrypt(b, k)\n"},
+		{"python behind a BOM", "python", "python", bom + "import jwt\ndef f(t): return jwt.decode(t)\n"},
+		{"c behind a BOM", "c", "c", bom + "#include <sodium.h>" + cBody},
+		{"c after a block comment", "c", "c", "/* x */ #include <sodium.h>" + cBody},
+	}
+	for _, c := range cases {
+		if !keeps(t, rules[c.rule], []string{c.analyzer}, evidenceOf(c.analyzer, c.source)) {
+			t.Errorf("%s: OpenGrep matches %s, the prefilter must keep it", c.name, c.rule)
+		}
+	}
+	for _, c := range []struct{ rule, analyzer, source string }{
+		{"java", "java", "import java.util.List; import io.jsonwebtoken.Jwts;" + javaBody},
+		{"rust", "rust", `#[cfg(feature = "gcm")] use chacha20poly1305::Aes256Gcm;` + rustBody},
+		{"python", "python", "import os; import json\ndef f(t): return jwt.decode(t)\n"},
+		{"c", "c", "/* sodium.h */ #include <openssl/evp.h>" + cBody},
+	} {
+		if keeps(t, rules[c.rule], []string{c.analyzer}, evidenceOf(c.analyzer, c.source)) {
+			t.Errorf("%s: a unit that imports another module on the same line must still drop the rule", c.rule)
+		}
+	}
+}
+
+// TestExplicitMetadataImportsAcceptWildcard: metadata.imports names a class a
+// match uses, which `import javax.crypto.*;` supplies. A pattern-derived
+// literal guard matches an import statement, which OpenGrep does not match
+// against a wildcard import, so that guard stays unsatisfied.
+func TestExplicitMetadataImportsAcceptWildcard(t *testing.T) {
+	declared := mustRule(t, `{"id": "r", "languages": ["java"], "message": "m", "severity": "INFO",
+	  "metadata": {"imports": ["javax.crypto.Cipher"]}, "pattern": "Cipher.getInstance(...)"}`)
+	wild := "import javax.crypto.*;\nclass A { Object c = Cipher.getInstance(\"AES\"); }\n"
+	if !keeps(t, declared, []string{"java"}, evidenceOf("java", wild)) {
+		t.Error("a wildcard import of the declared class's package must satisfy metadata.imports")
+	}
+	if keeps(t, declared, []string{"java"}, evidenceOf("java", "import javax.net.*;\nclass A { Object c = Cipher.getInstance(\"AES\"); }\n")) {
+		t.Error("a wildcard import of an unrelated package must not satisfy metadata.imports")
+	}
+	guard := mustRule(t, `{"id": "r", "languages": ["java"], "message": "m", "severity": "INFO",
+	  "patterns": [{"pattern-inside": "import javax.crypto.Cipher;\n...\n"}, {"pattern": "Cipher.getInstance(...)"}]}`)
+	if keeps(t, guard, []string{"java"}, evidenceOf("java", wild)) {
+		t.Error("a literal import guard must not be satisfied by a wildcard import")
+	}
+}

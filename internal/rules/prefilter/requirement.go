@@ -193,6 +193,10 @@ type importAtom struct {
 	// the literal text before the first metavariable.
 	template    *regexp.Regexp
 	constraints map[int][]*regexp.Regexp
+	// declared marks a metadata.imports module, which names what a match
+	// uses rather than an import statement it matches, so a wildcard import
+	// of its package supplies it.
+	declared bool
 }
 
 func (a *importAtom) known() bool { return true }
@@ -207,6 +211,9 @@ func (a *importAtom) eval(ev *Evidence) bool {
 			if a.literal == "" || related(candidate, a.literal, sep) {
 				return true
 			}
+			if a.declared && wildcardSupplies(candidate, a.literal, sep) {
+				return true
+			}
 			continue
 		}
 		if a.matchesTemplate(candidate) {
@@ -214,7 +221,7 @@ func (a *importAtom) eval(ev *Evidence) bool {
 		}
 		// A wildcard import names a whole package; it may supply any
 		// member the template's literal prefix leaves open.
-		if wildcard(candidate) && a.literal != "" && related(strings.TrimRight(candidate, ".*:{} "), strings.TrimRight(a.literal, ".:/ "), sep) {
+		if wildcardSupplies(candidate, strings.TrimRight(a.literal, ".:/ "), sep) {
 			return true
 		}
 	}
@@ -236,8 +243,11 @@ func (a *importAtom) matchesTemplate(candidate string) bool {
 	return true
 }
 
-func wildcard(candidate string) bool {
-	return strings.HasSuffix(candidate, ".*") || strings.HasSuffix(candidate, "::*")
+// wildcardSupplies reports whether candidate is a wildcard import of a
+// package related to name.
+func wildcardSupplies(candidate, name, sep string) bool {
+	wildcard := strings.HasSuffix(candidate, ".*") || strings.HasSuffix(candidate, "::*")
+	return wildcard && name != "" && related(strings.TrimRight(candidate, ".*:{} "), name, sep)
 }
 
 func separator(family Family) string {

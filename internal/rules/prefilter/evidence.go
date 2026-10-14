@@ -63,7 +63,9 @@ func (ev *Evidence) AddFile(analyzers []string, content []byte) {
 			families[family] = true
 		}
 	}
-	text := string(content)
+	// A byte order mark would hide a first-line import from the line-anchored
+	// import patterns.
+	text := strings.TrimPrefix(string(content), "\uFEFF")
 	addTokens(ev.tokens, text)
 	for family := range families {
 		ev.addImports(family, text)
@@ -128,7 +130,26 @@ var (
 	whitespaceRun    = regexp.MustCompile(`\s+`)
 )
 
+// inlineImport finds, per family, an import keyword that follows another
+// statement, a block brace, an attribute or a comment on the same line, as
+// in `import a; import b;`, `try: import jwt` or `#[cfg(x)] use a::B;`.
+// Breaking the line there lets the line-anchored patterns read the import;
+// a keyword that is not an import only adds candidates, which keeps rules.
+var inlineImport = map[Family]*regexp.Regexp{
+	FamilyJava:   regexp.MustCompile(`([;{}]|\*/)([ \t]*(?:import|package)\b)`),
+	FamilyPython: regexp.MustCompile(`([;:])([ \t]*(?:import|from)\b)`),
+	FamilyRust:   regexp.MustCompile(`([;{}\]]|\*/)([ \t]*(?:use|pub)\b)`),
+	FamilyC:      regexp.MustCompile(`(\*/)([ \t]*#)`),
+	// Go imports are read from the whole line and JS specifiers from every
+	// string literal, wherever they stand.
+	FamilyGo: nil,
+	FamilyJS: nil,
+}
+
 func (ev *Evidence) addImports(family Family, text string) {
+	if re := inlineImport[family]; re != nil {
+		text = re.ReplaceAllString(text, "$1\n$2")
+	}
 	switch family {
 	case FamilyGo:
 		ev.addGoImports(text)
