@@ -17,6 +17,7 @@
 package engine
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -141,12 +142,12 @@ func cacheIdentityEnvironment(scannerName string, env []string) []string {
 
 // engineFingerprint returns the content fingerprint of the engine s runs,
 // or "" for a scanner that cannot give one.
-func engineFingerprint(s scanner.Scanner) (string, error) {
+func engineFingerprint(ctx context.Context, s scanner.Scanner) (string, error) {
 	fingerprinter, ok := s.(scanner.EngineFingerprinter)
 	if !ok {
 		return "", nil
 	}
-	return fingerprinter.EngineFingerprint()
+	return fingerprinter.EngineFingerprint(ctx)
 }
 
 // dependencyCacheIdentity is what a dependency's findings-cache key hashes.

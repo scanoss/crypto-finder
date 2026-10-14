@@ -297,7 +297,12 @@ func configFiles(rulePath string) ([]string, error) {
 }
 
 // walkRuleDir appends the rule files of dir, then those of its
-// subdirectories depth first, as pathlib's rglob lists them.
+// subdirectories depth first, as pathlib's rglob lists them. Within one
+// directory os.ReadDir sorts entries by name, where rglob takes os.scandir's
+// order, which the file system decides: the deterministic order is chosen
+// on purpose, so which of two equal rules in sibling files survives
+// dedupeRules (the first read) is the same on every host, where the CLI's
+// choice can differ between hosts.
 func walkRuleDir(rulePath, dir string, files *[]string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

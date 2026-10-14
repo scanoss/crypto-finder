@@ -190,3 +190,23 @@ func TestOutcomeScansIgnoreModes(t *testing.T) {
 		t.Errorf("certification scans must run the CLI with the rules as given, calls:\n%s", calls)
 	}
 }
+
+// TestCoreModeFallsBackWhenCoreRejectsARule pins that a rule opengrep-core
+// could not load (reported at exit 0, the other rules' findings included)
+// sends the scan to the CLI, which fails the run for such a rule, so a
+// broken rules file fails a scan the same way in both modes.
+func TestCoreModeFallsBackWhenCoreRejectsARule(t *testing.T) {
+	target, rules := fixtureProject(t)
+	coreJSON := `{"results":[{"check_id":"std.sha","path":"` + filepath.Join(target, "a.go") +
+		`","start":{"line":5,"col":12,"offset":45},"end":{"line":5,"col":24,"offset":57},"extra":{"message":"m","metadata":{},"metavars":{},"is_ignored":false}}],` +
+		`"errors":[{"error_type":"Rule parse error","severity":"error","message":"Expected one of pattern...","rule_id":"x.hkdf","location":{"path":"rules.json","start":{"line":1,"col":1,"offset":0},"end":{"line":1,"col":1,"offset":0}}}]}`
+	f := newFakeEngine(t, "x.std.sha", coreJSON)
+	s := fakeScanner(t, f, "1.30.2", scanner.OpengrepModeCore, scanner.RulePrefilterOff)
+	if ids := scanIDs(t, s, target, rules); len(ids) != 1 || ids[0] != "x.std.sha" {
+		t.Fatalf("findings = %v, want the CLI's x.std.sha", ids)
+	}
+	calls := f.calls(t)
+	if !strings.Contains(calls, "core ") || !strings.Contains(calls, "cli ") {
+		t.Errorf("a rule core rejects must send the scan to the CLI, calls:\n%s", calls)
+	}
+}

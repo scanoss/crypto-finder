@@ -18,6 +18,7 @@ package opengrep
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"reflect"
@@ -241,5 +242,109 @@ func TestRulesDocumentIDs(t *testing.T) {
 		if useBase != c.base || !reflect.DeepEqual(ids, c.ids) {
 			t.Errorf("useBase %v ids %v, want %v %v", useBase, ids, c.base, c.ids)
 		}
+	}
+}
+
+// TestConvertCoreOutputFailsOnARuleCoreCouldNotLoad pins that a rule
+// opengrep-core rejected makes the conversion fail, so the scan runs the
+// CLI: the CLI validates its rules first and fails the run (exit 7 for a
+// misspelled key, 8 for an unknown language, 2 for an unparsable pattern),
+// where core scans with the other rules at exit 0. Rules core skips without
+// failing, incompatible with its version or missing a plugin, are skipped by
+// the CLI as well.
+func TestConvertCoreOutputFailsOnARuleCoreCouldNotLoad(t *testing.T) {
+	rules := []*coreRule{testRule(t, `{"id":"a","message":"m","severity":"INFO","languages":["go"],"pattern":"f()"}`)}
+	// opengrep-core 1.30.2 output for a rule with `patern:` instead of `pattern:`.
+	ruleParse := `{"error_type":"Rule parse error","severity":"error","message":"Expected one of ` + "`pattern`" + `, ...","rule_id":"a","location":{"path":"rules.json","start":{"line":7,"col":5,"offset":107},"end":{"line":7,"col":5,"offset":107}}}`
+	patternParse := `{"error_type":["PatternParseError",["pattern"]],"severity":"error","message":"Invalid pattern for Go","rule_id":"a","location":{"path":"rules.json","start":{"line":1,"col":1,"offset":0},"end":{"line":1,"col":1,"offset":0}}}`
+	invalidYAML := `{"error_type":"Invalid YAML","severity":"error","message":"duplicate key","rule_id":"a","location":{"path":"rules.json","start":{"line":1,"col":1,"offset":0},"end":{"line":1,"col":1,"offset":0}}}`
+	for name, entry := range map[string]string{"rule parse": ruleParse, "pattern parse": patternParse, "invalid yaml": invalidYAML} {
+		parsed, err := parseCoreOutput([]byte(`{"results":[],"errors":[` + entry + `]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = convertCoreOutput(parsed, rules, true, "")
+		if !errors.Is(err, errCoreUnavailable) || !strings.Contains(err.Error(), "rule p.a") {
+			t.Errorf("%s: err = %v, want core unavailable naming the CLI's rule id p.a", name, err)
+		}
+	}
+	incompatible := `{"error_type":["IncompatibleRule",{"rule_id":"a","this_version":"1.30.2","min_version":"2.0.0"}],"severity":"info","message":"incompatible","rule_id":"a"}`
+	missingPlugin := `{"error_type":"Missing plugin","severity":"warn","message":"no plugin","rule_id":"a"}`
+	for name, entry := range map[string]string{"incompatible": incompatible, "missing plugin": missingPlugin} {
+		parsed, err := parseCoreOutput([]byte(`{"results":[],"errors":[` + entry + `]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := convertCoreOutput(parsed, rules, true, "")
+		if err != nil || len(out.Errors) != 1 {
+			t.Errorf("%s: a rule core skips like the CLI must convert, got %v %+v", name, err, out)
+		}
+	}
+}
+
+// TestConvertCoreOutputHidesInventoryAndExperiment pins that matches of
+// INVENTORY and EXPERIMENT severity are left out as the CLI leaves them out
+// of its output (DEFAULT_SHOWN_SEVERITIES), judged by the match's own
+// severity when core reports one and by its rule's otherwise.
+func TestConvertCoreOutputHidesInventoryAndExperiment(t *testing.T) {
+	rules := []*coreRule{
+		testRule(t, `{"id":"shown","message":"m","severity":"INFO","languages":["go"],"pattern":"f()"}`),
+		testRule(t, `{"id":"inv","message":"m","severity":"INVENTORY","languages":["go"],"pattern":"f()"}`),
+		testRule(t, `{"id":"exp","message":"m","severity":"EXPERIMENT","languages":["go"],"pattern":"f()"}`),
+	}
+	match := func(id, severity string) string {
+		return fmt.Sprintf(`{"check_id":%q,"path":"a.go","start":{"line":1,"col":1,"offset":0},"end":{"line":1,"col":2,"offset":1},"extra":{"metavars":{},"message":"m","metadata":{},"severity":%q}}`, id, severity)
+	}
+	parsed, err := parseCoreOutput([]byte(`{"results":[` + strings.Join([]string{match("shown", ""), match("inv", ""), match("exp", ""), match("shown", "INVENTORY"), match("shown", "WARNING")}, ",") + `],"errors":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := convertCoreOutput(parsed, rules, true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(out.Results))
+	for _, r := range out.Results {
+		got = append(got, r.CheckID+"|"+r.Extra.Severity)
+	}
+	want := []string{"p.shown|INFO", "p.shown|WARNING"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("results = %q, want %q", got, want)
+	}
+}
+
+// TestDecodeLikePython pins the CLI's reading of invalid UTF-8
+// (open(errors="replace")): every expectation was computed with CPython's
+// bytes.decode("utf-8", "replace"). Each maximal invalid prefix is one
+// U+FFFD: a stray byte, an overlong or out-of-range lead, or a multi-byte
+// sequence cut short.
+func TestDecodeLikePython(t *testing.T) {
+	const r = "�"
+	cases := []struct{ in, want string }{
+		{"bad\xffline", "bad" + r + "line"},
+		{"\xff\xff", r + r},
+		{"\xe2\x82A", r + "A"},
+		{"\xe2\x82", r},
+		{"\xe0\x80", r + r},
+		{"\xed\xa0\x80", r + r + r},
+		{"\xf0\x90\x80", r},
+		{"\xf4\x90\x80\x80", r + r + r + r},
+		{"\xc0\xaf", r + r},
+		{"\xf8\x88\x80\x80\x80", r + r + r + r + r},
+		{"\xc3", r},
+		{"ok\xc3\xa9", "oké"},
+		{"\xe2\x82\xac", "€"},
+		{"\xf0\x9f\x98\x80", "😀"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := decodeLikePython([]byte(c.in)); got != c.want {
+			t.Errorf("decodeLikePython(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	dir := t.TempDir()
+	writeTree(t, dir, map[string]string{"a.go": "x\xff\xffy\r\nz\n"})
+	if got := newLineReader(dir).span("a.go", 1, 2); got != "x"+r+r+"y\nz" {
+		t.Errorf("lines = %q, want each invalid byte replaced", got)
 	}
 }

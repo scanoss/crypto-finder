@@ -17,7 +17,9 @@
 package opengrep
 
 import (
+	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -32,26 +34,32 @@ import (
 // hashes the executable once however many scanners it initializes.
 var engineDigests sync.Map
 
-// EngineFingerprint returns the SHA-256 of the opengrep executable's
-// content and, in core mode with CoreBinaryEnv set, of the opengrep-core
-// binary it names. Without CoreBinaryEnv, core mode runs the opengrep-core
-// the executable unpacks (or one beside it reporting the same version), so
-// the executable's content stands for it.
-func (s *Scanner) EngineFingerprint() (string, error) {
-	fingerprint, err := engineFileDigest(s.executablePath)
-	if err != nil {
-		return "", err
-	}
+// coreFingerprintPrefix marks a fingerprint of an opengrep-core binary, so
+// it never reads as the digest of an opengrep executable.
+const coreFingerprintPrefix = "core:"
+
+// EngineFingerprint returns the SHA-256 of the content of the engine the
+// scan will run. In core mode that is the opengrep-core binary coreBinary
+// resolves, prefixed to tell it from an executable's digest; when core mode
+// cannot run (an unverified version, no opengrep-core found) the scan runs
+// the opengrep executable and the fingerprint is its digest, as in CLI
+// mode. A core run that fails during the scan falls back to the executable
+// too, which no fingerprint computed beforehand can foresee.
+func (s *Scanner) EngineFingerprint(ctx context.Context) (string, error) {
 	if s.mode == scanner.OpengrepModeCore {
-		if core := os.Getenv(CoreBinaryEnv); core != "" {
-			coreDigest, err := engineFileDigest(core)
+		core, err := s.coreBinary(ctx)
+		switch {
+		case err == nil:
+			digest, err := engineFileDigest(core)
 			if err != nil {
 				return "", err
 			}
-			fingerprint += "+core:" + coreDigest
+			return coreFingerprintPrefix + digest, nil
+		case !errors.Is(err, errCoreUnavailable):
+			return "", err
 		}
 	}
-	return fingerprint, nil
+	return engineFileDigest(s.executablePath)
 }
 
 // engineFileDigest returns the hex SHA-256 of the file path resolves to.

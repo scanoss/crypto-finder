@@ -200,7 +200,8 @@ type RootRelativeScanner interface {
 // engine build they run by its content. Info.Version cannot tell two builds
 // of one version apart, and the executable's path would tell apart identical
 // builds installed in different places, so caches of scan results key on the
-// fingerprint instead of either.
+// fingerprint instead of either. Resolving which binary will run may probe
+// it, hence the context.
 type EngineFingerprinter interface {
-	EngineFingerprint() (string, error)
+	EngineFingerprint(ctx context.Context) (string, error)
 }

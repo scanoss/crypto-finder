@@ -161,7 +161,9 @@ type fingerprintedScanner struct {
 	fingerprint func() (string, error)
 }
 
-func (s *fingerprintedScanner) EngineFingerprint() (string, error) { return s.fingerprint() }
+func (s *fingerprintedScanner) EngineFingerprint(context.Context) (string, error) {
+	return s.fingerprint()
+}
 
 // TestDependencyCacheWarmAcrossMachinesAndSessions runs the same dependency
 // scan the way two hosts or CI runs do: the second must reuse the first's

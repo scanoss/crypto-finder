@@ -66,7 +66,13 @@ func TestIsConfigSuffix(t *testing.T) {
 	}
 }
 
-func TestLoadCoreRulesetPrefixesAndDedupes(t *testing.T) {
+// TestLoadCoreRulesetPrefixesAndDedupesInNameOrder pins the CLI's id
+// prefixes and its deduplication, the first occurrence kept at the last
+// one's position, over the adapter's own file order: files of one directory
+// by name. The CLI reads them in os.scandir order instead, so which of two
+// equal rules in sibling files it keeps depends on the host; the adapter's
+// choice does not, and is not claimed to match the CLI's.
+func TestLoadCoreRulesetPrefixesAndDedupesInNameOrder(t *testing.T) {
 	root := t.TempDir()
 	writeTree(t, root, map[string]string{
 		"go/a.yaml": "rules:\n  - id: one\n    message: m\n    severity: INFO\n    languages: [go]\n    pattern: foo()\n    metadata: {x: 1}\n" +
@@ -86,7 +92,7 @@ func TestLoadCoreRulesetPrefixesAndDedupes(t *testing.T) {
 		ids = append(ids, rule.id)
 	}
 	// a.yaml and b.yaml hold the same rule "one" under the same prefix but
-	// for metadata: the CLI keeps a.yaml's at b.yaml's position.
+	// for metadata: read by name, a.yaml's is kept at b.yaml's position.
 	want := []string{base + "two", base + "one", base + "sub.three"}
 	if !reflect.DeepEqual(ids, want) {
 		t.Fatalf("rule ids = %v, want %v", ids, want)

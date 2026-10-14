@@ -669,7 +669,7 @@ func (ds *DependencyScanner) lookupDependency(
 	item.cacheState = depCacheDisabled
 	if ds.findingsCache != nil && rulesHash != "" {
 		item.cacheState = depCacheNoIdentity
-		identity := item.cacheIdentity(rulePaths, rulesHash)
+		identity := item.cacheIdentity(ctx, rulePaths, rulesHash)
 		defer func() { identity.logComponents(dep.Module, dep.Version, item.cacheState) }()
 	}
 
@@ -699,7 +699,7 @@ func (ds *DependencyScanner) lookupDependency(
 
 // cacheIdentity sets item's findings-cache key, unless its identity cannot
 // be known, and returns the identity.
-func (item *depWork) cacheIdentity(rulePaths []string, rulesHash string) *dependencyCacheIdentity {
+func (item *depWork) cacheIdentity(ctx context.Context, rulePaths []string, rulesHash string) *dependencyCacheIdentity {
 	dep := &item.dep
 	cwd, cwdErr := os.Getwd()
 	info := item.scanner.GetInfo()
@@ -722,7 +722,7 @@ func (item *depWork) cacheIdentity(rulePaths []string, rulesHash string) *depend
 			source, sourceErr = sourceDigest(dep.Dir, dep.Files, rootAnchoredDirs(item.opts.ScannerConfig.SkipPatterns, dep.Dir))
 		}
 	}
-	engine, engineErr := engineFingerprint(item.scanner)
+	engine, engineErr := engineFingerprint(ctx, item.scanner)
 	identity := &dependencyCacheIdentity{
 		Package:       item.key,
 		RulesHash:     rulesHash,
