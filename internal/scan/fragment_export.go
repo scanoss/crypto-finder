@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +97,8 @@ func writeGraphFragmentJSONFile(path string, result *engine.DepScanResult) error
 type graphFragmentJSONWriter struct {
 	w         *bufio.Writer
 	needComma bool
+	// scratch is writeCompactEdge's reusable encoding buffer.
+	scratch []byte
 }
 
 func (w *graphFragmentJSONWriter) writeResolvedResult(result *engine.DepScanResult, report *oid.ResolvedReport) error {
@@ -208,35 +211,40 @@ func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIn
 
 	internalCount := 0
 	var pending *graphfrag.GraphFragmentEdge
+	var pendingEntryCall []byte
 	var externalCalls []graphfrag.GraphFragmentExternal
 	flush := func() error {
 		if pending == nil {
 			return nil
 		}
 		compact := compactGraphFragmentEdge(*pending, functionIndex, stringInterner)
-		if err := w.writeArrayElement(internalCount, compact); err != nil {
+		if err := w.writeCompactEdge(internalCount, compact, pendingEntryCall); err != nil {
 			return err
 		}
 		internalCount++
 		return nil
 	}
 
-	for _, calleeKey := range sortedKeys(ctx.graph.Callers) {
-		calls, err := buildResolvedFragmentEdges(ctx, calleeKey, func(edge graphfrag.GraphFragmentEdge) error {
+	var err error
+	forEachFragmentEdges(ctx, sortedKeys(ctx.graph.Callers), encodeFragmentEntryCalls, func(edges fragmentEdges) bool {
+		for i := range edges.internal {
+			edge := edges.internal[i]
 			if pending != nil && fragmentEdgeSameKey(*pending, edge) {
 				*pending = edge
-				return nil
+				pendingEntryCall = edges.entryCalls[i]
+				continue
 			}
-			if err := flush(); err != nil {
-				return err
+			if err = flush(); err != nil {
+				return false
 			}
 			pending = &edge
-			return nil
-		})
-		if err != nil {
-			return 0, 0, err
+			pendingEntryCall = edges.entryCalls[i]
 		}
-		externalCalls = append(externalCalls, calls...)
+		externalCalls = append(externalCalls, edges.external...)
+		return true
+	})
+	if err != nil {
+		return 0, 0, fmt.Errorf("scan: emit fragment edge: %w", err)
 	}
 	if err := flush(); err != nil {
 		return 0, 0, err
@@ -272,6 +280,54 @@ func (w *graphFragmentJSONWriter) writeArrayElement(index int, value any) error 
 		return err
 	}
 	return writeJSONValue(w.w, value)
+}
+
+// writeCompactEdge writes edge as writeArrayElement would, from entryCall,
+// edge.EntryCall already encoded by encodeFragmentEntryCalls. With no such
+// encoding for a non-nil EntryCall it falls back to writeArrayElement.
+func (w *graphFragmentJSONWriter) writeCompactEdge(index int, edge graphfrag.GraphFragmentCompactEdge, entryCall []byte) error {
+	if edge.EntryCall != nil && entryCall == nil {
+		return w.writeArrayElement(index, edge)
+	}
+	if index == 0 {
+		w.scratch = append(w.scratch[:0], "\n    "...)
+	} else {
+		w.scratch = append(w.scratch[:0], ",\n    "...)
+	}
+	w.scratch = appendCompactFragmentEdge(w.scratch, edge, entryCall)
+	_, err := w.w.Write(w.scratch)
+	return err
+}
+
+// appendCompactFragmentEdge appends the bytes graphfrag's
+// GraphFragmentCompactEdge.MarshalJSON gives edge, encoded through
+// writeJSONValue, taking entryCall as edge.EntryCall's encoding.
+// TestAppendCompactFragmentEdgeMatchesMarshalJSON pins the two together.
+func appendCompactFragmentEdge(dst []byte, edge graphfrag.GraphFragmentCompactEdge, entryCall []byte) []byte {
+	values := [...]int{
+		edge.Caller, edge.Callee, edge.Line, edge.Resolution, edge.DeclaredType, edge.MethodName,
+		edge.Arity, edge.ReceiverVar, edge.AssignedVar, edge.ChainID, edge.StartCol, edge.EndCol,
+		edge.ResolvedReceiverType,
+	}
+	last := len(values) - 1
+	for last >= 0 && values[last] == 0 {
+		last--
+	}
+	if edge.EntryCall != nil {
+		last = len(values)
+	}
+	dst = append(dst, '[')
+	for i := 0; i <= last; i++ {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+		if i == len(values) {
+			dst = append(dst, entryCall...)
+			continue
+		}
+		dst = strconv.AppendInt(dst, int64(values[i]), 10)
+	}
+	return append(dst, ']')
 }
 
 func (w *graphFragmentJSONWriter) endArrayField(count int) error {
@@ -514,39 +570,29 @@ func buildGraphFragmentResolvedEdges(ctx *exportBuildContext) ([]graphfrag.Graph
 
 	internalEdges := make([]graphfrag.GraphFragmentEdge, 0, len(ctx.graph.EdgeResolutions))
 	var externalCalls []graphfrag.GraphFragmentExternal
-	for _, calleeKey := range sortedKeys(ctx.graph.Callers) {
-		internalEdges, externalCalls = addResolvedFragmentEdges(ctx, calleeKey, internalEdges, externalCalls)
-	}
+	forEachFragmentEdges(ctx, sortedKeys(ctx.graph.Callers), nil, func(edges fragmentEdges) bool {
+		internalEdges = append(internalEdges, edges.internal...)
+		externalCalls = append(externalCalls, edges.external...)
+		return true
+	})
 
 	return sortedFragmentEdges(internalEdges), sortedFragmentExternalCalls(externalCalls)
 }
 
-func addResolvedFragmentEdges(
-	ctx *exportBuildContext,
-	calleeKey string,
-	internalEdges []graphfrag.GraphFragmentEdge,
-	externalCalls []graphfrag.GraphFragmentExternal,
-) ([]graphfrag.GraphFragmentEdge, []graphfrag.GraphFragmentExternal) {
-	calls, err := buildResolvedFragmentEdges(ctx, calleeKey, func(edge graphfrag.GraphFragmentEdge) error {
-		internalEdges = append(internalEdges, edge)
-		return nil
-	})
-	if err != nil {
-		return internalEdges, externalCalls
-	}
-	externalCalls = append(externalCalls, calls...)
-	return internalEdges, externalCalls
-}
-
-func buildResolvedFragmentEdges(
-	ctx *exportBuildContext,
-	calleeKey string,
-	emitInternal func(graphfrag.GraphFragmentEdge) error,
-) ([]graphfrag.GraphFragmentExternal, error) {
-	graph := ctx.graph
+// sortedFragmentCallers returns calleeKey's callers in the order its edges
+// are built.
+func sortedFragmentCallers(graph *callgraph.CallGraph, calleeKey string) []string {
 	callers := append([]string(nil), graph.Callers[calleeKey]...)
 	sort.Strings(callers)
-	var externalCalls []graphfrag.GraphFragmentExternal
+	return callers
+}
+
+// buildResolvedFragmentEdgesFrom builds the edges into calleeKey from callers,
+// a run of sortedFragmentCallers: the internal edges in emission order and the
+// external calls.
+func buildResolvedFragmentEdgesFrom(ctx *exportBuildContext, calleeKey string, callers []string) fragmentEdges {
+	var out fragmentEdges
+	graph := ctx.graph
 	for _, callerKey := range callers {
 		callerDecl := graph.Functions[callerKey]
 		if callerDecl == nil {
@@ -554,16 +600,10 @@ func buildResolvedFragmentEdges(
 		}
 		resolutions := resolveFragmentEdges(ctx, callerKey, calleeKey)
 		for i := range resolutions {
-			external, err := buildResolvedFragmentEdge(ctx, callerKey, callerDecl, calleeKey, resolutions[i], emitInternal)
-			if err != nil {
-				return nil, err
-			}
-			if external != nil {
-				externalCalls = append(externalCalls, *external)
-			}
+			buildResolvedFragmentEdge(ctx, callerKey, callerDecl, calleeKey, resolutions[i], &out)
 		}
 	}
-	return externalCalls, nil
+	return out
 }
 
 func buildResolvedFragmentEdge(
@@ -572,8 +612,8 @@ func buildResolvedFragmentEdge(
 	callerDecl *callgraph.FunctionDecl,
 	calleeKey string,
 	res fragmentEdgeResolution,
-	emitInternal func(graphfrag.GraphFragmentEdge) error,
-) (*graphfrag.GraphFragmentExternal, error) {
+	out *fragmentEdges,
+) {
 	line := fragmentEdgeLine(ctx, callerKey, callerDecl, calleeKey, res)
 	call := findCallForCalleeAtLine(ctx, callerKey, callerDecl, calleeKey, line)
 	if call == nil {
@@ -584,16 +624,14 @@ func buildResolvedFragmentEdge(
 		if edge.ChainID == "" {
 			edge.ChainID = ctx.chainIDForLine(callerKey, callerDecl, line)
 		}
-		if err := emitInternal(edge); err != nil {
-			return nil, fmt.Errorf("scan: emit fragment edge: %w", err)
-		}
-		return nil, nil
+		out.internal = append(out.internal, edge)
+		return
 	}
 	external := buildFragmentExternalCall(ctx, callerDecl, call, callerKey, calleeKey, line, res)
 	if external.ChainID == "" {
 		external.ChainID = ctx.chainIDForLine(callerKey, callerDecl, line)
 	}
-	return &external, nil
+	out.external = append(out.external, external)
 }
 
 // findDispatchCallAtLine recovers the source invocation for a dispatch-expanded
@@ -1028,10 +1066,7 @@ func (ctx *exportBuildContext) chainIDForLine(callerKey string, fn *callgraph.Fu
 	if ctx == nil {
 		return chainIDForLine(fn, line)
 	}
-	if ctx.chainIDsByCallerLine == nil {
-		ctx.chainIDsByCallerLine = make(map[string]map[int]string)
-	}
-	lineIndex, ok := ctx.chainIDsByCallerLine[callerKey]
+	lineIndex, ok := ctx.chainIDsByCallerLine.lookup(callerKey)
 	if !ok {
 		lineIndex = make(map[int]string)
 		if fn != nil {
@@ -1042,7 +1077,7 @@ func (ctx *exportBuildContext) chainIDForLine(callerKey string, fn *callgraph.Fu
 				}
 			}
 		}
-		ctx.chainIDsByCallerLine[callerKey] = lineIndex
+		lineIndex = ctx.chainIDsByCallerLine.store(callerKey, lineIndex)
 	}
 	return lineIndex[line]
 }
@@ -1130,20 +1165,14 @@ func matchingCallsForCallee(ctx *exportBuildContext, callerKey string, callerDec
 
 func calleeSignatureKey(ctx *exportBuildContext, calleeKey string) (string, bool) {
 	if ctx != nil {
-		if ctx.calleeSignatureKeys == nil {
-			ctx.calleeSignatureKeys = make(map[string]string)
+		sigKey, ok := ctx.calleeSignatureKeys.lookup(calleeKey)
+		if !ok {
+			if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil {
+				sigKey = callSignatureKey(calleeID.Package, calleeID.Type, callgraph.BaseFunctionName(calleeID.Name))
+			}
+			sigKey = ctx.calleeSignatureKeys.store(calleeKey, sigKey)
 		}
-		if sigKey, ok := ctx.calleeSignatureKeys[calleeKey]; ok {
-			return sigKey, sigKey != ""
-		}
-		calleeID, err := callgraph.ParseFunctionID(calleeKey)
-		if err != nil {
-			ctx.calleeSignatureKeys[calleeKey] = ""
-			return "", false
-		}
-		sigKey := callSignatureKey(calleeID.Package, calleeID.Type, callgraph.BaseFunctionName(calleeID.Name))
-		ctx.calleeSignatureKeys[calleeKey] = sigKey
-		return sigKey, true
+		return sigKey, sigKey != ""
 	}
 	calleeID, err := callgraph.ParseFunctionID(calleeKey)
 	if err != nil {
@@ -1166,11 +1195,8 @@ func callSignatureKey(pkg, typ, baseName string) string {
 // callSignatureKey, building and caching the index on first use. See
 // exportBuildContext.callsBySignature's doc comment.
 func (ctx *exportBuildContext) callSignatureIndexForCaller(callerKey string, callerDecl *callgraph.FunctionDecl) map[string][]*callgraph.FunctionCall {
-	if index, ok := ctx.callsBySignature[callerKey]; ok {
+	if index, ok := ctx.callsBySignature.lookup(callerKey); ok {
 		return index
-	}
-	if ctx.callsBySignature == nil {
-		ctx.callsBySignature = make(map[string]map[string][]*callgraph.FunctionCall)
 	}
 	index := make(map[string][]*callgraph.FunctionCall, len(callerDecl.Calls))
 	for i := range callerDecl.Calls {
@@ -1178,8 +1204,7 @@ func (ctx *exportBuildContext) callSignatureIndexForCaller(callerKey string, cal
 		key := callSignatureKey(call.Callee.Package, call.Callee.Type, callgraph.BaseFunctionName(call.Callee.Name))
 		index[key] = append(index[key], call)
 	}
-	ctx.callsBySignature[callerKey] = index
-	return index
+	return ctx.callsBySignature.store(callerKey, index)
 }
 
 // buildGraphFragmentFunction projects one call-graph function onto its

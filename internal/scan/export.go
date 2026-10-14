@@ -61,7 +61,7 @@ type exportBuildContext struct {
 	// no longer changes.
 	functionsByFile *functionFileIndex
 	// exportLocations memoizes normalizeExportPath by the path it was given.
-	exportLocations map[string]normalizedExportLocation
+	exportLocations *exportMemo[normalizedExportLocation]
 	// callChainCache holds structural (non-expanded) chain nodes by containing
 	// function id. callChainRawCache holds the tracer steps for the same key so
 	// callgraph export can expand call sites without re-running TraceBackLimited.
@@ -90,9 +90,9 @@ type exportBuildContext struct {
 	// so a caller with heavy dispatch fan-out (many resolved edges, one
 	// source call site) pays the O(len(Calls)) index-build cost once instead
 	// of once per edge. nil until first use.
-	callsBySignature     map[string]map[string][]*callgraph.FunctionCall
-	calleeSignatureKeys  map[string]string
-	chainIDsByCallerLine map[string]map[int]string
+	callsBySignature     *exportMemo[map[string][]*callgraph.FunctionCall]
+	calleeSignatureKeys  *exportMemo[string]
+	chainIDsByCallerLine *exportMemo[map[int]string]
 	// returnInlining holds the call targets whose return sources are being
 	// inlined on the current provenance path, so a recursive callee is not
 	// re-inlined into itself.
@@ -1785,6 +1785,7 @@ func newExportPathContext(result *engine.DepScanResult) *exportBuildContext {
 		graph:           result.CallGraph,
 		ecosystem:       result.Ecosystem,
 		exportArtifacts: newExportArtifacts(result),
+		exportLocations: newExportMemo[normalizedExportLocation](),
 	}
 }
 
@@ -1797,6 +1798,10 @@ func newExportBuildContextWithUserPackages(result *engine.DepScanResult, finding
 		callChainRawCache:       make(map[string][]callgraph.CallChain),
 		callChainRemainingUses:  make(map[string]int),
 		fragmentEdgeResolutions: indexFragmentEdgeResolutions(result.CallGraph),
+		exportLocations:         newExportMemo[normalizedExportLocation](),
+		callsBySignature:        newExportMemo[map[string][]*callgraph.FunctionCall](),
+		calleeSignatureKeys:     newExportMemo[string](),
+		chainIDsByCallerLine:    newExportMemo[map[int]string](),
 		userPackages:            userPackages,
 		packageSeparator:        exportPackageSeparator(result.Ecosystem),
 		maxChainsBudget:         graphfrag.ResolveMaxChains(maxChains),
@@ -5225,13 +5230,9 @@ func normalizeFindingPath(ctx *exportBuildContext, findingPath string, depInfo *
 // An export asks once per function and call site, for few distinct files, so
 // each file is located once; every caller still gets its own DependencyInfo.
 func normalizeExportPath(ctx *exportBuildContext, actualPath string) normalizedExportLocation {
-	location, ok := ctx.exportLocations[actualPath]
+	location, ok := ctx.exportLocations.lookup(actualPath)
 	if !ok {
-		location = locateExportPath(ctx, actualPath)
-		if ctx.exportLocations == nil {
-			ctx.exportLocations = make(map[string]normalizedExportLocation)
-		}
-		ctx.exportLocations[actualPath] = location
+		location = ctx.exportLocations.store(actualPath, locateExportPath(ctx, actualPath))
 	}
 	if location.DependencyInfo != nil {
 		dep := *location.DependencyInfo
