@@ -114,8 +114,21 @@ func (s *Scanner) retryRuleTimeout() int {
 	return min(max(base*retryTimeoutFactor, minRetryRuleTimeoutSeconds), 255)
 }
 
-// retryTimeouts runs again, once, the rules that hit OpenGrep's time limit
-// on a file, with a longer limit, and adds the matches they find. A rule
+// retryRuleTimeouts are the per-rule limits of the retry rounds: the retry's
+// limit, then four times it for the files the first round still could not
+// finish. A large C++ file can take over a minute to parse on a very busy
+// host.
+func (s *Scanner) retryRuleTimeouts() []int {
+	first := s.retryRuleTimeout()
+	if second := min(first*retryTimeoutFactor, 255); second > first {
+		return []int{first, second}
+	}
+	return []int{first}
+}
+
+// retryTimeouts runs again the rules that hit OpenGrep's time limit on a
+// file, with a longer limit, and adds the matches they find; what still hits
+// it runs once more with a longer limit again (retryRuleTimeouts). A rule
 // timing out depends on the host's load rather than on the code: the same
 // rule on the same file finishes in milliseconds on an idle host and
 // overruns 5 s when the host is busy, so without a retry a busy scan
@@ -143,26 +156,45 @@ func (s *Scanner) retryTimeouts(ctx context.Context, output *entities.SemgrepOut
 			return output
 		}
 	}
-	plan := planRetry(pending, ran)
-	if len(plan.files) == 0 {
-		return output
+	for round, limit := range s.retryRuleTimeouts() {
+		plan := planRetry(pending, ran)
+		if len(plan.files) == 0 {
+			break
+		}
+		started := time.Now()
+		retried, err := s.runRetry(ctx, plan, limit)
+		if err != nil {
+			log.Warn().Err(err).Int("files", len(plan.files)).Msg("Retrying OpenGrep rule timeouts failed; keeping the findings of the earlier runs")
+			break
+		}
+		merged, recovered, still := mergeRetry(output, retried, plan)
+		log.Info().
+			Int("round", round+1).
+			Int("files", len(plan.files)).
+			Int("rules", len(plan.rules)).
+			Int("timeoutSeconds", limit).
+			Int("recoveredFindings", recovered).
+			Int("stillTimedOut", still).
+			Dur("duration", time.Since(started)).
+			Msg("Retried OpenGrep rule timeouts")
+		output = merged
+		if still == 0 {
+			break
+		}
+		pending = within(timeouts(output.Errors), plan.files)
 	}
-	started := time.Now()
-	retried, err := s.runRetry(ctx, plan)
-	if err != nil {
-		log.Warn().Err(err).Int("files", len(plan.files)).Msg("Retrying OpenGrep rule timeouts failed; keeping the findings of the first run")
-		return output
+	return output
+}
+
+// within keeps the files of pending that files lists.
+func within(pending timedOut, files []string) timedOut {
+	kept := make(timedOut, len(files))
+	for _, path := range files {
+		if ids, ok := pending[path]; ok {
+			kept[path] = ids
+		}
 	}
-	merged, recovered, still := mergeRetry(output, retried, plan)
-	log.Info().
-		Int("files", len(plan.files)).
-		Int("rules", len(plan.rules)).
-		Int("timeoutSeconds", s.retryRuleTimeout()).
-		Int("recoveredFindings", recovered).
-		Int("stillTimedOut", still).
-		Dur("duration", time.Since(started)).
-		Msg("Retried OpenGrep rule timeouts")
-	return merged
+	return kept
 }
 
 // retryPlan is what a retry runs: rules over files, and the pairs whose
@@ -235,16 +267,17 @@ func (p *retryPlan) add(path string, ids map[string]bool, byID map[string]*coreR
 	}
 }
 
-// runRetry runs the CLI over the plan with the retry's limit. The rules go
-// through a prefiltered rules file, so results keep the ids of the first run.
-func (s *Scanner) runRetry(ctx context.Context, plan *retryPlan) (*entities.SemgrepOutput, error) {
+// runRetry runs the CLI over the plan with the per-rule limit timeout. The
+// rules go through a prefiltered rules file, so results keep the ids of the
+// first run.
+func (s *Scanner) runRetry(ctx context.Context, plan *retryPlan, timeout int) (*entities.SemgrepOutput, error) {
 	path, cleanup, err := writePrefilteredRules(plan.rules)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 	retry := *s
-	retry.ruleTimeout = uint8(s.retryRuleTimeout()) //nolint:gosec // retryRuleTimeout caps at 255.
+	retry.ruleTimeout = uint8(timeout) //nolint:gosec // retryRuleTimeouts caps at 255.
 	if int(retry.jobs) > len(plan.files) {
 		retry.jobs = int16(len(plan.files)) //nolint:gosec // Bounded by jobs.
 	}

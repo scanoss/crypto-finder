@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,8 +35,12 @@ import (
 // (the run with the retry's 30 s limit) reports the match.
 func timeoutEngine(t *testing.T, id string) *fakeEngine {
 	t.Helper()
-	return limitEngine(t, id, `{"code":2,"level":"warn","type":"Timeout","rule_id":"`+id+
-		`","message":"Timeout when running `+id+` on %s:\\n ","path":"%s"}`)
+	return limitEngine(t, id, timeoutError(id), 30)
+}
+
+func timeoutError(id string) string {
+	return `{"code":2,"level":"warn","type":"Timeout","rule_id":"` + id +
+		`","message":"Timeout when running ` + id + ` on %s:\\n ","path":"%s"}`
 }
 
 // interruptedParseEngine is timeoutEngine for a first scan whose time limit
@@ -44,19 +49,20 @@ func timeoutEngine(t *testing.T, id string) *fakeEngine {
 func interruptedParseEngine(t *testing.T, id string) *fakeEngine {
 	t.Helper()
 	return limitEngine(t, id, `{"code":2,"level":"warn","type":"Other syntax error",`+
-		`"message":"Other syntax error at line %s:1:\\n Memprof_limits.Limit_reached: token set","path":"%s"}`)
+		`"message":"Other syntax error at line %s:1:\\n Memprof_limits.Limit_reached: token set","path":"%s"}`, 30)
 }
 
-// limitEngine is a fake opengrep CLI whose first scan reports firstError (a
-// format taking the target twice) and whose retry reports the match of id.
-func limitEngine(t *testing.T, id, firstError string) *fakeEngine {
+// limitEngine is a fake opengrep CLI whose scans report firstError (a format
+// taking the target twice) unless they run with the per-rule limit
+// recoverAt, which reports the match of id.
+func limitEngine(t *testing.T, id, firstError string, recoverAt int) *fakeEngine {
 	t.Helper()
 	f := newFakeEngine(t, "unused", "")
 	timeoutJSON := `{"results":[],"errors":[` + firstError + `]}`
 	matchJSON := `{"results":[{"check_id":"tmp.crypto-finder-prefilter-9.` + prefilteredIDMarker + id +
 		`","path":"%s","start":{"line":5,"col":12,"offset":45},"end":{"line":5,"col":24,"offset":57},"extra":{"message":"m","metadata":{},"metavars":{},"severity":"INFO","lines":"x"}}],"errors":[]}`
 	script := "#!/bin/sh\necho \"cli $*\" >> " + f.log + "\n" +
-		"case \"$*\" in *--timeout\\ 30*) printf '" + matchJSON + "' \"$FAKE_TARGET\";;\n" +
+		"case \"$*\" in *--timeout\\ " + strconv.Itoa(recoverAt) + "*) printf '" + matchJSON + "' \"$FAKE_TARGET\";;\n" +
 		"*) printf '" + timeoutJSON + "' \"$FAKE_TARGET\" \"$FAKE_TARGET\";; esac\nexit 0\n"
 	if err := os.WriteFile(f.cli, []byte(script), 0o700); err != nil { // Executable test fixture.
 		t.Fatal(err)
@@ -144,6 +150,39 @@ func TestInterruptedParseIsRetried(t *testing.T) {
 				t.Fatalf("want the scan and one retry of the file with a 30 s limit, calls:\n%s", strings.Join(calls, "\n"))
 			}
 		})
+	}
+}
+
+// TestRetryEscalatesForFilesStillCutShort pins the second retry round: a
+// file the 30 s retry still could not finish (a very busy host parsing a
+// large C++ file) runs once more with a 120 s limit.
+func TestRetryEscalatesForFilesStillCutShort(t *testing.T) {
+	target, rules := fixtureProject(t)
+	cwd, err := physicalDir("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := configPrefix(filepath.Join(rules, "merged-rules.yaml"), cwd) + "std.sha"
+	f := limitEngine(t, id, timeoutError(id), 120)
+	s := fakeScanner(t, f, "1.30.2", scanner.OpengrepModeCLI, scanner.RulePrefilterOff)
+	report, err := s.Scan(context.Background(), target, []string{rules}, entities.ToolInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 1 || len(report.IncompleteFiles) != 0 {
+		t.Fatalf("findings %+v incomplete %v, want std.sha recovered by the second round", report.Findings, report.IncompleteFiles)
+	}
+	calls := strings.Split(strings.TrimSpace(f.calls(t)), "\n")
+	if len(calls) != 3 || !strings.Contains(calls[1], "--timeout 30") || !strings.Contains(calls[2], "--timeout 120") {
+		t.Fatalf("want the scan, a 30 s and a 120 s retry, calls:\n%s", strings.Join(calls, "\n"))
+	}
+}
+
+func TestRetryRuleTimeouts(t *testing.T) {
+	for configured, want := range map[uint8][]int{0: {30, 120}, 30: {120, 255}, 100: {255}} {
+		if got := (&Scanner{ruleTimeout: configured}).retryRuleTimeouts(); !reflect.DeepEqual(got, want) {
+			t.Errorf("retry limits for %d = %v, want %v", configured, got, want)
+		}
 	}
 }
 
