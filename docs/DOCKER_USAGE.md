@@ -21,7 +21,7 @@ docker pull ghcr.io/scanoss/crypto-finder:latest
 ```
 
 **Features:**
-- OpenGrep 1.12.1+ included
+- OpenGrep 1.30.2 included, with its matching core unpacked so the default core mode runs from the first scan
 - Semgrep 1.145.0+ included
 - All scanning capabilities available
 

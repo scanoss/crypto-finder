@@ -5,9 +5,9 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT_DIR"
 
-readonly OPENGREP_VERSION="v1.12.1"
-readonly OPENGREP_AMD64_SHA256="f18f3c7012070dec9ac612e1d6715a3d9d34e966e8c5f67c190c5f6ac8d63963"
-readonly OPENGREP_ARM64_SHA256="078d7b69b04e416ed4f2ebf59bdb7dae17e744e0a3af380f9f392af219aec8b8"
+readonly OPENGREP_VERSION="v1.30.2"
+readonly OPENGREP_AMD64_SHA256="a66aa3278457f02b287b985a45b6762aebcaba5000f2689245fd1ed86d1456c7"
+readonly OPENGREP_ARM64_SHA256="90acea5df4b733083f388d4feeb250ca802f671b33d1f222653d1e571dd2b0d8"
 readonly OPENGREP_AMD64_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86"
 readonly OPENGREP_ARM64_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_aarch64"
 readonly RUSTUP_VERSION="1.29.1"

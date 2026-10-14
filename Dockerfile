@@ -38,9 +38,9 @@ RUN CGO_ENABLED=1 GOOS=linux go build -tags netgo \
 # ============================================================================
 FROM python:3.11-slim@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff AS scanner-installer
 
-ARG OPENGREP_VERSION=v1.12.1
-ARG OPENGREP_AMD64_SHA256=f18f3c7012070dec9ac612e1d6715a3d9d34e966e8c5f67c190c5f6ac8d63963
-ARG OPENGREP_ARM64_SHA256=078d7b69b04e416ed4f2ebf59bdb7dae17e744e0a3af380f9f392af219aec8b8
+ARG OPENGREP_VERSION=v1.30.2
+ARG OPENGREP_AMD64_SHA256=a66aa3278457f02b287b985a45b6762aebcaba5000f2689245fd1ed86d1456c7
+ARG OPENGREP_ARM64_SHA256=90acea5df4b733083f388d4feeb250ca802f671b33d1f222653d1e571dd2b0d8
 ARG TARGETARCH
 
 # Install system dependencies for downloading the pinned OpenGrep binary
@@ -55,6 +55,9 @@ RUN pip install --no-cache-dir semgrep==1.145.0 "pydantic<2.14"
 
 # Install the pinned opengrep release directly. This avoids the installer's
 # live releases API lookup while retaining binary integrity verification.
+# Running it once unpacks opengrep-core into /root/.cache/opengrep/<version>,
+# so the first scan in a fresh container runs in core mode instead of falling
+# back to the CLI.
 RUN case "${TARGETARCH}" in \
         amd64) asset="opengrep_manylinux_x86"; hash="${OPENGREP_AMD64_SHA256}" ;; \
         arm64) asset="opengrep_manylinux_aarch64"; hash="${OPENGREP_ARM64_SHA256}" ;; \
@@ -65,6 +68,7 @@ RUN case "${TARGETARCH}" in \
     && curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${asset}" -o "${install_dir}/opengrep" \
     && echo "${hash}  ${install_dir}/opengrep" | sha256sum -c - \
     && chmod a+x "${install_dir}/opengrep" \
+    && "${install_dir}/opengrep" --version \
     && ln -s "${install_dir}" /root/.opengrep/cli/latest
 
 # ============================================================================
