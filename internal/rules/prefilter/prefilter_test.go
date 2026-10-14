@@ -471,3 +471,27 @@ func TestExplicitMetadataImportsAcceptWildcard(t *testing.T) {
 		t.Error("a literal import guard must not be satisfied by a wildcard import")
 	}
 }
+
+// TestJavaScriptStatementBraceGuardIsNoRequirement: OpenGrep 1.30.2 parses
+// the pattern `{..., $F, ...} = require("jsonwebtoken")` as the leading
+// brace alone, which matches any object literal, so the rule matches files
+// that never require jsonwebtoken, such as one that requires fast-jwt. The
+// require in that pattern constrains nothing and must not drop the rule.
+func TestJavaScriptStatementBraceGuardIsNoRequirement(t *testing.T) {
+	rule := mustRule(t, `{"id": "javascript.jsonwebtoken.algorithm.jwa.hs256", "languages": ["javascript", "typescript"], "message": "m", "severity": "INFO",
+	  "patterns": [
+	    {"pattern-either": [
+	      {"pattern-inside": "$NS = <... require(\"jsonwebtoken\") ...>\n...\n"},
+	      {"pattern-inside": "{..., $F, ...} = require(\"jsonwebtoken\")\n...\n"},
+	      {"pattern-inside": "import $NS from \"jsonwebtoken\"\n...\n"}]},
+	    {"pattern": "{..., algorithm: \"HS256\", ...}"}]}`)
+	source := "const { createSigner } = require('fast-jwt');\nconst v = createSigner({ key, algorithm: 'HS256' });\n"
+	if !keeps(t, rule, []string{"js", "ts"}, evidenceOf("js", source)) {
+		t.Error("OpenGrep matches the jsonwebtoken rule in a fast-jwt file, the prefilter must keep it")
+	}
+	guarded := mustRule(t, `{"id": "r", "languages": ["javascript"], "message": "m", "severity": "INFO",
+	  "patterns": [{"pattern-inside": "$NS = <... require(\"jsonwebtoken\") ...>\n...\n"}, {"pattern": "{..., algorithm: \"HS256\", ...}"}]}`)
+	if keeps(t, guarded, []string{"js"}, evidenceOf("js", source)) {
+		t.Error("an assignment-rooted require guard must still drop the rule in a unit without jsonwebtoken")
+	}
+}

@@ -304,6 +304,12 @@ func pythonModules(text string) ([]string, bool) {
 // jsModules reads the module specifiers of a require/import pattern. Every
 // specifier the pattern spells must appear in a matching file.
 func jsModules(text string) ([]string, bool) {
+	// A statement starting with `{` is a block: OpenGrep reads
+	// `{..., $F, ...} = require("x")` as the brace alone, which matches any
+	// object literal, so the require constrains nothing.
+	if strings.HasPrefix(text, "{") {
+		return nil, false
+	}
 	firstLine := text
 	if newline := strings.IndexByte(text, '\n'); newline >= 0 {
 		firstLine = text[:newline]
