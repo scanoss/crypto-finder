@@ -402,3 +402,30 @@ func TestEnryDetector_CaseSensitivity(t *testing.T) {
 		t.Errorf("Expected lowercase 'go', got '%s'", languages[0])
 	}
 }
+
+// TestEnryDetector_AmbiguousExtensionUsesContent pins a crate whose only
+// source is src/lib.rs: .rs is shared by Rust, RenderScript and XML, and the
+// filename alone made enry guess XML, so the crate detected no Rust and its
+// call graph export found no ecosystem.
+func TestEnryDetector_AmbiguousExtensionUsesContent(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	src := filepath.Join(tempDir, "aes-gcm-0.11.1", "src")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatalf("Failed to create src dir: %v", err)
+	}
+	lib := "#![no_std]\n#![doc = include_str!(\"../README.md\")]\n\n//! # Usage\n\npub use aead;\n\npub struct AesGcm;\n"
+	if err := os.WriteFile(filepath.Join(src, "lib.rs"), []byte(lib), 0o644); err != nil {
+		t.Fatalf("Failed to create lib.rs: %v", err)
+	}
+
+	detector := NewEnryDetector(&noOpSkipMatcher{})
+	languages, err := detector.Detect(tempDir)
+	if err != nil {
+		t.Fatalf("Detect() failed: %v", err)
+	}
+	if !reflect.DeepEqual(languages, []string{"rust"}) {
+		t.Fatalf("languages = %v, want [rust]", languages)
+	}
+}
