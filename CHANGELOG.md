@@ -7,6 +7,236 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-10-15
+### Added
+- `scan --opengrep-mode core` (or `SCANOSS_OPENGREP_MODE=core`) runs `opengrep-core`
+  directly instead of the Python `opengrep` CLI, for the project scan and every
+  dependency batch. Targets, rule ids, messages, metadata, metavariables, lines
+  and errors match what the CLI reports, so findings are unchanged. Core mode is
+  pinned to OpenGrep 1.30.2 and finds the core binary the CLI unpacked (or the
+  one `SCANOSS_OPENGREP_CORE` names); with another version, without the binary,
+  or when the core run fails, the scan runs the CLI instead. The core-ready rules
+  file is cached under the crypto-finder cache directory (`opengrep-core-rules/`).
+  Core is the default mode; see the Changed section.
+- `scan --rule-prefilter imports` (or `SCANOSS_RULE_PREFILTER=imports`) drops, per
+  scanned unit (the project and each dependency batch), the rules whose library
+  the unit's Go, Java, Python, JavaScript/TypeScript, Rust or C/C++ sources never
+  import, judged from the import guards and qualified names in each rule's
+  patterns or an explicit `metadata.imports` list. Rules whose requirement is
+  unknown are kept. The default stays `off`. The OpenGrep mode and the prefilter
+  are part of the dependency findings cache key.
+- `SCANOSS_PHASE_TIMINGS=1` (or a file path) reports wall time, CPU time and
+  allocations per scan phase, plus the call-graph source files that took longest to
+  parse. `SCANOSS_CPUPROFILE`, `SCANOSS_MEMPROFILE` and `SCANOSS_TRACE` write Go
+  CPU, heap and execution-trace profiles of a scan, as the hidden `--cpuprofile`,
+  `--memprofile` and new `--trace` flags do.
+### Changed
+- **BREAKING:** Rust detection changed, so Rust scans report different rule ids
+  and more findings. Language detection no longer guesses from the file name
+  alone when an extension belongs to several languages: `.rs` (Rust,
+  RenderScript, XML) and similar files are classified by their content. Rust
+  sources were detected as XML, so:
+  - a Rust-only crate or project (such as `rage`) ran every rule of every
+    language, because no rule matched the detected languages. Only the Rust
+    rules run now, so its rule ids are relative to the Rust rules directory and
+    **lose their leading `rust.` prefix**. Consumers that match rule ids must
+    update;
+  - a mixed crate that also holds C or assembly (such as `ring`) ran no Rust
+    rules at all. It **now also reports its Rust findings**, for example
+    `getrandom` in `src/rand.rs`;
+  - a crate source package whose only source is `src/lib.rs`, such as `aes-gcm`
+    from crates.io, failed `--export-graph-fragment` and the call graph exports
+    with "could not determine a supported ecosystem". It now exports.
+- Call-graph construction is much faster on large dependency trees, with identical
+  findings, reachability and exports. Go sources no longer re-read a whole function
+  body for each name a callback API lookup resolves, and source files of all
+  packages are parsed on one pool of workers (Go files one by one) instead of one
+  package at a time. A `--scan-dependencies` scan of `smallstep/crypto`, whose
+  dependencies include multi-megabyte generated Go files, drops from about 600 s to
+  under 50 s of call-graph work on an 8-core host.
+- `--export-graph-fragment` traces each finding's callers on all CPU cores before
+  writing the fragment, which was single-threaded; the fragment is unchanged.
+- The dependency findings cache now keys an opengrep dependency scan on an audited
+  allowlist of environment variables instead of the whole environment: the locale
+  (`LANG`, `LC_ALL`, `LC_CTYPE`, `LOCPATH`), the dynamic loader (`LD_PRELOAD`,
+  `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`), the OCaml runtime
+  (`OCAMLRUNPARAM`, `CAMLRUNPARAM`) and the engine settings crypto-finder does not pass
+  as flags (`SEMGREP_CORE_EXTRA`, `SEMGREP_BASELINE_COMMIT`, `SEMGREP_BASELINE_REF`,
+  `SEMGREP_R2C_INTERNAL_EXPLICIT_SEMGREPIGNORE`, `SEMGREP_PYTHON_RECURSION_LIMIT_INCREASE`).
+  `HOSTNAME`, `PATH`, `HOME`, CI run ids (`GITHUB_RUN_ID`, `CI_JOB_ID`, `BUILD_NUMBER`, ...),
+  SSH session variables and other ambient variables no longer split the cache, so CI
+  runs and hosts sharing a findings cache (for example the Postgres backend) reuse each
+  other's dependency findings. Instead the key now includes the SHA-256 of the opengrep
+  executable (and of `SCANOSS_OPENGREP_CORE` in core mode) and the dependency's source
+  directory, which cached findings name and opengrep's results can depend on. Other
+  scanners (`semgrep`) keep keying on every variable except crypto-finder's diagnostics
+  and shell/login bookkeeping. Existing cache entries are rescanned once.
+- Dependency findings cache entries for published package versions are now portable across
+  home directories, hosts and checkout paths. The key no longer holds the dependency's
+  absolute source directory when it lies in a package store (crypto-finder's source cache
+  for Maven/Gradle, the Go module cache, Cargo's registry and git checkouts, `node_modules`,
+  `site-packages`), only its place in that store (for example
+  `sources:io.jsonwebtoken-jjwt-impl/0.12.6`), and keys the working directory only when rule
+  files lie below it. Dependencies from local directories (a Go `replace` naming a path) and
+  scans with extra scanner arguments or the `semgrep` scanner keep keying the absolute
+  directory and working directory. Existing entries are rescanned once.
+- `--export-graph-fragment` builds the fragment's call edges (`internal_edges_compact`,
+  `external_calls`) on all CPU cores instead of one, and writes them without re-encoding
+  each edge's call site. The fragment is byte-for-byte the one a single-threaded export
+  writes, and memory stays bounded: edges are built a few hundred caller-callee pairs at
+  a time, at most a few such batches per core ahead of the writer.
+- The Docker images (`crypto-finder`, `crypto-finder-deps` and the test image) now
+  ship OpenGrep 1.30.2 instead of 1.12.1, the version the default `--opengrep-mode
+  core` is verified against, and unpack its `opengrep-core` at build time, so the
+  first scan in a fresh container runs in core mode instead of falling back to the
+  CLI. Findings may differ from those of OpenGrep 1.12.1 where the engine's matching
+  changed between the two releases. Dependency findings cache keys include the
+  engine version and executable, so the first `--scan-dependencies` run on the new
+  images scans every dependency again with a cold cache. The install hints now name
+  v1.30.2; the minimum supported version stays 1.12.1, and the CLI mode keeps
+  working with it.
+- **BREAKING (default change):** `scan` and `annotate` now run OpenGrep in core
+  mode by default (`--opengrep-mode core`): `opengrep-core` runs directly instead
+  of the Python `opengrep` CLI. Findings are unchanged, and the scan still falls
+  back to the CLI whenever core cannot run (an OpenGrep version core mode was not
+  verified against, a missing `opengrep-core` binary, or a failed core run).
+  Opt out with `--opengrep-mode cli` or `SCANOSS_OPENGREP_MODE=cli`. `annotate`
+  gains the same `--opengrep-mode` flag, so its annotations keep matching
+  `scan --export-graph-fragment`.
+- Dependency findings cache keys change once, in every OpenGrep mode: the key
+  now records the engine that runs, the dependency's place in its package store
+  and an allowlist of environment variables, and core-mode keys also record the
+  mode. Entries written by earlier versions no longer match, including for
+  `--opengrep-mode cli`, so the first `--scan-dependencies` run after upgrading
+  scans every dependency again with a cold cache; later runs hit the cache as
+  before.
+### Fixed
+- Docker image builds no longer fail because Debian Trixie replaced `curl` `8.14.1-2+deb13u5` with `8.14.1-2+deb13u7`. The images and the test image now pin the currently published package.
+- The dependency findings cache no longer serves one install's findings for another
+  install of the same package version whose source differs. For dependencies in
+  `node_modules`, `site-packages`, `dist-packages` and crypto-finder's own source cache
+  (Maven and Gradle sources), which hold whatever was installed under a version's name,
+  the cache key now also hashes the dependency's file contents: a git fork or
+  `patch-package` edit of `lodash@4.17.21`, a pip install from a path or a git URL, or a
+  Maven SNAPSHOT extracted again is scanned rather than reused, including through a
+  findings cache shared between projects or tenants (the Postgres backend). Identical
+  content installed in another home, host or checkout still reuses the entry. Entries
+  of the Go module cache and of Cargo's registry and git checkouts keep their
+  module@version keys, since those stores verify their content. A dependency whose
+  source cannot be read is scanned and not cached. Entries of the affected stores
+  written by earlier versions are rescanned once.
+- Warm `--scan-dependencies` runs now reuse cached dependency findings when only
+  per-run diagnostics or shell bookkeeping differ. The findings-cache identity no
+  longer includes `SCANOSS_PHASE_TIMINGS`, `SCANOSS_CPUPROFILE`, `SCANOSS_MEMPROFILE`,
+  `SCANOSS_TRACE`, `SCANOSS_SCANNER_JOBS`, `_`, `OLDPWD`, `PWD`, `SHLVL` or login-session
+  variables (`SSH_*` session, `GPG_TTY`, `TERM_SESSION_ID`, `WINDOWID`, `TMUX_PANE`,
+  `XDG_SESSION_ID`). Before, a timings file named per run made every dependency a
+  cache miss. Findings are unchanged. Every other environment variable still
+  partitions the cache for scanners whose environment reads were not audited. Cache
+  entries written by earlier versions are rescanned once.
+- Dependency scans log the findings-cache outcome per lookup and store (hit, absent,
+  disabled, no identity, read error, stored, not stored because incomplete) at the end
+  of the dependency scan, and `SCANOSS_PHASE_TIMINGS` writes them as a
+  `phase_note dependency_findings_cache` line. Debug logging prints a digest of each
+  cache-identity component per dependency, so the component that split two runs' keys
+  can be found by diffing their logs.
+- Synthesized library entry-point assets (`crypto-finder.api-entry-point`) are now
+  written in the same order on every run. Previously two scans of the same target
+  could list them in a different order, so their reports were not byte-identical.
+- The timeout retry now also covers files whose parsing the analysis engine's
+  per-file time limit interrupted. Parsing counts against the first rule's
+  limit, and a large C or C++ file can take longer than 5 s to parse on a busy
+  host; the engine then reports a syntax error naming no rule, and no rule ran on
+  the file. Those files now run every rule again with the retry's longer limit,
+  like a file with three timed-out rules. Before, all of their findings were
+  silently dropped, so scans of the same code differed from run to run (for
+  example the Diffie-Hellman and ECDH findings in OpenSSH's `dh.c`, `ssh-sk.c`
+  and `regress/misc/sk-dummy/sk-dummy.c`), with or without `--opengrep-mode core`
+  and `--rule-prefilter imports`.
+- A file the timeout retry still cannot finish runs once more, only for those
+  files, with a longer per-rule limit: project scans retry at 30 s and then
+  120 s; dependency scans retry at 120 s and then 255 s. On a very busy host
+  the 30 s retry could still be too short to parse a large C++ file
+  (Crypto++ `donna_64.cpp`), so its 72 findings came and went between runs.
+- `--opengrep-mode core` now fails a scan over an invalid rule the way the
+  `opengrep` CLI does. A rule `opengrep-core` cannot load (a misspelled key, an
+  unknown language, a pattern or regex it cannot parse) used to be dropped
+  silently, with the other rules' findings reported as a success; the scan now
+  runs the CLI instead, which rejects the rules file (exit code 7, 8 or 2 as
+  before). Rules the CLI itself skips, such as ones incompatible with the
+  installed version, are still skipped.
+- `--opengrep-mode core` no longer reports findings of rules whose severity is
+  `INVENTORY` or `EXPERIMENT`; the CLI leaves those out of its output.
+- In `--opengrep-mode core`, the `lines` text of a finding in a file with
+  invalid UTF-8 now replaces each undecodable byte sequence with U+FFFD, as the
+  CLI does, instead of folding a run of them into one.
+- The dependency findings cache now keys core-mode scans on the `opengrep-core`
+  binary that actually runs (the one `SCANOSS_OPENGREP_CORE` names, the one
+  found beside the `opengrep` executable, or the one the CLI unpacked), and on
+  the `opengrep` executable only when core mode will run the CLI instead. Core
+  mode keys change once: the first `--scan-dependencies` run after upgrading
+  scans dependencies again. `--opengrep-mode cli` keys are unchanged.
+- A scan whose timeout expires, or that is interrupted with Ctrl-C, while
+  OpenGrep rule timeouts are being retried now fails with the scanner timeout
+  or cancellation error, as it does when the first run is stopped, instead of
+  reporting the pre-retry findings as a successful scan. Dependency batch scans
+  therefore see the failure and fall back to scanning the dependencies one by
+  one, or fail them all on cancellation, rather than caching a cut-short report.
+- A file OpenGrep timed out on keeps its timeout, and the report lists it under
+  `incompleteFiles`, when the retry's output does not list the file among its
+  scanned paths or name it in a result or an error (OpenGrep skipped it). Such
+  a file was reported complete before, so a truncated report could be cached.
+- `--exclude` patterns written relative to the working directory that name a
+  directory below the scan target (`crypto-finder scan ./proj --exclude
+  proj/vendor`) exclude it again. Since 0.36.2 scans run in the target
+  directory over relative paths, which left such patterns matching nothing.
+- Findings no longer depend on where the scanned project or dependency lies. opengrep
+  1.30.2's taint results depended on the target's absolute path string (a class whose
+  constructors delegate with `this(...)` reported a field-borne flow, for example
+  `pbkdf2-detailed` on a key length, for some directory names and not others), so the same
+  code found different assets under another `$HOME`, checkout path or mining job workspace.
+  The opengrep adapter now runs every opengrep process, CLI and `--opengrep-mode core`
+  alike, inside the scanned project with project-relative targets, and dependency scans
+  inside the package store holding the dependency (crypto-finder's source cache, the Go
+  module cache, Cargo's registry, the project directory above `node_modules`, the
+  directory above `site-packages`), so opengrep sees each file by its place in the store,
+  the same on every host; dependencies of one store still share a process. Report,
+  findings and `--export-graph-fragment` paths and rule ids are unchanged. Which taint
+  flows opengrep reports for a file can still change once when upgrading, since it now
+  sees the relative path.
+- `--exclude` patterns, the default exclusions and dependency test patterns no longer match
+  directories above the scan target: a project checked out below a directory named like a
+  pattern (`build`, `test`, `vendor`, `docs`, ...) was silently scanned without findings
+  when given by an absolute path. In npm dependencies, `node_modules/` directories at any
+  depth inside the package are skipped, as they are nested dependencies.
+- `scan --rule-prefilter imports` no longer skips rules for libraries a file
+  imports in a position it did not read: a Java import after another import or a
+  block comment on the same line, a Rust `use` after an attribute such as
+  `#[cfg(feature = "gcm")]` or inside `mod m { ... }`, a Python `import` or
+  `from ... import` after `;`, a C `#include` after a block comment, and any
+  first-line import in a file that starts with a UTF-8 byte order mark. A
+  `metadata.imports` entry such as `javax.crypto.Cipher` is now satisfied by
+  `import javax.crypto.*;`.
+- `scan --rule-prefilter imports` no longer skips JavaScript and TypeScript rules
+  guarded by a bare destructuring pattern such as
+  `{..., $F, ...} = require("jsonwebtoken")`. OpenGrep reads that pattern as its
+  leading brace alone, so it matches any object literal, and the prefilter now
+  keeps such a rule wherever OpenGrep can match it. The SCANOSS rules no longer
+  use this shape; it matters for custom rulesets that do.
+- A rule that reaches the analysis engine's per-file time limit (5 s for the
+  project scan, 30 s for dependency scans) now runs once more on that file with
+  four times the limit, at least 30 s, and a file the engine gave up on after
+  three timed-out rules runs every rule again. Findings the retry recovers are
+  added and the file no longer counts as incomplete. Before, a busy host
+  silently dropped such findings (for example PBKDF2 key sizes in Bouncy
+  Castle's `PKCS12KeyStoreSpi`), so repeated scans of the same code could report
+  different asset counts.
+- Assets that two rules match at the same location now list their rules, and
+  keep the first rule's match text, in a fixed order (location, then rule id)
+  whatever order the engine reported them in. `--opengrep-mode core` orders
+  results as the CLI does (by location, then rule id, not by rule), so both modes
+  name the same first rule, e.g. for Bouncy Castle's `ISO9797Alg3Mac` in `DES.java`.
+
 ## [0.36.1] - 2026-10-09
 ### Fixed
 - C and C++ findings in a component of another language now report `c` or
