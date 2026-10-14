@@ -82,7 +82,9 @@ Dependencies are deduplicated by `module@version` and processed in a stable orde
 
 **With an API key, published findings stand in for a dependency's detection.** The SCANOSS mining service scans each package version once and publishes its findings. When an API key is configured, a dependency the findings cache does not hold is looked up by versionless purl and version (`POST /v3/cryptography/reachability/component`, purl and requirement only). The published findings are taken as they are, including the closest mined patch the API serves for that version and the rules version it was mined with, and are kept to the dependency's own files. The dependency is then not scanned. A dependency the API has not mined, a lookup error, a refused key, or an API that does not offer the endpoint (HTTP 404) scans the dependency locally; a refused key or a missing endpoint stops further lookups for that scan, with one warning. Published findings are not written to the findings cache. The call graph, conditioned findings and reachability are always built from the local sources, so findings derived from calls between dependencies are kept. Each lookup sends the package's purl and version to the API. `--no-dependency-findings-api` scans every dependency locally (`internal/engine/dependency_findings_source.go`).
 
-Each root's report is what a scan of that root alone produces. The OpenGrep adapter (`ScanRoots`, `internal/scanner/opengrep/batch.go`) attributes every result and error to the root holding its file (longest prefix) and runs the same transformation per root, with that root as the target, so paths, deduplication, rule IDs and finding IDs are unchanged. An error without a file, such as a memory limit reported for the whole process, marks every root in the batch incomplete. The dependency scanner then stamps the ruleset and enriches each report as it does for a single scan, and writes each dependency to the findings cache under its own key, still skipping a dependency whose scan stopped at a limit.
+Each root's report is what a scan of that root alone produces. The OpenGrep adapter (`ScanRoots`, `internal/scanner/opengrep/batch.go`) attributes every result and error to the root holding its file (longest prefix) and runs the same transformation per root, with that root as the target, so paths, deduplication, rule IDs and finding IDs are unchanged. An error without a file, such as a memory limit reported for the whole process, marks every root in the batch incomplete.
+
+**OpenGrep runs inside the package store, over relative paths.** OpenGrep's taint results depend on the path string it is given (opengrep 1.30.2 orders a class's constructors by a hash of a function key holding the file's path, and the last constructor analyzed decides the field taint the class's methods see), so scanning through absolute paths made findings depend on the home directory, the checkout or the job's workspace. Every OpenGrep process, CLI and core mode, prefilter, timeout retry and CLI fallback alike, runs in a base directory with targets relative to it (`internal/scanner/opengrep/site.go`): the project directory for the project scan, and for a dependency the package store holding it (`scanner.Root.Base`, set by `storeBase` in `internal/engine/dependency_source_location.go`): crypto-finder's source cache, the Go module cache, Cargo's `registry/src` or `git/checkouts`, the directory above `node_modules` or `site-packages`. OpenGrep then names a dependency's files by their place in the store (`io.jsonwebtoken-jjwt-impl/0.12.6/io/...`), the same on every host, alone or batched; roots of one base share a process and roots of different bases never do. Reported paths are re-joined onto the base as the caller names it, and the CLI's cwd-relative rule-id prefixes are rewritten to the ones a run in crypto-finder's working directory reports, so reports are unchanged. Extra scanner arguments keep the old invocation, since they may name paths relative to the working directory. The dependency scanner then stamps the ruleset and enriches each report as it does for a single scan, and writes each dependency to the findings cache under its own key, still skipping a dependency whose scan stopped at a limit.
 
 Batch shaping (`internal/engine/dependency_batches.go`):
 
@@ -1004,18 +1006,10 @@ flowchart LR
 
 ### Cache Key Design
 
-The key captures everything that affects scan output:
+The key (`dependency-findings-v2:<sha256>`, `internal/engine/dependency_cache_identity.go`) hashes everything that affects a dependency's scan output: `module@version`, the rules hash (first 16 hex chars of SHA-256 over sorted rule file **contents**, computed once per scan), the Java runtime token, the scanner's name, version and engine content digest, the effective scanner configuration (job count zeroed), the language hint, the scope, the audited environment allowlist, and:
 
-```
-<module>@<version>:<rulesHash>
-```
-
-- **Module + version**: e.g., `org.bouncycastle:bcprov-jdk18on@1.78`
-- **Rules hash**: First 16 hex chars of SHA-256 over sorted rule file **contents** — if any rule is edited, the cache invalidates automatically
-
-Example: `org.bouncycastle:bcprov-jdk18on@1.78:a3f8b2c1d4e5f678`
-
-The `rulesHash` is computed once per scan (not per-dep), so I/O cost is negligible.
+- **Where the source lies, as its place in the package store** (`cacheRoot`): `sources:<group-artifact>/<version>`, `gomodcache:<module>@<version>`, `cargo-registry:<index>/<crate>-<version>`, `cargo-git:...`, or the path from the first `node_modules`/`site-packages`/`dist-packages` component. Because OpenGrep scans the dependency through that same place (see above), the cached findings are what a scan on any host finds, so entries carry over to other homes, hosts and checkouts. A dependency outside every store (a Go `replace` naming a local directory, a path dependency) and any scanner that does not scan through relative paths keep the absolute directory: another directory can hold other code for the same version. Exclude patterns anchored at the dependency (npm's own `node_modules/`) are keyed relative to it.
+- **The working directory, only when rule files lie below it** (`cacheCWD`): it then prefixes the rule ids the CLI reports. A report naming a file by absolute path or outside the root is never stored under a key without the directory (`not_stored_unportable`).
 
 ### Storage Layout
 
@@ -1023,12 +1017,10 @@ The default implementation (`DiskFindingsCache`) stores results as JSON files:
 
 ```
 ~/.scanoss/crypto-finder/cache/findings/
-  org.bouncycastle:bcprov-jdk18on@1.78:a3f8b2c1d4e5f678.json
-  com.google.guava:guava@33.0.0-jre:a3f8b2c1d4e5f678.json
-  golang.org_x_crypto@v0.31.0:a3f8b2c1d4e5f678.json
+  dependency-findings-v2_6600ec514e8b697ac50f74adb1b38a510db0fe229cd40ed70714082d2b0caa4f.json
 ```
 
-Forward slashes in module paths (e.g., `golang.org/x/crypto`) are replaced with `_` for filesystem safety. Writes use temp file + atomic rename to prevent corruption from interrupted scans.
+Characters unsafe in file names (`:`, `/`, `@`) are replaced with `_`. Writes use temp file + atomic rename to prevent corruption from interrupted scans.
 
 ### `FindingsCache` Interface
 
