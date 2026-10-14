@@ -203,6 +203,84 @@ func TestDependencyCacheKeepsRootWhereItMatters(t *testing.T) {
 	})
 }
 
+// Two installs of one version in stores that do not verify their content
+// never share an entry, while the same content installed elsewhere does.
+func TestDependencyCacheKeysSourceContentOfUnverifiedStores(t *testing.T) {
+	f := newPortableFixture(t)
+	base := t.TempDir()
+	projectA, depA := portableHome(t, filepath.Join(base, "homeA"))
+	writeTree(t, depA.Dir, map[string]string{"org/example/Kdf.java": "class Kdf { PBKDF2 }"})
+	t.Chdir(projectA)
+	cold := f.run(projectA, f.cache, depA)
+
+	projectB, depB := portableHome(t, filepath.Join(base, "homeB"))
+	writeTree(t, depB.Dir, map[string]string{"org/example/Kdf.java": "class Kdf { PBKDF2; scrypt }"})
+	t.Chdir(projectB)
+	f.run(projectB, f.cache, depB)
+	if len(f.scanned) != 2 || f.scanned[1] != depB.Dir {
+		t.Fatalf("other content at the same version and place must be scanned, not served another install's findings: scans=%v", f.scanned)
+	}
+
+	projectC, depC := portableHome(t, filepath.Join(base, "x", "homeC"))
+	writeTree(t, depC.Dir, map[string]string{"org/example/Kdf.java": "class Kdf { PBKDF2 }"})
+	t.Chdir(projectC)
+	if warm := f.run(projectC, f.cache, depC); len(f.scanned) != 2 || warm != cold {
+		t.Fatalf("the first install's content elsewhere must reuse its entry: scans=%v identical=%v", f.scanned, warm == cold)
+	}
+}
+
+// A store that verifies each version's content keys module@version alone:
+// what it holds under that name is that content.
+func TestDependencyCacheTrustsVerifiedStores(t *testing.T) {
+	f := newPortableFixture(t)
+	base := t.TempDir()
+	project, _ := portableHome(t, filepath.Join(base, "home"))
+	t.Chdir(project)
+	for i, content := range []string{"package x // one", "package x // two"} {
+		t.Setenv("GOMODCACHE", filepath.Join(base, "gomod", string(rune('a'+i))))
+		dir := filepath.Join(os.Getenv("GOMODCACHE"), "example.com", "x@v1.0.0")
+		writeTree(t, dir, map[string]string{"x.go": content})
+		f.run(project, f.cache, dependency.Dependency{Module: "example.com/x", Version: "v1.0.0", Dir: dir})
+	}
+	if len(f.scanned) != 1 {
+		t.Fatalf("a module cache entry is keyed by module@version, whatever its files hold: scans=%v", f.scanned)
+	}
+}
+
+// A dependency whose content cannot be read is scanned every time rather
+// than keyed on what could be read.
+func TestDependencyCacheNotKeyedOnUnreadableSource(t *testing.T) {
+	base := t.TempDir()
+	t.Run("listed file missing", func(t *testing.T) {
+		f := newPortableFixture(t)
+		project, dep := portableHome(t, filepath.Join(base, "m", "home"))
+		t.Chdir(project)
+		dep.Files = []string{filepath.Join(dep.Dir, "org", "example", "Kdf.java")}
+		f.run(project, f.cache, dep)
+		f.run(project, f.cache, dep)
+		if len(f.scanned) != 2 {
+			t.Fatalf("an unreadable source must not be cached: scans=%v", f.scanned)
+		}
+	})
+	t.Run("unreadable file", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root reads every file")
+		}
+		f := newPortableFixture(t)
+		project, dep := portableHome(t, filepath.Join(base, "u", "home"))
+		t.Chdir(project)
+		writeTree(t, dep.Dir, map[string]string{"org/example/Kdf.java": "class Kdf {}"})
+		if err := os.Chmod(filepath.Join(dep.Dir, "org", "example", "Kdf.java"), 0); err != nil {
+			t.Fatal(err)
+		}
+		f.run(project, f.cache, dep)
+		f.run(project, f.cache, dep)
+		if len(f.scanned) != 2 {
+			t.Fatalf("an unreadable source must not be cached: scans=%v", f.scanned)
+		}
+	})
+}
+
 func TestStorePlace(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("HOME", filepath.Join(base, "home"))

@@ -144,6 +144,12 @@ func TestDependencyCacheKeyIgnoresSessionAndKeysScanInputs(t *testing.T) {
 	if keyOf(sessionEnv(0), func(id *dependencyCacheIdentity) { id.Engine = "e2" }) == base {
 		t.Error("another engine build must change the key")
 	}
+	if keyOf(sessionEnv(0), func(id *dependencyCacheIdentity) { id.Source = "sha256-of-a-fork" }) == base {
+		t.Fatal("the source digest must change the key")
+	}
+	if data, err := json.Marshal(&dependencyCacheIdentity{}); err != nil || strings.Contains(string(data), "Source") {
+		t.Fatalf("an empty source digest must stay out of the key material, as for a verified store: %s", data)
+	}
 	if keyOf(sessionEnv(0), func(id *dependencyCacheIdentity) { id.Root = "/other/m/v1" }) == base {
 		t.Error("another dependency root must change the key")
 	}

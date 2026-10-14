@@ -176,6 +176,13 @@ type dependencyCacheIdentity struct {
 	// files relative to the dependency's directory, so an entry keyed by a
 	// place serves every directory holding that place.
 	Root string
+	// Source is the digest of the dependency's source content
+	// (sourceDigest) when Root is a place in a store that does not verify
+	// what it holds (storeVerifiesContent): node_modules, site-packages and
+	// crypto-finder's source cache hold whatever was installed there under
+	// a version's name. Empty when the place names the content, or the
+	// directory is keyed.
+	Source string `json:",omitempty"`
 }
 
 // key returns the findings-cache key of the identity.
@@ -217,6 +224,7 @@ func (id *dependencyCacheIdentity) logComponents(module, version, state string) 
 		Str("scope", digest(id.Scope)).
 		Str("engine", id.Engine).
 		Str("root", id.Root).
+		Str("source", id.Source).
 		Msg("Dependency findings cache identity")
 }
 

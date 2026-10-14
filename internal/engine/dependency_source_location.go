@@ -145,8 +145,8 @@ func rootAnchoredPatterns(patterns []string, dir string) []string {
 // storePlace returns dir's place in the store of published package
 // versions that holds it, and whether one does.
 func storePlace(dir string) (string, bool) {
-	place, _, ok := locateInStore(dir)
-	return place, ok
+	location, ok := locateInStore(dir)
+	return location.place, ok
 }
 
 // storeBase returns the directory a scan through relative paths names
@@ -154,8 +154,30 @@ func storePlace(dir string) (string, bool) {
 // (scanner.Root.Base); "" for a directory in no store, whose files are
 // named from dir itself.
 func storeBase(dir string) string {
-	_, base, _ := locateInStore(dir)
-	return base
+	location, _ := locateInStore(dir)
+	return location.base
+}
+
+// storeVerifiesContent reports whether the store holding dir checks a
+// version's content against what its publisher recorded, so that dir's
+// place in the store names its content (packageStore.verified).
+func storeVerifiesContent(dir string) bool {
+	location, ok := locateInStore(dir)
+	return ok && location.verified
+}
+
+// storeLocation is where a directory lies in a store of published package
+// versions.
+type storeLocation struct {
+	// place is the directory's place in the store, the same on every host
+	// holding the version.
+	place string
+	// base is the directory lexically holding the directory that place is
+	// relative to.
+	base string
+	// verified says the store checks the content it holds at place against
+	// a published checksum or commit, so that place names the content.
+	verified bool
 }
 
 // locateInStore returns dir's place in the store of published package
@@ -163,46 +185,55 @@ func storeBase(dir string) string {
 // relative to, and whether a store holds dir. A store is recognized only
 // as a lexical ancestor of dir, the store's own path or its resolved one,
 // so that base and dir name the same files.
-func locateInStore(dir string) (place, base string, ok bool) {
+func locateInStore(dir string) (location storeLocation, ok bool) {
 	if dir == "" || !filepath.IsAbs(dir) {
-		return "", "", false
+		return storeLocation{}, false
 	}
 	dir = filepath.Clean(dir)
 	parts := strings.Split(filepath.ToSlash(dir), "/")
 	for i, part := range parts {
 		if i > 0 && slices.Contains(storeComponents, part) {
-			return strings.Join(parts[i:], "/"), filepath.FromSlash(strings.Join(parts[:i], "/")), true
+			return storeLocation{place: strings.Join(parts[i:], "/"), base: filepath.FromSlash(strings.Join(parts[:i], "/"))}, true
 		}
 	}
 	for _, store := range packageStores() {
 		for _, root := range withResolved(store.dir) {
 			if rel, ok := below(root, dir); ok {
-				return store.name + ":" + filepath.ToSlash(rel), root, true
+				return storeLocation{place: store.name + ":" + filepath.ToSlash(rel), base: root, verified: store.verified}, true
 			}
 		}
 	}
-	return "", "", false
+	return storeLocation{}, false
 }
 
 // packageStore is a store directory and the name its places carry.
 type packageStore struct {
 	name, dir string
+	// verified says the package manager checks each version's content
+	// against a published checksum or commit before the store holds it: the
+	// Go module cache against go.sum, Cargo's registry against the index
+	// checksum, Cargo's git checkouts by the commit their directory names.
+	// Then module@version names the content. crypto-finder's source cache,
+	// node_modules and site-packages hold whatever was installed there: a
+	// git fork or a patched package at a registry version, a Maven SNAPSHOT,
+	// a pip install from a path.
+	verified bool
 }
 
 // packageStores lists the store directories of the current environment.
 func packageStores() []packageStore {
 	var stores []packageStore
 	if dir, err := dependency.SourceCacheDir(); err == nil {
-		stores = append(stores, packageStore{"sources", dir})
+		stores = append(stores, packageStore{name: "sources", dir: dir})
 	}
 	home, homeErr := os.UserHomeDir()
 	switch {
 	case os.Getenv("GOMODCACHE") != "":
-		stores = append(stores, packageStore{"gomodcache", os.Getenv("GOMODCACHE")})
+		stores = append(stores, packageStore{name: "gomodcache", dir: os.Getenv("GOMODCACHE"), verified: true})
 	case os.Getenv("GOPATH") != "":
-		stores = append(stores, packageStore{"gomodcache", filepath.Join(filepath.SplitList(os.Getenv("GOPATH"))[0], "pkg", "mod")})
+		stores = append(stores, packageStore{name: "gomodcache", dir: filepath.Join(filepath.SplitList(os.Getenv("GOPATH"))[0], "pkg", "mod"), verified: true})
 	case homeErr == nil:
-		stores = append(stores, packageStore{"gomodcache", filepath.Join(home, "go", "pkg", "mod")})
+		stores = append(stores, packageStore{name: "gomodcache", dir: filepath.Join(home, "go", "pkg", "mod"), verified: true})
 	}
 	cargo := os.Getenv("CARGO_HOME")
 	if cargo == "" && homeErr == nil {
@@ -210,13 +241,14 @@ func packageStores() []packageStore {
 	}
 	if cargo != "" {
 		stores = append(stores,
-			packageStore{"cargo-registry", filepath.Join(cargo, "registry", "src")},
-			packageStore{"cargo-git", filepath.Join(cargo, "git", "checkouts")})
+			packageStore{name: "cargo-registry", dir: filepath.Join(cargo, "registry", "src"), verified: true},
+			packageStore{name: "cargo-git", dir: filepath.Join(cargo, "git", "checkouts"), verified: true})
 	}
 	kept := stores[:0]
 	for _, store := range stores {
 		if filepath.IsAbs(store.dir) {
-			kept = append(kept, packageStore{store.name, filepath.Clean(store.dir)})
+			store.dir = filepath.Clean(store.dir)
+			kept = append(kept, store)
 		}
 	}
 	return kept

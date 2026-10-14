@@ -708,10 +708,19 @@ func (item *depWork) cacheIdentity(rulePaths []string, rulesHash string) *depend
 	// the cache by core count and by how many dependencies run at once.
 	config.Jobs = 0
 	root := cacheRoot(item.scanner, dep.Dir)
-	if root != dep.Dir {
+	item.portable = root != dep.Dir
+	var source string
+	var sourceErr error
+	if item.portable {
 		// Where the dependency lies is not keyed, so neither are the
 		// patterns anchored at it: they name the same files anywhere.
 		config.SkipPatterns = rootAnchoredPatterns(config.SkipPatterns, dep.Dir)
+		if !storeVerifiesContent(dep.Dir) {
+			// The place names a version, not what was installed under its
+			// name, so the content is keyed: two installs of the same
+			// version that differ never share an entry.
+			source, sourceErr = sourceDigest(dep.Dir, dep.Files, rootAnchoredDirs(item.opts.ScannerConfig.SkipPatterns, dep.Dir))
+		}
 	}
 	engine, engineErr := engineFingerprint(item.scanner)
 	identity := &dependencyCacheIdentity{
@@ -728,11 +737,11 @@ func (item *depWork) cacheIdentity(rulePaths []string, rulesHash string) *depend
 		Scope:         item.scope,
 		Engine:        engine,
 		Root:          root,
+		Source:        source,
 	}
-	item.portable = root != dep.Dir
 	key, encodeErr := identity.key()
 	// Unavailable context/identity disables caching, never scanner validation.
-	if encodeErr == nil && cwdErr == nil && engineErr == nil && info.Version != "" && info.Version != "unknown" {
+	if encodeErr == nil && cwdErr == nil && engineErr == nil && sourceErr == nil && info.Version != "" && info.Version != "unknown" {
 		item.cacheKey = key
 	}
 	return identity
