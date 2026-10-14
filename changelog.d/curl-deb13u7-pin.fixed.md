@@ -1,1 +1,0 @@
-- Docker image builds no longer fail because Debian Trixie replaced `curl` `8.14.1-2+deb13u5` with `8.14.1-2+deb13u7`. The images and the test image now pin the currently published package.
