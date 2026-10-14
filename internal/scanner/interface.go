@@ -149,10 +149,11 @@ type Config struct {
 	Jobs int16
 
 	// OpengrepMode selects how the OpenGrep adapter runs the engine. The zero
-	// value runs the opengrep CLI; OpengrepModeCore runs opengrep-core
-	// directly and falls back to the CLI whenever it cannot. Other adapters
-	// ignore it. Omitted from JSON when zero, so cache identities that encode
-	// the configuration stay what they were.
+	// value runs the opengrep CLI; OpengrepModeCore, the crypto-finder CLI's
+	// default, runs opengrep-core directly and falls back to the CLI whenever
+	// it cannot. Other adapters ignore it. Omitted from JSON when zero, so
+	// cache identities of CLI-mode scans stay what they were before the mode
+	// existed; core-mode identities differ from them.
 	OpengrepMode OpengrepMode `json:",omitempty"`
 
 	// RulePrefilter drops, per scanned unit, the rules whose library the

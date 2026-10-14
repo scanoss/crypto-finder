@@ -38,13 +38,15 @@ const (
 )
 
 // resolveOpengrepMode returns the OpenGrep execution mode: an explicit
-// --opengrep-mode wins over SCANOSS_OPENGREP_MODE; neither keeps the CLI.
+// --opengrep-mode wins over SCANOSS_OPENGREP_MODE; neither runs
+// opengrep-core, which itself falls back to the CLI whenever it cannot run.
+// --opengrep-mode cli or SCANOSS_OPENGREP_MODE=cli opts out.
 func resolveOpengrepMode(flagSet bool, flagValue string, lookupEnv func(string) (string, bool)) (scanner.OpengrepMode, error) {
 	source, value := "--opengrep-mode", flagValue
 	if !flagSet {
 		raw, ok := lookupEnv(opengrepModeEnv)
 		if !ok || strings.TrimSpace(raw) == "" {
-			return scanner.OpengrepModeCLI, nil
+			return scanner.OpengrepModeCore, nil
 		}
 		source, value = opengrepModeEnv, raw
 	}
@@ -53,6 +55,16 @@ func resolveOpengrepMode(flagSet bool, flagValue string, lookupEnv func(string) 
 		return scanner.OpengrepModeCLI, fmt.Errorf("%s: %w", source, err)
 	}
 	return mode, nil
+}
+
+// opengrepModeExplicit reports whether the user chose an OpenGrep mode, by
+// flag or SCANOSS_OPENGREP_MODE, rather than leaving the default.
+func opengrepModeExplicit(flagSet bool, lookupEnv func(string) (string, bool)) bool {
+	if flagSet {
+		return true
+	}
+	raw, ok := lookupEnv(opengrepModeEnv)
+	return ok && strings.TrimSpace(raw) != ""
 }
 
 // resolveRulePrefilter returns the rule prefilter: an explicit

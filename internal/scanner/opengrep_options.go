@@ -26,7 +26,8 @@ import (
 type OpengrepMode uint8
 
 const (
-	// OpengrepModeCLI runs the opengrep command-line wrapper (the default).
+	// OpengrepModeCLI runs the opengrep command-line wrapper. It is the zero
+	// value; the crypto-finder CLI defaults to OpengrepModeCore instead.
 	OpengrepModeCLI OpengrepMode = iota
 	// OpengrepModeCore runs opengrep-core directly, bypassing the Python
 	// wrapper, and falls back to the CLI when it cannot.
@@ -42,7 +43,8 @@ func (m OpengrepMode) String() string {
 }
 
 // ParseOpengrepMode reads a --opengrep-mode value. An empty value is the
-// default CLI mode.
+// zero-value CLI mode; the crypto-finder CLI resolves an unset mode to core
+// before parsing.
 func ParseOpengrepMode(value string) (OpengrepMode, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "cli":

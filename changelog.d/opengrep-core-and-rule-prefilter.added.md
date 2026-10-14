@@ -6,7 +6,7 @@
   one `SCANOSS_OPENGREP_CORE` names); with another version, without the binary,
   or when the core run fails, the scan runs the CLI instead. The core-ready rules
   file is cached under the crypto-finder cache directory (`opengrep-core-rules/`).
-  The default stays `cli`.
+  Core is the default mode; see the Changed section.
 - `scan --rule-prefilter imports` (or `SCANOSS_RULE_PREFILTER=imports`) drops, per
   scanned unit (the project and each dependency batch), the rules whose library
   the unit's Go, Java, Python, JavaScript/TypeScript, Rust or C/C++ sources never

@@ -208,10 +208,10 @@ func init() {
 	scanCmd.Flags().IntVar(&scanScannerJobs, "scanner-jobs", 0,
 		"Parallel jobs for the OpenGrep process of the primary scan (default 0: OpenGrep's own default, one per detected core; "+
 			"can also be set via "+scannerJobsEnv+"). Lower it when several scans share a host. Dependency scans size their own jobs")
-	scanCmd.Flags().StringVar(&scanOpengrepMode, "opengrep-mode", "cli",
-		"How the OpenGrep scanner runs: cli (the opengrep command) or core (opengrep-core directly, skipping the Python wrapper's "+
-			"startup and rule loading; falls back to cli whenever it cannot run, and is only used with OpenGrep versions it was verified against). "+
-			"Can also be set via "+opengrepModeEnv)
+	scanCmd.Flags().StringVar(&scanOpengrepMode, "opengrep-mode", "core",
+		"How the OpenGrep scanner runs: core (the default: opengrep-core directly, skipping the Python wrapper's "+
+			"startup and rule loading; falls back to cli whenever it cannot run, and is only used with OpenGrep versions it was verified against) "+
+			"or cli (the opengrep command; opts out of core). Can also be set via "+opengrepModeEnv)
 	scanCmd.Flags().StringVar(&scanRulePrefilter, "rule-prefilter", "off",
 		"Drop, per scanned unit (the project and each dependency batch), the rules whose library its sources never import: off or imports. "+
 			"Rules whose import requirement is unknown are always kept. OpenGrep scanner only. Can also be set via "+rulePrefilterEnv)
@@ -788,7 +788,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	if err != nil {
 		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
-	if scanScanner != opengrep.ScannerName && (opengrepMode != scanner.OpengrepModeCLI || rulePrefilter != scanner.RulePrefilterOff) {
+	if scanScanner != opengrep.ScannerName && (opengrepModeExplicit(cmd.Flags().Changed("opengrep-mode"), os.LookupEnv) || rulePrefilter != scanner.RulePrefilterOff) {
 		log.Warn().Str("scanner", scanScanner).Msg("--opengrep-mode and --rule-prefilter apply to the opengrep scanner only; ignoring them")
 	}
 
