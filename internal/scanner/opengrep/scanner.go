@@ -246,7 +246,7 @@ func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.Detect
 	var opengrepResults *entities.SemgrepOutput
 	if outcome == nil {
 		var err error
-		opengrepResults, err = s.collect(ctx, scanner.Root{Dir: target, Scope: scope}, rulePaths)
+		opengrepResults, err = s.collect(ctx, target, []scanner.Root{{Dir: target, Scope: scope}}, rulePaths)
 		if err != nil {
 			return nil, err
 		}

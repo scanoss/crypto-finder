@@ -43,9 +43,15 @@ func (s *batchingOpengrep) Scan(ctx context.Context, target string, rulePaths []
 	return s.Scanner.Scan(ctx, target, rulePaths, toolInfo)
 }
 
+// A dependency scanned alone from its package store comes through ScanRoots
+// with one root.
 func (s *batchingOpengrep) ScanRoots(ctx context.Context, roots []scanner.Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error) {
 	s.log.mu.Lock()
-	s.log.batches = append(s.log.batches, rootDirs(roots))
+	if len(roots) == 1 {
+		s.log.singles = append(s.log.singles, roots[0].Dir)
+	} else {
+		s.log.batches = append(s.log.batches, rootDirs(roots))
+	}
 	s.log.mu.Unlock()
 	return s.Scanner.ScanRoots(ctx, roots, rulePaths, toolInfo)
 }

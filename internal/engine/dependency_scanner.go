@@ -655,6 +655,7 @@ func (ds *DependencyScanner) lookupDependency(
 ) (result depScanResult, hit bool) {
 	dep := &item.dep
 	item.opts = ds.buildDepScanOptions(dep, rulePaths, opts)
+	item.base = storeBase(dep.Dir)
 	initializedScanner, err := ds.orchestrator.initializeScanner(ctx, item.opts)
 	if err != nil {
 		item.cacheState = depCacheScannerFailed
@@ -769,7 +770,18 @@ func (ds *DependencyScanner) scanDepAlone(ctx context.Context, item *depWork, va
 	dep := &item.dep
 	log.Info().Str("module", dep.Module).Str("version", dep.Version).Msg("Scanning dependency")
 
-	report, err := ds.orchestrator.scan(ctx, item.opts, item.scope, item.scanner, validator)
+	var report *entities.InterimReport
+	var err error
+	if _, batches := item.scanner.(scanner.BatchScanner); batches && item.base != "" {
+		// Named from its package store, as when it shares a process with
+		// other dependencies of that store, so it finds the same either way.
+		var reports []*entities.InterimReport
+		if reports, err = ds.orchestrator.scanRoots(ctx, item.opts, []scanner.Root{item.root()}, item.scanner, validator); err == nil {
+			report = reports[0]
+		}
+	} else {
+		report, err = ds.orchestrator.scan(ctx, item.opts, item.scope, item.scanner, validator)
+	}
 	report = item.ownFindings(report)
 	log.Info().
 		Str("module", dep.Module).
@@ -807,7 +819,7 @@ func (ds *DependencyScanner) scanBatch(ctx context.Context, batch scanBatch, val
 	modules := make([]string, 0, len(batch.items))
 	for i := range batch.items {
 		members = append(members, batch.items[i].opts)
-		roots = append(roots, scanner.Root{Dir: batch.items[i].dep.Dir, Scope: batch.items[i].scope})
+		roots = append(roots, batch.items[i].root())
 		modules = append(modules, batch.items[i].key)
 	}
 	batchOpts := batchScanOptions(members)

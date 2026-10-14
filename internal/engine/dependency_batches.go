@@ -40,6 +40,14 @@ type depWork struct {
 	// portable says the cache key leaves out where the dependency lies, so
 	// only a report naming files relative to it may be stored.
 	portable bool
+	// base is the package store the dependency's files are named from
+	// (scanner.Root.Base); empty names them from its directory.
+	base string
+}
+
+// root is the root a batch scanner scans the dependency as.
+func (item *depWork) root() scanner.Root {
+	return scanner.Root{Dir: item.dep.Dir, Scope: item.scope, Base: item.base}
 }
 
 // scanBatch is one scanner process over several dependency roots.

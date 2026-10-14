@@ -40,21 +40,24 @@ import (
 // reports, leaving the id the CLI gives the rule in its original file.
 const prefilteredIDMarker = "crypto-finder-prefiltered."
 
-// collect runs OpenGrep over root, in the root's directory (site), and
-// returns the output the CLI prints for it, with paths named as the caller
-// names the root. With a rule prefilter or core mode it first reads the
-// rules and enumerates the targets as the CLI would; whenever that or
-// opengrep-core fails it runs the CLI with every rule, so a failure costs
-// time, never findings. Rules that hit OpenGrep's time limit on a file run
-// once more with a longer limit (retryTimeouts).
-func (s *Scanner) collect(ctx context.Context, root scanner.Root, rulePaths []string) (*entities.SemgrepOutput, error) {
-	st := s.siteFor(root, rulePaths)
+// collect runs OpenGrep over roots, which share base, in the base
+// directory (site), and returns the output the CLI prints for them, with
+// paths named as the caller names the base. With a rule prefilter or core
+// mode it first reads the rules and enumerates the targets as the CLI
+// would; whenever that or opengrep-core fails it runs the CLI with every
+// rule, so a failure costs time, never findings. Rules that hit OpenGrep's
+// time limit on a file run once more with a longer limit (retryTimeouts).
+func (s *Scanner) collect(ctx context.Context, base string, roots []scanner.Root, rulePaths []string) (*entities.SemgrepOutput, error) {
+	st := s.siteFor(base, roots, rulePaths)
 	if st.dir != "" {
 		local := *s
 		local.skipPatterns = st.excludes
 		s = &local
 	}
-	scoped := root.Scope != nil
+	scoped := false
+	for _, root := range roots {
+		scoped = scoped || root.Scope != nil
+	}
 	if s.mode == scanner.OpengrepModeCore || s.prefilter == scanner.RulePrefilterImports {
 		output, ran, handled, err := s.collectPlanned(ctx, &st, rulePaths, scoped)
 		if handled {
@@ -106,7 +109,7 @@ func (s *Scanner) collectPlanned(ctx context.Context, st *site, rulePaths []stri
 	inspection := inspectTargets(plan, s.prefilter == scanner.RulePrefilterImports)
 	rules := ruleset.rules
 	if s.prefilter == scanner.RulePrefilterImports {
-		rules = s.prefilterRules(ruleset.rules, inspection.evidence, st.root)
+		rules = s.prefilterRules(ruleset.rules, inspection.evidence, st.roots)
 	}
 
 	if s.mode == scanner.OpengrepModeCore {
@@ -173,7 +176,7 @@ func (p *targetPlan) forLanguages(langs []*language) *targetPlan {
 	return kept
 }
 
-// collectCLI runs the opengrep CLI over the site's root, one process per
+// collectCLI runs the opengrep CLI over the site's roots, one process per
 // share of the command-line budget. rewriteID, when set, maps each reported
 // rule id.
 func (s *Scanner) collectCLI(ctx context.Context, st *site, rulePaths []string, scoped bool, rewriteID func(string) string) (*entities.SemgrepOutput, error) {
@@ -229,7 +232,7 @@ func inspectTargets(plan *targetPlan, withEvidence bool) targetInspection {
 
 // prefilterRules keeps the rules the unit's sources may let match and logs
 // the decision.
-func (s *Scanner) prefilterRules(rules []*coreRule, evidence *prefilter.Evidence, root scanner.Root) []*coreRule {
+func (s *Scanner) prefilterRules(rules []*coreRule, evidence *prefilter.Evidence, roots []scanner.Root) []*coreRule {
 	inputs := make([]prefilter.Rule, len(rules))
 	for i, rule := range rules {
 		inputs[i] = prefilter.Rule{Analyzers: rule.analyzers(), Requirement: rule.requirement()}
@@ -241,8 +244,12 @@ func (s *Scanner) prefilterRules(rules []*coreRule, evidence *prefilter.Evidence
 			kept = append(kept, rule)
 		}
 	}
+	dirs := make([]string, 0, len(roots))
+	for _, root := range roots {
+		dirs = append(dirs, root.Dir)
+	}
 	log.Debug().
-		Str("unit", root.Dir).
+		Strs("unit", dirs).
 		Int("files", evidence.Files()).
 		Int("rules", stats.Total).
 		Int("kept", stats.Kept).

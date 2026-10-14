@@ -122,6 +122,50 @@ func TestRootRelativeScanIsStableAcrossRootLocations(t *testing.T) {
 	}
 }
 
+// Dependencies in one package store are named from the store: the engine
+// sees "<place>/<path>", the same on every host and whether a dependency
+// shares its process with others of the store or runs alone.
+func TestStoreBaseScanIsStableAndIndependentOfTheBatch(t *testing.T) {
+	rules, err := filepath.Abs(filepath.Join(relativeRootFixtures, "kdf.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+	places := []string{filepath.Join("org.example-a", "1.0"), filepath.Join("org.example-b", "2.0")}
+	want := map[string]string{}
+	for _, m := range relativeRootModes {
+		s := realScanner(t, scanner.Config{OpengrepMode: m.mode, RulePrefilter: m.pf})
+		for _, name := range []string{"h1", "home/u2/.scanoss/sources", "x/y/z/other-home-3"} {
+			store := filepath.Join(base, name)
+			roots := make([]scanner.Root, len(places))
+			for i, place := range places {
+				roots[i] = scanner.Root{Dir: fixtureRoot(t, store, place), Base: store}
+			}
+			check := func(how string, roots []scanner.Root) {
+				t.Helper()
+				reports, err := s.ScanRoots(context.Background(), roots, []string{rules}, entities.ToolInfo{Name: "fixture"})
+				if err != nil {
+					t.Fatalf("%s %s %s: %v", m.name, name, how, err)
+				}
+				for i, report := range reports {
+					place := filepath.ToSlash(strings.TrimPrefix(roots[i].Dir, store+string(filepath.Separator)))
+					got := reportJSON(t, report)
+					if want[place] == "" {
+						want[place] = got
+						continue
+					}
+					if got != want[place] {
+						t.Errorf("%s %s %s: %s differs:\n got %s\nwant %s", m.name, name, how, place, got, want[place])
+					}
+				}
+			}
+			check("batched", roots)
+			check("alone", roots[:1])
+			check("alone", roots[1:])
+		}
+	}
+}
+
 // The scan in the root reports what a scan by the target's path in
 // crypto-finder's working directory reports: the same paths and the same
 // rule ids, here with the rules below the working directory, where the CLI

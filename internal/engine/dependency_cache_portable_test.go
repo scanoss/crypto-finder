@@ -212,22 +212,31 @@ func TestStorePlace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cases := map[string]string{
-		filepath.Join(sources, "io.jsonwebtoken-jjwt-impl", "0.12.6"):                     "sources:io.jsonwebtoken-jjwt-impl/0.12.6",
-		filepath.Join(base, "gomod", "golang.org", "x", "crypto@v0.17.0"):                 "gomodcache:golang.org/x/crypto@v0.17.0",
-		filepath.Join(base, "cargo", "registry", "src", "index.crates.io-1", "ring-0.17"): "cargo-registry:index.crates.io-1/ring-0.17",
-		filepath.Join(base, "cargo", "git", "checkouts", "x-1", "abc"):                    "cargo-git:x-1/abc",
-		filepath.Join(base, "proj", "node_modules", "a", "node_modules", "b"):             "node_modules/a/node_modules/b",
-		filepath.Join(base, "venv", "lib", "python3.12", "site-packages"):                 "site-packages",
-		filepath.Join(base, "local", "lib"):                                               "",
-		filepath.Join(base, "gomod"):                                                      "",
-		"relative/node_modules/x":                                                         "",
+	registry := filepath.Join(base, "cargo", "registry", "src")
+	cases := []struct{ dir, place, base string }{
+		{filepath.Join(sources, "io.jsonwebtoken-jjwt-impl", "0.12.6"), "sources:io.jsonwebtoken-jjwt-impl/0.12.6", sources},
+		{filepath.Join(base, "gomod", "golang.org", "x", "crypto@v0.17.0"), "gomodcache:golang.org/x/crypto@v0.17.0", filepath.Join(base, "gomod")},
+		{filepath.Join(registry, "index.crates.io-1", "ring-0.17"), "cargo-registry:index.crates.io-1/ring-0.17", registry},
+		{filepath.Join(base, "cargo", "git", "checkouts", "x-1", "abc"), "cargo-git:x-1/abc", filepath.Join(base, "cargo", "git", "checkouts")},
+		{filepath.Join(base, "proj", "node_modules", "a", "node_modules", "b"), "node_modules/a/node_modules/b", filepath.Join(base, "proj")},
+		{filepath.Join(base, "venv", "lib", "python3.12", "site-packages"), "site-packages", filepath.Join(base, "venv", "lib", "python3.12")},
+		{filepath.Join(base, "local", "lib"), "", ""},
+		{filepath.Join(base, "gomod"), "", ""},
+		{"relative/node_modules/x", "", ""},
 	}
-	for dir, want := range cases {
-		got, ok := storePlace(dir)
-		if got != want || ok != (want != "") {
-			t.Errorf("storePlace(%s) = %q %v, want %q", dir, got, ok, want)
+	for _, c := range cases {
+		place, ok := storePlace(c.dir)
+		if place != c.place || ok != (c.place != "") {
+			t.Errorf("storePlace(%s) = %q %v, want %q", c.dir, place, ok, c.place)
 		}
+		if got := storeBase(c.dir); got != c.base {
+			t.Errorf("storeBase(%s) = %q, want %q", c.dir, got, c.base)
+		}
+	}
+	// The scan of a dependency is named from its store, alone or batched.
+	item := depWork{dep: dependency.Dependency{Dir: cases[0].dir}, base: storeBase(cases[0].dir)}
+	if root := item.root(); root.Base != sources || root.Dir != cases[0].dir {
+		t.Errorf("root = %+v, want %s named from the source cache %s", root, cases[0].dir, sources)
 	}
 }
 

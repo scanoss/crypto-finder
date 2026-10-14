@@ -145,26 +145,43 @@ func rootAnchoredPatterns(patterns []string, dir string) []string {
 // storePlace returns dir's place in the store of published package
 // versions that holds it, and whether one does.
 func storePlace(dir string) (string, bool) {
+	place, _, ok := locateInStore(dir)
+	return place, ok
+}
+
+// storeBase returns the directory a scan through relative paths names
+// dir's files from, so that they read as dir's place in its package store
+// (scanner.Root.Base); "" for a directory in no store, whose files are
+// named from dir itself.
+func storeBase(dir string) string {
+	_, base, _ := locateInStore(dir)
+	return base
+}
+
+// locateInStore returns dir's place in the store of published package
+// versions that holds it, the directory lexically holding dir the place is
+// relative to, and whether a store holds dir. A store is recognized only
+// as a lexical ancestor of dir, the store's own path or its resolved one,
+// so that base and dir name the same files.
+func locateInStore(dir string) (place, base string, ok bool) {
 	if dir == "" || !filepath.IsAbs(dir) {
-		return "", false
+		return "", "", false
 	}
 	dir = filepath.Clean(dir)
 	parts := strings.Split(filepath.ToSlash(dir), "/")
 	for i, part := range parts {
-		if slices.Contains(storeComponents, part) {
-			return strings.Join(parts[i:], "/"), true
+		if i > 0 && slices.Contains(storeComponents, part) {
+			return strings.Join(parts[i:], "/"), filepath.FromSlash(strings.Join(parts[:i], "/")), true
 		}
 	}
 	for _, store := range packageStores() {
-		for _, base := range withResolved(store.dir) {
-			for _, path := range withResolved(dir) {
-				if rel, ok := below(base, path); ok {
-					return store.name + ":" + filepath.ToSlash(rel), true
-				}
+		for _, root := range withResolved(store.dir) {
+			if rel, ok := below(root, dir); ok {
+				return store.name + ":" + filepath.ToSlash(rel), root, true
 			}
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // packageStore is a store directory and the name its places carry.

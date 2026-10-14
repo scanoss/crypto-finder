@@ -219,9 +219,10 @@ func TestScanRoots_LimitErrorWithoutFileMarksItsRootIncomplete(t *testing.T) {
 	}
 }
 
-// Nested and repeated roots no longer share a process, so each is scanned
-// whole, as alone.
-func TestScanRoots_NestedRootsScanAlone(t *testing.T) {
+// Nested roots of different bases run in processes of their own, so each
+// is scanned whole, as alone. Roots of one base still share a process, so a
+// repeated root is refused, as a nested one would be.
+func TestScanRoots_NestedRootsOfOwnBasesScanAlone(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a")
 	inner := filepath.Join(a, "node_modules", "b")
@@ -231,13 +232,69 @@ func TestScanRoots_NestedRootsScanAlone(t *testing.T) {
 		"b": fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[]}`, result("lib/y.js")),
 	})
 	s := batchScanner(t, exe)
-	reports, err := s.ScanRoots(context.Background(), dirRoots(a, inner, a), rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"})
+	reports, err := s.ScanRoots(context.Background(), dirRoots(a, inner), rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := [][]string{findingPaths(reports[0]), findingPaths(reports[1]), findingPaths(reports[2])}
-	if want := [][]string{{"index.js"}, {"lib/y.js"}, {"index.js"}}; !reflect.DeepEqual(got, want) {
+	got := [][]string{findingPaths(reports[0]), findingPaths(reports[1])}
+	if want := [][]string{{"index.js"}, {"lib/y.js"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("findings per root = %v, want %v", got, want)
+	}
+	if _, err := s.ScanRoots(context.Background(), dirRoots(a, a), rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"}); err == nil {
+		t.Error("a repeated root must be refused")
+	}
+	nested := []scanner.Root{{Dir: a, Base: dir}, {Dir: inner, Base: dir}}
+	if _, err := s.ScanRoots(context.Background(), nested, rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"}); err == nil {
+		t.Error("nested roots of one base must be refused")
+	}
+}
+
+// Roots sharing a base, the package store their dependencies were installed
+// into, share one process in the base: the engine names their files by
+// their place in the store, and each result goes to the root holding it,
+// named under the root as the caller names it. A root of that base scanned
+// alone runs the same way, so the engine sees the same paths batched or not.
+func TestScanRoots_RootsOfOneBaseShareAProcessInTheBase(t *testing.T) {
+	dir := t.TempDir()
+	store := filepath.Join(dir, "home", ".scanoss", "sources")
+	a, b := filepath.Join(store, "org.example-a", "1.0"), filepath.Join(store, "org.example-b", "2.0")
+	physical := mkdirs(t, a, b)
+	storePhysical := filepath.Dir(filepath.Dir(physical[0]))
+	exe := fakeOpengrep(t, dir, map[string]string{
+		"sources": fmt.Sprintf(`{"version":"1.12.1","results":[%s,%s],"errors":[{"type":"Timeout","level":"warn","message":"m","path":"org.example-b/2.0/Big.java"}]}`,
+			result("org.example-b/2.0/b/B.java"), result("org.example-a/1.0/a/A.java")),
+	})
+	s := batchScanner(t, exe, "test/", filepath.ToSlash(a)+"/node_modules/")
+	roots := []scanner.Root{{Dir: a, Base: store}, {Dir: b, Base: store}}
+	reports, err := s.ScanRoots(context.Background(), roots, rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := [][]string{findingPaths(reports[0]), findingPaths(reports[1])}, [][]string{{"a/A.java"}, {"b/B.java"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("findings per root = %v, want %v", got, want)
+	}
+	if len(reports[0].IncompleteFiles) != 0 || !reflect.DeepEqual(reports[1].IncompleteFiles, []string{filepath.Join(b, "Big.java")}) {
+		t.Errorf("incomplete files = %v and %v, want only b's file, named under b", reports[0].IncompleteFiles, reports[1].IncompleteFiles)
+	}
+	calls := recordedCalls(t, dir)
+	if len(calls) != 1 || calls[0].dir != storePhysical {
+		t.Fatalf("calls = %v, want one process in the store %s", calls, storePhysical)
+	}
+	argv := calls[0].argv
+	if !reflect.DeepEqual(argv[len(argv)-2:], []string{"org.example-a/1.0", "org.example-b/2.0"}) {
+		t.Errorf("argv = %v, want it to end with the roots' places in the store", argv)
+	}
+	if want := []string{"test/", "org.example-a/1.0/node_modules/"}; !reflect.DeepEqual(excludesOf(argv), want) {
+		t.Errorf("excludes = %v, want %v: anchored patterns named relative to the base", excludesOf(argv), want)
+	}
+
+	writeTree(t, filepath.Join(dir, "out"), map[string]string{"sources.json": fmt.Sprintf(`{"version":"1.12.1","results":[%s],"errors":[]}`, result("org.example-a/1.0/a/A.java"))})
+	if _, err := s.ScanRoots(context.Background(), roots[:1], rulesFixture(t, dir), entities.ToolInfo{Name: "fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	calls = recordedCalls(t, dir)
+	if alone := calls[len(calls)-1]; alone.dir != storePhysical || alone.argv[len(alone.argv)-1] != "org.example-a/1.0" {
+		t.Errorf("alone: call %v, want the batched invocation's directory and target", alone)
 	}
 }
 

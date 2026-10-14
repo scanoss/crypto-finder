@@ -29,25 +29,30 @@ import (
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 
-// site is where the engine scans one root: in the root itself, with
-// targets relative to it, so the paths the engine sees are the same
-// wherever the root lies. OpenGrep's results depend on those path strings:
-// opengrep 1.30.2 orders a class's constructors by a hash of a function key
-// holding the file's path, and the order decides whether taint a
-// constructor leaves in a field reaches the class's methods. Scanning a
+// site is where the engine scans a group of roots: in their base
+// directory, with targets relative to it, so the paths the engine sees are
+// the same wherever the base lies. OpenGrep's results depend on those path
+// strings: opengrep 1.30.2 orders a class's constructors by a hash of a
+// function key holding the file's path, and the order decides whether taint
+// a constructor leaves in a field reaches the class's methods. Scanning a
 // root through its absolute path made findings depend on the home
 // directory, the checkout location or the job's workspace path.
 //
-// Every path the engine reports is named again as the caller names the
-// root (named), so reports read as before.
+// The base is a root's Base, or its Dir: a dependency's package store, so
+// the engine names its files by their place in the store, the same on every
+// host and whichever dependencies share the process. Every path the engine
+// reports is named again under the base as the caller names it (named), so
+// reports read as before.
 type site struct {
-	// root is the scanned root as the caller names it.
-	root scanner.Root
-	// dir is the root's physical directory, the engine's working
+	// base is the group's base directory as the caller names it.
+	base string
+	// roots are the scanned roots, as the caller names them.
+	roots []scanner.Root
+	// dir is the base's physical directory, the engine's working
 	// directory. Empty runs the engine in crypto-finder's working
-	// directory over the root as named, as before: when extra scanner
-	// arguments may name paths relative to it, or the root is no
-	// directory the engine could run in.
+	// directory over the roots as named, as before: when extra scanner
+	// arguments may name paths relative to it, or the base is no directory
+	// the engine could run in.
 	dir string
 	// configs are the rule paths the CLI receives: absolute, since its
 	// working directory is not crypto-finder's.
@@ -62,19 +67,21 @@ type site struct {
 	rewriteID func(string) string
 }
 
-// siteFor plans the scan of root with rulePaths.
-func (s *Scanner) siteFor(root scanner.Root, rulePaths []string) site {
-	legacy := site{root: root, configs: rulePaths, excludes: s.skipPatterns}
-	if len(s.extraArgs) > 0 || root.Dir == "" {
+// baseOf is the directory root's files are named from.
+func baseOf(root scanner.Root) string {
+	if root.Base != "" {
+		return root.Base
+	}
+	return root.Dir
+}
+
+// siteFor plans the scan of roots, which share base, with rulePaths.
+func (s *Scanner) siteFor(base string, roots []scanner.Root, rulePaths []string) site {
+	legacy := site{base: base, roots: roots, configs: rulePaths, excludes: s.skipPatterns}
+	if len(s.extraArgs) > 0 || base == "" {
 		return legacy
 	}
-	dir, err := physicalDir(fsPath(s.workDir, root.Dir))
-	if err == nil {
-		var info os.FileInfo
-		if info, err = os.Stat(dir); err == nil && !info.IsDir() {
-			err = fmt.Errorf("opengrep: target %s is not a directory", root.Dir)
-		}
-	}
+	dir, err := s.baseDir(base, roots)
 	var cwd string
 	if err == nil {
 		cwd, err = physicalDir(s.workDir)
@@ -93,27 +100,55 @@ func (s *Scanner) siteFor(root scanner.Root, rulePaths []string) site {
 	var excludes []string
 	if err == nil {
 		var named string
-		if named, err = filepath.Abs(fsPath(s.workDir, root.Dir)); err == nil {
+		if named, err = filepath.Abs(fsPath(s.workDir, base)); err == nil {
 			excludes, err = rootExcludes(s.skipPatterns, pyPath(filepath.ToSlash(named)), filepath.ToSlash(dir))
 		}
 	}
 	if err != nil {
-		log.Debug().Err(err).Str("target", root.Dir).Msg("OpenGrep scans the target by its path as given")
+		log.Debug().Err(err).Str("target", base).Msg("OpenGrep scans the target by its path as given")
 		return legacy
 	}
-	return site{root: root, dir: dir, configs: configs, excludes: excludes, rewriteID: rewrite}
+	return site{base: base, roots: roots, dir: dir, configs: configs, excludes: excludes, rewriteID: rewrite}
+}
+
+// baseDir returns the physical directory of base, which must be a
+// directory holding every root as named.
+func (s *Scanner) baseDir(base string, roots []scanner.Root) (string, error) {
+	dir, err := physicalDir(fsPath(s.workDir, base))
+	if err != nil {
+		return "", err
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("opengrep: target %s is not a directory", base)
+	}
+	for _, root := range roots {
+		if !lexicallyHolds(pyPath(base), pyPath(root.Dir)) {
+			return "", fmt.Errorf("opengrep: root %s does not lie below its base %s", root.Dir, base)
+		}
+	}
+	return dir, nil
+}
+
+// lexicallyHolds reports whether path, as pyPath normalizes it, is base or
+// lies below it.
+func lexicallyHolds(base, path string) bool {
+	if base == "." {
+		return !filepath.IsAbs(path) && path != ".." && !strings.HasPrefix(path, "../")
+	}
+	return holds(base, path)
 }
 
 // rootExcludes returns the exclude patterns for an engine running in the
-// root, which matches them against paths relative to it. A pattern naming
-// an absolute path below the root, as the npm dependency scan anchors the
-// dependency's own node_modules, names it relative to the root; it then
-// also matches below other directories of that name in the root. Other
-// patterns are kept: matched against the paths the engine reports, now
-// relative to the root, they no longer match the root's ancestors, as they
-// did when a directory named like one of them (build, test, vendor...)
-// held the root. A pattern naming an absolute path elsewhere fails: it
-// would match nothing, where it excluded the whole root or nothing before.
+// base, which matches them against paths relative to it. A pattern naming
+// an absolute path below the base, as the npm dependency scan anchors the
+// dependency's own node_modules, names it relative to the base; it then
+// also matches below other directories of that name in the base, which
+// only the base itself can hold when it is a root. Other patterns are kept:
+// matched against the paths the engine reports, now relative to the base,
+// they no longer match the base's ancestors, as they did when a directory
+// named like one of them (build, test, vendor...) held the root. A pattern
+// naming an absolute path elsewhere fails: it would match nothing, where it
+// excluded the whole root or nothing before.
 func rootExcludes(patterns []string, named, dir string) ([]string, error) {
 	out := make([]string, len(patterns))
 	for i, pattern := range patterns {
@@ -143,30 +178,34 @@ func (st *site) workDir(s *Scanner) string {
 	return s.workDir
 }
 
-// targets are the root's targets as the engine in workDir names them.
+// targets are the roots' targets as the engine in workDir names them.
 func (st *site) targets() []scanner.Root {
 	if st.dir == "" {
-		return []scanner.Root{st.root}
+		return st.roots
 	}
-	return []scanner.Root{{Dir: ".", Scope: st.root.Scope}}
+	targets := make([]scanner.Root, len(st.roots))
+	for i, root := range st.roots {
+		targets[i] = scanner.Root{Dir: st.relative(pyPath(root.Dir)), Scope: root.Scope}
+	}
+	return targets
 }
 
-// named is path, as the engine reported it, named as the caller names
-// the root: the path a scan of the root by that name reports.
+// named is path, as the engine reported it, named as the caller names the
+// base: the path a scan by that name reports.
 func (st *site) named(path string) string {
 	if st.dir == "" || path == "" || filepath.IsAbs(path) {
 		return path
 	}
-	return pyJoin(st.root.Dir, path)
+	return pyJoin(st.base, path)
 }
 
 // relative is the inverse of named: path, named as the caller names the
-// root, as the engine in dir names it.
+// base, as the engine in dir names it.
 func (st *site) relative(path string) string {
 	if st.dir == "" {
 		return path
 	}
-	base := pyPath(st.root.Dir)
+	base := pyPath(st.base)
 	if base == "." {
 		return path
 	}
