@@ -36,7 +36,7 @@ var cLanguageExtensions = map[string]bool{
 
 // maxWorkers caps the number of concurrent file reads for dead code detection.
 // Bounded to avoid exhausting file descriptors on large scans.
-var maxWorkers = min(runtime.NumCPU(), 8)
+var maxWorkers = min(runtime.GOMAXPROCS(0), 8)
 
 // filterResult holds the outcome of processing a single finding.
 type filterResult struct {

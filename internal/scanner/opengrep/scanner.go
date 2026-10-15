@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"maps"
 	"os/exec"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -352,6 +353,16 @@ func (s *Scanner) validateVersion() error {
 	return nil
 }
 
+// jobCount is the configured job count, or the CPUs this process may use.
+// Left to itself, OpenGrep counts the host's cores, which oversubscribes a
+// container with a CPU quota.
+func (s *Scanner) jobCount() int {
+	if s.jobs > 0 {
+		return int(s.jobs)
+	}
+	return runtime.GOMAXPROCS(0)
+}
+
 // buildCommand constructs the opengrep command arguments. namedFiles marks
 // targets that are explicit files from a detection scope.
 func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string, namedFiles bool) []string {
@@ -363,8 +374,8 @@ func (s *Scanner) buildCommand(ctx context.Context, targets, rulePaths []string,
 	if s.includeGitIgnored {
 		args = append(args, "--no-git-ignore")
 	}
-	if s.jobs > 0 && !setsOption(s.extraArgs, "--jobs", "-j") {
-		args = append(args, "--jobs", strconv.FormatInt(int64(s.jobs), 10))
+	if !setsOption(s.extraArgs, "--jobs", "-j") {
+		args = append(args, "--jobs", strconv.Itoa(s.jobCount()))
 	}
 	if s.ruleTimeout > 0 && !setsOption(s.extraArgs, "--timeout", "") {
 		args = append(args, "--timeout", strconv.Itoa(int(s.ruleTimeout)))

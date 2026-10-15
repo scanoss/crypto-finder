@@ -196,7 +196,7 @@ func effectiveJobs(config scanner.Config) int {
 		}
 	}
 	if jobs <= 0 {
-		return runtime.NumCPU()
+		return runtime.GOMAXPROCS(0)
 	}
 	return jobs
 }

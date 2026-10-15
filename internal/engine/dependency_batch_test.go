@@ -404,7 +404,7 @@ func TestBatchScanOptions_ScalesTheProcessTimeoutWithRoots(t *testing.T) {
 		{"as many roots as jobs", 4, 4, 10 * time.Minute},
 		{"one more root than jobs", 5, 4, 20 * time.Minute},
 		{"sixteen roots over four jobs", 16, 4, 40 * time.Minute},
-		{"a lone worker uses every core", 2, 0, 10 * time.Minute * time.Duration((2+runtime.NumCPU()-1)/runtime.NumCPU())},
+		{"a lone worker uses every core", 2, 0, 10 * time.Minute * time.Duration((2+runtime.GOMAXPROCS(0)-1)/runtime.GOMAXPROCS(0))},
 	}
 	t.Run("a --jobs in ExtraArgs is the parallelism the process runs with", func(t *testing.T) {
 		members := []ScanOptions{member("/deps/a", 8), member("/deps/b", 8), member("/deps/c", 8)}

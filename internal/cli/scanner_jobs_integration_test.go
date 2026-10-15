@@ -37,15 +37,15 @@ type scannerJobsCase struct {
 }
 
 // The primary scan and annotate pass --scanner-jobs (or SCANOSS_SCANNER_JOBS)
-// to the OpenGrep scan process, leave OpenGrep's default alone without either,
-// and fail before scanning on an invalid value.
+// to the OpenGrep scan process, pass the CPUs the process may use without
+// either, and fail before scanning on an invalid value.
 func TestScanScannerJobsReachOpenGrep(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires a compiled CLI and external scanner process")
 	}
 	binary := buildProgressCryptoFinder(t)
 	tests := []scannerJobsCase{
-		{name: "default leaves OpenGrep's own jobs"},
+		{name: "default passes the usable CPUs", wantJobs: []string{"--jobs", "3"}},
 		{name: "flag", flags: []string{"--scanner-jobs", "3"}, wantJobs: []string{"--jobs", "3"}},
 		{name: "environment", env: "2", wantJobs: []string{"--jobs", "2"}},
 		{name: "flag wins over environment", flags: []string{"--scanner-jobs=4"}, env: "2", wantJobs: []string{"--jobs", "4"}},
@@ -69,6 +69,7 @@ printf '%s\n' '{"results":[],"errors":[]}'`)
 	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
 	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
 	env := slices.DeleteFunc(progressTestEnv(dir), func(entry string) bool { return strings.HasPrefix(entry, scannerJobsEnv+"=") })
+	env = append(env, "GOMAXPROCS=3")
 	rules := []string{"--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml")}
 	findings := filepath.Join(dir, "findings.json")
 

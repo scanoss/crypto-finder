@@ -204,9 +204,9 @@ func init() {
 			"OpenGrep scanner only.")
 	scanCmd.Flags().StringVar(&scanDepEcosystem, "dep-ecosystem", "auto", "Dependency ecosystem: auto, go, java, node, python, rust")
 
-	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of CPU cores, max 8; Java max 2); concurrent scans share the CPU cores")
+	scanCmd.Flags().IntVar(&scanDepWorkers, "dep-workers", 0, "Number of parallel dependency scan workers (default: half of the usable CPUs, max 8; Java max 2); concurrent scans share the CPUs")
 	scanCmd.Flags().IntVar(&scanScannerJobs, "scanner-jobs", 0,
-		"Parallel jobs for the OpenGrep process of the primary scan (default 0: OpenGrep's own default, one per detected core; "+
+		"Parallel jobs for the OpenGrep process of the primary scan (default 0: one per CPU the process may use, which honors a container CPU limit; "+
 			"can also be set via "+scannerJobsEnv+"). Lower it when several scans share a host. Dependency scans size their own jobs")
 	scanCmd.Flags().StringVar(&scanOpengrepMode, "opengrep-mode", "core",
 		"How the OpenGrep scanner runs: core (the default: opengrep-core directly, skipping the Python wrapper's "+

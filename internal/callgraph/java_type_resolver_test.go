@@ -386,7 +386,7 @@ func TestJavaBytecodeTypeResolver_ResolveTypes_UsesResolverSuppliedCompiledArtif
 func TestJavaBytecodeTypeResolver_ResolveTypes_ProcessesJARsConcurrently(t *testing.T) {
 	disableAmbientJavaHome(t)
 
-	workers := min(max(runtime.NumCPU()/2, 1), maxJavaJARWorkers)
+	workers := min(max(runtime.GOMAXPROCS(0)/2, 1), maxJavaJARWorkers)
 	if workers < 2 {
 		t.Skip("environment does not provide enough CPUs to exercise resolver concurrency")
 	}
