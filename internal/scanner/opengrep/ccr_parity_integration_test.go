@@ -28,8 +28,9 @@ import (
 
 // The tests below pin CLI parity of core mode and the import prefilter for
 // C, C++ and Rust on fixtures shaped like the projects that showed
-// differences in benchmarks. They need opengrep and opengrep-core 1.30.2
-// but no parity paths: rules and code are inline.
+// differences in benchmarks. They need opengrep and opengrep-core at a
+// version in coreVerifiedVersions, but no parity paths: rules and code are
+// inline.
 
 // cIncludeRule is the shape of most C/C++ rules: an include of the library
 // (matched through a metavariable regex) before the call.

@@ -21,7 +21,8 @@ package opengrep
 // opengrep-core takes, the names rules may use for it, the file name
 // suffixes it selects and the interpreters whose shebang selects a file
 // without one. Core mode is pinned to the versions this table was checked
-// against.
+// against: 1.30.2, and 1.22.0 through the mode parity suites over the
+// crypto_rules fixtures.
 type language struct {
 	id       string
 	keys     []string
