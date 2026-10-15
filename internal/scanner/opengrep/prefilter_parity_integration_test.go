@@ -29,8 +29,8 @@ import (
 )
 
 // The parity tests below run real OpenGrep over a real ruleset and real
-// fixture code. They need opengrep 1.30.2 (CLI and opengrep-core) and are
-// skipped unless both paths are set:
+// fixture code. They need opengrep and opengrep-core at a version in
+// coreVerifiedVersions, and are skipped unless both paths are set:
 //
 //	CRYPTO_FINDER_PARITY_RULES     a Semgrep rules directory (crypto_rules/semgrep-rules)
 //	CRYPTO_FINDER_PARITY_FIXTURES  a directory of per-language fixture directories

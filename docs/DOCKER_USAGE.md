@@ -21,7 +21,7 @@ docker pull ghcr.io/scanoss/crypto-finder:latest
 ```
 
 **Features:**
-- OpenGrep 1.30.2 included, with its matching core unpacked so the default core mode runs from the first scan
+- OpenGrep 1.22.0 included, with its matching core unpacked so the default core mode runs from the first scan. OpenGrep 1.23.0 to 1.31.0 drop taint findings in Java `switch` cases after the first when the labels are enum constants (opengrep/opengrep#859)
 - Semgrep 1.145.0+ included
 - All scanning capabilities available
 

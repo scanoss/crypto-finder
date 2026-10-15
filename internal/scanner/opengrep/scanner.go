@@ -147,7 +147,7 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 			err,
 			failure.CodeScannerUnavailable,
 			failure.StageScan,
-			"opengrep not found in PATH (install v1.30.2 from https://github.com/opengrep/opengrep/releases/tag/v1.30.2)",
+			"opengrep not found in PATH (install v1.22.0 from https://github.com/opengrep/opengrep/releases/tag/v1.22.0)",
 			failure.WithDetail("scanner", ScannerName),
 		)
 	}
@@ -346,7 +346,7 @@ func (s *Scanner) validateVersion() error {
 	}
 
 	if currentVer.LessThan(minVer) {
-		return fmt.Errorf("opengrep version %s is below minimum required version %s (upgrade from https://github.com/opengrep/opengrep/releases/tag/v1.30.2)", s.version, MinimumVersion)
+		return fmt.Errorf("opengrep version %s is below minimum required version %s (upgrade from https://github.com/opengrep/opengrep/releases/tag/v1.22.0)", s.version, MinimumVersion)
 	}
 
 	return nil

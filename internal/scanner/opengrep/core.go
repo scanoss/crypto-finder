@@ -44,9 +44,9 @@ const CoreBinaryEnv = "SCANOSS_OPENGREP_CORE"
 // mode reproduces: target selection, rule id prefixes, the core command
 // line and the output conversion were checked against them. Any other
 // version runs the CLI.
-var coreVerifiedVersions = []string{"1.30.2"}
+var coreVerifiedVersions = []string{"1.22.0", "1.30.2"}
 
-// Defaults of the CLI's core command line (opengrep 1.30.2).
+// Defaults of the CLI's core command line (opengrep 1.22.0 and 1.30.2).
 const (
 	coreDefaultTimeoutSeconds   = 5
 	coreTimeoutThreshold        = "3"

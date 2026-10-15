@@ -204,7 +204,8 @@ func requireModeParity(ctx context.Context, t *testing.T, target, rulePath strin
 // TestCoreModeHonorsNosemgrepLikeCLI pins the nosemgrep comments the CLI
 // honors, by suffix of the prefixed rule id, including one that spells the
 // rule file's directory: core mode must silence the same matches. It needs
-// opengrep and opengrep-core 1.30.2 but no parity paths.
+// opengrep and opengrep-core at a version in coreVerifiedVersions, but no
+// parity paths.
 func TestCoreModeHonorsNosemgrepLikeCLI(t *testing.T) {
 	checkOpengrepAvailable(t)
 	ctx := context.Background()
