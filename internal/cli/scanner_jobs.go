@@ -31,7 +31,7 @@ const maxScannerJobs = 1024
 
 // resolveScannerJobs returns the OpenGrep job count for the primary scan. An
 // explicit --scanner-jobs wins over SCANOSS_SCANNER_JOBS; an empty or unset
-// variable keeps the default. Zero keeps OpenGrep's own default.
+// variable keeps the default. Zero means one job per CPU the process may use.
 func resolveScannerJobs(flagSet bool, flagValue int, lookupEnv func(string) (string, bool)) (int16, error) {
 	source, value := "--scanner-jobs", flagValue
 	if !flagSet {

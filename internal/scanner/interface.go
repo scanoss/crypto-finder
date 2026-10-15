@@ -137,8 +137,8 @@ type Config struct {
 	// applies it, and a timeout flag in ExtraArgs takes precedence.
 	RuleTimeoutSeconds uint8
 
-	// Jobs caps the analysis jobs one scan runs in parallel. Zero keeps the
-	// scanner's own default, which claims every core it detects. Dependency
+	// Jobs caps the analysis jobs one scan runs in parallel. Zero gives the
+	// OpenGrep adapter one job per CPU the process may use. Dependency
 	// scans set it so concurrent scans share the cores. Only the OpenGrep
 	// adapter applies it, and a jobs flag in ExtraArgs takes precedence.
 	// The small fields after the flags fit the flags' padding, so scan

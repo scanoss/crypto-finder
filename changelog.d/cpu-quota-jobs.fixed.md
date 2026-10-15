@@ -4,4 +4,5 @@
   may use, which honors the container's CPU limit, instead of the host's cores. On a
   32-core host with a 4-CPU limit, a core-mode scan of Bouncy Castle's `bcprov` drops
   from 213 s to 28 s, and a `--opengrep-mode cli` scan from 107 s to 41 s, with the same
-  findings. The CLI mode now always passes `--jobs` to OpenGrep.
+  findings. The CLI mode now always passes `--jobs` to OpenGrep. A `GOMAXPROCS`
+  environment variable now bounds OpenGrep's jobs as well.
