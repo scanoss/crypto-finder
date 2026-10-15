@@ -30,7 +30,7 @@ crypto-finder scan --export-callgraph callgraph.json --output findings.json /pat
 - **OpenGrep** (recommended) or **Semgrep** — the scanning engine. Included in the Docker images.
 
     ```bash
-    # OpenGrep v1.30.2 (the version the default core mode runs against): download from https://github.com/opengrep/opengrep/releases/tag/v1.30.2
+    # OpenGrep v1.22.0 (the version the images ship; core mode also runs against 1.30.2): download from https://github.com/opengrep/opengrep/releases/tag/v1.22.0
     # Semgrep:
     pip install semgrep==1.145.0
     ```
