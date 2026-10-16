@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-10-16
+### Fixed
+- Scans inside a container with a CPU limit no longer oversubscribe it. The default
+  OpenGrep jobs for the project scan (`--scanner-jobs 0`), the jobs each concurrent
+  dependency scan gets, and the default `--dep-workers` now count the CPUs the process
+  may use, which honors the container's CPU limit, instead of the host's cores. On a
+  32-core host with a 4-CPU limit, a core-mode scan of Bouncy Castle's `bcprov` drops
+  from 213 s to 28 s, and a `--opengrep-mode cli` scan from 107 s to 41 s, with the same
+  findings. The CLI mode now always passes `--jobs` to OpenGrep. A `GOMAXPROCS`
+  environment variable now bounds OpenGrep's jobs as well.
+- The container images ship OpenGrep 1.22.0 instead of 1.30.2. OpenGrep 1.23.0 to
+  1.31.0 report a taint finding only in the first case of a Java `switch` whose labels
+  are enum constants, so 0.37.0 images lost those findings: 34 of 1747 in Bouncy
+  Castle's `bcprov-jdk18on` 1.78.1, for example its composite signature key pair
+  generators. The default core mode was checked against 1.22.0 and runs with it.
+
 ## [0.37.0] - 2026-10-15
 ### Added
 - `scan --opengrep-mode core` (or `SCANOSS_OPENGREP_MODE=core`) runs `opengrep-core`
