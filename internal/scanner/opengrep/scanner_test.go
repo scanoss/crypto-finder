@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -477,6 +478,7 @@ func TestBuildCommand_JobsComposeWithExtraArgs(t *testing.T) {
 		return []byte("--x-ignore-semgrepignore-files"), nil
 	}
 
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(5))
 	rule, target := "/rules/node.yaml", "/deps/eta"
 	for _, tt := range []struct {
 		name      string
@@ -485,7 +487,7 @@ func TestBuildCommand_JobsComposeWithExtraArgs(t *testing.T) {
 		want      []string
 		certified bool
 	}{
-		{name: "zero keeps the OpenGrep default"},
+		{name: "zero passes the usable CPUs", want: []string{"--jobs", "5"}},
 		{name: "positive caps parallel jobs", jobs: 4, want: []string{"--jobs", "4"}},
 		// OpenGrep exits 2 on a repeated --jobs, so explicit arguments win.
 		{name: "certification profile keeps its own", jobs: 4, extra: []string{"--quiet", "--jobs", "2"}, want: []string{"--jobs", "2"}, certified: true},

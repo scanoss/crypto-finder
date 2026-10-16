@@ -601,7 +601,7 @@ func (r *MavenResolver) downloadSources(ctx context.Context, targetDir string, d
 		return summary
 	}
 
-	workers := min(max(runtime.NumCPU()/2, 1), sourceFallbackMaxWorkers)
+	workers := min(max(runtime.GOMAXPROCS(0)/2, 1), sourceFallbackMaxWorkers)
 	if len(missing) < workers {
 		workers = len(missing)
 	}

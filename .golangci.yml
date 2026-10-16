@@ -65,8 +65,14 @@ linters:
 
     # Linter management
     - nolintlint # Reports ill-formed or insufficient nolint directives
+    - forbidigo # Forbids identifiers listed in its settings
 
   settings:
+    forbidigo:
+      forbid:
+        - pattern: ^runtime\.NumCPU$
+          msg: "NumCPU counts the host's cores and ignores a container's CPU quota; size work with runtime.GOMAXPROCS(0)."
+      analyze-types: true
     errcheck:
       check-type-assertions: true
       check-blank: true

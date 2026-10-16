@@ -148,7 +148,7 @@ func (r *JavaBytecodeTypeResolver) ResolveTypes(graph *CallGraph, sourceRoots []
 	platformSource, platformSourceErr := r.discoverPlatformSource()
 	platformMeta := r.platformSignatureMetadata(platformSource, platformSourceErr)
 
-	workers := min(max(runtime.NumCPU()/2, 1), maxJavaJARWorkers)
+	workers := min(max(runtime.GOMAXPROCS(0)/2, 1), maxJavaJARWorkers)
 	index, hierarchy, indexStats := r.buildIndexes(tasks, workers)
 	if err := r.handlePlatformDiscoveryError(graph, platformMeta, platformSourceErr); err != nil {
 		return err

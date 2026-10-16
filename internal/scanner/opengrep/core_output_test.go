@@ -17,11 +17,13 @@
 package opengrep
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -346,5 +348,26 @@ func TestDecodeLikePython(t *testing.T) {
 	writeTree(t, dir, map[string]string{"a.go": "x\xff\xffy\r\nz\n"})
 	if got := newLineReader(dir).span("a.go", 1, 2); got != "x"+r+r+"y\nz" {
 		t.Errorf("lines = %q, want each invalid byte replaced", got)
+	}
+}
+
+// A container's CPU quota bounds the default job count in both modes; the host's
+// core count does not.
+func TestJobCountFollowsTheUsableCPUs(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(3))
+	originalCommandOutput := commandOutput
+	defer func() { commandOutput = originalCommandOutput }()
+	commandOutput = func(context.Context, string, ...string) ([]byte, error) { return nil, nil }
+
+	if got := strings.Join(NewScanner().coreArgs("R", "T")[3:5], " "); got != "-j 3" {
+		t.Errorf("core default = %q, want -j 3", got)
+	}
+	if got := strings.Join(NewScanner().buildCommand(context.Background(), []string{"/t"}, []string{"/r.yaml"}, false), " "); !strings.Contains(got, "--jobs 3 ") {
+		t.Errorf("CLI default command lacks --jobs 3: %s", got)
+	}
+	explicit := NewScanner()
+	explicit.jobs = 7
+	if got := strings.Join(explicit.coreArgs("R", "T")[3:5], " "); got != "-j 7" {
+		t.Errorf("configured jobs = %q, want -j 7", got)
 	}
 }

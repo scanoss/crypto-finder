@@ -51,7 +51,7 @@ const (
 type DepScanOptions struct {
 	// ScanOptions are the base scan options to reuse for each dependency scan.
 	ScanOptions ScanOptions
-	// Workers is the number of concurrent dependency scans (0 = default to NumCPU/2, capped at 8).
+	// Workers is the number of concurrent dependency scans (0 = half the usable CPUs, capped at 8).
 	Workers int
 }
 
@@ -490,7 +490,7 @@ func dependencyScanWorkers(configured int, ecosystem string) int {
 	if ecosystem == languageJava {
 		limit = 2
 	}
-	return min(max(runtime.NumCPU()/2, 1), limit)
+	return min(max(runtime.GOMAXPROCS(0)/2, 1), limit)
 }
 
 // dependencyScanJobs sizes each scanner process so concurrent dependency
@@ -499,7 +499,7 @@ func dependencyScanJobs(workers int) int16 {
 	if workers <= 1 {
 		return 0
 	}
-	return int16(min(max(1, runtime.NumCPU()/workers), math.MaxInt16)) //nolint:gosec // Bounded by MaxInt16.
+	return int16(min(max(1, runtime.GOMAXPROCS(0)/workers), math.MaxInt16)) //nolint:gosec // Bounded by MaxInt16.
 }
 
 // scanDependenciesParallel scans all dependencies concurrently using a worker pool.

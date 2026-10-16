@@ -111,7 +111,7 @@ func (r *PythonDependencyTypeResolver) ResolveTypes(graph *CallGraph, sourceRoot
 		return nil
 	}
 
-	workers := min(max(runtime.NumCPU()/2, 1), maxPythonDistributionWorkers)
+	workers := min(max(runtime.GOMAXPROCS(0)/2, 1), maxPythonDistributionWorkers)
 	signatures, hierarchy := r.buildIndexes(roots, workers)
 	if len(signatures) == 0 && len(hierarchy) == 0 {
 		return nil

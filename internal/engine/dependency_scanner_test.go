@@ -762,7 +762,7 @@ func TestDependencyScanWorkers_DefaultsAreMemorySafeForJava(t *testing.T) {
 }
 
 func TestDependencyScanJobs_ConcurrentScansShareTheCores(t *testing.T) {
-	cpus := runtime.NumCPU()
+	cpus := runtime.GOMAXPROCS(0)
 	if got := dependencyScanJobs(1); got != 0 {
 		t.Fatalf("a lone dependency scan got %d jobs, want 0 (the OpenGrep default)", got)
 	}
@@ -805,7 +805,7 @@ func TestDependencyScanner_ScanDependenciesParallel_SplitsCoresAcrossConcurrentS
 		return seen
 	}
 
-	half := int16(max(1, runtime.NumCPU()/2))
+	half := int16(max(1, runtime.GOMAXPROCS(0)/2))
 	if got := scan(2, "a", "b", "c"); !reflect.DeepEqual(got, []int16{half, half, half}) {
 		t.Fatalf("two workers: scanner jobs = %v, want %d each", got, half)
 	}
@@ -1739,5 +1739,16 @@ func TestDependencyScanner_CollectPackageSets_NamesTheParsedDependencies(t *test
 	path := dependency.Paths(resolved, sets.parsedModules)["org.example:crypto"]
 	if !path.WithoutSource || len(path.Steps) != 2 || !path.Steps[0].WithoutSource {
 		t.Fatalf("crypto path = %+v, want the bridge step marked without source", path)
+	}
+}
+
+// Dependency workers split the CPUs this process may use, not the host's cores.
+func TestDependencyScanJobs_FollowTheUsableCPUs(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(6))
+	if got := dependencyScanJobs(2); got != 3 {
+		t.Fatalf("2 workers on 6 usable CPUs: %d jobs, want 3", got)
+	}
+	if got := dependencyScanWorkers(0, "go"); got != 3 {
+		t.Fatalf("default go workers on 6 usable CPUs = %d, want 3", got)
 	}
 }

@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -141,10 +140,7 @@ func (s *Scanner) coreSupported(rules *coreRuleset) string {
 
 // coreArgs is the command line the CLI builds for opengrep-core.
 func (s *Scanner) coreArgs(rulesFile, targetsFile string) []string {
-	jobs := int(s.jobs)
-	if jobs <= 0 {
-		jobs = runtime.NumCPU()
-	}
+	jobs := s.jobCount()
 	timeout := int(s.ruleTimeout)
 	if timeout == 0 {
 		timeout = coreDefaultTimeoutSeconds

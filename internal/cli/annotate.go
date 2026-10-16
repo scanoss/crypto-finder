@@ -93,7 +93,7 @@ func init() {
 	annotateCmd.Flags().StringVar(&annotateScanner, "scanner", defaultScanner, fmt.Sprintf("Scanner to use (default: %s)", defaultScanner))
 	annotateCmd.Flags().StringVarP(&annotateTimeout, "timeout", "t", defaultTimeout, "Detection timeout (e.g., 10m, 1h)")
 	annotateCmd.Flags().IntVar(&annotateScannerJobs, "scanner-jobs", 0,
-		"Parallel jobs for the OpenGrep detection process (default 0: OpenGrep's own default, one per detected core; "+
+		"Parallel jobs for the OpenGrep detection process (default 0: one per CPU the process may use, which honors a container CPU limit; "+
 			"can also be set via "+scannerJobsEnv+"). Lower it when several scans share a host")
 	annotateCmd.Flags().StringVar(&annotateOpengrepMode, "opengrep-mode", "core",
 		"How the OpenGrep scanner runs, as for scan: core (the default; falls back to cli whenever it cannot run) "+
