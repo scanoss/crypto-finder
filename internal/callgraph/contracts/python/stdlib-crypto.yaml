@@ -1,0 +1,660 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: python-stdlib-crypto
+  coordinates:
+    - stdlib:hashlib
+    - stdlib:hmac
+    - stdlib:ssl
+    - stdlib:secrets
+    - stdlib:os
+    - stdlib:random
+  version_range: ">=3.6"
+  description: "CPython standard-library cryptography APIs: hashlib, hmac, ssl, secrets, os.urandom and random.SystemRandom"
+
+# Inventory sources: CPython 3.13 Lib/hashlib.py, Lib/hmac.py, Lib/ssl.py,
+# Lib/secrets.py, Lib/random.py and the _hashlib/_blake2/_ssl built-ins
+# (inspect.signature on 3.13.5), the docs.python.org 3.13 library reference,
+# and the Python stdlib rules on scanoss/crypto_rules main
+# (semgrep-rules/python/{hashlib,hmac,ssl,secrets,os,random}).
+#
+# SPELLINGS. Module functions emit `module.func` under either import form.
+# Classes the caller instantiates carry two keys, like pyopenssl.yaml:
+# `hmac.HMAC(..)` emits `hmac.HMAC` and `from hmac import HMAC; HMAC(..)` emits
+# `hmac.HMAC.<init>`. `secrets.SystemRandom` and `secrets.compare_digest` are
+# re-exports of `random.SystemRandom` and `hmac.compare_digest` and carry
+# their own keys.
+#
+# RETURN TYPES are the runtime classes. hashlib constructors return
+# `_hashlib.HASH` (OpenSSL-backed; the builtin fallbacks expose the same
+# protocol), SHAKE returns `_hashlib.HASHXOF`, and BLAKE2 returns
+# `_blake2.blake2b`/`_blake2.blake2s`. `hashlib.new` returns one of the three
+# depending on its name argument. The four classes share no base class, so
+# the hash-object protocol (update/digest/hexdigest/copy) is declared on each.
+#
+# ROLES. factory creates a hash, MAC, TLS context, TLS socket or CSPRNG
+# object, or returns a copy of one. config sets TLS parameters on an existing
+# context. operation feeds data, performs the handshake, compares digests or
+# draws random values. output reads a computed digest or a negotiated TLS
+# value, or converts a certificate encoding.
+#
+# VERSION WINDOWS inside `>=3.6`:
+#   hmac.digest                                                   3.7 onward
+#   hashlib.file_digest                                           3.11 onward
+#   SSLSocket/SSLObject.get_verified_chain, get_unverified_chain  3.13 onward
+#   ssl.wrap_socket, ssl.match_hostname                           removed in 3.12
+#
+# INVENTORY. contracted: every entry below.
+# skipped-unsupported (attribute assignments and constants, rule assets but
+#   not callable identities): SSLContext.minimum_version, maximum_version,
+#   check_hostname, verify_mode, verify_flags, options, security_level,
+#   hostname_checks_common_name, keylog_filename, post_handshake_auth;
+#   ssl.PROTOCOL_*, ssl.TLSVersion.*, ssl.CERT_*, ssl.OP_*; and the callback
+#   setters SSLContext.set_psk_client_callback, set_psk_server_callback,
+#   set_servername_callback, sni_callback.
+# skipped-informative-return: hashlib.algorithms_guaranteed,
+#   algorithms_available; hash and HMAC digest_size, block_size, name;
+#   SSLContext.get_ciphers, get_ca_certs, cert_store_stats, session_stats;
+#   ssl.get_default_verify_paths, ssl.RAND_status.
+# skipped-non-crypto: SSLContext.set_npn_protocols (removed by OpenSSL),
+#   ssl.cert_time_to_seconds; SSLSocket/SSLObject.selected_alpn_protocol,
+#   unwrap, pending, read/write/send/recv; SystemRandom.seed (a no-op),
+#   SystemRandom.getstate/setstate (raise NotImplementedError).
+# needs-follow-up: ssl.RAND_add (seeds the OpenSSL PRNG; no rule yet).
+
+contracts:
+  # ══ hashlib ═══════════════════════════════════════════════════════════════
+
+  # ── Named constructors (hashlib.py:__get_hash) ──────────────────────────
+  # md5/sha*/sha3_*(data=b'', *, usedforsecurity=True, string=None)
+  - method: hashlib.md5
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.sha1
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.sha224
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.sha256
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.sha384
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.sha512
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.sha3_224
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.sha3_256
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.sha3_384
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.sha3_512
+    arity: 3
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  - method: hashlib.shake_128
+    arity: 3
+    return: { type: _hashlib.HASHXOF, confidence: high }
+    role: factory
+  - method: hashlib.shake_256
+    arity: 3
+    return: { type: _hashlib.HASHXOF, confidence: high }
+    role: factory
+  # blake2b/blake2s(data=b'', *, digest_size, key=b'', salt=b'', person=b'',
+  # fanout, depth, leaf_size, node_offset, node_depth, inner_size, last_node,
+  # usedforsecurity, string): keyed BLAKE2 is a MAC, digest_size sets the
+  # output length.
+  - method: hashlib.blake2b
+    arity: 14
+    return: { type: _blake2.blake2b, confidence: high }
+    role: factory
+    parameters: &blake2_params
+      - { index: 1, name: digest_size, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+      - { index: 2, name: key, role: metadata-contributing, contributes: { property: keySize, derivation: argument_byte_length } }
+      - { index: 3, name: salt, role: metadata-contributing, contributes: { property: salt, derivation: argument_value } }
+  - method: hashlib.blake2s
+    arity: 14
+    return: { type: _blake2.blake2s, confidence: high }
+    role: factory
+    parameters: *blake2_params
+
+  # ── hashlib.new(name, data=b'', **kwargs) (hashlib.py:__hash_new) ───────
+  # BLAKE2 names are served by _blake2 and SHAKE names by HASHXOF; every
+  # other name returns _hashlib.HASH.
+  - method: hashlib.new
+    arity: 2
+    when:
+      arg_index: 0
+      arg_value_in: ["'blake2b'", "\"blake2b\"", "blake2b"]
+    return: { type: _blake2.blake2b, confidence: high }
+    role: factory
+    parameters: &hash_name_param
+      - { index: 0, name: name, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: hashlib.new
+    arity: 2
+    when:
+      arg_index: 0
+      arg_value_in: ["'blake2s'", "\"blake2s\"", "blake2s"]
+    return: { type: _blake2.blake2s, confidence: high }
+    role: factory
+    parameters: *hash_name_param
+  - method: hashlib.new
+    arity: 2
+    when:
+      arg_index: 0
+      arg_value_in: ["'shake_128'", "\"shake_128\"", "shake_128", "'shake_256'", "\"shake_256\"", "shake_256"]
+    return: { type: _hashlib.HASHXOF, confidence: high }
+    role: factory
+    parameters: *hash_name_param
+  - method: hashlib.new
+    arity: 2
+    when:
+      arg_index: 0
+      arg_value_in: ["'md5'", "\"md5\"", "'sha1'", "\"sha1\"", "'sha224'", "\"sha224\"",
+        "'sha256'", "\"sha256\"", "'sha384'", "\"sha384\"", "'sha512'", "\"sha512\"",
+        "'sha512_224'", "\"sha512_224\"", "'sha512_256'", "\"sha512_256\"", "'sha3_224'",
+        "\"sha3_224\"", "'sha3_256'", "\"sha3_256\"", "'sha3_384'", "\"sha3_384\"", "'sha3_512'",
+        "\"sha3_512\"", "'md5-sha1'", "\"md5-sha1\"", "'ripemd160'", "\"ripemd160\"", "'sm3'",
+        "\"sm3\"", "'MD5'", "\"MD5\"", "'SHA1'", "\"SHA1\"", "'SHA224'", "\"SHA224\"", "'SHA256'",
+        "\"SHA256\"", "'SHA384'", "\"SHA384\"", "'SHA512'", "\"SHA512\""]
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+    parameters: *hash_name_param
+
+  # ── hashlib.file_digest(fileobj, digest, /) (3.11+) ─────────────────────
+  # digest is a name or a constructor such as hashlib.sha256.
+  - method: hashlib.file_digest
+    arity: 2
+    return: { type: _hashlib.HASH, confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: digest, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+
+  # ── Key derivation (hashlib.py, _hashlib) ───────────────────────────────
+  # pbkdf2_hmac(hash_name, password, salt, iterations, dklen=None)
+  # scrypt(password, *, salt=None, n=None, r=None, p=None, maxmem=0, dklen=64)
+  # scrypt's dklen is keyword-only, so only the keyword-name match resolves
+  # it; parameter_types is still declared for consistency.
+  - method: hashlib.pbkdf2_hmac
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    parameter_types:
+      - builtins.str
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 4
+        name: dklen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: hashlib.scrypt
+    arity: 7
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+    parameter_types:
+      - builtins.bytes
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 6
+        name: dklen
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  # ── Hash-object protocol ────────────────────────────────────────────────
+  - method: _hashlib.HASH.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: _hashlib.HASH.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: _hashlib.HASH.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: _hashlib.HASH.copy
+    arity: 0
+    return: { type: _hashlib.HASH, confidence: high }
+    role: factory
+  # HASHXOF.digest(length) / hexdigest(length): the caller picks the output
+  # length in bytes.
+  - method: _hashlib.HASHXOF.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: _hashlib.HASHXOF.digest
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+    parameters: &xof_length_param
+      - { index: 0, name: length, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+  - method: _hashlib.HASHXOF.hexdigest
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+    parameters: *xof_length_param
+  - method: _hashlib.HASHXOF.copy
+    arity: 0
+    return: { type: _hashlib.HASHXOF, confidence: high }
+    role: factory
+  - method: _blake2.blake2b.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: _blake2.blake2b.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: _blake2.blake2b.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: _blake2.blake2b.copy
+    arity: 0
+    return: { type: _blake2.blake2b, confidence: high }
+    role: factory
+  - method: _blake2.blake2s.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: _blake2.blake2s.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: _blake2.blake2s.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: _blake2.blake2s.copy
+    arity: 0
+    return: { type: _blake2.blake2s, confidence: high }
+    role: factory
+
+  # ══ hmac ══════════════════════════════════════════════════════════════════
+
+  # new(key, msg=None, digestmod='') and HMAC(key, msg=None, digestmod='').
+  # digestmod is a hash name, a hashlib constructor or a module.
+  - method: hmac.new
+    arity: 3
+    return: { type: hmac.HMAC, confidence: high }
+    role: factory
+    parameters: &hmac_params
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keySize, derivation: argument_byte_length } }
+      - { index: 2, name: digestmod, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: hmac.HMAC
+    arity: 3
+    return: { type: hmac.HMAC, confidence: high }
+    role: factory
+    parameters: *hmac_params
+  - method: hmac.HMAC.<init>
+    arity: 3
+    return: { type: hmac.HMAC, confidence: high }
+    role: factory
+    parameters: *hmac_params
+  # digest(key, msg, digest): one-shot MAC (3.7+).
+  - method: hmac.digest
+    arity: 3
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keySize, derivation: argument_byte_length } }
+      - { index: 2, name: digest, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  # compare_digest(a, b, /): constant-time comparison.
+  - method: hmac.compare_digest
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+    parameters: &compare_digest_params
+      - { index: 0, role: metadata-contributing, contributes: { property: authenticationTag, derivation: argument_value } }
+  - method: secrets.compare_digest
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+    parameters: *compare_digest_params
+  - method: hmac.HMAC.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: hmac.HMAC.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: hmac.HMAC.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: hmac.HMAC.copy
+    arity: 0
+    return: { type: hmac.HMAC, confidence: high }
+    role: factory
+
+  # ══ ssl ═══════════════════════════════════════════════════════════════════
+
+  # ── Context factories (ssl.py) ──────────────────────────────────────────
+  # create_default_context(purpose, *, cafile, capath, cadata)
+  - method: ssl.create_default_context
+    arity: 4
+    return: { type: ssl.SSLContext, confidence: high }
+    role: factory
+  # _create_unverified_context(protocol, *, cert_reqs, check_hostname,
+  # purpose, certfile, keyfile, cafile, capath, cadata): private but the
+  # documented way to turn off verification (PEP 476).
+  - method: ssl._create_unverified_context
+    arity: 9
+    return: { type: ssl.SSLContext, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: protocol, role: operation-determining }
+  # SSLContext(protocol=None): PROTOCOL_TLS_CLIENT, PROTOCOL_TLS_SERVER, ...
+  - method: ssl.SSLContext
+    arity: 1
+    return: { type: ssl.SSLContext, confidence: high }
+    role: factory
+    parameters: &ssl_protocol_param
+      - { index: 0, name: protocol, role: operation-determining }
+  - method: ssl.SSLContext.<init>
+    arity: 1
+    return: { type: ssl.SSLContext, confidence: high }
+    role: factory
+    parameters: *ssl_protocol_param
+
+  # ── Context configuration ───────────────────────────────────────────────
+  - method: ssl.SSLContext.set_ciphers
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: cipherlist, role: operation-determining }
+  - method: ssl.SSLContext.set_ecdh_curve
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: name, role: operation-determining }
+  - method: ssl.SSLContext.load_dh_params
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: ssl.SSLContext.set_alpn_protocols
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  # What the context presents and trusts.
+  - method: ssl.SSLContext.load_cert_chain
+    arity: 3
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: ssl.SSLContext.load_verify_locations
+    arity: 3
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: ssl.SSLContext.load_default_certs
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: ssl.SSLContext.set_default_verify_paths
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+
+  # ── Connections ─────────────────────────────────────────────────────────
+  # wrap_socket(sock, server_side, do_handshake_on_connect,
+  # suppress_ragged_eofs, server_hostname, session)
+  - method: ssl.SSLContext.wrap_socket
+    arity: 6
+    return: { type: ssl.SSLSocket, confidence: high }
+    role: factory
+  # wrap_bio(incoming, outgoing, server_side, server_hostname, session)
+  - method: ssl.SSLContext.wrap_bio
+    arity: 5
+    return: { type: ssl.SSLObject, confidence: high }
+    role: factory
+  # Module-level wrap_socket(sock, keyfile, certfile, server_side, cert_reqs,
+  # ssl_version, ca_certs, do_handshake_on_connect, suppress_ragged_eofs,
+  # ciphers), removed in 3.12.
+  - method: ssl.wrap_socket
+    arity: 10
+    return: { type: ssl.SSLSocket, confidence: high }
+    role: factory
+    parameters:
+      - { index: 4, name: cert_reqs, role: operation-determining }
+      - { index: 5, name: ssl_version, role: operation-determining }
+      - { index: 9, name: ciphers, role: operation-determining }
+  # get_server_certificate(addr, ssl_version, ca_certs, timeout): connects,
+  # completes a handshake and returns the peer certificate as PEM.
+  - method: ssl.get_server_certificate
+    arity: 4
+    return: { type: builtins.str, confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: ssl_version, role: operation-determining }
+  # match_hostname(cert, hostname), removed in 3.12.
+  - method: ssl.match_hostname
+    arity: 2
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+  # SSLSocket and SSLObject expose the same TLS surface and share no base
+  # class, so each method is declared on both.
+  - method: ssl.SSLSocket.do_handshake
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: ssl.SSLObject.do_handshake
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: ssl.SSLSocket.verify_client_post_handshake
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: ssl.SSLObject.verify_client_post_handshake
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  # getpeercert(binary_form=False) returns a dict, or DER bytes when
+  # binary_form is true.
+  - method: ssl.SSLSocket.getpeercert
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: ssl.SSLObject.getpeercert
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: ssl.SSLSocket.cipher
+    arity: 0
+    return: { type: builtins.tuple, confidence: high }
+    role: output
+  - method: ssl.SSLObject.cipher
+    arity: 0
+    return: { type: builtins.tuple, confidence: high }
+    role: output
+  - method: ssl.SSLSocket.shared_ciphers
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+  - method: ssl.SSLObject.shared_ciphers
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+  - method: ssl.SSLSocket.version
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: ssl.SSLObject.version
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: ssl.SSLSocket.get_channel_binding
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ssl.SSLObject.get_channel_binding
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ssl.SSLSocket.get_verified_chain
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+  - method: ssl.SSLObject.get_verified_chain
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+  - method: ssl.SSLSocket.get_unverified_chain
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+  - method: ssl.SSLObject.get_unverified_chain
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+
+  # ── Certificate encoding and the OpenSSL CSPRNG ─────────────────────────
+  - method: ssl.DER_cert_to_PEM_cert
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: ssl.PEM_cert_to_DER_cert
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ssl.RAND_bytes
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters: &random_size_param
+      - { index: 0, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+
+  # ══ secrets, os.urandom, random.SystemRandom ══════════════════════════════
+
+  # token_bytes/token_hex/token_urlsafe(nbytes=None): nbytes is the entropy
+  # in bytes.
+  - method: secrets.token_bytes
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters: *random_size_param
+  - method: secrets.token_hex
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: operation
+    parameters: *random_size_param
+  - method: secrets.token_urlsafe
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: operation
+    parameters: *random_size_param
+  - method: secrets.randbelow
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: secrets.randbits
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: secrets.choice
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  # urandom(size, /), getrandom(size, flags=0)
+  - method: os.urandom
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters: *random_size_param
+  - method: os.getrandom
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters: *random_size_param
+  # SystemRandom(x=None): x is ignored.
+  - method: random.SystemRandom
+    arity: 1
+    return: { type: random.SystemRandom, confidence: high }
+    role: factory
+  - method: random.SystemRandom.<init>
+    arity: 1
+    return: { type: random.SystemRandom, confidence: high }
+    role: factory
+  - method: secrets.SystemRandom
+    arity: 1
+    return: { type: random.SystemRandom, confidence: high }
+    role: factory
+  - method: random.SystemRandom.random
+    arity: 0
+    return: { type: builtins.float, confidence: high }
+    role: operation
+  - method: random.SystemRandom.getrandbits
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: random.SystemRandom.randbytes
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters: *random_size_param
+  - method: random.SystemRandom.randrange
+    arity: 3
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: random.SystemRandom.randint
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: random.SystemRandom.uniform
+    arity: 2
+    return: { type: builtins.float, confidence: high }
+    role: operation
+  - method: random.SystemRandom.choice
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: operation
+  - method: random.SystemRandom.choices
+    arity: 4
+    return: { type: builtins.list, confidence: high }
+    role: operation
+  - method: random.SystemRandom.sample
+    arity: 3
+    return: { type: builtins.list, confidence: high }
+    role: operation
+  - method: random.SystemRandom.shuffle
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+hierarchy: {}

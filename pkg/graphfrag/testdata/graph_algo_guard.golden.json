@@ -1,5 +1,5 @@
 {
-  "graph_algo_version": "graph-algo-8",
+  "graph_algo_version": "graph-algo-9",
   "ecosystems": {
     "c": {
       "sha256": "8ba67f18003dc8c422e9409c0d5f3d1262ae289843488d5f138abe22bcb38d34",
@@ -32,7 +32,7 @@
       "external_calls": 15
     },
     "python": {
-      "sha256": "fa251b74b38fee1c95687926c27523410e13194e347a91df5d6c5909763cf02d",
+      "sha256": "483c86231697a6c34bfd9873400bbf9391863856a482a02a0d80de93f737eb9d",
       "functions": 8,
       "internal_edges": 4,
       "external_calls": 11
