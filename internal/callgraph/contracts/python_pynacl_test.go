@@ -163,6 +163,12 @@ func wantPynaclContracts() []string {
 		// sk), :90 crypto_sign_open(signed, pk).
 		pynaclLine("nacl.bindings.crypto_sign#2", "nacl.bindings.crypto_sign", "operation", "builtins.bytes", "-", "-"),
 		pynaclLine("nacl.bindings.crypto_sign_open#2", "nacl.bindings.crypto_sign_open", "operation", "builtins.bytes", "-", "-"),
+		// 0.2.0 to 0.2.3: c/crypto_sign.py:67 crypto_sign(sk, message), :85
+		// crypto_sign_open(pk, signed), re-exported by c/__init__.py.
+		pynaclLine("nacl.c.crypto_sign#2", "nacl.c.crypto_sign", "operation", "builtins.bytes", "-", "-"),
+		pynaclLine("nacl.c.crypto_sign.crypto_sign#2", "nacl.c.crypto_sign.crypto_sign", "operation", "builtins.bytes", "-", "-"),
+		pynaclLine("nacl.c.crypto_sign.crypto_sign_open#2", "nacl.c.crypto_sign.crypto_sign_open", "operation", "builtins.bytes", "-", "-"),
+		pynaclLine("nacl.c.crypto_sign_open#2", "nacl.c.crypto_sign_open", "operation", "builtins.bytes", "-", "-"),
 	}
 }
 
