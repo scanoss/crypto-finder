@@ -100,7 +100,9 @@ internal/callgraph/contracts/
 ├── python/                # pyca-cryptography, pycryptodome(x), paramiko, passlib,
 │                          #   bcrypt, argon2-cffi, pynacl, pyopenssl, m2crypto,
 │                          #   pyjwt, flask-jwt-extended, pyotp, werkzeug, boto3,
-│                          #   azure-keyvault-keys, azure-keyvault-secrets
+│                          #   azure-keyvault-keys, azure-keyvault-secrets,
+│                          #   aws-encryption-sdk, aws-cryptographic-material-providers,
+│                          #   pykmip, truststore
 └── rust/                  # aes, blowfish, des, cbc, cfb-mode, ctr, aes-gcm, aes-gcm-siv,
                            #   ccm, chacha20poly1305, argon2, pbkdf2, scrypt, dsa, ecdsa,
                            #   ed25519, ghash, poly1305, ring, openssl, rsa, sodiumoxide,
