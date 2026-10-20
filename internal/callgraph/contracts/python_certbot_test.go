@@ -93,6 +93,12 @@ var wantCertbotContracts = []string{
 	"certbot.ocsp.RevocationChecker.ocsp_revoked#1/output/builtins.bool/builtins.bool/[certbot.interfaces.RenewableCert]/high/varargs=false/params=[]/certbot",
 	"certbot.ocsp.RevocationChecker.ocsp_revoked#2/output/builtins.bool/builtins.bool/[builtins.str,builtins.str]/high/varargs=false/params=[]/certbot",
 	"certbot.ocsp.RevocationChecker.ocsp_revoked_by_paths#2/output/builtins.bool/builtins.bool/[builtins.str,builtins.str]/high/varargs=false/params=[]/certbot",
+	// 1.0.0 certbot/_internal/ocsp.py:31 __init__(enforce_openssl_binary_usage=False),
+	// :53 ocsp_revoked(cert); 5.5.0 _internal/ocsp.py:38 ocsp_revoked_by_paths.
+	"certbot._internal.ocsp.RevocationChecker#1/factory/certbot._internal.ocsp.RevocationChecker/certbot._internal.ocsp.RevocationChecker/[builtins.bool]/high/varargs=false/params=[]/certbot",
+	"certbot._internal.ocsp.RevocationChecker.<init>#0/factory/certbot._internal.ocsp.RevocationChecker/certbot._internal.ocsp.RevocationChecker/[]/high/varargs=false/params=[]/certbot",
+	"certbot._internal.ocsp.RevocationChecker.ocsp_revoked#1/output/builtins.bool/builtins.bool/[certbot.interfaces.RenewableCert]/high/varargs=false/params=[]/certbot",
+	"certbot._internal.ocsp.RevocationChecker.ocsp_revoked_by_paths#2/output/builtins.bool/builtins.bool/[builtins.str,builtins.str]/high/varargs=false/params=[]/certbot",
 }
 
 // TestLoadEmbedded_Python_Certbot_ExactSet compares the loaded set against the

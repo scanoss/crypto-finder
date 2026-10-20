@@ -436,3 +436,43 @@ contracts:
       type: builtins.bool
       confidence: high
     role: output
+
+  # ── Names older releases use ──
+  # 1.0.0 to 1.2.0, and again from 5.5.0: RevocationChecker is defined in
+  # certbot._internal.ocsp (5.5.0 makes certbot.ocsp a re-export of it).
+  - method: certbot._internal.ocsp.RevocationChecker.<init>
+    arity: 0
+    parameter_types: []
+    canonical_return_type: certbot._internal.ocsp.RevocationChecker
+    return:
+      type: certbot._internal.ocsp.RevocationChecker
+      confidence: high
+    role: factory
+
+  - method: certbot._internal.ocsp.RevocationChecker
+    arity: 1
+    parameter_types: ["builtins.bool"]
+    canonical_return_type: certbot._internal.ocsp.RevocationChecker
+    return:
+      type: certbot._internal.ocsp.RevocationChecker
+      confidence: high
+    role: factory
+
+  - method: certbot._internal.ocsp.RevocationChecker.ocsp_revoked
+    arity: 1
+    parameter_types: ["certbot.interfaces.RenewableCert"]
+    canonical_return_type: builtins.bool
+    return:
+      type: builtins.bool
+      confidence: high
+    role: output
+
+  # 5.5.0 on: ocsp_revoked_by_paths(cert_path, chain_path).
+  - method: certbot._internal.ocsp.RevocationChecker.ocsp_revoked_by_paths
+    arity: 2
+    parameter_types: ["builtins.str", "builtins.str"]
+    canonical_return_type: builtins.bool
+    return:
+      type: builtins.bool
+      confidence: high
+    role: output
