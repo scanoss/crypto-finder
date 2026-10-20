@@ -14,9 +14,12 @@ library:
 # TruststoreSSLContext. From 0.3.0 the class is SSLContext, defined in
 # truststore._api and re-exported by the package. inject_into_ssl and
 # extract_from_ssl arrive in 0.6.0, set_default_verify_paths in 0.10.0. Before
-# 0.6.0 SSLContext defines only wrap_socket, wrap_bio and load_verify_locations;
-# the config methods below are inherited from ssl.SSLContext there, so the
-# same call reaches the stdlib implementation.
+# 0.6.0 SSLContext defines only wrap_socket, wrap_bio and load_verify_locations
+# and inherits the rest from ssl.SSLContext. Lookup is by exact FQN and does
+# not walk `hierarchy`, so each inherited method is also declared on the
+# 0.1.0-0.2.0 TruststoreSSLContext. Its load_verify_locations accepts only
+# certifi's default bundle (a no-op) and raises otherwise; it is kept because
+# requests and urllib3 call it with that default.
 #
 # SPELLINGS. `truststore.SSLContext(..)` emits the attribute path
 # `truststore.SSLContext`; `from truststore import SSLContext; SSLContext(..)`
@@ -101,7 +104,7 @@ contracts:
     arity: 1
     return: { type: builtins.NoneType, confidence: high }
     role: config
-    parameters:
+    parameters: &cipher_param
       - index: 0
         name: cipherlist
         role: operation-determining
@@ -123,6 +126,28 @@ contracts:
     arity: 0
     return: { type: builtins.NoneType, confidence: high }
     role: config
+  # Inherited from ssl.SSLContext in 0.1.0-0.2.0.
+  - method: truststore.TruststoreSSLContext.load_cert_chain
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: truststore.TruststoreSSLContext.load_default_certs
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: truststore.TruststoreSSLContext.set_default_verify_paths
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: truststore.TruststoreSSLContext.set_ciphers
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters: *cipher_param
+  - method: truststore.TruststoreSSLContext.get_ciphers
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
 
 hierarchy:
   truststore._api.SSLContext:
