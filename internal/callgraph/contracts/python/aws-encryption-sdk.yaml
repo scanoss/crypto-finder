@@ -4,18 +4,19 @@ library:
   name: aws-encryption-sdk
   coordinates:
     - aws-encryption-sdk
-  version_range: ">=1.3.2"
+  version_range: ">=1.3.1"
   description: "AWS Encryption SDK for Python: client, streaming encryptor/decryptor, KMS and raw master key providers, wrapping keys and crypto materials managers"
 
 # Inventory source: aws-encryption-sdk 4.0.7 sdist (src/aws_encryption_sdk/
 # __init__.py, streaming_client.py, key_providers/{base,kms,raw}.py,
 # materials_managers/{base,default,caching}.py, internal/crypto/
-# wrapping_keys.py) and examples/src, cross-checked against 1.2.0, 1.3.8,
-# 1.7.1, 2.0.0, 2.2.0, 2.3.0 and 3.3.0.
+# wrapping_keys.py) and examples/src, cross-checked against the 1.2.0,
+# 1.3.8, 1.7.1, 2.0.0, 2.2.0, 2.3.0 and 3.3.0 sdists and the 1.3.0 and 1.3.1
+# wheels.
 #
-# VERSION RANGE. `>=1.3.2`: 1.2.0, the only earlier release, defines
-# WrappingKey in internal/crypto/__init__.py rather than wrapping_keys.py, so
-# the return type below would be wrong for it. Version windows inside the range:
+# VERSION RANGE. `>=1.3.1`: 1.3.0 and earlier lack wrapping_keys.py, so the
+# WrappingKey return type below would be wrong for them. 1.3.1 ships only a
+# wheel and already has every contracted symbol. Version windows inside the range:
 #   aws_encryption_sdk.encrypt/decrypt/stream, KMSMasterKeyProvider   <2.0.0
 #   EncryptionSDKClient, Strict/DiscoveryAwsKmsMasterKeyProvider      >=1.7.1
 #   MRKAwareStrict/MRKAwareDiscoveryAwsKmsMasterKeyProvider           >=2.3.0
@@ -32,13 +33,22 @@ library:
 # keyword count resolves through the Python name-only fallback. Keyword
 # arguments are not bound to parameter positions yet (crypto-finder#284), so
 # the `algorithm`, `commitment_policy`, `key_ids` and `keyring` keywords carry
-# no parameter role. WrappingKey and the attrs CMMs take positional arguments
-# and are declared at their required positional count.
+# no parameter role. WrappingKey and the attrs CMMs are declared at their
+# required positional count; WrappingKey's algorithm and key roles bind only
+# when it is called positionally, and the examples call it with keywords.
 #
 # RETURN TYPES. encrypt/decrypt return a (bytes, MessageHeader) tuple.
 # stream() returns StreamEncryptor or StreamDecryptor depending on the `mode`
 # keyword, which cannot be bound, so it is typed by their shared base
 # _EncryptionStream, where read() is defined.
+#
+# INHERITED METHODS. The KB lookup is by exact FQN and does not walk
+# `hierarchy`, so `provider.add_master_key(..)` on a Strict provider is keyed
+# on StrictAwsKmsMasterKeyProvider and never reaches a MasterKeyProvider
+# contract. Each lifecycle method is therefore declared on its base class (for
+# receivers typed by the base, e.g. stream()) AND on every concrete provider,
+# master key, CMM and stream a consumer constructs. Master keys get only the
+# data-key calls; adding members to a master key is not a consumer API.
 #
 # ROLES. factory builds the client, a stream, a master key, a provider, a
 # wrapping key or a CMM. config adds master keys or child providers to a
@@ -52,8 +62,8 @@ library:
 #   materials_managers.mpl.CryptoMaterialsManagerFromMPL wraps an MPL CMM
 #   inside the ESDK (needs-follow-up).
 # - RawMasterKeyProvider is abstract; consumers subclass it and implement
-#   _get_raw_key, so the constructor is keyed on the consumer's class
-#   (skipped-unsupported).
+#   _get_raw_key, so the constructor and every inherited call are keyed on
+#   the consumer's own class and cannot be contracted (skipped-unsupported).
 # - identifiers.Algorithm, CommitmentPolicy, WrappingAlgorithm and
 #   EncryptionKeyType are enum member reads, not calls (skipped-unsupported).
 # - StreamEncryptor/StreamDecryptor.header and stream_length are properties
@@ -64,8 +74,11 @@ library:
 #   DiscoveryFilter hold the same keywords the client, streams and providers
 #   accept (skipped-non-crypto).
 # - BaseKMSMasterKeyProvider.add_regional_client(s_from_list), provider_id,
-#   owns_data_key and master_key_for_encrypt/decrypt route keys without doing
-#   cryptography (skipped-non-crypto).
+#   owns_data_key, master_key_for_encrypt/decrypt and
+#   master_keys_for_encryption route keys without doing cryptography
+#   (skipped-non-crypto).
+# - StreamEncryptor.generate_header serializes the message header the stream
+#   writes on its first read (skipped-non-crypto).
 # - LocalCryptoMaterialsCache and NullCryptoMaterialsCache store materials
 #   (skipped-non-crypto).
 # - MRKAwareKMSMasterKey is built by the MRK-aware providers, never by
@@ -143,8 +156,16 @@ contracts:
     arity: 0
     return: { type: aws_encryption_sdk.streaming_client.StreamDecryptor, confidence: high }
     role: factory
-  # streaming_client.py:326 read(b=-1), shared by both streams.
+  # streaming_client.py:326 read(b=-1), inherited by both streams.
   - method: aws_encryption_sdk.streaming_client._EncryptionStream.read
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.streaming_client.StreamEncryptor.read
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.streaming_client.StreamDecryptor.read
     arity: 0
     return: { type: builtins.bytes, confidence: high }
     role: operation
@@ -235,8 +256,9 @@ contracts:
     return: { type: aws_encryption_sdk.key_providers.raw.RawMasterKey, confidence: high }
     role: factory
 
-  # ── Provider and master key lifecycle, declared on the base classes in
-  # key_providers/base.py; the hierarchy maps the concrete providers to them.
+  # ── Provider and master key lifecycle. key_providers/base.py:135-291
+  # (MasterKeyProvider) and :438-506 (MasterKey). Declared on the base classes
+  # here and on each concrete class below (see INHERITED METHODS).
   - method: aws_encryption_sdk.key_providers.base.MasterKeyProvider.add_master_key
     arity: 1
     return: { type: builtins.NoneType, confidence: high }
@@ -270,6 +292,153 @@ contracts:
     return: { type: aws_encryption_sdk.structures.EncryptedDataKey, confidence: high }
     role: operation
   - method: aws_encryption_sdk.key_providers.base.MasterKey.decrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  # Inherited by every concrete provider; the MRK-aware ones are >=2.3.0 and
+  # KMSMasterKeyProvider is <2.0.0.
+  - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.add_master_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.add_master_keys_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.add_master_key_provider
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.add_master_key_providers_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.decrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.decrypt_data_key_from_list
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.DiscoveryAwsKmsMasterKeyProvider.add_master_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.DiscoveryAwsKmsMasterKeyProvider.add_master_keys_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.DiscoveryAwsKmsMasterKeyProvider.add_master_key_provider
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.DiscoveryAwsKmsMasterKeyProvider.add_master_key_providers_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.DiscoveryAwsKmsMasterKeyProvider.decrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.DiscoveryAwsKmsMasterKeyProvider.decrypt_data_key_from_list
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.add_master_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.add_master_keys_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.add_master_key_provider
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.add_master_key_providers_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.decrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.decrypt_data_key_from_list
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareDiscoveryAwsKmsMasterKeyProvider.add_master_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareDiscoveryAwsKmsMasterKeyProvider.add_master_keys_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareDiscoveryAwsKmsMasterKeyProvider.add_master_key_provider
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareDiscoveryAwsKmsMasterKeyProvider.add_master_key_providers_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareDiscoveryAwsKmsMasterKeyProvider.decrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareDiscoveryAwsKmsMasterKeyProvider.decrypt_data_key_from_list
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.add_master_key
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.add_master_keys_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.add_master_key_provider
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.add_master_key_providers_from_list
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.decrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.decrypt_data_key_from_list
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  # Inherited by both master keys.
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKey.generate_data_key
+    arity: 2
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKey.encrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.EncryptedDataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKey.decrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.raw.RawMasterKey.generate_data_key
+    arity: 2
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.raw.RawMasterKey.encrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.EncryptedDataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.raw.RawMasterKey.decrypt_data_key
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
@@ -342,12 +511,29 @@ contracts:
     arity: 2
     return: { type: aws_encryption_sdk.materials_managers.caching.CachingCryptoMaterialsManager, confidence: high }
     role: factory
-  # materials_managers/base.py:17/30, implemented by both CMMs above.
+  # materials_managers/base.py:17/30, for receivers typed by the base;
+  # each CMM overrides both (default.py:52/129, caching.py:169/219).
   - method: aws_encryption_sdk.materials_managers.base.CryptoMaterialsManager.get_encryption_materials
     arity: 1
     return: { type: aws_encryption_sdk.materials_managers.EncryptionMaterials, confidence: high }
     role: operation
   - method: aws_encryption_sdk.materials_managers.base.CryptoMaterialsManager.decrypt_materials
+    arity: 1
+    return: { type: aws_encryption_sdk.materials_managers.DecryptionMaterials, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.materials_managers.default.DefaultCryptoMaterialsManager.get_encryption_materials
+    arity: 1
+    return: { type: aws_encryption_sdk.materials_managers.EncryptionMaterials, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.materials_managers.default.DefaultCryptoMaterialsManager.decrypt_materials
+    arity: 1
+    return: { type: aws_encryption_sdk.materials_managers.DecryptionMaterials, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.materials_managers.caching.CachingCryptoMaterialsManager.get_encryption_materials
+    arity: 1
+    return: { type: aws_encryption_sdk.materials_managers.EncryptionMaterials, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.materials_managers.caching.CachingCryptoMaterialsManager.decrypt_materials
     arity: 1
     return: { type: aws_encryption_sdk.materials_managers.DecryptionMaterials, confidence: high }
     role: operation
