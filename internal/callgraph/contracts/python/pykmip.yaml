@@ -60,8 +60,8 @@ library:
 # - get_attributes: returns the algorithm and length attributes as KMIP core
 #   objects; no detection rule reads them yet (needs-follow-up).
 # - kmip_version property: protocol version, not crypto (skipped-non-crypto).
-# - objects.SplitKey, objects.SecretData: no detection rule matches them yet
-#   (needs-follow-up). objects.OpaqueObject holds opaque bytes
+# - objects.SplitKey (0.10.0+), objects.SecretData: no detection rule matches
+#   them yet (needs-follow-up). objects.OpaqueObject holds opaque bytes
 #   (skipped-non-crypto). objects.Certificate is the abstract base of
 #   X509Certificate (skipped-non-crypto).
 # - Key and certificate attribute getters (cryptographic_algorithm,
@@ -126,7 +126,9 @@ contracts:
     return: { type: builtins.str, confidence: high }
     role: operation
   # client.py:671 derive_key(object_type, unique_identifiers,
-  # derivation_method, derivation_parameters).
+  # derivation_method, derivation_parameters, **kwargs). The derived key's
+  # algorithm and length travel in **kwargs and the hash in the
+  # derivation_parameters dict; neither is declared.
   - method: kmip.pie.client.ProxyKmipClient.derive_key
     arity: 4
     return: { type: builtins.str, confidence: high }
@@ -139,6 +141,8 @@ contracts:
     arity: 1
     return: { type: builtins.str, confidence: high }
     role: factory
+  # get(uid=None) from 0.7.0; uid is required in 0.4.0-0.6.0, which the
+  # name-only Python fallback still matches.
   - method: kmip.pie.client.ProxyKmipClient.get
     arity: 0
     return: { type: kmip.pie.objects.ManagedObject, confidence: high }
