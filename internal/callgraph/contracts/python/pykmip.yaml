@@ -1,0 +1,251 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: pykmip
+  coordinates:
+    - pykmip
+  version_range: ">=0.4.0"
+  description: "PyKMIP — KMIP client key lifecycle and key-server cryptographic operations"
+
+# Read at pykmip 0.11.0 (kmip/__init__.py, kmip/pie/__init__.py,
+# kmip/pie/client.py, kmip/pie/objects.py, kmip/core/enums.py); checked
+# against 0.3.0, 0.4.0, 0.5.0, 0.6.0, 0.7.0, 0.8.0, 0.9.0 and 0.10.0.
+#
+# VERSION RANGE. kmip.pie.client.ProxyKmipClient and the kmip.pie.objects key
+# classes arrive in 0.4.0 with __enter__, open, close, create,
+# create_key_pair, register, get and destroy. encrypt, decrypt, sign,
+# signature_verify, mac, derive_key, locate, activate and revoke arrive in
+# 0.7.0, rekey and check in 0.8.0. A call to a later method on an older
+# release does not exist to be keyed.
+#
+# SPELLINGS. A Python call-graph key follows the consumer's import:
+# `kmip.pie.client.ProxyKmipClient(..)` and `client.ProxyKmipClient(..)` after
+# `from kmip.pie import client` emit the attribute path, while `from
+# kmip.pie.client import ProxyKmipClient` emits `<path>.<init>`. From 0.7.0 the
+# class is also re-exported as `kmip.pie.ProxyKmipClient` and aliased as
+# `kmip.KmipClient`; every spelling builds the same class. The key classes are
+# documented as `from kmip.pie import objects`, so they carry the
+# kmip.pie.objects spellings only.
+#
+# CONTEXT MANAGER. `with ProxyKmipClient(..) as c:` is the documented idiom;
+# the `as` target takes its type from __enter__, which opens the connection
+# and returns the client.
+#
+# RETURN TYPES. Instance methods are keyed on kmip.pie.client.ProxyKmipClient.
+# The server returns uids, so create, register, rekey and derive_key return
+# builtins.str; create_key_pair, encrypt and mac return tuples (public and
+# private uid; data and server IV; uid and MAC). get returns whichever managed
+# object the uid names, so it is typed by the base class ManagedObject.
+#
+# ROLES. factory creates or retrieves a client or a managed object: the
+# constructors, __enter__, register (stores caller-supplied key material) and
+# get. operation runs cryptography on the server: key and key-pair
+# generation, rekey, key derivation, encrypt, decrypt, sign, signature
+# verification and MAC. open runs the TLS handshake with the KMIP server and is
+# an operation too.
+#
+# PARAMETERS. algorithm is a kmip.core.enums.CryptographicAlgorithm and length
+# the key length in bits. cryptographic_parameters on encrypt, decrypt, sign
+# and signature_verify is a dict that selects the algorithm, mode, padding and
+# hash; it is exported as the call's algorithm. Keyword arguments are not yet
+# bound to positions by the parser, so a keyword-written argument is not
+# exported.
+#
+# Dispositions for the remaining public surface:
+# - close, __exit__: tear down the connection (skipped-non-crypto).
+# - activate, revoke, destroy: key state changes on the server, no
+#   cryptography (skipped-non-crypto).
+# - locate, check, get_attribute_list, set_attribute, modify_attribute,
+#   delete_attribute: attribute search and bookkeeping (skipped-non-crypto).
+# - get_attributes: returns the algorithm and length attributes as KMIP core
+#   objects; no detection rule reads them yet (needs-follow-up).
+# - kmip_version property: protocol version, not crypto (skipped-non-crypto).
+# - objects.SplitKey, objects.SecretData: no detection rule matches them yet
+#   (needs-follow-up). objects.OpaqueObject holds opaque bytes
+#   (skipped-non-crypto). objects.Certificate is the abstract base of
+#   X509Certificate (skipped-non-crypto).
+# - Key and certificate attribute getters (cryptographic_algorithm,
+#   cryptographic_length, value) are attributes, not calls
+#   (skipped-unsupported).
+# - kmip.services.kmip_client.KMIPProxy, the legacy client ProxyKmipClient
+#   wraps: its requests take kmip.core TemplateAttribute objects, so the
+#   algorithm and length are not call arguments, and no detection rule targets
+#   it (needs-follow-up).
+# - kmip.services.server and kmip.core message payloads: server side and wire
+#   encoding (skipped-non-crypto).
+contracts:
+  # ── Client constructors. client.py:56; every argument is optional.
+  - method: kmip.pie.client.ProxyKmipClient
+    arity: 0
+    return: { type: kmip.pie.client.ProxyKmipClient, confidence: high }
+    role: factory
+  - method: kmip.pie.client.ProxyKmipClient.<init>
+    arity: 0
+    return: { type: kmip.pie.client.ProxyKmipClient, confidence: high }
+    role: factory
+  - method: kmip.pie.ProxyKmipClient
+    arity: 0
+    return: { type: kmip.pie.client.ProxyKmipClient, confidence: high }
+    role: factory
+  - method: kmip.pie.ProxyKmipClient.<init>
+    arity: 0
+    return: { type: kmip.pie.client.ProxyKmipClient, confidence: high }
+    role: factory
+  - method: kmip.KmipClient
+    arity: 0
+    return: { type: kmip.pie.client.ProxyKmipClient, confidence: high }
+    role: factory
+  - method: kmip.KmipClient.<init>
+    arity: 0
+    return: { type: kmip.pie.client.ProxyKmipClient, confidence: high }
+    role: factory
+  - method: kmip.pie.client.ProxyKmipClient.__enter__
+    arity: 0
+    return: { type: kmip.pie.client.ProxyKmipClient, confidence: high }
+    role: factory
+  - method: kmip.pie.client.ProxyKmipClient.open
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+
+  # ── Key generation. client.py:196 / :266.
+  - method: kmip.pie.client.ProxyKmipClient.create
+    arity: 2
+    return: { type: builtins.str, confidence: high }
+    role: operation
+    parameters: &kmip_algorithm_length_params
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: length, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: kmip.pie.client.ProxyKmipClient.create_key_pair
+    arity: 2
+    return: { type: builtins.tuple, confidence: high }
+    role: operation
+    parameters: *kmip_algorithm_length_params
+  - method: kmip.pie.client.ProxyKmipClient.rekey
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: operation
+  # client.py:671 derive_key(object_type, unique_identifiers,
+  # derivation_method, derivation_parameters).
+  - method: kmip.pie.client.ProxyKmipClient.derive_key
+    arity: 4
+    return: { type: builtins.str, confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: derivation_method, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+
+  # ── Managed objects. client.py:513 / :930.
+  - method: kmip.pie.client.ProxyKmipClient.register
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: factory
+  - method: kmip.pie.client.ProxyKmipClient.get
+    arity: 0
+    return: { type: kmip.pie.objects.ManagedObject, confidence: high }
+    role: factory
+
+  # ── Server-side cryptographic operations. client.py:1195-1571.
+  - method: kmip.pie.client.ProxyKmipClient.encrypt
+    arity: 1
+    return: { type: builtins.tuple, confidence: high }
+    role: operation
+    parameters: &kmip_crypto_params
+      - { index: 2, name: cryptographic_parameters, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: kmip.pie.client.ProxyKmipClient.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters: *kmip_crypto_params
+  - method: kmip.pie.client.ProxyKmipClient.sign
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+    parameters: *kmip_crypto_params
+  - method: kmip.pie.client.ProxyKmipClient.signature_verify
+    arity: 2
+    return: { type: kmip.core.enums.ValidityIndicator, confidence: high }
+    role: operation
+    parameters:
+      - { index: 3, name: cryptographic_parameters, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: kmip.pie.client.ProxyKmipClient.mac
+    arity: 1
+    return: { type: builtins.tuple, confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+
+  # ── Key objects passed to register. objects.py:659 / :828 / :1001.
+  - method: kmip.pie.objects.SymmetricKey
+    arity: 3
+    return: { type: kmip.pie.objects.SymmetricKey, confidence: high }
+    role: factory
+    parameters: &kmip_key_params
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: length, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+      - { index: 2, name: value, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: kmip.pie.objects.SymmetricKey.<init>
+    arity: 3
+    return: { type: kmip.pie.objects.SymmetricKey, confidence: high }
+    role: factory
+    parameters: *kmip_key_params
+  - method: kmip.pie.objects.PublicKey
+    arity: 3
+    return: { type: kmip.pie.objects.PublicKey, confidence: high }
+    role: factory
+    parameters: *kmip_key_params
+  - method: kmip.pie.objects.PublicKey.<init>
+    arity: 3
+    return: { type: kmip.pie.objects.PublicKey, confidence: high }
+    role: factory
+    parameters: *kmip_key_params
+  # PrivateKey also requires format_type (KeyFormatType).
+  - method: kmip.pie.objects.PrivateKey
+    arity: 4
+    return: { type: kmip.pie.objects.PrivateKey, confidence: high }
+    role: factory
+    parameters: *kmip_key_params
+  - method: kmip.pie.objects.PrivateKey.<init>
+    arity: 4
+    return: { type: kmip.pie.objects.PrivateKey, confidence: high }
+    role: factory
+    parameters: *kmip_key_params
+  # objects.py:1527 X509Certificate(value).
+  - method: kmip.pie.objects.X509Certificate
+    arity: 1
+    return: { type: kmip.pie.objects.X509Certificate, confidence: high }
+    role: factory
+  - method: kmip.pie.objects.X509Certificate.<init>
+    arity: 1
+    return: { type: kmip.pie.objects.X509Certificate, confidence: high }
+    role: factory
+
+hierarchy:
+  kmip.pie.client.ProxyKmipClient:
+    - builtins.object
+  kmip.pie.objects.SymmetricKey:
+    - kmip.pie.objects.Key
+  kmip.pie.objects.PublicKey:
+    - kmip.pie.objects.Key
+  kmip.pie.objects.PrivateKey:
+    - kmip.pie.objects.Key
+  kmip.pie.objects.Key:
+    - kmip.pie.objects.CryptographicObject
+  kmip.pie.objects.X509Certificate:
+    - kmip.pie.objects.Certificate
+  kmip.pie.objects.Certificate:
+    - kmip.pie.objects.CryptographicObject
+  kmip.pie.objects.CryptographicObject:
+    - kmip.pie.objects.ManagedObject
+  kmip.pie.objects.ManagedObject:
+    - builtins.object
+  kmip.core.enums.ValidityIndicator:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  builtins.object: []
