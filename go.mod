@@ -1,6 +1,6 @@
 module github.com/scanoss/crypto-finder
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/CycloneDX/cyclonedx-go v0.12.0

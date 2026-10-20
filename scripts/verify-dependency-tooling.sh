@@ -136,7 +136,7 @@ for file in "${DOCKERFILES[@]}"; do
   fi
 done
 
-if ! grep -q 'goreleaser-cross:v1.25.9@sha256:' .github/workflows/release.yml; then
+if ! grep -q 'goreleaser-cross:v1.26.5@sha256:' .github/workflows/release.yml; then
   fail '.github/workflows/release.yml does not pin the GoReleaser image digest'
 fi
 
