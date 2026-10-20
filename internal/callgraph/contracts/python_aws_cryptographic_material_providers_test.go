@@ -24,7 +24,7 @@ const (
 )
 
 // mplCtor renders both import spellings of a constructor.
-func mplCtor(spelling string, arity, ret string) []string {
+func mplCtor(spelling, arity, ret string) []string {
 	return []string{
 		mplLine(spelling+"#"+arity, spelling, "factory", ret),
 		mplLine(spelling+".<init>#"+arity, spelling+".<init>", "factory", ret),
@@ -39,14 +39,15 @@ func mplLine(key, method, role, ret string) string {
 // 1.11.3, never derived from the YAML: a derived expectation goes green on a
 // corrupted contract.
 func wantMPLContracts() []string {
-	lines := []string{
+	lines := make([]string, 0, 128)
+	lines = append(lines,
 		mplLine(mplPublic+".AwsCryptographicMaterialProviders#0", mplPublic+".AwsCryptographicMaterialProviders", "factory", mplClient),
 		mplLine(mplPublic+".AwsCryptographicMaterialProviders.<init>#0", mplPublic+".AwsCryptographicMaterialProviders.<init>", "factory", mplClient),
 		mplLine(mplPublic+".client.AwsCryptographicMaterialProviders#0", mplPublic+".client.AwsCryptographicMaterialProviders", "factory", mplClient),
 		mplLine(mplPublic+".client.AwsCryptographicMaterialProviders.<init>#0", mplPublic+".client.AwsCryptographicMaterialProviders.<init>", "factory", mplClient),
 		mplLine(mplClient+".create_default_cryptographic_materials_manager#1", mplClient+".create_default_cryptographic_materials_manager", "factory", mplCMM),
 		mplLine(mplClient+".create_required_encryption_context_cmm#1", mplClient+".create_required_encryption_context_cmm", "factory", mplCMM),
-	}
+	)
 	for _, m := range []string{
 		"create_aws_kms_keyring",
 		"create_aws_kms_discovery_keyring",
