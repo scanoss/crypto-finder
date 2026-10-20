@@ -1,0 +1,144 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: truststore
+  coordinates:
+    - truststore
+  version_range: ">=0.1.0"
+  description: "truststore — ssl.SSLContext that verifies peers against the OS trust store"
+
+# Read at truststore 0.10.5 (src/truststore/__init__.py, _api.py); checked
+# against 0.1.0, 0.2.0, 0.3.0, 0.5.0, 0.6.0, 0.8.0, 0.9.2 and 0.10.0.
+#
+# VERSION RANGE. 0.1.0 and 0.2.0 ship a single truststore.py whose class is
+# TruststoreSSLContext. From 0.3.0 the class is SSLContext, defined in
+# truststore._api and re-exported by the package. inject_into_ssl and
+# extract_from_ssl arrive in 0.6.0, set_default_verify_paths in 0.10.0. Before
+# 0.6.0 SSLContext defines only wrap_socket, wrap_bio and load_verify_locations
+# and forwards every other attribute to the wrapped ssl.SSLContext, so the
+# config methods below resolve to the same call there.
+#
+# SPELLINGS. `truststore.SSLContext(..)` emits the attribute path
+# `truststore.SSLContext`; `from truststore import SSLContext; SSLContext(..)`
+# emits `truststore.SSLContext.<init>`. Each constructor carries both keys.
+# truststore._api is private and not declared as a spelling.
+#
+# ROLES. factory creates the context or a TLS connection from it (wrap_socket,
+# wrap_bio). config sets trust anchors, the presented certificate chain and the
+# cipher list, and inject_into_ssl / extract_from_ssl swap truststore in and out
+# of the ssl module. output reads the loaded CA certificates and ciphers.
+#
+# Dispositions for the remaining public surface:
+# - The protocol bounds, verify mode/flags, options and check_hostname are
+#   properties set by assignment, not calls (skipped-unsupported).
+# - set_alpn_protocols, set_npn_protocols, session_stats, cert_store_stats and
+#   keylog_filename are not crypto (skipped-non-crypto).
+contracts:
+  # ── SSLContext constructors. _api.py:85 SSLContext(protocol=None).
+  - method: truststore.SSLContext
+    arity: 0
+    return: { type: truststore._api.SSLContext, confidence: high }
+    role: factory
+    parameters: &protocol_param
+      - index: 0
+        name: protocol
+        role: operation-determining
+  - method: truststore.SSLContext.<init>
+    arity: 0
+    return: { type: truststore._api.SSLContext, confidence: high }
+    role: factory
+    parameters: *protocol_param
+  # 0.1.0-0.2.0: truststore.py:431 TruststoreSSLContext(protocol=None).
+  - method: truststore.TruststoreSSLContext
+    arity: 0
+    return: { type: truststore.TruststoreSSLContext, confidence: high }
+    role: factory
+    parameters: *protocol_param
+  - method: truststore.TruststoreSSLContext.<init>
+    arity: 0
+    return: { type: truststore.TruststoreSSLContext, confidence: high }
+    role: factory
+    parameters: *protocol_param
+
+  # ── ssl module injection. _api.py:32 / :64.
+  - method: truststore.inject_into_ssl
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: truststore.extract_from_ssl
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+
+  # ── SSLContext methods. _api.py:120-240.
+  - method: truststore._api.SSLContext.wrap_socket
+    arity: 1
+    return: { type: ssl.SSLSocket, confidence: high }
+    role: factory
+  - method: truststore._api.SSLContext.wrap_bio
+    arity: 2
+    return: { type: ssl.SSLObject, confidence: high }
+    role: factory
+  - method: truststore._api.SSLContext.load_verify_locations
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: truststore._api.SSLContext.load_cert_chain
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: truststore._api.SSLContext.load_default_certs
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: truststore._api.SSLContext.set_default_verify_paths
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+  - method: truststore._api.SSLContext.set_ciphers
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: cipherlist
+        role: operation-determining
+  - method: truststore._api.SSLContext.get_ciphers
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+  - method: truststore._api.SSLContext.get_ca_certs
+    arity: 0
+    return: { type: builtins.list, confidence: high }
+    role: output
+
+  # ── 0.1.0-0.2.0 TruststoreSSLContext methods. truststore.py:453-473.
+  - method: truststore.TruststoreSSLContext.wrap_socket
+    arity: 1
+    return: { type: ssl.SSLSocket, confidence: high }
+    role: factory
+  - method: truststore.TruststoreSSLContext.wrap_bio
+    arity: 2
+    return: { type: ssl.SSLObject, confidence: high }
+    role: factory
+  - method: truststore.TruststoreSSLContext.load_verify_locations
+    arity: 0
+    return: { type: builtins.NoneType, confidence: high }
+    role: config
+
+hierarchy:
+  truststore._api.SSLContext:
+    - ssl.SSLContext
+  truststore.TruststoreSSLContext:
+    - ssl.SSLContext
+  ssl.SSLContext:
+    - builtins.object
+  ssl.SSLSocket:
+    - builtins.object
+  ssl.SSLObject:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  builtins.list:
+    - builtins.object
+  builtins.object: []
