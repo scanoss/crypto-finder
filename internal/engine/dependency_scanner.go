@@ -168,11 +168,12 @@ func (ds *DependencyScanner) ScanWithDependencies(
 
 	validator := &rules.ParameterConditionValidator{}
 	prepareSpan := perf.Start("dependencies.resolve")
-	resolved, filteredRulePaths, rulesHash, cleanupRulePaths, err := ds.prepareDependencyScan(ctx, opts, validator)
+	scanRoot, filteredRulePaths, rulesHash, cleanupRulePaths, err := ds.prepareDependencyScan(ctx, opts, validator)
 	prepareSpan.End()
 	if err != nil {
 		return nil, err
 	}
+	resolved := scanRoot.result
 	defer cleanupRulePaths()
 	ecosystem := ""
 	if ds.resolver != nil {
@@ -220,6 +221,11 @@ func (ds *DependencyScanner) ScanWithDependencies(
 	result := ds.mergeReports(userReport, depResults)
 	attributeSpan.End()
 
+	pathsSpan := perf.Start("dependencies.graph")
+	sharedGraphs := dependency.SharedGraphs(ctx, scanRoot.dirs, ecosystem)
+	dependencyPaths := dependency.ResolvedPaths(sharedGraphs, resolved, ecosystem, parsed)
+	pathsSpan.End()
+
 	pipelineDuration := time.Since(pipelineStart)
 	log.Info().
 		Str("duration", utils.HumanDuration(pipelineDuration)).
@@ -233,7 +239,7 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		Ecosystem:       ds.resolver.Ecosystem(),
 		ProjectRoot:     opts.ScanOptions.Target,
 		Dependencies:    canonicalDependencies(resolved.Dependencies),
-		DependencyPaths: dependency.Paths(resolved, parsed),
+		DependencyPaths: dependencyPaths,
 		summary:         summary,
 	}, nil
 }
@@ -244,6 +250,8 @@ func (ds *DependencyScanner) ScanWithDependencies(
 // resolves today takes the single Resolve call it always took, with the same
 // typed error.
 //
+// It also returns the directories it resolved: the target, or each module root.
+//
 // skipPatterns are the scan's exclusions. Discovery honors them because
 // resolving a root runs mvn, gradle, cargo or go in that directory, which is a
 // heavier consequence than reading a file the user asked to skip.
@@ -251,18 +259,20 @@ func (ds *DependencyScanner) resolveScanRoot(
 	ctx context.Context,
 	target string,
 	skipPatterns []string,
-) (*dependency.ResolveResult, error) {
+) (*dependency.ResolveResult, []string, error) {
 	ecosystem := ds.resolver.Ecosystem()
 	discovery := dependency.ResolutionRoots(target, ecosystem, skipPatterns)
 	logRootDiscovery(target, ecosystem, discovery)
 	if len(discovery.Roots) == 0 {
-		return ds.resolver.Resolve(ctx, target)
+		result, err := ds.resolver.Resolve(ctx, target)
+		return result, []string{target}, err
 	}
 
 	resolutions := make([]dependency.RootResolution, 0, len(discovery.Roots))
+	dirs := make([]string, 0, len(discovery.Roots))
 	for i, root := range discovery.Roots {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		log.Info().Str("root", root.Rel).Int("index", i+1).Int("roots", len(discovery.Roots)).Msg("Resolving module root")
 		result, err := ds.resolver.Resolve(ctx, root.Dir)
@@ -270,7 +280,7 @@ func (ds *DependencyScanner) resolveScanRoot(
 			// WrapUnknown only prefixes an already-typed failure, so the root
 			// keeps its own code and details and now also names which of
 			// several roots failed.
-			return nil, failure.WrapUnknown(
+			return nil, nil, failure.WrapUnknown(
 				err,
 				failure.CodeDependencyResolutionFailed,
 				failure.StageDependency,
@@ -278,8 +288,9 @@ func (ds *DependencyScanner) resolveScanRoot(
 			)
 		}
 		resolutions = append(resolutions, dependency.RootResolution{Root: root, Result: result})
+		dirs = append(dirs, root.Dir)
 	}
-	return dependency.MergeRootResolutions(resolutions), nil
+	return dependency.MergeRootResolutions(resolutions), dirs, nil
 }
 
 func logRootDiscovery(target, ecosystem string, discovery dependency.RootDiscovery) {
@@ -306,15 +317,22 @@ func logRootDiscovery(target, ecosystem string, discovery dependency.RootDiscove
 	}
 }
 
+// resolvedScanRoot is the scan root's resolution and the directories
+// resolveScanRoot resolved for it.
+type resolvedScanRoot struct {
+	result *dependency.ResolveResult
+	dirs   []string
+}
+
 func (ds *DependencyScanner) prepareDependencyScan(
 	ctx context.Context,
 	opts DepScanOptions,
 	validator *rules.ParameterConditionValidator,
-) (*dependency.ResolveResult, []string, string, func(), error) {
+) (resolvedScanRoot, []string, string, func(), error) {
 	log.Info().Str("target", opts.ScanOptions.Target).Msg("Resolving dependencies")
-	resolved, err := ds.resolveScanRoot(ctx, opts.ScanOptions.Target, opts.ScanOptions.ScannerConfig.SkipPatterns)
+	resolved, dirs, err := ds.resolveScanRoot(ctx, opts.ScanOptions.Target, opts.ScanOptions.ScannerConfig.SkipPatterns)
 	if err != nil {
-		return nil, nil, "", func() {}, failure.WrapUnknown(
+		return resolvedScanRoot{}, nil, "", func() {}, failure.WrapUnknown(
 			err,
 			failure.CodeDependencyResolutionFailed,
 			failure.StageDependency,
@@ -323,12 +341,12 @@ func (ds *DependencyScanner) prepareDependencyScan(
 	}
 	log.Info().Int("deps", len(resolved.Dependencies)).Msg("Resolved dependencies")
 	if len(resolved.Dependencies) == 0 {
-		return resolved, nil, "", func() {}, nil
+		return resolvedScanRoot{resolved, dirs}, nil, "", func() {}, nil
 	}
 
 	filteredRulePaths, cleanupRulePaths, err := ds.loadFilteredRules(ds.resolver.Ecosystem(), validator)
 	if err != nil {
-		return nil, nil, "", func() {}, failure.WrapUnknown(
+		return resolvedScanRoot{}, nil, "", func() {}, failure.WrapUnknown(
 			err,
 			failure.CodeRulesLoadFailed,
 			failure.StageRules,
@@ -340,7 +358,7 @@ func (ds *DependencyScanner) prepareDependencyScan(
 		Str("ecosystem", ds.resolver.Ecosystem()).
 		Msg("Filtered rules by language")
 
-	return resolved, filteredRulePaths, ds.computeRulesHash(filteredRulePaths), cleanupRulePaths, nil
+	return resolvedScanRoot{resolved, dirs}, filteredRulePaths, ds.computeRulesHash(filteredRulePaths), cleanupRulePaths, nil
 }
 
 func (ds *DependencyScanner) computeRulesHash(rulePaths []string) string {

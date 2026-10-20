@@ -1463,12 +1463,15 @@ func TestDependencyScanner_ResolveScanRoot_RootManifestResolvesAtTarget(t *testi
 	}}
 	ds := &DependencyScanner{resolver: resolver}
 
-	resolved, err := ds.resolveScanRoot(context.Background(), root, nil)
+	resolved, dirs, err := ds.resolveScanRoot(context.Background(), root, nil)
 	if err != nil {
 		t.Fatalf("resolveScanRoot: %v", err)
 	}
 	if !reflect.DeepEqual(resolver.calls, []string{root}) {
 		t.Fatalf("Resolve calls = %v, want exactly the scan root %q", resolver.calls, root)
+	}
+	if !reflect.DeepEqual(dirs, []string{root}) {
+		t.Errorf("resolved dirs = %v, want the scan root %q", dirs, root)
 	}
 	if resolved.RootModule != "example.com/root" {
 		t.Errorf("RootModule = %q, want the resolver's own answer untouched", resolved.RootModule)
@@ -1489,7 +1492,7 @@ func TestDependencyScanner_ResolveScanRoot_DiscoveredRootsAreResolvedAndMerged(t
 	}}
 	ds := &DependencyScanner{resolver: resolver}
 
-	resolved, err := ds.resolveScanRoot(context.Background(), root, nil)
+	resolved, dirs, err := ds.resolveScanRoot(context.Background(), root, nil)
 	if err != nil {
 		t.Fatalf("resolveScanRoot: %v", err)
 	}
@@ -1497,6 +1500,9 @@ func TestDependencyScanner_ResolveScanRoot_DiscoveredRootsAreResolvedAndMerged(t
 	wantCalls := []string{filepath.Join(root, "services", "gateway"), filepath.Join(root, "services", "ledger")}
 	if !reflect.DeepEqual(resolver.calls, wantCalls) {
 		t.Fatalf("Resolve calls = %v, want %v", resolver.calls, wantCalls)
+	}
+	if !reflect.DeepEqual(dirs, wantCalls) {
+		t.Errorf("resolved dirs = %v, want each module root %v", dirs, wantCalls)
 	}
 	if resolved.RootModule != "" {
 		t.Errorf("RootModule = %q, want empty: the scan root declares no module and its directory name is not one", resolved.RootModule)
@@ -1526,7 +1532,7 @@ func TestDependencyScanner_ResolveScanRoot_FailingRootNamesIt(t *testing.T) {
 	}}
 	ds := &DependencyScanner{resolver: resolver}
 
-	_, err := ds.resolveScanRoot(context.Background(), root, nil)
+	_, _, err := ds.resolveScanRoot(context.Background(), root, nil)
 	if err == nil {
 		t.Fatal("resolveScanRoot: expected an error")
 	}
@@ -1574,7 +1580,7 @@ func TestDependencyScanner_ResolveScanRoot_NothingBelowKeepsTheResolverError(t *
 	root := writeRepoTree(t, map[string]string{"src/main/java/app/Use.java": "package app; class Use {}"})
 	ds := &DependencyScanner{resolver: dependency.NewJavaResolver()}
 
-	_, err := ds.resolveScanRoot(context.Background(), root, nil)
+	_, _, err := ds.resolveScanRoot(context.Background(), root, nil)
 	structured, ok := failure.As(err)
 	if !ok {
 		t.Fatalf("failure.As: %v is not a structured failure", err)
