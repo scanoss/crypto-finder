@@ -137,6 +137,17 @@ var fastecdsaAPI = []fastecdsaEntry{
 		[]string{feCurve},
 		"3.0.1 fastecdsa/keys.py:12",
 	},
+	// Before 1.1.3 `gen_keypair(curve=P256)` lives in fastecdsa.ecdsa.
+	{
+		"fastecdsa.ecdsa.gen_keypair", 0, "factory", "builtins.tuple", "high",
+		nil,
+		"1.1.0 fastecdsa/ecdsa.py:14",
+	},
+	{
+		"fastecdsa.ecdsa.gen_keypair", 1, "factory", "builtins.tuple", "high",
+		[]string{feCurve},
+		"1.1.0 fastecdsa/ecdsa.py:14",
+	},
 
 	// `gen_private_key(curve, randfunc=urandom) -> int`. `randfunc` arrives at
 	// 1.7.0, so arity 2 is legal from there and arity 1 from 1.1.3.
@@ -602,6 +613,7 @@ func TestPythonFastecdsaContract_EveryDeclaredArityIsLegal(t *testing.T) {
 		"fastecdsa.ecdsa.sign":                                  {2, 5},
 		"fastecdsa.ecdsa.verify":                                {3, 6},
 		"fastecdsa.keys.gen_keypair":                            {1, 1},
+		"fastecdsa.ecdsa.gen_keypair":                           {0, 1}, // 1.1.x: gen_keypair(curve=P256)
 		"fastecdsa.keys.gen_private_key":                        {1, 2},
 		"fastecdsa.keys.get_public_key":                         {2, 2},
 		"fastecdsa.keys.get_public_keys_from_sig":               {2, 4},

@@ -158,6 +158,7 @@ library:
 # VERSION WINDOWS PER SYMBOL, measured over all 46 sdists with `ast`; every one
 # is contiguous, so no entry here pairs a symbol with a range it is absent from:
 #   ecdsa.sign / ecdsa.verify                       1.1.0 - 3.0.1   39 rows
+#   ecdsa.gen_keypair                               1.1.0 - 1.1.2    3 rows
 #   keys.gen_keypair / gen_private_key /
 #     get_public_key                                1.1.3 - 3.0.1   36 rows
 #   keys.get_public_keys_from_sig                   1.6.2 - 3.0.1   26 rows
@@ -633,3 +634,23 @@ contracts:
     canonical_return_type: builtins.tuple
     parameter_types:
       - builtins.bytes
+
+  # ── Names older releases use ──
+  # 1.1.0 to 1.1.2: gen_keypair(curve=P256) is defined in fastecdsa.ecdsa;
+  # 1.1.3 moved it to fastecdsa.keys.
+  - method: fastecdsa.ecdsa.gen_keypair
+    arity: 0
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+  - method: fastecdsa.ecdsa.gen_keypair
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    canonical_return_type: builtins.tuple
+    parameter_types:
+      - fastecdsa.curve.Curve
