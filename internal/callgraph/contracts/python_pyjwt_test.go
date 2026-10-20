@@ -132,6 +132,14 @@ func wantPyjwtContracts() []string {
 		"jwt.get_algorithm_by_name#1 jwt.get_algorithm_by_name/factory/jwt.algorithms.Algorithm/high/-/jwt.algorithms.Algorithm/params=0:alg_name:operation-determining:-:-/varargs=false/when=-/lib=pyjwt",
 		"jwt.register_algorithm#2 jwt.register_algorithm/config/builtins.NoneType/high/-/builtins.NoneType/params=-/varargs=false/when=-/lib=pyjwt",
 		"jwt.unregister_algorithm#1 jwt.unregister_algorithm/config/builtins.NoneType/high/-/builtins.NoneType/params=-/varargs=false/when=-/lib=pyjwt",
+		// 1.0.0 jwt/api.py:17 class PyJWT, :57 encode returns b'.'.join(segments)
+		// at :110, :112 decode; 0.4.2 api.py:35 and :88 module-level encode and decode.
+		"jwt.api.PyJWT#0 jwt.api.PyJWT/factory/jwt.api.PyJWT/high/-/jwt.api.PyJWT/params=-/varargs=false/when=-/lib=pyjwt",
+		"jwt.api.PyJWT.<init>#0 jwt.api.PyJWT.<init>/factory/jwt.api.PyJWT/high/-/jwt.api.PyJWT/params=-/varargs=false/when=-/lib=pyjwt",
+		"jwt.api.PyJWT.decode#1 jwt.api.PyJWT.decode/operation/builtins.dict/high/-/builtins.dict/params=-/varargs=false/when=-/lib=pyjwt",
+		"jwt.api.PyJWT.encode#2 jwt.api.PyJWT.encode/operation/builtins.bytes/high/-/builtins.bytes/params=-/varargs=false/when=-/lib=pyjwt",
+		"jwt.api.decode#1 jwt.api.decode/operation/builtins.dict/high/-/builtins.dict/params=-/varargs=false/when=-/lib=pyjwt",
+		"jwt.api.encode#2 jwt.api.encode/operation/builtins.bytes/high/-/builtins.bytes/params=-/varargs=false/when=-/lib=pyjwt",
 	}
 }
 

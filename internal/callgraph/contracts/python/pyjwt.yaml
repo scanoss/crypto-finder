@@ -29,6 +29,8 @@ library:
 # (jwt/api_jwt.py). Widening the range to cover 1.x would publish a false return
 # type for every 1.x consumer, so the range stays at 2.x even though the
 # `algorithm=` keyword itself exists from 0.1.1 and `algorithms=` from 1.0.0.
+# The 0.4.2-1.1 `jwt.api.*` block at the end is a distinct FQN, so its bytes
+# `encode` publishes no false type for 2.x.
 #
 # ARITY. `ContractsForTolerant` falls back to a name-only, lowest-arity lookup
 # for python (contracts.go:292-342), so one entry per (method, spelling) joins
@@ -188,6 +190,40 @@ contracts:
         name: alg_name
         role: operation-determining
 
+  # ── Names older releases use ──
+  # 1.0.0 to 1.1.0: PyJWT is defined in jwt/api.py, and its encode returns bytes.
+  - method: jwt.api.PyJWT
+    arity: 0
+    return: { type: jwt.api.PyJWT, confidence: high }
+    canonical_return_type: jwt.api.PyJWT
+    role: factory
+  - method: jwt.api.PyJWT.<init>
+    arity: 0
+    return: { type: jwt.api.PyJWT, confidence: high }
+    canonical_return_type: jwt.api.PyJWT
+    role: factory
+  - method: jwt.api.PyJWT.encode
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    canonical_return_type: builtins.bytes
+    role: operation
+  - method: jwt.api.PyJWT.decode
+    arity: 1
+    return: { type: builtins.dict, confidence: high }
+    canonical_return_type: builtins.dict
+    role: operation
+  # 0.4.2 to 1.1.0: the module-level encode (bytes) and decode in jwt/api.py.
+  - method: jwt.api.encode
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    canonical_return_type: builtins.bytes
+    role: operation
+  - method: jwt.api.decode
+    arity: 1
+    return: { type: builtins.dict, confidence: high }
+    canonical_return_type: builtins.dict
+    role: operation
+
 hierarchy:
   builtins.str:
     - builtins.object
@@ -195,7 +231,11 @@ hierarchy:
     - builtins.object
   builtins.NoneType:
     - builtins.object
+  builtins.bytes:
+    - builtins.object
   jwt.api_jwt.PyJWT:
+    - builtins.object
+  jwt.api.PyJWT:
     - builtins.object
   jwt.api_jws.PyJWS:
     - builtins.object
