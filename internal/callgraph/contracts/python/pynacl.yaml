@@ -323,6 +323,26 @@ contracts:
     return: { type: builtins.bytes, confidence: high }
     role: operation
 
+  # ── Names older releases use ──
+  # 0.2.0 to 0.2.3: signing is nacl.c.crypto_sign(sk, message), re-exported by
+  # nacl.c; 0.3.0 renamed the package to nacl.bindings.
+  - method: nacl.c.crypto_sign
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.c.crypto_sign.crypto_sign
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.c.crypto_sign_open
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: nacl.c.crypto_sign.crypto_sign_open
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
 hierarchy:
   nacl.secret.SecretBox:
     - builtins.object
