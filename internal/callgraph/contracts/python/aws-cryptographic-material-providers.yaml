@@ -16,8 +16,8 @@ library:
 # VERSION RANGE. `>=1.7.2` is the oldest release on PyPI; the client methods
 # and the input signatures below are unchanged from 1.7.2 to 1.11.3.
 #
-# SPELLINGS. Consumers import from the public mpl modules, which re-export the
-# smithygenerated ones with `import *`. `from ..mpl import
+# SPELLINGS. Consumers import from the public mpl and keystore modules, which
+# re-export the smithygenerated ones with `import *`. `from ..mpl import
 # AwsCryptographicMaterialProviders; AwsCryptographicMaterialProviders(..)`
 # emits `<module>.AwsCryptographicMaterialProviders.<init>`; the attribute
 # path emits the name without `<init>`. Each constructor carries both keys for
@@ -30,23 +30,28 @@ library:
 # wrapping key, wrapping_alg, padding_scheme, encryption_algorithm and
 # curve_spec carry no parameter role.
 #
-# ROLES. factory creates the client, a keyring, a CMM, or an input object that
-# carries key material or a wrapping algorithm. The keyring's own
-# on_encrypt/on_decrypt are called by the ESDK, not by consumers.
+# ROLES. factory creates the client, a keyring, a CMM, the KeyStore, or an
+# input object that carries key material, a wrapping algorithm or the key
+# that wraps (ECDH static configurations, KMS configurations, branch-key
+# inputs). operation runs the keyring's on_encrypt/on_decrypt, the CMM's
+# materials calls, and the KeyStore's create_key/version_key, which generate
+# and rotate branch and beacon keys through KMS. output reads a branch or
+# beacon key back from the KeyStore, unwrapped by KMS.
+#
+# KEYSTORE. aws_cryptographic_material_providers.keystore and its client,
+# config and models modules exist from 1.7.2 and are identical to 1.11.3.
 #
 # Dispositions for the remaining public surface:
 # - MaterialProvidersConfig() is an empty config object (skipped-non-crypto).
 # - Discovery, MRK, MRK-discovery and multi keyring inputs, and the CMM inputs,
 #   carry key IDs, KMS clients or child keyrings, not key material or an
 #   algorithm (skipped-non-crypto); their create_* methods are contracted.
-# - CreateAwsKmsHierarchicalKeyringInput reads branch keys from the KeyStore
-#   client (needs-follow-up).
-# - aws_cryptographic_material_providers.keystore.KeyStore: create_key and
-#   version_key create and rotate the branch keys the hierarchical keyring
-#   wraps with; create_key_store, get_key_store_info, get_active_branch_key,
-#   get_branch_key_version and get_beacon_key read them (needs-follow-up).
-# - RawEcdhStaticConfigurations* / KmsEcdhStaticConfigurations* union members
-#   carry the ECDH private and public keys (needs-follow-up).
+# - The *Unknown union members (RawEcdh/KmsEcdh static configurations,
+#   KMSConfiguration) are deserialization placeholders (skipped-non-crypto).
+# - KeyStore.create_key_store creates the DynamoDB table and get_key_store_info
+#   returns the store configuration (skipped-non-crypto). Get*Input,
+#   CreateKeyStoreInput and the Discovery/MRDiscovery selectors carry only
+#   identifiers, a table ARN or a region (skipped-non-crypto).
 # - AesWrappingAlg, PaddingScheme, ESDKAlgorithmSuiteId and the other enum
 #   classes are member reads, not calls (skipped-unsupported).
 # - create_cryptographic_materials_cache, create_default_client_supplier,
@@ -55,9 +60,6 @@ library:
 #   encryption_materials_has_plaintext_data_key and
 #   decryption_materials_with_plaintext_data_key are cache, routing and
 #   validation helpers (skipped-non-crypto).
-# - Keyring.on_encrypt/on_decrypt and CryptographicMaterialsManager.
-#   get_encryption_materials/decrypt_materials run inside the ESDK
-#   (needs-follow-up).
 contracts:
   # ── Client constructors. smithygenerated/.../client.py:125.
   - method: aws_cryptographic_material_providers.mpl.AwsCryptographicMaterialProviders
@@ -202,6 +204,216 @@ contracts:
     return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsEcdhKeyringInput, confidence: high }
     role: factory
 
+  # ── Hierarchical keyring input: key_store and branch_key_id select the
+  # branch key the keyring wraps with. models.py:2330.
+  - method: aws_cryptographic_material_providers.mpl.models.CreateAwsKmsHierarchicalKeyringInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsHierarchicalKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateAwsKmsHierarchicalKeyringInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsHierarchicalKeyringInput, confidence: high }
+    role: factory
+
+  # ── ECDH static configurations: the sender/recipient keys of the raw and
+  # KMS ECDH keyrings. Inner inputs are keyword-only; union members take one
+  # positional `value`. models.py:1371-1560, :3441-3689.
+  - method: aws_cryptographic_material_providers.mpl.models.RawPrivateKeyToStaticPublicKeyInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawPrivateKeyToStaticPublicKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.RawPrivateKeyToStaticPublicKeyInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawPrivateKeyToStaticPublicKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.EphemeralPrivateKeyToStaticPublicKeyInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.EphemeralPrivateKeyToStaticPublicKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.EphemeralPrivateKeyToStaticPublicKeyInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.EphemeralPrivateKeyToStaticPublicKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.PublicKeyDiscoveryInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.PublicKeyDiscoveryInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.PublicKeyDiscoveryInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.PublicKeyDiscoveryInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.KmsPrivateKeyToStaticPublicKeyInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsPrivateKeyToStaticPublicKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.KmsPrivateKeyToStaticPublicKeyInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsPrivateKeyToStaticPublicKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.KmsPublicKeyDiscoveryInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsPublicKeyDiscoveryInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.KmsPublicKeyDiscoveryInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsPublicKeyDiscoveryInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.RawEcdhStaticConfigurationsRawPrivateKeyToStaticPublicKey
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawEcdhStaticConfigurationsRawPrivateKeyToStaticPublicKey, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.RawEcdhStaticConfigurationsRawPrivateKeyToStaticPublicKey.<init>
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawEcdhStaticConfigurationsRawPrivateKeyToStaticPublicKey, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.RawEcdhStaticConfigurationsEphemeralPrivateKeyToStaticPublicKey
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawEcdhStaticConfigurationsEphemeralPrivateKeyToStaticPublicKey, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.RawEcdhStaticConfigurationsEphemeralPrivateKeyToStaticPublicKey.<init>
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawEcdhStaticConfigurationsEphemeralPrivateKeyToStaticPublicKey, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.RawEcdhStaticConfigurationsPublicKeyDiscovery
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawEcdhStaticConfigurationsPublicKeyDiscovery, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.RawEcdhStaticConfigurationsPublicKeyDiscovery.<init>
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawEcdhStaticConfigurationsPublicKeyDiscovery, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.KmsEcdhStaticConfigurationsKmsPrivateKeyToStaticPublicKey
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsEcdhStaticConfigurationsKmsPrivateKeyToStaticPublicKey, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.KmsEcdhStaticConfigurationsKmsPrivateKeyToStaticPublicKey.<init>
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsEcdhStaticConfigurationsKmsPrivateKeyToStaticPublicKey, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.KmsEcdhStaticConfigurationsKmsPublicKeyDiscovery
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsEcdhStaticConfigurationsKmsPublicKeyDiscovery, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.KmsEcdhStaticConfigurationsKmsPublicKeyDiscovery.<init>
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsEcdhStaticConfigurationsKmsPublicKeyDiscovery, confidence: high }
+    role: factory
+
+  # ── Keyring and CMM operations, keyed on the reference classes the
+  # factories return. references.py:517-700.
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring.on_encrypt
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.OnEncryptOutput, confidence: high }
+    role: operation
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring.on_decrypt
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.OnDecryptOutput, confidence: high }
+    role: operation
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.CryptographicMaterialsManager.get_encryption_materials
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.GetEncryptionMaterialsOutput, confidence: high }
+    role: operation
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.CryptographicMaterialsManager.decrypt_materials
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.DecryptMaterialsOutput, confidence: high }
+    role: operation
+
+  # ── KeyStore: holds the branch keys the hierarchical keyring wraps with.
+  # keystore/{__init__,client,config,models}.py re-export the smithygenerated
+  # aws_cryptography_keystore modules. client.py:65-178.
+  - method: aws_cryptographic_material_providers.keystore.KeyStore
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.KeyStore.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.client.KeyStore
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.client.KeyStore.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.config.KeyStoreConfig
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.config.KeyStoreConfig, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.config.KeyStoreConfig.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.config.KeyStoreConfig, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.KMSConfigurationKmsKeyArn
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationKmsKeyArn, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.KMSConfigurationKmsKeyArn.<init>
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationKmsKeyArn, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.KMSConfigurationKmsMRKeyArn
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationKmsMRKeyArn, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.KMSConfigurationKmsMRKeyArn.<init>
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationKmsMRKeyArn, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.KMSConfigurationDiscovery
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationDiscovery, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.KMSConfigurationDiscovery.<init>
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationDiscovery, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.KMSConfigurationMrDiscovery
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationMrDiscovery, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.KMSConfigurationMrDiscovery.<init>
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationMrDiscovery, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.CreateKeyInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.CreateKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.CreateKeyInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.CreateKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.VersionKeyInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.VersionKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.keystore.models.VersionKeyInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.VersionKeyInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore.create_key
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.CreateKeyOutput, confidence: high }
+    role: operation
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore.version_key
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.VersionKeyOutput, confidence: high }
+    role: operation
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore.get_active_branch_key
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.GetActiveBranchKeyOutput, confidence: high }
+    role: output
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore.get_branch_key_version
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.GetBranchKeyVersionOutput, confidence: high }
+    role: output
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore.get_beacon_key
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.GetBeaconKeyOutput, confidence: high }
+    role: output
+
 hierarchy:
   aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders:
     - builtins.object
@@ -224,5 +436,61 @@ hierarchy:
   aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsRsaKeyringInput:
     - builtins.object
   aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsEcdhKeyringInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsHierarchicalKeyringInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawPrivateKeyToStaticPublicKeyInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.EphemeralPrivateKeyToStaticPublicKeyInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.PublicKeyDiscoveryInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsPrivateKeyToStaticPublicKeyInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsPublicKeyDiscoveryInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawEcdhStaticConfigurationsRawPrivateKeyToStaticPublicKey:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawEcdhStaticConfigurationsEphemeralPrivateKeyToStaticPublicKey:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.RawEcdhStaticConfigurationsPublicKeyDiscovery:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsEcdhStaticConfigurationsKmsPrivateKeyToStaticPublicKey:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.KmsEcdhStaticConfigurationsKmsPublicKeyDiscovery:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.OnEncryptOutput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.OnDecryptOutput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.GetEncryptionMaterialsOutput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.DecryptMaterialsOutput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.config.KeyStoreConfig:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationKmsKeyArn:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationKmsMRKeyArn:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationDiscovery:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.KMSConfigurationMrDiscovery:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.CreateKeyInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.VersionKeyInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.CreateKeyOutput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.VersionKeyOutput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.GetActiveBranchKeyOutput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.GetBranchKeyVersionOutput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.models.GetBeaconKeyOutput:
     - builtins.object
   builtins.object: []
