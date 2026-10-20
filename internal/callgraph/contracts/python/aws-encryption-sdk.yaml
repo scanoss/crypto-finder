@@ -58,9 +58,7 @@ library:
 #
 # Dispositions for the remaining public surface:
 # - Keyrings (the `keyring=` argument of 4.x) are contracted in
-#   aws-cryptographic-material-providers.yaml (covered-existing);
-#   materials_managers.mpl.CryptoMaterialsManagerFromMPL wraps an MPL CMM
-#   inside the ESDK (needs-follow-up).
+#   aws-cryptographic-material-providers.yaml (covered-existing).
 # - RawMasterKeyProvider is abstract; consumers subclass it and implement
 #   _get_raw_key, so the constructor and every inherited call are keyed on
 #   the consumer's own class and cannot be contracted (skipped-unsupported).
@@ -74,18 +72,16 @@ library:
 #   DiscoveryFilter hold the same keywords the client, streams and providers
 #   accept (skipped-non-crypto).
 # - BaseKMSMasterKeyProvider.add_regional_client(s_from_list), provider_id,
-#   owns_data_key, master_key_for_encrypt/decrypt and
-#   master_keys_for_encryption route keys without doing cryptography
-#   (skipped-non-crypto).
+#   owns_data_key and master_keys_for_encryption route keys without doing
+#   cryptography (skipped-non-crypto).
 # - StreamEncryptor.generate_header serializes the message header the stream
 #   writes on its first read (skipped-non-crypto).
 # - LocalCryptoMaterialsCache and NullCryptoMaterialsCache store materials
 #   (skipped-non-crypto).
-# - MRKAwareKMSMasterKey is built by the MRK-aware providers, never by
-#   consumers (needs-follow-up).
 # - internal.crypto.{encryption,authentication,data_keys,elliptic_curve,iv}
-#   are internal helpers the client calls (needs-follow-up if a rule targets
-#   them).
+#   are private `internal` modules the client calls, not a consumer API
+#   (skipped-unsupported). WrappingKey is the exception: raw master key
+#   consumers build it, so it is contracted.
 contracts:
   # ── Client, >=1.7.1. __init__.py:58. EncryptionSDKClient(**kwargs).
   - method: aws_encryption_sdk.EncryptionSDKClient
@@ -254,6 +250,17 @@ contracts:
   - method: aws_encryption_sdk.key_providers.raw.RawMasterKey.<init>
     arity: 0
     return: { type: aws_encryption_sdk.key_providers.raw.RawMasterKey, confidence: high }
+    role: factory
+
+  # kms.py:398, >=2.3.0. MRKAwareKMSMasterKey(**kwargs); also returned by the
+  # MRK-aware providers' master key lookups below.
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey
+    arity: 0
+    return: { type: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey.<init>
+    arity: 0
+    return: { type: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey, confidence: high }
     role: factory
 
   # ── Provider and master key lifecycle. key_providers/base.py:135-291
@@ -443,6 +450,83 @@ contracts:
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
 
+  # Inherited by MRKAwareKMSMasterKey from MasterKey (base.py:438-506).
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey.generate_data_key
+    arity: 2
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey.encrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.EncryptedDataKey, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey.decrypt_data_key
+    arity: 3
+    return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
+    role: operation
+
+  # ── Master key lookup. base.py:171 master_key_for_encrypt(key_id), aliased as
+  # master_key, and :185 master_key_for_decrypt(key_info) return the master key
+  # the provider builds: KMSMasterKey, or MRKAwareKMSMasterKey for the MRK-aware
+  # providers (kms.py:818 master_key_class, :961 _new_master_key_impl). The
+  # Discovery providers have no key IDs to encrypt with, so only their decrypt
+  # lookup is declared.
+  - method: aws_encryption_sdk.key_providers.base.MasterKeyProvider.master_key
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.base.MasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.base.MasterKeyProvider.master_key_for_encrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.base.MasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.base.MasterKeyProvider.master_key_for_decrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.base.MasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.master_key
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.KMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.master_key_for_encrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.KMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.master_key_for_decrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.KMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.master_key
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.KMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.master_key_for_encrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.KMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.master_key_for_decrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.KMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.master_key
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.master_key_for_encrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.master_key_for_decrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.DiscoveryAwsKmsMasterKeyProvider.master_key_for_decrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.KMSMasterKey, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.key_providers.kms.MRKAwareDiscoveryAwsKmsMasterKeyProvider.master_key_for_decrypt
+    arity: 1
+    return: { type: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey, confidence: high }
+    role: factory
+
   # ── Wrapping key. internal/crypto/wrapping_keys.py:20
   # WrappingKey(wrapping_algorithm, wrapping_key, wrapping_key_type,
   # password=None): the algorithm selects AES-GCM or RSA-OAEP wrapping.
@@ -538,6 +622,25 @@ contracts:
     return: { type: aws_encryption_sdk.materials_managers.DecryptionMaterials, confidence: high }
     role: operation
 
+  # materials_managers/mpl/cmm.py:38, >=4.0.0. CryptoMaterialsManagerFromMPL(mpl_cmm)
+  # wraps an MPL CMM; the package re-exports nothing from the mpl subpackage.
+  - method: aws_encryption_sdk.materials_managers.mpl.cmm.CryptoMaterialsManagerFromMPL
+    arity: 1
+    return: { type: aws_encryption_sdk.materials_managers.mpl.cmm.CryptoMaterialsManagerFromMPL, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.materials_managers.mpl.cmm.CryptoMaterialsManagerFromMPL.<init>
+    arity: 1
+    return: { type: aws_encryption_sdk.materials_managers.mpl.cmm.CryptoMaterialsManagerFromMPL, confidence: high }
+    role: factory
+  - method: aws_encryption_sdk.materials_managers.mpl.cmm.CryptoMaterialsManagerFromMPL.get_encryption_materials
+    arity: 1
+    return: { type: aws_encryption_sdk.materials_managers.mpl.materials.EncryptionMaterialsFromMPL, confidence: high }
+    role: operation
+  - method: aws_encryption_sdk.materials_managers.mpl.cmm.CryptoMaterialsManagerFromMPL.decrypt_materials
+    arity: 1
+    return: { type: aws_encryption_sdk.materials_managers.mpl.materials.DecryptionMaterialsFromMPL, confidence: high }
+    role: operation
+
 hierarchy:
   aws_encryption_sdk.EncryptionSDKClient:
     - builtins.object
@@ -565,6 +668,8 @@ hierarchy:
     - aws_encryption_sdk.key_providers.base.MasterKeyProvider
   aws_encryption_sdk.key_providers.kms.KMSMasterKey:
     - aws_encryption_sdk.key_providers.base.MasterKey
+  aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey:
+    - aws_encryption_sdk.key_providers.kms.KMSMasterKey
   aws_encryption_sdk.key_providers.raw.RawMasterKey:
     - aws_encryption_sdk.key_providers.base.MasterKey
   aws_encryption_sdk.key_providers.base.MasterKey:
@@ -583,8 +688,14 @@ hierarchy:
     - aws_encryption_sdk.materials_managers.base.CryptoMaterialsManager
   aws_encryption_sdk.materials_managers.caching.CachingCryptoMaterialsManager:
     - aws_encryption_sdk.materials_managers.base.CryptoMaterialsManager
+  aws_encryption_sdk.materials_managers.mpl.cmm.CryptoMaterialsManagerFromMPL:
+    - aws_encryption_sdk.materials_managers.base.CryptoMaterialsManager
   aws_encryption_sdk.materials_managers.base.CryptoMaterialsManager:
     - builtins.object
+  aws_encryption_sdk.materials_managers.mpl.materials.EncryptionMaterialsFromMPL:
+    - aws_encryption_sdk.materials_managers.EncryptionMaterials
+  aws_encryption_sdk.materials_managers.mpl.materials.DecryptionMaterialsFromMPL:
+    - aws_encryption_sdk.materials_managers.DecryptionMaterials
   aws_encryption_sdk.materials_managers.EncryptionMaterials:
     - builtins.object
   aws_encryption_sdk.materials_managers.DecryptionMaterials:
