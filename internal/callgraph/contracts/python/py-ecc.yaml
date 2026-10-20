@@ -817,7 +817,7 @@ contracts:
     parameter_types:
       - builtins.bytes
       - builtins.int
-      - builtins.int
+      - builtins.object
   - method: py_ecc.bls.api.sign
     arity: 3
     return:
@@ -827,7 +827,7 @@ contracts:
     parameter_types:
       - builtins.bytes
       - builtins.int
-      - builtins.int
+      - builtins.object
   - method: py_ecc.bls.verify
     arity: 4
     return:
@@ -838,7 +838,7 @@ contracts:
       - builtins.bytes
       - eth_typing.BLSPubkey
       - eth_typing.BLSSignature
-      - builtins.int
+      - builtins.object
   - method: py_ecc.bls.api.verify
     arity: 4
     return:
@@ -849,7 +849,7 @@ contracts:
       - builtins.bytes
       - eth_typing.BLSPubkey
       - eth_typing.BLSSignature
-      - builtins.int
+      - builtins.object
   - method: py_ecc.bls.verify_multiple
     arity: 4
     return:
@@ -860,7 +860,7 @@ contracts:
       - builtins.list
       - builtins.list
       - eth_typing.BLSSignature
-      - builtins.int
+      - builtins.object
   - method: py_ecc.bls.api.verify_multiple
     arity: 4
     return:
@@ -871,7 +871,7 @@ contracts:
       - builtins.list
       - builtins.list
       - eth_typing.BLSSignature
-      - builtins.int
+      - builtins.object
   - method: py_ecc.bls.aggregate_signatures
     arity: 1
     return:

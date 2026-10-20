@@ -147,33 +147,33 @@ var pyEccFlatAPI = []pyEccEntry{
 	// ── era 1, py_ecc/bls/api.py, 1.6.0 - 1.7.1 ──
 	{
 		"py_ecc.bls.sign", 3, "operation", "eth_typing.BLSSignature", "high",
-		[]string{"builtins.bytes", "builtins.int", "builtins.int"},
-		"1.6.0 py_ecc/bls/api.py:36",
+		[]string{"builtins.bytes", "builtins.int", "builtins.object"},
+		"1.6.0 py_ecc/bls/api.py:36 (domain: int; Domain bytes at 1.7.1)",
 	},
 	{
 		"py_ecc.bls.api.sign", 3, "operation", "eth_typing.BLSSignature", "high",
-		[]string{"builtins.bytes", "builtins.int", "builtins.int"},
-		"1.6.0 py_ecc/bls/api.py:36",
+		[]string{"builtins.bytes", "builtins.int", "builtins.object"},
+		"1.6.0 py_ecc/bls/api.py:36 (domain: int; Domain bytes at 1.7.1)",
 	},
 	{
 		"py_ecc.bls.verify", 4, "operation", "builtins.bool", "high",
-		[]string{"builtins.bytes", "eth_typing.BLSPubkey", "eth_typing.BLSSignature", "builtins.int"},
-		"1.6.0 py_ecc/bls/api.py:50",
+		[]string{"builtins.bytes", "eth_typing.BLSPubkey", "eth_typing.BLSSignature", "builtins.object"},
+		"1.6.0 py_ecc/bls/api.py:50 (domain: int; Domain bytes at 1.7.1)",
 	},
 	{
 		"py_ecc.bls.api.verify", 4, "operation", "builtins.bool", "high",
-		[]string{"builtins.bytes", "eth_typing.BLSPubkey", "eth_typing.BLSSignature", "builtins.int"},
-		"1.6.0 py_ecc/bls/api.py:50",
+		[]string{"builtins.bytes", "eth_typing.BLSPubkey", "eth_typing.BLSSignature", "builtins.object"},
+		"1.6.0 py_ecc/bls/api.py:50 (domain: int; Domain bytes at 1.7.1)",
 	},
 	{
 		"py_ecc.bls.verify_multiple", 4, "operation", "builtins.bool", "high",
-		[]string{"builtins.list", "builtins.list", "eth_typing.BLSSignature", "builtins.int"},
-		"1.6.0 py_ecc/bls/api.py:83",
+		[]string{"builtins.list", "builtins.list", "eth_typing.BLSSignature", "builtins.object"},
+		"1.6.0 py_ecc/bls/api.py:83 (domain: int; Domain bytes at 1.7.1)",
 	},
 	{
 		"py_ecc.bls.api.verify_multiple", 4, "operation", "builtins.bool", "high",
-		[]string{"builtins.list", "builtins.list", "eth_typing.BLSSignature", "builtins.int"},
-		"1.6.0 py_ecc/bls/api.py:83",
+		[]string{"builtins.list", "builtins.list", "eth_typing.BLSSignature", "builtins.object"},
+		"1.6.0 py_ecc/bls/api.py:83 (domain: int; Domain bytes at 1.7.1)",
 	},
 	{
 		"py_ecc.bls.aggregate_signatures", 1, "operation", "eth_typing.BLSSignature", "high",
