@@ -15,6 +15,8 @@ import (
 	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
+const esdkKMS = "aws_encryption_sdk.key_providers.kms"
+
 const mplClient = "aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders"
 
 // awsPykmipTruststoreTracer writes each library the way its own examples do.
@@ -25,21 +27,28 @@ from aws_cryptographic_material_providers.mpl.config import MaterialProvidersCon
 from aws_cryptographic_material_providers.mpl.models import CreateRawAesKeyringInput
 from kmip.pie.client import ProxyKmipClient
 from kmip.core import enums
-import truststore
+from truststore import SSLContext
 
 
-def run(key, data):
+def run(key, data, sock, arn, request):
     client = aws_encryption_sdk.EncryptionSDKClient()
     mpl = AwsCryptographicMaterialProviders(config=MaterialProvidersConfig())
     ring = mpl.create_raw_aes_keyring(input=CreateRawAesKeyringInput(key_namespace="n", key_name="k", wrapping_key=key))
     ct, header = client.encrypt(source=data, keyring=ring)
-    kmip = ProxyKmipClient()
-    uid = kmip.create(enums.CryptographicAlgorithm.AES, 256)
-    sig = kmip.sign(data, uid)
-    ctx = truststore.SSLContext()
+    provider = aws_encryption_sdk.StrictAwsKmsMasterKeyProvider(key_ids=[arn])
+    provider.add_master_key(arn)
+    cmm = aws_encryption_sdk.DefaultCryptoMaterialsManager(provider)
+    materials = cmm.get_encryption_materials(request)
+    stream = aws_encryption_sdk.StreamEncryptor(source=data, key_provider=provider)
+    chunk = stream.read()
+    with ProxyKmipClient() as kmip:
+        uid = kmip.create(enums.CryptographicAlgorithm.AES, 256)
+        sig = kmip.sign(data, uid)
+    ctx = SSLContext()
     ctx.load_verify_locations()
     ctx.set_ciphers("ECDHE+AESGCM")
-    return ct, sig, ctx
+    tls = ctx.wrap_socket(sock)
+    return ct, materials, chunk, sig, tls
 `
 
 func TestAwsPykmipTruststore_SupportingCallsCarryTheirLifecycleRole(t *testing.T) {
@@ -47,7 +56,7 @@ func TestAwsPykmipTruststore_SupportingCallsCarryTheirLifecycleRole(t *testing.T
 
 	lines := strings.Split(awsPykmipTruststoreTracer, "\n")
 	var assets []entities.CryptographicAsset
-	for _, line := range []int{11, 12, 15, 18} {
+	for _, line := range []int{11, 12, 15, 17, 19, 21, 24} {
 		assets = append(assets, entities.CryptographicAsset{
 			StartLine: line, EndLine: line,
 			Match:    strings.TrimSpace(lines[line-1]),
@@ -91,10 +100,14 @@ func TestAwsPykmipTruststore_SupportingCallsCarryTheirLifecycleRole(t *testing.T
 	want := []pycaSupportingCall{
 		{13, mplClient + ".create_raw_aes_keyring", "factory"},
 		{14, "aws_encryption_sdk.EncryptionSDKClient.encrypt", "operation"},
-		{16, "kmip.pie.client.ProxyKmipClient.create", "operation"},
-		{17, "kmip.pie.client.ProxyKmipClient.sign", "operation"},
-		{19, "truststore._api.SSLContext.load_verify_locations", "config"},
-		{20, "truststore._api.SSLContext.set_ciphers", "config"},
+		{16, esdkKMS + ".StrictAwsKmsMasterKeyProvider.add_master_key", "config"},
+		{18, "aws_encryption_sdk.materials_managers.default.DefaultCryptoMaterialsManager.get_encryption_materials", "operation"},
+		{20, "aws_encryption_sdk.streaming_client.StreamEncryptor.read", "operation"},
+		{22, "kmip.pie.client.ProxyKmipClient.create", "operation"},
+		{23, "kmip.pie.client.ProxyKmipClient.sign", "operation"},
+		{25, "truststore._api.SSLContext.load_verify_locations", "config"},
+		{26, "truststore._api.SSLContext.set_ciphers", "config"},
+		{27, "truststore._api.SSLContext.wrap_socket", "factory"},
 	}
 	for _, w := range want {
 		category, ok := got[w.line][w.symbol]
