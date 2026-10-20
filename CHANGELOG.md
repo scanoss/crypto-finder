@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-10-20
+### Added
+- Calls into the PyCrypto-compatible pycryptodome and pycryptodomex modules and into the
+  python-jose key classes now resolve to their contracts. Re-mine components that depend
+  on those libraries.
+- Calls into older releases of cryptography, pycryptodome, pycryptodomex, python-jose,
+  pyjwt, certbot, pynacl, fastecdsa and py-ecc now resolve to their contracts. Re-mine
+  components built on those releases to pick up the roles and entry points.
+### Fixed
+- py-ecc point types are now named `py_ecc.bls.typing.G1Uncompressed`/`G2Uncompressed`,
+  and py-ecc 1.7.1 calls that pass a bytes `domain` match their contracts.
+
 ## [0.37.1] - 2026-10-16
 ### Fixed
 - Scans inside a container with a CPU limit no longer oversubscribe it. The default
