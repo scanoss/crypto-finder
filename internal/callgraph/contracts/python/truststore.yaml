@@ -14,9 +14,9 @@ library:
 # TruststoreSSLContext. From 0.3.0 the class is SSLContext, defined in
 # truststore._api and re-exported by the package. inject_into_ssl and
 # extract_from_ssl arrive in 0.6.0, set_default_verify_paths in 0.10.0. Before
-# 0.6.0 SSLContext defines only wrap_socket, wrap_bio and load_verify_locations
-# and forwards every other attribute to the wrapped ssl.SSLContext, so the
-# config methods below resolve to the same call there.
+# 0.6.0 SSLContext defines only wrap_socket, wrap_bio and load_verify_locations;
+# the config methods below are inherited from ssl.SSLContext there, so the
+# same call reaches the stdlib implementation.
 #
 # SPELLINGS. `truststore.SSLContext(..)` emits the attribute path
 # `truststore.SSLContext`; `from truststore import SSLContext; SSLContext(..)`
@@ -26,13 +26,15 @@ library:
 # ROLES. factory creates the context or a TLS connection from it (wrap_socket,
 # wrap_bio). config sets trust anchors, the presented certificate chain and the
 # cipher list, and inject_into_ssl / extract_from_ssl swap truststore in and out
-# of the ssl module. output reads the loaded CA certificates and ciphers.
+# of the ssl module. output reads the cipher list.
 #
 # Dispositions for the remaining public surface:
 # - The protocol bounds, verify mode/flags, options and check_hostname are
 #   properties set by assignment, not calls (skipped-unsupported).
-# - set_alpn_protocols, set_npn_protocols, session_stats, cert_store_stats and
-#   keylog_filename are not crypto (skipped-non-crypto).
+# - set_alpn_protocols, set_npn_protocols, session_stats and keylog_filename
+#   are not crypto (skipped-non-crypto).
+# - get_ca_certs and cert_store_stats raise NotImplementedError in every
+#   release that defines them (skipped-non-crypto).
 contracts:
   # ── SSLContext constructors. _api.py:85 SSLContext(protocol=None).
   - method: truststore.SSLContext
@@ -104,10 +106,6 @@ contracts:
         name: cipherlist
         role: operation-determining
   - method: truststore._api.SSLContext.get_ciphers
-    arity: 0
-    return: { type: builtins.list, confidence: high }
-    role: output
-  - method: truststore._api.SSLContext.get_ca_certs
     arity: 0
     return: { type: builtins.list, confidence: high }
     role: output

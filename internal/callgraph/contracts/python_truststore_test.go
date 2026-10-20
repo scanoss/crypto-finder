@@ -37,7 +37,6 @@ func wantTruststoreContracts() []string {
 		"truststore._api.SSLContext.set_default_verify_paths#0 truststore._api.SSLContext.set_default_verify_paths/config/builtins.NoneType/high/-/params=-/varargs=false/when=-/lib=truststore",
 		"truststore._api.SSLContext.set_ciphers#1 truststore._api.SSLContext.set_ciphers/config/builtins.NoneType/high/-/params=" + truststoreCipherParam + "/varargs=false/when=-/lib=truststore",
 		"truststore._api.SSLContext.get_ciphers#0 truststore._api.SSLContext.get_ciphers/output/builtins.list/high/-/params=-/varargs=false/when=-/lib=truststore",
-		"truststore._api.SSLContext.get_ca_certs#0 truststore._api.SSLContext.get_ca_certs/output/builtins.list/high/-/params=-/varargs=false/when=-/lib=truststore",
 		"truststore.TruststoreSSLContext.wrap_socket#1 truststore.TruststoreSSLContext.wrap_socket/factory/ssl.SSLSocket/high/-/params=-/varargs=false/when=-/lib=truststore",
 		"truststore.TruststoreSSLContext.wrap_bio#2 truststore.TruststoreSSLContext.wrap_bio/factory/ssl.SSLObject/high/-/params=-/varargs=false/when=-/lib=truststore",
 		"truststore.TruststoreSSLContext.load_verify_locations#0 truststore.TruststoreSSLContext.load_verify_locations/config/builtins.NoneType/high/-/params=-/varargs=false/when=-/lib=truststore",
