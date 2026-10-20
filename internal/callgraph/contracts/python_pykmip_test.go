@@ -17,7 +17,11 @@ const (
 		"1:length:metadata-contributing:keySize:argument_value"
 	pykmipKeyParams = pykmipAlgorithmLengthParams +
 		",2:value:metadata-contributing:keyMaterial:argument_value"
-	pykmipCryptoParams = "2:cryptographic_parameters:operation-determining:algorithm:argument_value"
+	pykmipCryptoParams   = "2:cryptographic_parameters:operation-determining:algorithm:argument_value"
+	pykmipSplitKeyParams = "0:cryptographic_algorithm:operation-determining:algorithm:argument_value," +
+		"1:cryptographic_length:metadata-contributing:keySize:argument_value," +
+		"2:key_value:metadata-contributing:keyMaterial:argument_value"
+	pykmipSecretDataParams = "0:value:metadata-contributing:keyMaterial:argument_value"
 )
 
 // wantPykmipContracts is written BY HAND from pykmip 0.11.0, never derived
@@ -60,6 +64,30 @@ func wantPykmipContracts() []string {
 		"kmip.pie.objects.PrivateKey.<init>#4 kmip.pie.objects.PrivateKey.<init>/factory/kmip.pie.objects.PrivateKey/high/-/params=" + pykmipKeyParams + "/varargs=false/when=-/lib=pykmip",
 		"kmip.pie.objects.X509Certificate#1 kmip.pie.objects.X509Certificate/factory/kmip.pie.objects.X509Certificate/high/-/params=-/varargs=false/when=-/lib=pykmip",
 		"kmip.pie.objects.X509Certificate.<init>#1 kmip.pie.objects.X509Certificate.<init>/factory/kmip.pie.objects.X509Certificate/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		// get_attributes returns (uid, attributes).
+		"kmip.pie.client.ProxyKmipClient.get_attributes#0 kmip.pie.client.ProxyKmipClient.get_attributes/output/builtins.tuple/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		// SplitKey (0.10.0+) takes every argument optionally; SecretData needs value and data_type.
+		"kmip.pie.objects.SplitKey#0 kmip.pie.objects.SplitKey/factory/kmip.pie.objects.SplitKey/high/-/params=" + pykmipSplitKeyParams + "/varargs=false/when=-/lib=pykmip",
+		"kmip.pie.objects.SplitKey.<init>#0 kmip.pie.objects.SplitKey.<init>/factory/kmip.pie.objects.SplitKey/high/-/params=" + pykmipSplitKeyParams + "/varargs=false/when=-/lib=pykmip",
+		"kmip.pie.objects.SecretData#2 kmip.pie.objects.SecretData/factory/kmip.pie.objects.SecretData/high/-/params=" + pykmipSecretDataParams + "/varargs=false/when=-/lib=pykmip",
+		"kmip.pie.objects.SecretData.<init>#2 kmip.pie.objects.SecretData.<init>/factory/kmip.pie.objects.SecretData/high/-/params=" + pykmipSecretDataParams + "/varargs=false/when=-/lib=pykmip",
+		// Legacy KMIPProxy: algorithm and length travel in TemplateAttribute objects.
+		"kmip.services.kmip_client.KMIPProxy#0 kmip.services.kmip_client.KMIPProxy/factory/kmip.services.kmip_client.KMIPProxy/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.<init>#0 kmip.services.kmip_client.KMIPProxy.<init>/factory/kmip.services.kmip_client.KMIPProxy/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.open#0 kmip.services.kmip_client.KMIPProxy.open/operation/builtins.NoneType/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.create#2 kmip.services.kmip_client.KMIPProxy.create/operation/kmip.services.results.CreateResult/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.create_key_pair#0 kmip.services.kmip_client.KMIPProxy.create_key_pair/operation/kmip.services.results.CreateKeyPairResult/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.rekey_key_pair#0 kmip.services.kmip_client.KMIPProxy.rekey_key_pair/operation/kmip.services.results.RekeyKeyPairResult/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.rekey#0 kmip.services.kmip_client.KMIPProxy.rekey/operation/builtins.dict/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.derive_key#5 kmip.services.kmip_client.KMIPProxy.derive_key/operation/builtins.dict/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.encrypt#1 kmip.services.kmip_client.KMIPProxy.encrypt/operation/builtins.dict/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.decrypt#1 kmip.services.kmip_client.KMIPProxy.decrypt/operation/builtins.dict/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.sign#1 kmip.services.kmip_client.KMIPProxy.sign/operation/builtins.dict/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.signature_verify#2 kmip.services.kmip_client.KMIPProxy.signature_verify/operation/builtins.dict/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.mac#1 kmip.services.kmip_client.KMIPProxy.mac/operation/kmip.services.results.MACResult/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.register#3 kmip.services.kmip_client.KMIPProxy.register/factory/kmip.services.results.RegisterResult/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.get#0 kmip.services.kmip_client.KMIPProxy.get/factory/kmip.services.results.GetResult/high/-/params=-/varargs=false/when=-/lib=pykmip",
+		"kmip.services.kmip_client.KMIPProxy.get_attributes#0 kmip.services.kmip_client.KMIPProxy.get_attributes/output/kmip.services.results.GetAttributesResult/high/-/params=-/varargs=false/when=-/lib=pykmip",
 	}
 }
 
@@ -114,6 +142,8 @@ func TestPythonPykmipContract_KeyHierarchy(t *testing.T) {
 		"kmip.pie.objects.PublicKey",
 		"kmip.pie.objects.PrivateKey",
 		"kmip.pie.objects.X509Certificate",
+		"kmip.pie.objects.SplitKey",
+		"kmip.pie.objects.SecretData",
 	} {
 		if !pykmipReaches(kb.Hierarchy, child, "kmip.pie.objects.ManagedObject") {
 			t.Errorf("%s does not reach kmip.pie.objects.ManagedObject through the hierarchy", child)
