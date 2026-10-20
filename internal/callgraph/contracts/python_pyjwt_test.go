@@ -110,7 +110,7 @@ func wantPyjwtContracts() []string {
 
 		// ── the JWS layer. jwt/api_jws.py:33 (class), :120 encode,
 		// :285 decode, :219 decode_complete, :449-455 the singleton bindings.
-		// Present since 1.5.0, when api_jws.py split out of api.py.
+		// Present since 1.3.0, when api_jws.py split out of api.py.
 		"jwt.PyJWS#0 jwt.PyJWS/factory/jwt.api_jws.PyJWS/high/-/jwt.api_jws.PyJWS/params=-/varargs=false/when=-/lib=pyjwt",
 		"jwt.PyJWS.<init>#0 jwt.PyJWS.<init>/factory/jwt.api_jws.PyJWS/high/-/jwt.api_jws.PyJWS/params=-/varargs=false/when=-/lib=pyjwt",
 		"jwt.api_jws.PyJWS#0 jwt.api_jws.PyJWS/factory/jwt.api_jws.PyJWS/high/-/jwt.api_jws.PyJWS/params=-/varargs=false/when=-/lib=pyjwt",
