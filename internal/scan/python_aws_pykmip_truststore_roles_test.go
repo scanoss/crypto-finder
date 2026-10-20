@@ -57,15 +57,20 @@ def run(key, data, sock, arn, request, store_config, template):
     branch = store.create_key(input=CreateKeyInput())
     legacy = KMIPProxy()
     created = legacy.create(enums.ObjectType.SYMMETRIC_KEY, template)
-    return ct, materials, chunk, sig, tls, branch, created
+    enc = client.stream(mode="e", source=data, keyring=ring)
+    piece = enc.read()
+    mk = provider.master_key_for_decrypt(arn)
+    plain = mk.decrypt_data_key(header, request, materials)
+    return ct, materials, chunk, sig, tls, branch, created, piece, plain
 `
 
 func TestAwsPykmipTruststore_SupportingCallsCarryTheirLifecycleRole(t *testing.T) {
 	t.Parallel()
 
 	lines := strings.Split(awsPykmipTruststoreTracer, "\n")
-	var assets []entities.CryptographicAsset
-	for _, line := range []int{14, 15, 18, 20, 22, 24, 27, 31, 33} {
+	anchors := []int{14, 15, 18, 20, 22, 24, 27, 31, 33, 35, 37}
+	assets := make([]entities.CryptographicAsset, 0, len(anchors))
+	for _, line := range anchors {
 		assets = append(assets, entities.CryptographicAsset{
 			StartLine: line, EndLine: line,
 			Match:    strings.TrimSpace(lines[line-1]),
@@ -119,6 +124,9 @@ func TestAwsPykmipTruststore_SupportingCallsCarryTheirLifecycleRole(t *testing.T
 		{30, "truststore._api.SSLContext.wrap_socket", "factory"},
 		{32, keystoreClient + ".create_key", "operation"},
 		{34, "kmip.services.kmip_client.KMIPProxy.create", "operation"},
+		{36, "aws_encryption_sdk.streaming_client._EncryptionStream.read", "operation"},
+		{37, esdkKMS + ".StrictAwsKmsMasterKeyProvider.master_key_for_decrypt", "factory"},
+		{38, esdkKMS + ".KMSMasterKey.decrypt_data_key", "operation"},
 	}
 	for _, w := range want {
 		category, ok := got[w.line][w.symbol]
