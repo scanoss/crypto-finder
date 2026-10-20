@@ -47,8 +47,8 @@ library:
 #
 # ONE SPELLING ONLY WHERE THERE IS ONLY ONE. `hash_to_G1` / `hash_to_G2` are
 # NOT re-exported from `py_ecc/bls/__init__.py` in ANY release — it re-exports
-# the three classes and nothing else, checked file by file across all 32
-# archives — so `py_ecc.bls.hash_to_G2` resolves nowhere and declaring it would
+# the six `api` functions in 1.6.0-1.7.1 and the three classes after, checked
+# file by file across all 32 archives — so `py_ecc.bls.hash_to_G2` resolves nowhere and declaring it would
 # ship an entry matching code that raises ImportError.
 #
 # TWO SPELLINGS FOR THE CURVE FLAVORS AND FOR secp256k1, and this file once
@@ -871,6 +871,26 @@ contracts:
       - builtins.list
       - builtins.list
       - eth_typing.BLSSignature
+      - builtins.object
+  # The pre-RFC hash_to_G2(message_hash, domain) is in py_ecc/bls/utils.py and
+  # imported by api.py; domain is an int up to 1.7.0 and Domain bytes at 1.7.1.
+  - method: py_ecc.bls.utils.hash_to_G2
+    arity: 2
+    return:
+      type: py_ecc.bls.typing.G2Uncompressed
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
+      - builtins.object
+  - method: py_ecc.bls.api.hash_to_G2
+    arity: 2
+    return:
+      type: py_ecc.bls.typing.G2Uncompressed
+      confidence: high
+    role: operation
+    parameter_types:
+      - builtins.bytes
       - builtins.object
   - method: py_ecc.bls.aggregate_signatures
     arity: 1
