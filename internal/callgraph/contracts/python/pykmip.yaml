@@ -40,9 +40,9 @@ library:
 # documented as `from kmip.pie import objects`, so they carry the
 # kmip.pie.objects spellings only.
 #
-# CONTEXT MANAGER. `with ProxyKmipClient(..) as c:` is the documented idiom;
-# the `as` target takes its type from __enter__, which opens the connection
-# and returns the client.
+# CONTEXT MANAGER. `with ProxyKmipClient(..) as c:` is the documented idiom.
+# The parser types the `as` target from the constructor, so __enter__ only
+# covers an explicit `c.__enter__()` call.
 #
 # RETURN TYPES. Instance methods are keyed on kmip.pie.client.ProxyKmipClient.
 # The server returns uids, so create, register, rekey and derive_key return
@@ -336,6 +336,7 @@ contracts:
     return: { type: kmip.services.results.GetAttributesResult, confidence: high }
     role: output
 
+# Edges are stated at 0.11.0; lookup does not walk them.
 hierarchy:
   kmip.pie.client.ProxyKmipClient:
     - builtins.object
