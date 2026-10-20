@@ -17,6 +17,8 @@ import (
 
 const esdkKMS = "aws_encryption_sdk.key_providers.kms"
 
+const keystoreClient = "aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore.client.KeyStore"
+
 const mplClient = "aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders"
 
 // awsPykmipTruststoreTracer writes each library the way its own examples do.
@@ -28,9 +30,12 @@ from aws_cryptographic_material_providers.mpl.models import CreateRawAesKeyringI
 from kmip.pie.client import ProxyKmipClient
 from kmip.core import enums
 from truststore import SSLContext
+from aws_cryptographic_material_providers.keystore import KeyStore
+from aws_cryptographic_material_providers.keystore.models import CreateKeyInput
+from kmip.services.kmip_client import KMIPProxy
 
 
-def run(key, data, sock, arn, request):
+def run(key, data, sock, arn, request, store_config, template):
     client = aws_encryption_sdk.EncryptionSDKClient()
     mpl = AwsCryptographicMaterialProviders(config=MaterialProvidersConfig())
     ring = mpl.create_raw_aes_keyring(input=CreateRawAesKeyringInput(key_namespace="n", key_name="k", wrapping_key=key))
@@ -48,7 +53,11 @@ def run(key, data, sock, arn, request):
     ctx.load_verify_locations()
     ctx.set_ciphers("ECDHE+AESGCM")
     tls = ctx.wrap_socket(sock)
-    return ct, materials, chunk, sig, tls
+    store = KeyStore(config=store_config)
+    branch = store.create_key(input=CreateKeyInput())
+    legacy = KMIPProxy()
+    created = legacy.create(enums.ObjectType.SYMMETRIC_KEY, template)
+    return ct, materials, chunk, sig, tls, branch, created
 `
 
 func TestAwsPykmipTruststore_SupportingCallsCarryTheirLifecycleRole(t *testing.T) {
@@ -56,7 +65,7 @@ func TestAwsPykmipTruststore_SupportingCallsCarryTheirLifecycleRole(t *testing.T
 
 	lines := strings.Split(awsPykmipTruststoreTracer, "\n")
 	var assets []entities.CryptographicAsset
-	for _, line := range []int{11, 12, 15, 17, 19, 21, 24} {
+	for _, line := range []int{14, 15, 18, 20, 22, 24, 27, 31, 33} {
 		assets = append(assets, entities.CryptographicAsset{
 			StartLine: line, EndLine: line,
 			Match:    strings.TrimSpace(lines[line-1]),
@@ -98,16 +107,18 @@ func TestAwsPykmipTruststore_SupportingCallsCarryTheirLifecycleRole(t *testing.T
 		got[s.StartLine][s.SupportingCall.FunctionName] = s.Category
 	}
 	want := []pycaSupportingCall{
-		{13, mplClient + ".create_raw_aes_keyring", "factory"},
-		{14, "aws_encryption_sdk.EncryptionSDKClient.encrypt", "operation"},
-		{16, esdkKMS + ".StrictAwsKmsMasterKeyProvider.add_master_key", "config"},
-		{18, "aws_encryption_sdk.materials_managers.default.DefaultCryptoMaterialsManager.get_encryption_materials", "operation"},
-		{20, "aws_encryption_sdk.streaming_client.StreamEncryptor.read", "operation"},
-		{22, "kmip.pie.client.ProxyKmipClient.create", "operation"},
-		{23, "kmip.pie.client.ProxyKmipClient.sign", "operation"},
-		{25, "truststore._api.SSLContext.load_verify_locations", "config"},
-		{26, "truststore._api.SSLContext.set_ciphers", "config"},
-		{27, "truststore._api.SSLContext.wrap_socket", "factory"},
+		{16, mplClient + ".create_raw_aes_keyring", "factory"},
+		{17, "aws_encryption_sdk.EncryptionSDKClient.encrypt", "operation"},
+		{19, esdkKMS + ".StrictAwsKmsMasterKeyProvider.add_master_key", "config"},
+		{21, "aws_encryption_sdk.materials_managers.default.DefaultCryptoMaterialsManager.get_encryption_materials", "operation"},
+		{23, "aws_encryption_sdk.streaming_client.StreamEncryptor.read", "operation"},
+		{25, "kmip.pie.client.ProxyKmipClient.create", "operation"},
+		{26, "kmip.pie.client.ProxyKmipClient.sign", "operation"},
+		{28, "truststore._api.SSLContext.load_verify_locations", "config"},
+		{29, "truststore._api.SSLContext.set_ciphers", "config"},
+		{30, "truststore._api.SSLContext.wrap_socket", "factory"},
+		{32, keystoreClient + ".create_key", "operation"},
+		{34, "kmip.services.kmip_client.KMIPProxy.create", "operation"},
 	}
 	for _, w := range want {
 		category, ok := got[w.line][w.symbol]
