@@ -594,7 +594,41 @@ contracts:
           property: keySize
           derivation: argument_byte_length
 
+  # ── PyCrypto-compatible names ──
+  # Signature/PKCS1_v1_5.py new(rsa_key) and PKCS1_PSS.py new(rsa_key, ..); verify
+  # returns a bool from 3.2 (3.0 and 3.1 raise ValueError and return None).
+  - method: Cryptodome.Signature.PKCS1_v1_5.new
+    arity: 1
+    return: { type: Cryptodome.Signature.PKCS1_v1_5.PKCS115_SigScheme, confidence: high }
+    role: factory
+  - method: Cryptodome.Signature.PKCS1_v1_5.PKCS115_SigScheme.sign
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Signature.PKCS1_v1_5.PKCS115_SigScheme.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: Cryptodome.Signature.PKCS1_PSS.new
+    arity: 1
+    return: { type: Cryptodome.Signature.PKCS1_PSS.PSS_SigScheme, confidence: high }
+    role: factory
+  - method: Cryptodome.Signature.PKCS1_PSS.PSS_SigScheme.sign
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Signature.PKCS1_PSS.PSS_SigScheme.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
 hierarchy:
+  Cryptodome.Signature.PKCS1_PSS.PSS_SigScheme:
+    - builtins.object
+  Cryptodome.Signature.PKCS1_v1_5.PKCS115_SigScheme:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
   Cryptodome.Cipher.DES.DESCipher:
     - builtins.object
   Cryptodome.Cipher.DES3.DES3Cipher:

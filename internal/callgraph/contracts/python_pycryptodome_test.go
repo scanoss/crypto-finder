@@ -15,7 +15,8 @@ import (
 // pycryptodome 3.23.0 sources (lib/Crypto); the DES, DES3, Salsa20 and
 // PKCS1_OAEP entries also against every release from 3.0. Update returns differ by class:
 // SHA-2 and ChaCha20-Poly1305 return None, SHA-3, HMAC and the AES AEAD
-// modes return the object. Every verify raises on failure and returns None.
+// modes return the object. Every verify raises on failure and returns None,
+// except the PyCrypto-compatible PKCS1_v1_5/PKCS1_PSS schemes, which return a bool.
 func wantPycryptodomeContracts() []string {
 	return []string{
 		"Crypto.Cipher.AES.AESCipher.decrypt#1 Crypto.Cipher.AES.AESCipher.decrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
@@ -119,6 +120,14 @@ func wantPycryptodomeContracts() []string {
 		"Crypto.Signature.pss.PSS_SigScheme.sign#1 Crypto.Signature.pss.PSS_SigScheme.sign/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Signature.pss.PSS_SigScheme.verify#2 Crypto.Signature.pss.PSS_SigScheme.verify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Signature.pss.new#1 Crypto.Signature.pss.new/factory/Crypto.Signature.pss.PSS_SigScheme/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		// 3.1 Signature/PKCS1_v1_5.py:69 PKCS115_SigScheme, :244 new; PKCS1_PSS.py:73
+		// PSS_SigScheme; from 3.2 both new() return the pkcs1_15/pss scheme with a bool verify.
+		"Crypto.Signature.PKCS1_PSS.PSS_SigScheme.sign#1 Crypto.Signature.PKCS1_PSS.PSS_SigScheme.sign/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Signature.PKCS1_PSS.PSS_SigScheme.verify#2 Crypto.Signature.PKCS1_PSS.PSS_SigScheme.verify/operation/builtins.bool/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Signature.PKCS1_PSS.new#1 Crypto.Signature.PKCS1_PSS.new/factory/Crypto.Signature.PKCS1_PSS.PSS_SigScheme/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Signature.PKCS1_v1_5.PKCS115_SigScheme.sign#1 Crypto.Signature.PKCS1_v1_5.PKCS115_SigScheme.sign/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Signature.PKCS1_v1_5.PKCS115_SigScheme.verify#2 Crypto.Signature.PKCS1_v1_5.PKCS115_SigScheme.verify/operation/builtins.bool/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Signature.PKCS1_v1_5.new#1 Crypto.Signature.PKCS1_v1_5.new/factory/Crypto.Signature.PKCS1_v1_5.PKCS115_SigScheme/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 	}
 }
 
