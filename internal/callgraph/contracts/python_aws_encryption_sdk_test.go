@@ -21,6 +21,8 @@ const (
 	esdkBase       = esdk + ".key_providers.base"
 	esdkStream     = esdk + ".streaming_client"
 	esdkWrapping   = esdk + ".internal.crypto.wrapping_keys.WrappingKey"
+	esdkAlgParam0  = "0:algorithm:operation-determining:algorithm:argument_value"
+	esdkAlgParam1  = "1:algorithm:operation-determining:algorithm:argument_value"
 	esdkWrapParams = "0:wrapping_algorithm:operation-determining:algorithm:argument_value," +
 		"1:wrapping_key:metadata-contributing:keyMaterial:argument_value"
 )
@@ -75,11 +77,11 @@ func wantAwsESDKContracts() []string {
 		esdkLine(esdkBase+".MasterKeyProvider.add_master_keys_from_list", 1, "config", "builtins.NoneType", "-"),
 		esdkLine(esdkBase+".MasterKeyProvider.add_master_key_provider", 1, "config", "builtins.NoneType", "-"),
 		esdkLine(esdkBase+".MasterKeyProvider.add_master_key_providers_from_list", 1, "config", "builtins.NoneType", "-"),
-		esdkLine(esdkBase+".MasterKeyProvider.decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
-		esdkLine(esdkBase+".MasterKeyProvider.decrypt_data_key_from_list", 3, "operation", esdk+".structures.DataKey", "-"),
-		esdkLine(esdkBase+".MasterKey.generate_data_key", 2, "operation", esdk+".structures.DataKey", "-"),
-		esdkLine(esdkBase+".MasterKey.encrypt_data_key", 3, "operation", esdk+".structures.EncryptedDataKey", "-"),
-		esdkLine(esdkBase+".MasterKey.decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
+		esdkLine(esdkBase+".MasterKeyProvider.decrypt_data_key", 3, "operation", esdk+".structures.DataKey", esdkAlgParam1),
+		esdkLine(esdkBase+".MasterKeyProvider.decrypt_data_key_from_list", 3, "operation", esdk+".structures.DataKey", esdkAlgParam1),
+		esdkLine(esdkBase+".MasterKey.generate_data_key", 2, "operation", esdk+".structures.DataKey", esdkAlgParam0),
+		esdkLine(esdkBase+".MasterKey.encrypt_data_key", 3, "operation", esdk+".structures.EncryptedDataKey", esdkAlgParam1),
+		esdkLine(esdkBase+".MasterKey.decrypt_data_key", 3, "operation", esdk+".structures.DataKey", esdkAlgParam1),
 	)
 	// base.py MasterKeyProvider methods, inherited by every concrete provider.
 	for _, cls := range []string{
@@ -93,25 +95,25 @@ func wantAwsESDKContracts() []string {
 			esdkLine(p+".add_master_keys_from_list", 1, "config", "builtins.NoneType", "-"),
 			esdkLine(p+".add_master_key_provider", 1, "config", "builtins.NoneType", "-"),
 			esdkLine(p+".add_master_key_providers_from_list", 1, "config", "builtins.NoneType", "-"),
-			esdkLine(p+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
-			esdkLine(p+".decrypt_data_key_from_list", 3, "operation", esdk+".structures.DataKey", "-"),
+			esdkLine(p+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", esdkAlgParam1),
+			esdkLine(p+".decrypt_data_key_from_list", 3, "operation", esdk+".structures.DataKey", esdkAlgParam1),
 		)
 	}
 	// base.py MasterKey data-key methods, inherited by both master keys.
 	for _, key := range []string{esdkKMS + ".KMSMasterKey", esdk + ".key_providers.raw.RawMasterKey"} {
 		add(
-			esdkLine(key+".generate_data_key", 2, "operation", esdk+".structures.DataKey", "-"),
-			esdkLine(key+".encrypt_data_key", 3, "operation", esdk+".structures.EncryptedDataKey", "-"),
-			esdkLine(key+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
+			esdkLine(key+".generate_data_key", 2, "operation", esdk+".structures.DataKey", esdkAlgParam0),
+			esdkLine(key+".encrypt_data_key", 3, "operation", esdk+".structures.EncryptedDataKey", esdkAlgParam1),
+			esdkLine(key+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", esdkAlgParam1),
 		)
 	}
 	// kms.py:398 MRKAwareKMSMasterKey, >=2.3.0; its data-key calls are inherited.
 	esdkMRKKey := esdkKMS + ".MRKAwareKMSMasterKey"
 	add(esdkCtor(esdkMRKKey, 0, esdkMRKKey, "-")...)
 	add(
-		esdkLine(esdkMRKKey+".generate_data_key", 2, "operation", esdk+".structures.DataKey", "-"),
-		esdkLine(esdkMRKKey+".encrypt_data_key", 3, "operation", esdk+".structures.EncryptedDataKey", "-"),
-		esdkLine(esdkMRKKey+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
+		esdkLine(esdkMRKKey+".generate_data_key", 2, "operation", esdk+".structures.DataKey", esdkAlgParam0),
+		esdkLine(esdkMRKKey+".encrypt_data_key", 3, "operation", esdk+".structures.EncryptedDataKey", esdkAlgParam1),
+		esdkLine(esdkMRKKey+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", esdkAlgParam1),
 	)
 	// base.py:171/:185 master key lookups return the key class the provider
 	// builds; Discovery providers only look keys up to decrypt.

@@ -36,6 +36,9 @@ library:
 # no parameter role. WrappingKey and the attrs CMMs are declared at their
 # required positional count; WrappingKey's algorithm and key roles bind only
 # when it is called positionally, and the examples call it with keywords.
+# The data-key methods take `algorithm` positionally in every release (index 0
+# on generate_data_key, 1 on encrypt/decrypt_data_key(_from_list)), so it
+# carries a role on every declaration.
 #
 # RETURN TYPES. encrypt/decrypt return a (bytes, MessageHeader) tuple.
 # stream() returns StreamEncryptor or StreamDecryptor depending on the `mode`
@@ -286,22 +289,32 @@ contracts:
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.base.MasterKeyProvider.decrypt_data_key_from_list
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.base.MasterKey.generate_data_key
     arity: 2
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.base.MasterKey.encrypt_data_key
     arity: 3
     return: { type: aws_encryption_sdk.structures.EncryptedDataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.base.MasterKey.decrypt_data_key
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   # Inherited by every concrete provider; the MRK-aware ones are >=2.3.0 and
   # KMSMasterKeyProvider is <2.0.0.
   - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.add_master_key
@@ -324,10 +337,14 @@ contracts:
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.StrictAwsKmsMasterKeyProvider.decrypt_data_key_from_list
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.DiscoveryAwsKmsMasterKeyProvider.add_master_key
     arity: 1
     return: { type: builtins.NoneType, confidence: high }
@@ -348,10 +365,14 @@ contracts:
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.DiscoveryAwsKmsMasterKeyProvider.decrypt_data_key_from_list
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.add_master_key
     arity: 1
     return: { type: builtins.NoneType, confidence: high }
@@ -372,10 +393,14 @@ contracts:
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.MRKAwareStrictAwsKmsMasterKeyProvider.decrypt_data_key_from_list
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.MRKAwareDiscoveryAwsKmsMasterKeyProvider.add_master_key
     arity: 1
     return: { type: builtins.NoneType, confidence: high }
@@ -396,10 +421,14 @@ contracts:
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.MRKAwareDiscoveryAwsKmsMasterKeyProvider.decrypt_data_key_from_list
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.add_master_key
     arity: 1
     return: { type: builtins.NoneType, confidence: high }
@@ -420,49 +449,71 @@ contracts:
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.KMSMasterKeyProvider.decrypt_data_key_from_list
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   # Inherited by both master keys.
   - method: aws_encryption_sdk.key_providers.kms.KMSMasterKey.generate_data_key
     arity: 2
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.KMSMasterKey.encrypt_data_key
     arity: 3
     return: { type: aws_encryption_sdk.structures.EncryptedDataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.KMSMasterKey.decrypt_data_key
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.raw.RawMasterKey.generate_data_key
     arity: 2
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.raw.RawMasterKey.encrypt_data_key
     arity: 3
     return: { type: aws_encryption_sdk.structures.EncryptedDataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.raw.RawMasterKey.decrypt_data_key
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
 
   # Inherited by MRKAwareKMSMasterKey from MasterKey (base.py:438-506).
   - method: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey.generate_data_key
     arity: 2
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey.encrypt_data_key
     arity: 3
     return: { type: aws_encryption_sdk.structures.EncryptedDataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
   - method: aws_encryption_sdk.key_providers.kms.MRKAwareKMSMasterKey.decrypt_data_key
     arity: 3
     return: { type: aws_encryption_sdk.structures.DataKey, confidence: high }
     role: operation
+    parameters:
+      - { index: 1, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
 
   # ── Master key lookup. base.py:171 master_key_for_encrypt(key_id), aliased as
   # master_key, and :185 master_key_for_decrypt(key_info) return the master key
