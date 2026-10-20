@@ -934,7 +934,7 @@ contracts:
   - method: py_ecc.bls.hash_to_curve.hash_to_G2
     arity: 3
     return:
-      type: py_ecc.typing.G2Uncompressed
+      type: py_ecc.bls.typing.G2Uncompressed
       confidence: high
     role: operation
     parameter_types:
@@ -944,7 +944,7 @@ contracts:
   - method: py_ecc.bls.hash_to_curve.hash_to_G2
     arity: 2
     return:
-      type: py_ecc.typing.G2Uncompressed
+      type: py_ecc.bls.typing.G2Uncompressed
       confidence: high
     role: operation
     parameter_types:
@@ -953,7 +953,7 @@ contracts:
   - method: py_ecc.bls.hash_to_curve.hash_to_G1
     arity: 3
     return:
-      type: py_ecc.typing.G1Uncompressed
+      type: py_ecc.bls.typing.G1Uncompressed
       confidence: high
     role: operation
     parameter_types:

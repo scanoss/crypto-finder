@@ -209,17 +209,17 @@ var pyEccFlatAPI = []pyEccEntry{
 	// ── hash-to-curve. ONE spelling: `py_ecc/bls/__init__.py` re-exports the
 	// three ciphersuite classes and nothing else, so there is no shallower path.
 	{
-		"py_ecc.bls.hash_to_curve.hash_to_G2", 3, "operation", "py_ecc.typing.G2Uncompressed", "high",
+		"py_ecc.bls.hash_to_curve.hash_to_G2", 3, "operation", "py_ecc.bls.typing.G2Uncompressed", "high",
 		[]string{"builtins.bytes", "builtins.bytes", "builtins.object"},
 		"8.0.0 py_ecc/bls/hash_to_curve.py:38",
 	},
 	{
-		"py_ecc.bls.hash_to_curve.hash_to_G2", 2, "operation", "py_ecc.typing.G2Uncompressed", "high",
+		"py_ecc.bls.hash_to_curve.hash_to_G2", 2, "operation", "py_ecc.bls.typing.G2Uncompressed", "high",
 		[]string{"builtins.bytes", "builtins.bytes"},
 		"2.0.0 py_ecc/bls/hash_to_curve.py:26 (arity 2 at 2.0.0 ONLY; hash_function lands in 3.0.0)",
 	},
 	{
-		"py_ecc.bls.hash_to_curve.hash_to_G1", 3, "operation", "py_ecc.typing.G1Uncompressed", "high",
+		"py_ecc.bls.hash_to_curve.hash_to_G1", 3, "operation", "py_ecc.bls.typing.G1Uncompressed", "high",
 		[]string{"builtins.bytes", "builtins.bytes", "builtins.object"},
 		"8.0.0 py_ecc/bls/hash_to_curve.py:107 (>= 8.0.0b1 only)",
 	},
