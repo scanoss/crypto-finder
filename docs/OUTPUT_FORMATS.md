@@ -557,11 +557,11 @@ more than one implementation for that call site drops the ambiguous group.
 
 ## CycloneDX CBOM Format
 
-CycloneDX 1.6 compatible Cryptography Bill of Materials format for standardized reporting.
+CycloneDX 1.7 compatible Cryptography Bill of Materials format for standardized reporting.
 
 ### Features
 
-- **Schema Validation**: Validates against CycloneDX 1.6 specification
+- **Schema Validation**: Validates against CycloneDX 1.7 specification
 - **Standardized Components**: Maps cryptographic assets to standardized component types
 - **Rich Metadata**: Includes algorithm properties, evidence, and provenance
 - **Industry Standard**: Compatible with CycloneDX ecosystem tools
@@ -580,7 +580,7 @@ CycloneDX 1.6 compatible Cryptography Bill of Materials format for standardized 
 ```json
 {
   "bomFormat": "CycloneDX",
-  "specVersion": "1.6",
+  "specVersion": "1.7",
   "version": 1,
   "metadata": {
     "timestamp": "2025-01-15T10:00:00Z",
@@ -653,7 +653,7 @@ CycloneDX CBOM output can be consumed by:
 | **Detail Level** | High (findings metadata, code snippets) | Medium (structured metadata) |
 | **File Size** | Larger | Smaller |
 | **Best For** | Deep analysis, custom tooling | Compliance, integration, reporting |
-| **Schema** | SCANOSS interim spec | CycloneDX 1.6 |
+| **Schema** | SCANOSS interim spec | CycloneDX 1.7 |
 | **Validation** | SCANOSS tools | CycloneDX validators |
 
 ## Related Documentation
