@@ -18,7 +18,18 @@ const (
 	mplKeyring   = mplGenerated + ".references.Keyring"
 	mplCMM       = mplGenerated + ".references.CryptographicMaterialsManager"
 	mplTail      = "/high/-/params=-/varargs=false/when=-/lib=" + mplLibrary
+	ksPublic     = "aws_cryptographic_material_providers.keystore"
+	ksGenerated  = "aws_cryptographic_material_providers.smithygenerated.aws_cryptography_keystore"
+	ksClient     = ksGenerated + ".client.KeyStore"
 )
+
+// mplCtor renders both import spellings of a constructor.
+func mplCtor(spelling string, arity, ret string) []string {
+	return []string{
+		mplLine(spelling+"#"+arity, spelling, "factory", ret),
+		mplLine(spelling+".<init>#"+arity, spelling+".<init>", "factory", ret),
+	}
+}
 
 func mplLine(key, method, role, ret string) string {
 	return key + " " + method + "/" + role + "/" + ret + mplTail
@@ -65,11 +76,51 @@ func wantMPLContracts() []string {
 		"CreateAwsKmsEcdhKeyringInput",
 	} {
 		ret := mplGenerated + ".models." + in
-		lines = append(lines,
-			mplLine(mplPublic+".models."+in+"#0", mplPublic+".models."+in, "factory", ret),
-			mplLine(mplPublic+".models."+in+".<init>#0", mplPublic+".models."+in+".<init>", "factory", ret),
-		)
+		lines = append(lines, mplCtor(mplPublic+".models."+in, "0", ret)...)
 	}
+	// ECDH static configurations: keyword-only inner inputs, one-`value` unions.
+	for in, arity := range map[string]string{
+		"CreateAwsKmsHierarchicalKeyringInput":                            "0",
+		"RawPrivateKeyToStaticPublicKeyInput":                             "0",
+		"EphemeralPrivateKeyToStaticPublicKeyInput":                       "0",
+		"PublicKeyDiscoveryInput":                                         "0",
+		"KmsPrivateKeyToStaticPublicKeyInput":                             "0",
+		"KmsPublicKeyDiscoveryInput":                                      "0",
+		"RawEcdhStaticConfigurationsRawPrivateKeyToStaticPublicKey":       "1",
+		"RawEcdhStaticConfigurationsEphemeralPrivateKeyToStaticPublicKey": "1",
+		"RawEcdhStaticConfigurationsPublicKeyDiscovery":                   "1",
+		"KmsEcdhStaticConfigurationsKmsPrivateKeyToStaticPublicKey":       "1",
+		"KmsEcdhStaticConfigurationsKmsPublicKeyDiscovery":                "1",
+	} {
+		lines = append(lines, mplCtor(mplPublic+".models."+in, arity, mplGenerated+".models."+in)...)
+	}
+	lines = append(lines,
+		mplLine(mplKeyring+".on_encrypt#1", mplKeyring+".on_encrypt", "operation", mplGenerated+".models.OnEncryptOutput"),
+		mplLine(mplKeyring+".on_decrypt#1", mplKeyring+".on_decrypt", "operation", mplGenerated+".models.OnDecryptOutput"),
+		mplLine(mplCMM+".get_encryption_materials#1", mplCMM+".get_encryption_materials", "operation", mplGenerated+".models.GetEncryptionMaterialsOutput"),
+		mplLine(mplCMM+".decrypt_materials#1", mplCMM+".decrypt_materials", "operation", mplGenerated+".models.DecryptMaterialsOutput"),
+	)
+	// KeyStore, from aws_cryptographic_material_providers.keystore.
+	lines = append(lines, mplCtor(ksPublic+".KeyStore", "0", ksClient)...)
+	lines = append(lines, mplCtor(ksPublic+".client.KeyStore", "0", ksClient)...)
+	lines = append(lines, mplCtor(ksPublic+".config.KeyStoreConfig", "0", ksGenerated+".config.KeyStoreConfig")...)
+	for in, arity := range map[string]string{
+		"KMSConfigurationKmsKeyArn":   "1",
+		"KMSConfigurationKmsMRKeyArn": "1",
+		"KMSConfigurationDiscovery":   "1",
+		"KMSConfigurationMrDiscovery": "1",
+		"CreateKeyInput":              "0",
+		"VersionKeyInput":             "0",
+	} {
+		lines = append(lines, mplCtor(ksPublic+".models."+in, arity, ksGenerated+".models."+in)...)
+	}
+	lines = append(lines,
+		mplLine(ksClient+".create_key#1", ksClient+".create_key", "operation", ksGenerated+".models.CreateKeyOutput"),
+		mplLine(ksClient+".version_key#1", ksClient+".version_key", "operation", ksGenerated+".models.VersionKeyOutput"),
+		mplLine(ksClient+".get_active_branch_key#1", ksClient+".get_active_branch_key", "output", ksGenerated+".models.GetActiveBranchKeyOutput"),
+		mplLine(ksClient+".get_branch_key_version#1", ksClient+".get_branch_key_version", "output", ksGenerated+".models.GetBranchKeyVersionOutput"),
+		mplLine(ksClient+".get_beacon_key#1", ksClient+".get_beacon_key", "output", ksGenerated+".models.GetBeaconKeyOutput"),
+	)
 	return lines
 }
 
@@ -110,8 +161,7 @@ func TestPythonMPLContract_ExactSet(t *testing.T) {
 	}
 }
 
-// A keyring and a CMM must stay subtypes of their interfaces, which consumers
-// annotate with (mpl.references.IKeyring).
+// A keyring and a CMM must stay subtypes of their smithygenerated interfaces.
 func TestPythonMPLContract_InterfaceHierarchy(t *testing.T) {
 	t.Parallel()
 
