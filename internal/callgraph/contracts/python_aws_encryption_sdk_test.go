@@ -105,6 +105,35 @@ func wantAwsESDKContracts() []string {
 			esdkLine(key+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
 		)
 	}
+	// kms.py:398 MRKAwareKMSMasterKey, >=2.3.0; its data-key calls are inherited.
+	esdkMRKKey := esdkKMS + ".MRKAwareKMSMasterKey"
+	add(esdkCtor(esdkMRKKey, 0, esdkMRKKey, "-")...)
+	add(
+		esdkLine(esdkMRKKey+".generate_data_key", 2, "operation", esdk+".structures.DataKey", "-"),
+		esdkLine(esdkMRKKey+".encrypt_data_key", 3, "operation", esdk+".structures.EncryptedDataKey", "-"),
+		esdkLine(esdkMRKKey+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
+	)
+	// base.py:171/:185 master key lookups return the key class the provider
+	// builds; Discovery providers only look keys up to decrypt.
+	for _, lookup := range []struct {
+		provider, key string
+		encrypt       bool
+	}{
+		{esdkBase + ".MasterKeyProvider", esdkBase + ".MasterKey", true},
+		{esdkKMS + ".StrictAwsKmsMasterKeyProvider", esdkKMS + ".KMSMasterKey", true},
+		{esdkKMS + ".KMSMasterKeyProvider", esdkKMS + ".KMSMasterKey", true},
+		{esdkKMS + ".MRKAwareStrictAwsKmsMasterKeyProvider", esdkMRKKey, true},
+		{esdkKMS + ".DiscoveryAwsKmsMasterKeyProvider", esdkKMS + ".KMSMasterKey", false},
+		{esdkKMS + ".MRKAwareDiscoveryAwsKmsMasterKeyProvider", esdkMRKKey, false},
+	} {
+		if lookup.encrypt {
+			add(
+				esdkLine(lookup.provider+".master_key", 1, "factory", lookup.key, "-"),
+				esdkLine(lookup.provider+".master_key_for_encrypt", 1, "factory", lookup.key, "-"),
+			)
+		}
+		add(esdkLine(lookup.provider+".master_key_for_decrypt", 1, "factory", lookup.key, "-"))
+	}
 	add(esdkCtor(esdk+".internal.crypto.WrappingKey", 3, esdkWrapping, esdkWrapParams)...)
 	add(esdkCtor(esdkWrapping, 3, esdkWrapping, esdkWrapParams)...)
 	add(
@@ -129,6 +158,15 @@ func wantAwsESDKContracts() []string {
 			"operation", esdk+".materials_managers.EncryptionMaterials", "-"),
 		esdkLine(esdk+".materials_managers.base.CryptoMaterialsManager.decrypt_materials", 1,
 			"operation", esdk+".materials_managers.DecryptionMaterials", "-"),
+	)
+	// materials_managers/mpl/cmm.py:38, 4.x: CryptoMaterialsManagerFromMPL(mpl_cmm).
+	mplCMM := esdk + ".materials_managers.mpl.cmm.CryptoMaterialsManagerFromMPL"
+	add(esdkCtor(mplCMM, 1, mplCMM, "-")...)
+	add(
+		esdkLine(mplCMM+".get_encryption_materials", 1, "operation",
+			esdk+".materials_managers.mpl.materials.EncryptionMaterialsFromMPL", "-"),
+		esdkLine(mplCMM+".decrypt_materials", 1, "operation",
+			esdk+".materials_managers.mpl.materials.DecryptionMaterialsFromMPL", "-"),
 	)
 	return want
 }
