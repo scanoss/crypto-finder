@@ -39,16 +39,22 @@ library:
 # - Discovery, MRK, MRK-discovery and multi keyring inputs, and the CMM inputs,
 #   carry key IDs, KMS clients or child keyrings, not key material or an
 #   algorithm (skipped-non-crypto); their create_* methods are contracted.
-# - CreateAwsKmsHierarchicalKeyringInput reads branch keys from the separate
-#   KeyStore client (aws_cryptography_keystore) (needs-follow-up).
+# - CreateAwsKmsHierarchicalKeyringInput reads branch keys from the KeyStore
+#   client (needs-follow-up).
+# - aws_cryptographic_material_providers.keystore.KeyStore: create_key and
+#   version_key create and rotate the branch keys the hierarchical keyring
+#   wraps with; create_key_store, get_key_store_info, get_active_branch_key,
+#   get_branch_key_version and get_beacon_key read them (needs-follow-up).
 # - RawEcdhStaticConfigurations* / KmsEcdhStaticConfigurations* union members
 #   carry the ECDH private and public keys (needs-follow-up).
 # - AesWrappingAlg, PaddingScheme, ESDKAlgorithmSuiteId and the other enum
 #   classes are member reads, not calls (skipped-unsupported).
 # - create_cryptographic_materials_cache, create_default_client_supplier,
-#   initialize_*_materials, valid_*_transition, get_algorithm_suite_info and
-#   validate_commitment_policy_on_* are cache, routing and validation helpers
-#   (skipped-non-crypto).
+#   initialize_*_materials, valid_*_transition, valid_algorithm_suite_info,
+#   get_algorithm_suite_info, validate_commitment_policy_on_*,
+#   encryption_materials_has_plaintext_data_key and
+#   decryption_materials_with_plaintext_data_key are cache, routing and
+#   validation helpers (skipped-non-crypto).
 # - Keyring.on_encrypt/on_decrypt and CryptographicMaterialsManager.
 #   get_encryption_materials/decrypt_materials run inside the ESDK
 #   (needs-follow-up).
