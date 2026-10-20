@@ -622,7 +622,272 @@ contracts:
     return: { type: builtins.bool, confidence: high }
     role: operation
 
+  # ── PyCrypto-compatible modules ──
+  # RSA PKCS#1 v1.5 encryption (Cipher/PKCS1_v1_5.py new(key); randfunc from 3.1). decrypt
+  # takes a required sentinel; expected_pt_len is a third, optional argument.
+  - method: Cryptodome.Cipher.PKCS1_v1_5.new
+    arity: 1
+    return: { type: Cryptodome.Cipher.PKCS1_v1_5.PKCS115_Cipher, confidence: high }
+    role: factory
+  - method: Cryptodome.Cipher.PKCS1_v1_5.PKCS115_Cipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Cipher.PKCS1_v1_5.PKCS115_Cipher.decrypt
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Cipher.PKCS1_v1_5.PKCS115_Cipher.decrypt
+    arity: 3
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ARC2, Blowfish and CAST (Cipher/<name>.py new(key, mode, *args, **kwargs)). As for
+  # DES, the mode object new() returns is modelled as one cipher type.
+  - method: Cryptodome.Cipher.ARC2.new
+    arity: 2
+    return: { type: Cryptodome.Cipher.ARC2.ARC2Cipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
+  - method: Cryptodome.Cipher.ARC2.ARC2Cipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Cipher.ARC2.ARC2Cipher.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Cipher.Blowfish.new
+    arity: 2
+    return: { type: Cryptodome.Cipher.Blowfish.BlowfishCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
+  - method: Cryptodome.Cipher.Blowfish.BlowfishCipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Cipher.Blowfish.BlowfishCipher.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Cipher.CAST.new
+    arity: 2
+    return: { type: Cryptodome.Cipher.CAST.CASTCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
+  - method: Cryptodome.Cipher.CAST.CASTCipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Cipher.CAST.CASTCipher.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ARC4 (Cipher/ARC4.py new(key, *args, **kwargs), new(key, drop=0) from 4.0).
+  - method: Cryptodome.Cipher.ARC4.new
+    arity: 1
+    return: { type: Cryptodome.Cipher.ARC4.ARC4Cipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+  - method: Cryptodome.Cipher.ARC4.ARC4Cipher.encrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: Cryptodome.Cipher.ARC4.ARC4Cipher.decrypt
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # SHA-1, MD5 and RIPEMD-160 (Hash/<name>.py new(data=None)). SHA and RIPEMD re-export
+  # SHA1.new and RIPEMD160.new, so they return the same objects; update returns None.
+  - method: Cryptodome.Hash.SHA1.new
+    arity: 0
+    return: { type: Cryptodome.Hash.SHA1.SHA1Hash, confidence: high }
+    role: factory
+  - method: Cryptodome.Hash.SHA.new
+    arity: 0
+    return: { type: Cryptodome.Hash.SHA1.SHA1Hash, confidence: high }
+    role: factory
+  - method: Cryptodome.Hash.SHA1.SHA1Hash.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Cryptodome.Hash.SHA1.SHA1Hash.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Cryptodome.Hash.SHA1.SHA1Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: Cryptodome.Hash.SHA1.SHA1Hash.copy
+    arity: 0
+    return: { type: Cryptodome.Hash.SHA1.SHA1Hash, confidence: high }
+    role: factory
+  - method: Cryptodome.Hash.MD5.new
+    arity: 0
+    return: { type: Cryptodome.Hash.MD5.MD5Hash, confidence: high }
+    role: factory
+  - method: Cryptodome.Hash.MD5.MD5Hash.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Cryptodome.Hash.MD5.MD5Hash.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Cryptodome.Hash.MD5.MD5Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: Cryptodome.Hash.MD5.MD5Hash.copy
+    arity: 0
+    return: { type: Cryptodome.Hash.MD5.MD5Hash, confidence: high }
+    role: factory
+  - method: Cryptodome.Hash.RIPEMD160.new
+    arity: 0
+    return: { type: Cryptodome.Hash.RIPEMD160.RIPEMD160Hash, confidence: high }
+    role: factory
+  - method: Cryptodome.Hash.RIPEMD.new
+    arity: 0
+    return: { type: Cryptodome.Hash.RIPEMD160.RIPEMD160Hash, confidence: high }
+    role: factory
+  - method: Cryptodome.Hash.RIPEMD160.RIPEMD160Hash.update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: Cryptodome.Hash.RIPEMD160.RIPEMD160Hash.digest
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Cryptodome.Hash.RIPEMD160.RIPEMD160Hash.hexdigest
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: Cryptodome.Hash.RIPEMD160.RIPEMD160Hash.copy
+    arity: 0
+    return: { type: Cryptodome.Hash.RIPEMD160.RIPEMD160Hash, confidence: high }
+    role: factory
+
+  # DSA keys (PublicKey/DSA.py generate(bits, randfunc=None, domain=None)). As for RSA,
+  # importKey, exportKey and publickey are the PyCrypto spellings kept as aliases.
+  - method: Cryptodome.PublicKey.DSA.generate
+    arity: 1
+    return: { type: Cryptodome.PublicKey.DSA.DsaKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: Cryptodome.PublicKey.DSA.construct
+    arity: 1
+    return: { type: Cryptodome.PublicKey.DSA.DsaKey, confidence: high }
+    role: factory
+  - method: Cryptodome.PublicKey.DSA.import_key
+    arity: 1
+    return: { type: Cryptodome.PublicKey.DSA.DsaKey, confidence: high }
+    role: factory
+  - method: Cryptodome.PublicKey.DSA.importKey
+    arity: 1
+    return: { type: Cryptodome.PublicKey.DSA.DsaKey, confidence: high }
+    role: factory
+  - method: Cryptodome.PublicKey.DSA.DsaKey.export_key
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Cryptodome.PublicKey.DSA.DsaKey.exportKey
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: Cryptodome.PublicKey.DSA.DsaKey.public_key
+    arity: 0
+    return: { type: Cryptodome.PublicKey.DSA.DsaKey, confidence: high }
+    role: factory
+  - method: Cryptodome.PublicKey.DSA.DsaKey.publickey
+    arity: 0
+    return: { type: Cryptodome.PublicKey.DSA.DsaKey, confidence: high }
+    role: factory
+
+  # ElGamal keys (PublicKey/ElGamal.py generate(bits, randfunc), randfunc required).
+  # From 3.4 the key's encrypt/sign raise NotImplementedError, so only the key is modelled.
+  - method: Cryptodome.PublicKey.ElGamal.generate
+    arity: 2
+    return: { type: Cryptodome.PublicKey.ElGamal.ElGamalKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: bits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: Cryptodome.PublicKey.ElGamal.construct
+    arity: 1
+    return: { type: Cryptodome.PublicKey.ElGamal.ElGamalKey, confidence: high }
+    role: factory
+  - method: Cryptodome.PublicKey.ElGamal.ElGamalKey.publickey
+    arity: 0
+    return: { type: Cryptodome.PublicKey.ElGamal.ElGamalKey, confidence: high }
+    role: factory
+
 hierarchy:
+  Cryptodome.Cipher.ARC2.ARC2Cipher:
+    - builtins.object
+  Cryptodome.Cipher.ARC4.ARC4Cipher:
+    - builtins.object
+  Cryptodome.Cipher.Blowfish.BlowfishCipher:
+    - builtins.object
+  Cryptodome.Cipher.CAST.CASTCipher:
+    - builtins.object
+  Cryptodome.Cipher.PKCS1_v1_5.PKCS115_Cipher:
+    - builtins.object
+  Cryptodome.Hash.MD5.MD5Hash:
+    - builtins.object
+  Cryptodome.Hash.RIPEMD160.RIPEMD160Hash:
+    - builtins.object
+  Cryptodome.Hash.SHA1.SHA1Hash:
+    - builtins.object
+  Cryptodome.PublicKey.DSA.DsaKey:
+    - builtins.object
+  Cryptodome.PublicKey.ElGamal.ElGamalKey:
+    - builtins.object
   Cryptodome.Signature.PKCS1_PSS.PSS_SigScheme:
     - builtins.object
   Cryptodome.Signature.PKCS1_v1_5.PKCS115_SigScheme:
