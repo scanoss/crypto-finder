@@ -1,0 +1,222 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: aws-cryptographic-material-providers
+  coordinates:
+    - aws-cryptographic-material-providers
+  version_range: ">=1.7.2"
+  description: "AWS Cryptographic Material Providers Library (MPL): the keyrings and CMMs aws-encryption-sdk 4.x takes"
+
+# Inventory source: aws-cryptographic-material-providers 1.11.3 sdist
+# (src/aws_cryptographic_material_providers/mpl/{__init__,client,config,
+# models,references}.py and the smithygenerated/aws_cryptography_
+# materialproviders modules they re-export), cross-checked against 1.7.2 and
+# 1.10.0, and the keyring examples of aws-encryption-sdk 4.0.7.
+#
+# VERSION RANGE. `>=1.7.2` is the oldest release on PyPI; the client methods
+# and the input signatures below are unchanged from 1.7.2 to 1.11.3.
+#
+# SPELLINGS. Consumers import from the public mpl modules, which re-export the
+# smithygenerated ones with `import *`. `from ..mpl import
+# AwsCryptographicMaterialProviders; AwsCryptographicMaterialProviders(..)`
+# emits `<module>.AwsCryptographicMaterialProviders.<init>`; the attribute
+# path emits the name without `<init>`. Each constructor carries both keys for
+# the module consumers import from. Return types are the smithygenerated
+# defining classes, so instance methods are keyed there.
+#
+# ARITY AND PARAMETERS. Every create_* method takes one `input` object, and
+# every input class constructor is keyword-only (arity 0). Keyword arguments
+# are not bound to parameter positions yet (crypto-finder#284), so the
+# wrapping key, wrapping_alg, padding_scheme, encryption_algorithm and
+# curve_spec carry no parameter role.
+#
+# ROLES. factory creates the client, a keyring, a CMM, or an input object that
+# carries key material or a wrapping algorithm. The keyring's own
+# on_encrypt/on_decrypt are called by the ESDK, not by consumers.
+#
+# Dispositions for the remaining public surface:
+# - MaterialProvidersConfig() is an empty config object (skipped-non-crypto).
+# - Discovery, MRK, MRK-discovery and multi keyring inputs, and the CMM inputs,
+#   carry key IDs, KMS clients or child keyrings, not key material or an
+#   algorithm (skipped-non-crypto); their create_* methods are contracted.
+# - CreateAwsKmsHierarchicalKeyringInput reads branch keys from the separate
+#   KeyStore client (aws_cryptography_keystore) (needs-follow-up).
+# - RawEcdhStaticConfigurations* / KmsEcdhStaticConfigurations* union members
+#   carry the ECDH private and public keys (needs-follow-up).
+# - AesWrappingAlg, PaddingScheme, ESDKAlgorithmSuiteId and the other enum
+#   classes are member reads, not calls (skipped-unsupported).
+# - create_cryptographic_materials_cache, create_default_client_supplier,
+#   initialize_*_materials, valid_*_transition, get_algorithm_suite_info and
+#   validate_commitment_policy_on_* are cache, routing and validation helpers
+#   (skipped-non-crypto).
+# - Keyring.on_encrypt/on_decrypt and CryptographicMaterialsManager.
+#   get_encryption_materials/decrypt_materials run inside the ESDK
+#   (needs-follow-up).
+contracts:
+  # ── Client constructors. smithygenerated/.../client.py:125.
+  - method: aws_cryptographic_material_providers.mpl.AwsCryptographicMaterialProviders
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.AwsCryptographicMaterialProviders.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.client.AwsCryptographicMaterialProviders
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.client.AwsCryptographicMaterialProviders.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders, confidence: high }
+    role: factory
+
+  # ── Keyring factories. client.py:145-393.
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_discovery_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_multi_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_discovery_multi_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_mrk_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_mrk_multi_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_mrk_discovery_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_mrk_discovery_multi_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_hierarchical_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_rsa_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_aws_kms_ecdh_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_multi_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_raw_aes_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_raw_rsa_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_raw_ecdh_keyring
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring, confidence: high }
+    role: factory
+
+  # ── CMM factories. client.py:411 / :428.
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_default_cryptographic_materials_manager
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.CryptographicMaterialsManager, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders.create_required_encryption_context_cmm
+    arity: 1
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.CryptographicMaterialsManager, confidence: high }
+    role: factory
+
+  # ── Keyring inputs that carry key material or a wrapping algorithm.
+  # models.py:3363 raw AES (wrapping_key, wrapping_alg), :3824 raw RSA
+  # (padding_scheme, public_key, private_key), :3740 raw ECDH (curve_spec),
+  # :2487 AWS KMS, :3059 AWS KMS RSA (encryption_algorithm), :1605 AWS KMS ECDH.
+  - method: aws_cryptographic_material_providers.mpl.models.CreateRawAesKeyringInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateRawAesKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateRawAesKeyringInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateRawAesKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateRawRsaKeyringInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateRawRsaKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateRawRsaKeyringInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateRawRsaKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateRawEcdhKeyringInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateRawEcdhKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateRawEcdhKeyringInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateRawEcdhKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateAwsKmsKeyringInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateAwsKmsKeyringInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateAwsKmsRsaKeyringInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsRsaKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateAwsKmsRsaKeyringInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsRsaKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateAwsKmsEcdhKeyringInput
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsEcdhKeyringInput, confidence: high }
+    role: factory
+  - method: aws_cryptographic_material_providers.mpl.models.CreateAwsKmsEcdhKeyringInput.<init>
+    arity: 0
+    return: { type: aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsEcdhKeyringInput, confidence: high }
+    role: factory
+
+hierarchy:
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.client.AwsCryptographicMaterialProviders:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.Keyring:
+    - aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.IKeyring
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.IKeyring:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.CryptographicMaterialsManager:
+    - aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.ICryptographicMaterialsManager
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.references.ICryptographicMaterialsManager:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateRawAesKeyringInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateRawRsaKeyringInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateRawEcdhKeyringInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsKeyringInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsRsaKeyringInput:
+    - builtins.object
+  aws_cryptographic_material_providers.smithygenerated.aws_cryptography_materialproviders.models.CreateAwsKmsEcdhKeyringInput:
+    - builtins.object
+  builtins.object: []
