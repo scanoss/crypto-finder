@@ -54,6 +54,9 @@ func wantAwsESDKContracts() []string {
 		esdkLine(esdk+".decrypt", 0, "operation", "builtins.tuple", "-"),
 		esdkLine(esdk+".stream", 0, "factory", esdkStream+"._EncryptionStream", "-"),
 		esdkLine(esdkStream+"._EncryptionStream.read", 0, "operation", "builtins.bytes", "-"),
+		// read() is inherited, and Python lookup does not walk the hierarchy.
+		esdkLine(esdkStream+".StreamEncryptor.read", 0, "operation", "builtins.bytes", "-"),
+		esdkLine(esdkStream+".StreamDecryptor.read", 0, "operation", "builtins.bytes", "-"),
 	)
 	for _, cls := range []string{"StreamEncryptor", "StreamDecryptor"} {
 		add(esdkCtor(esdk+"."+cls, 0, esdkStream+"."+cls, "-")...)
@@ -78,6 +81,30 @@ func wantAwsESDKContracts() []string {
 		esdkLine(esdkBase+".MasterKey.encrypt_data_key", 3, "operation", esdk+".structures.EncryptedDataKey", "-"),
 		esdkLine(esdkBase+".MasterKey.decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
 	)
+	// base.py MasterKeyProvider methods, inherited by every concrete provider.
+	for _, cls := range []string{
+		"StrictAwsKmsMasterKeyProvider", "DiscoveryAwsKmsMasterKeyProvider",
+		"MRKAwareStrictAwsKmsMasterKeyProvider", "MRKAwareDiscoveryAwsKmsMasterKeyProvider",
+		"KMSMasterKeyProvider",
+	} {
+		p := esdkKMS + "." + cls
+		add(
+			esdkLine(p+".add_master_key", 1, "config", "builtins.NoneType", "-"),
+			esdkLine(p+".add_master_keys_from_list", 1, "config", "builtins.NoneType", "-"),
+			esdkLine(p+".add_master_key_provider", 1, "config", "builtins.NoneType", "-"),
+			esdkLine(p+".add_master_key_providers_from_list", 1, "config", "builtins.NoneType", "-"),
+			esdkLine(p+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
+			esdkLine(p+".decrypt_data_key_from_list", 3, "operation", esdk+".structures.DataKey", "-"),
+		)
+	}
+	// base.py MasterKey data-key methods, inherited by both master keys.
+	for _, key := range []string{esdkKMS + ".KMSMasterKey", esdk + ".key_providers.raw.RawMasterKey"} {
+		add(
+			esdkLine(key+".generate_data_key", 2, "operation", esdk+".structures.DataKey", "-"),
+			esdkLine(key+".encrypt_data_key", 3, "operation", esdk+".structures.EncryptedDataKey", "-"),
+			esdkLine(key+".decrypt_data_key", 3, "operation", esdk+".structures.DataKey", "-"),
+		)
+	}
 	add(esdkCtor(esdk+".internal.crypto.WrappingKey", 3, esdkWrapping, esdkWrapParams)...)
 	add(esdkCtor(esdkWrapping, 3, esdkWrapping, esdkWrapParams)...)
 	add(
@@ -91,6 +118,11 @@ func wantAwsESDKContracts() []string {
 		typ := esdk + ".materials_managers." + cmm.module + "." + cmm.cls
 		add(esdkCtor(esdk+"."+cmm.cls, cmm.arity, typ, "-")...)
 		add(esdkCtor(typ, cmm.arity, typ, "-")...)
+		// Both CMMs override the base materials calls.
+		add(
+			esdkLine(typ+".get_encryption_materials", 1, "operation", esdk+".materials_managers.EncryptionMaterials", "-"),
+			esdkLine(typ+".decrypt_materials", 1, "operation", esdk+".materials_managers.DecryptionMaterials", "-"),
+		)
 	}
 	add(
 		esdkLine(esdk+".materials_managers.base.CryptoMaterialsManager.get_encryption_materials", 1,
@@ -152,52 +184,8 @@ func TestPythonAwsEncryptionSDKContract_LibraryBlock(t *testing.T) {
 	if kb.Library == nil || kb.Library.Name != awsESDKLibrary {
 		t.Fatalf("library block = %+v, want name %s", kb.Library, awsESDKLibrary)
 	}
-	// 1.2.0 defines WrappingKey in another module, so the range starts at 1.3.2.
-	if got := kb.Library.VersionRange; got != ">=1.3.2" {
-		t.Errorf("library.version_range = %q, want >=1.3.2", got)
-	}
-}
-
-// The concrete providers and CMMs resolve their lifecycle calls through the
-// base-class contracts, so the hierarchy must reach those bases.
-func TestPythonAwsEncryptionSDKContract_HierarchyReachesBases(t *testing.T) {
-	t.Parallel()
-
-	data, err := os.ReadFile(filepath.Join("python", "aws-encryption-sdk.yaml"))
-	if err != nil {
-		t.Fatalf("read aws-encryption-sdk.yaml: %v", err)
-	}
-	kb, err := contracts.Load(data)
-	if err != nil {
-		t.Fatalf("Load(aws-encryption-sdk.yaml): %v", err)
-	}
-	reaches := func(child, ancestor string) bool {
-		seen := map[string]bool{}
-		queue := []string{child}
-		for len(queue) > 0 {
-			cur := queue[0]
-			queue = queue[1:]
-			if cur == ancestor {
-				return true
-			}
-			if seen[cur] {
-				continue
-			}
-			seen[cur] = true
-			queue = append(queue, kb.Hierarchy[cur]...)
-		}
-		return false
-	}
-	for _, edge := range []struct{ child, ancestor string }{
-		{esdkKMS + ".MRKAwareStrictAwsKmsMasterKeyProvider", esdkBase + ".MasterKeyProvider"},
-		{esdkKMS + ".DiscoveryAwsKmsMasterKeyProvider", esdkBase + ".MasterKeyProvider"},
-		{esdk + ".key_providers.raw.RawMasterKey", esdkBase + ".MasterKey"},
-		{esdkKMS + ".KMSMasterKey", esdkBase + ".MasterKey"},
-		{esdk + ".materials_managers.caching.CachingCryptoMaterialsManager", esdk + ".materials_managers.base.CryptoMaterialsManager"},
-		{esdkStream + ".StreamDecryptor", esdkStream + "._EncryptionStream"},
-	} {
-		if !reaches(edge.child, edge.ancestor) {
-			t.Errorf("%s does not reach %s through the hierarchy", edge.child, edge.ancestor)
-		}
+	// 1.3.0 and earlier lack wrapping_keys.py, so the range starts at 1.3.1.
+	if got := kb.Library.VersionRange; got != ">=1.3.1" {
+		t.Errorf("library.version_range = %q, want >=1.3.1", got)
 	}
 }
