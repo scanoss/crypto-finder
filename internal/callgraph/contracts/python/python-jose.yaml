@@ -316,6 +316,86 @@ contracts:
       confidence: high
     role: output
 
+  # ── jose.jwk.Key, as `from jose.jwk import Key` names it ──
+  # `from jose.jwk import Key` annotations type receivers as jose.jwk.Key; the
+  # arity-2/3 sign/verify forms are 0.5.0-0.7.0, where the key is passed per call.
+  - method: jose.jwk.Key.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.jwk.Key.sign
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.jwk.Key.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+
+  - method: jose.jwk.Key.verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+
+  - method: jose.jwk.Key.encrypt
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: jose.jwk.Key.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.jwk.Key.wrap_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.jwk.Key.unwrap_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.jwk.Key.public_key
+    arity: 0
+    return:
+      type: jose.backends.base.Key
+      confidence: high
+    role: output
+
+  - method: jose.jwk.Key.to_pem
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: jose.jwk.Key.to_dict
+    arity: 0
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
 hierarchy:
   jose.backends.HMACKey:
     - jose.backends.base.Key
@@ -324,6 +404,8 @@ hierarchy:
   jose.backends.ECKey:
     - jose.backends.base.Key
   jose.backends.AESKey:
+    - jose.backends.base.Key
+  jose.jwk.Key:
     - jose.backends.base.Key
   jose.backends.base.Key:
     - builtins.object
