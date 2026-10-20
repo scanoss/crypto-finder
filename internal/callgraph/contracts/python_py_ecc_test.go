@@ -218,6 +218,17 @@ var pyEccFlatAPI = []pyEccEntry{
 		[]string{"builtins.bytes", "builtins.bytes"},
 		"2.0.0 py_ecc/bls/hash_to_curve.py:26 (arity 2 at 2.0.0 ONLY; hash_function lands in 3.0.0)",
 	},
+	// The pre-RFC hash_to_G2(message_hash, domain) of 1.6.0 to 1.7.1.
+	{
+		"py_ecc.bls.utils.hash_to_G2", 2, "operation", "py_ecc.bls.typing.G2Uncompressed", "high",
+		[]string{"builtins.bytes", "builtins.object"},
+		"1.6.0 py_ecc/bls/utils.py:79; 1.7.1 utils.py:78",
+	},
+	{
+		"py_ecc.bls.api.hash_to_G2", 2, "operation", "py_ecc.bls.typing.G2Uncompressed", "high",
+		[]string{"builtins.bytes", "builtins.object"},
+		"1.6.0 py_ecc/bls/api.py:30 (imported from py_ecc.bls.utils); 1.7.1 api.py:33",
+	},
 	{
 		"py_ecc.bls.hash_to_curve.hash_to_G1", 3, "operation", "py_ecc.bls.typing.G1Uncompressed", "high",
 		[]string{"builtins.bytes", "builtins.bytes", "builtins.object"},
