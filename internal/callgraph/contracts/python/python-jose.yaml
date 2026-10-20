@@ -63,11 +63,13 @@ library:
 #                             contracted (factory)     — module-attribute spelling
 #   jose.backends.{HMACKey,RSAKey,ECKey,AESKey}.<init>
 #                             contracted (factory)     — from-import constructor spelling
+#   jose.jwk.{HMACKey,RSAKey,ECKey,AESKey}.<init>
+#                             contracted (factory)     — from jose.jwk import spelling
 #   DIRKey                    needs-follow-up          — alg "dir" passthrough key; direct
 #                                                         construction is rare in the wild
 #
-# jose.backends.base.Key shared instance surface (base.py; concrete backends
-# override — contracts declared once on the shared base per KB convention)
+# jose.backends.base.Key shared instance surface (base.py). The concrete
+# jose.backends types carry their own methods too: lookup does not walk `hierarchy:`.
 #   sign / verify             contracted (operation)
 #   encrypt                   contracted (operation)   — returns (iv, ciphertext, tag)
 #                                                         tuple per the base contract
@@ -390,6 +392,179 @@ contracts:
     role: output
 
   - method: jose.jwk.Key.to_dict
+    arity: 0
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  # ── python-jose key classes ──
+  # Constructor spellings: `from jose.jwk import RSAKey; RSAKey(key, alg)`.
+  - method: jose.jwk.HMACKey.<init>
+    arity: 2
+    return:
+      type: jose.backends.HMACKey
+      confidence: high
+    role: factory
+
+  - method: jose.jwk.RSAKey.<init>
+    arity: 2
+    return:
+      type: jose.backends.RSAKey
+      confidence: high
+    role: factory
+
+  - method: jose.jwk.ECKey.<init>
+    arity: 2
+    return:
+      type: jose.backends.ECKey
+      confidence: high
+    role: factory
+
+  - method: jose.jwk.AESKey.<init>
+    arity: 2
+    return:
+      type: jose.backends.AESKey
+      confidence: high
+    role: factory
+
+  # Concrete key surface: method lookup does not walk `hierarchy:`, so each type the
+  # constructors return carries the methods its class implements.
+  - method: jose.backends.HMACKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.HMACKey.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+
+  - method: jose.backends.HMACKey.to_dict
+    arity: 0
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: jose.backends.RSAKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.RSAKey.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+
+  - method: jose.backends.RSAKey.wrap_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.RSAKey.unwrap_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.RSAKey.public_key
+    arity: 0
+    return:
+      type: jose.backends.RSAKey
+      confidence: high
+    role: output
+
+  - method: jose.backends.RSAKey.to_pem
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: jose.backends.RSAKey.to_dict
+    arity: 0
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: jose.backends.ECKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.ECKey.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+
+  - method: jose.backends.ECKey.public_key
+    arity: 0
+    return:
+      type: jose.backends.ECKey
+      confidence: high
+    role: output
+
+  - method: jose.backends.ECKey.to_pem
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: jose.backends.ECKey.to_dict
+    arity: 0
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  # encrypt returns the (iv, ciphertext, auth_tag) tuple, as on the base Key.
+  - method: jose.backends.AESKey.encrypt
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: jose.backends.AESKey.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.AESKey.wrap_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.AESKey.unwrap_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: jose.backends.AESKey.to_dict
     arity: 0
     return:
       type: builtins.dict
