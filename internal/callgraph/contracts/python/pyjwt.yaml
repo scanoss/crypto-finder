@@ -127,7 +127,7 @@ contracts:
     canonical_return_type: builtins.dict
     role: operation
 
-  # ── the JWS layer (jwt/api_jws.py). Present since 1.5.0, when api_jws.py split
+  # ── the JWS layer (jwt/api_jws.py). Present since 1.3.0, when api_jws.py split
   #    out of api.py; the module-level names are bound from a PyJWS singleton at
   #    jwt/api_jws.py:449-456, so they key on `jwt.api_jws.*`. `encode` returns
   #    str from 2.0.0, matching the JWT layer.
