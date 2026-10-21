@@ -66,13 +66,18 @@ type componentResponse struct {
 
 // ComponentFindings asks the API for the findings mined from purl at
 // requirement. It reports false when the API has no findings for that
-// component.
+// component, and for a Go release it reports false unless the API served
+// that exact release: the tilde lookupRequirement sends could otherwise
+// serve a later patch, whose lines would not match the source being scanned.
 func (c *Client) ComponentFindings(ctx context.Context, purl, requirement string) (*ComponentFindings, bool, error) {
 	answer, err := c.LookupComponent(ctx, purl, requirement)
 	if err != nil {
 		return nil, false, err
 	}
 	if answer.InfoCode != componentReady {
+		return nil, false, nil
+	}
+	if lookupRequirement(purl, requirement) != requirement && strings.TrimPrefix(answer.Version, "v") != strings.TrimPrefix(requirement, "v") {
 		return nil, false, nil
 	}
 	return answer, true, nil

@@ -220,3 +220,23 @@ func TestComponentFindings_GoReleaseAsksForTheRelease(t *testing.T) {
 		}
 	}
 }
+
+func TestComponentFindings_GoReleaseMustBeServedExactly(t *testing.T) {
+	served := func(version string) string {
+		return `{"info_code":"READY","data":[{"version":"` + version + `","findings":[]}]}`
+	}
+	for _, tc := range []struct {
+		served string
+		found  bool
+	}{
+		{"v0.17.0", true},
+		{"0.17.0", true},
+		{"v0.17.3", false},
+	} {
+		client := serveComponent(t, http.StatusOK, served(tc.served), nil)
+		_, found, err := client.ComponentFindings(context.Background(), "pkg:golang/golang.org/x/crypto", "v0.17.0")
+		if err != nil || found != tc.found {
+			t.Errorf("served %s: found %v, err %v; want found %v", tc.served, found, err, tc.found)
+		}
+	}
+}
