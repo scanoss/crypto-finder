@@ -83,6 +83,7 @@ func init() {
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(annotateCmd)
 	rootCmd.AddCommand(convertCmd)
+	rootCmd.AddCommand(cbomCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(configureCmd)
 }

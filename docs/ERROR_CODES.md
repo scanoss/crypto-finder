@@ -85,6 +85,7 @@ The stage column shows the typical stage; the stage is assigned where the error 
 | `callgraph_export_failed` | `export` | Export write failed | `--export-callgraph` / `--export-graph-fragment` destination not writable, serialization failure |
 | `output_writer_unavailable` | `output` | No writer for the requested format | Unsupported `--format` value reaching the writer factory |
 | `output_write_failed` | `output` | Report write failed | Output path not writable, disk full |
+| `component_lookup_failed` | `dependency` | The SCANOSS API refused the component findings lookups of `cbom` | Missing or invalid API key, key without cryptography access |
 | `findings_detected` | `policy` | Findings found with `--fail-on-findings` | Expected CI gate behavior, not an error in the tool |
 
 ## Adding a new failure mode
