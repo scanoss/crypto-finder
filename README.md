@@ -72,6 +72,7 @@ docker pull ghcr.io/scanoss/crypto-finder:latest-deps
 | `scan` | Scan a source tree for crypto usage. Optionally builds the call graph, scans dependencies, and exports reachability artifacts. |
 | `annotate` | Re-run **only crypto detection** against a previously exported graph fragment — skips the expensive call graph rebuild. |
 | `convert` | Convert interim JSON results to CycloneDX CBOM. |
+| `cbom` | Build a CycloneDX CBOM for an SBOM from the findings SCANOSS published for its components. |
 | `configure` | Persist the SCANOSS API key / URL. |
 | `version` | Print version information. |
 

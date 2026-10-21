@@ -43,6 +43,7 @@ const (
 	CodeOutputWriterUnavailable     Code = "output_writer_unavailable"
 	CodeOutputWriteFailed           Code = "output_write_failed"
 	CodeFindingsDetected            Code = "findings_detected"
+	CodeComponentLookupFailed       Code = "component_lookup_failed"
 )
 
 // Failure stages identify which pipeline phase produced a terminal error.

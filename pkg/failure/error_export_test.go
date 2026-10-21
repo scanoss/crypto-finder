@@ -71,7 +71,7 @@ func TestPublicFailureEnumValues(t *testing.T) {
 		failure.CodeDependencyBuildToolUnknown: "java_build_tool_unknown", failure.CodeJavaBuildToolAmbiguous: "java_build_tool_ambiguous", failure.CodeGradleToolMissing: "gradle_tool_missing",
 		failure.CodeGradleExportFailed: "gradle_export_failed", failure.CodeGradleJavaIncompatible: "gradle_java_incompatible", failure.CodeCallGraphBuildFailed: "callgraph_build_failed",
 		failure.CodeCallGraphExportFailed: "callgraph_export_failed", failure.CodeOutputWriterUnavailable: "output_writer_unavailable", failure.CodeOutputWriteFailed: "output_write_failed",
-		failure.CodeFindingsDetected: "findings_detected",
+		failure.CodeFindingsDetected: "findings_detected", failure.CodeComponentLookupFailed: "component_lookup_failed",
 	}
 	for code, want := range codes {
 		if string(code) != want {
