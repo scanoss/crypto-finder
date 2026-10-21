@@ -46,6 +46,19 @@ func WithVersion(raw, version string) string {
 	return p.ToString()
 }
 
+// Split returns a package URL's canonical versionless form, without
+// qualifiers or subpath, and its version. An SBOM's
+// pkg:maven/g/a@1.0?type=jar becomes pkg:maven/g/a and 1.0.
+func Split(raw string) (base, version string, ok bool) {
+	p, ok := parse(raw)
+	if !ok {
+		return "", "", false
+	}
+	version = p.Version
+	p.Version, p.Qualifiers, p.Subpath = "", nil, ""
+	return p.ToString(), version, true
+}
+
 func parse(raw string) (packageurl.PackageURL, bool) {
 	p, err := packageurl.FromString(strings.TrimSpace(raw))
 	if err != nil || p.Type == "" || p.Name == "" {
