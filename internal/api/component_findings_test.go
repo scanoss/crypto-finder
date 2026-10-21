@@ -156,6 +156,28 @@ func TestComponentFindings_NotReadyIsNotFound(t *testing.T) {
 	}
 }
 
+func TestLookupComponent_ReportsTheVerdict(t *testing.T) {
+	for _, tc := range []struct {
+		body, code string
+		findings   int
+	}{
+		{readyComponentResponse, "READY", 1},
+		{`{"info_code":"COMPONENT_NOT_FOUND"}`, "COMPONENT_NOT_FOUND", 0},
+		{`{"info_code":"VERSION_NOT_FOUND"}`, "VERSION_NOT_FOUND", 0},
+		{`{"info_code":"INVALID_SEMVER"}`, "INVALID_SEMVER", 0},
+		{`{"info_code":"READY","data":[]}`, "", 0},
+	} {
+		client := serveComponent(t, http.StatusOK, tc.body, nil)
+		got, err := client.LookupComponent(context.Background(), "pkg:maven/a/b", "1.0")
+		if err != nil {
+			t.Fatalf("%s: unexpected error %v", tc.code, err)
+		}
+		if got.InfoCode != tc.code || len(got.Findings) != tc.findings {
+			t.Errorf("%s: got code %q with %d findings", tc.body, got.InfoCode, len(got.Findings))
+		}
+	}
+}
+
 func TestComponentFindings_AccessErrors(t *testing.T) {
 	for status, want := range map[int]error{
 		http.StatusUnauthorized: ErrUnauthorized,
@@ -174,5 +196,27 @@ func TestComponentFindings_MalformedBodyIsAnError(t *testing.T) {
 	client := serveComponent(t, http.StatusOK, `{"info_code":"READY","data":[{"findings":"x"}]}`, nil)
 	if _, found, err := client.ComponentFindings(context.Background(), "pkg:maven/a/b", "1.0"); found || err == nil {
 		t.Errorf("found %v, err %v; want a decode error", found, err)
+	}
+}
+
+func TestComponentFindings_GoReleaseAsksForTheRelease(t *testing.T) {
+	for _, tc := range []struct{ purl, version, want string }{
+		{"pkg:golang/github.com/go-jose/go-jose/v4", "v4.1.4", "~4.1.4"},
+		{"pkg:golang/golang.org/x/crypto", "0.17.0", "~0.17.0"},
+		{"pkg:golang/golang.org/x/net", "v0.0.0-20230101000000-abcdef123456", "v0.0.0-20230101000000-abcdef123456"},
+		{"pkg:maven/org.bouncycastle/bcprov-jdk18on", "1.78", "1.78"},
+	} {
+		var sent componentRequest
+		client := serveComponent(t, http.StatusOK, `{"info_code":"VERSION_NOT_FOUND"}`, func(_ *http.Request, body []byte) {
+			if err := json.Unmarshal(body, &sent); err != nil {
+				t.Errorf("decode request: %v", err)
+			}
+		})
+		if _, err := client.LookupComponent(context.Background(), tc.purl, tc.version); err != nil {
+			t.Fatal(err)
+		}
+		if sent.Requirement != tc.want {
+			t.Errorf("%s@%s sent requirement %q, want %q", tc.purl, tc.version, sent.Requirement, tc.want)
+		}
 	}
 }
