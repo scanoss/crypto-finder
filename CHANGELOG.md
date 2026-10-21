@@ -11,10 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Calls into aws-encryption-sdk and its material providers (keyrings), pykmip and
   truststore now resolve to their contracts. Re-mine components that depend on them.
+- Python call graph contracts for the standard library: `hashlib` (named
+  constructors, `new`, `file_digest` and the hash-object protocol, including
+  BLAKE2 and SHAKE), `hmac` (`new`, `HMAC`, `digest`, `compare_digest`),
+  `ssl` (`SSLContext` factories, cipher, curve, certificate and trust
+  configuration, `wrap_socket`/`wrap_bio`, and the `SSLSocket`/`SSLObject`
+  handshake and peer-certificate calls), `secrets`, `os.urandom`/`getrandom`
+  and `random.SystemRandom`. Calls on the objects these modules return are
+  exported as supporting calls under the stdlib class with their lifecycle
+  category, for example `_hashlib.HASH.digest` or `ssl.SSLContext.set_ciphers`.
+  The `hashlib.pbkdf2_hmac` and `hashlib.scrypt` contracts now belong to the
+  `python-stdlib-crypto` library.
+  In the structural graph, a method chained on a stdlib call, such as
+  `hashlib.sha256(d).hexdigest()`, now targets the stdlib class; a call through
+  a local variable keeps its local target. `graphfrag.GraphAlgoVersion`
+  `graph-algo-9` of this release covers this change, so a consumer that caches
+  structural graphs under `scan_metadata.graph_algo_version` must re-mine. The
+  wire schema is unchanged.
+- `crypto-finder cbom <sbom>` builds a CycloneDX 1.7 CBOM for a CycloneDX JSON, SPDX JSON or SPDX tag-value SBOM without scanning source. It asks the SCANOSS API (`/v3/cryptography/reachability/component`) for the findings published for each component and converts them as `convert` does. A per-component summary goes to stderr, `--max-components` (default 2000) bounds the lookups, and a refused API key fails with the new code `component_lookup_failed`.
+- Go package `github.com/scanoss/crypto-finder/pkg/sbomcbom` exposes the same flow: `ParseSBOM` and `Generate`, with each component's outcome (`crypto`, `no-crypto`, `not-mined`, `unsupported`, `failed`) and the release the findings came from.
+### Changed
+- CBOMs now link dependency findings to their dependency. With `--scan-dependencies` or `cbom`, each dependency is a `library` component whose `bom-ref` is its package URL, and the `dependencies` section lists the cryptographic assets found in it.
+- Algorithm assets in a CBOM carry their family: in `algorithmFamily` when the CycloneDX algorithm family registry lists it (`AES`, `SHA-2`), otherwise in the `scanoss:algorithmFamily` property (`RSA`).
 ### Fixed
 - A library's public API now keeps its rule's crypto entry point when its body
   only calls another library's crypto. Re-mine the affected libraries to pick up
   the new entry points.
+- Go dependencies are served from the SCANOSS API's published findings again. The API missed every exact Go release (scanoss/scanoss.api#241), so each Go dependency was scanned locally. crypto-finder now asks for `~X.Y.Z` and uses the answer only when the API served that exact release; otherwise the dependency is scanned locally as before.
+- CBOM conversion maps the Java padding names `PKCS1Padding` (to `pkcs1v15`), `OAEPPadding` and `OAEPWith<digest>AndMGF1Padding` (to `oaep`). Before, an asset with one of them failed strict CycloneDX validation and the whole CBOM was refused.
 
 ## [0.38.0] - 2026-10-20
 ### Added

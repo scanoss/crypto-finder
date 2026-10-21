@@ -1,1 +1,0 @@
-- CBOM conversion maps the Java padding names `PKCS1Padding` (to `pkcs1v15`), `OAEPPadding` and `OAEPWith<digest>AndMGF1Padding` (to `oaep`). Before, an asset with one of them failed strict CycloneDX validation and the whole CBOM was refused.
