@@ -77,6 +77,53 @@ def sign(secret, msg):
 		anchors: map[int]string{5: "jose.jwk.HMACKey"},
 		want:    map[int][2]string{6: {"jose.backends.HMACKey.sign", "operation"}},
 	},
+	{
+		name: "stdlib hashlib and hmac",
+		source: `import hashlib
+import hmac
+
+
+def use(key, data):
+    h = hashlib.new("blake2b", data)
+    h.digest()
+    x = hashlib.shake_128(data)
+    x.hexdigest(32)
+    m = hmac.new(key, data, hashlib.sha256)
+    m.update(data)
+    return m.digest()
+`,
+		anchors: map[int]string{
+			6:  "hashlib.new",
+			8:  "hashlib.shake_128",
+			10: "hmac.new",
+		},
+		want: map[int][2]string{
+			7:  {"_blake2.blake2b.digest", "output"},
+			9:  {"_hashlib.HASHXOF.hexdigest", "output"},
+			11: {"hmac.HMAC.update", "operation"},
+			12: {"hmac.HMAC.digest", "output"},
+		},
+	},
+	{
+		name: "stdlib ssl context and socket",
+		source: `import ssl
+
+
+def connect(sock, host):
+    ctx = ssl.create_default_context()
+    ctx.set_ciphers("ECDHE+AESGCM")
+    ctx.load_cert_chain("client.pem")
+    tls = ctx.wrap_socket(sock, server_hostname=host)
+    return tls.version()
+`,
+		anchors: map[int]string{5: "ssl.create_default_context"},
+		want: map[int][2]string{
+			6: {"ssl.SSLContext.set_ciphers", "config"},
+			7: {"ssl.SSLContext.load_cert_chain", "config"},
+			8: {"ssl.SSLContext.wrap_socket", "factory"},
+			9: {"ssl.SSLSocket.version", "output"},
+		},
+	},
 }
 
 func TestPython_CoverageConsumersCarryTheirContractRole(t *testing.T) {

@@ -70,7 +70,12 @@ const SchemaVersion = "graph-fragment-1.14"
 // A structural graph cached under graph-algo-6 has none.
 //
 // graph-algo-8: Python symbols are no longer prefixed with the pyproject name.
-const GraphAlgoVersion = "graph-algo-8"
+//
+// graph-algo-9: Python standard-library contracts type the objects hashlib,
+// hmac, ssl and random.SystemRandom return, so a method chained on such a call
+// (hashlib.sha256(d).hexdigest()) resolves to its stdlib class instead of a
+// local name.
+const GraphAlgoVersion = "graph-algo-9"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
