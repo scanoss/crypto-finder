@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-10-21
+### Added
+- Calls into aws-encryption-sdk and its material providers (keyrings), pykmip and
+  truststore now resolve to their contracts. Re-mine components that depend on them.
+### Fixed
+- A library's public API now keeps its rule's crypto entry point when its body
+  only calls another library's crypto. Re-mine the affected libraries to pick up
+  the new entry points.
+
 ## [0.38.0] - 2026-10-20
 ### Added
 - Calls into the PyCrypto-compatible pycryptodome and pycryptodomex modules and into the
