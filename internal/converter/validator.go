@@ -88,6 +88,10 @@ func (v *Validator) Validate(bom *cdx.BOM) error {
 		}
 	}
 
+	if err := validateDependencyRefs(bom); err != nil {
+		return fmt.Errorf("dependency validation failed: %w", err)
+	}
+
 	log.Debug().Msg("BOM validation successful")
 	return nil
 }
@@ -159,6 +163,10 @@ func (v *Validator) validateStructure(bom *cdx.BOM) error {
 
 // validateComponent checks component-specific requirements.
 func (v *Validator) validateComponent(component *cdx.Component) error {
+	if component.Type == cdx.ComponentTypeLibrary {
+		return validateLibrary(component)
+	}
+
 	// Check component type
 	if component.Type != cdx.ComponentTypeCryptographicAsset {
 		return fmt.Errorf("component type must be 'cryptographic-asset', got '%s'", component.Type)
@@ -291,5 +299,42 @@ func (v *Validator) validateEvidence(evidence *cdx.Evidence) error {
 		}
 	}
 
+	return nil
+}
+
+// validateLibrary checks a dependency the CBOM attributes assets to: the
+// dependency graph refers to it by its package URL.
+func validateLibrary(component *cdx.Component) error {
+	if component.BOMRef == "" || component.Name == "" || component.PackageURL == "" {
+		return fmt.Errorf("library %q needs a bom-ref, a name and a purl", component.Name)
+	}
+	return nil
+}
+
+// validateDependencyRefs checks that every ref in the dependency graph names a
+// component of the BOM. The schema cannot express that.
+func validateDependencyRefs(bom *cdx.BOM) error {
+	if bom.Dependencies == nil {
+		return nil
+	}
+	refs := map[string]bool{}
+	if bom.Components != nil {
+		for i := range *bom.Components {
+			refs[(*bom.Components)[i].BOMRef] = true
+		}
+	}
+	for _, d := range *bom.Dependencies {
+		if !refs[d.Ref] {
+			return fmt.Errorf("ref %q is not a component", d.Ref)
+		}
+		if d.Dependencies == nil {
+			continue
+		}
+		for _, on := range *d.Dependencies {
+			if !refs[on] {
+				return fmt.Errorf("%q depends on %q, which is not a component", d.Ref, on)
+			}
+		}
+	}
 	return nil
 }

@@ -38,6 +38,8 @@ func TestCBOMPaddingCLIContract(t *testing.T) {
 		{"java-pkcs5", "PKCS5Padding", "pkcs5", ""},
 		{"java-pkcs7", "PKCS7Padding", "pkcs7", ""},
 		{"java-none", "NoPadding", "raw", ""},
+		{"java-pkcs1", "PKCS1Padding", "pkcs1v15", ""},
+		{"java-oaep-mgf1", "OAEPWithSHA-256AndMGF1Padding", "oaep", ""},
 		{"canonical-pkcs5", "pkcs5", "pkcs5", ""},
 		{"canonical-pkcs7", "pkcs7", "pkcs7", ""},
 		{"canonical-raw", "raw", "raw", ""},

@@ -75,6 +75,9 @@ type AssetOccurrence struct {
 
 	// Match is the code snippet that was matched
 	Match string
+	// Dependency attributes the occurrence to the dependency it was found in;
+	// nil for the project's own code.
+	Dependency *entities.DependencyInfo
 }
 
 // AssetIdentity represents a unique detection method for a cryptographic asset.
@@ -168,12 +171,13 @@ func (a *Aggregator) aggregateFindings(findings []entities.Finding) ([]Aggregate
 			}
 
 			occurrence := AssetOccurrence{
-				FilePath:  finding.FilePath,
-				StartLine: asset.StartLine,
-				EndLine:   asset.EndLine,
-				RuleIDs:   ruleIDs,
-				API:       asset.Metadata["api"],
-				Match:     asset.Match,
+				FilePath:   finding.FilePath,
+				StartLine:  asset.StartLine,
+				EndLine:    asset.EndLine,
+				RuleIDs:    ruleIDs,
+				API:        asset.Metadata["api"],
+				Match:      asset.Match,
+				Dependency: dependencyOf(asset),
 			}
 			aggregated.Occurrences = append(aggregated.Occurrences, occurrence)
 
@@ -275,4 +279,13 @@ func (a *Aggregator) SortAssets(assets []AggregatedAsset) {
 	sort.Slice(assets, func(i, j int) bool {
 		return assets[i].Name < assets[j].Name
 	})
+}
+
+// dependencyOf returns the dependency an asset was found in, when it carries a
+// package URL to name it by.
+func dependencyOf(asset *entities.CryptographicAsset) *entities.DependencyInfo {
+	if asset.DependencyInfo == nil || strings.TrimSpace(asset.DependencyInfo.PURL) == "" {
+		return nil
+	}
+	return asset.DependencyInfo
 }

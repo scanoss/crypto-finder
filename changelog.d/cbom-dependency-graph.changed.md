@@ -1,0 +1,2 @@
+- CBOMs now link dependency findings to their dependency. With `--scan-dependencies` or `cbom`, each dependency is a `library` component whose `bom-ref` is its package URL, and the `dependencies` section lists the cryptographic assets found in it.
+- Algorithm assets in a CBOM carry their family: in `algorithmFamily` when the CycloneDX algorithm family registry lists it (`AES`, `SHA-2`), otherwise in the `scanoss:algorithmFamily` property (`RSA`).

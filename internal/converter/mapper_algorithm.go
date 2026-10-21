@@ -83,6 +83,7 @@ func (m *AlgorithmMapper) MapToComponentWithEvidence(asset *entities.Cryptograph
 		CryptoProperties: cryptoProps,
 		// Properties and Evidence will be set by the converter
 	}
+	addAlgorithmFamily(component, algorithmProps, asset.Metadata["algorithmFamily"])
 	addCryptoFunctionProperty(component, asset)
 
 	return component, nil
@@ -161,9 +162,17 @@ func cbomPadding(value string) string {
 		return "pkcs7"
 	case "nopadding":
 		return "raw"
+	case "pkcs1padding":
+		return string(cdx.CryptoPaddingPKCS1v15)
+	case "oaeppadding":
+		return string(cdx.CryptoPaddingOAEP)
 	case "pkcs5", "pkcs7", "pkcs1v15", "oaep", "raw", "other", "unknown":
 		return padding
 	default:
+		// OAEPWith<digest>AndMGF1Padding, such as OAEPWithSHA-256AndMGF1Padding.
+		if strings.HasPrefix(padding, "oaepwith") && strings.HasSuffix(padding, "andmgf1padding") {
+			return string(cdx.CryptoPaddingOAEP)
+		}
 		return value
 	}
 }

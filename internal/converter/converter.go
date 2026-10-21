@@ -104,6 +104,7 @@ func (c *Converter) Convert(report *oid.ResolvedReport) (*cdx.BOM, error) {
 	// Convert aggregated assets to components
 	components := []cdx.Component{}
 	skippedCount := 0
+	libraries := dependencyLibraries{}
 
 	for _, aggregated := range aggregatedAssets {
 		component, err := c.convertAggregatedAsset(&aggregated)
@@ -122,9 +123,14 @@ func (c *Converter) Convert(report *oid.ResolvedReport) (*cdx.BOM, error) {
 		}
 
 		components = append(components, *component)
+		libraries.add(component.BOMRef, aggregated.Occurrences)
 	}
 
+	components = append(components, libraries.components()...)
 	bom.Components = &components
+	if dependencies := libraries.dependencies(); len(dependencies) > 0 {
+		bom.Dependencies = &dependencies
+	}
 
 	log.Info().
 		Int("unique_assets", len(aggregatedAssets)).

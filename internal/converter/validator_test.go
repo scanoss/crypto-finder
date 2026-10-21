@@ -253,12 +253,31 @@ func TestValidator_ValidateComponent(t *testing.T) {
 		{
 			name: "Invalid component type",
 			component: &cdx.Component{
-				Type:   cdx.ComponentTypeLibrary,
+				Type:   cdx.ComponentTypeApplication,
 				BOMRef: "test-ref",
 				Name:   "Test",
 			},
 			wantErr:     true,
 			errContains: "cryptographic-asset",
+		},
+		{
+			name: "Library without a purl",
+			component: &cdx.Component{
+				Type:   cdx.ComponentTypeLibrary,
+				BOMRef: "test-ref",
+				Name:   "Test",
+			},
+			wantErr:     true,
+			errContains: "purl",
+		},
+		{
+			name: "Library a dependency graph can refer to",
+			component: &cdx.Component{
+				Type:       cdx.ComponentTypeLibrary,
+				BOMRef:     "pkg:npm/node-forge@1.3.1",
+				Name:       "node-forge",
+				PackageURL: "pkg:npm/node-forge@1.3.1",
+			},
 		},
 		{
 			name: "Missing BOM ref",
