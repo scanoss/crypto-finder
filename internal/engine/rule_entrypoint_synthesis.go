@@ -295,11 +295,11 @@ func synthesizeImplicitCtorAsset(
 }
 
 // synthesizeDeclaredAPIAssets appends one synthetic asset per crypto block in
-// metas at each declaration in decls. The terminal-finding check is evaluated
-// ONCE per declaration, before any of that declaration's blocks are appended:
-// a later block (e.g. the decrypt half of a shared api) must be suppressed only
-// by a REAL pre-existing finding in the method body, never by a synthetic
-// sibling asset (e.g. the encrypt half) added moments earlier in this same loop.
+// metas at each declaration in decls. The body findings are collected ONCE per
+// declaration, before any of that declaration's blocks are appended: a later
+// block (e.g. the decrypt half of a shared api) must be suppressed only by a
+// REAL pre-existing finding in the method body, never by a synthetic sibling
+// asset (e.g. the encrypt half) added moments earlier in this same loop.
 func synthesizeDeclaredAPIAssets(
 	report *entities.InterimReport,
 	fileIdx map[string]int,
@@ -310,10 +310,11 @@ func synthesizeDeclaredAPIAssets(
 ) int {
 	added := 0
 	for _, fn := range decls {
-		if functionBodyHasTerminalFinding(report, fn, result) {
-			continue // Type 1: primitive already detected inside the method.
-		}
+		bodyPURLs := terminalFindingPURLs(report, fn, result)
 		for _, meta := range metas {
+			if suppressedByBodyFinding(bodyPURLs, purl.Rule(meta[RulePURLMetadataKey])) {
+				continue // Type 1: primitive already detected inside the method.
+			}
 			if appendSyntheticRuleAsset(report, fileIdx, api, meta, fn, result) {
 				added++
 			}
@@ -405,18 +406,20 @@ func baseFQN(fqn string) string {
 	return fqn
 }
 
-// functionBodyHasTerminalFinding reports whether report already contains a
-// non-supporting crypto asset inside fn. CSPRNG salt generation is supporting
-// evidence and must not suppress a synthesized KDF/hash API boundary.
+// terminalFindingPURLs returns the rule purl of each non-supporting crypto
+// asset already inside fn ("" when the rule has none). CSPRNG salt generation
+// is supporting evidence and must not suppress a synthesized KDF/hash API
+// boundary.
 //
 // A finding is in fn's file only when it names the same file of the same
 // artifact: the key a synthetic asset at fn would be filed under.
-func functionBodyHasTerminalFinding(report *entities.InterimReport, fn *callgraph.FunctionDecl, result *DepScanResult) bool {
+func terminalFindingPURLs(report *entities.InterimReport, fn *callgraph.FunctionDecl, result *DepScanResult) []string {
 	filePath, depInfo, ok := syntheticFindingLocation(result, fn.FilePath)
 	if !ok {
-		return false
+		return nil
 	}
 	fnKey := syntheticFindingKey(filePath, depInfo)
+	var purls []string
 	for i := range report.Findings {
 		for j := range report.Findings[i].CryptographicAssets {
 			a := &report.Findings[i].CryptographicAssets[j]
@@ -424,8 +427,21 @@ func functionBodyHasTerminalFinding(report *entities.InterimReport, fn *callgrap
 				continue
 			}
 			if a.StartLine >= fn.StartLine && a.StartLine <= fn.EndLine && syntheticSuppressingAsset(a) {
-				return true
+				purls = append(purls, a.PURL)
 			}
+		}
+	}
+	return purls
+}
+
+// suppressedByBodyFinding reports whether a body finding already covers a rule
+// block. A finding from another library's rule (e.g. pyca key loading inside an
+// aws-encryption-sdk constructor) does not describe the boundary, so it only
+// suppresses when either purl is unknown or both name the same library.
+func suppressedByBodyFinding(bodyPURLs []string, rulePURL string) bool {
+	for _, p := range bodyPURLs {
+		if p == "" || rulePURL == "" || p == rulePURL {
+			return true
 		}
 	}
 	return false

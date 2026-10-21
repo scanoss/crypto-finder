@@ -987,3 +987,67 @@ func TestSynthesize_AppendsAssetsInAPIOrder(t *testing.T) {
 		}
 	}
 }
+
+func wrappingKeyDecl() *callgraph.FunctionDecl {
+	return &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "aws_encryption_sdk.internal.crypto.wrapping_keys", Type: "WrappingKey", Name: "<init>"},
+		FilePath:  "aws_encryption_sdk/internal/crypto/wrapping_keys.py",
+		StartLine: 33,
+		EndLine:   50,
+	}
+}
+
+func reportWithBodyFinding(decl *callgraph.FunctionDecl, bodyPURL string) *entities.InterimReport {
+	return &entities.InterimReport{
+		Findings: []entities.Finding{{
+			FilePath: decl.FilePath,
+			Language: "python",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 38,
+				PURL:      bodyPURL,
+				Metadata:  map[string]string{"assetType": "related-crypto-material", "api": "load_pem_private_key"},
+			}},
+		}},
+	}
+}
+
+func TestSynthesize_OtherLibraryBodyFindingDoesNotSuppress(t *testing.T) {
+	// Another library's finding in the body does not describe the boundary.
+	dir := t.TempDir()
+	api := "aws_encryption_sdk.internal.crypto.wrapping_keys.WrappingKey.<init>"
+	rule := writeRule(t, dir, api, "AES", "pkg:pypi/aws-encryption-sdk")
+	decl := wrappingKeyDecl()
+	report := reportWithBodyFinding(decl, "pkg:pypi/cryptography")
+
+	if n := SynthesizeRuleCryptoEntryPoints(report, graphWith(decl), []string{rule}, "python"); n != 1 {
+		t.Fatalf("expected the boundary asset despite a cryptography finding in the body, got %d", n)
+	}
+}
+
+func TestSynthesize_SameLibraryBodyFindingSuppresses(t *testing.T) {
+	dir := t.TempDir()
+	api := "aws_encryption_sdk.internal.crypto.wrapping_keys.WrappingKey.<init>"
+	rule := writeRule(t, dir, api, "AES", "pkg:pypi/aws-encryption-sdk")
+	decl := wrappingKeyDecl()
+	report := reportWithBodyFinding(decl, "pkg:pypi/aws-encryption-sdk")
+
+	if n := SynthesizeRuleCryptoEntryPoints(report, graphWith(decl), []string{rule}, "python"); n != 0 {
+		t.Fatalf("expected suppression by a same-library body finding, got %d", n)
+	}
+}
+
+func TestSynthesize_UnknownPURLBodyFindingSuppresses(t *testing.T) {
+	// Without a purl on either side the library cannot be told apart.
+	dir := t.TempDir()
+	api := "aws_encryption_sdk.internal.crypto.wrapping_keys.WrappingKey.<init>"
+	decl := wrappingKeyDecl()
+
+	withPURL := writeRule(t, dir, api, "AES", "pkg:pypi/aws-encryption-sdk")
+	if n := SynthesizeRuleCryptoEntryPoints(reportWithBodyFinding(decl, ""), graphWith(decl), []string{withPURL}, "python"); n != 0 {
+		t.Fatalf("body finding without purl: expected suppression, got %d", n)
+	}
+	noPURL := writeRule(t, t.TempDir(), api, "AES")
+	if n := SynthesizeRuleCryptoEntryPoints(reportWithBodyFinding(decl, "pkg:pypi/cryptography"), graphWith(decl), []string{noPURL}, "python"); n != 0 {
+		t.Fatalf("rule without purl: expected suppression, got %d", n)
+	}
+}
