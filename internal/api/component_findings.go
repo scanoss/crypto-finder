@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 
@@ -36,6 +38,10 @@ const (
 
 // ComponentFindings is what the API publishes for one component version.
 type ComponentFindings struct {
+	// InfoCode is the API's verdict for the lookup: READY when it served
+	// findings, or why it did not (COMPONENT_NOT_FOUND, VERSION_NOT_FOUND,
+	// INVALID_PURL, INVALID_SEMVER, NO_INFO...).
+	InfoCode string
 	// Version is the version the findings were mined from. The API may serve
 	// the closest mined patch of the requested minor.
 	Version      string
@@ -59,18 +65,32 @@ type componentResponse struct {
 }
 
 // ComponentFindings asks the API for the findings mined from purl at
-// requirement. Asking for nothing but the purl and the requirement selects
-// the findings-only answer, without reachability. It reports false when the
-// API has no findings for that component.
+// requirement. It reports false when the API has no findings for that
+// component.
 func (c *Client) ComponentFindings(ctx context.Context, purl, requirement string) (*ComponentFindings, bool, error) {
-	payload, err := json.Marshal(componentRequest{Purl: purl, Requirement: requirement})
+	answer, err := c.LookupComponent(ctx, purl, requirement)
 	if err != nil {
-		return nil, false, fmt.Errorf("apiclient: encode component request: %w", err)
+		return nil, false, err
+	}
+	if answer.InfoCode != componentReady {
+		return nil, false, nil
+	}
+	return answer, true, nil
+}
+
+// LookupComponent asks the API for the findings mined from purl at
+// requirement and returns its verdict whatever it is. Asking for nothing but
+// the purl and the requirement selects the findings-only answer, without
+// reachability. InfoCode is READY only when the API served a component.
+func (c *Client) LookupComponent(ctx context.Context, purl, requirement string) (*ComponentFindings, error) {
+	payload, err := json.Marshal(componentRequest{Purl: purl, Requirement: lookupRequirement(purl, requirement)})
+	if err != nil {
+		return nil, fmt.Errorf("apiclient: encode component request: %w", err)
 	}
 	url := c.baseURL + componentFindingsEndpoint
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
-		return nil, false, fmt.Errorf("apiclient: create component request: %w", err)
+		return nil, fmt.Errorf("apiclient: create component request: %w", err)
 	}
 	req.Header.Set(headerAPIKey, c.apiKey)
 	req.Header.Set(headerUserAgent, userAgentValue)
@@ -79,7 +99,7 @@ func (c *Client) ComponentFindings(ctx context.Context, purl, requirement string
 	// #nosec G704 -- URL is the configured API base URL plus a fixed endpoint.
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, false, fmt.Errorf("apiclient: component request: %w", err)
+		return nil, fmt.Errorf("apiclient: component request: %w", err)
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
@@ -87,22 +107,40 @@ func (c *Client) ComponentFindings(ctx context.Context, purl, requirement string
 		}
 	}()
 	if resp.StatusCode != http.StatusOK {
-		return nil, false, c.handleHTTPError(resp, url)
+		return nil, c.handleHTTPError(resp, url)
 	}
 
 	var body componentResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxComponentResponseBytes)).Decode(&body); err != nil {
-		return nil, false, fmt.Errorf("apiclient: decode component response for %s: %w", purl, err)
+		return nil, fmt.Errorf("apiclient: decode component response for %s: %w", purl, err)
 	}
 	if body.InfoCode != componentReady || len(body.Data) == 0 {
-		return nil, false, nil
+		code := body.InfoCode
+		if code == componentReady {
+			code = ""
+		}
+		return &ComponentFindings{InfoCode: code, RulesVersion: body.RulesVersion}, nil
 	}
 	block := body.Data[0]
 	version := block.Version
 	if block.ActualMinedVersion != "" {
 		version = block.ActualMinedVersion
 	}
-	return &ComponentFindings{Version: version, RulesVersion: body.RulesVersion, Findings: block.Findings}, true, nil
+	return &ComponentFindings{InfoCode: componentReady, Version: version, RulesVersion: body.RulesVersion, Findings: block.Findings}, nil
+}
+
+// goReleaseVersion is a plain Go module release, such as v0.17.0.
+var goReleaseVersion = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
+
+// lookupRequirement works around scanoss/scanoss.api#241: the API stores Go
+// versions with their v prefix and its exact match misses them, so "v4.1.4"
+// answers VERSION_NOT_FOUND while "~4.1.4" serves v4.1.4. A tilde selects the
+// requested release when it is mined, like an exact match.
+func lookupRequirement(purl, version string) string {
+	if strings.HasPrefix(purl, "pkg:golang/") && goReleaseVersion.MatchString(version) {
+		return "~" + strings.TrimPrefix(version, "v")
+	}
+	return version
 }
 
 // maxComponentResponseBytes bounds one answer. The largest mined components

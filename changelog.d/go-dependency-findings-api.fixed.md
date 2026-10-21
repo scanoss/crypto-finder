@@ -1,0 +1,1 @@
+- Go dependencies are served from the SCANOSS API's published findings again. The API missed every exact Go release (scanoss/scanoss.api#241), so each Go dependency was scanned locally; crypto-finder now asks for `~X.Y.Z`, which selects the same release.
