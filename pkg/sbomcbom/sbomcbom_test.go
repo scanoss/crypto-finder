@@ -27,6 +27,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 )
@@ -278,6 +279,39 @@ func TestGenerate_DoesNotRetryAClientError(t *testing.T) {
 	}
 	if res.Components[0].Status != StatusFailed || len(api.asked) != 1 {
 		t.Errorf("status %q after %d calls; want failed after one call", res.Components[0].Status, len(api.asked))
+	}
+}
+
+func TestGenerate_DeadlineKeepsWhatWasLookedUp(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Purl string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Purl == "pkg:npm/slow" {
+			<-r.Context().Done()
+			return
+		}
+		_, _ = w.Write([]byte(lodashAnswer))
+	}))
+	t.Cleanup(server.Close)
+	doc := &Document{Components: []Component{{PURL: "pkg:npm/lodash@4.17.21"}, {PURL: "pkg:npm/slow@1.0.0"}}}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	res, err := Generate(ctx, doc, Options{APIURL: server.URL, APIKey: "k", Concurrency: 2})
+	if err != nil {
+		t.Fatalf("a deadline lost the whole CBOM: %v", err)
+	}
+	if res.Components[0].Status != StatusNoCrypto || res.Components[1].Status != StatusFailed {
+		t.Errorf("statuses %q, %q; want no-crypto, failed", res.Components[0].Status, res.Components[1].Status)
+	}
+}
+
+func TestGenerate_CancellationStopsTheRun(t *testing.T) {
+	api := &fakeAPI{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	doc := &Document{Components: []Component{{PURL: "pkg:npm/a@1.0.0"}}}
+	if _, err := Generate(ctx, doc, Options{APIURL: api.serve(t), APIKey: "k"}); !errors.Is(err, context.Canceled) {
+		t.Errorf("err %v, want context.Canceled", err)
 	}
 }
 

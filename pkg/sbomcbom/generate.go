@@ -126,7 +126,8 @@ type lookup struct {
 // Generate looks up every component of doc and converts the findings
 // SCANOSS published for them into one CycloneDX 1.7 CBOM. Each component
 // that uses cryptography appears as a library whose dependencies are its
-// crypto assets.
+// crypto assets. When ctx's deadline passes, the components not looked up
+// in time are failed and the others still make the CBOM.
 func Generate(ctx context.Context, doc *Document, opts Options) (*Result, error) {
 	if doc == nil {
 		return nil, fmt.Errorf("sbomcbom: nil document")
@@ -284,10 +285,27 @@ func lookUp(parent context.Context, client *apiclient.Client, lookups []*lookup,
 	if denied != nil {
 		return fmt.Errorf("%w: %w", ErrAccessDenied, denied)
 	}
-	if err := parent.Err(); err != nil {
+	return stopped(parent, lookups)
+}
+
+// stopped reports how the run ended once the workers are done. A deadline
+// still leaves a CBOM of what was looked up in time, with the rest failed; a
+// cancellation stops the run.
+func stopped(parent context.Context, lookups []*lookup) error {
+	err := parent.Err()
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, context.DeadlineExceeded):
+		for _, l := range lookups {
+			if l.answer == nil && l.err == nil {
+				l.err = fmt.Errorf("sbomcbom: not looked up before the deadline: %w", err)
+			}
+		}
+		return nil
+	default:
 		return fmt.Errorf("sbomcbom: lookups stopped: %w", err)
 	}
-	return nil
 }
 
 // excludeUnconvertible converts each component's findings on their own and
