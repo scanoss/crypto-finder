@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.1] - 2026-10-21
+### Fixed
+- The slim image builds again: it pinned a `ca-certificates` build that Debian bookworm
+  no longer serves. Use 0.39.1 rather than 0.39.0, whose module checksum changed after
+  release. (#764)
+
 ## [0.39.0] - 2026-10-21
 ### Added
 - Calls into aws-encryption-sdk and its material providers (keyrings), pykmip and
