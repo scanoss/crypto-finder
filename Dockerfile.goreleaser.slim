@@ -15,7 +15,7 @@ ARG BUILD_DATE=unknown
 # Install minimal runtime dependencies
 # - ca-certificates: For HTTPS requests
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates=20250419~deb12u1 \
+    && apt-get install -y --no-install-recommends ca-certificates=20250419~deb12u2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the pre-built crypto-finder binary from GoReleaser's build context
