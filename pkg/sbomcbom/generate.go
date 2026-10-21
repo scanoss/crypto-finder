@@ -174,6 +174,9 @@ func planLookups(components []Component) (perEntry, distinct []*lookup) {
 	byKey := map[string]*lookup{}
 	for i, c := range components {
 		base, version, ok := purl.Split(c.PURL)
+		if version == "" {
+			version = strings.TrimSpace(c.Version)
+		}
 		if !ok || version == "" {
 			continue
 		}
@@ -195,6 +198,7 @@ func planLookups(components []Component) (perEntry, distinct []*lookup) {
 func buildReport(lookups []*lookup, toolVersion string) (*entities.InterimReport, string) {
 	report := &entities.InterimReport{Version: "1.0", Tool: entities.ToolInfo{Name: "crypto-finder", Version: toolVersion}}
 	rulesVersion := ""
+	added := map[string]bool{}
 	for _, l := range lookups {
 		l.ref = ""
 		if l.err != nil || l.answer == nil || l.answer.InfoCode != componentReady || len(l.answer.Findings) == 0 {
@@ -205,6 +209,12 @@ func buildReport(lookups []*lookup, toolVersion string) (*entities.InterimReport
 		}
 		dep := &entities.DependencyInfo{Module: moduleName(l), Version: l.answer.Version, PURL: purl.WithVersion(l.base, l.answer.Version)}
 		l.ref = dep.PURL
+		// Two SBOM versions can be served the same mined release; its
+		// findings go in once.
+		if added[dep.PURL] {
+			continue
+		}
+		added[dep.PURL] = true
 		report.Findings = append(report.Findings, attribute(l.answer.Findings, dep)...)
 	}
 	report.Rules = entities.RulesInfo{Source: "scanoss-api", Version: rulesVersion}
@@ -310,10 +320,15 @@ func refused(err error) bool {
 	return errors.Is(err, apiclient.ErrUnauthorized) || errors.Is(err, apiclient.ErrForbidden)
 }
 
-// transient reports a failure one more attempt may not repeat: anything but a
-// refusal, a missing endpoint or the run being stopped.
+// transient reports a failure one more attempt may not repeat: a server
+// error, a timeout or a broken connection. A client error such as a refusal
+// or a rate limit would only repeat.
 func transient(ctx context.Context, err error) bool {
-	return err != nil && ctx.Err() == nil && !refused(err) && !errors.Is(err, apiclient.ErrNotFound)
+	if err == nil || ctx.Err() != nil || refused(err) || errors.Is(err, apiclient.ErrNotFound) {
+		return false
+	}
+	var status *apiclient.HTTPError
+	return !errors.As(err, &status) || status.StatusCode >= http.StatusInternalServerError
 }
 
 func componentResult(raw string, l *lookup) ComponentResult {

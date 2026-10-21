@@ -244,6 +244,43 @@ func TestGenerate_LeavesOutAComponentWhoseFindingsFailValidation(t *testing.T) {
 	}
 }
 
+func TestGenerate_TwoVersionsServedTheSameReleaseShareItsFindings(t *testing.T) {
+	api := &fakeAPI{answers: map[string]string{
+		"pkg:maven/org.bouncycastle/bcprov-jdk18on@1.77": bcprovAnswer,
+		"pkg:maven/org.bouncycastle/bcprov-jdk18on@1.78": bcprovAnswer,
+	}}
+	doc := &Document{Components: []Component{
+		{PURL: "pkg:maven/org.bouncycastle/bcprov-jdk18on@1.77"},
+		{PURL: "pkg:maven/org.bouncycastle/bcprov-jdk18on", Version: "1.78"},
+	}}
+	res, err := Generate(context.Background(), doc, Options{APIURL: api.serve(t), APIKey: "k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range res.Components {
+		if c.Ref != "pkg:maven/org.bouncycastle/bcprov-jdk18on@1.78" {
+			t.Errorf("%s: ref %q, want the served release", c.PURL, c.Ref)
+		}
+	}
+	for _, c := range *res.BOM.Components {
+		if c.Evidence != nil && c.Evidence.Occurrences != nil && len(*c.Evidence.Occurrences) != 1 {
+			t.Errorf("%s has %d occurrences, want 1: the shared findings went in twice", c.Name, len(*c.Evidence.Occurrences))
+		}
+	}
+}
+
+func TestGenerate_DoesNotRetryAClientError(t *testing.T) {
+	api := &fakeAPI{status: http.StatusTooManyRequests}
+	doc := &Document{Components: []Component{{PURL: "pkg:npm/a@1.0.0"}}}
+	res, err := Generate(context.Background(), doc, Options{APIURL: api.serve(t), APIKey: "k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Components[0].Status != StatusFailed || len(api.asked) != 1 {
+		t.Errorf("status %q after %d calls; want failed after one call", res.Components[0].Status, len(api.asked))
+	}
+}
+
 func TestGenerate_RefusedKeyFailsTheRun(t *testing.T) {
 	api := &fakeAPI{status: http.StatusUnauthorized}
 	doc := &Document{Components: []Component{{PURL: "pkg:npm/a@1.0.0"}, {PURL: "pkg:npm/b@1.0.0"}}}
