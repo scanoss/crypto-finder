@@ -62,3 +62,22 @@ func TestWithVersion(t *testing.T) {
 		t.Fatalf("WithVersion(versioned) = %q, want empty", got)
 	}
 }
+
+func TestSplit(t *testing.T) {
+	for _, tc := range []struct{ raw, base, version string }{
+		{"pkg:maven/org.apache.httpcomponents.core5/httpcore5@5.3.4?type=jar", "pkg:maven/org.apache.httpcomponents.core5/httpcore5", "5.3.4"},
+		{"pkg:npm/%40babel/code-frame@7.27.1", "pkg:npm/%40babel/code-frame", "7.27.1"},
+		{"pkg:npm/@babel/code-frame@7.27.1", "pkg:npm/%40babel/code-frame", "7.27.1"},
+		{"pkg:pypi/Flask_Login@0.6.3", "pkg:pypi/flask-login", "0.6.3"},
+		{"pkg:golang/github.com/go-jose/go-jose/v4@v4.1.4#cipher", "pkg:golang/github.com/go-jose/go-jose/v4", "v4.1.4"},
+		{"pkg:npm/left-pad", "pkg:npm/left-pad", ""},
+	} {
+		base, version, ok := Split(tc.raw)
+		if !ok || base != tc.base || version != tc.version {
+			t.Errorf("Split(%q) = %q, %q, %v; want %q, %q", tc.raw, base, version, ok, tc.base, tc.version)
+		}
+	}
+	if _, _, ok := Split("not a purl"); ok {
+		t.Error("Split accepted a string that is not a package URL")
+	}
+}
