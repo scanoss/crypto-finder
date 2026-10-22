@@ -1,0 +1,1284 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "noble-post-quantum"
+  coordinates:
+    - "@noble/post-quantum"
+  version_range: ">=0.1.0"
+  description: "@noble/post-quantum: ML-KEM, ML-DSA, SLH-DSA, Falcon and hybrid KEMs"
+
+# ONE SUBPATH PER SCHEME, KEYED THROUGH THE PARAMETER-SET OBJECT:
+# `@noble/post-quantum/ml-kem.ml_kem768.encapsulate`. 0.1-0.4 export bare
+# subpaths (0.4 also `.js`); 0.5+ exports only `.js`, so hybrid (0.5+) and
+# falcon (0.6+) have no bare spelling.
+#
+# 0.5 swapped the sign/verify argument order but kept the returns, so one
+# entry per arity covers both conventions.
+#
+# Deliberately NOT contracted: the 0.1.0 pre-standard names (kyber*,
+# dilithium*, sphincs*), the 0.5-0.6 hybrid aliases (XWing, MLKEM768X25519 and
+# the other CamelCase names), 0.7 `webcrypto` and prepared KEMs, `utils`, and
+# `PARAMS`. No rule detects them, or they hold constants.
+contracts:
+
+  # KEMs: keygen(seed?) returns the key pair, encapsulate(publicKey, msg?) returns
+  # { cipherText, sharedSecret }, decapsulate(cipherText, secretKey) the shared secret.
+  - method: "@noble/post-quantum/ml-kem.ml_kem512.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem512.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem512.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem512.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem512.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem768.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem768.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem768.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem768.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem768.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem1024.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem1024.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem1024.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem1024.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.ml_kem1024.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem512.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem512.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem512.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem512.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem512.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem768.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem768.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem768.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem768.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem768.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem1024.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem1024.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem1024.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem1024.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-kem.js.ml_kem1024.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_x25519.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_x25519.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_x25519.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_x25519.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_x25519.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_p256.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_p256.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_p256.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_p256.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem768_p256.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem1024_p384.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem1024_p384.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem1024_p384.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem1024_p384.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.ml_kem1024_p384.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem768_p256.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem768_p256.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem768_p256.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem768_p256.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem768_p256.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem1024_p384.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem1024_p384.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem1024_p384.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem1024_p384.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.QSF_ml_kem1024_p384.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.KitchenSink_ml_kem768_x25519.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.KitchenSink_ml_kem768_x25519.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.KitchenSink_ml_kem768_x25519.encapsulate"
+    arity: 1
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.KitchenSink_ml_kem768_x25519.encapsulate"
+    arity: 2
+    return: { type: "@noble/post-quantum.Encapsulation", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/hybrid.js.KitchenSink_ml_kem768_x25519.decapsulate"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # Signatures. 0.1-0.4 take (secretKey, msg, ctx?, random?) and (publicKey, msg, sig, ctx?);
+  # 0.5+ take (msg, secretKey, opts?) and (sig, msg, publicKey, opts?). The returns match.
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa44.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa44.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa44.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa44.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa44.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa44.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa44.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa65.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa65.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa65.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa65.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa65.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa65.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa65.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa87.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa87.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa87.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa87.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa87.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa87.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.ml_dsa87.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa44.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa44.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa44.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa44.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa44.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa44.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa44.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa65.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa65.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa65.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa65.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa65.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa65.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa65.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa87.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa87.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa87.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa87.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa87.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa87.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/ml-dsa.js.ml_dsa87.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_128s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_192s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_sha2_256s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_128s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_192s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.slh_dsa_shake_256s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_128s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_192s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_sha2_256s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_128s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_192s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256f.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256f.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256f.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256f.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256f.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256f.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256f.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256s.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256s.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256s.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256s.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256s.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256s.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256s.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.attached.seal"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.attached.seal"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.attached.open"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512.attached.open"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.attached.seal"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.attached.seal"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.attached.open"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon512padded.attached.open"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.attached.seal"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.attached.seal"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.attached.open"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024.attached.open"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.keygen"
+    arity: 0
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.keygen"
+    arity: 1
+    return: { type: "@noble/post-quantum.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.sign"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.attached.seal"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.attached.seal"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.attached.open"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/post-quantum/falcon.js.falcon1024padded.attached.open"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
