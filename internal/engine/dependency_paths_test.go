@@ -64,3 +64,61 @@ func TestScanWithDependencies_CarriesDependencyPaths(t *testing.T) {
 		t.Fatalf("crypto path = %+v, want %+v behind a dependency without source", path, want)
 	}
 }
+
+// TestScanWithDependencies_DependencyPathsFollowTheLockfile: the scan takes a
+// dependency's route from the lockfile in the scan root, through the shared
+// resolver, over the resolver's own graph, which here calls it direct.
+func TestScanWithDependencies_DependencyPathsFollowTheLockfile(t *testing.T) {
+	dir := t.TempDir()
+	rule := filepath.Join(dir, "rule.yaml")
+	if err := os.WriteFile(rule, []byte("rules:\n- id: fixture\n  languages: [javascript]\n  pattern: $X\n  message: fixture\n  severity: WARNING\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock := `{"name": "app", "version": "1.0.0", "lockfileVersion": 3, "packages": {
+		"": {"name": "app", "version": "1.0.0", "dependencies": {"bridge": "1.0.0"}},
+		"node_modules/bridge": {"version": "1.0.0", "dependencies": {"cryptolib": "2.0.0"}},
+		"node_modules/cryptolib": {"version": "2.0.0"}}}`
+	if err := os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte(lock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	deps := []dependency.Dependency{{Module: "bridge", Version: "1.0.0"}, {Module: "cryptolib", Version: "2.0.0"}}
+	for i := range deps {
+		deps[i].Dir = filepath.Join(dir, "node_modules", deps[i].Module)
+		if err := os.MkdirAll(deps[i].Dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry := scanner.NewRegistry()
+	registry.RegisterFactory("fixture", func() scanner.Scanner {
+		return &mockScanner{scanFunc: func(_ context.Context, target string, _ []string, info entities.ToolInfo) (*entities.InterimReport, error) {
+			return &entities.InterimReport{Version: "1.0", Tool: info, Findings: []entities.Finding{{
+				FilePath:            filepath.Join(target, "index.js"),
+				CryptographicAssets: []entities.CryptographicAsset{{Metadata: map[string]string{"assetType": "algorithm"}}},
+			}}}, nil
+		}}
+	})
+	orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) { return []string{rule}, nil }}), registry)
+	resolver := &fakeResolver{ecosystem: "node", resolveFn: func(context.Context, string) (*dependency.ResolveResult, error) {
+		return &dependency.ResolveResult{
+			RootModule:   "app",
+			Dependencies: deps,
+			Graph:        map[string][]string{"app": {"bridge", "cryptolib"}, "bridge": {"cryptolib"}},
+		}, nil
+	}}
+	consumer := NewDependencyScanner(orchestrator, resolver, callgraph.NewBuilder(noopCallgraphParser{}), nil)
+
+	result, err := consumer.ScanWithDependencies(t.Context(), &entities.InterimReport{}, DepScanOptions{Workers: 1, ScanOptions: ScanOptions{Target: dir, ScannerName: "fixture"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []dependency.PathStep{{Module: "bridge", Version: "1.0.0"}, {Module: "cryptolib", Version: "2.0.0"}}
+	for _, key := range []string{"cryptolib@2.0.0", "cryptolib"} {
+		path, ok := result.DependencyPaths[key]
+		if !ok {
+			t.Fatalf("no dependency path for %s in %v", key, result.DependencyPaths)
+		}
+		if path.WithoutSource || len(path.Steps) != 2 || path.Steps[0] != want[0] || path.Steps[1] != want[1] {
+			t.Fatalf("%s path = %+v, want the lockfile's transitive route %+v", key, path, want)
+		}
+	}
+}
