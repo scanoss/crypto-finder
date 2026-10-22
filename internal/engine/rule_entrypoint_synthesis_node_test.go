@@ -71,6 +71,7 @@ func TestSynthesizeNodeFactoryExport(t *testing.T) {
 	writeNodeFiles(t, root, map[string]string{
 		"package.json": `{"name": "@acme/curves", "exports": {"./ec": {"types": "./ec.d.ts", "import": "./esm/ec.js", "require": "./ec.js"}}}`,
 		"esm/ec.js":    "import { make } from './utils.js';\nexport const ec = make('secp256k1');\n",
+		"esm/utils.js": "export function make(name) {\n  return { sign(m, k) {}, verify(s, m, p) {} };\n}\n",
 		"ec.js":        "\"use strict\";\nexports.ec = void 0;\nexports.ec = (0, utils_1.make)('secp256k1');\n",
 		"src/ec.ts":    "export const ec = make('secp256k1');\n",
 	})
@@ -103,6 +104,35 @@ func TestSynthesizeNodeFactoryExport(t *testing.T) {
 	}
 	if lang := result.Report.Findings[0].Language; lang != "javascript" {
 		t.Errorf("language = %q, want javascript", lang)
+	}
+}
+
+// A rule covers every release; an api whose member this release does not have
+// is not surfaced even though its export exists.
+func TestSynthesizeNodeSkipsMembersTheReleaseLacks(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json": `{"name": "@acme/curves", "exports": {"./ec": "./ec.js"}}`,
+		"ec.js":        "export const ec = make();\nfunction make() { return { sign() {} }; }\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+	rules := writeNodeRules(t, map[string]string{
+		"@acme/curves/ec.ec.sign":         "sign",
+		"@acme/curves/ec.ec.utils.keygen": "keygen",
+	})
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{rules}); got != 1 {
+		t.Fatalf("synthesized = %d, want 1 (sign only)", got)
+	}
+	if a := syntheticAssets(result.Report)["ec.js @acme/curves/ec.ec.sign"]; a == nil {
+		t.Errorf("assets = %v, want only ec.sign", syntheticAssets(result.Report))
 	}
 }
 

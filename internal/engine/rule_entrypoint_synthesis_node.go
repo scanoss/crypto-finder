@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -18,7 +19,10 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 )
 
-const ecosystemNode = "node"
+const (
+	ecosystemNode  = "node"
+	nodeModulesDir = "node_modules"
+)
 
 // nodeConditionOrder ranks package.json export conditions. When one subpath
 // publishes several builds of a module (ESM and CommonJS), the first ranked
@@ -33,11 +37,12 @@ var nodeLayoutDirs = map[string]bool{"esm": true, "lib": true, "dist": true, "cj
 // the specifiers a consumer imports it by, so a rule api written
 // "@noble/curves/secp256k1.secp256k1.sign" meets the `secp256k1` export even
 // though that export is a value built by a factory, not a function. A key the
-// graph already declares keeps its function definition.
-func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.FunctionDecl) {
+// graph already declares keeps its function definition. It returns the
+// identifiers the package's code declares or uses, for nodeExportDecls.
+func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.FunctionDecl) map[string]bool {
 	pkg, ok := readNodePackage(root)
 	if !ok {
-		return
+		return nil
 	}
 	for spec, rel := range nodeModuleFiles(root, pkg) {
 		file := filepath.Join(root, filepath.FromSlash(rel))
@@ -57,14 +62,20 @@ func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.F
 			}}
 		}
 	}
+	return nodePackageIdentifiers(root)
 }
 
 // nodeExportDecls resolves a rule api to the export that owns it: the api
 // itself when it names an export, else its longest dotted prefix that does
-// ("...secp256k1.secp256k1.sign" -> "...secp256k1.secp256k1").
-func nodeExportDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl) []*callgraph.FunctionDecl {
+// ("...secp256k1.secp256k1.sign" -> "...secp256k1.secp256k1"). A rule covers
+// every release, so a member must appear in this release's code: 0.9 has the
+// `ed25519` export but no `ed25519.keygen`.
+func nodeExportDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl, idents map[string]bool) []*callgraph.FunctionDecl {
 	for key := api; ; {
 		if decls := declsByFQN[key]; len(decls) > 0 {
+			if key != api && !allNodeMembersPresent(api[len(key)+1:], idents) {
+				return nil
+			}
 			return decls
 		}
 		i := strings.LastIndex(key, ".")
@@ -73,6 +84,49 @@ func nodeExportDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl
 		}
 		key = key[:i]
 	}
+}
+
+func allNodeMembersPresent(members string, idents map[string]bool) bool {
+	for _, m := range strings.Split(members, ".") {
+		if !idents[m] {
+			return false
+		}
+	}
+	return true
+}
+
+var nodeIdentifierRe = regexp.MustCompile(`[A-Za-z_$][\w$]*`)
+
+// nodePackageIdentifiers collects every identifier in the package's own
+// JavaScript, TypeScript and declaration files.
+func nodePackageIdentifiers(root string) map[string]bool {
+	idents := make(map[string]bool)
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // skip unreadable entries, keep walking
+		}
+		if d.IsDir() {
+			if p != root && d.Name() == nodeModulesDir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !isNodeSourceFile(d.Name()) && !strings.HasSuffix(d.Name(), ".ts") {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil //nolint:nilerr // an unreadable file contributes no identifiers
+		}
+		for _, id := range nodeIdentifierRe.FindAll(data, -1) {
+			idents[string(id)] = true
+		}
+		return nil
+	})
+	if err != nil {
+		log.Debug().Err(err).Str("root", root).Msg("node identifier walk stopped early")
+	}
+	return idents
 }
 
 type nodePackage struct {
@@ -142,7 +196,7 @@ func (f nodeSpecifierFiles) walk(root, main string) fs.WalkDirFunc {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
 		}
 		if d.IsDir() {
-			if p != root && (d.Name() == "node_modules" || strings.HasPrefix(d.Name(), ".")) {
+			if p != root && (d.Name() == nodeModulesDir || strings.HasPrefix(d.Name(), ".")) {
 				return filepath.SkipDir
 			}
 			return nil
