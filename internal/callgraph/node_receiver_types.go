@@ -312,6 +312,10 @@ func (s *nodeScope) localNames() map[string]bool {
 // return class is read later.
 func (f *nodeFileTypes) initializerType(value *sitter.Node, src []byte, scope *nodeScope) (nodeTypeRef, bool) {
 	switch value.Type() {
+	case nodeMemberExpression:
+		if iface, ok := nodeWebCryptoInterface(value, src, f.bindings.webCryptoScope(f.bindings.withModuleVariables(scope.localNames()))); ok {
+			return nodeTypeRef{name: iface}, true
+		}
 	case nodeNewExpression:
 		return f.constructed(value, src, scope)
 	case nodeCallExpression:
@@ -402,6 +406,10 @@ func (p *NodeParser) declareVarType(declarator *sitter.Node, src []byte, facts *
 		return
 	}
 	if name.Type() != goNodeIdentifier {
+		if value := declarator.ChildByFieldName("value"); value != nil && name.Type() == nodeObjectPattern {
+			p.file.declareWebCryptoPattern(name, value, src, p.scope, facts)
+			return
+		}
 		poisonNodePattern(name, src, facts)
 		return
 	}
@@ -415,6 +423,29 @@ func (p *NodeParser) declareVarType(declarator *sitter.Node, src []byte, facts *
 		ref, ok = p.file.initializerType(value, src, p.scope)
 	}
 	facts.set(name.Content(src), ref, ok)
+}
+
+// declareWebCryptoPattern types the names `const { subtle } = <crypto>`
+// destructures from the WebCrypto Crypto object; every other name the pattern
+// writes is dropped as usual.
+func (f *nodeFileTypes) declareWebCryptoPattern(pattern, value *sitter.Node, src []byte, scope *nodeScope, facts *nodeTypeFacts) {
+	iface, ok := nodeWebCryptoInterface(value, src, f.bindings.webCryptoScope(f.bindings.withModuleVariables(scope.localNames())))
+	if !ok || iface != nodeCryptoType {
+		poisonNodePattern(pattern, src, facts)
+		return
+	}
+	for i := 0; i < int(pattern.NamedChildCount()); i++ {
+		item := pattern.NamedChild(i)
+		local, property := item, item
+		if item.Type() == nodePairPattern {
+			local, property = item.ChildByFieldName("value"), item.ChildByFieldName("key")
+		}
+		if local != nil && property != nil && (local.Type() == goNodeIdentifier || local.Type() == nodeShorthandPattern) && unquoteNodeString(property.Content(src)) == "subtle" {
+			facts.set(local.Content(src), nodeTypeRef{name: nodeSubtleCryptoType}, true)
+			continue
+		}
+		poisonNodePattern(item, src, facts)
+	}
 }
 
 // poisonNodePattern drops every name a binding or assignment target writes.

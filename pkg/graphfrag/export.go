@@ -75,7 +75,13 @@ const SchemaVersion = "graph-fragment-1.14"
 // hmac, ssl and random.SystemRandom return, so a method chained on such a call
 // (hashlib.sha256(d).hexdigest()) resolves to its stdlib class instead of a
 // local name.
-const GraphAlgoVersion = "graph-algo-9"
+//
+// graph-algo-10: a Node call on the WebCrypto API resolves to its WebIDL
+// interface (SubtleCrypto.encrypt, Crypto.getRandomValues) under every
+// spelling: the global crypto object, Node's crypto.webcrypto, and a subtle
+// object held in a variable. It was an unbound member named after the calling
+// module.
+const GraphAlgoVersion = "graph-algo-10"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
