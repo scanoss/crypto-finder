@@ -110,6 +110,10 @@ func synthesizeRuleCryptoEntryPoints(
 		declsByFQN = rustDeclarationsBySynthesisKey(graph)
 	case ecosystemPython:
 		addPythonPublicPathDeclarations(graph, declsByFQN, declsByClass)
+	case ecosystemNode:
+		if result != nil {
+			addNodeExportDeclarations(result.ProjectRoot, declsByFQN)
+		}
 	}
 	fileIdx := indexReportFiles(report)
 	added := synthesizeRuleCryptoAssets(report, fileIdx, apiCrypto, declsByFQN, declsByClass, ecosystem, result)
@@ -250,6 +254,9 @@ func synthesizeRuleCryptoAssets(
 		decls := declsByFQN[api]
 		if ecosystem == ecosystemRust {
 			decls = declsByFQN[rustSynthesisKey(api)]
+		}
+		if ecosystem == ecosystemNode && len(decls) == 0 {
+			decls = nodeExportDecls(api, declsByFQN)
 		}
 		added += synthesizeAPIAssets(report, fileIdx, api, metas, decls, declsByClass, result)
 	}
@@ -426,7 +433,8 @@ func terminalFindingPURLs(report *entities.InterimReport, fn *callgraph.Function
 			if syntheticFindingKey(report.Findings[i].FilePath, a.DependencyInfo) != fnKey {
 				continue
 			}
-			if a.StartLine >= fn.StartLine && a.StartLine <= fn.EndLine && syntheticSuppressingAsset(a) {
+			// A synthetic sibling never suppresses: Node APIs of one export share its line.
+			if a.StartLine >= fn.StartLine && a.StartLine <= fn.EndLine && syntheticSuppressingAsset(a) && !isSyntheticEntryPointAsset(a) {
 				purls = append(purls, a.PURL)
 			}
 		}
@@ -859,12 +867,12 @@ func cryptoAPI(crypto map[string]any, ecosystem string) (string, bool) {
 // short JCA-style names like "Cipher.getInstance" (Type 1) are excluded while
 // deep Java FQNs like "com.password4j.HashBuilder.withBcrypt" qualify.
 func isQualifiedMethodSymbol(s, ecosystem string) bool {
-	if s == "" || strings.ContainsAny(s, " ()/\"") {
+	if s == "" || strings.ContainsAny(s, " ()\"") || (ecosystem != ecosystemNode && strings.Contains(s, "/")) {
 		return false
 	}
 	minDots := 2
 	switch ecosystem {
-	case ecosystemPython:
+	case ecosystemPython, ecosystemNode:
 		minDots = 1
 	case ecosystemRust:
 		// "cmac::Cmac::new_from_slice" is as qualified as "cmac.Cmac.new_from_slice".
@@ -942,6 +950,10 @@ func languageForPath(path string) string {
 		return ecosystemPython
 	case ".rs":
 		return "rust"
+	case ".js", ".mjs", ".cjs":
+		return "javascript"
+	case ".ts", ".mts", ".cts":
+		return "typescript"
 	case ".c", ".h":
 		return "c"
 	case ".cs":
@@ -992,6 +1004,44 @@ func MarkSyntheticVariants(report *entities.InterimReport) {
 		}
 		for _, key := range order {
 			markSiteVariants(sites[key])
+		}
+		markSharedLineAPIs(report.Findings[i].CryptographicAssets)
+	}
+}
+
+// markSharedLineAPIs gives synthetic assets of different apis on one line
+// distinct identities. Node anchors every api of an export on the export's
+// line; a Java or Python api has its own method and line, so its id is kept.
+func markSharedLineAPIs(assets []entities.CryptographicAsset) {
+	type lineKey struct {
+		module, version string
+		line            int
+	}
+	apis := make(map[lineKey]map[string]bool)
+	keyOf := func(a *entities.CryptographicAsset) lineKey {
+		k := lineKey{line: a.StartLine}
+		if a.DependencyInfo != nil {
+			k.module, k.version = a.DependencyInfo.Module, a.DependencyInfo.Version
+		}
+		return k
+	}
+	for j := range assets {
+		if a := &assets[j]; isSyntheticEntryPointAsset(a) {
+			if apis[keyOf(a)] == nil {
+				apis[keyOf(a)] = make(map[string]bool)
+			}
+			apis[keyOf(a)][a.Metadata["api"]] = true
+		}
+	}
+	for j := range assets {
+		a := &assets[j]
+		if !isSyntheticEntryPointAsset(a) || len(apis[keyOf(a)]) < 2 {
+			continue
+		}
+		if a.ConditionedValue == "" {
+			a.ConditionedValue = "api:" + a.Metadata["api"]
+		} else {
+			a.ConditionedValue = "api:" + a.Metadata["api"] + "|" + a.ConditionedValue
 		}
 	}
 }
