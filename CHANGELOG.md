@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-10-22
+### Added
+- Node callgraph contracts for `@noble/curves` 0.9 to 2.x. Supporting calls on
+  ECDSA, Schnorr, EdDSA, X25519/X448, BLS and BN254 APIs now report their
+  lifecycle role, and on 0.x/1.x the signature returned by `sign` types its
+  encoders and `recoverPublicKey`.
+- Node callgraph contracts for `@noble/hashes` 0.4 to 2.x. Supporting calls on
+  an incremental hasher, HMAC, KMAC or ESKDF object now report their lifecycle
+  role (`factory`, `operation`, `output`) instead of shipping uncategorized.
+- Node callgraph contracts for `@noble/post-quantum` 0.1 to 0.7: ML-KEM, ML-DSA,
+  SLH-DSA, Falcon and the hybrid KEMs. Functions that return their keys,
+  encapsulations, signatures or verdicts now carry an inferred return type.
+- JavaScript and TypeScript call graph: a call on the WebCrypto API resolves to
+  its WebIDL interface, `SubtleCrypto.<method>` or `Crypto.getRandomValues`,
+  under every spelling: the global `crypto` object (bare, `globalThis.`,
+  `window.`, `self.`), Node's `crypto.webcrypto` through `require` or `import`,
+  and a `subtle` object held in a variable or destructured. Contracts for the
+  `SubtleCrypto` operations (`encrypt`, `decrypt`, `sign`, `verify`, `digest`,
+  `generateKey`, `importKey`, `exportKey`, `deriveKey`, `deriveBits`,
+  `wrapKey`, `unwrapKey`) and `Crypto.getRandomValues` export them as
+  supporting calls with their lifecycle category.
+  The structural graph of a Node scan that uses WebCrypto changes;
+  `graphfrag.GraphAlgoVersion` `graph-algo-10` of this release covers this
+  change, so a consumer that caches structural graphs under
+  `scan_metadata.graph_algo_version` must re-mine. The wire schema is unchanged.
+### Changed
+- `finding_graphs[].dependency.relationship` and `.path` in the callgraph export now come from the
+  dependency graph of scanoss.go's shared resolver, the one Earnie uses: the project's lockfile for
+  npm, Cargo, Poetry and uv, and the `go` and `mvn` tools for Go modules and Maven projects. A Go
+  module that `go.mod` marks `// indirect` is now `transitive`, with its route, instead of `direct`.
+  In a multi-module Maven project each module's declared dependencies are `direct`, and findings in
+  dependencies that carried no `relationship` now carry one. Where the shared resolver records no
+  edges (pip without a lockfile, Gradle, npm without a lockfile) the previous graph is used.
+- Building crypto-finder from source requires Go 1.26.
+
 ## [0.39.1] - 2026-10-21
 ### Fixed
 - The slim image builds again: it pinned a `ca-certificates` build that Debian bookworm
