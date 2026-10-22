@@ -34,7 +34,7 @@ This project adheres to a Code of Conduct that all contributors are expected to 
 
 ### Prerequisites
 
-- Go 1.25 or later
+- Go 1.26 or later
 - Make
 - Docker (optional, for container testing)
 

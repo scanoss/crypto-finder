@@ -4,7 +4,7 @@
 # This image is used for running integration tests in CI/CD and locally.
 # It includes Go, semgrep, and opengrep to support scanner integration tests.
 
-FROM golang:1.25@sha256:dbeddb5e728ea4b5ba7920574413e311025ffa42d196793857e4d160e8dfe60d
+FROM golang:1.26@sha256:5c3f3f28a273c9b61698b2d34f18375929790ab1f1d3835d032d21e2b31eae0c
 
 ARG OPENGREP_VERSION=v1.22.0
 ARG OPENGREP_AMD64_SHA256=45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319

@@ -26,7 +26,7 @@ crypto-finder scan --export-callgraph callgraph.json --output findings.json /pat
 
 ### Prerequisites
 
-- **Go** 1.25+ (only for building from source)
+- **Go** 1.26+ (only for building from source)
 - **OpenGrep** (recommended) or **Semgrep** — the scanning engine. Included in the Docker images.
 
     ```bash
