@@ -22,6 +22,7 @@ import (
 const (
 	nodeCallExpression        = "call_expression"
 	nodeMemberExpression      = "member_expression"
+	nodePairPattern           = "pair_pattern"
 	nodeVariableDeclarator    = "variable_declarator"
 	nodeFunctionDeclaration   = "function_declaration"
 	nodeGeneratorDeclaration  = "generator_function_declaration"
@@ -269,6 +270,16 @@ func (b nodeBindings) lookup(locals map[string]bool, name string) (nodeBinding, 
 	return binding, ok && binding.module != ""
 }
 
+// webCryptoScope reads the bindings and locals the way WebCrypto receiver
+// resolution needs them: an import binds a name, a local declaration shadows
+// the global crypto object.
+func (b nodeBindings) webCryptoScope(locals map[string]bool) webCryptoScope {
+	return webCryptoScope{
+		bound:    func(name string) (nodeBinding, bool) { return b.lookup(locals, name) },
+		declared: func(name string) bool { return locals[name] },
+	}
+}
+
 // withModuleVariables returns a function's locals plus the variables the
 // module declares, so a call on a module variable records its receiver. That
 // is how a variable the module binds once, as elliptic consumers do with their
@@ -402,7 +413,7 @@ func extractNodeRequireImport(node *sitter.Node, src []byte, bindings nodeBindin
 			switch item.Type() {
 			case nodeShorthandPattern:
 				bindings[item.Content(src)] = nodeBinding{module: binding.module, member: joinNodeMember(binding.member, item.Content(src))}
-			case "pair_pattern":
+			case nodePairPattern:
 				key := item.ChildByFieldName("key")
 				alias := item.ChildByFieldName("value")
 				if key != nil && alias != nil && alias.Type() == goNodeIdentifier {
@@ -929,7 +940,7 @@ func collectNodePatternNames(node *sitter.Node, src []byte, locals map[string]bo
 	switch node.Type() {
 	case goNodeIdentifier, nodeShorthandPattern:
 		locals[node.Content(src)] = true
-	case "pair_pattern":
+	case nodePairPattern:
 		collectNodePatternNames(node.ChildByFieldName("value"), src, locals)
 	case nodeAssignmentPattern, "object_assignment_pattern":
 		collectNodePatternNames(node.ChildByFieldName("left"), src, locals)
@@ -1045,6 +1056,14 @@ func (p *NodeParser) parseNodeMemberCall(call *FunctionCall, function *sitter.No
 	name := property.Content(src)
 	objectText := object.Content(src)
 	call.Callee = FunctionID{Package: packagePath, Name: name}
+	if iface, ok := nodeWebCryptoCallInterface(object, src, name, imports.webCryptoScope(locals)); ok {
+		// Every spelling reaches the one WebCrypto object, so the interface is
+		// the receiver identity that ties a function's calls on it together
+		// (generateKey, then encrypt), as a variable name does for `subtle.x()`.
+		call.Callee = FunctionID{Type: iface, Name: name}
+		call.ReceiverVar = iface
+		return call
+	}
 	first, suffix := splitNodeMemberObject(objectText)
 	binding, importedObject := imports.lookup(locals, first)
 	required, requiredObject := p.requireReceiver(object, src)
