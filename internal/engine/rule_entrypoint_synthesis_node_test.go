@@ -136,6 +136,25 @@ func TestSynthesizeNodeSkipsMembersTheReleaseLacks(t *testing.T) {
 	}
 }
 
+// Node resolves main without its extension and as a directory index.
+func TestIsNodeMainFile(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		rel, main string
+		want      bool
+	}{
+		{"bcrypt.js", "bcrypt", true},
+		{"lib/index.js", "lib/index.js", true},
+		{"lib/index.js", "lib", true},
+		{"lib/other.js", "lib", false},
+		{"index.js", "", false},
+	} {
+		if got := isNodeMainFile(tc.rel, tc.main); got != tc.want {
+			t.Errorf("isNodeMainFile(%q, %q) = %v, want %v", tc.rel, tc.main, got, tc.want)
+		}
+	}
+}
+
 // An unscoped package without an exports map is importable by its main file.
 func TestSynthesizeNodeMainExportWithoutExportsMap(t *testing.T) {
 	t.Parallel()

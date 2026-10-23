@@ -213,12 +213,23 @@ func (f nodeSpecifierFiles) walk(root, main string) fs.WalkDirFunc {
 		if first, rest, ok := strings.Cut(mod, "/"); ok && nodeLayoutDirs[first] {
 			mod = rest
 		}
-		if mod == "index" || rel == main {
+		if mod == "index" || isNodeMainFile(rel, main) {
 			f.add(".", rel)
 		}
 		f.add("./"+mod, rel)
 		return nil
 	}
+}
+
+// isNodeMainFile reports whether rel is the file a package.json main names.
+// Node resolves main with or without its extension, and as a directory index:
+// bcrypt's main is "./bcrypt" for bcrypt.js.
+func isNodeMainFile(rel, main string) bool {
+	if main == "" || main == "." {
+		return false
+	}
+	noExt := strings.TrimSuffix(rel, path.Ext(rel))
+	return rel == main || noExt == main || noExt == main+"/index"
 }
 
 func isNodeSourceFile(rel string) bool {
