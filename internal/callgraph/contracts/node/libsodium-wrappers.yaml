@@ -26,42 +26,123 @@ library:
 #
 # AN OPTIONAL TRAILING `outputFormat` ARGUMENT exists on most of these -- "uint8array",
 # "hex", "base64" -- so each function is declared at its base arity and one
-# above it.
+# above it. A buffer the wrapper also accepts as undefined (generichash's key, a
+# stream's ad) adds the arity without it.
 #
 # Deliberately NOT contracted: the `*_keybytes`, `*_npubbytes` and `*_abytes`
 # constants, `sodium.ready`, and the from_/to_ encoding helpers. They report
 # sizes and convert representations; they compute nothing.
 contracts:
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_decrypt"
+    arity: 5
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_decrypt"
+    arity: 6
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_decrypt_detached"
+    arity: 6
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_decrypt_detached"
+    arity: 7
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_encrypt"
+    arity: 5
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_encrypt"
+    arity: 6
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_encrypt_detached"
+    arity: 5
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_encrypt_detached"
+    arity: 6
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_keygen"
+    arity: 0
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis128l_keygen"
+    arity: 1
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_decrypt"
+    arity: 5
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_decrypt"
+    arity: 6
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_decrypt_detached"
+    arity: 6
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_decrypt_detached"
+    arity: 7
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_encrypt"
+    arity: 5
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_encrypt"
+    arity: 6
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_encrypt_detached"
+    arity: 5
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_encrypt_detached"
+    arity: 6
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_keygen"
+    arity: 0
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_aead_aegis256_keygen"
+    arity: 1
+    return: { type: "libsodium-wrappers.SecretKey", confidence: high }
+    role: operation
   - method: "libsodium-wrappers.crypto_aead_chacha20poly1305_ietf_decrypt"
-    arity: 2
+    arity: 5
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_aead_chacha20poly1305_ietf_decrypt"
-    arity: 3
+    arity: 6
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_aead_chacha20poly1305_ietf_encrypt"
-    arity: 2
+    arity: 5
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_aead_chacha20poly1305_ietf_encrypt"
-    arity: 3
+    arity: 6
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_decrypt"
-    arity: 2
+    arity: 5
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_decrypt"
-    arity: 3
+    arity: 6
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_encrypt"
-    arity: 2
+    arity: 5
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_encrypt"
-    arity: 3
+    arity: 6
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_keygen"
@@ -90,10 +171,6 @@ contracts:
     role: operation
   - method: "libsodium-wrappers.crypto_auth_verify"
     arity: 3
-    return: { type: "libsodium-wrappers.Boolean", confidence: high }
-    role: operation
-  - method: "libsodium-wrappers.crypto_auth_verify"
-    arity: 4
     return: { type: "libsodium-wrappers.Boolean", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_box_easy"
@@ -128,12 +205,12 @@ contracts:
     arity: 3
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
-  - method: "libsodium-wrappers.crypto_generichash_update"
-    arity: 2
+  - method: "libsodium-wrappers.crypto_generichash"
+    arity: 4
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_generichash_update"
-    arity: 3
+    arity: 2
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_kdf_derive_from_key"
@@ -188,10 +265,6 @@ contracts:
     arity: 3
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
-  - method: "libsodium-wrappers.crypto_pwhash_str"
-    arity: 4
-    return: { type: "libsodium-wrappers.Bytes", confidence: high }
-    role: operation
   - method: "libsodium-wrappers.crypto_scalarmult"
     arity: 2
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
@@ -228,16 +301,12 @@ contracts:
     arity: 2
     return: { type: "libsodium-wrappers.StreamState", confidence: high }
     role: factory
-  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_init_pull"
-    arity: 3
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_init_push"
+    arity: 1
     return: { type: "libsodium-wrappers.StreamState", confidence: high }
     role: factory
   - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_init_push"
     arity: 2
-    return: { type: "libsodium-wrappers.StreamState", confidence: high }
-    role: factory
-  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_init_push"
-    arity: 3
     return: { type: "libsodium-wrappers.StreamState", confidence: high }
     role: factory
   - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_keygen"
@@ -256,12 +325,16 @@ contracts:
     arity: 3
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
-  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_push"
-    arity: 2
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_pull"
+    arity: 4
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_push"
-    arity: 3
+    arity: 4
+    return: { type: "libsodium-wrappers.Bytes", confidence: high }
+    role: operation
+  - method: "libsodium-wrappers.crypto_secretstream_xchacha20poly1305_push"
+    arity: 5
     return: { type: "libsodium-wrappers.Bytes", confidence: high }
     role: operation
   - method: "libsodium-wrappers.crypto_sign_detached"
@@ -314,9 +387,5 @@ contracts:
     role: operation
   - method: "libsodium-wrappers.crypto_sign_verify_detached"
     arity: 3
-    return: { type: "libsodium-wrappers.Boolean", confidence: high }
-    role: operation
-  - method: "libsodium-wrappers.crypto_sign_verify_detached"
-    arity: 4
     return: { type: "libsodium-wrappers.Boolean", confidence: high }
     role: operation
