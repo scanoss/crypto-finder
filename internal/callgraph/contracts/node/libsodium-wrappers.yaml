@@ -32,22 +32,6 @@ library:
 # constants, `sodium.ready`, and the from_/to_ encoding helpers. They report
 # sizes and convert representations; they compute nothing.
 contracts:
-  - method: "libsodium-wrappers.crypto_aead_aes256gcm_decrypt"
-    arity: 2
-    return: { type: "libsodium-wrappers.Bytes", confidence: high }
-    role: operation
-  - method: "libsodium-wrappers.crypto_aead_aes256gcm_decrypt"
-    arity: 3
-    return: { type: "libsodium-wrappers.Bytes", confidence: high }
-    role: operation
-  - method: "libsodium-wrappers.crypto_aead_aes256gcm_encrypt"
-    arity: 2
-    return: { type: "libsodium-wrappers.Bytes", confidence: high }
-    role: operation
-  - method: "libsodium-wrappers.crypto_aead_aes256gcm_encrypt"
-    arity: 3
-    return: { type: "libsodium-wrappers.Bytes", confidence: high }
-    role: operation
   - method: "libsodium-wrappers.crypto_aead_chacha20poly1305_ietf_decrypt"
     arity: 2
     return: { type: "libsodium-wrappers.Bytes", confidence: high }

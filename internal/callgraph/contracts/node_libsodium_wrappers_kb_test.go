@@ -101,7 +101,7 @@ func TestLoadEmbeddedNodeLibsodiumWrappers(t *testing.T) {
 			n++
 		}
 	}
-	if n != 76 {
-		t.Errorf("libsodium-wrappers contributes %d keys, want 76", n)
+	if n != 72 {
+		t.Errorf("libsodium-wrappers contributes %d keys, want 72", n)
 	}
 }

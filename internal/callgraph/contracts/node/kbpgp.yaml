@@ -46,7 +46,11 @@ contracts:
     arity: 2
     return: { type: "kbpgp.KeyManager", confidence: high }
     role: factory
-  - method: "kbpgp.KeyManager.generate_primary"
+  - method: "kbpgp.KeyManager.generate_rsa"
+    arity: 2
+    return: { type: "kbpgp.KeyManager", confidence: high }
+    role: factory
+  - method: "kbpgp.KeyManager.generate_ecc"
     arity: 2
     return: { type: "kbpgp.KeyManager", confidence: high }
     role: factory
