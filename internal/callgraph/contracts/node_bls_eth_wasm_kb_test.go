@@ -52,6 +52,8 @@ func TestLoadEmbeddedNodeBlsEthWasm(t *testing.T) {
 		// The one that joins today. init selects the CURVE, and this library
 		// builds BN254, BN381_1 and BN_SNARK1 besides BLS12-381.
 		{"bls-eth-wasm.init", 1, "void"},
+		// Batch verification is a module function too, reached through the import.
+		{"bls-eth-wasm.multiVerify", 3, "boolean"},
 
 		// THE TWO THAT CARRY THE TYPE ACROSS STATEMENTS. Without them the
 		// second half of every consumer's key flow is unrelated calls on
@@ -102,7 +104,7 @@ func TestLoadEmbeddedNodeBlsEthWasm(t *testing.T) {
 			n++
 		}
 	}
-	if n != 27 {
-		t.Errorf("bls-eth-wasm contributes %d keys, want 27", n)
+	if n != 28 {
+		t.Errorf("bls-eth-wasm contributes %d keys, want 28", n)
 	}
 }

@@ -262,5 +262,9 @@ contracts:
     arity: 1
     return: { type: builtins.string, confidence: high }
     role: output
+  - method: node-forge.random.getBytes
+    arity: 1
+    return: { type: builtins.string, confidence: high }
+    role: output
 
 hierarchy: {}

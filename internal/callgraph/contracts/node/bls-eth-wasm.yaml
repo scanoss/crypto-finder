@@ -74,6 +74,10 @@ contracts:
     arity: 2
     return: { type: "boolean", confidence: high }
     role: operation
+  - method: "bls-eth-wasm.multiVerify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
   - method: "bls-eth-wasm.Signature.aggregate"
     arity: 1
     return: { type: "boolean", confidence: high }
