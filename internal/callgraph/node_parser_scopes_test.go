@@ -140,3 +140,20 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// A class assigned to the exports declares its methods under its own name, or,
+// when anonymous, under the name it is exported as.
+func TestNodeParser_ClassAssignedToExports(t *testing.T) {
+	t.Parallel()
+
+	analysis := parseNodeSource(t, "module.exports = class CryptographyKey {\n  constructor(buf) {}\n  getBuffer() {}\n};\nexports.Signer = class {\n  sign() {}\n};\n")
+	got := map[string]bool{}
+	for _, fn := range analysis.Functions {
+		got[fn.OwnerName+"."+fn.ID.Name] = true
+	}
+	for _, want := range []string{"CryptographyKey.constructor", "CryptographyKey.getBuffer", "Signer.sign"} {
+		if !got[want] {
+			t.Errorf("%s not declared; got %v", want, got)
+		}
+	}
+}
