@@ -41,14 +41,6 @@ contracts:
     arity: 2
     return: { type: builtins.object, confidence: high }
     role: operation
-  - method: "@aws-sdk/signature-v4.SignatureV4.signWithCredentials"
-    arity: 2
-    return: { type: builtins.object, confidence: high }
-    role: operation
-  - method: "@aws-sdk/signature-v4.SignatureV4.signWithCredentials"
-    arity: 3
-    return: { type: builtins.object, confidence: high }
-    role: operation
   - method: "@aws-sdk/signature-v4.getPayloadHash"
     arity: 2
     return: { type: builtins.string, confidence: high }

@@ -24,7 +24,7 @@ func TestLoadEmbeddedNodeKbpgp(t *testing.T) {
 
 	for _, want := range []string{
 		"kbpgp.box#2", "kbpgp.unbox#2",
-		"kbpgp.KeyManager.generate#2", "kbpgp.KeyManager.generate_primary#2",
+		"kbpgp.KeyManager.generate#2", "kbpgp.KeyManager.generate_rsa#2", "kbpgp.KeyManager.generate_ecc#2",
 		"kbpgp.KeyManager.import_public#2", "kbpgp.KeyManager.import_from_armored_pgp#2",
 		"kbpgp.KeyManager.import_from_p3skb#2",
 		"kbpgp.keyring.KeyRing.<init>#0",
@@ -107,7 +107,7 @@ func TestLoadEmbeddedNodeKbpgp(t *testing.T) {
 			n++
 		}
 	}
-	if n != 12 {
-		t.Errorf("kbpgp contributes %d keys, want 12", n)
+	if n != 13 {
+		t.Errorf("kbpgp contributes %d keys, want 13", n)
 	}
 }

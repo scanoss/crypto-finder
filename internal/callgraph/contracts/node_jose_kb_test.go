@@ -135,7 +135,7 @@ func TestLoadEmbeddedNodeJose(t *testing.T) {
 			n++
 		}
 	}
-	if n != 173 {
-		t.Errorf("jose contributes %d keys, want 173", n)
+	if n != 174 {
+		t.Errorf("jose contributes %d keys, want 174", n)
 	}
 }

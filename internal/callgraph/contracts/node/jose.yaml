@@ -225,12 +225,16 @@ contracts:
     arity: 2
     return: { type: "jose.EncryptJWT", confidence: high }
     role: config
-  - method: "jose.EncryptJWT.setReplicatedHeader"
-    arity: 1
+  - method: "jose.EncryptJWT.replicateIssuerAsHeader"
+    arity: 0
     return: { type: "jose.EncryptJWT", confidence: high }
     role: config
-  - method: "jose.EncryptJWT.setReplicatedHeader"
-    arity: 2
+  - method: "jose.EncryptJWT.replicateSubjectAsHeader"
+    arity: 0
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: config
+  - method: "jose.EncryptJWT.replicateAudienceAsHeader"
+    arity: 0
     return: { type: "jose.EncryptJWT", confidence: high }
     role: config
   - method: "jose.EncryptJWT.encrypt"
