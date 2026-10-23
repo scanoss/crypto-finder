@@ -10,9 +10,10 @@ library:
 # ONE SUBPATH PER CURVE FAMILY, AND THE PARSER KEYS BY THE SPECIFIER. Consumers
 # import `@noble/curves/secp256k1`, `ed25519`, `nist` and so on; the call is
 # keyed through the curve object (`@noble/curves/secp256k1.secp256k1.sign`).
-# 0.x and 1.x export bare subpaths (1.x also `.js`); 2.x exports only `.js`.
-# p256/p384/p521 are their own modules before 2.x and live in `nist` from 1.9;
-# brainpool exists only in 2.x `misc`.
+# 0.x and 1.x export bare subpaths (1.x also `.js`); 2.x exports only `.js`,
+# except 2.0.0, which has no exports map. p256/p384/p521 are their own modules
+# before 2.x and live in `nist` from 1.9; brainpool and webcrypto are 2.x only,
+# keyed under both spellings because the rules name them bare.
 #
 # ECDSA `sign` IS SPLIT BY SPELLING. 0.x/1.x return a signature object whose
 # encoders and `recoverPublicKey` are what consumers call next; 2.x returns the
@@ -3870,6 +3871,151 @@ contracts:
     arity: 1
     return: { type: "@noble/curves.Point", confidence: high }
     role: operation
+  # Bare `misc` (2.0.0 has no exports map, so bundlers resolve it); the rules key brainpool by it.
+  - method: "@noble/curves/misc.brainpoolP256r1.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.getSharedSecret"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.keygen"
+    arity: 1
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.utils.randomSecretKey"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.utils.randomSecretKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP256r1.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.getSharedSecret"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.keygen"
+    arity: 1
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.utils.randomSecretKey"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.utils.randomSecretKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP384r1.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.getSharedSecret"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.keygen"
+    arity: 1
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.utils.randomSecretKey"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.utils.randomSecretKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/misc.brainpoolP512r1.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
 
   # BIP-340 Schnorr over secp256k1.
   - method: "@noble/curves/secp256k1.schnorr.sign"
@@ -5510,6 +5656,211 @@ contracts:
   - method: "@noble/curves/webcrypto.js.x448.utils.randomSecretKey"
     arity: 1
     return: { type: "Uint8Array", confidence: high }
+    role: operation
+  # Bare `webcrypto` (2.0.0 has no exports map, so bundlers resolve it); the rules key the calls by it.
+  - method: "@noble/curves/webcrypto.ed25519.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed25519.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed25519.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed25519.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed25519.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed25519.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed25519.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed448.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed448.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed448.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed448.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed448.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed448.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.ed448.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p256.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p256.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p256.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p256.getSharedSecret"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p256.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p256.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p256.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p256.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p256.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p384.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p384.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p384.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p384.getSharedSecret"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p384.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p384.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p384.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p384.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p384.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p521.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p521.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p521.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p521.getSharedSecret"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p521.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p521.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p521.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p521.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.p521.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x25519.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x25519.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x25519.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x25519.getSharedSecret"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x25519.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x448.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x448.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x448.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x448.getSharedSecret"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/curves/webcrypto.x448.keygen"
+    arity: 0
+    return: { type: "@noble/curves.KeyPair", confidence: high }
     role: operation
 
   # The signature object (0.x/1.x sign, and the Signature constructors) and the points.

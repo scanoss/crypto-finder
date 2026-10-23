@@ -41,6 +41,9 @@ func TestLoadEmbeddedNodeNobleCurves(t *testing.T) {
 		{"@noble/curves/bls12-381.js.bls12_381.longSignatures.sign", 2, "@noble/curves.Point", "operation"},
 		{"@noble/curves/bn254.js.bn254.pairing", 2, "@noble/curves.Fp12", "operation"},
 		{"@noble/curves/webcrypto.js.p256.sign", 2, "Uint8Array", "operation"},
+		{"@noble/curves/webcrypto.x448.getSharedSecret", 2, "Uint8Array", "operation"},
+		{"@noble/curves/webcrypto.ed25519.keygen", 0, "@noble/curves.KeyPair", "operation"},
+		{"@noble/curves/misc.brainpoolP512r1.sign", 3, "Uint8Array", "operation"},
 		// The signature object and the points.
 		{"@noble/curves.Signature.addRecoveryBit", 1, "@noble/curves.Signature", "config"},
 		{"@noble/curves.Signature.recoverPublicKey", 1, "@noble/curves.Point", "operation"},
@@ -57,12 +60,18 @@ func TestLoadEmbeddedNodeNobleCurves(t *testing.T) {
 		}
 	}
 
-	// 2.x-only modules have no bare spelling, and internals stay undeclared.
+	// Internals stay undeclared; bare misc/webcrypto keys mirror their `.js` keys.
 	for key := range kb.Contracts {
-		bareWebcrypto := strings.HasPrefix(key, "@noble/curves/webcrypto.") && !strings.HasPrefix(key, "@noble/curves/webcrypto.js.")
-		if strings.HasPrefix(key, "@noble/curves/abstract") || strings.HasPrefix(key, "@noble/curves/utils") ||
-			bareWebcrypto || strings.HasPrefix(key, "@noble/curves/misc.brainpool") {
-			t.Errorf("contract %q names an internal export or a spelling the package never shipped", key)
+		if strings.HasPrefix(key, "@noble/curves/abstract") || strings.HasPrefix(key, "@noble/curves/utils") {
+			t.Errorf("contract %q names an internal export", key)
+		}
+		for _, sub := range []string{"misc", "webcrypto"} {
+			bare := "@noble/curves/" + sub + "."
+			if strings.HasPrefix(key, bare) && !strings.HasPrefix(key, bare+"js.") {
+				if _, ok := kb.Contracts[bare+"js."+strings.TrimPrefix(key, bare)]; !ok {
+					t.Errorf("bare contract %q has no `.js` twin", key)
+				}
+			}
 		}
 	}
 
@@ -74,7 +83,7 @@ func TestLoadEmbeddedNodeNobleCurves(t *testing.T) {
 			n++
 		}
 	}
-	if n != 1387 {
-		t.Errorf("noble-curves contributes %d keys, want 1387", n)
+	if n != 1474 {
+		t.Errorf("noble-curves contributes %d keys, want 1474", n)
 	}
 }

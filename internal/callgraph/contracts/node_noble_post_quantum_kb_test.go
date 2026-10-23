@@ -36,6 +36,9 @@ func TestLoadEmbeddedNodeNoblePostQuantum(t *testing.T) {
 		{"@noble/post-quantum/slh-dsa.js.slh_dsa_shake_256s.sign", 2, "Uint8Array", "operation"},
 		{"@noble/post-quantum/falcon.js.falcon512.attached.seal", 2, "Uint8Array", "operation"},
 		{"@noble/post-quantum/falcon.js.falcon1024padded.verify", 4, "boolean", "operation"},
+		{"@noble/post-quantum/falcon.falcon512.attached.open", 2, "Uint8Array", "operation"},
+		{"@noble/post-quantum/falcon.falcon1024.keygen", 0, "@noble/post-quantum.KeyPair", "operation"},
+		{"@noble/post-quantum/hybrid.ml_kem768_x25519.decapsulate", 2, "Uint8Array", "operation"},
 	} {
 		got := kb.ContractsFor(w.method, w.arity)
 		if len(got) == 0 {
@@ -47,12 +50,18 @@ func TestLoadEmbeddedNodeNoblePostQuantum(t *testing.T) {
 		}
 	}
 
-	// hybrid and falcon only ever shipped `.js` subpaths.
+	// Bare hybrid and falcon keys exist only as the rules' api names: each mirrors its `.js` key.
 	for key := range kb.Contracts {
-		if strings.HasPrefix(key, "@noble/post-quantum/hybrid.") && !strings.HasPrefix(key, "@noble/post-quantum/hybrid.js.") ||
-			strings.HasPrefix(key, "@noble/post-quantum/falcon.") && !strings.HasPrefix(key, "@noble/post-quantum/falcon.js.") ||
-			strings.HasPrefix(key, "@noble/post-quantum/utils") {
-			t.Errorf("contract %q names a helper or a spelling the package never shipped", key)
+		if strings.HasPrefix(key, "@noble/post-quantum/utils") {
+			t.Errorf("contract %q names a helper", key)
+		}
+		for _, sub := range []string{"hybrid", "falcon"} {
+			bare := "@noble/post-quantum/" + sub + "."
+			if strings.HasPrefix(key, bare) && !strings.HasPrefix(key, bare+"js.") {
+				if _, ok := kb.Contracts[bare+"js."+strings.TrimPrefix(key, bare)]; !ok {
+					t.Errorf("bare contract %q has no `.js` twin", key)
+				}
+			}
 		}
 	}
 
@@ -64,7 +73,7 @@ func TestLoadEmbeddedNodeNoblePostQuantum(t *testing.T) {
 			n++
 		}
 	}
-	if n != 314 {
-		t.Errorf("noble-post-quantum contributes %d keys, want 314", n)
+	if n != 388 {
+		t.Errorf("noble-post-quantum contributes %d keys, want 388", n)
 	}
 }
