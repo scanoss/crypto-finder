@@ -81,7 +81,10 @@ const SchemaVersion = "graph-fragment-1.14"
 // spelling: the global crypto object, Node's crypto.webcrypto, and a subtle
 // object held in a variable. It was an unbound member named after the calling
 // module.
-const GraphAlgoVersion = "graph-algo-10"
+//
+// graph-algo-11: a class assigned to Node exports (`module.exports = class Key
+// {..}`, `exports.Key = class {..}`) declares its methods, which were missing.
+const GraphAlgoVersion = "graph-algo-11"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
