@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,6 +160,34 @@ func TestSynthesizeNodeFollowsStarReExports(t *testing.T) {
 	}
 	if a := syntheticAssets(result.Report)["dist/signature.js acme.ecsign"]; a == nil || a.StartLine != 2 {
 		t.Errorf("assets = %v, want acme.ecsign at dist/signature.js:2", syntheticAssets(result.Report))
+	}
+}
+
+// An index that re-exports many modules reaches all of them; the bound is on
+// the depth of the re-export chain, not on how many modules one index lists.
+func TestSynthesizeNodeFollowsEveryStarOfAnIndex(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{"package.json": `{"name": "acme", "main": "index.js"}`}
+	var index strings.Builder
+	for i := 0; i < 12; i++ {
+		name := fmt.Sprintf("m%d", i)
+		index.WriteString("export * from './" + name + ".js';\n")
+		files[name+".js"] = "export const " + name + " = 1;\n"
+	}
+	files["index.js"] = index.String()
+	files["m11.js"] = "export function sign() {}\n"
+	root := t.TempDir()
+	writeNodeFiles(t, root, files)
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.sign": "sign"})}); got != 1 {
+		t.Fatalf("synthesized = %d, want 1 (sign is re-exported by the 12th star)", got)
 	}
 }
 
