@@ -50,6 +50,8 @@ func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.F
 	return nodePackageIdentifiers(root)
 }
 
+const nodeConstructorMember = "<init>"
+
 // nodeStarDepth bounds how many `export *` hops are followed from one module.
 const nodeStarDepth = 8
 
@@ -144,7 +146,7 @@ func resolveNodeRelative(from, spec string) string {
 
 // nodeExportDecls resolves a rule api to the export that owns it: the api
 // itself when it names an export, else its longest dotted prefix that does
-// ("...secp256k1.secp256k1.sign" -> "...secp256k1.secp256k1"). A rule covers
+// ("...secp256k1.secp256k1.sign" -> "...secp256k1.secp256k1", "X.<init>" -> "X"). A rule covers
 // every release, so a member must appear in this release's code: 0.9 has the
 // `ed25519` export but no `ed25519.keygen`.
 func nodeExportDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl, idents map[string]bool) []*callgraph.FunctionDecl {
@@ -163,9 +165,10 @@ func nodeExportDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl
 	}
 }
 
+// An exported class's constructor is named by the rule, not by the code.
 func allNodeMembersPresent(members string, idents map[string]bool) bool {
 	for _, m := range strings.Split(members, ".") {
-		if !idents[m] {
+		if !idents[m] && m != nodeConstructorMember {
 			return false
 		}
 	}
