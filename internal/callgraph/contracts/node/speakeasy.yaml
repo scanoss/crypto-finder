@@ -1,0 +1,84 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "speakeasy"
+  coordinates:
+    - "speakeasy"
+  version_range: ">=1.0.0"
+  description: "speakeasy: HOTP and TOTP one-time passcodes"
+
+# Every OTP function takes one options object. generate_key and generate_key_ascii
+# are the 1.x names, kept as deprecated aliases in 2.x.
+contracts:
+
+  # One-time passcodes.
+  - method: "speakeasy.digest"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "speakeasy.hotp"
+    arity: 1
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "speakeasy.hotp.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "speakeasy.hotp.verifyDelta"
+    arity: 1
+    return: { type: "speakeasy.Delta", confidence: high }
+    role: operation
+  - method: "speakeasy.totp"
+    arity: 1
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "speakeasy.totp.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "speakeasy.totp.verifyDelta"
+    arity: 1
+    return: { type: "speakeasy.Delta", confidence: high }
+    role: operation
+
+  # Shared-secret generation; every argument is optional.
+  - method: "speakeasy.generateSecret"
+    arity: 0
+    return: { type: "speakeasy.GeneratedSecret", confidence: high }
+    role: operation
+  - method: "speakeasy.generateSecret"
+    arity: 1
+    return: { type: "speakeasy.GeneratedSecret", confidence: high }
+    role: operation
+  - method: "speakeasy.generate_key"
+    arity: 0
+    return: { type: "speakeasy.GeneratedSecret", confidence: high }
+    role: operation
+  - method: "speakeasy.generate_key"
+    arity: 1
+    return: { type: "speakeasy.GeneratedSecret", confidence: high }
+    role: operation
+  - method: "speakeasy.generateSecretASCII"
+    arity: 0
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "speakeasy.generateSecretASCII"
+    arity: 1
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "speakeasy.generateSecretASCII"
+    arity: 2
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "speakeasy.generate_key_ascii"
+    arity: 0
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "speakeasy.generate_key_ascii"
+    arity: 1
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "speakeasy.generate_key_ascii"
+    arity: 2
+    return: { type: "builtins.string", confidence: high }
+    role: operation
