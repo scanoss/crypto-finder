@@ -136,7 +136,16 @@ func (s *NodeShapes) valueShape(m *nodeShapeModule, n *sitter.Node, name string,
 	if n != nil && nodeIsFunction(n) {
 		return s.functionShape(m, n, name)
 	}
-	return s.shapeOf(m, n, depth)
+	sh := s.shapeOf(m, n, depth)
+	// `var hotp = {}; hotp.gen = function..` builds the object after its literal.
+	if n != nil && nodeUnwrapValue(n).Type() == nodeObjectLiteral && name != "" && !sh.open {
+		nodeWalk(m.root, func(a *sitter.Node) {
+			if a.Type() == nodeAssignmentExpression {
+				s.addAssignedMember(m, a, name, &sh)
+			}
+		})
+	}
+	return sh
 }
 
 // functionShape is what a class or constructor function offers: its methods,
@@ -790,7 +799,13 @@ func (s *NodeShapes) memberValue(m *nodeShapeModule, n *sitter.Node, member stri
 		if value != nil && nodeIsFunction(value) {
 			return s.functionMember(vm, value, n.Content(m.src), member)
 		}
-		return s.memberValue(vm, value, member, depth+1)
+		if found, fm := s.memberValue(vm, value, member, depth+1); found != nil {
+			return found, fm
+		}
+		if value != nil && nodeUnwrapValue(value).Type() == nodeObjectLiteral {
+			return nodeAssignedValue(vm, n.Content(m.src)+"."+member), vm
+		}
+		return nil, nil
 	case n.Type() == nodeObjectLiteral:
 		return s.objectMember(m, n, member, depth)
 	case nodeIsFunction(n):
