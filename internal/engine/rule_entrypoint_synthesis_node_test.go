@@ -325,6 +325,33 @@ func TestSynthesizeNodeExportedClassConstructor(t *testing.T) {
 	}
 }
 
+// A constructor api names a class or constructor function, not a constant.
+func TestSynthesizeNodeConstructorOnlyOnClasses(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json": `{"name": "acme", "main": "index.js"}`,
+		"index.js":     "exports.VERSION = '1.0';\nexports.Key = class Key {};\nfunction Signer() {}\nexports.Signer = Signer;\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+	rules := writeNodeRules(t, map[string]string{"acme.VERSION.<init>": "keygen", "acme.Key.<init>": "keygen", "acme.Signer.<init>": "sign"})
+
+	SynthesizeRuleCryptoEntryPointsForResult(result, []string{rules})
+	got := map[string]bool{}
+	for _, a := range syntheticAssets(result.Report) {
+		got[a.Metadata["api"]] = true
+	}
+	if !got["acme.Key.<init>"] || !got["acme.Signer.<init>"] || got["acme.VERSION.<init>"] {
+		t.Errorf("surfaced %v, want the Key and Signer constructors only", got)
+	}
+}
+
 // Specifiers resolve as Node resolves them: "./*" reaches subdirectories, a
 // subpath mapped to null is not importable, the package root is its main, an
 // ESM wrapper falls through to the build it wraps, and deep imports use real paths.

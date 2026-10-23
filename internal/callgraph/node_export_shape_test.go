@@ -62,18 +62,19 @@ func TestNodeShapesReadCommonJSExports(t *testing.T) {
 	}
 }
 
-// What only exists at run time is unknown, not empty: a class, a value from
+// What only exists at run time is unknown, not empty: a subclass, a value from
 // another package, an object spread from a parameter.
 func TestNodeShapesLeaveRunTimeValuesUnknown(t *testing.T) {
 	t.Parallel()
 	root := writeShapeFiles(t, map[string]string{
-		"index.js": "import { make } from 'other-package';\nexport class Key {}\nexport const ext = make();\n" +
-			"export const spread = build({});\nfunction build(o) { return { ...o, a: 1 }; }\n",
+		"index.js": "import { make, Base } from 'other-package';\nexport class Key extends Base {}\nexport const ext = make();\n" +
+			"export const spread = build({});\nfunction build(o) { return { ...o, a: 1 }; }\n" +
+			"export function eddsa() {}\nfunction legacy(eddsa) { return Object.assign({}, eddsa, { x: 1 }); }\nexport const shadowed = legacy({});\n",
 	})
 	s := NewNodeShapes()
 	defer s.Close()
 
-	for _, name := range []string{"Key", "ext", "spread"} {
+	for _, name := range []string{"Key", "ext", "spread", "shadowed"} {
 		if keys, ok := s.ExportMembers(filepath.Join(root, "index.js"), name); ok {
 			t.Errorf("%s = %v, want unknown", name, keys)
 		}
@@ -90,5 +91,30 @@ func TestNodeCodeNamesSkipCommentsAndStrings(t *testing.T) {
 	}
 	if names["pairing"] || names["verify"] || !names["sign"] || !names["bn"] {
 		t.Errorf("names = %v", names)
+	}
+}
+
+// A class or constructor function offers its methods, statics and prototype
+// assignments; a constant is not a constructor.
+func TestNodeShapesReadClassesAndConstructors(t *testing.T) {
+	t.Parallel()
+	root := writeShapeFiles(t, map[string]string{
+		"index.js": "export class Key { static from() {} sign() {} }\nfunction EC() {}\nEC.prototype.genKeyPair = function() {};\n" +
+			"EC.curves = {};\nexport { EC };\nexport const VERSION = '1.0';\n",
+	})
+	s := NewNodeShapes()
+	defer s.Close()
+	file := filepath.Join(root, "index.js")
+
+	if keys, ok := s.ExportMembers(file, "Key"); !ok || !maps.Equal(keys, map[string]bool{"from": true, "sign": true}) {
+		t.Errorf("Key = %v (known %v)", keys, ok)
+	}
+	if keys, ok := s.ExportMembers(file, "EC"); !ok || !maps.Equal(keys, map[string]bool{"genKeyPair": true, "curves": true}) {
+		t.Errorf("EC = %v (known %v)", keys, ok)
+	}
+	for name, want := range map[string]bool{"Key": true, "EC": true, "VERSION": false} {
+		if callable, known := s.ExportIsCallable(file, name); !known || callable != want {
+			t.Errorf("%s callable = %v (known %v), want %v", name, callable, known, want)
+		}
 	}
 }
