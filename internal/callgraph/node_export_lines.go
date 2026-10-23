@@ -34,11 +34,13 @@ func NodeExportLines(filePath string) (map[string]int, error) {
 	return exports.Lines, nil
 }
 
-// NodeExports is what one module exports: its own names, and the modules it
-// re-exports wholesale (`export * from './x'`, tsc's `__exportStar(require('./x'), exports)`).
+// NodeExports is what one module exports: its own names, the modules it
+// re-exports wholesale (`export * from './x'`, tsc's `__exportStar(require('./x'), exports)`),
+// and the modules it re-exports under a name (`export * as ns from './x'`).
 type NodeExports struct {
-	Lines    map[string]int
-	StarFrom []string
+	Lines       map[string]int
+	StarFrom    []string
+	NamespaceOf map[string]string
 }
 
 // NodeModuleExports reads the exports of one JavaScript or TypeScript file. A
@@ -59,7 +61,7 @@ func NodeModuleExports(filePath string) (*NodeExports, error) {
 	}
 	defer tree.Close()
 
-	out := &NodeExports{Lines: make(map[string]int)}
+	out := &NodeExports{Lines: make(map[string]int), NamespaceOf: make(map[string]string)}
 	root := tree.RootNode()
 	aliases := nodeExportAliases(root, src)
 	for i := 0; i < int(root.NamedChildCount()); i++ {
@@ -70,6 +72,10 @@ func NodeModuleExports(filePath string) (*NodeExports, error) {
 			nodeClauseExportLines(stmt, src, out.Lines)
 			if from := nodeStarExportSource(stmt, src); from != "" {
 				out.StarFrom = append(out.StarFrom, from)
+			}
+			if ns, from := nodeNamespaceExport(stmt, src); ns != "" {
+				out.Lines[ns] = nodeLine(stmt)
+				out.NamespaceOf[ns] = from
 			}
 		case nodeExpressionStatement:
 			if stmt.NamedChildCount() == 0 {
@@ -204,6 +210,20 @@ func nodeStarExportSource(stmt *sitter.Node, src []byte) string {
 		}
 	}
 	return unquoteNodeString(source.Content(src))
+}
+
+// nodeNamespaceExport returns the name and module of `export * as ns from 'x'`.
+func nodeNamespaceExport(stmt *sitter.Node, src []byte) (string, string) {
+	source := stmt.ChildByFieldName("source")
+	if source == nil {
+		return "", ""
+	}
+	for i := 0; i < int(stmt.NamedChildCount()); i++ {
+		if c := stmt.NamedChild(i); c.Type() == "namespace_export" && c.NamedChildCount() == 1 {
+			return unquoteNodeString(c.NamedChild(0).Content(src)), unquoteNodeString(source.Content(src))
+		}
+	}
+	return "", ""
 }
 
 // nodeExportStarCall returns the module of tsc's __exportStar(require('x'), exports),

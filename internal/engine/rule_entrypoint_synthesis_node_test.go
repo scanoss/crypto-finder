@@ -191,6 +191,33 @@ func TestSynthesizeNodeFollowsEveryStarOfAnIndex(t *testing.T) {
 	}
 }
 
+// A module re-exported under a name surfaces its apis under that name, in the
+// module that defines them.
+func TestSynthesizeNodeFollowsNamespaceReExports(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json":       `{"name": "acme", "exports": {".": {"node": {"import": "./main.js", "require": "./build/main.cjs"}}}}`,
+		"main.js":            "export * as plonk from \"./src/plonk.js\";\n",
+		"src/plonk.js":       "export { default as prove } from \"./plonk_prove.js\";\n",
+		"src/plonk_prove.js": "export default async function prove() {}\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.plonk.prove": "sign"})}); got != 1 {
+		t.Fatalf("synthesized = %d, want 1", got)
+	}
+	if a := syntheticAssets(result.Report)["src/plonk.js acme.plonk.prove"]; a == nil || a.StartLine != 1 {
+		t.Errorf("assets = %v, want acme.plonk.prove at src/plonk.js:1", syntheticAssets(result.Report))
+	}
+}
+
 // Node resolves main without its extension and as a directory index.
 func TestIsNodeMainFile(t *testing.T) {
 	t.Parallel()

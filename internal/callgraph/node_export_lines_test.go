@@ -85,9 +85,10 @@ func TestNodeModuleExportsFollowsAliasesAndStars(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name, src string
-		lines     map[string]int
-		stars     []string
+		name, src  string
+		lines      map[string]int
+		stars      []string
+		namespaces map[string]string
 	}{
 		{
 			name: "alias of exports",
@@ -137,8 +138,9 @@ tslib_1.__exportStar(require("./account"), exports);
 (0, tslib_1.__exportStar)(require("./bytes"), exports);
 __exportStar(require("other-package"), exports);
 `,
-			lines: map[string]int{"a": 3},
-			stars: []string{"./signature.js", "./account", "./bytes", "other-package"},
+			lines:      map[string]int{"ns": 2, "a": 3},
+			stars:      []string{"./signature.js", "./account", "./bytes", "other-package"},
+			namespaces: map[string]string{"ns": "./ns.js"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -153,6 +155,9 @@ __exportStar(require("other-package"), exports);
 			}
 			if !maps.Equal(got.Lines, tc.lines) || !slices.Equal(got.StarFrom, tc.stars) {
 				t.Errorf("exports = %v stars %v, want %v stars %v", got.Lines, got.StarFrom, tc.lines, tc.stars)
+			}
+			if len(tc.namespaces) > 0 && !maps.Equal(got.NamespaceOf, tc.namespaces) {
+				t.Errorf("namespaces = %v, want %v", got.NamespaceOf, tc.namespaces)
 			}
 		})
 	}
