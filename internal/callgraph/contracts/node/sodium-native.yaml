@@ -1,0 +1,497 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "sodium-native"
+  coordinates:
+    - "sodium-native"
+  description: "sodium-native: native Node.js bindings for libsodium"
+
+# Flat module functions that mirror the C API: callers pass the output buffers
+# first, so most functions write into them and return nothing.
+# Async variants return a Promise without a callback; the *_instance factories
+# exist only in the 2.x releases.
+contracts:
+  - method: "sodium-native.crypto_aead_chacha20poly1305_ietf_decrypt"
+    arity: 6
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_aead_chacha20poly1305_ietf_decrypt_detached"
+    arity: 7
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_aead_chacha20poly1305_ietf_encrypt"
+    arity: 6
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_aead_chacha20poly1305_ietf_encrypt_detached"
+    arity: 7
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_aead_chacha20poly1305_ietf_keygen"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_aead_xchacha20poly1305_ietf_decrypt"
+    arity: 6
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_aead_xchacha20poly1305_ietf_decrypt_detached"
+    arity: 7
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_aead_xchacha20poly1305_ietf_encrypt"
+    arity: 6
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_aead_xchacha20poly1305_ietf_encrypt_detached"
+    arity: 7
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_aead_xchacha20poly1305_ietf_keygen"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_auth"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_auth_verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_box_detached"
+    arity: 6
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_box_easy"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_box_keypair"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_box_open_detached"
+    arity: 6
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_box_open_easy"
+    arity: 5
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_box_seal"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_box_seal_open"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_box_seed_keypair"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_generichash"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_generichash"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_generichash_batch"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_generichash_batch"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_generichash_final"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_generichash_init"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_generichash_instance"
+    arity: 0
+    return: { type: "sodium-native.CryptoGenericHashWrap", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_generichash_instance"
+    arity: 1
+    return: { type: "sodium-native.CryptoGenericHashWrap", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_generichash_instance"
+    arity: 2
+    return: { type: "sodium-native.CryptoGenericHashWrap", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_generichash_keygen"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_generichash_update"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_hash"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_hash_sha256"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_hash_sha256_final"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_hash_sha256_init"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_hash_sha256_instance"
+    arity: 0
+    return: { type: "sodium-native.CryptoHashSha256Wrap", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_hash_sha256_update"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_hash_sha512"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_hash_sha512_final"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_hash_sha512_init"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_hash_sha512_instance"
+    arity: 0
+    return: { type: "sodium-native.CryptoHashSha512Wrap", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_hash_sha512_update"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_kdf_derive_from_key"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_kdf_keygen"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_kx_client_session_keys"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_kx_keypair"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_kx_seed_keypair"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_kx_server_session_keys"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_onetimeauth"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_onetimeauth_final"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_onetimeauth_init"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_onetimeauth_update"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_onetimeauth_verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash"
+    arity: 6
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_async"
+    arity: 6
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_async"
+    arity: 7
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_scryptsalsa208sha256"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_scryptsalsa208sha256_async"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_scryptsalsa208sha256_async"
+    arity: 6
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_scryptsalsa208sha256_str"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_scryptsalsa208sha256_str_async"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_scryptsalsa208sha256_str_async"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_scryptsalsa208sha256_str_verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_scryptsalsa208sha256_str_verify_async"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_scryptsalsa208sha256_str_verify_async"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_str"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_str_async"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_str_async"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_str_verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_str_verify_async"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_pwhash_str_verify_async"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_scalarmult"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_scalarmult_base"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: output
+  - method: "sodium-native.crypto_secretbox_detached"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_secretbox_easy"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_secretbox_open_detached"
+    arity: 5
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_secretbox_open_easy"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_secretstream_xchacha20poly1305_init_pull"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_secretstream_xchacha20poly1305_init_push"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_secretstream_xchacha20poly1305_keygen"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_secretstream_xchacha20poly1305_pull"
+    arity: 4
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_secretstream_xchacha20poly1305_pull"
+    arity: 5
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_secretstream_xchacha20poly1305_push"
+    arity: 5
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_shorthash"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_sign"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_sign_detached"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_sign_ed25519_pk_to_curve25519"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: output
+  - method: "sodium-native.crypto_sign_ed25519_sk_to_curve25519"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: output
+  - method: "sodium-native.crypto_sign_ed25519_sk_to_pk"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: output
+  - method: "sodium-native.crypto_sign_keypair"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_sign_open"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_sign_seed_keypair"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: factory
+  - method: "sodium-native.crypto_sign_verify_detached"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_chacha20"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_chacha20_ietf"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_chacha20_ietf_xor"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_chacha20_ietf_xor_ic"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_chacha20_ietf_xor_wrap_init"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_stream_chacha20_xor"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_chacha20_xor_ic"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_chacha20_xor_wrap_init"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_stream_salsa20"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_salsa20_xor"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_salsa20_xor_ic"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_salsa20_xor_wrap_init"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_stream_xchacha20"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_xchacha20_xor"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_xchacha20_xor_ic"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_xchacha20_xor_wrap_init"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.crypto_stream_xor"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.crypto_stream_xor_wrap_init"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: config
+  - method: "sodium-native.extension_pbkdf2_sha512"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.extension_pbkdf2_sha512_async"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.extension_pbkdf2_sha512_async"
+    arity: 6
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.extension_tweak_ed25519_sign_detached"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.extension_tweak_ed25519_sign_detached"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.randombytes_buf"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.randombytes_buf_deterministic"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "sodium-native.randombytes_random"
+    arity: 0
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "sodium-native.randombytes_uniform"
+    arity: 1
+    return: { type: "number", confidence: high }
+    role: operation
