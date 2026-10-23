@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-10-23
+### Added
+- Node contracts now cover every crypto rule api that names a method, including
+  new contracts for sodium-native, tweetnacl, secp256k1, speakeasy, notp,
+  scrypt-js, noise-protocol, pem and pkijs, so consumer calls to them resolve.
+### Changed
+- The graph algorithm version is now `graph-algo-11`: a class assigned to Node
+  exports declares its methods. Re-mine npm components.
+### Fixed
+- Mining a Node library now reports the crypto API it offers, as other ecosystems
+  already did, instead of only the crypto it calls. Re-mine npm components to
+  pick this up.
+
 ## [0.40.0] - 2026-10-22
 ### Added
 - Node callgraph contracts for `@noble/curves` 0.9 to 2.x. Supporting calls on
