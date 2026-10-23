@@ -1,0 +1,26 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "scrypt-js"
+  coordinates:
+    - "scrypt-js"
+  version_range: ">=3.0.0"
+  description: "scrypt-js: the scrypt key derivation function in JavaScript"
+
+# Declared from scrypt.d.ts (3.0.1). 2.x had a callback-only scrypt that returns nothing,
+# so the range starts at 3.0.0.
+contracts:
+
+  # scrypt, async with an optional progress callback, and sync.
+  - method: "scrypt-js.scrypt"
+    arity: 6
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "scrypt-js.scrypt"
+    arity: 7
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "scrypt-js.syncScrypt"
+    arity: 6
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
