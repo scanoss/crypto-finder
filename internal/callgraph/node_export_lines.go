@@ -127,14 +127,7 @@ func nodeCommonJSAssignmentLines(expr *sitter.Node, src []byte, out map[string]i
 	target := left.Content(src)
 	switch {
 	case target == nodeModuleExportsTarget && right.Type() == nodeObjectLiteral:
-		for i := 0; i < int(right.NamedChildCount()); i++ {
-			member := right.NamedChild(i)
-			if member.Type() == nodeShorthandProperty {
-				out[member.Content(src)] = nodeLine(member)
-			} else if key := member.ChildByFieldName("key"); member.Type() == nodePair && key != nil {
-				out[unquoteNodeString(key.Content(src))] = nodeLine(member)
-			}
-		}
+		nodeExportObjectLines(right, src, out)
 	case strings.HasPrefix(target, nodeCommonJSExportsObject+".") || strings.HasPrefix(target, nodeModuleExportsTarget+"."):
 		if name, _ := nodeAssignmentTarget(left, src); name != "" {
 			out[name] = nodeLine(expr)
@@ -151,4 +144,23 @@ func nodeDefinePropertyExportLine(expr *sitter.Node, src []byte, out map[string]
 		return
 	}
 	out[unquoteNodeString(args.NamedChild(1).Content(src))] = nodeLine(expr)
+}
+
+// nodeExportObjectLines records the members of module.exports = {a, b: c, d() {}}.
+func nodeExportObjectLines(object *sitter.Node, src []byte, out map[string]int) {
+	for i := 0; i < int(object.NamedChildCount()); i++ {
+		member := object.NamedChild(i)
+		switch member.Type() {
+		case nodeShorthandProperty:
+			out[member.Content(src)] = nodeLine(member)
+		case nodePair:
+			if key := member.ChildByFieldName("key"); key != nil {
+				out[unquoteNodeString(key.Content(src))] = nodeLine(member)
+			}
+		case nodeMethodDefinition:
+			if name := member.ChildByFieldName("name"); name != nil {
+				out[unquoteNodeString(name.Content(src))] = nodeLine(member)
+			}
+		}
+	}
 }
