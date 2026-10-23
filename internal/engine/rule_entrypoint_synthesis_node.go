@@ -45,7 +45,7 @@ func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.F
 		return nil
 	}
 	for spec, rel := range nodeModuleFiles(root, pkg) {
-		indexNodeModuleExports(spec, filepath.Join(root, filepath.FromSlash(rel)), declsByFQN, map[string]bool{})
+		indexNodeModuleExports(spec, filepath.Join(root, filepath.FromSlash(rel)), declsByFQN, map[string]bool{}, 0)
 	}
 	return nodePackageIdentifiers(root)
 }
@@ -56,8 +56,8 @@ const nodeStarDepth = 8
 // indexNodeModuleExports indexes the exports of file under spec, then the
 // exports of every module it re-exports wholesale, each anchored in the file
 // that defines it. A module's own export wins over a re-exported one.
-func indexNodeModuleExports(spec, file string, declsByFQN map[string][]*callgraph.FunctionDecl, seen map[string]bool) {
-	if seen[file] || len(seen) > nodeStarDepth {
+func indexNodeModuleExports(spec, file string, declsByFQN map[string][]*callgraph.FunctionDecl, seen map[string]bool, depth int) {
+	if seen[file] || depth > nodeStarDepth {
 		return
 	}
 	seen[file] = true
@@ -78,7 +78,7 @@ func indexNodeModuleExports(spec, file string, declsByFQN map[string][]*callgrap
 	}
 	for _, from := range exports.StarFrom {
 		if target := resolveNodeRelative(file, from); target != "" {
-			indexNodeModuleExports(spec, target, declsByFQN, seen)
+			indexNodeModuleExports(spec, target, declsByFQN, seen, depth+1)
 		}
 	}
 }
