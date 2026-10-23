@@ -272,6 +272,31 @@ func TestSynthesizeNodeModuleExportedAsItself(t *testing.T) {
 	}
 }
 
+// A constructor api resolves to the exported class.
+func TestSynthesizeNodeExportedClassConstructor(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json": `{"name": "acme", "main": "index.js"}`,
+		"index.js":     "module.exports = {\n  CryptographyKey: require('./lib/key'),\n};\n",
+		"lib/key.js":   "module.exports = class CryptographyKey {};\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.CryptographyKey.<init>": "keygen"})}); got != 1 {
+		t.Fatalf("synthesized = %d, want 1", got)
+	}
+	if a := syntheticAssets(result.Report)["index.js acme.CryptographyKey.<init>"]; a == nil || a.StartLine != 2 {
+		t.Errorf("assets = %v, want the constructor at index.js:2", syntheticAssets(result.Report))
+	}
+}
+
 // Node resolves main without its extension and as a directory index.
 func TestIsNodeMainFile(t *testing.T) {
 	t.Parallel()
