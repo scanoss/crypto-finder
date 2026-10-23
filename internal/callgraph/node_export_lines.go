@@ -38,8 +38,10 @@ func NodeExportLines(filePath string) (map[string]int, error) {
 // re-exports wholesale (`export * from './x'`, tsc's `__exportStar(require('./x'), exports)`),
 // the modules it re-exports under a name (`export * as ns from './x'`), the
 // modules whose exported factory it calls (`module.exports = require('./lib')(addon)`),
-// and what its own exported factory returns.
+// what its own exported factory returns, and the line of a function or class
+// the module exports as itself (`module.exports = SHA256`).
 type NodeExports struct {
+	Self        int
 	Lines       map[string]int
 	StarFrom    []string
 	NamespaceOf map[string]string
@@ -124,8 +126,10 @@ func nodeModuleExportsValue(root, right *sitter.Node, src []byte, out *NodeExpor
 			out.FactoryFrom = append(out.FactoryFrom, from)
 		}
 	case nodeArrowFunction, nodeFunctionExpression:
+		out.Self = nodeLine(right)
 		nodeFunctionReturnLines(right, src, out.Returned)
 	case goNodeIdentifier:
+		out.Self = nodeLine(right)
 		if fn := nodeTopLevelFunction(root, right.Content(src), src); fn != nil {
 			nodeFunctionReturnLines(fn, src, out.Returned)
 		}

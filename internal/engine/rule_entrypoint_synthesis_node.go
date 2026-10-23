@@ -82,6 +82,13 @@ func indexNodeModuleExports(spec, file string, declsByFQN map[string][]*callgrap
 			indexNodeModuleExports(spec, target, declsByFQN, seen, depth+1)
 		}
 	}
+	// A module that exports a function as itself is an api by its specifier.
+	if exports.Self > 0 && len(declsByFQN[spec]) == 0 {
+		declsByFQN[spec] = []*callgraph.FunctionDecl{{
+			ID:       callgraph.FunctionID{Package: spec, Name: "default"},
+			FilePath: file, StartLine: exports.Self, EndLine: exports.Self,
+		}}
+	}
 	for _, from := range exports.FactoryFrom {
 		if target := resolveNodeRelative(file, from); target != "" {
 			indexNodeFactoryReturn(spec, target, declsByFQN)
@@ -280,6 +287,9 @@ func (f nodeSpecifierFiles) walk(root, main string) fs.WalkDirFunc {
 			return nil
 		}
 		mod := strings.TrimSuffix(rel, path.Ext(rel))
+		// Node resolves a deep import by its real path; the layout-free name is
+		// how rules name a build's modules.
+		f.add("./"+mod, rel)
 		if first, rest, ok := strings.Cut(mod, "/"); ok && nodeLayoutDirs[first] {
 			mod = rest
 		}
