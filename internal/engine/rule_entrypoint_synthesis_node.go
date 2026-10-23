@@ -100,14 +100,10 @@ func (m *nodeMembers) anchorOne(api string, d *callgraph.FunctionDecl) *callgrap
 			members = append(members, p)
 		}
 	}
-	file, line, ok := m.shapes.Definition(d.FilePath, name, members)
+	ctor := strings.HasSuffix(api, "."+nodeConstructorMember)
+	file, line, ok := m.definition(d.FilePath, name, members, ctor)
 	if !ok {
 		return d
-	}
-	if strings.HasSuffix(api, "."+nodeConstructorMember) {
-		if ctor, found := m.shapes.Constructor(file, line); found {
-			line = ctor
-		}
 	}
 	last := name
 	if len(members) > 0 {
@@ -116,7 +112,31 @@ func (m *nodeMembers) anchorOne(api string, d *callgraph.FunctionDecl) *callgrap
 	if g := m.graphDecl(file, line, last); g != nil {
 		return g
 	}
+	// The call graph indexes the TypeScript source rather than this build: the
+	// definition there, through the same aliases, is the declaration it has.
+	for _, src := range nodeSourceFiles(m.root, d.FilePath) {
+		if len(m.byFile[src]) == 0 {
+			continue
+		}
+		if sfile, sline, found := m.definition(src, name, members, ctor); found {
+			if g := m.graphDecl(sfile, sline, ""); g != nil {
+				return g
+			}
+		}
+	}
 	return &callgraph.FunctionDecl{ID: d.ID, FilePath: file, StartLine: line, EndLine: line}
+}
+
+// definition is where name.members... of file's exports is defined, at a
+// class's constructor for a constructor api.
+func (m *nodeMembers) definition(file, name string, members []string, ctor bool) (string, int, bool) {
+	def, line, ok := m.shapes.Definition(file, name, members)
+	if ok && ctor {
+		if c, found := m.shapes.Constructor(def, line); found {
+			line = c
+		}
+	}
+	return def, line, ok
 }
 
 // graphDecl returns the call graph's declaration of the function at file:line,

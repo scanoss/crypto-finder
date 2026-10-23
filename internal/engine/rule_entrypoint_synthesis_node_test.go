@@ -353,6 +353,29 @@ func TestSynthesizeNodeAnchorsAtTheDefinition(t *testing.T) {
 	}
 }
 
+// A build's export that aliases another function is anchored at that function
+// in the TypeScript source the call graph indexes.
+func TestSynthesizeNodeAnchorsAliasInTypeScriptSource(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json":        `{"name": "acme", "exports": {".": "./dist/esm/account.js"}}`,
+		"dist/esm/account.js": "export const pubToAddress = function (pubKey) {};\nexport const publicToAddress = pubToAddress;\n",
+		"src/account.ts":      "// header\nexport const pubToAddress = function (pubKey: Uint8Array) {};\nexport const publicToAddress = pubToAddress;\n",
+	})
+	src := filepath.Join(root, "src", "account.ts")
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		"pubToAddress": {ID: callgraph.FunctionID{Package: "acme/src/account", Name: "pubToAddress"}, FilePath: src, StartLine: 2, EndLine: 2},
+	}}
+	result := &DepScanResult{Report: &entities.InterimReport{}, CallGraph: graph, Ecosystem: ecosystemNode, ProjectRoot: root}
+
+	SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.publicToAddress": "other"})})
+	if a := syntheticAssets(result.Report)["src/account.ts acme.publicToAddress"]; a == nil || a.StartLine != 2 {
+		t.Errorf("assets = %v, want acme.publicToAddress at src/account.ts:2", syntheticAssets(result.Report))
+	}
+}
+
 // A constructor api names a class or constructor function, not a constant.
 func TestSynthesizeNodeConstructorOnlyOnClasses(t *testing.T) {
 	t.Parallel()
