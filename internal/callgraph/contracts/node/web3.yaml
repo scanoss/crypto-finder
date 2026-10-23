@@ -19,14 +19,9 @@ library:
 # `Web3.utils.*` and the 4.x `utils` named export are keyed `web3.utils.*`
 # whatever the local name, and `new Web3(..)` is keyed `web3.Web3.<init>`.
 #
-# WHAT IT CANNOT. The account and key operations hang off nested objects of the
-# instance: `web3.eth.accounts.sign(..)`, `web3.eth.accounts.create()`,
-# `web3.eth.accounts.privateKeyToAccount(pk).sign(..)`. The parser types a
-# variable from a contracted result and then types calls made directly on that
-# variable; a receiver that is itself a member chain (`web3.eth.accounts`), or
-# an alias of one, stays an untyped receiver, so nothing in that chain can be
-# reached by a contract and none is declared. Neither are the utilities reached
-# through an instance (`web3.utils.keccak256` on a `new Web3(..)` variable).
+# THE ACCOUNTS SURFACE hangs off nested objects of the instance
+# (`web3.eth.accounts.sign(..)`); it is keyed under `web3.eth.accounts.*`, the
+# names the rules give it.
 #
 # Declared from web3 4.16.0 and web3-utils 4.3.3 (index.d.ts, hash.d.ts) and
 # checked against 1.10.4 and 1.2.0: keccak256, sha3 and sha3Raw take one value;
@@ -35,10 +30,10 @@ library:
 # net). sha3 and soliditySha3 may return nothing for an empty input; the declared
 # result is the hash string.
 #
-# Deliberately NOT contracted: the `web3.eth.accounts` surface (see above), the
-# provider, transport and signing-by-node calls (`eth.sign`, `eth.personal.sign`,
-# `eth.signTransaction`, `sendTransaction`), which ask the connected node to sign
-# over RPC, and the utilities that format or convert without hashing.
+# Deliberately NOT contracted: the provider, transport and signing-by-node calls
+# (`eth.sign`, `eth.personal.sign`, `eth.signTransaction`, `sendTransaction`),
+# which ask the connected node to sign over RPC, and the utilities that format
+# or convert without hashing.
 contracts:
   - method: "web3.Web3.<init>"
     arity: 0
@@ -111,4 +106,107 @@ contracts:
   - method: "web3.utils.soliditySha3Raw"
     arity: 6
     return: { type: "string", confidence: high }
+    role: operation
+
+  # The accounts surface, keyed as the rules name it. Arities span 1.x (callbacks,
+  # entropy) and 4.x (web3-eth-accounts 4.3.1 plus the context wrappers in web3).
+  - method: "web3.eth.accounts.create"
+    arity: 0
+    return: { type: "web3.Web3Account", confidence: high }
+    role: factory
+  - method: "web3.eth.accounts.create"
+    arity: 1
+    return: { type: "web3.Web3Account", confidence: high }
+    role: factory
+  - method: "web3.eth.accounts.privateKeyToAccount"
+    arity: 1
+    return: { type: "web3.Web3Account", confidence: high }
+    role: factory
+  - method: "web3.eth.accounts.privateKeyToAccount"
+    arity: 2
+    return: { type: "web3.Web3Account", confidence: high }
+    role: factory
+  - method: "web3.eth.accounts.wallet.create"
+    arity: 1
+    return: { type: "web3.Wallet", confidence: high }
+    role: factory
+  - method: "web3.eth.accounts.wallet.create"
+    arity: 2
+    return: { type: "web3.Wallet", confidence: high }
+    role: factory
+  - method: "web3.eth.accounts.sign"
+    arity: 2
+    return: { type: "web3.SignResult", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.signTransaction"
+    arity: 2
+    return: { type: "web3.SignTransactionResult", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.signTransaction"
+    arity: 3
+    return: { type: "web3.SignTransactionResult", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.hashMessage"
+    arity: 1
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.hashMessage"
+    arity: 2
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.recover"
+    arity: 1
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.recover"
+    arity: 2
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.recover"
+    arity: 3
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.recover"
+    arity: 4
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.recover"
+    arity: 5
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.recoverTransaction"
+    arity: 1
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.recoverTransaction"
+    arity: 2
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.encrypt"
+    arity: 2
+    return: { type: "web3.KeyStore", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.encrypt"
+    arity: 3
+    return: { type: "web3.KeyStore", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.decrypt"
+    arity: 2
+    return: { type: "web3.Web3Account", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.decrypt"
+    arity: 3
+    return: { type: "web3.Web3Account", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.Account.sign"
+    arity: 1
+    return: { type: "web3.SignResult", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.Account.signTransaction"
+    arity: 1
+    return: { type: "web3.SignTransactionResult", confidence: high }
+    role: operation
+  - method: "web3.eth.accounts.Account.signTransaction"
+    arity: 2
+    return: { type: "web3.SignTransactionResult", confidence: high }
     role: operation

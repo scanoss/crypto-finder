@@ -47,12 +47,8 @@ func TestLoadEmbeddedNodeWeb3(t *testing.T) {
 		}
 	}
 
-	// The accounts surface hangs off a nested object the parser does not type,
-	// and the RPC signing calls ask the connected node to sign.
+	// The RPC signing calls ask the connected node to sign.
 	for _, unwanted := range []string{
-		"web3.eth.accounts.sign#2",
-		"web3.eth.accounts.create#0",
-		"web3.eth.accounts.privateKeyToAccount#1",
 		"web3.eth.sign#2",
 		"web3.eth.personal.sign#3",
 		"web3.eth.signTransaction#1",
@@ -60,6 +56,13 @@ func TestLoadEmbeddedNodeWeb3(t *testing.T) {
 	} {
 		if _, ok := kb.Contracts[unwanted]; ok {
 			t.Errorf("contract %q must not be declared", unwanted)
+		}
+	}
+
+	// The accounts surface, keyed as the rules name it.
+	for _, want := range []string{"web3.eth.accounts.sign#2", "web3.eth.accounts.create#0", "web3.eth.accounts.privateKeyToAccount#1", "web3.eth.accounts.Account.signTransaction#1"} {
+		if _, ok := kb.Contracts[want]; !ok {
+			t.Errorf("contract %q missing from the embedded Node KB", want)
 		}
 	}
 
@@ -71,7 +74,7 @@ func TestLoadEmbeddedNodeWeb3(t *testing.T) {
 			n++
 		}
 	}
-	if n != 18 {
-		t.Errorf("web3 contributes %d keys, want 18", n)
+	if n != 43 {
+		t.Errorf("web3 contributes %d keys, want 43", n)
 	}
 }
