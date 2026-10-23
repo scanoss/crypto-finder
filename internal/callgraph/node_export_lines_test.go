@@ -106,6 +106,29 @@ module.exports = bls;
 			lines: map[string]int{"SecretKey": 2},
 		},
 		{
+			name: "IIFE handed module.exports (tweetnacl)",
+			src: `(function(nacl) {
+nacl.box = function() {};
+nacl.box.before = function() {};
+})(typeof module !== 'undefined' && module.exports ? module.exports : {});
+`,
+			lines: map[string]int{"box": 2},
+		},
+		{
+			name: "module.exports = lib inside a UMD guard (scrypt-js)",
+			src: `(function(root) {
+  const lib = {
+    scrypt: function() {},
+    syncScrypt,
+  };
+  if (typeof(exports) !== 'undefined') {
+    module.exports = lib;
+  }
+})(this);
+`,
+			lines: map[string]int{"scrypt": 3, "syncScrypt": 4},
+		},
+		{
 			name: "star re-exports, ES and tsc",
 			src: `export * from './signature.js';
 export * as ns from './ns.js';
