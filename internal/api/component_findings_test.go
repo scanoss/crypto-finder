@@ -240,3 +240,37 @@ func TestComponentFindings_GoReleaseMustBeServedExactly(t *testing.T) {
 		}
 	}
 }
+
+// The API mines a Go module under <module without host>@<version>/, so its
+// file paths carry that root ahead of the path inside the module.
+func TestComponentFindings_GoPathsAreRelativeToTheModule(t *testing.T) {
+	body := `{"info_code":"READY","rules_version":"v1.31.0","data":[{"version":"v5.3.1","findings":[` +
+		`{"file_path":"golang-jwt/jwt/v5@v5.3.1/ecdsa.go","language":"go","cryptographic_assets":[]},` +
+		`{"file_path":"golang-jwt/jwt/v5@v5.3.1/cmd/jwt/main.go","language":"go","cryptographic_assets":[]}]}]}`
+	client := serveComponent(t, http.StatusOK, body, nil)
+
+	got, found, err := client.ComponentFindings(context.Background(), "pkg:golang/github.com/golang-jwt/jwt/v5", "v5.3.1")
+	if err != nil || !found {
+		t.Fatalf("ComponentFindings = found %v, err %v", found, err)
+	}
+	paths := make([]string, 0, len(got.Findings))
+	for _, finding := range got.Findings {
+		paths = append(paths, finding.FilePath)
+	}
+	if want := []string{"ecdsa.go", "cmd/jwt/main.go"}; !reflect.DeepEqual(paths, want) {
+		t.Errorf("file paths = %q, want %q", paths, want)
+	}
+}
+
+// A Go finding outside the mined module root cannot be placed in the module
+// being scanned, so the answer is not used.
+func TestComponentFindings_GoPathOutsideTheModuleIsNotFound(t *testing.T) {
+	for _, path := range []string{"ecdsa.go", "golang-jwt/jwt/v4@v4.5.2/ecdsa.go", "golang-jwt/jwt/v5@v5.3.0/ecdsa.go"} {
+		body := `{"info_code":"READY","data":[{"version":"v5.3.1","findings":[{"file_path":"` + path + `","cryptographic_assets":[]}]}]}`
+		client := serveComponent(t, http.StatusOK, body, nil)
+		got, found, err := client.ComponentFindings(context.Background(), "pkg:golang/github.com/golang-jwt/jwt/v5", "v5.3.1")
+		if err != nil || found || got != nil {
+			t.Errorf("%s: got %+v, found %v, err %v; want not found", path, got, found, err)
+		}
+	}
+}

@@ -26,6 +26,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/package-url/packageurl-go"
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/pkg/schema"
@@ -65,10 +66,11 @@ type componentResponse struct {
 }
 
 // ComponentFindings asks the API for the findings mined from purl at
-// requirement. It reports false when the API has no findings for that
-// component, and for a Go release it reports false unless the API served
-// that exact release: the tilde lookupRequirement sends could otherwise
-// serve a later patch, whose lines would not match the source being scanned.
+// requirement, with file paths relative to the component's root. It reports
+// false when the API has no findings for that component, and for a Go release
+// it reports false unless the API served that exact release: the tilde
+// lookupRequirement sends could otherwise serve a later patch, whose lines
+// would not match the source being scanned.
 func (c *Client) ComponentFindings(ctx context.Context, purl, requirement string) (*ComponentFindings, bool, error) {
 	answer, err := c.LookupComponent(ctx, purl, requirement)
 	if err != nil {
@@ -80,7 +82,38 @@ func (c *Client) ComponentFindings(ctx context.Context, purl, requirement string
 	if lookupRequirement(purl, requirement) != requirement && strings.TrimPrefix(answer.Version, "v") != strings.TrimPrefix(requirement, "v") {
 		return nil, false, nil
 	}
+	if strings.HasPrefix(purl, "pkg:golang/") && !rebaseGoFindings(purl, answer) {
+		return nil, false, nil
+	}
 	return answer, true, nil
+}
+
+// rebaseGoFindings makes the file paths of a Go answer relative to the
+// module. The API mines a Go module under <module without host>@<version>/,
+// so golang-jwt/jwt/v5@v5.3.1/ecdsa.go is ecdsa.go in
+// github.com/golang-jwt/jwt/v5. It reports false when a finding lies outside
+// that root, since such an answer cannot be placed in the module's source.
+func rebaseGoFindings(purl string, answer *ComponentFindings) bool {
+	parsed, err := packageurl.FromString(purl)
+	if err != nil {
+		return false
+	}
+	module := parsed.Name
+	if parsed.Namespace != "" {
+		module = parsed.Namespace + "/" + parsed.Name
+	}
+	if _, path, ok := strings.Cut(module, "/"); ok {
+		module = path
+	}
+	root := module + "@v" + strings.TrimPrefix(answer.Version, "v") + "/"
+	for i := range answer.Findings {
+		path, ok := strings.CutPrefix(answer.Findings[i].FilePath, root)
+		if !ok {
+			return false
+		}
+		answer.Findings[i].FilePath = path
+	}
+	return true
 }
 
 // LookupComponent asks the API for the findings mined from purl at
