@@ -109,16 +109,52 @@ func nodeModuleExportsValues(root *sitter.Node, src []byte, out *NodeExports) {
 		if left == nil || right == nil || left.Content(src) != nodeModuleExportsTarget {
 			return
 		}
-		if from := nodeRequireSource(right, src); from != "" {
-			out.StarFrom = append(out.StarFrom, from)
-		} else if right.Type() == nodeCallExpression {
-			if from := nodeRequireSource(right.ChildByFieldName("function"), src); from != "" {
-				out.FactoryFrom = append(out.FactoryFrom, from)
-			}
-		} else if right.Type() == nodeArrowFunction || right.Type() == nodeFunctionExpression {
-			nodeFunctionReturnLines(right, src, out.Returned)
-		}
+		nodeModuleExportsValue(root, right, src, out)
 	})
+}
+
+func nodeModuleExportsValue(root, right *sitter.Node, src []byte, out *NodeExports) {
+	if from := nodeRequireSource(right, src); from != "" {
+		out.StarFrom = append(out.StarFrom, from)
+		return
+	}
+	switch right.Type() {
+	case nodeCallExpression:
+		if from := nodeRequireSource(right.ChildByFieldName("function"), src); from != "" {
+			out.FactoryFrom = append(out.FactoryFrom, from)
+		}
+	case nodeArrowFunction, nodeFunctionExpression:
+		nodeFunctionReturnLines(right, src, out.Returned)
+	case goNodeIdentifier:
+		if fn := nodeTopLevelFunction(root, right.Content(src), src); fn != nil {
+			nodeFunctionReturnLines(fn, src, out.Returned)
+		}
+	}
+}
+
+// nodeTopLevelFunction returns the function a top-level declaration names:
+// `function f() {}` or `const f = () => {}`.
+func nodeTopLevelFunction(root *sitter.Node, name string, src []byte) *sitter.Node {
+	for i := 0; i < int(root.NamedChildCount()); i++ {
+		stmt := root.NamedChild(i)
+		if stmt.Type() == nodeFunctionDeclaration {
+			if n := stmt.ChildByFieldName("name"); n != nil && n.Content(src) == name {
+				return stmt
+			}
+			continue
+		}
+		for j := 0; j < int(stmt.NamedChildCount()); j++ {
+			d := stmt.NamedChild(j)
+			if d.Type() != nodeVariableDeclarator {
+				continue
+			}
+			n, v := d.ChildByFieldName("name"), d.ChildByFieldName("value")
+			if n != nil && v != nil && n.Content(src) == name && (v.Type() == nodeArrowFunction || v.Type() == nodeFunctionExpression) {
+				return v
+			}
+		}
+	}
+	return nil
 }
 
 // nodeRequireSource returns the module of `require('x')`.
@@ -134,7 +170,7 @@ func nodeRequireSource(n *sitter.Node, src []byte) string {
 }
 
 // nodeFunctionReturnLines reads the object literal a function returns from its
-// body: `(x) => ({...})` or a top-level `return {...}`.
+// body: `(x) => ({...})` or a top-level `return {...}`, also frozen.
 func nodeFunctionReturnLines(fn *sitter.Node, src []byte, out map[string]int) {
 	body := fn.ChildByFieldName("body")
 	for body != nil && body.Type() == goNodeParenExpr && body.NamedChildCount() > 0 {
@@ -148,10 +184,24 @@ func nodeFunctionReturnLines(fn *sitter.Node, src []byte, out map[string]int) {
 		return
 	}
 	for i := 0; i < int(body.NamedChildCount()); i++ {
-		if stmt := body.NamedChild(i); stmt.Type() == goNodeReturnStatement && stmt.NamedChildCount() == 1 && stmt.NamedChild(0).Type() == nodeObjectLiteral {
-			nodeExportObjectLines(stmt.NamedChild(0), src, out)
+		if stmt := body.NamedChild(i); stmt.Type() == goNodeReturnStatement && stmt.NamedChildCount() == 1 {
+			if obj := nodeUnfrozen(stmt.NamedChild(0), src); obj.Type() == nodeObjectLiteral {
+				nodeExportObjectLines(obj, src, out)
+			}
 		}
 	}
+}
+
+// nodeUnfrozen returns the object of `Object.freeze(obj)`, else n.
+func nodeUnfrozen(n *sitter.Node, src []byte) *sitter.Node {
+	if n.Type() != nodeCallExpression {
+		return n
+	}
+	fn, args := n.ChildByFieldName("function"), n.ChildByFieldName("arguments")
+	if fn != nil && args != nil && fn.Content(src) == "Object.freeze" && args.NamedChildCount() == 1 {
+		return args.NamedChild(0)
+	}
+	return n
 }
 
 // nodeExportAliases returns the names bound to the exports object anywhere in

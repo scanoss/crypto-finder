@@ -102,6 +102,23 @@ func TestNodeModuleExportsReadsModuleExportsValues(t *testing.T) {
 	}
 }
 
+// An exported factory named by its declaration returns a frozen API object.
+func TestNodeModuleExportsReadsNamedFrozenFactory(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "handshake.js")
+	src := "function createHandshake (deps) {\n  function keygen () {}\n  return Object.freeze({\n    keygen,\n    SKLEN: 32\n  })\n}\nmodule.exports = createHandshake\n"
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NodeModuleExports(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !maps.Equal(got.Returned, map[string]int{"keygen": 4, "SKLEN": 5}) {
+		t.Errorf("returned = %v", got.Returned)
+	}
+}
+
 func TestNodeModuleExportsFollowsAliasesAndStars(t *testing.T) {
 	t.Parallel()
 
