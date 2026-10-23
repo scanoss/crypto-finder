@@ -218,6 +218,35 @@ func TestSynthesizeNodeFollowsNamespaceReExports(t *testing.T) {
 	}
 }
 
+// A package that exports the result of calling its factory, picking a build in
+// a try, surfaces the methods the factory returns.
+func TestSynthesizeNodeFactoryPackage(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json": `{"name": "acme", "main": "./index.js"}`,
+		"index.js":     "try {\n  module.exports = require('./bindings')\n} catch (err) {\n  module.exports = require('./fallback')\n}\n",
+		"bindings.js":  "module.exports = require('./lib')(require('./native'))\n",
+		"fallback.js":  "module.exports = require('./lib')(require('./lib/js'))\n",
+		"lib/index.js": "module.exports = (impl) => {\n  return {\n    ecdsaSign (msg, key) {},\n    ecdh: (pub, key) => {},\n  }\n}\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+	rules := writeNodeRules(t, map[string]string{"acme.ecdsaSign": "sign", "acme.ecdh": "keyagree"})
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{rules}); got != 2 {
+		t.Fatalf("synthesized = %d, want 2", got)
+	}
+	if a := syntheticAssets(result.Report)["lib/index.js acme.ecdsaSign"]; a == nil || a.StartLine != 3 {
+		t.Errorf("assets = %v, want acme.ecdsaSign at lib/index.js:3", syntheticAssets(result.Report))
+	}
+}
+
 // Node resolves main without its extension and as a directory index.
 func TestIsNodeMainFile(t *testing.T) {
 	t.Parallel()

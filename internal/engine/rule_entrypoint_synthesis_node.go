@@ -82,9 +82,32 @@ func indexNodeModuleExports(spec, file string, declsByFQN map[string][]*callgrap
 			indexNodeModuleExports(spec, target, declsByFQN, seen, depth+1)
 		}
 	}
+	for _, from := range exports.FactoryFrom {
+		if target := resolveNodeRelative(file, from); target != "" {
+			indexNodeFactoryReturn(spec, target, declsByFQN)
+		}
+	}
 	for ns, from := range exports.NamespaceOf {
 		if target := resolveNodeRelative(file, from); target != "" {
 			indexNodeModuleExports(spec+"."+ns, target, declsByFQN, seen, depth+1)
+		}
+	}
+}
+
+// indexNodeFactoryReturn indexes what the factory file exports returns, for a
+// package that exports the factory's result.
+func indexNodeFactoryReturn(spec, file string, declsByFQN map[string][]*callgraph.FunctionDecl) {
+	exports, err := callgraph.NodeModuleExports(file)
+	if err != nil {
+		log.Debug().Err(err).Str("file", file).Msg("node export index skipped a factory")
+		return
+	}
+	for name, line := range exports.Returned {
+		if key := spec + "." + name; len(declsByFQN[key]) == 0 {
+			declsByFQN[key] = []*callgraph.FunctionDecl{{
+				ID:       callgraph.FunctionID{Package: spec, Name: name},
+				FilePath: file, StartLine: line, EndLine: line,
+			}}
 		}
 	}
 }

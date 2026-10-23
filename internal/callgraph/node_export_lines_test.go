@@ -81,6 +81,27 @@ export abstract class Base {}
 	}
 }
 
+// A CommonJS module re-exports a required module, exports a factory's result,
+// or exports a factory whose returned object is the API.
+func TestNodeModuleExportsReadsModuleExportsValues(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "index.js")
+	src := "try { module.exports = require('./bindings') } catch (e) {}\n" +
+		"module.exports = require('./lib')(addon)\n" +
+		"module.exports = function (impl) {\n  return { sign () {}, verify: v }\n}\n"
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NodeModuleExports(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.StarFrom, []string{"./bindings"}) || !slices.Equal(got.FactoryFrom, []string{"./lib"}) ||
+		!maps.Equal(got.Returned, map[string]int{"sign": 4, "verify": 4}) {
+		t.Errorf("stars %v factories %v returned %v", got.StarFrom, got.FactoryFrom, got.Returned)
+	}
+}
+
 func TestNodeModuleExportsFollowsAliasesAndStars(t *testing.T) {
 	t.Parallel()
 
