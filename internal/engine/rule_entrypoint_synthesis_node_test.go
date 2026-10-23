@@ -137,6 +137,34 @@ func TestSynthesizeNodeSkipsMembersTheReleaseLacks(t *testing.T) {
 	}
 }
 
+// A member counts only if the export has it: not another export's member, a
+// comment, a type declaration or a test.
+func TestSynthesizeNodeMemberMustBelongToTheExport(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json":    `{"name": "acme", "main": "index.js"}`,
+		"index.js":        "// pairing-friendly curve\nexports.ec = make();\nfunction make(){ return { sign(){} }; }\nexports.other = { verify(){} };\nexports.bn = weierstrass();\n",
+		"index.d.ts":      "export declare const ec: { sign(): void; keygen(): void };\n",
+		"test/ec.test.js": "ec.recover();\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+	rules := writeNodeRules(t, map[string]string{
+		"acme.ec.sign": "sign", "acme.ec.verify": "verify", "acme.ec.keygen": "keygen",
+		"acme.ec.recover": "other", "acme.bn.pairing": "other",
+	})
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{rules}); got != 1 {
+		t.Fatalf("synthesized = %d (%v), want acme.ec.sign only", got, syntheticAssets(result.Report))
+	}
+}
+
 // A package that re-exports its modules wholesale surfaces each api in the
 // module that defines it; another package's re-export is not followed.
 func TestSynthesizeNodeFollowsStarReExports(t *testing.T) {

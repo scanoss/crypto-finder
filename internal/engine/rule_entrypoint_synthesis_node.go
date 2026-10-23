@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -39,15 +38,42 @@ var nodeLayoutDirs = map[string]bool{"esm": true, "lib": true, "dist": true, "cj
 // though that export is a value built by a factory, not a function. A key the
 // graph already declares keeps its function definition. It returns the
 // identifiers the package's code declares or uses, for nodeExportDecls.
-func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.FunctionDecl) map[string]bool {
+func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.FunctionDecl) *nodeMembers {
+	members := &nodeMembers{shapes: callgraph.NewNodeShapes()}
 	pkg, ok := readNodePackage(root)
 	if !ok {
-		return nil
+		return members
 	}
 	for spec, rel := range nodeModuleFiles(root, pkg) {
 		indexNodeModuleExports(spec, filepath.Join(root, filepath.FromSlash(rel)), declsByFQN, map[string]bool{}, 0)
 	}
-	return nodePackageIdentifiers(root)
+	members.idents = nodePackageIdentifiers(root)
+	return members
+}
+
+// nodeMembers decides whether an export has a member a rule api names.
+type nodeMembers struct {
+	idents map[string]bool // names the package's runtime code defines or uses
+	shapes *callgraph.NodeShapes
+}
+
+// has reports whether the export decl names has every member in members. The
+// first member must belong to that export when its shape is known; deeper
+// members, and exports whose shape is not, fall back to the package's names.
+func (m *nodeMembers) has(decl *callgraph.FunctionDecl, members string) bool {
+	if m == nil {
+		return false
+	}
+	parts := strings.Split(members, ".")
+	if keys, known := m.shapes.ExportMembers(decl.FilePath, decl.ID.Name); known && !keys[parts[0]] {
+		return false
+	}
+	for _, p := range parts {
+		if !m.idents[p] && p != nodeConstructorMember {
+			return false
+		}
+	}
+	return true
 }
 
 const nodeConstructorMember = "<init>"
@@ -149,10 +175,10 @@ func resolveNodeRelative(from, spec string) string {
 // ("...secp256k1.secp256k1.sign" -> "...secp256k1.secp256k1", "X.<init>" -> "X"). A rule covers
 // every release, so a member must appear in this release's code: 0.9 has the
 // `ed25519` export but no `ed25519.keygen`.
-func nodeExportDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl, idents map[string]bool) []*callgraph.FunctionDecl {
+func nodeExportDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl, members *nodeMembers) []*callgraph.FunctionDecl {
 	for key := api; ; {
 		if decls := declsByFQN[key]; len(decls) > 0 {
-			if key != api && !allNodeMembersPresent(api[len(key)+1:], idents) {
+			if key != api && !members.has(decls[0], api[len(key)+1:]) {
 				return nil
 			}
 			return decls
@@ -165,20 +191,8 @@ func nodeExportDecls(api string, declsByFQN map[string][]*callgraph.FunctionDecl
 	}
 }
 
-// An exported class's constructor is named by the rule, not by the code.
-func allNodeMembersPresent(members string, idents map[string]bool) bool {
-	for _, m := range strings.Split(members, ".") {
-		if !idents[m] && m != nodeConstructorMember {
-			return false
-		}
-	}
-	return true
-}
-
-var nodeIdentifierRe = regexp.MustCompile(`[A-Za-z_$][\w$]*`)
-
-// nodePackageIdentifiers collects every identifier in the package's own
-// JavaScript, TypeScript and declaration files.
+// nodePackageIdentifiers collects the names the package's runtime code uses:
+// not comments or strings, type declarations, or tests.
 func nodePackageIdentifiers(root string) map[string]bool {
 	idents := make(map[string]bool)
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -186,20 +200,20 @@ func nodePackageIdentifiers(root string) map[string]bool {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
 		}
 		if d.IsDir() {
-			if p != root && d.Name() == nodeModulesDir {
+			if p != root && (d.Name() == nodeModulesDir || nodeTestDirs[d.Name()]) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !isNodeSourceFile(d.Name()) && !strings.HasSuffix(d.Name(), ".ts") {
+		if !isNodeRuntimeSource(d.Name()) {
 			return nil
 		}
-		data, err := os.ReadFile(p)
+		names, err := callgraph.NodeCodeNames(p)
 		if err != nil {
-			return nil //nolint:nilerr // an unreadable file contributes no identifiers
+			return nil //nolint:nilerr // an unparsable file contributes no identifiers
 		}
-		for _, id := range nodeIdentifierRe.FindAll(data, -1) {
-			idents[string(id)] = true
+		for n := range names {
+			idents[n] = true
 		}
 		return nil
 	})
@@ -207,6 +221,17 @@ func nodePackageIdentifiers(root string) map[string]bool {
 		log.Debug().Err(err).Str("root", root).Msg("node identifier walk stopped early")
 	}
 	return idents
+}
+
+var nodeTestDirs = map[string]bool{"test": true, "tests": true, "__tests__": true, "spec": true}
+
+// isNodeRuntimeSource reports a source file that ships code, not types or tests.
+func isNodeRuntimeSource(name string) bool {
+	if strings.HasSuffix(name, ".d.ts") || strings.HasSuffix(name, ".d.mts") || strings.HasSuffix(name, ".d.cts") ||
+		strings.Contains(name, ".test.") || strings.Contains(name, ".spec.") {
+		return false
+	}
+	return isNodeSourceFile(name) || strings.HasSuffix(name, ".ts")
 }
 
 type nodePackage struct {
