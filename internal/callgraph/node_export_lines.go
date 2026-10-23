@@ -20,6 +20,7 @@ const (
 	nodeModuleExportsTarget   = "module.exports"
 	nodeObjectDefineProperty  = "Object.defineProperty"
 	nodeCommonJSExportsObject = "exports"
+	nodePrototypeMember       = "prototype"
 )
 
 // NodeExportLines returns every module-level name a JavaScript or TypeScript
@@ -74,15 +75,7 @@ func NodeModuleExports(filePath string) (*NodeExports, error) {
 		stmt := root.NamedChild(i)
 		switch stmt.Type() {
 		case nodeExportKind:
-			nodeDeclarationExportLines(stmt.ChildByFieldName("declaration"), src, out.Lines)
-			nodeClauseExportLines(stmt, src, out.Lines)
-			if from := nodeStarExportSource(stmt, src); from != "" {
-				out.StarFrom = append(out.StarFrom, from)
-			}
-			if ns, from := nodeNamespaceExport(stmt, src); ns != "" {
-				out.Lines[ns] = nodeLine(stmt)
-				out.NamespaceOf[ns] = from
-			}
+			nodeESExportLines(stmt, src, out)
 		case nodeExpressionStatement:
 			if stmt.NamedChildCount() == 0 {
 				continue
@@ -97,6 +90,24 @@ func NodeModuleExports(filePath string) (*NodeExports, error) {
 	nodeAliasExportLines(root, src, aliases, out.Lines)
 	nodeModuleExportsValues(root, src, out)
 	return out, nil
+}
+
+// nodeESExportLines reads one export statement. `export default function sign`
+// exports "default", not "sign".
+func nodeESExportLines(stmt *sitter.Node, src []byte, out *NodeExports) {
+	if nodeIsDefaultExport(stmt) {
+		out.Lines[nodeDefaultExport] = nodeLine(stmt)
+		return
+	}
+	nodeDeclarationExportLines(stmt.ChildByFieldName("declaration"), src, out.Lines)
+	nodeClauseExportLines(stmt, src, out.Lines)
+	if from := nodeStarExportSource(stmt, src); from != "" {
+		out.StarFrom = append(out.StarFrom, from)
+	}
+	if ns, from := nodeNamespaceExport(stmt, src); ns != "" {
+		out.Lines[ns] = nodeLine(stmt)
+		out.NamespaceOf[ns] = from
+	}
 }
 
 // nodeModuleExportsValues reads `module.exports = <value>` anywhere in the file
@@ -129,8 +140,9 @@ func nodeModuleExportsValue(root, right *sitter.Node, src []byte, out *NodeExpor
 		out.Self = nodeLine(right)
 		nodeFunctionReturnLines(right, src, out.Returned)
 	case goNodeIdentifier:
-		out.Self = nodeLine(right)
+		// Only a function is an api by itself; an object's members are the exports.
 		if fn := nodeTopLevelFunction(root, right.Content(src), src); fn != nil {
+			out.Self = nodeLine(right)
 			nodeFunctionReturnLines(fn, src, out.Returned)
 		}
 	}
@@ -202,7 +214,7 @@ func nodeUnfrozen(n *sitter.Node, src []byte) *sitter.Node {
 		return n
 	}
 	fn, args := n.ChildByFieldName("function"), n.ChildByFieldName("arguments")
-	if fn != nil && args != nil && fn.Content(src) == "Object.freeze" && args.NamedChildCount() == 1 {
+	if fn != nil && args != nil && fn.Content(src) == nodeObjectFreeze && args.NamedChildCount() == 1 {
 		return args.NamedChild(0)
 	}
 	return n
@@ -264,7 +276,7 @@ func nodeAliasExportLines(root *sitter.Node, src []byte, aliases map[string]bool
 	nodeWalk(root, func(n *sitter.Node) {
 		switch n.Type() {
 		case nodeAssignmentExpression:
-			if name := nodeAliasMember(n.ChildByFieldName("left"), src, aliases); name != "" {
+			if name := nodeAliasMember(n.ChildByFieldName("left"), src, aliases); name != "" && name != nodePrototypeMember {
 				if _, seen := out[name]; !seen {
 					out[name] = nodeLine(n)
 				}

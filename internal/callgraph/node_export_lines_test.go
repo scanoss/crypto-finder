@@ -207,3 +207,33 @@ func TestNodeExportLinesRejectsUnsupportedFiles(t *testing.T) {
 		t.Error("a .py file must be rejected")
 	}
 }
+
+// A module exports what it names: a default is "default", a prototype is not
+// an export, and an object assigned to module.exports is not a function api.
+func TestNodeModuleExportsNamesOnlyWhatIsExported(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, src string
+		lines     map[string]int
+		self      int
+	}{
+		{"default export", "export default function sign() {}\n", map[string]int{"default": 1}, 0},
+		{"prototype", "function F(){}\nF.prototype.sign = function(){};\nF.verify = function(){};\nmodule.exports = F;\n", map[string]int{"verify": 3}, 4},
+		{"object module", "var lib = {};\nlib.sign = function(){};\nmodule.exports = lib;\n", map[string]int{"sign": 2}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "index.js")
+			if err := os.WriteFile(path, []byte(tc.src), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := NodeModuleExports(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !maps.Equal(got.Lines, tc.lines) || got.Self != tc.self {
+				t.Errorf("exports = %v self %d, want %v self %d", got.Lines, got.Self, tc.lines, tc.self)
+			}
+		})
+	}
+}
