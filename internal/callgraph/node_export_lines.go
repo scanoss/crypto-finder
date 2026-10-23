@@ -36,11 +36,15 @@ func NodeExportLines(filePath string) (map[string]int, error) {
 
 // NodeExports is what one module exports: its own names, the modules it
 // re-exports wholesale (`export * from './x'`, tsc's `__exportStar(require('./x'), exports)`),
-// and the modules it re-exports under a name (`export * as ns from './x'`).
+// the modules it re-exports under a name (`export * as ns from './x'`), the
+// modules whose exported factory it calls (`module.exports = require('./lib')(addon)`),
+// and what its own exported factory returns.
 type NodeExports struct {
 	Lines       map[string]int
 	StarFrom    []string
 	NamespaceOf map[string]string
+	FactoryFrom []string
+	Returned    map[string]int
 }
 
 // NodeModuleExports reads the exports of one JavaScript or TypeScript file. A
@@ -61,7 +65,7 @@ func NodeModuleExports(filePath string) (*NodeExports, error) {
 	}
 	defer tree.Close()
 
-	out := &NodeExports{Lines: make(map[string]int), NamespaceOf: make(map[string]string)}
+	out := &NodeExports{Lines: make(map[string]int), NamespaceOf: make(map[string]string), Returned: make(map[string]int)}
 	root := tree.RootNode()
 	aliases := nodeExportAliases(root, src)
 	for i := 0; i < int(root.NamedChildCount()); i++ {
@@ -89,7 +93,65 @@ func NodeModuleExports(filePath string) (*NodeExports, error) {
 		}
 	}
 	nodeAliasExportLines(root, src, aliases, out.Lines)
+	nodeModuleExportsValues(root, src, out)
 	return out, nil
+}
+
+// nodeModuleExportsValues reads `module.exports = <value>` anywhere in the file
+// (also inside try or a guard): a required module is re-exported, a called
+// required module is a factory to read, and an exported function returns its API.
+func nodeModuleExportsValues(root *sitter.Node, src []byte, out *NodeExports) {
+	nodeWalk(root, func(n *sitter.Node) {
+		if n.Type() != nodeAssignmentExpression {
+			return
+		}
+		left, right := n.ChildByFieldName("left"), n.ChildByFieldName("right")
+		if left == nil || right == nil || left.Content(src) != nodeModuleExportsTarget {
+			return
+		}
+		if from := nodeRequireSource(right, src); from != "" {
+			out.StarFrom = append(out.StarFrom, from)
+		} else if right.Type() == nodeCallExpression {
+			if from := nodeRequireSource(right.ChildByFieldName("function"), src); from != "" {
+				out.FactoryFrom = append(out.FactoryFrom, from)
+			}
+		} else if right.Type() == nodeArrowFunction || right.Type() == nodeFunctionExpression {
+			nodeFunctionReturnLines(right, src, out.Returned)
+		}
+	})
+}
+
+// nodeRequireSource returns the module of `require('x')`.
+func nodeRequireSource(n *sitter.Node, src []byte) string {
+	if n == nil || n.Type() != nodeCallExpression {
+		return ""
+	}
+	fn, args := n.ChildByFieldName("function"), n.ChildByFieldName("arguments")
+	if fn == nil || args == nil || fn.Content(src) != nodeRequireFunction || args.NamedChildCount() != 1 || args.NamedChild(0).Type() != nodeStringNode {
+		return ""
+	}
+	return unquoteNodeString(args.NamedChild(0).Content(src))
+}
+
+// nodeFunctionReturnLines reads the object literal a function returns from its
+// body: `(x) => ({...})` or a top-level `return {...}`.
+func nodeFunctionReturnLines(fn *sitter.Node, src []byte, out map[string]int) {
+	body := fn.ChildByFieldName("body")
+	for body != nil && body.Type() == goNodeParenExpr && body.NamedChildCount() > 0 {
+		body = body.NamedChild(0)
+	}
+	if body == nil {
+		return
+	}
+	if body.Type() == nodeObjectLiteral {
+		nodeExportObjectLines(body, src, out)
+		return
+	}
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		if stmt := body.NamedChild(i); stmt.Type() == goNodeReturnStatement && stmt.NamedChildCount() == 1 && stmt.NamedChild(0).Type() == nodeObjectLiteral {
+			nodeExportObjectLines(stmt.NamedChild(0), src, out)
+		}
+	}
 }
 
 // nodeExportAliases returns the names bound to the exports object anywhere in
