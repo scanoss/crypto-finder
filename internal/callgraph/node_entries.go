@@ -210,7 +210,7 @@ func nodeIdentifierOrigin(at *sitter.Node, name string, src []byte, bindings nod
 // a parameter's type annotation), nil when it says nothing.
 func nodeScopeDeclaration(scope *sitter.Node, name string, src []byte) (*sitter.Node, bool) {
 	switch scope.Type() {
-	case "program", "statement_block":
+	case nodeProgram, nodeStatementBlock:
 		for i := 0; i < int(scope.NamedChildCount()); i++ {
 			stmt := scope.NamedChild(i)
 			if stmt.Type() == "export_statement" {

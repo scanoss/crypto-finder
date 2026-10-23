@@ -105,7 +105,7 @@ func synthesizeRuleCryptoEntryPoints(
 	}
 
 	declsByFQN, declsByClass := indexGraphDeclarations(graph)
-	var nodeIdents map[string]bool
+	var nodeIdents *nodeMembers
 	switch ecosystem {
 	case ecosystemRust:
 		declsByFQN = rustDeclarationsBySynthesisKey(graph)
@@ -114,6 +114,7 @@ func synthesizeRuleCryptoEntryPoints(
 	case ecosystemNode:
 		if result != nil {
 			nodeIdents = addNodeExportDeclarations(result.ProjectRoot, declsByFQN)
+			defer nodeIdents.shapes.Close()
 		}
 	}
 	fileIdx := indexReportFiles(report)
@@ -246,7 +247,7 @@ func synthesizeRuleCryptoAssets(
 	declsByFQN map[string][]*callgraph.FunctionDecl,
 	declsByClass map[string][]*callgraph.FunctionDecl,
 	ecosystem string,
-	nodeIdents map[string]bool,
+	nodeIdents *nodeMembers,
 	result *DepScanResult,
 ) int {
 	added := 0
