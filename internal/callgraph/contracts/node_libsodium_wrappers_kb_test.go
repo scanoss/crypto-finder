@@ -27,7 +27,9 @@ func TestLoadEmbeddedNodeLibsodiumWrappers(t *testing.T) {
 	for _, want := range []string{
 		"libsodium-wrappers.crypto_secretbox_easy#3",
 		"libsodium-wrappers.crypto_secretbox_open_easy#3",
-		"libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_encrypt#2",
+		"libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_encrypt#5",
+		"libsodium-wrappers.crypto_aead_aegis256_encrypt#5",
+		"libsodium-wrappers.crypto_aead_aegis128l_decrypt_detached#6",
 		"libsodium-wrappers.crypto_sign_detached#2",
 		"libsodium-wrappers.crypto_sign_verify_detached#3",
 		"libsodium-wrappers.crypto_scalarmult#2",
@@ -49,6 +51,11 @@ func TestLoadEmbeddedNodeLibsodiumWrappers(t *testing.T) {
 	}
 	if got := kb.ContractsFor("libsodium-wrappers.crypto_secretbox_easy", 3); len(got) == 0 {
 		t.Error("crypto_secretbox_easy#3 resolved nothing; that is the wrapper's arity")
+	}
+	// The AEAD wrappers take (message, ad, nsec, npub, key): two arguments is
+	// no call a consumer can write.
+	if got := kb.ContractsFor("libsodium-wrappers.crypto_aead_xchacha20poly1305_ietf_encrypt", 2); len(got) != 0 {
+		t.Error("crypto_aead_xchacha20poly1305_ietf_encrypt#2 resolved; the wrapper takes five arguments")
 	}
 
 	// NO ENTRY NAMES AN ALGORITHM and none needs to: the algorithm is in the
@@ -101,7 +108,7 @@ func TestLoadEmbeddedNodeLibsodiumWrappers(t *testing.T) {
 			n++
 		}
 	}
-	if n != 72 {
-		t.Errorf("libsodium-wrappers contributes %d keys, want 72", n)
+	if n != 89 {
+		t.Errorf("libsodium-wrappers contributes %d keys, want 89", n)
 	}
 }
