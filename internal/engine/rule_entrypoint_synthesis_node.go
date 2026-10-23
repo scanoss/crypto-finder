@@ -55,12 +55,13 @@ const nodeStarDepth = 8
 
 // indexNodeModuleExports indexes the exports of file under spec, then the
 // exports of every module it re-exports wholesale, each anchored in the file
-// that defines it. A module's own export wins over a re-exported one.
+// that defines it. A module's own export wins over a re-exported one. A module
+// re-exported under a name (`export * as ns`) is indexed under spec.ns.
 func indexNodeModuleExports(spec, file string, declsByFQN map[string][]*callgraph.FunctionDecl, seen map[string]bool, depth int) {
-	if seen[file] || depth > nodeStarDepth {
+	if seen[spec+"\x00"+file] || depth > nodeStarDepth {
 		return
 	}
-	seen[file] = true
+	seen[spec+"\x00"+file] = true
 	exports, err := callgraph.NodeModuleExports(file)
 	if err != nil {
 		log.Debug().Err(err).Str("file", file).Msg("node export index skipped a module")
@@ -79,6 +80,11 @@ func indexNodeModuleExports(spec, file string, declsByFQN map[string][]*callgrap
 	for _, from := range exports.StarFrom {
 		if target := resolveNodeRelative(file, from); target != "" {
 			indexNodeModuleExports(spec, target, declsByFQN, seen, depth+1)
+		}
+	}
+	for ns, from := range exports.NamespaceOf {
+		if target := resolveNodeRelative(file, from); target != "" {
+			indexNodeModuleExports(spec+"."+ns, target, declsByFQN, seen, depth+1)
 		}
 	}
 }
