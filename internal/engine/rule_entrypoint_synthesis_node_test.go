@@ -62,9 +62,8 @@ func syntheticAssets(report *entities.InterimReport) map[string]*entities.Crypto
 	return out
 }
 
-// A Node library exports a curve built by a factory, so the api has no function
-// definition: the export line carries every api once, from one build, each
-// with its own identity.
+// A Node library exports a curve built by a factory: each api is anchored where
+// the factory defines it, once, from one build, each with its own identity.
 func TestSynthesizeNodeFactoryExport(t *testing.T) {
 	t.Parallel()
 
@@ -93,9 +92,9 @@ func TestSynthesizeNodeFactoryExport(t *testing.T) {
 	AssignFindingIDs(result.Report)
 
 	assets := syntheticAssets(result.Report)
-	sign, verify := assets["esm/ec.js @acme/curves/ec.ec.sign"], assets["esm/ec.js @acme/curves/ec.ec.verify"]
+	sign, verify := assets["esm/utils.js @acme/curves/ec.ec.sign"], assets["esm/utils.js @acme/curves/ec.ec.verify"]
 	if sign == nil || verify == nil {
-		t.Fatalf("assets = %v, want sign and verify on esm/ec.js", assets)
+		t.Fatalf("assets = %v, want sign and verify where the factory defines them, esm/utils.js", assets)
 	}
 	if sign.StartLine != 2 || sign.Metadata["operation"] != "sign" || verify.Metadata["operation"] != "verify" {
 		t.Errorf("sign at line %d with %q, verify with %q", sign.StartLine, sign.Metadata["operation"], verify.Metadata["operation"])
@@ -186,8 +185,8 @@ func TestSynthesizeNodeFollowsStarReExports(t *testing.T) {
 	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.ecsign": "sign"})}); got != 1 {
 		t.Fatalf("synthesized = %d, want 1", got)
 	}
-	if a := syntheticAssets(result.Report)["dist/signature.js acme.ecsign"]; a == nil || a.StartLine != 2 {
-		t.Errorf("assets = %v, want acme.ecsign at dist/signature.js:2", syntheticAssets(result.Report))
+	if a := syntheticAssets(result.Report)["dist/signature.js acme.ecsign"]; a == nil || a.StartLine != 1 {
+		t.Errorf("assets = %v, want acme.ecsign at its definition, dist/signature.js:1", syntheticAssets(result.Report))
 	}
 }
 
@@ -219,8 +218,8 @@ func TestSynthesizeNodeFollowsEveryStarOfAnIndex(t *testing.T) {
 	}
 }
 
-// A module re-exported under a name surfaces its apis under that name, in the
-// module that defines them.
+// A module re-exported under a name surfaces its apis under that name, at the
+// function that defines them.
 func TestSynthesizeNodeFollowsNamespaceReExports(t *testing.T) {
 	t.Parallel()
 
@@ -241,8 +240,8 @@ func TestSynthesizeNodeFollowsNamespaceReExports(t *testing.T) {
 	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.plonk.prove": "sign"})}); got != 1 {
 		t.Fatalf("synthesized = %d, want 1", got)
 	}
-	if a := syntheticAssets(result.Report)["src/plonk.js acme.plonk.prove"]; a == nil || a.StartLine != 1 {
-		t.Errorf("assets = %v, want acme.plonk.prove at src/plonk.js:1", syntheticAssets(result.Report))
+	if a := syntheticAssets(result.Report)["src/plonk_prove.js acme.plonk.prove"]; a == nil || a.StartLine != 1 {
+		t.Errorf("assets = %v, want acme.plonk.prove where it is defined, src/plonk_prove.js:1", syntheticAssets(result.Report))
 	}
 }
 
@@ -295,12 +294,12 @@ func TestSynthesizeNodeModuleExportedAsItself(t *testing.T) {
 	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"hash.js/lib/hash/sha/256": "digest"})}); got != 1 {
 		t.Fatalf("synthesized = %d, want 1", got)
 	}
-	if a := syntheticAssets(result.Report)["lib/hash/sha/256.js hash.js/lib/hash/sha/256"]; a == nil || a.StartLine != 2 {
-		t.Errorf("assets = %v, want the module api at lib/hash/sha/256.js:2", syntheticAssets(result.Report))
+	if a := syntheticAssets(result.Report)["lib/hash/sha/256.js hash.js/lib/hash/sha/256"]; a == nil || a.StartLine != 1 {
+		t.Errorf("assets = %v, want the module api at its function, lib/hash/sha/256.js:1", syntheticAssets(result.Report))
 	}
 }
 
-// A constructor api resolves to the exported class.
+// A constructor api resolves to the exported class, where it is defined.
 func TestSynthesizeNodeExportedClassConstructor(t *testing.T) {
 	t.Parallel()
 
@@ -320,8 +319,37 @@ func TestSynthesizeNodeExportedClassConstructor(t *testing.T) {
 	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.CryptographyKey.<init>": "keygen"})}); got != 1 {
 		t.Fatalf("synthesized = %d, want 1", got)
 	}
-	if a := syntheticAssets(result.Report)["index.js acme.CryptographyKey.<init>"]; a == nil || a.StartLine != 2 {
-		t.Errorf("assets = %v, want the constructor at index.js:2", syntheticAssets(result.Report))
+	if a := syntheticAssets(result.Report)["lib/key.js acme.CryptographyKey.<init>"]; a == nil || a.StartLine != 1 {
+		t.Errorf("assets = %v, want the class at lib/key.js:1", syntheticAssets(result.Report))
+	}
+}
+
+// An api is anchored at the function that defines it: its own assignment
+// through an exports alias, a class's constructor, and the call graph's
+// declaration in the TypeScript source a built file comes from.
+func TestSynthesizeNodeAnchorsAtTheDefinition(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json":        `{"name": "acme", "exports": {".": "./index.js", "./ciphers": "./dist/src/ciphers.js"}}`,
+		"index.js":            "var nacl = exports;\nnacl.box = function(){};\nnacl.box.before = function(){};\nexports.Key = class Key {\n  constructor(k) {}\n};\n",
+		"dist/src/ciphers.js": "export function create() {}\n",
+		"src/ciphers.ts":      "// header\nexport function create(): void {}\n",
+	})
+	src := filepath.Join(root, "src", "ciphers.ts")
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		"create": {ID: callgraph.FunctionID{Package: "acme/src/ciphers", Name: "create"}, FilePath: src, StartLine: 2, EndLine: 2},
+	}}
+	result := &DepScanResult{Report: &entities.InterimReport{}, CallGraph: graph, Ecosystem: ecosystemNode, ProjectRoot: root}
+	rules := writeNodeRules(t, map[string]string{"acme.box.before": "keygen", "acme.Key.<init>": "keygen", "acme/ciphers.create": "encrypt"})
+
+	SynthesizeRuleCryptoEntryPointsForResult(result, []string{rules})
+	assets := syntheticAssets(result.Report)
+	for key, line := range map[string]int{"index.js acme.box.before": 3, "index.js acme.Key.<init>": 5, "src/ciphers.ts acme/ciphers.create": 2} {
+		if a := assets[key]; a == nil || a.StartLine != line {
+			t.Errorf("%s: want line %d; assets = %v", key, line, assets)
+		}
 	}
 }
 
@@ -455,8 +483,8 @@ func TestSynthesizeNodeMainExportWithoutExportsMap(t *testing.T) {
 	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.sign": "sign"})}); got != 1 {
 		t.Fatalf("synthesized = %d, want 1", got)
 	}
-	if a := syntheticAssets(result.Report)["lib/index.js acme.sign"]; a == nil || a.StartLine != 2 {
-		t.Errorf("assets = %v, want acme.sign at lib/index.js:2", syntheticAssets(result.Report))
+	if a := syntheticAssets(result.Report)["lib/index.js acme.sign"]; a == nil || a.StartLine != 1 {
+		t.Errorf("assets = %v, want acme.sign at its definition, lib/index.js:1", syntheticAssets(result.Report))
 	}
 }
 

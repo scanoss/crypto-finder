@@ -34,8 +34,8 @@ var nodeConditionOrder = []string{"import", "module", "default", "require", "nod
 // though that export is a value built by a factory, not a function. A key the
 // graph already declares keeps its function definition. It returns the
 // identifiers the package's code declares or uses, for nodeExportDecls.
-func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.FunctionDecl) *nodeMembers {
-	members := &nodeMembers{shapes: callgraph.NewNodeShapes()}
+func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.FunctionDecl, graph *callgraph.CallGraph) *nodeMembers {
+	members := &nodeMembers{shapes: callgraph.NewNodeShapes(), root: root, byFile: nodeDeclsByFile(root, graph)}
 	pkg, ok := readNodePackage(root)
 	if !ok {
 		return members
@@ -53,7 +53,118 @@ func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.F
 type nodeMembers struct {
 	idents map[string]bool // names the package's runtime code defines or uses
 	shapes *callgraph.NodeShapes
+	root   string
+	byFile map[string][]*callgraph.FunctionDecl // the call graph's declarations, by absolute file
 }
+
+func nodeDeclsByFile(root string, graph *callgraph.CallGraph) map[string][]*callgraph.FunctionDecl {
+	out := make(map[string][]*callgraph.FunctionDecl)
+	if graph == nil {
+		return out
+	}
+	for _, fn := range graph.Functions {
+		file := fn.FilePath
+		if !filepath.IsAbs(file) {
+			file = filepath.Join(root, file)
+		}
+		out[filepath.Clean(file)] = append(out[filepath.Clean(file)], fn)
+	}
+	return out
+}
+
+// anchor moves each export-line declaration of api to the function, method or
+// class that defines it, as the call graph declares it when it can, so the
+// entry point is the function a consumer's call reaches.
+func (m *nodeMembers) anchor(api string, decls []*callgraph.FunctionDecl) []*callgraph.FunctionDecl {
+	if m == nil {
+		return decls
+	}
+	out := make([]*callgraph.FunctionDecl, 0, len(decls))
+	for _, d := range decls {
+		out = append(out, m.anchorOne(api, d))
+	}
+	return out
+}
+
+func (m *nodeMembers) anchorOne(api string, d *callgraph.FunctionDecl) *callgraph.FunctionDecl {
+	key, name := d.ID.Package, d.ID.Name
+	if name != nodeDefaultExportName {
+		key += "." + name
+	}
+	if !strings.HasPrefix(api, key) || len(m.byFile[filepath.Clean(d.FilePath)]) > 0 && d.StartLine != d.EndLine {
+		return d // a call graph declaration already is the definition
+	}
+	var members []string
+	for _, p := range strings.Split(strings.TrimPrefix(api[len(key):], "."), ".") {
+		if p != "" && p != nodeConstructorMember {
+			members = append(members, p)
+		}
+	}
+	file, line, ok := m.shapes.Definition(d.FilePath, name, members)
+	if !ok {
+		return d
+	}
+	if strings.HasSuffix(api, "."+nodeConstructorMember) {
+		if ctor, found := m.shapes.Constructor(file, line); found {
+			line = ctor
+		}
+	}
+	last := name
+	if len(members) > 0 {
+		last = members[len(members)-1]
+	}
+	if g := m.graphDecl(file, line, last); g != nil {
+		return g
+	}
+	return &callgraph.FunctionDecl{ID: d.ID, FilePath: file, StartLine: line, EndLine: line}
+}
+
+// graphDecl returns the call graph's declaration of the function at file:line,
+// or, when the graph indexes the package's TypeScript source rather than its
+// build, the declaration named name in that source file.
+func (m *nodeMembers) graphDecl(file string, line int, name string) *callgraph.FunctionDecl {
+	if decls := m.byFile[filepath.Clean(file)]; len(decls) > 0 {
+		var best *callgraph.FunctionDecl
+		for _, d := range decls {
+			if d.StartLine <= line && line <= d.EndLine && (best == nil || d.EndLine-d.StartLine < best.EndLine-best.StartLine) {
+				best = d
+			}
+		}
+		return best
+	}
+	for _, src := range nodeSourceFiles(m.root, file) {
+		for _, d := range m.byFile[src] {
+			if d.ID.Name == name {
+				return d
+			}
+		}
+	}
+	return nil
+}
+
+// nodeSourceFiles returns the TypeScript sources a built file may come from:
+// dist/src/a/b.js -> src/a/b.ts, lib/a.js -> src/a.ts.
+func nodeSourceFiles(root, file string) []string {
+	rel, err := filepath.Rel(root, file)
+	if err != nil {
+		return nil
+	}
+	rel = strings.TrimSuffix(filepath.ToSlash(rel), path.Ext(rel))
+	var stems []string
+	for first, rest, ok := strings.Cut(rel, "/"); ok && nodeBuildDirs[first]; first, rest, ok = strings.Cut(rest, "/") {
+		stems = append(stems, rest, "src/"+rest)
+	}
+	var out []string
+	for _, stem := range stems {
+		for _, ext := range []string{".ts", ".mts", ".cts", ".tsx"} {
+			out = append(out, filepath.Join(root, filepath.FromSlash(stem+ext)))
+		}
+	}
+	return out
+}
+
+// nodeBuildDirs are the directories a package ships its compiled output in.
+var nodeBuildDirs = map[string]bool{"dist": true, "build": true, "lib": true, "esm": true, "cjs": true, "out": true, "es": true}
 
 // has reports whether the export decl names has every member in members. The
 // first member must belong to that export when its shape is known; deeper

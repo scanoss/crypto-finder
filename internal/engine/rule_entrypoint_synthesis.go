@@ -113,7 +113,7 @@ func synthesizeRuleCryptoEntryPoints(
 		addPythonPublicPathDeclarations(graph, declsByFQN, declsByClass)
 	case ecosystemNode:
 		if result != nil {
-			nodeIdents = addNodeExportDeclarations(result.ProjectRoot, declsByFQN)
+			nodeIdents = addNodeExportDeclarations(result.ProjectRoot, declsByFQN, graph)
 			defer nodeIdents.shapes.Close()
 		}
 	}
@@ -258,8 +258,11 @@ func synthesizeRuleCryptoAssets(
 		if ecosystem == ecosystemRust {
 			decls = declsByFQN[rustSynthesisKey(api)]
 		}
-		if ecosystem == ecosystemNode && len(decls) == 0 {
-			decls = nodeExportDecls(api, declsByFQN, nodeIdents)
+		if ecosystem == ecosystemNode {
+			if len(decls) == 0 {
+				decls = nodeExportDecls(api, declsByFQN, nodeIdents)
+			}
+			decls = nodeIdents.anchor(api, decls)
 		}
 		added += synthesizeAPIAssets(report, fileIdx, api, metas, decls, declsByClass, result)
 	}
