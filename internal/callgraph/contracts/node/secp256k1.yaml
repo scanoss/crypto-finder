@@ -1,0 +1,156 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "secp256k1"
+  coordinates:
+    - "secp256k1"
+  version_range: ">=3.0.0"
+  description: "secp256k1: libsecp256k1 bindings for ECDSA and ECDH over secp256k1"
+
+# Covers both API generations: v3 (sign, verify, recover, DER import/export, ecdhUnsafe)
+# and v4/v5 (ecdsa*, optional compressed flag and output buffer), read from lib/index.js.
+contracts:
+
+  # v4/v5 ECDSA and ECDH.
+  - method: "secp256k1.ecdsaSign"
+    arity: 2
+    return: { type: "secp256k1.RecoverableSignature", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdsaSign"
+    arity: 3
+    return: { type: "secp256k1.RecoverableSignature", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdsaSign"
+    arity: 4
+    return: { type: "secp256k1.RecoverableSignature", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdsaVerify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdsaRecover"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdsaRecover"
+    arity: 4
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdsaRecover"
+    arity: 5
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdh"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdh"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdh"
+    arity: 4
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+
+  # v3 ECDSA and ECDH.
+  - method: "secp256k1.sign"
+    arity: 2
+    return: { type: "secp256k1.RecoverableSignature", confidence: high }
+    role: operation
+  - method: "secp256k1.sign"
+    arity: 3
+    return: { type: "secp256k1.RecoverableSignature", confidence: high }
+    role: operation
+  - method: "secp256k1.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "secp256k1.recover"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.recover"
+    arity: 4
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdhUnsafe"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.ecdhUnsafe"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+
+  # Key derivation and validation.
+  - method: "secp256k1.publicKeyCreate"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.publicKeyCreate"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.publicKeyCreate"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "secp256k1.privateKeyVerify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "secp256k1.publicKeyVerify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  # Encoding conversions of keys and signatures.
+  - method: "secp256k1.publicKeyConvert"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.publicKeyConvert"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.publicKeyConvert"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.privateKeyExport"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.privateKeyExport"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.privateKeyImport"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.signatureExport"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.signatureExport"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.signatureImport"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.signatureImport"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.signatureImportLax"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
+  - method: "secp256k1.signatureNormalize"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: output
