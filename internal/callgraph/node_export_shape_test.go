@@ -118,3 +118,22 @@ func TestNodeShapesReadClassesAndConstructors(t *testing.T) {
 		}
 	}
 }
+
+// An object filled in after its literal (`var hotp = {}; hotp.gen = ..`) has
+// those members, and each is defined where it is assigned.
+func TestNodeShapesReadObjectsFilledByAssignment(t *testing.T) {
+	t.Parallel()
+	root := writeShapeFiles(t, map[string]string{
+		"index.js": "var hotp = {};\nhotp.gen = function(key) {};\nhotp.verify = function(token, key) {};\nmodule.exports.hotp = hotp;\n",
+	})
+	s := NewNodeShapes()
+	defer s.Close()
+	file := filepath.Join(root, "index.js")
+
+	if keys, ok := s.ExportMembers(file, "hotp"); !ok || !maps.Equal(keys, map[string]bool{"gen": true, "verify": true}) {
+		t.Errorf("hotp = %v (known %v), want {gen, verify}", keys, ok)
+	}
+	if _, line, ok := s.Definition(file, "hotp", []string{"verify"}); !ok || line != 3 {
+		t.Errorf("hotp.verify defined at line %d (found %v), want 3", line, ok)
+	}
+}
