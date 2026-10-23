@@ -1,0 +1,30 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "noise-protocol"
+  coordinates:
+    - "noise-protocol"
+  version_range: ">=2.0.0"
+  description: "noise-protocol: the Noise Protocol Framework handshake over libsodium"
+
+# writeMessage returns the split { tx, rx } cipher states after the last handshake
+# message and undefined before it. keygen(buffer) fills a secret key and returns nothing.
+contracts:
+
+  # Static key pairs and handshake messages.
+  - method: "noise-protocol.keygen"
+    arity: 0
+    return: { type: "noise-protocol.KeyPair", confidence: high }
+    role: factory
+  - method: "noise-protocol.keygen"
+    arity: 1
+    return: { type: "noise-protocol.KeyPair", confidence: high }
+    role: factory
+  - method: "noise-protocol.seedKeygen"
+    arity: 1
+    return: { type: "noise-protocol.KeyPair", confidence: high }
+    role: factory
+  - method: "noise-protocol.writeMessage"
+    arity: 3
+    return: { type: "noise-protocol.CipherStates", confidence: high }
+    role: operation
