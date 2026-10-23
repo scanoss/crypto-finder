@@ -20,10 +20,14 @@ const (
 	nodeNamespaceImport = "namespace_import"
 	nodeAwaitExpression = "await_expression"
 	nodeDefaultExport   = "default"
-	nodeObjectFreeze    = "Object.freeze"
 	nodeProgram         = "program"
 	nodeFieldKey        = "key"
 	nodeFieldName       = "name"
+	nodeClassBody       = "class_body"
+	nodeObjectFreeze    = "Object.freeze"
+	nodeLiteralFalse    = "false"
+	nodeLiteralNull     = "null"
+	nodeLiteralTrue     = "true"
 
 	// nodeShapeDepth bounds how many calls, bindings and modules one shape follows.
 	nodeShapeDepth = 16
@@ -73,11 +77,146 @@ func (s *NodeShapes) ExportMembers(file, name string) (map[string]bool, bool) {
 	if value == nil {
 		return nil, false
 	}
-	sh := s.shapeOf(vmod, value, 0)
+	sh := s.valueShape(vmod, value, name, 0)
 	if sh.open {
 		return nil, false
 	}
 	return sh.keys, true
+}
+
+// ExportIsCallable reports whether file's export name is a class or function,
+// the only exports a constructor api can name. known is false when the value
+// is only decided at run time, such as a factory's result.
+func (s *NodeShapes) ExportIsCallable(file, name string) (callable, known bool) {
+	mod := s.module(file)
+	if mod == nil {
+		return false, false
+	}
+	value, vmod := s.exportValue(mod, name, 0)
+	return s.callable(vmod, value, 0)
+}
+
+func (s *NodeShapes) callable(m *nodeShapeModule, n *sitter.Node, depth int) (callable, known bool) {
+	n = nodeUnwrapValue(n)
+	if n == nil || depth > nodeShapeDepth {
+		return false, false
+	}
+	switch {
+	case nodeIsFunction(n):
+		return true, true
+	case n.Type() == goNodeIdentifier:
+		value, vm := s.binding(m, n, n.Content(m.src), depth)
+		return s.callable(vm, value, depth+1)
+	case n.Type() == nodeCallExpression:
+		fn, args := n.ChildByFieldName("function"), n.ChildByFieldName("arguments")
+		if fn != nil && args != nil && fn.Content(m.src) == nodeRequireFunction && args.NamedChildCount() == 1 {
+			if target := s.relative(m, unquoteNodeString(args.NamedChild(0).Content(m.src))); target != nil {
+				value, vm := s.exportValue(target, nodeDefaultExport, depth+1)
+				return s.callable(vm, value, depth+1)
+			}
+		}
+		return false, false // a factory may return a class
+	case nodeIsLiteral(n):
+		return false, true
+	}
+	return false, false
+}
+
+func nodeIsLiteral(n *sitter.Node) bool {
+	switch n.Type() {
+	case nodeStringNode, "number", "template_string", nodeLiteralTrue, nodeLiteralFalse, nodeLiteralNull, nodeObjectLiteral, "array", "regex":
+		return true
+	}
+	return false
+}
+
+// valueShape is shapeOf, with a class or function read as its members.
+func (s *NodeShapes) valueShape(m *nodeShapeModule, n *sitter.Node, name string, depth int) nodeShape {
+	if n != nil && nodeIsFunction(n) {
+		return s.functionShape(m, n, name)
+	}
+	return s.shapeOf(m, n, depth)
+}
+
+// functionShape is what a class or constructor function offers: its methods,
+// fields and statics, and `Name.x` / `Name.prototype.x` assignments. Anything
+// it inherits is not tracked, so a subclass is unknown.
+func (s *NodeShapes) functionShape(m *nodeShapeModule, fn *sitter.Node, name string) nodeShape {
+	if n := fn.ChildByFieldName(nodeFieldName); n != nil {
+		name = n.Content(m.src)
+	}
+	sh := nodeClassBodyShape(m, fn)
+	if sh.open || name == "" || name == nodeDefaultExport {
+		return sh
+	}
+	nodeWalk(m.root, func(n *sitter.Node) {
+		switch n.Type() {
+		case nodeAssignmentExpression:
+			s.addAssignedMember(m, n, name, &sh)
+		case nodeCallExpression:
+			if nodeInheritsFrom(m, n, name) {
+				sh.open = true
+			}
+		}
+	})
+	return sh
+}
+
+// nodeClassBodyShape reads a class's methods and fields; a subclass is unknown.
+func nodeClassBodyShape(m *nodeShapeModule, fn *sitter.Node) nodeShape {
+	sh := nodeShape{keys: make(map[string]bool)}
+	body := fn.ChildByFieldName("body")
+	if body == nil || body.Type() != nodeClassBody {
+		return sh
+	}
+	for i := 0; i < int(fn.NamedChildCount()); i++ {
+		if fn.NamedChild(i).Type() == "class_heritage" {
+			return open()
+		}
+	}
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		if key := nodeClassMemberName(m, body.NamedChild(i)); key != "" {
+			sh.keys[key] = true
+		}
+	}
+	return sh
+}
+
+func nodeClassMemberName(m *nodeShapeModule, member *sitter.Node) string {
+	for _, field := range []string{nodeFieldName, "property"} {
+		if key := member.ChildByFieldName(field); key != nil {
+			return strings.TrimPrefix(key.Content(m.src), "#")
+		}
+	}
+	return ""
+}
+
+// nodeInheritsFrom reports `inherits(name, Base)` and the like, which give
+// name members this module does not list.
+func nodeInheritsFrom(m *nodeShapeModule, call *sitter.Node, name string) bool {
+	fn, args := call.ChildByFieldName("function"), call.ChildByFieldName("arguments")
+	return fn != nil && args != nil && nodeInherits(fn.Content(m.src)) && args.NamedChildCount() > 0 &&
+		strings.HasPrefix(args.NamedChild(0).Content(m.src), name)
+}
+
+func (s *NodeShapes) addAssignedMember(m *nodeShapeModule, n *sitter.Node, name string, sh *nodeShape) {
+	left, right := n.ChildByFieldName("left"), n.ChildByFieldName("right")
+	if left == nil || right == nil {
+		return
+	}
+	target := left.Content(m.src)
+	switch {
+	case target == name+"."+nodePrototypeMember:
+		sh.merge(s.shapeOf(m, right, 0))
+	case strings.HasPrefix(target, name+"."+nodePrototypeMember+"."):
+		sh.keys[strings.SplitN(strings.TrimPrefix(target, name+"."+nodePrototypeMember+"."), ".", 2)[0]] = true
+	case strings.HasPrefix(target, name+"."):
+		sh.keys[strings.SplitN(strings.TrimPrefix(target, name+"."), ".", 2)[0]] = true
+	}
+}
+
+func nodeInherits(fn string) bool {
+	return fn == "inherits" || strings.HasSuffix(fn, ".inherits") || fn == "Object.setPrototypeOf" || fn == "Object.assign"
 }
 
 func (s *NodeShapes) module(path string) *nodeShapeModule {
@@ -146,10 +285,10 @@ func (s *NodeShapes) shapeOf(m *nodeShapeModule, n *sitter.Node, depth int) node
 		return s.callShape(m, n, depth)
 	case goNodeIdentifier:
 		value, vm := s.binding(m, n, n.Content(m.src), depth)
-		if value == nil || nodeIsFunction(value) {
-			return open() // a function's own members (statics) are not tracked
+		if value == nil {
+			return open()
 		}
-		return s.shapeOf(vm, value, depth+1)
+		return s.valueShape(vm, value, n.Content(m.src), depth+1)
 	}
 	return open()
 }
@@ -280,6 +419,12 @@ func (s *NodeShapes) returnShape(m *nodeShapeModule, fn *sitter.Node, depth int)
 // function, then the module's top level, then an import.
 func (s *NodeShapes) binding(m *nodeShapeModule, at *sitter.Node, name string, depth int) (*sitter.Node, *nodeShapeModule) {
 	for scope := at.Parent(); scope != nil; scope = scope.Parent() {
+		if nodeIsFunction(scope) || scope.Type() == nodeMethodDefinition {
+			if _, param := nodeScopeDeclaration(scope, name, m.src); param {
+				return nil, nil // a parameter is only known at run time, and shadows outer names
+			}
+			continue
+		}
 		if scope.Type() != nodeStatementBlock && scope.Type() != nodeProgram {
 			continue
 		}
@@ -287,16 +432,22 @@ func (s *NodeShapes) binding(m *nodeShapeModule, at *sitter.Node, name string, d
 			return value, m
 		}
 		if scope.Type() == nodeProgram {
-			if spec, imported := nodeImportOf(scope, name, m.src); spec != "" {
-				target := s.relative(m, spec)
-				if target == nil {
-					return nil, nil
-				}
-				return s.exportValue(target, imported, depth+1)
-			}
+			return s.importedBinding(m, scope, name, depth)
 		}
 	}
 	return nil, nil
+}
+
+func (s *NodeShapes) importedBinding(m *nodeShapeModule, program *sitter.Node, name string, depth int) (*sitter.Node, *nodeShapeModule) {
+	spec, imported := nodeImportOf(program, name, m.src)
+	if spec == "" {
+		return nil, nil
+	}
+	target := s.relative(m, spec)
+	if target == nil {
+		return nil, nil
+	}
+	return s.exportValue(target, imported, depth+1)
 }
 
 // exportValue returns the value a module exports as name ("default" for the

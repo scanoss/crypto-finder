@@ -63,6 +63,10 @@ func (m *nodeMembers) has(decl *callgraph.FunctionDecl, members string) bool {
 		return false
 	}
 	parts := strings.Split(members, ".")
+	if parts[0] == nodeConstructorMember {
+		callable, known := m.shapes.ExportIsCallable(decl.FilePath, decl.ID.Name)
+		return callable || !known
+	}
 	if keys, known := m.shapes.ExportMembers(decl.FilePath, decl.ID.Name); known && !keys[parts[0]] {
 		return false
 	}
