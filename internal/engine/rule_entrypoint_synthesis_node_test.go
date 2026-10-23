@@ -325,21 +325,86 @@ func TestSynthesizeNodeExportedClassConstructor(t *testing.T) {
 	}
 }
 
-// Node resolves main without its extension and as a directory index.
-func TestIsNodeMainFile(t *testing.T) {
+// Specifiers resolve as Node resolves them: "./*" reaches subdirectories, a
+// subpath mapped to null is not importable, the package root is its main, an
+// ESM wrapper falls through to the build it wraps, and deep imports use real paths.
+func TestSynthesizeNodeResolvesSpecifiersLikeNode(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		rel, main string
-		want      bool
+		name    string
+		files   map[string]string
+		surface []string
+		absent  []string
 	}{
-		{"bcrypt.js", "bcrypt", true},
-		{"lib/index.js", "lib/index.js", true},
-		{"lib/index.js", "lib", true},
-		{"lib/other.js", "lib", false},
-		{"index.js", "", false},
+		{"nested pattern and null", map[string]string{
+			"package.json":       `{"name": "acme", "exports": {"./*": "./dist/*.js", "./internal/*": null}}`,
+			"dist/a/b.js":        "export function sign() {}\n",
+			"dist/internal/x.js": "export function verify() {}\n",
+		}, []string{"acme/a/b.sign"}, []string{"acme/internal/x.verify"}},
+		{"main over other index files", map[string]string{
+			"package.json":  `{"name": "acme", "main": "src/main.js"}`,
+			"dist/index.js": "exports.sign = function(){};\n",
+			"src/main.js":   "exports.verify = function(){};\n",
+		}, []string{"acme.verify"}, []string{"acme.sign"}},
+		{"esm wrapper over cjs", map[string]string{
+			"package.json": `{"name": "acme", "exports": {".": {"import": "./wrapper.mjs", "require": "./index.js"}}}`,
+			"wrapper.mjs":  "import mod from './index.js';\nexport const { sign } = mod;\n",
+			"index.js":     "exports.sign = function(){};\n",
+		}, []string{"acme.sign"}, nil},
+		{"deep import by real path", map[string]string{
+			"package.json": `{"name": "acme.js", "main": "lib/index.js"}`,
+			"lib/index.js": "exports.a = 1;\n",
+			"lib/foo.js":   "exports.sign = function(){};\n",
+		}, []string{"acme.js/lib/foo.sign"}, []string{"acme.js/foo.sign", "acme/lib/foo.sign"}},
 	} {
-		if got := isNodeMainFile(tc.rel, tc.main); got != tc.want {
-			t.Errorf("isNodeMainFile(%q, %q) = %v, want %v", tc.rel, tc.main, got, tc.want)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeNodeFiles(t, root, tc.files)
+			result := &DepScanResult{
+				Report:      &entities.InterimReport{},
+				CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+				Ecosystem:   ecosystemNode,
+				ProjectRoot: root,
+			}
+			apis := map[string]string{}
+			for _, a := range append(append([]string{}, tc.surface...), tc.absent...) {
+				apis[a] = "sign"
+			}
+			SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, apis)})
+			got := map[string]bool{}
+			for _, a := range syntheticAssets(result.Report) {
+				got[a.Metadata["api"]] = true
+			}
+			for _, a := range tc.surface {
+				if !got[a] {
+					t.Errorf("%s not surfaced; got %v", a, got)
+				}
+			}
+			for _, a := range tc.absent {
+				if got[a] {
+					t.Errorf("%s surfaced", a)
+				}
+			}
+		})
+	}
+}
+
+// Node resolves main without its extension and as a directory index, and
+// falls back to index.js, not to the first index file of a build directory.
+func TestNodeMainFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{"bcrypt.js": "", "lib/index.js": "", "index.js": "", "dist/index.js": ""})
+	for _, tc := range []struct{ main, want string }{
+		{"bcrypt", "bcrypt.js"},
+		{"./lib", "lib/index.js"},
+		{"lib/index.js", "lib/index.js"},
+		{"", "index.js"},
+		{"missing.js", "index.js"},
+	} {
+		if got := nodeMainFile(root, tc.main); got != tc.want {
+			t.Errorf("nodeMainFile(%q) = %q, want %q", tc.main, got, tc.want)
 		}
 	}
 }

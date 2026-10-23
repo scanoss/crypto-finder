@@ -28,10 +28,6 @@ const (
 // one is indexed, so each api is surfaced once.
 var nodeConditionOrder = []string{"import", "module", "default", "require", "node", "browser"}
 
-// nodeLayoutDirs are build-output directories a package without an exports map
-// publishes its modules under; the module's path drops them.
-var nodeLayoutDirs = map[string]bool{"esm": true, "lib": true, "dist": true, "cjs": true, "build": true}
-
 // addNodeExportDeclarations indexes every export of the mined npm package under
 // the specifiers a consumer imports it by, so a rule api written
 // "@noble/curves/secp256k1.secp256k1.sign" meets the `secp256k1` export even
@@ -44,8 +40,10 @@ func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.F
 	if !ok {
 		return members
 	}
-	for spec, rel := range nodeModuleFiles(root, pkg) {
-		indexNodeModuleExports(spec, filepath.Join(root, filepath.FromSlash(rel)), declsByFQN, map[string]bool{}, 0)
+	for spec, rels := range nodeModuleFiles(root, pkg) {
+		for _, rel := range rels {
+			indexNodeModuleExports(spec, filepath.Join(root, filepath.FromSlash(rel)), declsByFQN, map[string]bool{}, 0)
+		}
 	}
 	members.idents = nodePackageIdentifiers(root)
 	return members
@@ -76,7 +74,10 @@ func (m *nodeMembers) has(decl *callgraph.FunctionDecl, members string) bool {
 	return true
 }
 
-const nodeConstructorMember = "<init>"
+const (
+	nodeConstructorMember = "<init>"
+	nodeDefaultExportName = "default"
+)
 
 // nodeStarDepth bounds how many `export *` hops are followed from one module.
 const nodeStarDepth = 8
@@ -95,16 +96,7 @@ func indexNodeModuleExports(spec, file string, declsByFQN map[string][]*callgrap
 		log.Debug().Err(err).Str("file", file).Msg("node export index skipped a module")
 		return
 	}
-	for name, line := range exports.Lines {
-		key := spec + "." + name
-		if len(declsByFQN[key]) > 0 {
-			continue
-		}
-		declsByFQN[key] = []*callgraph.FunctionDecl{{
-			ID:       callgraph.FunctionID{Package: spec, Name: name},
-			FilePath: file, StartLine: line, EndLine: line,
-		}}
-	}
+	addNodeExportLines(spec, file, exports.Lines, depth > 0, declsByFQN)
 	for _, from := range exports.StarFrom {
 		if target := resolveNodeRelative(file, from); target != "" {
 			indexNodeModuleExports(spec, target, declsByFQN, seen, depth+1)
@@ -144,6 +136,21 @@ func indexNodeFactoryReturn(spec, file string, declsByFQN map[string][]*callgrap
 				FilePath: file, StartLine: line, EndLine: line,
 			}}
 		}
+	}
+}
+
+// addNodeExportLines indexes a module's own export names; a re-exported module
+// does not pass on its default, which `export *` never re-exports.
+func addNodeExportLines(spec, file string, lines map[string]int, reexported bool, declsByFQN map[string][]*callgraph.FunctionDecl) {
+	for name, line := range lines {
+		key := spec + "." + name
+		if (reexported && name == nodeDefaultExportName) || len(declsByFQN[key]) > 0 {
+			continue
+		}
+		declsByFQN[key] = []*callgraph.FunctionDecl{{
+			ID:       callgraph.FunctionID{Package: spec, Name: name},
+			FilePath: file, StartLine: line, EndLine: line,
+		}}
 	}
 }
 
@@ -249,31 +256,53 @@ func readNodePackage(root string) (nodePackage, bool) {
 	return pkg, true
 }
 
-// nodeModuleFiles maps each specifier the package publishes to the one source
-// file that backs it, relative to root. Specifiers are written both with and
+// nodeModuleFiles maps each specifier the package publishes to the source
+// files that back it, relative to root, in the order an import resolves them:
+// an ESM wrapper first, then the build it re-exports. Subpaths are also written
 // without a ".js" suffix, because rules name the bare form.
-func nodeModuleFiles(root string, pkg nodePackage) map[string]string {
-	files := nodeSpecifierFiles{name: pkg.Name, out: make(map[string]string)}
+func nodeModuleFiles(root string, pkg nodePackage) map[string][]string {
+	files := nodeSpecifierFiles{name: pkg.Name, out: make(map[string][]string)}
 	if len(pkg.Exports) > 0 {
-		for _, sub := range nodeExportSubpaths(pkg.Exports) {
+		subpaths := nodeExportSubpaths(pkg.Exports)
+		for _, sub := range subpaths {
 			for _, target := range sub.targets {
 				for _, m := range expandNodeExportTarget(root, sub.subpath, target) {
-					files.add(m.subpath, m.rel)
+					if !nodeSubpathExcluded(m.subpath, subpaths) {
+						files.add(m.subpath, m.rel)
+					}
 				}
 			}
 		}
 		return files.out
 	}
-	if err := filepath.WalkDir(root, files.walk(root, pkg.Main)); err != nil {
+	if main := nodeMainFile(root, pkg.Main); main != "" {
+		files.add(".", main)
+	}
+	if err := filepath.WalkDir(root, files.walk(root)); err != nil {
 		log.Debug().Err(err).Str("root", root).Msg("node export index walk stopped early")
 	}
 	return files.out
 }
 
-// nodeSpecifierFiles collects the first file registered for each specifier.
+// nodeSubpathExcluded reports whether a subpath matches an exports entry mapped
+// to null ("./internal/*": null), which Node refuses to import.
+func nodeSubpathExcluded(subpath string, subpaths []nodeSubpath) bool {
+	for _, sub := range subpaths {
+		if len(sub.targets) > 0 {
+			continue
+		}
+		prefix, suffix, pattern := strings.Cut(sub.subpath, "*")
+		if subpath == sub.subpath || (pattern && strings.HasPrefix(subpath, prefix) && strings.HasSuffix(subpath, suffix)) {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeSpecifierFiles collects the files registered for each specifier.
 type nodeSpecifierFiles struct {
 	name string
-	out  map[string]string
+	out  map[string][]string
 }
 
 func (f nodeSpecifierFiles) add(subpath, rel string) {
@@ -281,21 +310,21 @@ func (f nodeSpecifierFiles) add(subpath, rel string) {
 	if !isNodeSourceFile(rel) {
 		return
 	}
-	spec := f.name
+	specs := []string{f.name}
 	if subpath != "." {
-		spec += "/" + strings.TrimPrefix(subpath, "./")
+		spec := f.name + "/" + strings.TrimPrefix(subpath, "./")
+		specs = []string{spec, strings.TrimSuffix(spec, ".js")}
 	}
-	for _, s := range []string{spec, strings.TrimSuffix(spec, ".js")} {
-		if _, taken := f.out[s]; !taken {
-			f.out[s] = rel
+	for _, s := range slices.Compact(specs) {
+		if !slices.Contains(f.out[s], rel) {
+			f.out[s] = append(f.out[s], rel)
 		}
 	}
 }
 
-// walk registers every module of a package without an exports map under its
-// path, and its main file and index under the package name.
-func (f nodeSpecifierFiles) walk(root, main string) fs.WalkDirFunc {
-	main = strings.TrimPrefix(path.Clean(main), "./")
+// walk registers every module of a package without an exports map under the
+// path Node resolves it by.
+func (f nodeSpecifierFiles) walk(root string) fs.WalkDirFunc {
 	return func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
@@ -311,33 +340,28 @@ func (f nodeSpecifierFiles) walk(root, main string) fs.WalkDirFunc {
 			return nil //nolint:nilerr // a path outside root is not part of the package
 		}
 		rel = filepath.ToSlash(rel)
-		if !isNodeSourceFile(rel) {
-			return nil
+		if isNodeSourceFile(rel) {
+			f.add("./"+strings.TrimSuffix(rel, path.Ext(rel)), rel)
 		}
-		mod := strings.TrimSuffix(rel, path.Ext(rel))
-		// Node resolves a deep import by its real path; the layout-free name is
-		// how rules name a build's modules.
-		f.add("./"+mod, rel)
-		if first, rest, ok := strings.Cut(mod, "/"); ok && nodeLayoutDirs[first] {
-			mod = rest
-		}
-		if mod == "index" || isNodeMainFile(rel, main) {
-			f.add(".", rel)
-		}
-		f.add("./"+mod, rel)
 		return nil
 	}
 }
 
-// isNodeMainFile reports whether rel is the file a package.json main names.
-// Node resolves main with or without its extension, and as a directory index:
-// bcrypt's main is "./bcrypt" for bcrypt.js.
-func isNodeMainFile(rel, main string) bool {
-	if main == "" || main == "." {
-		return false
+// nodeMainFile resolves the package root the way Node does without an exports
+// map: main as written, with an extension or as a directory index, else index.js.
+func nodeMainFile(root, main string) string {
+	main = strings.TrimPrefix(path.Clean(main), "./")
+	var candidates []string
+	if main != "" && main != "." {
+		candidates = append(candidates, main, main+".js", main+".cjs", main+".mjs", main+"/index.js")
 	}
-	noExt := strings.TrimSuffix(rel, path.Ext(rel))
-	return rel == main || noExt == main || noExt == main+"/index"
+	candidates = append(candidates, "index.js")
+	for _, c := range candidates {
+		if info, err := os.Stat(filepath.Join(root, filepath.FromSlash(c))); err == nil && !info.IsDir() && isNodeSourceFile(c) {
+			return c
+		}
+	}
+	return ""
 }
 
 func isNodeSourceFile(rel string) bool {
@@ -388,6 +412,9 @@ func nodeExportSubpaths(raw json.RawMessage) []nodeSubpath {
 // nodeExportTargets returns the file targets of one exports value, ranked so
 // the first is the build that gets indexed. Type declarations are skipped.
 func nodeExportTargets(raw json.RawMessage) []string {
+	if strings.TrimSpace(string(raw)) == "null" {
+		return nil // an excluded subpath
+	}
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
 		return []string{s}
@@ -432,25 +459,31 @@ func nodeExportTargets(raw json.RawMessage) []string {
 type nodeSubpathFile struct{ subpath, rel string }
 
 // expandNodeExportTarget resolves one target to files. A "*" pattern
-// ("./*": "./esm/*.js") expands to every file it matches.
+// ("./*": "./esm/*.js") expands to every file it matches, in any subdirectory.
 func expandNodeExportTarget(root, subpath, target string) []nodeSubpathFile {
 	if !strings.Contains(target, "*") {
 		return []nodeSubpathFile{{subpath, target}}
 	}
-	matches, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(target, "./"))))
-	if err != nil {
-		return nil
-	}
 	prefix, suffix, _ := strings.Cut(strings.TrimPrefix(target, "./"), "*")
 	var out []nodeSubpathFile
-	for _, m := range matches {
-		rel, err := filepath.Rel(root, m)
+	walkRoot := filepath.Join(root, filepath.FromSlash(path.Dir(prefix+"x")))
+	err := filepath.WalkDir(walkRoot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil //nolint:nilerr // skip unreadable entries and directories
+		}
+		rel, err := filepath.Rel(root, p)
 		if err != nil {
-			continue
+			return nil //nolint:nilerr // a path outside root is not part of the package
 		}
 		rel = filepath.ToSlash(rel)
-		star := strings.TrimSuffix(strings.TrimPrefix(rel, prefix), suffix)
-		out = append(out, nodeSubpathFile{strings.Replace(subpath, "*", star, 1), rel})
+		if strings.HasPrefix(rel, prefix) && strings.HasSuffix(rel, suffix) && len(rel) >= len(prefix)+len(suffix) {
+			star := strings.TrimSuffix(strings.TrimPrefix(rel, prefix), suffix)
+			out = append(out, nodeSubpathFile{strings.Replace(subpath, "*", star, 1), rel})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil
 	}
 	return out
 }
