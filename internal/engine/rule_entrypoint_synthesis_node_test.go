@@ -333,7 +333,7 @@ func TestSynthesizeNodeAnchorsAtTheDefinition(t *testing.T) {
 	root := t.TempDir()
 	writeNodeFiles(t, root, map[string]string{
 		"package.json":        `{"name": "acme", "exports": {".": "./index.js", "./ciphers": "./dist/src/ciphers.js"}}`,
-		"index.js":            "var nacl = exports;\nnacl.box = function(){};\nnacl.box.before = function(){};\nexports.Key = class Key {\n  constructor(k) {}\n};\n",
+		"index.js":            "var nacl = exports;\nnacl.box = function(){};\nnacl.box.before = function(){};\nexports.Key = class Key {\n  constructor(k) {}\n};\nnacl.box.after = nacl.box.before;\n",
 		"dist/src/ciphers.js": "export function create() {}\n",
 		"src/ciphers.ts":      "// header\nexport function create(): void {}\n",
 	})
@@ -342,11 +342,11 @@ func TestSynthesizeNodeAnchorsAtTheDefinition(t *testing.T) {
 		"create": {ID: callgraph.FunctionID{Package: "acme/src/ciphers", Name: "create"}, FilePath: src, StartLine: 2, EndLine: 2},
 	}}
 	result := &DepScanResult{Report: &entities.InterimReport{}, CallGraph: graph, Ecosystem: ecosystemNode, ProjectRoot: root}
-	rules := writeNodeRules(t, map[string]string{"acme.box.before": "keygen", "acme.Key.<init>": "keygen", "acme/ciphers.create": "encrypt"})
+	rules := writeNodeRules(t, map[string]string{"acme.box.before": "keygen", "acme.box.after": "keygen", "acme.Key.<init>": "keygen", "acme/ciphers.create": "encrypt"})
 
 	SynthesizeRuleCryptoEntryPointsForResult(result, []string{rules})
 	assets := syntheticAssets(result.Report)
-	for key, line := range map[string]int{"index.js acme.box.before": 3, "index.js acme.Key.<init>": 5, "src/ciphers.ts acme/ciphers.create": 2} {
+	for key, line := range map[string]int{"index.js acme.box.before": 3, "index.js acme.box.after": 3, "index.js acme.Key.<init>": 5, "src/ciphers.ts acme/ciphers.create": 2} {
 		if a := assets[key]; a == nil || a.StartLine != line {
 			t.Errorf("%s: want line %d; assets = %v", key, line, assets)
 		}
