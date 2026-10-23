@@ -938,8 +938,8 @@ func assignedExportPath(m *nodeShapeModule, name string, members []string) *sitt
 			return
 		}
 		base, rest, ok := strings.Cut(left.Content(m.src), "."+suffix)
-		if ok && rest == "" && aliases[base] {
-			found = n.ChildByFieldName("right")
+		if right := n.ChildByFieldName("right"); ok && rest == "" && aliases[base] && !nodeForwardDeclaration(right, m.src) {
+			found = right
 		}
 	})
 	return found

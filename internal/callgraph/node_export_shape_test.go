@@ -137,3 +137,26 @@ func TestNodeShapesReadObjectsFilledByAssignment(t *testing.T) {
 		t.Errorf("hotp.verify defined at line %d (found %v), want 3", line, ok)
 	}
 }
+
+// tsc forward-declares exports in a chain ending in `void 0`; the definition is
+// the later assignment, followed through an alias of another export.
+func TestNodeShapesSkipChainedForwardDeclarations(t *testing.T) {
+	t.Parallel()
+	root := writeShapeFiles(t, map[string]string{
+		"account.js": "exports.publicToAddress = exports.pubToAddress = exports.Account = void 0;\n" +
+			"const pubToAddress = function (pubKey) {};\nexports.pubToAddress = pubToAddress;\n" +
+			"exports.publicToAddress = exports.pubToAddress;\n",
+	})
+	s := NewNodeShapes()
+	defer s.Close()
+	if _, line, ok := s.Definition(filepath.Join(root, "account.js"), "publicToAddress", nil); !ok || line != 2 {
+		t.Errorf("publicToAddress defined at line %d (found %v), want 2", line, ok)
+	}
+	exports, err := NodeModuleExports(filepath.Join(root, "account.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exports.Lines["publicToAddress"] != 4 || exports.Lines["pubToAddress"] != 3 {
+		t.Errorf("export lines = %v, want the assignments, not the forward declaration", exports.Lines)
+	}
+}
