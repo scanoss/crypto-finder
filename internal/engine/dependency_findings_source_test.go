@@ -20,6 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"sync/atomic"
@@ -249,5 +252,28 @@ func TestAPIFindingsSource_MissingEndpointStopsAsking(t *testing.T) {
 	}
 	if api.calls != 1 {
 		t.Errorf("API asked %d times, want once", api.calls)
+	}
+}
+
+// scanoss/crypto-finder#775: the API serves golang-jwt/jwt/v5@v5.3.1 under
+// its mined module root, and those findings must land on the module's files.
+func TestDependencyScanner_APIFindingsForGoModuleKeepItsFiles(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"info_code":"READY","rules_version":"v1.31.0","data":[{"version":"v5.3.1","findings":[`+
+			`{"file_path":"golang-jwt/jwt/v5@v5.3.1/ecdsa.go","language":"go","cryptographic_assets":[{"start_line":3,"end_line":3,"match":"ecdsa.Sign(rand.Reader, key, hash)"}]},`+
+			`{"file_path":"golang-jwt/jwt/v5@v5.3.1/cmd/jwt/main.go","language":"go","cryptographic_assets":[{"start_line":9,"end_line":9,"match":"jwt.Parse(data, keyFunc)"}]}]}]}`)
+	}))
+	t.Cleanup(server.Close)
+	ds, scans := sourceScanner(t, nil, NewAPIFindingsSource(apiclient.NewClient(server.URL, "test-key")))
+	dir := t.TempDir()
+	dep := dependency.Dependency{Module: "github.com/golang-jwt/jwt/v5", Version: "v5.3.1", Dir: dir, Files: []string{filepath.Join(dir, "ecdsa.go")}}
+
+	res := ds.scanSingleDep(context.Background(), dep, "github.com/golang-jwt/jwt/v5@v5.3.1", []string{"/rules/go.yaml"}, sourceScanOptions())
+
+	if res.err != nil || scans.Load() != 0 {
+		t.Fatalf("err %v, scans %d; want the API's answer", res.err, scans.Load())
+	}
+	if res.report == nil || len(res.report.Findings) != 1 || res.report.Findings[0].FilePath != "ecdsa.go" {
+		t.Errorf("report = %+v, want the finding in ecdsa.go", res.report)
 	}
 }
