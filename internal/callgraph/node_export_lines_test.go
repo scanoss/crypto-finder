@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -75,6 +76,60 @@ export abstract class Base {}
 			}
 			if !maps.Equal(got, tc.want) {
 				t.Errorf("exports = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNodeModuleExportsFollowsAliasesAndStars(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, src string
+		lines     map[string]int
+		stars     []string
+	}{
+		{
+			name: "alias of exports",
+			src: `var elliptic = exports;
+elliptic.version = '6.6.1';
+elliptic.ec = require('./elliptic/ec');
+`,
+			lines: map[string]int{"version": 2, "ec": 3},
+		},
+		{
+			name: "module.exports bound to a name",
+			src: `const bls = {};
+bls.SecretKey = class {};
+module.exports = bls;
+`,
+			lines: map[string]int{"SecretKey": 2},
+		},
+		{
+			name: "star re-exports, ES and tsc",
+			src: `export * from './signature.js';
+export * as ns from './ns.js';
+export { a } from './a.js';
+tslib_1.__exportStar(require("./account"), exports);
+(0, tslib_1.__exportStar)(require("./bytes"), exports);
+__exportStar(require("other-package"), exports);
+`,
+			lines: map[string]int{"a": 3},
+			stars: []string{"./signature.js", "./account", "./bytes", "other-package"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "index.js")
+			if err := os.WriteFile(path, []byte(tc.src), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := NodeModuleExports(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !maps.Equal(got.Lines, tc.lines) || !slices.Equal(got.StarFrom, tc.stars) {
+				t.Errorf("exports = %v stars %v, want %v stars %v", got.Lines, got.StarFrom, tc.lines, tc.stars)
 			}
 		})
 	}

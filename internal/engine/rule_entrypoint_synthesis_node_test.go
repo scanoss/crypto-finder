@@ -136,6 +136,32 @@ func TestSynthesizeNodeSkipsMembersTheReleaseLacks(t *testing.T) {
 	}
 }
 
+// A package that re-exports its modules wholesale surfaces each api in the
+// module that defines it; another package's re-export is not followed.
+func TestSynthesizeNodeFollowsStarReExports(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json":      `{"name": "acme", "main": "dist/index.js"}`,
+		"dist/index.js":     "tslib_1.__exportStar(require(\"./signature\"), exports);\n__exportStar(require(\"other\"), exports);\n",
+		"dist/signature.js": "function ecsign() {}\nexports.ecsign = ecsign;\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.ecsign": "sign"})}); got != 1 {
+		t.Fatalf("synthesized = %d, want 1", got)
+	}
+	if a := syntheticAssets(result.Report)["dist/signature.js acme.ecsign"]; a == nil || a.StartLine != 2 {
+		t.Errorf("assets = %v, want acme.ecsign at dist/signature.js:2", syntheticAssets(result.Report))
+	}
+}
+
 // Node resolves main without its extension and as a directory index.
 func TestIsNodeMainFile(t *testing.T) {
 	t.Parallel()

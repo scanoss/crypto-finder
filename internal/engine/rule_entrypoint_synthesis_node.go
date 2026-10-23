@@ -45,24 +45,65 @@ func addNodeExportDeclarations(root string, declsByFQN map[string][]*callgraph.F
 		return nil
 	}
 	for spec, rel := range nodeModuleFiles(root, pkg) {
-		file := filepath.Join(root, filepath.FromSlash(rel))
-		exports, err := callgraph.NodeExportLines(file)
-		if err != nil {
-			log.Debug().Err(err).Str("file", file).Msg("node export index skipped a module")
-			continue
-		}
-		for name, line := range exports {
-			key := spec + "." + name
-			if len(declsByFQN[key]) > 0 {
-				continue
-			}
-			declsByFQN[key] = []*callgraph.FunctionDecl{{
-				ID:       callgraph.FunctionID{Package: spec, Name: name},
-				FilePath: file, StartLine: line, EndLine: line,
-			}}
-		}
+		indexNodeModuleExports(spec, filepath.Join(root, filepath.FromSlash(rel)), declsByFQN, map[string]bool{})
 	}
 	return nodePackageIdentifiers(root)
+}
+
+// nodeStarDepth bounds how many `export *` hops are followed from one module.
+const nodeStarDepth = 8
+
+// indexNodeModuleExports indexes the exports of file under spec, then the
+// exports of every module it re-exports wholesale, each anchored in the file
+// that defines it. A module's own export wins over a re-exported one.
+func indexNodeModuleExports(spec, file string, declsByFQN map[string][]*callgraph.FunctionDecl, seen map[string]bool) {
+	if seen[file] || len(seen) > nodeStarDepth {
+		return
+	}
+	seen[file] = true
+	exports, err := callgraph.NodeModuleExports(file)
+	if err != nil {
+		log.Debug().Err(err).Str("file", file).Msg("node export index skipped a module")
+		return
+	}
+	for name, line := range exports.Lines {
+		key := spec + "." + name
+		if len(declsByFQN[key]) > 0 {
+			continue
+		}
+		declsByFQN[key] = []*callgraph.FunctionDecl{{
+			ID:       callgraph.FunctionID{Package: spec, Name: name},
+			FilePath: file, StartLine: line, EndLine: line,
+		}}
+	}
+	for _, from := range exports.StarFrom {
+		if target := resolveNodeRelative(file, from); target != "" {
+			indexNodeModuleExports(spec, target, declsByFQN, seen)
+		}
+	}
+}
+
+// resolveNodeRelative resolves a relative module specifier the way Node and
+// TypeScript output do: as written, with an added extension, or as a directory index.
+func resolveNodeRelative(from, spec string) string {
+	if !strings.HasPrefix(spec, ".") {
+		return "" // another package's exports are not this package's API
+	}
+	base := filepath.Join(filepath.Dir(from), filepath.FromSlash(spec))
+	candidates := []string{base}
+	for _, ext := range []string{".js", ".ts", ".mjs", ".cjs"} {
+		candidates = append(candidates, base+ext, filepath.Join(base, "index"+ext))
+	}
+	// tsc output keeps the .js the source imported, beside a .ts source of the same name.
+	if strings.HasSuffix(base, ".js") {
+		candidates = append(candidates, strings.TrimSuffix(base, ".js")+".ts")
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() && isNodeSourceFile(filepath.ToSlash(c)) {
+			return c
+		}
+	}
+	return ""
 }
 
 // nodeExportDecls resolves a rule api to the export that owns it: the api
