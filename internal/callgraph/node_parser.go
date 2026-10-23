@@ -521,10 +521,29 @@ func (p *NodeParser) extractDeclarations(node *sitter.Node, src []byte, filePath
 				return
 			}
 		}
+		if p.extractAssignedClass(node, src, filePath, packagePath, bindings, analysis) {
+			return
+		}
 	}
 	for i := 0; i < int(node.ChildCount()); i++ {
 		p.extractDeclarations(node.Child(i), src, filePath, packagePath, bindings, analysis)
 	}
+}
+
+// extractAssignedClass declares the methods of `module.exports = class Key {..}`
+// and `exports.Key = class {..}`: the class's own name, else the name it is
+// assigned to, owns them.
+func (p *NodeParser) extractAssignedClass(node *sitter.Node, src []byte, filePath, packagePath string, bindings nodeBindings, analysis *FileAnalysis) bool {
+	right := node.ChildByFieldName("right")
+	if right == nil || right.Type() != nodeClassExpression {
+		return false
+	}
+	bound, _ := nodeAssignmentTarget(node.ChildByFieldName("left"), src)
+	if bound == "" && right.ChildByFieldName("name") == nil {
+		return false
+	}
+	p.extractClassMethods(right, src, filePath, packagePath, bound, bindings, analysis)
+	return true
 }
 
 // nodeAssignedFunction returns the function an assignment stores, looking
