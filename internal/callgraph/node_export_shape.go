@@ -728,7 +728,7 @@ func (s *NodeShapes) Definition(file, name string, members []string) (string, in
 		return "", 0, false
 	}
 	if value := assignedExportPath(mod, name, members); value != nil {
-		if def, dm := s.definitionNode(mod, value, 0); def != nil {
+		if def, dm := s.definitionNode(mod, s.followExportAlias(mod, value, 0), 0); def != nil {
 			return dm.path, nodeLine(def), true
 		}
 	}
@@ -951,4 +951,25 @@ func (s *NodeShapes) Constructor(file string, line int) (int, bool) {
 		}
 	})
 	return found, found != 0
+}
+
+// followExportAlias follows `nacl.box.after = nacl.secretbox` to the value
+// assigned to nacl.secretbox when nacl is the exports object.
+func (s *NodeShapes) followExportAlias(m *nodeShapeModule, value *sitter.Node, depth int) *sitter.Node {
+	if value == nil || value.Type() != nodeMemberExpression || depth > nodeShapeDepth {
+		return value
+	}
+	base, path, ok := strings.Cut(value.Content(m.src), ".")
+	if !ok {
+		return value
+	}
+	aliases := nodeExportAliases(m.root, m.src)
+	if !aliases[base] && base != nodeCommonJSExportsObject {
+		return value
+	}
+	parts := strings.Split(path, ".")
+	if next := assignedExportPath(m, parts[0], parts[1:]); next != nil {
+		return s.followExportAlias(m, next, depth+1)
+	}
+	return value
 }

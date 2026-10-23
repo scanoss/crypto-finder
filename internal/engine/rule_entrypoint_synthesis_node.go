@@ -124,9 +124,11 @@ func (m *nodeMembers) anchorOne(api string, d *callgraph.FunctionDecl) *callgrap
 // build, the declaration named name in that source file.
 func (m *nodeMembers) graphDecl(file string, line int, name string) *callgraph.FunctionDecl {
 	if decls := m.byFile[filepath.Clean(file)]; len(decls) > 0 {
+		// Only a declaration that starts at the definition is it: a function
+		// that merely contains the line (a module IIFE) is not.
 		var best *callgraph.FunctionDecl
 		for _, d := range decls {
-			if d.StartLine <= line && line <= d.EndLine && (best == nil || d.EndLine-d.StartLine < best.EndLine-best.StartLine) {
+			if d.StartLine == line && (best == nil || d.EndLine-d.StartLine < best.EndLine-best.StartLine) {
 				best = d
 			}
 		}
