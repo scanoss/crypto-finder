@@ -340,6 +340,33 @@ func TestSynthesizeNodeMainExportWithoutExportsMap(t *testing.T) {
 	}
 }
 
+// Ids are assigned more than once per scan; a second pass keeps them.
+func TestAssignFindingIDsTwiceKeepsSharedLineIDs(t *testing.T) {
+	t.Parallel()
+
+	asset := func(api string) entities.CryptographicAsset {
+		return entities.CryptographicAsset{
+			StartLine: 2,
+			Rules:     []entities.RuleInfo{{ID: SyntheticEntryPointRuleID}},
+			Metadata:  map[string]string{"api": api},
+		}
+	}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath:            "ec.js",
+		CryptographicAssets: []entities.CryptographicAsset{asset("acme.ec.sign"), asset("acme.ec.verify")},
+	}}}
+
+	AssignFindingIDs(report)
+	first := []string{report.Findings[0].CryptographicAssets[0].FindingID, report.Findings[0].CryptographicAssets[1].FindingID}
+	AssignFindingIDs(report)
+
+	for i, a := range report.Findings[0].CryptographicAssets {
+		if a.FindingID != first[i] || a.ConditionedValue != "api:"+a.Metadata["api"] {
+			t.Errorf("%s: id %s -> %s, conditioned value %q", a.Metadata["api"], first[i], a.FindingID, a.ConditionedValue)
+		}
+	}
+}
+
 // Apis on their own lines, the Java and Python case, keep the id they always had.
 func TestMarkSyntheticVariantsKeepsIDsOfAPIsOnTheirOwnLines(t *testing.T) {
 	t.Parallel()

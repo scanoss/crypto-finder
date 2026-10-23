@@ -1040,10 +1040,14 @@ func markSharedLineAPIs(assets []entities.CryptographicAsset) {
 		if !isSyntheticEntryPointAsset(a) || len(apis[keyOf(a)]) < 2 {
 			continue
 		}
-		if a.ConditionedValue == "" {
-			a.ConditionedValue = "api:" + a.Metadata["api"]
-		} else {
-			a.ConditionedValue = "api:" + a.Metadata["api"] + "|" + a.ConditionedValue
+		tag := "api:" + a.Metadata["api"]
+		switch {
+		case a.ConditionedValue == tag || strings.HasPrefix(a.ConditionedValue, tag+"|"):
+			// Already marked: ids are assigned more than once per scan.
+		case a.ConditionedValue == "":
+			a.ConditionedValue = tag
+		default:
+			a.ConditionedValue = tag + "|" + a.ConditionedValue
 		}
 	}
 }
