@@ -84,13 +84,27 @@ contracts:
     arity: 2
     return: { type: "@libp2p/crypto.HMAC", confidence: high }
     role: factory
-  - method: "@libp2p/crypto/ciphers.create"
+  # 5.x publishes AES-GCM as the AES_GCM namespace of '/ciphers'; 0.22-3.x
+  # publish AES-CTR as `create` on '/aes' and on the root `aes` namespace.
+  - method: "@libp2p/crypto/ciphers.AES_GCM.create"
     arity: 0
     return: { type: "@libp2p/crypto.AESCipher", confidence: high }
     role: factory
-  - method: "@libp2p/crypto/ciphers.create"
+  - method: "@libp2p/crypto/ciphers.AES_GCM.create"
     arity: 1
     return: { type: "@libp2p/crypto.AESCipher", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto/aes.create"
+    arity: 2
+    return: { type: "@libp2p/crypto.AESCipher", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto.aes.create"
+    arity: 2
+    return: { type: "@libp2p/crypto.AESCipher", confidence: high }
+    role: factory
+  - method: "@libp2p/crypto.hmac.create"
+    arity: 2
+    return: { type: "@libp2p/crypto.HMAC", confidence: high }
     role: factory
   - method: "@libp2p/crypto.randomBytes"
     arity: 1
