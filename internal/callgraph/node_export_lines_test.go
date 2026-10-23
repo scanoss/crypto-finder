@@ -46,9 +46,13 @@ Object.defineProperty(exports, "Point", { enumerable: true, get: function () { r
 			name: "module.exports object",
 			file: "index.js",
 			src: `function sign() {}
-module.exports = { sign, verify: sign };
+module.exports = {
+  sign,
+  verify: sign,
+  hash (plain, options) {},
+};
 `,
-			want: map[string]int{"sign": 2, "verify": 2},
+			want: map[string]int{"sign": 3, "verify": 4, "hash": 5},
 		},
 		{
 			name: "TypeScript",
