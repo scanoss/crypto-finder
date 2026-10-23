@@ -77,62 +77,119 @@ func NodeModuleExports(filePath string) (*NodeExports, error) {
 			}
 			expr := stmt.NamedChild(0)
 			nodeCommonJSExportLines(expr, src, out.Lines)
-			nodeAliasExportLine(expr, src, aliases, out.Lines)
 			if from := nodeExportStarCall(expr, src); from != "" {
 				out.StarFrom = append(out.StarFrom, from)
 			}
 		}
 	}
+	nodeAliasExportLines(root, src, aliases, out.Lines)
 	return out, nil
 }
 
-// nodeExportAliases returns the module-level names bound to the exports object.
+// nodeExportAliases returns the names bound to the exports object anywhere in
+// the file: `var e = exports`, `module.exports = lib` (also inside a UMD guard),
+// and the parameter of an IIFE called with module.exports (tweetnacl's
+// `(function(nacl) {...})(module.exports)`).
 func nodeExportAliases(root *sitter.Node, src []byte) map[string]bool {
 	aliases := make(map[string]bool)
-	for i := 0; i < int(root.NamedChildCount()); i++ {
-		stmt := root.NamedChild(i)
-		switch stmt.Type() {
-		case nodeLexicalDeclaration, nodeVariableDeclaration:
-			for j := 0; j < int(stmt.NamedChildCount()); j++ {
-				d := stmt.NamedChild(j)
-				name, value := d.ChildByFieldName("name"), d.ChildByFieldName("value")
-				if name != nil && value != nil && isNodeExportsObject(value.Content(src)) {
-					aliases[name.Content(src)] = true
-				}
+	nodeWalk(root, func(n *sitter.Node) {
+		switch n.Type() {
+		case nodeVariableDeclarator:
+			name, value := n.ChildByFieldName("name"), n.ChildByFieldName("value")
+			if name != nil && value != nil && isNodeExportsObject(value.Content(src)) {
+				aliases[name.Content(src)] = true
 			}
-		case nodeExpressionStatement:
-			// module.exports = bls: the members later assigned to bls are exports.
-			if expr := stmt.NamedChild(0); expr != nil && expr.Type() == nodeAssignmentExpression {
-				left, right := expr.ChildByFieldName("left"), expr.ChildByFieldName("right")
-				if left != nil && right != nil && left.Content(src) == nodeModuleExportsTarget && right.Type() == goNodeIdentifier {
-					aliases[right.Content(src)] = true
-				}
+		case nodeAssignmentExpression:
+			left, right := n.ChildByFieldName("left"), n.ChildByFieldName("right")
+			if left != nil && right != nil && left.Content(src) == nodeModuleExportsTarget && right.Type() == goNodeIdentifier {
+				aliases[right.Content(src)] = true
+			}
+		case nodeCallExpression:
+			if param := nodeExportsIIFEParam(n, src); param != "" {
+				aliases[param] = true
 			}
 		}
-	}
+	})
 	return aliases
+}
+
+// nodeExportsIIFEParam returns the first parameter of an IIFE whose first
+// argument mentions module.exports.
+func nodeExportsIIFEParam(call *sitter.Node, src []byte) string {
+	fn, args := call.ChildByFieldName("function"), call.ChildByFieldName("arguments")
+	for fn != nil && fn.Type() == goNodeParenExpr && fn.NamedChildCount() > 0 {
+		fn = fn.NamedChild(0)
+	}
+	if fn == nil || args == nil || args.NamedChildCount() == 0 || (fn.Type() != nodeFunctionExpression && fn.Type() != nodeArrowFunction) {
+		return ""
+	}
+	if !strings.Contains(args.NamedChild(0).Content(src), nodeModuleExportsTarget) {
+		return ""
+	}
+	params := fn.ChildByFieldName("parameters")
+	if params == nil || params.NamedChildCount() == 0 || params.NamedChild(0).Type() != goNodeIdentifier {
+		return ""
+	}
+	return params.NamedChild(0).Content(src)
+}
+
+// nodeAliasExportLines records, anywhere in the file, `alias.name = v`,
+// `alias.name.sub = v` (as name) and the keys of `var alias = { ... }`.
+func nodeAliasExportLines(root *sitter.Node, src []byte, aliases map[string]bool, out map[string]int) {
+	if len(aliases) == 0 {
+		return
+	}
+	nodeWalk(root, func(n *sitter.Node) {
+		switch n.Type() {
+		case nodeAssignmentExpression:
+			if name := nodeAliasMember(n.ChildByFieldName("left"), src, aliases); name != "" {
+				if _, seen := out[name]; !seen {
+					out[name] = nodeLine(n)
+				}
+			}
+		case nodeVariableDeclarator:
+			name, value := n.ChildByFieldName("name"), n.ChildByFieldName("value")
+			if name != nil && value != nil && aliases[name.Content(src)] && value.Type() == nodeObjectLiteral {
+				nodeExportObjectLines(value, src, out)
+			}
+		}
+	})
+}
+
+// nodeAliasMember returns the member right after an alias at the base of a
+// member chain: "sjcl.cipher.aes" with alias sjcl gives "cipher".
+func nodeAliasMember(left *sitter.Node, src []byte, aliases map[string]bool) string {
+	member := ""
+	for left != nil && left.Type() == nodeMemberExpression {
+		if prop := left.ChildByFieldName("property"); prop != nil {
+			member = prop.Content(src)
+		}
+		obj := left.ChildByFieldName("object")
+		if obj != nil && obj.Type() == goNodeIdentifier {
+			if aliases[obj.Content(src)] {
+				return member
+			}
+			return ""
+		}
+		left = obj
+	}
+	return ""
+}
+
+func nodeWalk(n *sitter.Node, visit func(*sitter.Node)) {
+	stack := []*sitter.Node{n}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		visit(cur)
+		for i := int(cur.NamedChildCount()) - 1; i >= 0; i-- {
+			stack = append(stack, cur.NamedChild(i))
+		}
+	}
 }
 
 func isNodeExportsObject(text string) bool {
 	return text == nodeCommonJSExportsObject || text == nodeModuleExportsTarget
-}
-
-// nodeAliasExportLine records alias.name = value for an alias of the exports object.
-func nodeAliasExportLine(expr *sitter.Node, src []byte, aliases map[string]bool, out map[string]int) {
-	if expr.Type() != nodeAssignmentExpression || len(aliases) == 0 {
-		return
-	}
-	left := expr.ChildByFieldName("left")
-	if left == nil || left.Type() != nodeMemberExpression {
-		return
-	}
-	obj, prop := left.ChildByFieldName("object"), left.ChildByFieldName("property")
-	if obj == nil || prop == nil || obj.Type() != goNodeIdentifier || !aliases[obj.Content(src)] {
-		return
-	}
-	if _, seen := out[prop.Content(src)]; !seen {
-		out[prop.Content(src)] = nodeLine(expr)
-	}
 }
 
 // nodeStarExportSource returns the module of `export * from 'x'`.
