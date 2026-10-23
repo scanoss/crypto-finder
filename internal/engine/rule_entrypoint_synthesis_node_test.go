@@ -247,6 +247,31 @@ func TestSynthesizeNodeFactoryPackage(t *testing.T) {
 	}
 }
 
+// A module that exports its hash function as itself is the api of its specifier.
+func TestSynthesizeNodeModuleExportedAsItself(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json":        `{"name": "hash.js", "main": "lib/hash.js"}`,
+		"lib/hash.js":         "exports.sha256 = require('./hash/sha/256');\n",
+		"lib/hash/sha/256.js": "function SHA256() {}\nmodule.exports = SHA256;\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"hash.js/lib/hash/sha/256": "digest"})}); got != 1 {
+		t.Fatalf("synthesized = %d, want 1", got)
+	}
+	if a := syntheticAssets(result.Report)["lib/hash/sha/256.js hash.js/lib/hash/sha/256"]; a == nil || a.StartLine != 2 {
+		t.Errorf("assets = %v, want the module api at lib/hash/sha/256.js:2", syntheticAssets(result.Report))
+	}
+}
+
 // Node resolves main without its extension and as a directory index.
 func TestIsNodeMainFile(t *testing.T) {
 	t.Parallel()
