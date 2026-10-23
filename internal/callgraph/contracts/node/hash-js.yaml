@@ -179,3 +179,30 @@ contracts:
     arity: 1
     return: { type: "hash.js.HmacDigest", confidence: high }
     role: output
+
+  # Deep imports: each sha/<n> module IS the hasher constructor, and ripemd
+  # exports it as ripemd160. They return the same hasher types as the top-level factories.
+  - method: "hash.js/lib/hash/sha/1"
+    arity: 0
+    return: { type: "hash.js.SHA1", confidence: high }
+    role: factory
+  - method: "hash.js/lib/hash/sha/224"
+    arity: 0
+    return: { type: "hash.js.SHA224", confidence: high }
+    role: factory
+  - method: "hash.js/lib/hash/sha/256"
+    arity: 0
+    return: { type: "hash.js.SHA256", confidence: high }
+    role: factory
+  - method: "hash.js/lib/hash/sha/384"
+    arity: 0
+    return: { type: "hash.js.SHA384", confidence: high }
+    role: factory
+  - method: "hash.js/lib/hash/sha/512"
+    arity: 0
+    return: { type: "hash.js.SHA512", confidence: high }
+    role: factory
+  - method: "hash.js/lib/hash/ripemd.ripemd160"
+    arity: 0
+    return: { type: "hash.js.RIPEMD160", confidence: high }
+    role: factory

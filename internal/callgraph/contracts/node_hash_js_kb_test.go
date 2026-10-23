@@ -103,13 +103,20 @@ func TestLoadEmbeddedNodeHashJS(t *testing.T) {
 		t.Errorf("ContractsFor(sha256, 7) resolved %d contracts; that arity does not exist", len(got))
 	}
 
+	// Deep imports of the hasher modules, as the rules name them.
+	for _, want := range []string{"hash.js/lib/hash/sha/256#0", "hash.js/lib/hash/sha/512#0", "hash.js/lib/hash/ripemd.ripemd160#0"} {
+		if _, ok := kb.Contracts[want]; !ok {
+			t.Errorf("contract %q missing from the embedded Node KB", want)
+		}
+	}
+
 	n := 0
 	for k := range kb.Contracts {
-		if strings.HasPrefix(k, "hash.js.") {
+		if strings.HasPrefix(k, "hash.js.") || strings.HasPrefix(k, "hash.js/") {
 			n++
 		}
 	}
-	if n != 36 {
-		t.Errorf("hash.js contributes %d keys, want 36", n)
+	if n != 42 {
+		t.Errorf("hash.js contributes %d keys, want 42", n)
 	}
 }
