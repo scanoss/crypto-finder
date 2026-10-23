@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -716,4 +717,238 @@ func NodeCodeNames(path string) (map[string]bool, error) {
 		}
 	})
 	return names, nil
+}
+
+// Definition returns where the value at name.members... of file's exports is
+// defined: the function, method or class a consumer's call reaches. ok is
+// false when the path cannot be followed statically.
+func (s *NodeShapes) Definition(file, name string, members []string) (string, int, bool) {
+	mod := s.module(file)
+	if mod == nil {
+		return "", 0, false
+	}
+	if value := assignedExportPath(mod, name, members); value != nil {
+		if def, dm := s.definitionNode(mod, value, 0); def != nil {
+			return dm.path, nodeLine(def), true
+		}
+	}
+	value, vm := s.exportValue(mod, name, 0)
+	for _, member := range members {
+		if value == nil {
+			return "", 0, false
+		}
+		value, vm = s.memberValue(vm, value, member, 0)
+	}
+	value, vm = s.definitionNode(vm, value, 0)
+	if value == nil {
+		return "", 0, false
+	}
+	return vm.path, nodeLine(value), true
+}
+
+// definitionNode follows bindings and re-export requires to the node that
+// defines a value.
+func (s *NodeShapes) definitionNode(m *nodeShapeModule, n *sitter.Node, depth int) (*sitter.Node, *nodeShapeModule) {
+	n = nodeUnwrapValue(n)
+	if n == nil || depth > nodeShapeDepth {
+		return nil, nil
+	}
+	switch n.Type() {
+	case goNodeIdentifier:
+		value, vm := s.binding(m, n, n.Content(m.src), depth)
+		if value == nil {
+			return nil, nil
+		}
+		return s.definitionNode(vm, value, depth+1)
+	case nodeCallExpression:
+		if target := s.requiredModule(m, n); target != nil {
+			value, vm := s.exportValue(target, nodeDefaultExport, depth+1)
+			return s.definitionNode(vm, value, depth+1)
+		}
+	}
+	return n, m
+}
+
+func (s *NodeShapes) requiredModule(m *nodeShapeModule, call *sitter.Node) *nodeShapeModule {
+	fn, args := call.ChildByFieldName("function"), call.ChildByFieldName("arguments")
+	if fn == nil || args == nil || fn.Content(m.src) != nodeRequireFunction || args.NamedChildCount() != 1 ||
+		args.NamedChild(0).Type() != nodeStringNode {
+		return nil
+	}
+	return s.relative(m, unquoteNodeString(args.NamedChild(0).Content(m.src)))
+}
+
+// memberValue returns the node that member of value is bound to.
+func (s *NodeShapes) memberValue(m *nodeShapeModule, n *sitter.Node, member string, depth int) (*sitter.Node, *nodeShapeModule) {
+	n = nodeUnwrapValue(n)
+	if n == nil || depth > nodeShapeDepth {
+		return nil, nil
+	}
+	switch {
+	case n.Type() == goNodeIdentifier:
+		value, vm := s.binding(m, n, n.Content(m.src), depth)
+		if value != nil && nodeIsFunction(value) {
+			return s.functionMember(vm, value, n.Content(m.src), member)
+		}
+		return s.memberValue(vm, value, member, depth+1)
+	case n.Type() == nodeObjectLiteral:
+		return s.objectMember(m, n, member, depth)
+	case nodeIsFunction(n):
+		return s.functionMember(m, n, "", member)
+	case n.Type() == nodeCallExpression:
+		return s.callMember(m, n, member, depth)
+	}
+	return nil, nil
+}
+
+func (s *NodeShapes) objectMember(m *nodeShapeModule, obj *sitter.Node, member string, depth int) (*sitter.Node, *nodeShapeModule) {
+	for i := 0; i < int(obj.NamedChildCount()); i++ {
+		if value, vm := s.objectEntryMember(m, obj.NamedChild(i), member, depth); value != nil {
+			return value, vm
+		}
+	}
+	return nil, nil
+}
+
+func (s *NodeShapes) objectEntryMember(m *nodeShapeModule, c *sitter.Node, member string, depth int) (*sitter.Node, *nodeShapeModule) {
+	switch c.Type() {
+	case nodeShorthandProperty:
+		if c.Content(m.src) == member {
+			return s.binding(m, c, member, depth)
+		}
+	case nodePair:
+		if key := c.ChildByFieldName(nodeFieldKey); key != nil && unquoteNodeString(key.Content(m.src)) == member {
+			return c.ChildByFieldName("value"), m
+		}
+	case nodeMethodDefinition:
+		if key := c.ChildByFieldName(nodeFieldName); key != nil && unquoteNodeString(key.Content(m.src)) == member {
+			return c, m
+		}
+	case nodeSpreadElement:
+		if c.NamedChildCount() > 0 {
+			return s.memberValue(m, c.NamedChild(0), member, depth+1)
+		}
+	}
+	return nil, nil
+}
+
+func (s *NodeShapes) callMember(m *nodeShapeModule, call *sitter.Node, member string, depth int) (*sitter.Node, *nodeShapeModule) {
+	fn, args := call.ChildByFieldName("function"), call.ChildByFieldName("arguments")
+	if fn == nil || args == nil {
+		return nil, nil
+	}
+	switch fn.Content(m.src) {
+	case nodeObjectFreeze:
+		if args.NamedChildCount() == 1 {
+			return s.memberValue(m, args.NamedChild(0), member, depth+1)
+		}
+		return nil, nil
+	case nodeRequireFunction:
+		if target := s.requiredModule(m, call); target != nil {
+			if value, vm := s.exportValue(target, member, depth+1); value != nil {
+				return value, vm
+			}
+			value, vm := s.exportValue(target, nodeDefaultExport, depth+1)
+			return s.memberValue(vm, value, member, depth+1)
+		}
+		return nil, nil
+	}
+	callee, cm := s.callee(m, fn, depth)
+	if callee == nil {
+		return nil, nil
+	}
+	body := callee.ChildByFieldName("body")
+	if body == nil {
+		return nil, nil
+	}
+	if body.Type() != nodeStatementBlock {
+		return s.memberValue(cm, body, member, depth+1)
+	}
+	var value *sitter.Node
+	var vm *nodeShapeModule
+	nodeWalkSkippingFunctions(body, func(n *sitter.Node) {
+		if value == nil && n.Type() == goNodeReturnStatement && n.NamedChildCount() > 0 {
+			value, vm = s.memberValue(cm, n.NamedChild(0), member, depth+1)
+		}
+	})
+	return value, vm
+}
+
+// functionMember finds a class method or a `Name.member` / `Name.prototype.member`
+// assignment.
+func (s *NodeShapes) functionMember(m *nodeShapeModule, fn *sitter.Node, name, member string) (*sitter.Node, *nodeShapeModule) {
+	if n := fn.ChildByFieldName(nodeFieldName); n != nil {
+		name = n.Content(m.src)
+	}
+	if body := fn.ChildByFieldName("body"); body != nil && body.Type() == nodeClassBody {
+		for i := 0; i < int(body.NamedChildCount()); i++ {
+			if nodeClassMemberName(m, body.NamedChild(i)) == member {
+				return body.NamedChild(i), m
+			}
+		}
+	}
+	if name == "" {
+		return nil, nil
+	}
+	return nodeAssignedValue(m, name+"."+member, name+"."+nodePrototypeMember+"."+member), m
+}
+
+// nodeAssignedValue returns the right side of the first assignment to one of targets.
+func nodeAssignedValue(m *nodeShapeModule, targets ...string) *sitter.Node {
+	var found *sitter.Node
+	nodeWalk(m.root, func(n *sitter.Node) {
+		if found != nil || n.Type() != nodeAssignmentExpression {
+			return
+		}
+		if left := n.ChildByFieldName("left"); left != nil && slices.Contains(targets, left.Content(m.src)) {
+			found = n.ChildByFieldName("right")
+		}
+	})
+	return found
+}
+
+// assignedExportPath finds `exports.name.m1 = v`, or the same through an alias
+// of the exports object (`var nacl = exports; nacl.box.before = v`).
+func assignedExportPath(m *nodeShapeModule, name string, members []string) *sitter.Node {
+	suffix := strings.Join(append([]string{name}, members...), ".")
+	aliases := nodeExportAliases(m.root, m.src)
+	aliases[nodeCommonJSExportsObject], aliases[nodeModuleExportsTarget] = true, true
+	var found *sitter.Node
+	nodeWalk(m.root, func(n *sitter.Node) {
+		if found != nil || n.Type() != nodeAssignmentExpression {
+			return
+		}
+		left := n.ChildByFieldName("left")
+		if left == nil {
+			return
+		}
+		base, rest, ok := strings.Cut(left.Content(m.src), "."+suffix)
+		if ok && rest == "" && aliases[base] {
+			found = n.ChildByFieldName("right")
+		}
+	})
+	return found
+}
+
+// Constructor returns the line of the `constructor` of the class defined at
+// file:line, the function `new` runs.
+func (s *NodeShapes) Constructor(file string, line int) (int, bool) {
+	mod := s.module(file)
+	if mod == nil {
+		return 0, false
+	}
+	found := 0
+	nodeWalk(mod.root, func(n *sitter.Node) {
+		if found != 0 || nodeLine(n) != line || (n.Type() != nodeClassDeclaration && n.Type() != nodeClassExpression) {
+			return
+		}
+		if body := n.ChildByFieldName("body"); body != nil {
+			for i := 0; i < int(body.NamedChildCount()); i++ {
+				if c := body.NamedChild(i); c.Type() == nodeMethodDefinition && nodeClassMemberName(mod, c) == "constructor" {
+					found = nodeLine(c)
+				}
+			}
+		}
+	})
+	return found, found != 0
 }
