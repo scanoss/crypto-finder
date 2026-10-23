@@ -93,13 +93,20 @@ func TestLoadEmbeddedNodeEthers(t *testing.T) {
 		}
 	}
 
+	// The constructor keyed on the bare class name, as the rules name it.
+	for _, want := range []string{"ethers.SigningKey#1"} {
+		if _, ok := kb.Contracts[want]; !ok {
+			t.Errorf("contract %q missing from the embedded Node KB", want)
+		}
+	}
+
 	n := 0
 	for k := range kb.Contracts {
 		if strings.HasPrefix(k, "ethers.") {
 			n++
 		}
 	}
-	if n != 27 {
-		t.Errorf("ethers contributes %d keys, want 27", n)
+	if n != 28 {
+		t.Errorf("ethers contributes %d keys, want 28", n)
 	}
 }

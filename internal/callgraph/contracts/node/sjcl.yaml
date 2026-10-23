@@ -48,6 +48,11 @@ contracts:
     arity: 1
     return: { type: "sjcl.cipher.aes", confidence: high }
     role: factory
+  # The rules name the class itself; the same constructors under that key.
+  - method: "sjcl.cipher.aes"
+    arity: 1
+    return: { type: "sjcl.cipher.aes", confidence: high }
+    role: factory
   - method: "sjcl.cipher.aes.encrypt"
     arity: 1
     return: { type: "Array", confidence: high }
@@ -63,6 +68,14 @@ contracts:
     return: { type: "sjcl.hash.sha256", confidence: high }
     role: factory
   - method: "sjcl.hash.sha256.<init>"
+    arity: 1
+    return: { type: "sjcl.hash.sha256", confidence: high }
+    role: factory
+  - method: "sjcl.hash.sha256"
+    arity: 0
+    return: { type: "sjcl.hash.sha256", confidence: high }
+    role: factory
+  - method: "sjcl.hash.sha256"
     arity: 1
     return: { type: "sjcl.hash.sha256", confidence: high }
     role: factory
@@ -89,6 +102,14 @@ contracts:
     return: { type: "sjcl.misc.hmac", confidence: high }
     role: factory
   - method: "sjcl.misc.hmac.<init>"
+    arity: 2
+    return: { type: "sjcl.misc.hmac", confidence: high }
+    role: factory
+  - method: "sjcl.misc.hmac"
+    arity: 1
+    return: { type: "sjcl.misc.hmac", confidence: high }
+    role: factory
+  - method: "sjcl.misc.hmac"
     arity: 2
     return: { type: "sjcl.misc.hmac", confidence: high }
     role: factory

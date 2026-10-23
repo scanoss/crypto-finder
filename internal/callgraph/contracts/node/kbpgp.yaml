@@ -86,3 +86,9 @@ contracts:
     arity: 1
     return: { type: "kbpgp.keyring.KeyRing", confidence: high }
     role: config
+
+  # The constructor keyed on the bare class name, as the rules name it.
+  - method: "kbpgp.keyring.KeyRing"
+    arity: 0
+    return: { type: "kbpgp.keyring.KeyRing", confidence: high }
+    role: factory

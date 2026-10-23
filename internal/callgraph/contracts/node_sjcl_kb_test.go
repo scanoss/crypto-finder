@@ -26,6 +26,10 @@ func TestLoadEmbeddedNodeSJCL(t *testing.T) {
 	}
 	for _, w := range []want{
 		{"sjcl.cipher.aes.<init>", 1, "sjcl.cipher.aes", "factory"},
+		// The rules name the class without <init>.
+		{"sjcl.cipher.aes", 1, "sjcl.cipher.aes", "factory"},
+		{"sjcl.hash.sha256", 0, "sjcl.hash.sha256", "factory"},
+		{"sjcl.misc.hmac", 2, "sjcl.misc.hmac", "factory"},
 		{"sjcl.cipher.aes.encrypt", 1, "Array", "operation"},
 		{"sjcl.cipher.aes.decrypt", 1, "Array", "operation"},
 		{"sjcl.hash.sha256.<init>", 0, "sjcl.hash.sha256", "factory"},
@@ -87,7 +91,7 @@ func TestLoadEmbeddedNodeSJCL(t *testing.T) {
 			n++
 		}
 	}
-	if n != 50 {
-		t.Errorf("sjcl contributes %d keys, want 50", n)
+	if n != 55 {
+		t.Errorf("sjcl contributes %d keys, want 55", n)
 	}
 }

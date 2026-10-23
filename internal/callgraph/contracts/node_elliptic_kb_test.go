@@ -103,6 +103,13 @@ func TestLoadEmbeddedNodeElliptic(t *testing.T) {
 	}
 
 	// Separate coordinates implementing the same curves must never be keyed here.
+	// The constructor keyed on the bare class name, as the rules name it.
+	for _, want := range []string{"elliptic.ec#1"} {
+		if _, ok := kb.Contracts[want]; !ok {
+			t.Errorf("contract %q missing from the embedded Node KB", want)
+		}
+	}
+
 	assertLibraryOwnsItsKeys(t, kb, "elliptic", "elliptic.")
 
 	n := 0
@@ -111,7 +118,7 @@ func TestLoadEmbeddedNodeElliptic(t *testing.T) {
 			n++
 		}
 	}
-	if n != 31 {
-		t.Errorf("elliptic contributes %d keys, want 31", n)
+	if n != 32 {
+		t.Errorf("elliptic contributes %d keys, want 32", n)
 	}
 }

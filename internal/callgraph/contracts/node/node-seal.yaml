@@ -635,3 +635,13 @@ contracts:
     arity: 2
     return: { type: "node-seal.PlainText", confidence: high }
     role: operation
+
+  # The KeyGenerator factory keyed as the rules name it: (context) or (context, secretKey).
+  - method: "node-seal.KeyGenerator"
+    arity: 1
+    return: { type: "node-seal.KeyGenerator", confidence: high }
+    role: factory
+  - method: "node-seal.KeyGenerator"
+    arity: 2
+    return: { type: "node-seal.KeyGenerator", confidence: high }
+    role: factory

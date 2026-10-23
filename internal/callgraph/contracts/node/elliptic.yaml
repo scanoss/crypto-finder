@@ -180,3 +180,9 @@ contracts:
     arity: 4
     return: { type: "number", confidence: high }
     role: operation
+
+  # The constructor keyed on the bare class name, as the rules name it.
+  - method: "elliptic.ec"
+    arity: 1
+    return: { type: "elliptic.ec", confidence: high }
+    role: factory
