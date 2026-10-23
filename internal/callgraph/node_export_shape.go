@@ -20,6 +20,7 @@ const (
 	nodeNamespaceImport = "namespace_import"
 	nodeAwaitExpression = "await_expression"
 	nodeDefaultExport   = "default"
+	nodeObjectFreeze    = "Object.freeze"
 	nodeProgram         = "program"
 	nodeFieldKey        = "key"
 	nodeFieldName       = "name"
@@ -192,7 +193,7 @@ func (s *NodeShapes) callShape(m *nodeShapeModule, call *sitter.Node, depth int)
 		return open()
 	}
 	switch fn.Content(m.src) {
-	case "Object.freeze":
+	case nodeObjectFreeze:
 		if args.NamedChildCount() != 1 {
 			return open()
 		}
