@@ -434,11 +434,12 @@ func nodeCommonJSExportLines(expr *sitter.Node, src []byte, out map[string]int) 
 	}
 }
 
-// tsc's `exports.x = void 0` forward declarations are not values and are skipped.
+// tsc's `exports.x = void 0` forward declarations, also chained
+// (`exports.a = exports.b = void 0`), are not values and are skipped.
 func nodeCommonJSAssignmentLines(expr *sitter.Node, src []byte, out map[string]int) {
 	left, right := expr.ChildByFieldName("left"), expr.ChildByFieldName("right")
 	if left == nil || right == nil || left.Type() != nodeMemberExpression ||
-		strings.HasPrefix(strings.TrimSpace(right.Content(src)), "void ") {
+		nodeForwardDeclaration(right, src) {
 		return
 	}
 	target := left.Content(src)
@@ -480,4 +481,13 @@ func nodeExportObjectLines(object *sitter.Node, src []byte, out map[string]int) 
 			}
 		}
 	}
+}
+
+// nodeForwardDeclaration reports a value that is `void 0` at the end of an
+// assignment chain: tsc's forward declaration of its exports.
+func nodeForwardDeclaration(value *sitter.Node, src []byte) bool {
+	for value != nil && value.Type() == nodeAssignmentExpression {
+		value = value.ChildByFieldName("right")
+	}
+	return value != nil && strings.HasPrefix(strings.TrimSpace(value.Content(src)), "void ")
 }
