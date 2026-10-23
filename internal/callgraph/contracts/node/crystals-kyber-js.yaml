@@ -105,3 +105,17 @@ contracts:
     arity: 1
     return: { type: "Uint8Array", confidence: high }
     role: operation
+
+  # The constructors keyed on the bare class name, as the rules name them.
+  - method: "crystals-kyber-js.MlKem512"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.MlKem768"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory
+  - method: "crystals-kyber-js.MlKem1024"
+    arity: 0
+    return: { type: "crystals-kyber-js.MlKemBase", confidence: high }
+    role: factory

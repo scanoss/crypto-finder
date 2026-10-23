@@ -737,3 +737,30 @@ contracts:
     arity: 1
     return: { type: "jose.ProtectedHeader", confidence: high }
     role: output
+
+  # The builders keyed on the bare class name, as the rules name them; the
+  # payload is optional since 5.x.
+  - method: "jose.SignJWT"
+    arity: 0
+    return: { type: "jose.SignJWT", confidence: high }
+    role: factory
+  - method: "jose.SignJWT"
+    arity: 1
+    return: { type: "jose.SignJWT", confidence: high }
+    role: factory
+  - method: "jose.EncryptJWT"
+    arity: 0
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: factory
+  - method: "jose.EncryptJWT"
+    arity: 1
+    return: { type: "jose.EncryptJWT", confidence: high }
+    role: factory
+  - method: "jose.UnsecuredJWT"
+    arity: 0
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: factory
+  - method: "jose.UnsecuredJWT"
+    arity: 1
+    return: { type: "jose.UnsecuredJWT", confidence: high }
+    role: factory

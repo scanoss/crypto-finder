@@ -88,6 +88,13 @@ func TestLoadEmbeddedNodeCrystalsKyber(t *testing.T) {
 	// only while those siblings have no KB of their own, and adding one is the
 	// ordinary way this catalog grows. Adding liboqs-node.yaml failed this test
 	// though crystals-kyber-js had not changed.
+	// The constructors keyed on the bare class name, as the rules name them.
+	for _, want := range []string{"crystals-kyber-js.MlKem512#0", "crystals-kyber-js.MlKem768#0", "crystals-kyber-js.MlKem1024#0"} {
+		if _, ok := kb.Contracts[want]; !ok {
+			t.Errorf("contract %q missing from the embedded Node KB", want)
+		}
+	}
+
 	assertLibraryOwnsItsKeys(t, kb, "crystals-kyber-js", "crystals-kyber-js.")
 
 	n := 0
@@ -96,7 +103,7 @@ func TestLoadEmbeddedNodeCrystalsKyber(t *testing.T) {
 			n++
 		}
 	}
-	if n != 18 {
-		t.Errorf("crystals-kyber-js contributes %d keys, want 18", n)
+	if n != 21 {
+		t.Errorf("crystals-kyber-js contributes %d keys, want 21", n)
 	}
 }

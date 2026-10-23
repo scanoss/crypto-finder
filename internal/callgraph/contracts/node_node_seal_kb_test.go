@@ -63,6 +63,13 @@ func TestLoadEmbeddedNodeSeal(t *testing.T) {
 		}
 	}
 
+	// The KeyGenerator factory keyed as the rules name it.
+	for _, want := range []string{"node-seal.KeyGenerator#1", "node-seal.KeyGenerator#2"} {
+		if _, ok := kb.Contracts[want]; !ok {
+			t.Errorf("contract %q missing from the embedded Node KB", want)
+		}
+	}
+
 	assertLibraryOwnsItsKeys(t, kb, "node-seal", "node-seal")
 
 	n := 0
@@ -71,7 +78,7 @@ func TestLoadEmbeddedNodeSeal(t *testing.T) {
 			n++
 		}
 	}
-	if n != 147 {
-		t.Errorf("node-seal contributes %d keys, want 147", n)
+	if n != 149 {
+		t.Errorf("node-seal contributes %d keys, want 149", n)
 	}
 }

@@ -70,4 +70,59 @@ contracts:
     return: { type: builtins.object, confidence: high }
     role: operation
 
+  # The same constructors keyed on the bare class name, as the rules name them;
+  # CreateKey and GenerateRandom take an optional input.
+  - method: "@aws-sdk/client-kms.CreateKeyCommand"
+    arity: 0
+    return: { type: "@aws-sdk/client-kms.CreateKeyCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.CreateKeyCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.CreateKeyCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.DecryptCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.DecryptCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.DeriveSharedSecretCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.DeriveSharedSecretCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.EncryptCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.EncryptCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.GenerateDataKeyCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.GenerateDataKeyCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.GenerateMacCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.GenerateMacCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.GenerateRandomCommand"
+    arity: 0
+    return: { type: "@aws-sdk/client-kms.GenerateRandomCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.GenerateRandomCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.GenerateRandomCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.GetPublicKeyCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.GetPublicKeyCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.SignCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.SignCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.VerifyCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.VerifyCommand", confidence: high }
+    role: factory
+  - method: "@aws-sdk/client-kms.VerifyMacCommand"
+    arity: 1
+    return: { type: "@aws-sdk/client-kms.VerifyMacCommand", confidence: high }
+    role: factory
+
 hierarchy: {}

@@ -99,6 +99,13 @@ func TestLoadEmbeddedNodeKbpgp(t *testing.T) {
 		}
 	}
 
+	// The constructor keyed on the bare class name, as the rules name it.
+	for _, want := range []string{"kbpgp.keyring.KeyRing#0"} {
+		if _, ok := kb.Contracts[want]; !ok {
+			t.Errorf("contract %q missing from the embedded Node KB", want)
+		}
+	}
+
 	assertLibraryOwnsItsKeys(t, kb, "kbpgp", "kbpgp.")
 
 	n := 0
@@ -107,7 +114,7 @@ func TestLoadEmbeddedNodeKbpgp(t *testing.T) {
 			n++
 		}
 	}
-	if n != 13 {
-		t.Errorf("kbpgp contributes %d keys, want 13", n)
+	if n != 14 {
+		t.Errorf("kbpgp contributes %d keys, want 14", n)
 	}
 }

@@ -129,13 +129,20 @@ func TestLoadEmbeddedNodeJose(t *testing.T) {
 		t.Errorf("ContractsFor(jwtVerify, 9) resolved %d contracts; that arity does not exist", len(got))
 	}
 
+	// The builders keyed on the bare class name, as the rules name them.
+	for _, want := range []string{"jose.SignJWT#0", "jose.EncryptJWT#1", "jose.UnsecuredJWT#0"} {
+		if _, ok := kb.Contracts[want]; !ok {
+			t.Errorf("contract %q missing from the embedded Node KB", want)
+		}
+	}
+
 	n := 0
 	for k := range kb.Contracts {
 		if strings.HasPrefix(k, "jose.") {
 			n++
 		}
 	}
-	if n != 174 {
-		t.Errorf("jose contributes %d keys, want 174", n)
+	if n != 180 {
+		t.Errorf("jose contributes %d keys, want 180", n)
 	}
 }
