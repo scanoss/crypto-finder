@@ -471,6 +471,216 @@ contracts:
       type: java.security.spec.EncodedKeySpec
       confidence: high
 
+  # --- javax.crypto.KEM (JDK 21+, JEP 452) ---
+  # Nested classes use the dotted owner.Nested form the Java parser produces
+  # (javaNestedTypeName), the same spelling aws-kms.yaml uses for
+  # EncryptRequest.Builder. The algorithm string of getInstance selects the
+  # KEM (for example "ML-KEM", "ML-KEM-768" on JDK 24+, or a provider name
+  # such as "DHKEM"); it is recorded only on these new entries, so the
+  # existing getInstance contracts keep their shape.
+  - method: javax.crypto.KEM.getInstance
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: javax.crypto.KEM
+    return:
+      type: javax.crypto.KEM
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # getInstance(String, Provider) and getInstance(String, String) share arity 2.
+  - method: javax.crypto.KEM.getInstance
+    arity: 2
+    return:
+      type: javax.crypto.KEM
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 1
+        name: provider
+        role: metadata-contributing
+        contributes: { property: provider, derivation: argument_value }
+
+  - method: javax.crypto.KEM.getAlgorithm
+    arity: 0
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+
+  # newEncapsulator(PublicKey), (PublicKey, SecureRandom),
+  # (PublicKey, AlgorithmParameterSpec, SecureRandom)
+  - method: javax.crypto.KEM.newEncapsulator
+    arity: 1
+    parameter_types: [java.security.PublicKey]
+    canonical_return_type: javax.crypto.KEM.Encapsulator
+    return:
+      type: javax.crypto.KEM.Encapsulator
+      confidence: high
+    role: factory
+
+  - method: javax.crypto.KEM.newEncapsulator
+    arity: 2
+    parameter_types: [java.security.PublicKey, java.security.SecureRandom]
+    canonical_return_type: javax.crypto.KEM.Encapsulator
+    return:
+      type: javax.crypto.KEM.Encapsulator
+      confidence: high
+    role: factory
+
+  - method: javax.crypto.KEM.newEncapsulator
+    arity: 3
+    parameter_types: [java.security.PublicKey, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom]
+    canonical_return_type: javax.crypto.KEM.Encapsulator
+    return:
+      type: javax.crypto.KEM.Encapsulator
+      confidence: high
+    role: factory
+
+  # newDecapsulator(PrivateKey), (PrivateKey, AlgorithmParameterSpec)
+  - method: javax.crypto.KEM.newDecapsulator
+    arity: 1
+    parameter_types: [java.security.PrivateKey]
+    canonical_return_type: javax.crypto.KEM.Decapsulator
+    return:
+      type: javax.crypto.KEM.Decapsulator
+      confidence: high
+    role: factory
+
+  - method: javax.crypto.KEM.newDecapsulator
+    arity: 2
+    parameter_types: [java.security.PrivateKey, java.security.spec.AlgorithmParameterSpec]
+    canonical_return_type: javax.crypto.KEM.Decapsulator
+    return:
+      type: javax.crypto.KEM.Decapsulator
+      confidence: high
+    role: factory
+
+  # Encapsulator.encapsulate() and encapsulate(from, to, algorithm): the
+  # three-argument form names the algorithm of the derived SecretKey
+  # (for example "AES"), not the KEM.
+  - method: javax.crypto.KEM.Encapsulator.encapsulate
+    arity: 0
+    parameter_types: []
+    canonical_return_type: javax.crypto.KEM.Encapsulated
+    return:
+      type: javax.crypto.KEM.Encapsulated
+      confidence: high
+    role: operation
+
+  - method: javax.crypto.KEM.Encapsulator.encapsulate
+    arity: 3
+    parameter_types: [int, int, java.lang.String]
+    canonical_return_type: javax.crypto.KEM.Encapsulated
+    return:
+      type: javax.crypto.KEM.Encapsulated
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: algorithm
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+
+  - method: javax.crypto.KEM.Encapsulator.secretSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+
+  - method: javax.crypto.KEM.Encapsulator.encapsulationSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+
+  # Encapsulated(SecretKey, byte[], byte[]) and its accessors.
+  - method: javax.crypto.KEM.Encapsulated.<init>
+    arity: 3
+    parameter_types: [javax.crypto.SecretKey, "byte[]", "byte[]"]
+    canonical_return_type: javax.crypto.KEM.Encapsulated
+    return:
+      type: javax.crypto.KEM.Encapsulated
+      confidence: high
+    role: factory
+
+  - method: javax.crypto.KEM.Encapsulated.key
+    arity: 0
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: output
+
+  - method: javax.crypto.KEM.Encapsulated.encapsulation
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  - method: javax.crypto.KEM.Encapsulated.params
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  # Decapsulator.decapsulate(byte[]) and decapsulate(byte[], from, to, algorithm)
+  - method: javax.crypto.KEM.Decapsulator.decapsulate
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: operation
+
+  - method: javax.crypto.KEM.Decapsulator.decapsulate
+    arity: 4
+    parameter_types: ["byte[]", int, int, java.lang.String]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: operation
+    parameters:
+      - index: 3
+        name: algorithm
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+
+  - method: javax.crypto.KEM.Decapsulator.secretSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+
+  - method: javax.crypto.KEM.Decapsulator.encapsulationSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+
+  # NamedParameterSpec(String): the name selects the algorithm or parameter
+  # set ("X25519", "Ed448", and on JDK 24+ "ML-KEM-768", "ML-DSA-65"). The
+  # JDK 24 static fields ML_KEM_512/768/1024 and ML_DSA_44/65/87 are field
+  # reads, which this KB cannot contract. Returns the base spec type like the
+  # other spec constructors above so KeyPairGenerator.initialize(spec) joins.
+  - method: java.security.spec.NamedParameterSpec.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.spec.NamedParameterSpec
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: stdName
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+
 hierarchy:
   javax.net.ssl.SSLContext:
     - java.lang.Object
@@ -564,4 +774,18 @@ hierarchy:
   java.security.spec.KeySpec:
     - java.lang.Object
   java.security.spec.AlgorithmParameterSpec:
+    - java.lang.Object
+
+  # javax.crypto.KEM (JDK 21+) and its nested result/engine classes
+  javax.crypto.KEM:
+    - java.lang.Object
+  javax.crypto.KEM.Encapsulator:
+    - java.lang.Object
+  javax.crypto.KEM.Decapsulator:
+    - java.lang.Object
+  javax.crypto.KEM.Encapsulated:
+    - java.lang.Object
+  java.security.spec.NamedParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  java.lang.String:
     - java.lang.Object
