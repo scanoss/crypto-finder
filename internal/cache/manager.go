@@ -21,11 +21,14 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,6 +43,8 @@ import (
 const (
 	metadataFileName = ".cache-meta.json"
 	manifestFileName = "manifest.json"
+	indexFileName    = "index.json"
+	profilesDirName  = "profiles"
 	tempSuffix       = ".tmp"
 	lockSuffix       = ".lock"
 )
@@ -89,11 +94,129 @@ func (m *Manager) SetMaxStaleCacheAge(maxAge time.Duration) {
 	m.maxStaleCacheAge = maxAge
 }
 
+// rulesetRequest names one cached ruleset: the full ruleset of a version,
+// or the subset a profile keeps.
+type rulesetRequest struct {
+	name    string
+	version string
+	// path is the cache directory of this ruleset.
+	path string
+	// profile is the hash of the profile a filtered ruleset was reduced
+	// with; empty for the full ruleset.
+	profile string
+	// fetch downloads the ruleset tarball and its manifest.
+	fetch func(ctx context.Context) ([]byte, *api.Manifest, error)
+}
+
 // GetRulesetPath returns the path to a cached ruleset
 // If the ruleset is not cached or expired, it downloads it first.
 // If noCache is enabled, it always downloads a fresh copy and updates the cache.
 func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (string, error) {
-	rulesetPath := m.getRulesetCachePath(name, version)
+	return m.resolve(ctx, rulesetRequest{
+		name:    name,
+		version: version,
+		path:    m.getRulesetCachePath(name, version),
+		fetch: func(ctx context.Context) ([]byte, *api.Manifest, error) {
+			return m.apiClient.DownloadRuleset(ctx, name, version)
+		},
+	})
+}
+
+// GetFilteredRulesetPath returns the path to the cached subset of a ruleset
+// that profile keeps, downloading it first when it is not cached or has
+// expired. Each profile has its own cache directory, named by the profile
+// hash, with the TTL, locking and stale fallback of the full ruleset. Any
+// failure is returned, so the caller can fall back to GetRulesetPath.
+func (m *Manager) GetFilteredRulesetPath(ctx context.Context, name, version string, profile api.RulesetProfile) (string, error) {
+	hash := profileHash(profile)
+	return m.resolve(ctx, rulesetRequest{
+		name:    name,
+		version: version,
+		path:    filepath.Join(m.getProfilesCachePath(name, version), hash),
+		profile: hash,
+		fetch: func(ctx context.Context) ([]byte, *api.Manifest, error) {
+			return m.apiClient.DownloadFilteredRuleset(ctx, name, version, profile)
+		},
+	})
+}
+
+// GetRulesetIndex returns the ruleset's index, from the cache while it is
+// younger than the ruleset TTL, otherwise from the API. A fresh index is
+// written beside the ruleset's profiles; a failed write is only logged.
+func (m *Manager) GetRulesetIndex(ctx context.Context, name, version string) (*api.RulesetIndex, error) {
+	indexPath := filepath.Join(m.getProfilesCachePath(name, version), indexFileName)
+	if !m.noCache {
+		if index, err := m.cachedIndex(indexPath, m.getTTL(version)); err == nil {
+			log.Debug().Str("ruleset", name).Str("version", version).Msg("Using cached ruleset index")
+			return index, nil
+		}
+	}
+	index, err := m.apiClient.GetRulesetIndex(ctx, name, version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch ruleset index: %w", err)
+	}
+	if err := m.saveIndex(index, indexPath); err != nil {
+		log.Warn().Err(err).Str("path", indexPath).Msg("Failed to cache ruleset index")
+	}
+	return index, nil
+}
+
+// cachedIndex reads an index file no older than ttl.
+func (m *Manager) cachedIndex(path string, ttl time.Duration) (*api.RulesetIndex, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if time.Since(info.ModTime()) > ttl {
+		return nil, fmt.Errorf("cache: ruleset index expired")
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- a file below the cache directory.
+	if err != nil {
+		return nil, err
+	}
+	var index api.RulesetIndex
+	if err := json.Unmarshal(data, &index); err != nil {
+		return nil, fmt.Errorf("cache: failed to parse ruleset index: %w", err)
+	}
+	return &index, nil
+}
+
+func (m *Manager) saveIndex(index *api.RulesetIndex, path string) error {
+	data, err := json.Marshal(index)
+	if err != nil {
+		return fmt.Errorf("cache: failed to marshal ruleset index: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("cache: failed to create index directory: %w", err)
+	}
+	tempPath := path + tempSuffix
+	if err := os.WriteFile(tempPath, data, 0o600); err != nil {
+		return fmt.Errorf("cache: failed to write ruleset index: %w", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("cache: failed to replace ruleset index: %w", err)
+	}
+	return nil
+}
+
+// LoadManifest reads the manifest.json saved with a cached ruleset.
+func LoadManifest(rulesetPath string) (*api.Manifest, error) {
+	data, err := os.ReadFile(filepath.Join(rulesetPath, manifestFileName)) // #nosec G304 -- a file below the cache directory.
+	if err != nil {
+		return nil, fmt.Errorf("cache: failed to read manifest file: %w", err)
+	}
+	var manifest api.Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("cache: failed to parse manifest JSON: %w", err)
+	}
+	return &manifest, nil
+}
+
+// resolve serves the request from the cache when it is valid, otherwise
+// downloads and caches it, falling back to a stale cache entry when the
+// download fails outside strict mode.
+func (m *Manager) resolve(ctx context.Context, req rulesetRequest) (string, error) {
+	rulesetPath := req.path
 	metadataPath := filepath.Join(rulesetPath, metadataFileName)
 
 	// Skip cache check if noCache is enabled
@@ -102,8 +225,9 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 		// Check if cache exists and is valid
 		if m.isCacheValid(rulesetPath, metadataPath) {
 			log.Debug().
-				Str("ruleset", name).
-				Str("version", version).
+				Str("ruleset", req.name).
+				Str("version", req.version).
+				Str("profile", req.profile).
 				Str("path", rulesetPath).
 				Msg("Using cached ruleset")
 
@@ -116,8 +240,8 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 			if err := utils.ValidateRuleDirNotEmpty(rulesetPath); err != nil {
 				log.Warn().
 					Err(err).
-					Str("ruleset", name).
-					Str("version", version).
+					Str("ruleset", req.name).
+					Str("version", req.version).
 					Msg("Cached ruleset is invalid, will re-download")
 				// Cache is corrupted, proceed to download
 			} else {
@@ -126,21 +250,22 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 		}
 	} else {
 		log.Info().
-			Str("ruleset", name).
-			Str("version", version).
+			Str("ruleset", req.name).
+			Str("version", req.version).
 			Msg("Cache bypass enabled, forcing fresh download")
 	}
 
 	// Cache is invalid, doesn't exist, or noCache is enabled - download and cache the ruleset
 	log.Info().
-		Str("ruleset", name).
-		Str("version", version).
+		Str("ruleset", req.name).
+		Str("version", req.version).
+		Str("profile", req.profile).
 		Msg("Downloading ruleset")
 
-	if err := m.downloadAndCache(ctx, name, version, rulesetPath); err != nil {
+	if err := m.downloadAndCache(ctx, req); err != nil {
 		// Download failed - try stale cache fallback if not in strict mode
 		if !m.strictMode {
-			if stalePath, staleErr := m.tryStaleCache(rulesetPath, metadataPath, name, version); staleErr == nil {
+			if stalePath, staleErr := m.tryStaleCache(rulesetPath, metadataPath, req.name, req.version); staleErr == nil {
 				// Successfully using stale cache
 				return stalePath, nil
 			}
@@ -160,6 +285,32 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 // getRulesetCachePath returns the cache path for a specific ruleset.
 func (m *Manager) getRulesetCachePath(name, version string) string {
 	return filepath.Join(m.cacheDir, name, version)
+}
+
+// getProfilesCachePath returns the directory holding the filtered subsets
+// of a ruleset version, one per profile hash, and its index. It stands
+// beside the full ruleset's directory, which is replaced whole on every
+// download and loaded whole by the scanner.
+func (m *Manager) getProfilesCachePath(name, version string) string {
+	return filepath.Join(m.cacheDir, name, profilesDirName, version)
+}
+
+// profileHash is the sha256 hex of the canonical profile JSON: sorted keys
+// and lists, no whitespace.
+func profileHash(profile api.RulesetProfile) string {
+	canonical := api.RulesetProfile{Languages: append([]string{}, profile.Languages...), Modules: make(map[string][]string, len(profile.Modules))}
+	sort.Strings(canonical.Languages)
+	for family, modules := range profile.Modules {
+		sorted := append([]string{}, modules...)
+		sort.Strings(sorted)
+		canonical.Modules[family] = sorted
+	}
+	data, err := json.Marshal(canonical)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // acquireLock acquires an exclusive file lock for the given ruleset path.
@@ -234,7 +385,8 @@ func (m *Manager) updateLastAccessed(metadataPath string) error {
 // downloadAndCache downloads a ruleset and caches it.
 // Uses file locking to prevent race conditions when multiple processes try to
 // update the same cache simultaneously.
-func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPath string) error {
+func (m *Manager) downloadAndCache(ctx context.Context, req rulesetRequest) error {
+	targetPath := req.path
 	// Acquire exclusive lock to prevent race conditions
 	lockFile, err := m.acquireLock(targetPath)
 	if err != nil {
@@ -247,14 +399,14 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 	metadataPath := filepath.Join(targetPath, metadataFileName)
 	if m.hasUsableCache(targetPath, metadataPath) {
 		log.Debug().
-			Str("ruleset", name).
-			Str("version", version).
+			Str("ruleset", req.name).
+			Str("version", req.version).
 			Msg("Cache was updated by another process while waiting for lock")
 		return nil
 	}
 
 	// Download tarball and manifest
-	tarball, manifest, err := m.apiClient.DownloadRuleset(ctx, name, version)
+	tarball, manifest, err := req.fetch(ctx)
 	if err != nil {
 		return err
 	}
@@ -263,25 +415,27 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 	if err := VerifyChecksum(tarball, manifest.ChecksumSHA256); err != nil {
 		log.Error().
 			Err(err).
-			Str("ruleset", name).
-			Str("version", version).
+			Str("ruleset", req.name).
+			Str("version", req.version).
 			Msg("Checksum verification failed")
 		return fmt.Errorf("%w: %s", api.ErrInvalidChecksum, err.Error())
 	}
 
 	log.Debug().
-		Str("ruleset", name).
-		Str("version", version).
+		Str("ruleset", req.name).
+		Str("version", req.version).
 		Str("checksum", manifest.ChecksumSHA256).
 		Msg("Checksum verified successfully")
 
-	if err := m.persistDownloadedRuleset(name, version, targetPath, tarball, manifest); err != nil {
+	if err := m.persistDownloadedRuleset(req, tarball, manifest); err != nil {
 		return err
 	}
 
 	log.Info().
-		Str("ruleset", name).
-		Str("version", version).
+		Str("ruleset", req.name).
+		Str("version", req.version).
+		Str("profile", req.profile).
+		Str("rules", manifest.Rules).
 		Str("path", targetPath).
 		Msg("Ruleset cached successfully")
 
@@ -295,33 +449,34 @@ func (m *Manager) hasUsableCache(rulesetPath, metadataPath string) bool {
 	return utils.ValidateRuleDirNotEmpty(rulesetPath) == nil
 }
 
-func (m *Manager) persistDownloadedRuleset(name, version, targetPath string, tarball []byte, manifest *api.Manifest) error {
+func (m *Manager) persistDownloadedRuleset(req rulesetRequest, tarball []byte, manifest *api.Manifest) error {
+	targetPath := req.path
 	tempPath := targetPath + tempSuffix
 	if err := m.extractTarball(tarball, tempPath); err != nil {
-		m.cleanupTempPath(tempPath, name, version)
+		m.cleanupTempPath(tempPath, req.name, req.version)
 		return fmt.Errorf("failed to extract tarball: %w", err)
 	}
 
-	if err := m.writeCacheMetadata(name, version, tempPath, manifest); err != nil {
-		m.cleanupTempPath(tempPath, name, version)
+	if err := m.writeCacheMetadata(req, tempPath, manifest); err != nil {
+		m.cleanupTempPath(tempPath, req.name, req.version)
 		return err
 	}
 
 	manifestPath := filepath.Join(tempPath, manifestFileName)
 	if err := m.saveManifest(manifest, manifestPath); err != nil {
-		m.cleanupTempPath(tempPath, name, version)
+		m.cleanupTempPath(tempPath, req.name, req.version)
 		return fmt.Errorf("failed to save manifest: %w", err)
 	}
 
 	if err := m.replaceCachedRuleset(targetPath, tempPath); err != nil {
-		m.cleanupTempPath(tempPath, name, version)
+		m.cleanupTempPath(tempPath, req.name, req.version)
 		return err
 	}
 
 	return nil
 }
 
-func (m *Manager) writeCacheMetadata(name, version, tempPath string, manifest *api.Manifest) error {
+func (m *Manager) writeCacheMetadata(req rulesetRequest, tempPath string, manifest *api.Manifest) error {
 	// Create cache metadata. The version we record is the *manifest* version
 	// returned by the SCANOSS API (concrete, e.g. "v1.0.4"), NOT the operator's
 	// request label (which can be "latest" — opaque, indistinguishable across
@@ -329,8 +484,9 @@ func (m *Manager) writeCacheMetadata(name, version, tempPath string, manifest *a
 	// metadata file a faithful audit trail of what was actually downloaded;
 	// downstream consumers can stamp it on scan results so a rules update is
 	// detectable.
-	ttl := m.getTTL(version)
-	metadata := NewMetadata(name, manifest.Version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
+	ttl := m.getTTL(req.version)
+	metadata := NewMetadata(req.name, manifest.Version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
+	metadata.Profile = req.profile
 	tempMetadataPath := filepath.Join(tempPath, metadataFileName)
 	if err := metadata.Save(tempMetadataPath); err != nil {
 		return fmt.Errorf("failed to save metadata: %w", err)
