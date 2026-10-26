@@ -18,7 +18,9 @@
 package apiclient
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,18 +33,24 @@ import (
 
 const (
 	// API endpoints.
-	rulesetsEndpointFmt = "/v2/cryptography/rulesets/%s/%s/download"
+	rulesetsEndpointFmt       = "/v2/cryptography/rulesets/%s/%s/download"
+	rulesetsIndexEndpointFmt  = "/v2/cryptography/rulesets/%s/%s/index"
+	rulesetsFilterEndpointFmt = "/v2/cryptography/rulesets/%s/%s/filter"
 
 	// HTTP headers - Request.
-	headerAPIKey    = "x-api-key"
-	headerUserAgent = "user-agent"
-	userAgentValue  = "scanoss-crypto-finder"
+	headerAPIKey      = "x-api-key"
+	headerUserAgent   = "user-agent"
+	headerContentType = "content-type"
+	userAgentValue    = "scanoss-crypto-finder"
+	contentTypeJSON   = "application/json"
 
 	// HTTP headers - Response.
 	headerRulesetName      = "scanoss-ruleset-name"
 	headerRulesetVersion   = "scanoss-ruleset-version"
 	headerChecksumSHA256   = "x-checksum-sha256"
 	headerRulesetCreatedAt = "scanoss-ruleset-created-at"
+	headerRulesetProfile   = "scanoss-ruleset-profile"
+	headerRulesetRules     = "scanoss-ruleset-rules"
 )
 
 // Manifest represents the manifest.json file reconstructed from HTTP headers.
@@ -51,6 +59,29 @@ type Manifest struct {
 	Version        string    `json:"version"`
 	ChecksumSHA256 string    `json:"checksum_sha256"`
 	CreatedAt      time.Time `json:"created_at"`
+	// Profile is the hash of the profile a filtered ruleset was reduced
+	// with, and Rules its kept/total rule count; both empty for a full
+	// download.
+	Profile string `json:"profile,omitempty"`
+	Rules   string `json:"rules,omitempty"`
+}
+
+// RulesetIndex is what the API publishes about a ruleset: the languages its
+// rules name and, per import family, the modules its rules declare.
+type RulesetIndex struct {
+	Name           string              `json:"name"`
+	Version        string              `json:"version"`
+	ChecksumSHA256 string              `json:"checksum_sha256"`
+	Languages      []string            `json:"languages"`
+	Modules        map[string][]string `json:"modules"`
+}
+
+// RulesetProfile selects the rules of a filtered download: those with a
+// listed language whose declared modules relate to a listed module of their
+// family. A family absent from Modules keeps all its rules.
+type RulesetProfile struct {
+	Languages []string            `json:"languages"`
+	Modules   map[string][]string `json:"modules"`
 }
 
 // Client is an HTTP client for the SCANOSS REST API.
@@ -83,8 +114,7 @@ func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *C
 // DownloadRuleset downloads a ruleset tarball from the API
 // Returns the tarball bytes and the parsed manifest.
 func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]byte, *Manifest, error) {
-	endpoint := fmt.Sprintf(rulesetsEndpointFmt, name, version)
-	url := c.baseURL + endpoint
+	url := c.baseURL + fmt.Sprintf(rulesetsEndpointFmt, name, version)
 
 	log.Debug().
 		Str("ruleset", name).
@@ -92,29 +122,104 @@ func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]b
 		Str("url", url).
 		Msg("Downloading ruleset")
 
-	// Implement retry logic with exponential backoff
+	return c.downloadWithRetries(ctx, "download", http.MethodGet, url, nil)
+}
+
+// DownloadFilteredRuleset downloads the ruleset reduced to the rules the
+// profile keeps: the languages the scanned sources have files of and, per
+// import family, the index modules they use. The manifest carries the
+// checksum of the returned tarball, the profile hash the server computed
+// and the kept/total rule count.
+func (c *Client) DownloadFilteredRuleset(ctx context.Context, name, version string, profile RulesetProfile) ([]byte, *Manifest, error) {
+	url := c.baseURL + fmt.Sprintf(rulesetsFilterEndpointFmt, name, version)
+	body, err := json.Marshal(profile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to encode ruleset profile: %w", err)
+	}
+
+	log.Debug().
+		Str("ruleset", name).
+		Str("version", version).
+		Str("url", url).
+		Int("languages", len(profile.Languages)).
+		Msg("Downloading filtered ruleset")
+
+	return c.downloadWithRetries(ctx, "filtered download", http.MethodPost, url, body)
+}
+
+// GetRulesetIndex fetches the languages and declared modules of a ruleset.
+func (c *Client) GetRulesetIndex(ctx context.Context, name, version string) (*RulesetIndex, error) {
+	url := c.baseURL + fmt.Sprintf(rulesetsIndexEndpointFmt, name, version)
+
+	log.Debug().
+		Str("ruleset", name).
+		Str("version", version).
+		Str("url", url).
+		Msg("Fetching ruleset index")
+
+	var index RulesetIndex
+	err := c.withRetries(ctx, "index", func() error {
+		resp, err := c.do(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		defer closeBody(resp)
+		if resp.StatusCode != http.StatusOK {
+			return c.handleHTTPError(resp, url)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&index); err != nil {
+			return fmt.Errorf("failed to decode ruleset index: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &index, nil
+}
+
+// downloadWithRetries fetches a ruleset tarball and its header manifest
+// with the retry policy of withRetries.
+func (c *Client) downloadWithRetries(ctx context.Context, what, method, url string, body []byte) ([]byte, *Manifest, error) {
+	var tarball []byte
+	var manifest *Manifest
+	err := c.withRetries(ctx, what, func() error {
+		var err error
+		tarball, manifest, err = c.doDownload(ctx, method, url, body)
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return tarball, manifest, nil
+}
+
+// withRetries runs attempt with exponential backoff until it succeeds, fails
+// with a non-retryable error, exhausts the retry budget or the context ends
+// during a backoff, in which case the context's error is returned as is.
+func (c *Client) withRetries(ctx context.Context, what string, attempt func() error) error {
 	var lastErr error
 	delay := config.DefaultRetryDelay
 
-	for attempt := 0; attempt <= config.DefaultMaxRetries; attempt++ {
-		if attempt > 0 {
+	for try := 0; try <= config.DefaultMaxRetries; try++ {
+		if try > 0 {
 			log.Debug().
-				Int("attempt", attempt).
+				Int("attempt", try).
 				Dur("delay", delay).
-				Msg("Retrying download")
+				Msg("Retrying " + what)
 
 			select {
 			case <-ctx.Done():
-				return nil, nil, ctx.Err()
+				return ctx.Err()
 			case <-time.After(delay):
 			}
 
 			delay *= 2
 		}
 
-		tarball, manifest, err := c.doDownload(ctx, url)
+		err := attempt()
 		if err == nil {
-			return tarball, manifest, nil
+			return nil
 		}
 
 		lastErr = err
@@ -129,32 +234,55 @@ func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]b
 
 		log.Warn().
 			Err(err).
-			Int("attempt", attempt+1).
+			Int("attempt", try+1).
 			Int("max_retries", config.DefaultMaxRetries).
-			Msg("Download failed, will retry")
+			Msg("Request failed, will retry")
 	}
 
-	return nil, nil, fmt.Errorf("download failed after %d retries: %w", config.DefaultMaxRetries, lastErr)
+	return fmt.Errorf("%s failed after %d retries: %w", what, config.DefaultMaxRetries, lastErr)
 }
 
-// doDownload performs a single download attempt.
-func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+// do sends one request with the API key and user agent headers. A nil body
+// sends no body; a body is sent as JSON.
+func (c *Client) do(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
+	var reader io.Reader = http.NoBody
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Add headers
 	req.Header.Set(headerAPIKey, c.apiKey)
 	req.Header.Set(headerUserAgent, userAgentValue)
+	if body != nil {
+		req.Header.Set(headerContentType, contentTypeJSON)
+	}
 
 	// #nosec G704 -- URL is constructed from configured API base URL plus a fixed endpoint format.
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return nil, nil, ErrTimeout
+			return nil, ErrTimeout
 		}
-		return nil, nil, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	return resp, nil
+}
+
+func closeBody(resp *http.Response) {
+	if err := resp.Body.Close(); err != nil {
+		log.Warn().Err(err).Msg("Failed to close response body")
+	}
+}
+
+// doDownload performs a single download attempt.
+func (c *Client) doDownload(ctx context.Context, method, url string, body []byte) ([]byte, *Manifest, error) {
+	resp, err := c.do(ctx, method, url, body)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Handle HTTP status codes
@@ -177,6 +305,7 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 	log.Info().
 		Str("ruleset", manifest.Name).
 		Str("version", manifest.Version).
+		Str("rules", manifest.Rules).
 		Int("size_bytes", len(tarball)).
 		Msg("Ruleset downloaded successfully")
 
@@ -219,6 +348,8 @@ func (c *Client) manifestFromHeaders(headers http.Header) (*Manifest, error) {
 		Version:        version,
 		ChecksumSHA256: checksum,
 		CreatedAt:      createdAt,
+		Profile:        c.getHeaderValue(headers, headerRulesetProfile),
+		Rules:          c.getHeaderValue(headers, headerRulesetRules),
 	}, nil
 }
 

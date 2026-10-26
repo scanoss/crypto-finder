@@ -26,6 +26,9 @@ import (
 // left out, which only weakens the requirement.
 type constraints map[string][]*regexp.Regexp
 
+// alwaysOn is the metadata.imports entry of a rule that needs no import.
+const alwaysOn = "*"
+
 func (c constraints) with(items []any) constraints {
 	var added constraints
 	for _, item := range items {
@@ -78,10 +81,20 @@ func Requirement(rule map[string]any, analyzers []string) Expr {
 }
 
 // explicitImports reads metadata.imports: the modules a rule author declares
-// that every match imports, one of which the unit must import.
+// that every match imports, one of which the unit must import. The entry
+// "*" declares a rule that matches without any import, which is kept for
+// every unit of its language.
 func explicitImports(metadata map[string]any, family Family) Expr {
 	list, ok := metadata["imports"].([]any)
-	if !ok || len(list) == 0 || family == "" {
+	if !ok || len(list) == 0 {
+		return nil
+	}
+	for _, item := range list {
+		if module, ok := item.(string); ok && strings.TrimSpace(module) == alwaysOn {
+			return True
+		}
+	}
+	if family == "" {
 		return nil
 	}
 	alternatives := make([]Expr, 0, len(list))

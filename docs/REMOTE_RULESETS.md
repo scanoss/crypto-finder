@@ -63,12 +63,65 @@ crypto-finder scan --no-remote-rules --rules-dir ./local-rules /path/to/code
 # Force fresh download (bypass cache)
 crypto-finder scan --no-cache /path/to/code
 
+# Download the whole ruleset instead of the rules for this target's languages and libraries
+crypto-finder scan --no-remote-filter /path/to/code
+
 # Strict mode: fail if cache expired and API unreachable (no stale cache fallback)
 crypto-finder scan --strict /path/to/code
 
 # Configure maximum age for stale cache fallback (default: 30 days, max: 90 days)
 crypto-finder scan --max-stale-age 60d /path/to/code  # 60 days
 ```
+
+## Filtered downloads
+
+A scan downloads the ruleset reduced to the rules its target can match. Before
+the download, crypto-finder reads the target's sources once (honoring the scan's
+skip patterns) and fetches the ruleset *index*: the languages the ruleset covers
+and, per import family (`go`, `java`, `python`, `js`, `rust`, `c`), the library
+modules its rules declare in `metadata.imports`. It then sends the API a
+*profile*:
+
+- `languages`: the index languages the target has files of;
+- `modules`: per family with files, the index modules the sources use, that is,
+  the modules an import of the target names or extends (`javax.crypto.Cipher`
+  satisfies `javax.crypto`), a C include has a path segment starting with
+  (`deps/openssl/evp.h` satisfies `openssl`), or, in Java, Python and Rust, the
+  sources spell in full without an import.
+
+The profile carries library names from the index, never the project's own import
+list, file names or paths. The API answers with the tarball of the kept rules:
+those of a listed language whose declared modules relate to a listed module, plus
+every rule declaring `metadata.imports: ["*"]`. A family with files but no
+matching module keeps only its always-on rules; a language without import
+evidence (C#, Ruby, ...) keeps all its rules.
+
+The filtered ruleset is cached per profile:
+
+```
+~/.scanoss/crypto-finder/cache/rulesets/{name}/profiles/{version}/
+  ├── index.json                 # Ruleset index (same TTL as the ruleset)
+  └── {profile sha256}/          # One filtered ruleset per profile
+      ├── manifest.json          # Includes the server's profile hash and kept/total rules
+      ├── .cache-meta.json       # Cache metadata, with the profile hash
+      └── semgrep-rules/         # The kept rule files
+```
+
+The profile hash is the SHA-256 of the canonical profile JSON (sorted keys and
+lists, no whitespace), so the same sources map to the same cache entry whatever
+order they are read in. TTL, stale fallback and `--strict` apply as for the full
+ruleset. The interim report's `rules.profile` names the profile a scan used.
+
+Any failure of the index or filter request (API unreachable, older API without
+the endpoints, invalid profile) logs a warning and falls back to the full
+ruleset, so a filtered download never loses a finding. The full ruleset is also
+used:
+
+- with `--scan-dependencies`, since each dependency batch has imports of its own
+  (the local `--rule-prefilter` still applies per batch);
+- with `--rule-prefilter off`, with a scanner other than OpenGrep, and for
+  `annotate`;
+- with `--no-remote-filter` or `SCANOSS_NO_REMOTE_FILTER=1`, which opts out.
 
 ## Cache Management
 
@@ -80,6 +133,9 @@ crypto-finder scan --max-stale-age 60d /path/to/code  # 60 days
   ├── .cache-meta.json           # Cache metadata (timestamps, checksum, TTL)
   └── [language dirs]/           # Rule files organized by language
 ```
+
+Filtered downloads live beside the version directory, under
+`{name}/profiles/{version}/` (see [Filtered downloads](#filtered-downloads)).
 
 ### Cache Behavior
 

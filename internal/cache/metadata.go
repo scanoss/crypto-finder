@@ -33,6 +33,9 @@ type Metadata struct {
 	LastAccessed   time.Time `json:"last_accessed"`
 	ChecksumSHA256 string    `json:"checksum_sha256"`
 	TTLSeconds     int64     `json:"ttl_seconds"`
+	// Profile is the hash of the profile a filtered ruleset was reduced
+	// with; empty for the full ruleset.
+	Profile string `json:"profile,omitempty"`
 }
 
 // IsExpired checks if the cache has expired based on TTL.

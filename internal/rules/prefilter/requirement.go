@@ -62,21 +62,36 @@ const (
 	FamilyC      Family = "c"
 )
 
+// OpenGrep analyzer ids (lang.json ids) of the languages the prefilter and
+// the tree walk know.
+const (
+	analyzerGo     = "go"
+	analyzerJava   = "java"
+	analyzerPython = "python"
+	analyzerJS     = "js"
+	analyzerTS     = "ts"
+	analyzerRust   = "rust"
+	analyzerC      = "c"
+	analyzerCpp    = "cpp"
+	analyzerCSharp = "csharp"
+	analyzerRuby   = "ruby"
+)
+
 // FamilyOf maps an OpenGrep analyzer id (lang.json id) to its family, or ""
 // when the prefilter has no evidence for it.
 func FamilyOf(analyzer string) Family {
 	switch analyzer {
-	case "go":
+	case analyzerGo:
 		return FamilyGo
-	case "java":
+	case analyzerJava:
 		return FamilyJava
-	case "python", "python2", "python3":
+	case analyzerPython, "python2", "python3":
 		return FamilyPython
-	case "js", "ts":
+	case analyzerJS, analyzerTS:
 		return FamilyJS
-	case "rust":
+	case analyzerRust:
 		return FamilyRust
-	case "c", "cpp":
+	case analyzerC, analyzerCpp:
 		return FamilyC
 	default:
 		return ""
@@ -205,13 +220,13 @@ func (a *importAtom) eval(ev *Evidence) bool {
 	if ev.opaque[a.family] {
 		return true
 	}
+	if a.declared {
+		return a.evalDeclared(ev)
+	}
 	sep := separator(a.family)
 	for _, candidate := range ev.imports[a.family] {
 		if a.template == nil {
 			if a.literal == "" || related(candidate, a.literal, sep) {
-				return true
-			}
-			if a.declared && wildcardSupplies(candidate, a.literal, sep) {
 				return true
 			}
 			continue
@@ -226,6 +241,59 @@ func (a *importAtom) eval(ev *Evidence) bool {
 		}
 	}
 	return false
+}
+
+// evalDeclared evaluates a metadata.imports module: an import of the unit
+// names it or a sub-module (a wildcard import of its package counts), a C
+// include has a path segment starting with it, or, in Java, Python and
+// Rust, the unit spells every segment of it as an identifier, as a fully
+// qualified use without an import does.
+func (a *importAtom) evalDeclared(ev *Evidence) bool {
+	sep := separator(a.family)
+	for _, candidate := range ev.imports[a.family] {
+		if a.family == FamilyC {
+			if includeNames(candidate, a.literal) {
+				return true
+			}
+			continue
+		}
+		if related(candidate, a.literal, sep) || wildcardSupplies(candidate, a.literal, sep) {
+			return true
+		}
+	}
+	return a.spelledOut(ev)
+}
+
+// includeNames reports whether a bare include path (not the <...> or "..."
+// spelling) has a "/"-separated segment that starts with name.
+func includeNames(include, name string) bool {
+	if include == "" || include[0] == '<' || include[0] == '"' {
+		return false
+	}
+	for _, segment := range strings.Split(include, "/") {
+		if strings.HasPrefix(segment, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// spelledOut reports whether the unit spells every segment of the declared
+// module, in the families whose qualified names are made of identifiers.
+func (a *importAtom) spelledOut(ev *Evidence) bool {
+	switch a.family {
+	case FamilyJava, FamilyPython, FamilyRust:
+	case FamilyGo, FamilyJS, FamilyC:
+		return false
+	default:
+		return false
+	}
+	for _, segment := range strings.Split(a.literal, separator(a.family)) {
+		if !ev.tokens[segment] {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *importAtom) matchesTemplate(candidate string) bool {
