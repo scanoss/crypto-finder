@@ -210,6 +210,77 @@ func wantPycaCryptographyContracts() []string {
 		"cryptography.hazmat.primitives.interfaces.X509Certificate.public_key#0 cryptography.hazmat.primitives.interfaces.X509Certificate.public_key/factory/cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
 		"cryptography.hazmat.primitives.serialization.load_pem_pkcs8_private_key#3 cryptography.hazmat.primitives.serialization.load_pem_pkcs8_private_key/factory/cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
 		"cryptography.hazmat.primitives.serialization.load_pem_traditional_openssl_private_key#3 cryptography.hazmat.primitives.serialization.load_pem_traditional_openssl_private_key/factory/cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		// ML-KEM (FIPS 203) and ML-DSA (FIPS 204), asymmetric/mlkem.py and
+		// mldsa.py plus the MLDSAMuHasher stub, cryptography main (51.0.0-dev).
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.generate#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.generate/factory/cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.from_seed_bytes#1 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.from_seed_bytes/factory/cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.decapsulate#1 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.decapsulate/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.public_key#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.public_key/factory/cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.private_bytes#3 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.private_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.private_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.private_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.from_public_bytes#1 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.from_public_bytes/factory/cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.encapsulate#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.encapsulate/operation/builtins.tuple/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.public_bytes#2 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.public_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.public_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.public_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.generate#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.generate/factory/cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.from_seed_bytes#1 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.from_seed_bytes/factory/cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.decapsulate#1 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.decapsulate/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.public_key#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.public_key/factory/cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.private_bytes#3 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.private_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.private_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.private_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.from_public_bytes#1 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.from_public_bytes/factory/cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.encapsulate#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.encapsulate/operation/builtins.tuple/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.public_bytes#2 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.public_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.public_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.public_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.generate#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.generate/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.from_seed_bytes#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.from_seed_bytes/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.public_key#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.public_key/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.private_bytes#3 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.private_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.private_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.private_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.sign#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.sign/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.sign#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.sign/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.sign_mu#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.sign_mu/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.from_public_bytes#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.from_public_bytes/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.public_bytes#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.public_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.public_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.public_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.verify#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.verify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.verify#3 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.verify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.verify_mu#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.verify_mu/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.generate#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.generate/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.from_seed_bytes#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.from_seed_bytes/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.public_key#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.public_key/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.private_bytes#3 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.private_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.private_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.private_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.sign#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.sign/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.sign#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.sign/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.sign_mu#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.sign_mu/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.from_public_bytes#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.from_public_bytes/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.public_bytes#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.public_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.public_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.public_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.verify#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.verify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.verify#3 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.verify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.verify_mu#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.verify_mu/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.generate#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.generate/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.from_seed_bytes#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.from_seed_bytes/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.public_key#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.public_key/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.private_bytes#3 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.private_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.private_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.private_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.sign#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.sign/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.sign#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.sign/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.sign_mu#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.sign_mu/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.from_public_bytes#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.from_public_bytes/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.public_bytes#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.public_bytes/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.public_bytes_raw#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.public_bytes_raw/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.verify#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.verify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.verify#3 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.verify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.verify_mu#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.verify_mu/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.<init>#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.<init>/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.<init>#2 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.<init>/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.update#1 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.update/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.copy#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.copy/factory/cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
+		"cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.finalize#0 cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.finalize/output/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pyca-cryptography",
 	}
 }
 
@@ -246,6 +317,89 @@ func TestPycaCryptographyContract_ExactSet(t *testing.T) {
 	for _, line := range got {
 		if !wantSet[line] {
 			t.Errorf("loaded but not expected:\n\t%q,", line)
+		}
+	}
+}
+
+// TestPycaCryptographyPQCNegatives pins that lookalike keys resolve to nothing:
+// pyca offers no ML-KEM-512, decapsulate lives on the private key only, and
+// sign takes at most data and context. Names that exist under no arity must
+// also miss the Python name-tolerant lookup; a wrong arity on a real name is
+// only an exact-match miss, since ContractsForTolerant falls back by name.
+func TestPycaCryptographyPQCNegatives(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("python")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(\"python\"): %v", err)
+	}
+	const pfx = "cryptography.hazmat.primitives.asymmetric."
+	unknownNames := []struct {
+		method string
+		arity  int
+	}{
+		{pfx + "mlkem.MLKEM512PrivateKey.generate", 0},
+		{pfx + "mlkem.MLKEM512PublicKey.encapsulate", 0},
+		{pfx + "mlkem.MLKEM768PublicKey.decapsulate", 1},
+		{pfx + "mlkem.MLKEM768PrivateKey.encapsulate", 0},
+		{pfx + "mlkem.MLKEM1024PrivateKey.sign", 1},
+		{pfx + "mlkem.MLKEM768PrivateKey.from_public_bytes", 1},
+		{pfx + "mlkem.MLKEM768PublicKey.from_seed_bytes", 1},
+		{pfx + "mldsa.MLDSA128PrivateKey.generate", 0},
+		{pfx + "mldsa.MLDSA65PublicKey.sign", 1},
+		{pfx + "mldsa.MLDSA65PrivateKey.verify", 2},
+		{pfx + "mldsa.MLDSA65PrivateKey.decapsulate", 1},
+	}
+	for _, tt := range unknownNames {
+		if got := kb.ContractsFor(tt.method, tt.arity); len(got) != 0 {
+			t.Errorf("ContractsFor(%q, %d) = %d contracts, want none", tt.method, tt.arity, len(got))
+		}
+		if got := kb.ContractsForTolerant(tt.method, tt.arity); len(got) != 0 {
+			t.Errorf("ContractsForTolerant(%q, %d) = %d contracts, want none", tt.method, tt.arity, len(got))
+		}
+	}
+	wrongArity := []struct {
+		method string
+		arity  int
+	}{
+		{pfx + "mlkem.MLKEM768PrivateKey.generate", 1},
+		{pfx + "mlkem.MLKEM768PublicKey.encapsulate", 1},
+		{pfx + "mldsa.MLDSA65PrivateKey.sign", 3},
+		{pfx + "mldsa.MLDSA65PrivateKey.sign", 0},
+		{pfx + "mldsa.MLDSA65PrivateKey.sign_mu", 2},
+		{pfx + "mldsa.MLDSA65PublicKey.verify", 4},
+		{pfx + "mldsa.MLDSA65PublicKey.verify", 1},
+		{pfx + "mldsa.MLDSAMuHasher.<init>", 0},
+		{pfx + "mldsa.MLDSAMuHasher.<init>", 3},
+		{pfx + "mldsa.MLDSAMuHasher.update", 0},
+	}
+	for _, tt := range wrongArity {
+		if got := kb.ContractsFor(tt.method, tt.arity); len(got) != 0 {
+			t.Errorf("ContractsFor(%q, %d) = %d contracts, want none", tt.method, tt.arity, len(got))
+		}
+	}
+
+	// The positive counterparts of the negatives above do resolve.
+	positives := []struct {
+		method string
+		arity  int
+		ret    string
+	}{
+		{pfx + "mlkem.MLKEM768PrivateKey.generate", 0, pfx + "mlkem.MLKEM768PrivateKey"},
+		{pfx + "mlkem.MLKEM768PrivateKey.decapsulate", 1, "builtins.bytes"},
+		{pfx + "mlkem.MLKEM768PublicKey.encapsulate", 0, "builtins.tuple"},
+		{pfx + "mldsa.MLDSA65PrivateKey.sign", 2, "builtins.bytes"},
+		{pfx + "mldsa.MLDSA65PublicKey.verify", 3, "builtins.NoneType"},
+		{pfx + "mldsa.MLDSAMuHasher.finalize", 0, "builtins.bytes"},
+	}
+	for _, tt := range positives {
+		got := kb.ContractsFor(tt.method, tt.arity)
+		if len(got) != 1 {
+			t.Errorf("ContractsFor(%q, %d) = %d contracts, want 1", tt.method, tt.arity, len(got))
+			continue
+		}
+		if got[0].Return.Type != tt.ret {
+			t.Errorf("ContractsFor(%q, %d).Return.Type = %q, want %q", tt.method, tt.arity, got[0].Return.Type, tt.ret)
 		}
 	}
 }
