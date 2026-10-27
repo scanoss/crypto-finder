@@ -1,0 +1,505 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-pqc-jcajce
+  coordinates:
+    - "org.bouncycastle:bcprov-jdk18on"
+    - "org.bouncycastle:bcprov-jdk15to18"
+  version_range: ">=1.79,<2.0"
+  description: "Bouncy Castle provider (JCA) parameter and key specs for ML-KEM, ML-DSA, SLH-DSA, KEM wrapping and LMS/HSS"
+
+# org.bouncycastle.jcajce.spec classes used with the BC provider through the
+# standard JCA entry points (KeyPairGenerator.initialize(spec),
+# Signature.setParameter(spec), KeyFactory.generatePrivate(spec),
+# Cipher.init(mode, key, spec) / KeyGenerator.init(spec) for KEM wrapping).
+# The JCA factories themselves (KeyPairGenerator.getInstance("ML-KEM"),
+# Signature.getInstance("ML-DSA"), ...) are covered by jdk-crypto.yaml.
+# See the layout note at the top of bouncycastle-pqc.yaml.
+#
+# Sources: bcgit/bc-java prov/src/main/java/org/bouncycastle/jcajce/spec at
+# r1rv79 (MLKEMParameterSpec, MLDSAParameterSpec, SLHDSAParameterSpec,
+# KEMGenerateSpec, KEMExtractSpec, KEMParameterSpec), r1rv84 (the ML-KEM and
+# ML-DSA key specs) and main (LMSKeyGenParameterSpec and
+# LMSHSSKeyGenParameterSpec: on main, not in any release up to r1rv86v2).
+#
+# The static parameter-set fields (MLKEMParameterSpec.ml_kem_768,
+# MLDSAParameterSpec.ml_dsa_65, SLHDSAParameterSpec.slh_dsa_shake_128f, ...)
+# are field reads the KB cannot contract; the detection rules match them
+# directly. fromName(String) is the method form of the same selection.
+
+contracts:
+  # ------------------------------------------------ parameter-set specs
+  - method: org.bouncycastle.jcajce.spec.MLKEMParameterSpec.fromName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.jcajce.spec.MLKEMParameterSpec
+    return: { type: org.bouncycastle.jcajce.spec.MLKEMParameterSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.MLKEMParameterSpec.getName
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+
+  - method: org.bouncycastle.jcajce.spec.MLDSAParameterSpec.fromName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.jcajce.spec.MLDSAParameterSpec
+    return: { type: org.bouncycastle.jcajce.spec.MLDSAParameterSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.MLDSAParameterSpec.getName
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+
+  - method: org.bouncycastle.jcajce.spec.SLHDSAParameterSpec.fromName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.jcajce.spec.SLHDSAParameterSpec
+    return: { type: org.bouncycastle.jcajce.spec.SLHDSAParameterSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.SLHDSAParameterSpec.getName
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+
+  # ------------------------------------------------ KEM wrapping specs
+  # KEMGenerateSpec(PublicKey, keyAlgorithmName[, keySizeInBits]) drives
+  # KeyGenerator.init(spec) on a "ML-KEM"/"Kyber"/... generator: the KEM is
+  # chosen by the key, the string names the algorithm of the wrapped secret
+  # (for example "AES") and the int its size in bits.
+  - method: org.bouncycastle.jcajce.spec.KEMGenerateSpec.<init>
+    arity: 2
+    parameter_types: [java.security.PublicKey, java.lang.String]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMGenerateSpec
+    return: { type: org.bouncycastle.jcajce.spec.KEMGenerateSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: keyAlgorithmName
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.KEMGenerateSpec.<init>
+    arity: 3
+    parameter_types: [java.security.PublicKey, java.lang.String, int]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMGenerateSpec
+    return: { type: org.bouncycastle.jcajce.spec.KEMGenerateSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: keyAlgorithmName
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 2
+        name: keySizeInBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.KEMGenerateSpec.getPublicKey
+    arity: 0
+    return: { type: java.security.PublicKey, confidence: high }
+    role: output
+  # KEMGenerateSpec.Builder (nested static class, dotted spelling)
+  - method: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder.<init>
+    arity: 3
+    parameter_types: [java.security.PublicKey, java.lang.String, int]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder
+    return: { type: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: keyAlgorithmName
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 2
+        name: keySizeInBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder.withNoKdf
+    arity: 0
+    return: { type: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder, confidence: high }
+    role: config
+  - method: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder.withKdfAlgorithm
+    arity: 1
+    parameter_types: [org.bouncycastle.asn1.x509.AlgorithmIdentifier]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder
+    return: { type: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder, confidence: high }
+    role: config
+  - method: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder.withOtherInfo
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder
+    return: { type: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder, confidence: high }
+    role: config
+  - method: org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder.build
+    arity: 0
+    return: { type: org.bouncycastle.jcajce.spec.KEMGenerateSpec, confidence: high }
+    role: factory
+
+  # KEMExtractSpec(PrivateKey, encapsulation, keyAlgorithmName[, keySizeInBits])
+  - method: org.bouncycastle.jcajce.spec.KEMExtractSpec.<init>
+    arity: 3
+    parameter_types: [java.security.PrivateKey, "byte[]", java.lang.String]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMExtractSpec
+    return: { type: org.bouncycastle.jcajce.spec.KEMExtractSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 2
+        name: keyAlgorithmName
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.KEMExtractSpec.<init>
+    arity: 4
+    parameter_types: [java.security.PrivateKey, "byte[]", java.lang.String, int]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMExtractSpec
+    return: { type: org.bouncycastle.jcajce.spec.KEMExtractSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 2
+        name: keyAlgorithmName
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 3
+        name: keySizeInBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.KEMExtractSpec.getPrivateKey
+    arity: 0
+    return: { type: java.security.PrivateKey, confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.KEMExtractSpec.getEncapsulation
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder.<init>
+    arity: 4
+    parameter_types: [java.security.PrivateKey, "byte[]", java.lang.String, int]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder
+    return: { type: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder, confidence: high }
+    role: factory
+    parameters:
+      - index: 2
+        name: keyAlgorithmName
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 3
+        name: keySizeInBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder.withNoKdf
+    arity: 0
+    return: { type: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder, confidence: high }
+    role: config
+  - method: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder.withKdfAlgorithm
+    arity: 1
+    parameter_types: [org.bouncycastle.asn1.x509.AlgorithmIdentifier]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder
+    return: { type: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder, confidence: high }
+    role: config
+  - method: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder.withOtherInfo
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder
+    return: { type: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder, confidence: high }
+    role: config
+  - method: org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder.build
+    arity: 0
+    return: { type: org.bouncycastle.jcajce.spec.KEMExtractSpec, confidence: high }
+    role: factory
+
+  # KEMKDFSpec is the shared base of KEMGenerateSpec and KEMExtractSpec; its
+  # getters attach to both through the hierarchy.
+  - method: org.bouncycastle.jcajce.spec.KEMKDFSpec.getKeyAlgorithmName
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.KEMKDFSpec.getKeySize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.KEMKDFSpec.getOtherInfo
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  # KEMParameterSpec(keyAlgorithmName[, keySizeInBits]) for Cipher-based KEM
+  # wrapping (Cipher.init(WRAP_MODE, key, spec)).
+  - method: org.bouncycastle.jcajce.spec.KEMParameterSpec.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMParameterSpec
+    return: { type: org.bouncycastle.jcajce.spec.KEMParameterSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: keyAlgorithmName
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.KEMParameterSpec.<init>
+    arity: 2
+    parameter_types: [java.lang.String, int]
+    canonical_return_type: org.bouncycastle.jcajce.spec.KEMParameterSpec
+    return: { type: org.bouncycastle.jcajce.spec.KEMParameterSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: keyAlgorithmName
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 1
+        name: keySizeInBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.KEMParameterSpec.getKeySizeInBits
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+
+  # ------------------------------------------------ key specs (1.84+)
+  # MLKEMPrivateKeySpec(params, seed) / (params, privateData, publicData),
+  # MLKEMPublicKeySpec(params, publicData); same shape for ML-DSA. Used with
+  # KeyFactory.generatePrivate / generatePublic.
+  - method: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.jcajce.spec.MLKEMParameterSpec, "byte[]"]
+    canonical_return_type: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec
+    return: { type: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec.<init>
+    arity: 3
+    parameter_types: [org.bouncycastle.jcajce.spec.MLKEMParameterSpec, "byte[]", "byte[]"]
+    canonical_return_type: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec
+    return: { type: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec.getParameterSpec
+    arity: 0
+    return: { type: org.bouncycastle.jcajce.spec.MLKEMParameterSpec, confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec.getSeed
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec.getPrivateData
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec.getPublicData
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLKEMPublicKeySpec.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.jcajce.spec.MLKEMParameterSpec, "byte[]"]
+    canonical_return_type: org.bouncycastle.jcajce.spec.MLKEMPublicKeySpec
+    return: { type: org.bouncycastle.jcajce.spec.MLKEMPublicKeySpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.MLKEMPublicKeySpec.getParameterSpec
+    arity: 0
+    return: { type: org.bouncycastle.jcajce.spec.MLKEMParameterSpec, confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLKEMPublicKeySpec.getPublicData
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  - method: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.jcajce.spec.MLDSAParameterSpec, "byte[]"]
+    canonical_return_type: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec
+    return: { type: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec.<init>
+    arity: 3
+    parameter_types: [org.bouncycastle.jcajce.spec.MLDSAParameterSpec, "byte[]", "byte[]"]
+    canonical_return_type: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec
+    return: { type: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec.getParameterSpec
+    arity: 0
+    return: { type: org.bouncycastle.jcajce.spec.MLDSAParameterSpec, confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec.getSeed
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec.getPrivateData
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec.getPublicData
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLDSAPublicKeySpec.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.jcajce.spec.MLDSAParameterSpec, "byte[]"]
+    canonical_return_type: org.bouncycastle.jcajce.spec.MLDSAPublicKeySpec
+    return: { type: org.bouncycastle.jcajce.spec.MLDSAPublicKeySpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.MLDSAPublicKeySpec.getParameterSpec
+    arity: 0
+    return: { type: org.bouncycastle.jcajce.spec.MLDSAParameterSpec, confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.MLDSAPublicKeySpec.getPublicData
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  # ------------------------------------------------ LMS / HSS key-gen specs
+  # On bc-java main only (not in any release up to r1rv86v2). They take the
+  # org.bouncycastle.crypto.params LMSigParameters / LMOtsParameters of
+  # bouncycastle-lms-1.86.yaml.
+  - method: org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.crypto.params.LMSigParameters, org.bouncycastle.crypto.params.LMOtsParameters]
+    canonical_return_type: org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec
+    return: { type: org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: lmSigParams
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+      - index: 1
+        name: lmOtsParameters
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec.fromNames
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec
+    return: { type: org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: sigParams
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+      - index: 1
+        name: otsParams
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec.getLMSigParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.LMSigParameters, confidence: high }
+    role: output
+  - method: org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec.getLMOtsParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.LMOtsParameters, confidence: high }
+    role: output
+  # LMSHSSKeyGenParameterSpec(LMSKeyGenParameterSpec... specs): varargs count as 1.
+  - method: org.bouncycastle.jcajce.spec.LMSHSSKeyGenParameterSpec.<init>
+    arity: 1
+    parameter_types: ["org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec[]"]
+    canonical_return_type: org.bouncycastle.jcajce.spec.LMSHSSKeyGenParameterSpec
+    return: { type: org.bouncycastle.jcajce.spec.LMSHSSKeyGenParameterSpec, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: specs
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.jcajce.spec.LMSHSSKeyGenParameterSpec.getLMSSpecs
+    arity: 0
+    return: { type: "org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec[]", confidence: high }
+    role: output
+
+hierarchy:
+  org.bouncycastle.jcajce.spec.MLKEMParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  org.bouncycastle.jcajce.spec.MLDSAParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  org.bouncycastle.jcajce.spec.SLHDSAParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  org.bouncycastle.jcajce.spec.KEMGenerateSpec:
+    - org.bouncycastle.jcajce.spec.KEMKDFSpec
+    - java.security.spec.AlgorithmParameterSpec
+  org.bouncycastle.jcajce.spec.KEMExtractSpec:
+    - org.bouncycastle.jcajce.spec.KEMKDFSpec
+    - java.security.spec.AlgorithmParameterSpec
+  org.bouncycastle.jcajce.spec.KEMKDFSpec:
+    - java.lang.Object
+  org.bouncycastle.jcajce.spec.KEMGenerateSpec.Builder:
+    - java.lang.Object
+  org.bouncycastle.jcajce.spec.KEMExtractSpec.Builder:
+    - java.lang.Object
+  org.bouncycastle.jcajce.spec.KEMParameterSpec:
+    - org.bouncycastle.jcajce.spec.KTSParameterSpec
+  org.bouncycastle.jcajce.spec.KTSParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  org.bouncycastle.jcajce.spec.MLKEMPrivateKeySpec:
+    - java.security.spec.KeySpec
+  org.bouncycastle.jcajce.spec.MLKEMPublicKeySpec:
+    - java.security.spec.KeySpec
+  org.bouncycastle.jcajce.spec.MLDSAPrivateKeySpec:
+    - java.security.spec.KeySpec
+  org.bouncycastle.jcajce.spec.MLDSAPublicKeySpec:
+    - java.security.spec.KeySpec
+  org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  org.bouncycastle.jcajce.spec.LMSHSSKeyGenParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  org.bouncycastle.jcajce.spec.LMSKeyGenParameterSpec[]:
+    - java.lang.Object
+  # Shared JDK and Bouncy Castle types (identical to jdk-crypto.yaml and
+  # bouncycastle-lms-1.86.yaml; Merge accepts identical edges idempotently).
+  org.bouncycastle.crypto.params.LMSigParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.LMOtsParameters:
+    - java.lang.Object
+  java.security.PublicKey:
+    - java.security.Key
+  java.security.PrivateKey:
+    - java.security.Key
+  java.security.Key:
+    - java.lang.Object
+  java.security.spec.KeySpec:
+    - java.lang.Object
+  java.security.spec.AlgorithmParameterSpec:
+    - java.lang.Object
+  java.lang.String:
+    - java.lang.Object
+  java.lang.Object: []

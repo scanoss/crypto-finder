@@ -5,7 +5,7 @@ library:
   coordinates:
     - aws-lc-rs
     - aws_lc_rs
-  version_range: ">=1.0.0,<1.18.0"
+  version_range: ">=1.0.0,<1.19.0"
   description: "Safe AWS-LC bindings with a ring-compatible API"
 
 # API read at aws-lc-rs 1.17.1 (src/digest.rs, src/hmac.rs, src/aead.rs,
@@ -42,6 +42,78 @@ library:
 #
 # skipped-non-crypto: Nonce/Aad/Tag wrappers, the error types, encoding
 #   helpers, and the ring-compatibility re-export shims.
+#
+# ================= POST-QUANTUM: ML-KEM AND ML-DSA ===========================
+# Read at aws-lc-rs 1.18.2 (src/kem.rs, src/pqdsa/key_pair.rs,
+# src/pqdsa/signature.rs, src/signature.rs, src/unstable/signature.rs) and
+# cross-checked at the tags where each spelling appears or disappears:
+#
+#   src/kem.rs                      stable module from 1.6.0 (absent at 1.5.0)
+#     EncapsulationKey::new/key_bytes               1.6.0
+#     DecapsulationKey::generate/decapsulate/
+#       encapsulation_key/algorithm                 1.6.0
+#     ML_KEM_512/768/1024 consts                    1.10.0 (absent at 1.9.0)
+#     DecapsulationKey::new/key_bytes               1.16.0 (absent at 1.15.0)
+#   src/unstable/kem.rs             1.6.0 - 1.12.x only (removed at 1.13.0)
+#     get_algorithm(AlgorithmId) -> Option<&Algorithm>, the Kyber R3 selector
+#     (1.12.0 keeps the function but returns None for every id)
+#   src/unstable/signature.rs       ML-DSA era 1: 1.13.0 - 1.17.x
+#     re-exports PqdsaKeyPair & co. from the private crate::pqdsa modules;
+#     1.18.0 turns every item into a #[deprecated(since = "1.18.0")] alias
+#     behind the `unstable` feature, so the spelling still compiles there
+#   src/signature.rs                ML-DSA era 2: 1.18.0+ (PqdsaKeyPair,
+#     ML_DSA_44/65/87, ML_DSA_*_SIGNING stabilised; to_pkcs8 -> to_pkcs8v1)
+#     ParsedPublicKey::new/verify_sig               1.15.0 (absent at 1.13.0)
+#     PqdsaKeyPair::from_seed                       1.17.0 (absent at 1.13.0)
+#
+# THE RANGE IS WIDENED TO <1.19.0 because the stable ML-DSA spelling only
+# exists from 1.18.0 and 1.18.2 is the newest release read.
+#
+# BOTH ML-DSA SPELLINGS ARE AUTHORED IN THIS ONE FILE, the way ml-kem.yaml
+# keeps its era-1 and era-2 keys together: the keys differ
+# (`aws_lc_rs::unstable::signature::PqdsaKeyPair.generate` vs
+# `aws_lc_rs::signature::PqdsaKeyPair.generate`), so no (method, arity) key
+# carries two returns and no second file is needed. The version at which each
+# spelling is alive is recorded next to it. The `aws_lc_rs::pqdsa::*` path is
+# `mod pqdsa;` (private, lib.rs:284) in every release and is NOT a key.
+#
+# KEY SHAPES FOLLOW THE SAME RULE AS ABOVE. A method on a type in a nested
+# module emits `aws_lc_rs::unstable::signature.PqdsaKeyPair.generate` (two
+# dots) and rustAuthoredKey rewrites the second-to-last dot, so it is authored
+# `aws_lc_rs::unstable::signature::PqdsaKeyPair.generate`; a free function in
+# a nested module (`aws_lc_rs::unstable::kem.get_algorithm`) already carries
+# one dot and is authored as emitted, the shape rustls.yaml records for
+# `rustls::crypto::ring.default_provider`.
+#
+# ARITIES READ FROM THE DECLARATIONS (self excluded):
+#   kem::DecapsulationKey::generate(alg)                     -> 1 (kem.rs:253)
+#   kem::DecapsulationKey::new(alg, bytes)                   -> 2 (kem.rs:234)
+#   kem::DecapsulationKey::decapsulate(&self, ciphertext)    -> 1 (kem.rs:325)
+#   kem::EncapsulationKey::new(alg, bytes)                   -> 2 (kem.rs:465)
+#   kem::EncapsulationKey::encapsulate(&self)                -> 0 (kem.rs:402)
+#   unstable::kem::get_algorithm(id)                         -> 1 (1.8.0 unstable/kem.rs:133)
+#   PqdsaKeyPair::generate(algorithm)                        -> 1 (pqdsa/key_pair.rs:89)
+#   PqdsaKeyPair::from_pkcs8(algorithm, pkcs8)               -> 2 (pqdsa/key_pair.rs:106)
+#   PqdsaKeyPair::from_raw_private_key(algorithm, raw)       -> 2 (pqdsa/key_pair.rs:126)
+#   PqdsaKeyPair::from_seed(algorithm, seed)                 -> 2 (pqdsa/key_pair.rs:175)
+#   PqdsaKeyPair::sign(&self, msg, signature)                -> 2 (pqdsa/key_pair.rs:239)
+#   UnparsedPublicKey::new(algorithm, bytes)                 -> 2 (signature.rs:643)
+#   UnparsedPublicKey::verify(&self, message, signature)     -> 2 (signature.rs:661)
+#   ParsedPublicKey::new(algorithm, bytes)                   -> 2 (signature.rs:504)
+#   ParsedPublicKey::verify_sig(&self, message, signature)   -> 2 (signature.rs:564)
+#
+# The algorithm argument of every factory is the `&'static` constant a consumer
+# names (`&kem::ML_KEM_768`, `&signature::ML_DSA_65_SIGNING`), so it is
+# operation-determining with derivation argument_value, as ring.yaml does for
+# the same shape. `Result` returns are recorded as `core::result::Result`, the
+# convention the entries above already use.
+#
+# skipped-not-a-call-site: the `ML_KEM_*`, `ML_DSA_*`, `ML_DSA_*_SIGNING` and
+#   deprecated `MLDSA_*` constants. The rules claim them; a constant has no
+#   method key to contract.
+# skipped-non-crypto: `Ciphertext`/`SharedSecret`/`*KeyBytes` `AsRef<[u8]>`
+#   and `From` impls, `PqdsaSigningAlgorithm::signature_len/public_key_len/
+#   seed_len`, `Debug`, `AsDer`/`AsRawBytes` encoders on the private key.
 contracts:
   - method: aws_lc_rs::digest.digest
     arity: 2
@@ -75,6 +147,245 @@ contracts:
   - method: aws_lc_rs::aead::LessSafeKey.open_in_place
     arity: 3
     return: { type: core::result::Result, confidence: high }
+    role: operation
+
+
+  # ---- ML-KEM: aws_lc_rs::kem (stable module since 1.6.0) ----
+  - method: aws_lc_rs::kem::DecapsulationKey.generate
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::kem::Algorithm"]
+    role: factory
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::kem::DecapsulationKey.new
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::kem::Algorithm", "&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::kem::DecapsulationKey.encapsulation_key
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: output
+  - method: aws_lc_rs::kem::DecapsulationKey.decapsulate
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["aws_lc_rs::kem::Ciphertext"]
+    role: operation
+    parameters:
+      - index: 0
+        name: ciphertext
+        role: metadata-contributing
+        contributes: { property: ciphertext, derivation: argument_value }
+  - method: aws_lc_rs::kem::DecapsulationKey.key_bytes
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: output
+  - method: aws_lc_rs::kem::DecapsulationKey.algorithm
+    arity: 0
+    return: { type: "&'static aws_lc_rs::kem::Algorithm", confidence: high }
+    role: output
+  - method: aws_lc_rs::kem::EncapsulationKey.new
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::kem::Algorithm", "&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::kem::EncapsulationKey.encapsulate
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: aws_lc_rs::kem::EncapsulationKey.key_bytes
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: output
+  - method: aws_lc_rs::kem::EncapsulationKey.algorithm
+    arity: 0
+    return: { type: "&'static aws_lc_rs::kem::Algorithm", confidence: high }
+    role: output
+
+  # ---- Kyber R3 selector: aws_lc_rs::unstable::kem, 1.6.0 - 1.12.x ----
+  - method: aws_lc_rs::unstable::kem.get_algorithm
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: ["aws_lc_rs::unstable::kem::AlgorithmId"]
+    role: factory
+    parameters:
+      - index: 0
+        name: id
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # ---- ML-DSA era 1: aws_lc_rs::unstable::signature, 1.13.0 - 1.17.x ----
+  # (deprecated aliases keep the spelling compiling in 1.18.x)
+  - method: aws_lc_rs::unstable::signature::PqdsaKeyPair.generate
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::unstable::signature::PqdsaSigningAlgorithm"]
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::unstable::signature::PqdsaKeyPair.from_pkcs8
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::unstable::signature::PqdsaSigningAlgorithm", "&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::unstable::signature::PqdsaKeyPair.from_raw_private_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::unstable::signature::PqdsaSigningAlgorithm", "&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::unstable::signature::PqdsaKeyPair.from_seed
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::unstable::signature::PqdsaSigningAlgorithm", "&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::unstable::signature::PqdsaKeyPair.sign
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aws_lc_rs::unstable::signature::PqdsaKeyPair.to_pkcs8
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: output
+  - method: aws_lc_rs::unstable::signature::PqdsaKeyPair.public_key
+    arity: 0
+    return: { type: "&aws_lc_rs::unstable::signature::PqdsaPublicKey", confidence: high }
+    role: output
+  - method: aws_lc_rs::unstable::signature::PqdsaKeyPair.private_key
+    arity: 0
+    return: { type: aws_lc_rs::unstable::signature::PqdsaPrivateKey, confidence: high }
+    role: output
+  - method: aws_lc_rs::unstable::signature::PqdsaKeyPair.algorithm
+    arity: 0
+    return: { type: "&'static aws_lc_rs::unstable::signature::PqdsaSigningAlgorithm", confidence: high }
+    role: output
+
+  # ---- ML-DSA era 2: aws_lc_rs::signature, 1.18.0+ ----
+  - method: aws_lc_rs::signature::PqdsaKeyPair.generate
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::signature::PqdsaSigningAlgorithm"]
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::signature::PqdsaKeyPair.from_pkcs8
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::signature::PqdsaSigningAlgorithm", "&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::signature::PqdsaKeyPair.from_raw_private_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::signature::PqdsaSigningAlgorithm", "&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::signature::PqdsaKeyPair.from_seed
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&'static aws_lc_rs::signature::PqdsaSigningAlgorithm", "&[u8]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::signature::PqdsaKeyPair.sign
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: aws_lc_rs::signature::PqdsaKeyPair.to_pkcs8v1
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: output
+  - method: aws_lc_rs::signature::PqdsaKeyPair.public_key
+    arity: 0
+    return: { type: "&aws_lc_rs::signature::PqdsaPublicKey", confidence: high }
+    role: output
+  - method: aws_lc_rs::signature::PqdsaKeyPair.private_key
+    arity: 0
+    return: { type: aws_lc_rs::signature::PqdsaPrivateKey, confidence: high }
+    role: output
+  - method: aws_lc_rs::signature::PqdsaKeyPair.algorithm
+    arity: 0
+    return: { type: "&'static aws_lc_rs::signature::PqdsaSigningAlgorithm", confidence: high }
+    role: output
+
+  # ---- Verification: the path the ML-DSA docs take (signature.rs:177-191).
+  # Shared with every other verification algorithm of the crate; the constant
+  # passed as `algorithm` is what names ML-DSA. UnparsedPublicKey is 1.0.0+,
+  # ParsedPublicKey 1.15.0+.
+  - method: aws_lc_rs::signature::UnparsedPublicKey.new
+    arity: 2
+    return: { type: aws_lc_rs::signature::UnparsedPublicKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::signature::UnparsedPublicKey.verify
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&[u8]"]
+    role: operation
+  - method: aws_lc_rs::signature::ParsedPublicKey.new
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: aws_lc_rs::signature::ParsedPublicKey.verify_sig
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&[u8]"]
     role: operation
 
 hierarchy: {}

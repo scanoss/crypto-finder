@@ -1,0 +1,252 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: aws-lc
+  coordinates:
+    - aws/aws-lc
+    - aws-lc
+  version_range: ">=1.5.0,<6.0.0"
+  description: "AWS-LC post-quantum KEM and signature key APIs, deterministic KEM, ML-DSA signature context, and the libssl TLS group identifiers and negotiated-group getters"
+
+# Inventory source: include/openssl/evp.h, include/openssl/ssl.h and
+# include/openssl/experimental/kem_deterministic_api.h on the aws/aws-lc main
+# branch (read 2026-10-26, newest tag v5.9.0), with every contracted symbol
+# probed across the tag archives to find where it first appears:
+#
+#   EVP_PKEY_CTX_kem_set_params, EVP_PKEY_kem_new_raw_public_key,
+#   EVP_PKEY_kem_new_raw_secret_key, EVP_PKEY_kem_new_raw_key,
+#   EVP_PKEY_kem_check_key, EVP_PKEY_encapsulate, EVP_PKEY_decapsulate
+#                                                 v1.5.0  (absent at v1.0.1)
+#   SSL_CTX_set1_groups_list / SSL_set1_groups_list v1.10.0 (oldest tag read)
+#   SSL_get_group_id, SSL_get_group_name            v1.20.0 (absent at v1.15.0)
+#   EVP_PKEY_keygen_deterministic,
+#   EVP_PKEY_encapsulate_deterministic              v1.35.0 (absent at v1.15.0)
+#   EVP_PKEY_CTX_pqdsa_set_params,
+#   EVP_PKEY_pqdsa_new_raw_public_key,
+#   EVP_PKEY_pqdsa_new_raw_private_key,
+#   SSL_GROUP_X25519_MLKEM768 & co.                 v1.40.0 (absent at v1.38.0)
+#   EVP_PKEY_CTX_set_signature_context              v1.48.0 (absent at v1.45.0)
+#   SSL_get_negotiated_group                        v1.58.0 (absent at v1.55.0)
+#   EVP_PKEY_kem_get_type, EVP_PKEY_pqdsa_get_type,
+#   EVP_PKEY_CTX_set1_signature_context_string,
+#   EVP_PKEY_CTX_get0_signature_context             v5.0.0  (absent at v4.0.0)
+#   SSL_CTX_set1_group_ids / SSL_set1_group_ids     v5.6.0  (absent at v5.3.0)
+#
+# AWS-LC is a BoringSSL fork, so its libcrypto and libssl symbols share names
+# with OpenSSL. The C key is the bare function name and Merge() keeps the first
+# file (alphabetical) that declares a (method, arity) key, so THIS FILE DECLARES
+# ONLY THE SYMBOLS OPENSSL DOES NOT HAVE. The AWS-LC calls that OpenSSL also
+# declares with the same arity, return type, role and parameter roles resolve
+# through the merged C KB already and are deliberately absent here, so that
+# their attribution stays with the file that owned them first:
+#   EVP_PKEY_encapsulate/5, EVP_PKEY_decapsulate/5        (openssl-evp.yaml)
+#   SSL_CTX_set1_groups/3, SSL_set1_groups/3,
+#   SSL_CTX_set1_groups_list/2, SSL_set1_groups_list/2,
+#   SSL_CTX_set1_curves/3, SSL_set1_curves/3,
+#   SSL_CTX_set1_curves_list/2, SSL_set1_curves_list/2,
+#   SSL_get_negotiated_group/1                            (openssl-ssl.yaml)
+# A test pins that the merged KB still resolves them with the
+# keyExchangeGroups contribution the hybrid-group rules rely on.
+#
+# KEM and PQDSA keys are selected by an integer NID (NID_MLKEM512/768/1024,
+# NID_MLDSA44/65/87, NID_KYBER*_R3 in the 1.x era) passed to the *_set_params
+# configurator or to the raw-key factories, so that argument is
+# operation-determining with property algorithm, the shape openssl-evp.yaml
+# uses for the EVP_PKEY_CTX_new_from_name name argument. The *_get_type
+# getters return the same NID after the fact and are outputs.
+#
+# TLS groups: the group identifier lists set through SSL_CTX_set1_group_ids /
+# SSL_set1_group_ids carry SSL_GROUP_* values (SSL_GROUP_X25519_MLKEM768,
+# SSL_GROUP_SECP256R1_MLKEM768, SSL_GROUP_SECP384R1_MLKEM1024,
+# SSL_GROUP_MLKEM512/768/1024 among the classical curves), so the list is
+# metadata-contributing keyExchangeGroups like the string-list setters in
+# openssl-ssl.yaml. The group in force after the handshake is read through
+# SSL_get_group_id (uint16_t) and named through SSL_get_group_name(group_id);
+# SSL_get_curve_id / SSL_get_curve_name are the documented aliases that call
+# them. Configured and negotiated values stay distinct: config vs output.
+#
+# Dispositions for the rest of the reviewed surface:
+# covered-existing: the symbols listed above as owned by openssl-evp.yaml and
+#   openssl-ssl.yaml.
+# skipped-non-crypto: SSL_get_all_group_names / SSL_get_all_curve_names (table
+#   initialisation helpers, "not suitable to set a list of supported
+#   features" per the header), EVP_PKEY_KEM / EVP_PKEY_PQDSA (macros, not
+#   calls), the SSL_GROUP_* / SSL_CURVE_* constants.
+# skipped-unsupported: SSL_CTX_set_tmp_ecdh / SSL_set_tmp_ecdh take the group
+#   from an EC_KEY's curve, not from an argument the engine can derive.
+# needs-follow-up: ML-DSA ExternalMu / pre-hash signing (no public evp.h
+#   declaration; the internal ml_dsa headers are not a consumer surface), the
+#   generic EVP_PKEY_sign/verify path with an ML-DSA key (owned by
+#   openssl-evp.yaml's EVP_PKEY_sign_init/sign/verify entries), and the Kyber
+#   R3 NIDs retired from the KEM table in 2024.
+contracts:
+
+  # ML-KEM key material (EVP_PKEY_KEM). The NID selects the parameter set.
+  - method: EVP_PKEY_CTX_kem_set_params
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: nid
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_kem_new_raw_public_key
+    arity: 3
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nid
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_PKEY_kem_new_raw_secret_key
+    arity: 3
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nid
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_PKEY_kem_new_raw_key
+    arity: 5
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nid
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_kem_check_key
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_kem_get_type
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+
+  # Deterministic KEM (experimental/kem_deterministic_api.h): the same key
+  # generation and encapsulation with a caller-supplied seed.
+  - method: EVP_PKEY_keygen_deterministic
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_encapsulate_deterministic
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # ML-DSA key material (EVP_PKEY_PQDSA).
+  - method: EVP_PKEY_CTX_pqdsa_set_params
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: nid
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_pqdsa_new_raw_public_key
+    arity: 3
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nid
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_PKEY_pqdsa_new_raw_private_key
+    arity: 3
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: nid
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_PKEY_pqdsa_get_type
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+
+  # ML-DSA (and Ed25519ph) signature context string on the signing context.
+  - method: EVP_PKEY_CTX_set1_signature_context_string
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: context_len
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: EVP_PKEY_CTX_set_signature_context
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: context_len
+        role: metadata-contributing
+        contributes: {property: contextLength, derivation: argument_value}
+  - method: EVP_PKEY_CTX_get0_signature_context
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+
+  # TLS key-exchange groups by SSL_GROUP_* identifier (configuration).
+  - method: SSL_CTX_set1_group_ids
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: group_ids
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+  - method: SSL_set1_group_ids
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: group_ids
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+
+  # The group negotiated by the most recent handshake (output).
+  - method: SSL_get_group_id
+    arity: 1
+    return: {type: "uint16_t", confidence: high}
+    role: output
+  - method: SSL_get_group_name
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: SSL_get_curve_id
+    arity: 1
+    return: {type: "uint16_t", confidence: high}
+    role: output
+  - method: SSL_get_curve_name
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+
+hierarchy: {}

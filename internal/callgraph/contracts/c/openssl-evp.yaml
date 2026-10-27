@@ -11,6 +11,19 @@ library:
 # by crypto_rules#206. The list is limited to callable libcrypto APIs selected
 # by those detection rules: the EVP high-level surface plus the deprecated
 # low-level RSA/DSA key-generation entry points the rules still match.
+#
+# The "OpenSSL 3.5 PQC" section below adds the EVP_PKEY surface the ML-KEM
+# (FIPS 203), ML-DSA (FIPS 204) and SLH-DSA (FIPS 205) rules sink on, from the
+# OpenSSL master include/openssl/evp.h and the EVP_PKEY-ML-KEM(7),
+# EVP_KEM-ML-KEM(7), EVP_PKEY-ML-DSA(7), EVP_SIGNATURE-ML-DSA(7),
+# EVP_PKEY-SLH-DSA(7) and EVP_SIGNATURE-SLH-DSA(7) manuals. The algorithm is an
+# argument value ("ML-KEM-768", "ML-DSA-65", "SLH-DSA-SHA2-128s", ...) that the
+# rules capture; the contract only marks which argument carries it. OSSL_PARAM
+# keys ("seed", "context-string", "message-encoding", "deterministic", "mu",
+# "ikme", "encoded-pub-key") travel inside an OSSL_PARAM array and cannot be
+# expressed as a parameter role, so the *_init_ex2 / set_params calls carry a
+# config role only. The TLS group and signature-algorithm configuration lives
+# in openssl-ssl.yaml (libssl).
 contracts:
 
   # Cipher algorithm factories.
@@ -888,5 +901,407 @@ contracts:
     arity: 5
     return: {type: "int", confidence: high}
     role: operation
+
+
+  # OpenSSL 3.5 PQC (FIPS 203/204/205) and TLS groups. The TLS side (libssl)
+  # is in openssl-ssl.yaml; this block is the libcrypto EVP_PKEY surface.
+  # Signature contexts over a fetched EVP_SIGNATURE (OpenSSL 3.4): the
+  # algorithm argument carries "ML-DSA-65", "SLH-DSA-SHAKE-128f", ...
+  - method: EVP_PKEY_sign_init_ex
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_sign_init_ex2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_verify_init_ex
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_verify_init_ex2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_CTX_set_signature
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: siglen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+
+  # One-shot and streaming EVP_DigestSign/EVP_DigestVerify. ML-DSA and SLH-DSA
+  # take a NULL digest here; the key algorithm comes from the EVP_PKEY.
+  - method: EVP_DigestSignInit
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: type
+        role: operation-determining
+        contributes: {property: digest, derivation: argument_value}
+  - method: EVP_DigestSignInit_ex
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: mdname
+        role: operation-determining
+        contributes: {property: digest, derivation: argument_value}
+  - method: EVP_DigestSignUpdate
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: dsize
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_DigestSignFinal
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_DigestSign
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: tbslen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_DigestVerifyInit
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: type
+        role: operation-determining
+        contributes: {property: digest, derivation: argument_value}
+  - method: EVP_DigestVerifyInit_ex
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: mdname
+        role: operation-determining
+        contributes: {property: digest, derivation: argument_value}
+  - method: EVP_DigestVerifyUpdate
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: dsize
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: EVP_DigestVerifyFinal
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: siglen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+  - method: EVP_DigestVerify
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: siglen
+        role: metadata-contributing
+        contributes: {property: signatureLength, derivation: argument_value}
+      - index: 4
+        name: tbslen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+
+  # KEM contexts: the authenticated init variants (OpenSSL 3.2) and the KEM
+  # operation selector ("RSASVE", "DHKEM"); ML-KEM uses the plain init.
+  - method: EVP_PKEY_auth_encapsulate_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_auth_decapsulate_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_CTX_set_kem_op
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: op
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: EVP_PKEY_derive_init_ex
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_derive_set_peer_ex
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_encrypt_init_ex
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_decrypt_init_ex
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+
+  # Key-type and algorithm handles: the fetched algorithm name is read back
+  # from the handle, and the key-management fetch names the key type.
+  - method: EVP_KEYMGMT_fetch
+    arity: 3
+    return: {type: "EVP_KEYMGMT*", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_KEM_get0_name
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: EVP_KEM_is_a
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: name
+        role: metadata-contributing
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_SIGNATURE_get0_name
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: EVP_SIGNATURE_is_a
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: name
+        role: metadata-contributing
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # EVP_PKEY_CTX creation from an existing key and the generic key generator.
+  - method: EVP_PKEY_CTX_new
+    arity: 2
+    return: {type: "EVP_PKEY_CTX*", confidence: high}
+    role: factory
+  - method: EVP_PKEY_CTX_new_from_pkey
+    arity: 3
+    return: {type: "EVP_PKEY_CTX*", confidence: high}
+    role: factory
+  - method: EVP_PKEY_CTX_is_a
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: keytype
+        role: metadata-contributing
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_CTX_set_params
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_CTX_get_params
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: EVP_PKEY_paramgen_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_paramgen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_generate
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_check
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_public_check
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_public_check_quick
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_private_check
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_pairwise_check
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_param_check
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_PKEY_param_check_quick
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Key import and export through OSSL_PARAM arrays (ML-KEM, ML-DSA and
+  # SLH-DSA keys from "seed", "priv", "pub" or "encoded-pub-key"), and the raw
+  # NID-keyed importers (pre-3.0 names; the PQC key types need the _ex forms).
+  - method: EVP_PKEY_fromdata_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: EVP_PKEY_fromdata
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: selection
+        role: metadata-contributing
+        contributes: {property: selection, derivation: argument_value}
+  - method: EVP_PKEY_todata
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: selection
+        role: metadata-contributing
+        contributes: {property: selection, derivation: argument_value}
+  - method: EVP_PKEY_get_params
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: EVP_PKEY_get_octet_string_param
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: key_name
+        role: metadata-contributing
+        contributes: {property: parameter, derivation: argument_value}
+  - method: EVP_PKEY_get_utf8_string_param
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: key_name
+        role: metadata-contributing
+        contributes: {property: parameter, derivation: argument_value}
+  - method: EVP_PKEY_new_raw_private_key
+    arity: 4
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_PKEY_new_raw_public_key
+    arity: 4
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: len
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_PKEY_set1_encoded_public_key
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: ptlen
+        role: metadata-contributing
+        contributes: {property: keyLength, derivation: argument_value}
+  - method: EVP_PKEY_get1_encoded_public_key
+    arity: 2
+    return: {type: "size_t", confidence: high}
+    role: output
+
+  # Key-type and size introspection on an EVP_PKEY: the type name is the
+  # algorithm string ("ML-KEM-768", "ML-DSA-65", ...) and the predicate checks
+  # the key against one.
+  - method: EVP_PKEY_get0_type_name
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: EVP_PKEY_is_a
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: name
+        role: metadata-contributing
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: EVP_PKEY_get_id
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: EVP_PKEY_get_base_id
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: EVP_PKEY_get_bits
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: EVP_PKEY_get_security_bits
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: EVP_PKEY_get_security_category
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: EVP_PKEY_get_size
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
 
 hierarchy: {}
