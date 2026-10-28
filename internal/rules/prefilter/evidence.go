@@ -182,10 +182,10 @@ func (ev *Evidence) addImports(family Family, text string) {
 // single- or double-quoted one). A quote inside a comment or a regex
 // literal (`/["']/g`, "it's") then yields a wrong candidate besides, never
 // instead of, the real literals after it, so the result is a superset of
-// the file's literals and can only keep more rules. A candidate longer than
-// jsMaxSpecifier is dropped: no module specifier is that long, and the bound
-// keeps the reader linear on long literals full of escaped quotes (webpack
-// eval bundles).
+// the file's literals and can only keep more rules. A candidate is read for
+// at most jsMaxSpecifier bytes and a longer one is kept as that prefix: the
+// bound keeps the reader linear on long literals full of escaped quotes
+// (webpack eval bundles), and the prefix still extends any module it names.
 func jsStringLiterals(text string) []string {
 	var out []string
 	for i := 0; i < len(text); i++ {
@@ -203,14 +203,17 @@ func jsStringLiterals(text string) []string {
 			}
 			j++
 		}
-		if j < limit && text[j] == quote {
+		switch {
+		case j < limit && text[j] == quote:
 			out = append(out, text[i+1:j])
+		case j == limit && limit < len(text):
+			out = append(out, text[i+1:limit])
 		}
 	}
 	return out
 }
 
-// jsMaxSpecifier bounds a JS string-literal candidate, in bytes.
+// jsMaxSpecifier is how far a JS string-literal candidate is read, in bytes.
 const jsMaxSpecifier = 1024
 
 // addGoImports reads import declarations, single and grouped. Lines outside

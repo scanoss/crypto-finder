@@ -178,3 +178,12 @@ func TestJSStringLiteralsLinearOnEscapedQuotes(t *testing.T) {
 		t.Error("crypto-js not read after a long escaped literal")
 	}
 }
+
+func TestJSLongSpecifierKeepsItsModule(t *testing.T) {
+	rule := mustRule(t, `{"id": "r", "languages": ["js"], "message": "m", "severity": "INFO",
+	  "metadata": {"imports": ["node-seal"]}, "pattern": "SEAL()"}`)
+	source := "const s = require('node-seal/" + strings.Repeat("a", 1100) + "');\n"
+	if !keeps(t, rule, []string{"js"}, evidenceOf("js", source)) {
+		t.Error("a specifier longer than the bound must still name its module")
+	}
+}
