@@ -106,10 +106,16 @@ func (s *Scanner) collectPlanned(ctx context.Context, st *site, rulePaths []stri
 		return nil, nil, false, nil
 	}
 
-	inspection := inspectTargets(plan, s.prefilter == scanner.RulePrefilterImports)
+	// A scoped scan (--detect-paths-from) reads only the listed files, whose
+	// imports may sit in files outside the scope, so the prefilter would
+	// drop rules the unit can match: every rule runs.
+	withPrefilter := s.prefilter == scanner.RulePrefilterImports && !scoped
+	inspection := inspectTargets(plan, withPrefilter)
 	rules := ruleset.rules
-	if s.prefilter == scanner.RulePrefilterImports {
+	if withPrefilter {
 		rules = s.prefilterRules(ruleset.rules, inspection.evidence, st.roots)
+	} else if s.prefilter == scanner.RulePrefilterImports {
+		log.Debug().Msg("Rule prefilter skipped: the scan is limited to listed files")
 	}
 
 	if s.mode == scanner.OpengrepModeCore {
