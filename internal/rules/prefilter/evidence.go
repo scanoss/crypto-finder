@@ -204,6 +204,7 @@ func jsStringLiterals(text string) []string {
 // addGoImports reads import declarations, single and grouped. Lines outside
 // any declaration that merely start with "import" only add candidates.
 func (ev *Evidence) addGoImports(text string) {
+	text = stripGoComments(text)
 	inBlock := false
 	// pending marks an "import" keyword alone on its line: the "(" of its
 	// block may follow on the next line.
@@ -255,6 +256,42 @@ func stripGoLineComment(line string) string {
 		return line[:i]
 	}
 	return line
+}
+
+// stripGoComments blanks every comment of a Go source, keeping newlines, so
+// a ")" or an "import" inside a comment that spans lines never reads as
+// code. A comment marker inside a string literal is blanked too, which only
+// drops candidates that were never import paths.
+func stripGoComments(text string) string {
+	b := []byte(text)
+	for i := 0; i < len(b); i++ {
+		if b[i] != '/' || i+1 >= len(b) {
+			continue
+		}
+		var end int
+		switch b[i+1] {
+		case '/':
+			end = i + 2
+			for end < len(b) && b[end] != '\n' {
+				end++
+			}
+		case '*':
+			end = i + 2
+			for end+1 < len(b) && (b[end] != '*' || b[end+1] != '/') {
+				end++
+			}
+			end = min(end+2, len(b))
+		default:
+			continue
+		}
+		for k := i; k < end; k++ {
+			if b[k] != '\n' {
+				b[k] = ' '
+			}
+		}
+		i = end - 1
+	}
+	return string(b)
 }
 
 func (ev *Evidence) addGoStrings(text string) {
