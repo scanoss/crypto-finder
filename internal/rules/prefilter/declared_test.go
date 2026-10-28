@@ -134,3 +134,11 @@ func TestGoImportAfterCodeOnTheSameLine(t *testing.T) {
 		}
 	}
 }
+
+func TestCIncludeAfterFormFeed(t *testing.T) {
+	rule := mustRule(t, `{"id": "r", "languages": ["c"], "message": "m", "severity": "INFO",
+	  "metadata": {"imports": ["sodium"]}, "pattern": "crypto_secretbox_easy(...)"}`)
+	if !keeps(t, rule, []string{"c"}, evidenceOf("c", "\f#include <sodium.h>\nint main(void) { return 0; }\n")) {
+		t.Error("a form feed before #include is whitespace to the preprocessor")
+	}
+}

@@ -123,7 +123,7 @@ var (
 	pythonFromLine   = regexp.MustCompile(`(?m)^[ \t]*from[ \t]+([\w.]+)[ \t]+import[ \t]*(\([^)]*\)|[^\n#;]*)`)
 	rustUseDecl      = regexp.MustCompile(`(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+([^;]+);`)
 	rustCrate        = regexp.MustCompile(`\bextern\s+crate\s+([A-Za-z_][A-Za-z0-9_]*)`)
-	cIncludeLine     = regexp.MustCompile(`(?m)^[ \t]*#[ \t]*include[ \t]*([^\n]*)`)
+	cIncludeLine     = regexp.MustCompile(`(?m)^[ \t\f\v]*#[ \t\f\v]*include[ \t]*([^\n]*)`)
 	whitespaceRun    = regexp.MustCompile(`\s+`)
 )
 
