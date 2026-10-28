@@ -62,6 +62,7 @@ func TestDeclaredCIncludeMatchesPathSegment(t *testing.T) {
 	}{
 		{"openssl", "openssl/evp.h", true},
 		{"openssl", "deps/openssl/evp.h", true},
+		{"openssl", "..\\third_party\\openssl\\include\\openssl\\evp.h", true},
 		{"sodium", "sodium.h", true},
 		{"sodium", "../include/sodium/core.h", true},
 		{"QSsl", "QtNetwork/QSslSocket", true},
