@@ -102,9 +102,14 @@ func TestJSStringLiteralsStayInStep(t *testing.T) {
 	long := strings.Repeat("A", 700)
 	source := "const banner = \"Don't share this key\", CryptoJS = require('crypto-js');\n" +
 		"const data = \"" + long + "\"; const forge = require(\"node-forge\");\n" +
-		"const m = {'\"': \"&quot;\"}; const jose = require(`jose`);\n"
+		"const m = {'\"': \"&quot;\"}; const jose = require(`jose`);\n" +
+		"/* it's the legacy hasher */ import sjcl from 'sjcl';\n" +
+		"const QUOTES = /[\"']/g; const bcrypt = require(\"bcryptjs\");\n" +
+		"/** The `secret must stay private */\nconst argon = require(\"argon2\");\n" +
+		"const esc = /[\\\\`*_{}]/g; function f() { return require('tweetnacl'); }\n" +
+		"var h=/[&<>\"']/g,x=require(\"jsonwebtoken\");\n"
 	ev := evidenceOf("js", source)
-	for _, want := range []string{"crypto-js", "node-forge", "jose"} {
+	for _, want := range []string{"crypto-js", "node-forge", "jose", "sjcl", "bcryptjs", "argon2", "tweetnacl", "jsonwebtoken"} {
 		found := false
 		for _, candidate := range ev.imports[FamilyJS] {
 			found = found || candidate == want
@@ -118,7 +123,12 @@ func TestJSStringLiteralsStayInStep(t *testing.T) {
 func TestGoImportAfterCodeOnTheSameLine(t *testing.T) {
 	rule := mustRule(t, `{"id": "r", "languages": ["go"], "message": "m", "severity": "INFO",
 	  "metadata": {"imports": ["crypto/ecdh"]}, "pattern": "ecdh.X25519()"}`)
-	for _, source := range []string{"package main; import \"crypto/ecdh\"\n", "package main\n/* keep */ import \"crypto/ecdh\"\n"} {
+	for _, source := range []string{
+		"package main; import \"crypto/ecdh\"\n",
+		"package main\n/* keep */ import \"crypto/ecdh\"\n",
+		"package main\nimport /* standard library only */ (\n\t\"crypto/ecdh\"\n)\n",
+		"package main\nimport\n(\n\t\"crypto/ecdh\"\n)\n",
+	} {
 		if !keeps(t, rule, []string{"go"}, evidenceOf("go", source)) {
 			t.Errorf("import after code on the same line must be read: %q", source)
 		}
