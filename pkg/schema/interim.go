@@ -87,11 +87,6 @@ type RulesInfo struct {
 	// For remote sources: the manifest checksum reported by the API.
 	// For local sources: SHA256 of concatenated rule file contents in path-sorted order.
 	ChecksumSHA256 string `json:"checksum_sha256,omitempty"`
-
-	// Profile is the hash of the profile (languages and libraries of the
-	// scanned sources) a remote ruleset was filtered to before the scan.
-	// Empty when the full ruleset was used.
-	Profile string `json:"profile,omitempty"`
 }
 
 // Finding represents all cryptographic assets discovered in a single file.

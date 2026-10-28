@@ -18,7 +18,6 @@ package prefilter
 
 import (
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -52,26 +51,6 @@ func (ev *Evidence) Files() int { return ev.files }
 
 // HasAnalyzer reports whether some file was added for analyzer.
 func (ev *Evidence) HasAnalyzer(analyzer string) bool { return ev.analyzers[analyzer] }
-
-// Analyzers lists, sorted, the analyzers some file was added for.
-func (ev *Evidence) Analyzers() []string {
-	analyzers := make([]string, 0, len(ev.analyzers))
-	for analyzer := range ev.analyzers {
-		analyzers = append(analyzers, analyzer)
-	}
-	sort.Strings(analyzers)
-	return analyzers
-}
-
-// hasFamily reports whether some file was added for an analyzer of family.
-func (ev *Evidence) hasFamily(family Family) bool {
-	for analyzer := range ev.analyzers {
-		if FamilyOf(analyzer) == family {
-			return true
-		}
-	}
-	return false
-}
 
 // AddFile records one source file that the scanner analyzes with the given
 // analyzers.

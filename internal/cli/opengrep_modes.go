@@ -19,7 +19,6 @@ package cli
 import (
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -33,8 +32,6 @@ const (
 	opengrepModeEnv = "SCANOSS_OPENGREP_MODE"
 	// rulePrefilterEnv sets --rule-prefilter when the flag is not given.
 	rulePrefilterEnv = "SCANOSS_RULE_PREFILTER"
-	// noRemoteFilterEnv sets --no-remote-filter when the flag is not given.
-	noRemoteFilterEnv = "SCANOSS_NO_REMOTE_FILTER"
 	// opengrepCoreRulesCacheDirName holds the rules files core mode hands
 	// opengrep-core, under the crypto-finder cache directory.
 	opengrepCoreRulesCacheDirName = "opengrep-core-rules"
@@ -98,25 +95,6 @@ func rulePrefilterExplicit(flagSet bool, lookupEnv func(string) (string, bool)) 
 	}
 	raw, ok := lookupEnv(rulePrefilterEnv)
 	return ok && strings.TrimSpace(raw) != ""
-}
-
-// resolveNoRemoteFilter reports whether the remote ruleset is downloaded
-// whole rather than filtered to the scan's languages and libraries: an
-// explicit --no-remote-filter wins over SCANOSS_NO_REMOTE_FILTER, read as
-// a boolean; neither filters.
-func resolveNoRemoteFilter(flagSet, flagValue bool, lookupEnv func(string) (string, bool)) (bool, error) {
-	if flagSet {
-		return flagValue, nil
-	}
-	raw, ok := lookupEnv(noRemoteFilterEnv)
-	if !ok || strings.TrimSpace(raw) == "" {
-		return false, nil
-	}
-	value, err := strconv.ParseBool(strings.TrimSpace(raw))
-	if err != nil {
-		return false, fmt.Errorf("%s: %q is not a boolean", noRemoteFilterEnv, raw)
-	}
-	return value, nil
 }
 
 // opengrepCoreRulesCacheDir returns where core mode keeps opengrep-core

@@ -117,31 +117,3 @@ func TestRulePrefilterExplicit(t *testing.T) {
 		t.Error("a blank variable is not explicit")
 	}
 }
-
-func TestResolveNoRemoteFilter(t *testing.T) {
-	cases := []struct {
-		name    string
-		flagSet bool
-		flag    bool
-		env     map[string]string
-		want    bool
-		wantErr bool
-	}{
-		{name: "default"},
-		{name: "flag", flagSet: true, flag: true, want: true},
-		{name: "flag false wins over env", flagSet: true, flag: false, env: map[string]string{noRemoteFilterEnv: "1"}, want: false},
-		{name: "env 1", env: map[string]string{noRemoteFilterEnv: "1"}, want: true},
-		{name: "env true", env: map[string]string{noRemoteFilterEnv: "true"}, want: true},
-		{name: "env 0", env: map[string]string{noRemoteFilterEnv: "0"}, want: false},
-		{name: "blank env", env: map[string]string{noRemoteFilterEnv: " "}, want: false},
-		{name: "bad env", env: map[string]string{noRemoteFilterEnv: "yes please"}, wantErr: true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got, err := resolveNoRemoteFilter(c.flagSet, c.flag, envOf(c.env))
-			if (err != nil) != c.wantErr || got != c.want {
-				t.Errorf("resolveNoRemoteFilter = %v, %v; want %v, error %v", got, err, c.want, c.wantErr)
-			}
-		})
-	}
-}

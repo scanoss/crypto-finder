@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -611,7 +610,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 		defer cancel()
 
-		_, _, err := client.doDownload(ctx, http.MethodGet, "https://api.example.com/v2/cryptography/rulesets/dca/latest/download", nil)
+		_, _, err := client.doDownload(ctx, "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
 		if !errors.Is(err, ErrTimeout) {
 			t.Fatalf("expected ErrTimeout, got %v", err)
 		}
@@ -634,7 +633,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 		}
 		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
 
-		_, _, err := client.doDownload(context.Background(), http.MethodGet, "https://api.example.com/v2/cryptography/rulesets/dca/latest/download", nil)
+		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
 		if err == nil || !strings.Contains(err.Error(), "failed to read response body") {
 			t.Fatalf("expected read body failure, got %v", err)
 		}
@@ -660,7 +659,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 		}
 		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
 
-		_, _, err := client.doDownload(context.Background(), http.MethodGet, "https://api.example.com/v2/cryptography/rulesets/dca/latest/download", nil)
+		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
 		if err == nil || !strings.Contains(err.Error(), "failed to close response body") {
 			t.Fatalf("expected close body failure, got %v", err)
 		}
@@ -671,117 +670,8 @@ func TestClient_doDownload_InvalidURL(t *testing.T) {
 	t.Parallel()
 
 	client := NewClient("https://api.example.com", "test-key")
-	_, _, err := client.doDownload(context.Background(), http.MethodGet, "http://[::1", nil)
+	_, _, err := client.doDownload(context.Background(), "http://[::1")
 	if err == nil || !strings.Contains(err.Error(), "failed to create request") {
 		t.Fatalf("expected invalid URL request creation error, got %v", err)
-	}
-}
-
-func TestClient_GetRulesetIndex(t *testing.T) {
-	t.Parallel()
-
-	client := newTestClient(t, "test-key", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/v2/cryptography/rulesets/dca/v1.16.0/index" {
-			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		if r.Header.Get("x-api-key") != "test-key" {
-			t.Error("Missing or incorrect API key header")
-		}
-		w.Header().Set("content-type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"name":"dca","version":"v1.16.0","checksum_sha256":"abc","languages":["go","java"],"modules":{"go":["crypto/aes"],"java":["javax.crypto"]}}`))
-	})
-
-	index, err := client.GetRulesetIndex(context.Background(), "dca", "v1.16.0")
-	if err != nil {
-		t.Fatalf("GetRulesetIndex() failed: %v", err)
-	}
-	if index.Name != "dca" || index.Version != "v1.16.0" || index.ChecksumSHA256 != "abc" {
-		t.Errorf("unexpected index identity: %+v", index)
-	}
-	if len(index.Languages) != 2 || index.Modules["java"][0] != "javax.crypto" {
-		t.Errorf("unexpected index content: %+v", index)
-	}
-}
-
-func TestClient_GetRulesetIndex_NotFound(t *testing.T) {
-	t.Parallel()
-
-	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte("no such ruleset"))
-	})
-
-	_, err := client.GetRulesetIndex(context.Background(), "dca", "v0")
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
-	}
-}
-
-func TestClient_DownloadFilteredRuleset_Success(t *testing.T) {
-	t.Parallel()
-
-	profile := RulesetProfile{Languages: []string{"java"}, Modules: map[string][]string{"java": {"javax.crypto"}}}
-	client := newTestClient(t, "test-key", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v2/cryptography/rulesets/dca/latest/filter" {
-			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		if r.Header.Get("content-type") != "application/json" {
-			t.Errorf("content-type = %q", r.Header.Get("content-type"))
-		}
-		body, _ := io.ReadAll(r.Body)
-		if string(body) != `{"languages":["java"],"modules":{"java":["javax.crypto"]}}` {
-			t.Errorf("unexpected body %s", body)
-		}
-		w.Header().Set("scanoss-ruleset-name", "dca")
-		w.Header().Set("scanoss-ruleset-version", "v1.16.0")
-		w.Header().Set("x-checksum-sha256", "def456")
-		w.Header().Set("scanoss-ruleset-created-at", "2024-01-01T00:00:00Z")
-		w.Header().Set("scanoss-ruleset-profile", "p0f11e")
-		w.Header().Set("scanoss-ruleset-rules", "12/340")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("tarball"))
-	})
-
-	data, manifest, err := client.DownloadFilteredRuleset(context.Background(), "dca", "latest", profile)
-	if err != nil {
-		t.Fatalf("DownloadFilteredRuleset() failed: %v", err)
-	}
-	if string(data) != "tarball" {
-		t.Errorf("unexpected tarball %q", data)
-	}
-	if manifest.Version != "v1.16.0" || manifest.ChecksumSHA256 != "def456" || manifest.Profile != "p0f11e" || manifest.Rules != "12/340" {
-		t.Errorf("unexpected manifest %+v", manifest)
-	}
-}
-
-func TestClient_DownloadFilteredRuleset_BadProfile(t *testing.T) {
-	t.Parallel()
-
-	attempts := 0
-	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
-		attempts++
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`{"code":"INVALID_PROFILE"}`))
-	})
-
-	_, _, err := client.DownloadFilteredRuleset(context.Background(), "dca", "latest", RulesetProfile{})
-	if err == nil || !strings.Contains(err.Error(), "filtered download failed") {
-		t.Fatalf("expected a wrapped client error, got %v", err)
-	}
-	if attempts != 1 {
-		t.Errorf("a 400 must not be retried, got %d attempts", attempts)
-	}
-}
-
-func TestManifest_OptionalFieldsOmitted(t *testing.T) {
-	t.Parallel()
-
-	data, err := json.Marshal(Manifest{Name: "dca"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "profile") || strings.Contains(string(data), "rules") {
-		t.Errorf("empty profile and rules must be omitted: %s", data)
 	}
 }

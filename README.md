@@ -158,7 +158,6 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--no-cache` | off | Force fresh download of remote rules, bypass cache |
 | `--strict` | off | Fail if the rules cache expired and the API is unreachable (no stale-cache fallback) |
 | `--max-stale-age <dur>` | `30d` | Maximum age for stale cache fallback (max `90d`) |
-| `--no-remote-filter` | off | Download the whole remote ruleset instead of the rules for the target's languages and libraries (also via `SCANOSS_NO_REMOTE_FILTER=1`). See [Filtered downloads](docs/REMOTE_RULESETS.md#filtered-downloads) |
 | `--rule-prefilter <mode>` | `imports` | Skip, per scanned unit (the project and each dependency batch), the rules for libraries its sources never import; `off` runs every rule (also via `SCANOSS_RULE_PREFILTER`). OpenGrep only |
 | `--scanner <name>` | `opengrep` | Scanner engine: `opengrep`, `semgrep` |
 | `-f`, `--format <fmt>` | `json` | Output format: `json` (interim), `cyclonedx` |
@@ -219,7 +218,7 @@ Dependency scanning (`--scan-dependencies`) resolves and scans third-party packa
 
 Detection rules are **not in this repository** — they live in [scanoss/crypto_rules](https://github.com/scanoss/crypto_rules) and are served as the remote `dca` ruleset via the SCANOSS API (cached locally with TTL + stale fallback; see [Remote Rulesets](docs/REMOTE_RULESETS.md)).
 
-A scan runs only the rules its sources can match. The remote ruleset is downloaded filtered to the target's languages and the libraries it uses (`--no-remote-filter` downloads it whole), and the import prefilter skips, for the project and each dependency batch, the rules for libraries the unit never imports (`--rule-prefilter off` runs every rule). Rules declaring `metadata.imports: ["*"]`, and rules whose import requirement cannot be read, are always kept.
+A scan loads only the rules its sources can match: the import prefilter skips, for the project and each dependency batch, the rules for libraries the unit never imports (`--rule-prefilter off` runs every rule). Rules declaring `metadata.imports: ["*"]`, and rules whose import requirement cannot be read, are always kept; when the rules or the targets cannot be read ahead of the scanner, every rule of the unit's languages runs.
 
 Local rules development loop:
 
