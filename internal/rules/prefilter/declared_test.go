@@ -152,6 +152,8 @@ func TestCIncludeAfterBareCR(t *testing.T) {
 		"#include <stdio.h>\r#include <sodium.h>\rint main(void) { return 0; }\r",
 		"#include <stdio.h>\r\n\r#include <sodium.h>\r\nint main(void) { return 0; }\r\n",
 		"/* license */\r#include <sodium.h>\n",
+		"/* x */\f#include <sodium.h>\n",
+		"/* x */\v#include <sodium.h>\n",
 	} {
 		if !keeps(t, rule, []string{"c"}, evidenceOf("c", source)) {
 			t.Errorf("an include after a bare CR must be read: %q", source)
