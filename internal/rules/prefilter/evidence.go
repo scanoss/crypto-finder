@@ -141,7 +141,7 @@ var inlineImport = map[Family]*regexp.Regexp{
 	FamilyJava:   regexp.MustCompile(`([;{}]|\*/)([ \t]*(?:import|package)\b)`),
 	FamilyPython: regexp.MustCompile(`([;:])([ \t]*(?:import|from)\b)`),
 	FamilyRust:   regexp.MustCompile(`([;{}\]]|\*/)([ \t]*(?:use|pub)\b)`),
-	FamilyC:      regexp.MustCompile(`(\*/)([ \t]*#)`),
+	FamilyC:      regexp.MustCompile(`(\*/)([ \t\f\v]*#)`),
 	// A Go import after a statement or a comment on the same line
 	// (`package main; import "x"`, `/* keep */ import "x"`).
 	FamilyGo: regexp.MustCompile(`(;|\*/)([ \t]*import\b)`),
