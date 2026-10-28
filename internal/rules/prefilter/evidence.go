@@ -171,11 +171,13 @@ func (ev *Evidence) addImports(family Family, text string) {
 	}
 }
 
-// jsStringLiterals reads every string literal of a JavaScript or TypeScript
-// source in one left-to-right pass, so a quote of another kind inside a
-// literal ("Don't") or a long literal never puts the reader out of step with
-// the literals that follow. Backslash escapes are skipped; a literal left
-// open at the end of its line is dropped (template literals may span lines).
+// jsStringLiterals reads the string literals of a JavaScript or TypeScript
+// source without parsing it: a candidate literal starts at every quote and
+// ends at the next unescaped quote of the same kind (a newline ends a
+// single- or double-quoted one). A quote inside a comment or a regex
+// literal (`/["']/g`, "it's") then yields a wrong candidate besides, never
+// instead of, the real literals after it, so the result is a superset of
+// the file's literals and can only keep more rules.
 func jsStringLiterals(text string) []string {
 	var out []string
 	for i := 0; i < len(text); i++ {
@@ -192,12 +194,9 @@ func jsStringLiterals(text string) []string {
 			}
 			j++
 		}
-		if j >= len(text) || text[j] != quote {
-			i = j
-			continue
+		if j < len(text) && text[j] == quote {
+			out = append(out, text[i+1:j])
 		}
-		out = append(out, text[i+1:j])
-		i = j
 	}
 	return out
 }
@@ -206,6 +205,9 @@ func jsStringLiterals(text string) []string {
 // any declaration that merely start with "import" only add candidates.
 func (ev *Evidence) addGoImports(text string) {
 	inBlock := false
+	// pending marks an "import" keyword alone on its line: the "(" of its
+	// block may follow on the next line.
+	pending := false
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if inBlock {
@@ -216,14 +218,22 @@ func (ev *Evidence) addGoImports(text string) {
 			ev.addGoStrings(trimmed)
 			continue
 		}
+		if pending && trimmed != "" {
+			pending = false
+			trimmed = "import " + trimmed
+		}
 		if !strings.HasPrefix(trimmed, "import") {
 			continue
 		}
-		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "import"))
+		// A comment between "import" and "(" or in the "(" line is not
+		// part of the declaration.
+		rest := strings.TrimSpace(stripGoLineComment(strings.TrimPrefix(trimmed, "import")))
+		if rest == "" {
+			pending = true
+			continue
+		}
 		if strings.HasPrefix(rest, "(") {
-			// A ")" inside a comment on the "import (" line does not end
-			// the block.
-			body := stripGoLineComment(rest[1:])
+			body := rest[1:]
 			if end := strings.Index(body, ")"); end >= 0 {
 				ev.addGoStrings(body[:end])
 				continue
