@@ -265,12 +265,13 @@ func (a *importAtom) evalDeclared(ev *Evidence) bool {
 }
 
 // includeNames reports whether a bare include path (not the <...> or "..."
-// spelling) has a "/"-separated segment that starts with name.
+// spelling) has a segment, split on "/" or "\" (MSVC paths), that starts
+// with name.
 func includeNames(include, name string) bool {
 	if include == "" || include[0] == '<' || include[0] == '"' {
 		return false
 	}
-	for _, segment := range strings.Split(include, "/") {
+	for _, segment := range strings.FieldsFunc(include, func(r rune) bool { return r == '/' || r == '\\' }) {
 		if strings.HasPrefix(segment, name) {
 			return true
 		}
