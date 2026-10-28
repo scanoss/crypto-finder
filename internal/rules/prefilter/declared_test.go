@@ -144,3 +144,17 @@ func TestCIncludeAfterFormFeed(t *testing.T) {
 		t.Error("a form feed before #include is whitespace to the preprocessor")
 	}
 }
+
+func TestCIncludeAfterBareCR(t *testing.T) {
+	rule := mustRule(t, `{"id": "r", "languages": ["c"], "message": "m", "severity": "INFO",
+	  "metadata": {"imports": ["sodium"]}, "pattern": "crypto_secretbox_easy(...)"}`)
+	for _, source := range []string{
+		"#include <stdio.h>\r#include <sodium.h>\rint main(void) { return 0; }\r",
+		"#include <stdio.h>\r\n\r#include <sodium.h>\r\nint main(void) { return 0; }\r\n",
+		"/* license */\r#include <sodium.h>\n",
+	} {
+		if !keeps(t, rule, []string{"c"}, evidenceOf("c", source)) {
+			t.Errorf("an include after a bare CR must be read: %q", source)
+		}
+	}
+}
