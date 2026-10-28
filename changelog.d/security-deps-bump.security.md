@@ -1,1 +1,0 @@
-- Upgraded `golang.org/x/crypto` to v0.52.0, `github.com/klauspost/compress` to v1.18.7, `github.com/moby/go-archive` to v0.3.0 and `github.com/moby/sys/user` to v0.4.1 to fix open Dependabot security advisories
