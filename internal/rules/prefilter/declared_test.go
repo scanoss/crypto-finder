@@ -128,6 +128,8 @@ func TestGoImportAfterCodeOnTheSameLine(t *testing.T) {
 		"package main\n/* keep */ import \"crypto/ecdh\"\n",
 		"package main\nimport /* standard library only */ (\n\t\"crypto/ecdh\"\n)\n",
 		"package main\nimport\n(\n\t\"crypto/ecdh\"\n)\n",
+		"package main\nimport /*\nstdlib only\n*/ (\n\t\"crypto/ecdh\"\n)\n",
+		"package main\nimport (\n\t/* legacy\n\t) removed: see notes */\n\t\"crypto/ecdh\"\n)\n",
 	} {
 		if !keeps(t, rule, []string{"go"}, evidenceOf("go", source)) {
 			t.Errorf("import after code on the same line must be read: %q", source)
