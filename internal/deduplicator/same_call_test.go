@@ -104,3 +104,40 @@ func TestDeduplicate_SameCallSameMaterialMerges(t *testing.T) {
 		t.Fatalf("got\n%q\nwant\n%q", got, want)
 	}
 }
+
+func TestDeduplicate_UnresolvedKeyCallAbsorbedByResolvedAssetOfAnyType(t *testing.T) {
+	unresolvedKey := callAsset(10, 20, "jca.key.dynamic-keypairgenerator", map[string]string{
+		"assetType": "related-crypto-material", "materialType": "key", "api": "KeyPairGenerator.getInstance",
+	})
+	namedKey := callAsset(10, 20, "jca.key.keypairgenerator-rsa", map[string]string{
+		"assetType": "related-crypto-material", "materialType": "key", "materialAlgorithm": "RSA", "materialSize": "2048",
+	})
+	if got, want := dedupFile(unresolvedKey, namedKey), []string{
+		"10-20 [jca.key.keypairgenerator-rsa jca.key.dynamic-keypairgenerator] " +
+			"[assetType=related-crypto-material materialAlgorithm=RSA materialSize=2048 materialType=key]",
+	}; !slices.Equal(got, want) {
+		t.Fatalf("key: got\n%q\nwant\n%q", got, want)
+	}
+
+	namedAlgorithm := callAsset(10, 20, "jca.signature.ml-dsa.keypairgenerator", map[string]string{
+		"assetType": "algorithm", "algorithmName": "ML-DSA-65", "algorithmFamily": "ML-DSA",
+	})
+	if got, want := dedupFile(unresolvedKey, namedAlgorithm), []string{
+		"10-20 [jca.signature.ml-dsa.keypairgenerator jca.key.dynamic-keypairgenerator] " +
+			"[algorithmFamily=ML-DSA algorithmName=ML-DSA-65 assetType=algorithm]",
+	}; !slices.Equal(got, want) {
+		t.Fatalf("algorithm: got\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestDeduplicate_UnresolvedKeyCallKeptBesideUnrelatedMaterial(t *testing.T) {
+	unresolvedKey := callAsset(10, 20, "jca.key.dynamic-keypairgenerator", map[string]string{
+		"assetType": "related-crypto-material", "materialType": "key",
+	})
+	iv := callAsset(10, 20, "jca.iv.gcmparameterspec", map[string]string{
+		"assetType": "related-crypto-material", "materialType": "initialization-vector",
+	})
+	if got := dedupFile(unresolvedKey, iv); len(got) != 2 {
+		t.Fatalf("an IV does not resolve a key pair generator call, want both assets kept; got %q", got)
+	}
+}

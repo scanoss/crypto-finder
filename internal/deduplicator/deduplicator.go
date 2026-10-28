@@ -105,7 +105,76 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 		deduplicated = append(deduplicated, mergedAsset)
 	}
 
-	return mergeSameCallAssets(deduplicated)
+	return absorbUnresolvedAssets(mergeSameCallAssets(deduplicated))
+}
+
+// absorbUnresolvedAssets drops an asset whose rule matched only the call,
+// such as KeyPairGenerator.getInstance(name), when another asset on the same
+// span resolves what the call creates. That asset may be of another type: a
+// named ML-DSA algorithm resolves an unnamed key pair generator call. Only
+// the dropped asset's rule ids are kept, so its metadata cannot leak into an
+// asset of another type.
+func absorbUnresolvedAssets(assets []entities.CryptographicAsset) []entities.CryptographicAsset {
+	kept := make([]entities.CryptographicAsset, 0, len(assets))
+	absorbed := make([]bool, len(assets))
+	for i, asset := range assets {
+		if !unresolvedCall(asset) {
+			continue
+		}
+		j := slices.IndexFunc(assets, func(other entities.CryptographicAsset) bool {
+			return resolvesCall(other) && spansOverlap(asset, other)
+		})
+		if j < 0 {
+			continue
+		}
+		absorbed[i] = true
+		for _, rule := range asset.Rules {
+			if !slices.ContainsFunc(assets[j].Rules, func(r entities.RuleInfo) bool { return r.ID == rule.ID }) {
+				assets[j].Rules = append(assets[j].Rules, rule)
+			}
+		}
+	}
+	for i, asset := range assets {
+		if !absorbed[i] {
+			kept = append(kept, asset)
+		}
+	}
+	return kept
+}
+
+// resolvesCall reports whether the asset names the algorithm a call creates.
+func resolvesCall(asset entities.CryptographicAsset) bool {
+	switch asset.Metadata["assetType"] {
+	case "algorithm":
+		return resolvesAlgorithm(asset)
+	case "related-crypto-material":
+		return keyMaterial(asset) && asset.Metadata["materialAlgorithm"] != ""
+	default:
+		return false
+	}
+}
+
+func keyMaterial(asset entities.CryptographicAsset) bool {
+	switch asset.Metadata["materialType"] {
+	case "key", "secret-key", "private-key", "public-key":
+		return true
+	default:
+		return false
+	}
+}
+
+// unresolvedCall reports whether the rule could tell only that a crypto
+// object is created, not which algorithm, size or curve it uses.
+func unresolvedCall(asset entities.CryptographicAsset) bool {
+	switch asset.Metadata["assetType"] {
+	case "algorithm":
+		return !resolvesAlgorithm(asset)
+	case "related-crypto-material":
+		return keyMaterial(asset) && asset.Metadata["materialAlgorithm"] == "" && asset.Metadata["materialSize"] == "" &&
+			asset.Metadata["materialCurve"] == ""
+	default:
+		return false
+	}
 }
 
 // mergeSameCallAssets merges assets that different rules reported for one

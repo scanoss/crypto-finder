@@ -16,8 +16,10 @@
 - Crypto calls whose algorithm the scan cannot resolve, such as `Cipher.getInstance(name)` with a
   runtime value, are no longer dropped from the CBOM. They appear as `unknown-<primitive>` components
   (for example `unknown-block-cipher`, `unknown-hash`) with the `scanoss:unresolved` property set to
-  `true`. Algorithm findings without an `algorithmFamily` are no longer dropped either.
+  `true`. Keys and secret keys created by such a call keep their `key` / `secret-key` name and carry the
+  same property. Algorithm findings without an `algorithmFamily` are no longer dropped either.
 - Scan findings no longer report one call twice when two rules describe it: assets on overlapping
   spans with the same algorithm name and family, or the same key material, merge into one asset that
   lists both rules and keeps the more specific rule's metadata over a `generic` rule's. An unresolved
-  algorithm asset on the same call as a named one merges into the named one.
+  algorithm or key asset on the same call as an asset that names its algorithm, key or curve merges into
+  that asset.

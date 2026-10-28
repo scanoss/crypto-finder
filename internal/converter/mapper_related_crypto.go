@@ -72,6 +72,9 @@ func (m *RelatedCryptoMapper) MapToComponentWithEvidence(asset *entities.Cryptog
 	identity := materialIdentityOf(asset)
 	addCustomProperty(component, scanossMaterialAlgorithmPropertyName, identity.algorithm)
 	addCustomProperty(component, scanossCurvePropertyName, identity.curve)
+	if identity.unresolvedKey() {
+		addCustomProperty(component, scanossUnresolvedPropertyName, "true")
+	}
 
 	return component, nil
 }
@@ -133,6 +136,17 @@ func (id materialIdentity) name() string {
 		parts = append(parts, detail)
 	}
 	return strings.Join(append(parts, id.materialType), "-")
+}
+
+// unresolvedKey reports a key whose rule matched only the call that creates
+// it, such as KeyPairGenerator.getInstance(name) with a runtime name.
+func (id materialIdentity) unresolvedKey() bool {
+	switch id.materialType {
+	case "key", "secret-key", "private-key", "public-key":
+		return id.algorithm == "" && id.size == "" && id.curve == ""
+	default:
+		return false
+	}
 }
 
 // key separates material that shares a name but not a size.
