@@ -700,3 +700,27 @@ func TestAggregator_CertificateFallbackScopedByFile(t *testing.T) {
 		t.Fatalf("expected 2 certificate aggregates, got %d", len(aggregated))
 	}
 }
+
+func TestAggregator_CurveKeysGroupByNameWhateverTheirSize(t *testing.T) {
+	key := func(line int, size string) entities.CryptographicAsset {
+		metadata := map[string]string{
+			"assetType": "related-crypto-material", "materialType": "key",
+			"materialAlgorithm": "EC", "materialCurve": "secp384r1",
+		}
+		if size != "" {
+			metadata["materialSize"] = size
+		}
+		return entities.CryptographicAsset{StartLine: line, EndLine: line, Metadata: metadata}
+	}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath: "Keys.java", CryptographicAssets: []entities.CryptographicAsset{key(3, "384"), key(9, "")},
+	}}}
+
+	aggregated, err := NewAggregator().AggregateAssets(report)
+	if err != nil {
+		t.Fatalf("AggregateAssets() error = %v", err)
+	}
+	if len(aggregated) != 1 || aggregated[0].Name != "EC-secp384r1-key" || len(aggregated[0].Occurrences) != 2 {
+		t.Fatalf("want one EC-secp384r1-key component with 2 occurrences, got %+v", aggregated)
+	}
+}

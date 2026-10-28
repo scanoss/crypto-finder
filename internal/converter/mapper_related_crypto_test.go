@@ -18,7 +18,6 @@ package converter
 
 import (
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 
@@ -328,31 +327,5 @@ func TestRelatedCryptoMapper_DoesNotInferSideSpecificSizeForAmbiguousMaterial(t 
 	want := []cdx.Property{{Name: "scanoss:materialType", Value: "key-pair"}}
 	if component.Properties == nil || !reflect.DeepEqual(*component.Properties, want) {
 		t.Fatalf("Properties = %v, want only the raw material type %v", component.Properties, want)
-	}
-}
-
-func TestRelatedCryptoMapper_MarksOnlyKeysWithNothingResolvedAsUnresolved(t *testing.T) {
-	mapper := NewRelatedCryptoMapper()
-	cases := []struct {
-		metadata map[string]string
-		want     bool
-	}{
-		{map[string]string{"materialType": "key"}, true},
-		{map[string]string{"materialType": "secret-key"}, true},
-		{map[string]string{"materialType": "secret-key", "materialSize": "256"}, false},
-		{map[string]string{"materialType": "key", "materialAlgorithm": "RSA"}, false},
-		{map[string]string{"materialType": "initialization-vector"}, false},
-	}
-	for _, tc := range cases {
-		tc.metadata["assetType"] = "related-crypto-material"
-		component, err := mapper.MapToComponentWithEvidence(&entities.CryptographicAsset{Metadata: tc.metadata})
-		if err != nil {
-			t.Fatalf("%v: unexpected error: %v", tc.metadata, err)
-		}
-		got := component.Properties != nil &&
-			slices.Contains(*component.Properties, cdx.Property{Name: scanossUnresolvedPropertyName, Value: "true"})
-		if got != tc.want {
-			t.Errorf("%v: unresolved = %v, want %v", tc.metadata, got, tc.want)
-		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 func callAsset(startCol, endCol int, ruleID string, metadata map[string]string) entities.CryptographicAsset {
@@ -139,5 +140,53 @@ func TestDeduplicate_UnresolvedKeyCallKeptBesideUnrelatedMaterial(t *testing.T) 
 	})
 	if got := dedupFile(unresolvedKey, iv); len(got) != 2 {
 		t.Fatalf("an IV does not resolve a key pair generator call, want both assets kept; got %q", got)
+	}
+}
+
+func TestDeduplicate_UnresolvedCallInsideAMultiLineSpanIsKept(t *testing.T) {
+	block := entities.CryptographicAsset{
+		StartLine: 10, EndLine: 20, StartCol: 5, EndCol: 10,
+		Rules:    []entities.RuleInfo{{ID: "jca.cipher.aes"}},
+		Metadata: map[string]string{"assetType": "algorithm", "algorithmName": "AES", "algorithmPrimitive": "block-cipher"},
+	}
+	digest := entities.CryptographicAsset{
+		StartLine: 15, EndLine: 15, StartCol: 40, EndCol: 44,
+		Rules:    []entities.RuleInfo{{ID: "jca.hash.dynamic-message-digest"}},
+		Metadata: map[string]string{"assetType": "algorithm", "algorithmPrimitive": "hash"},
+	}
+	report := &entities.InterimReport{Findings: []entities.Finding{{FilePath: "Crypto.java", CryptographicAssets: []entities.CryptographicAsset{block, digest}}}}
+	if got := DeduplicateInterimReport(report).Findings[0].CryptographicAssets; len(got) != 2 {
+		t.Fatalf("an unresolved call inside another rule's multi-line span is a different call, want 2 assets, got %d", len(got))
+	}
+}
+
+func TestDeduplicate_SameCallMergeKeepsParsedParameterConditions(t *testing.T) {
+	condition, err := paramcondition.Parse("param[0]==AES/GCM/NoPadding")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conditioned := callAsset(10, 20, "jca.cipher.aes-gcm", map[string]string{
+		"assetType": "algorithm", "algorithmName": "AES-GCM", "parameterCondition": condition.Raw,
+	})
+	conditioned.ParameterConditions = []paramcondition.Condition{condition}
+	richer := callAsset(10, 20, "jca.cipher.aes-gcm-init", map[string]string{
+		"assetType": "algorithm", "algorithmName": "AES-GCM", "algorithmMode": "GCM", "algorithmPrimitive": "ae", "api": "Cipher.init", "library": "JCA",
+	})
+
+	report := &entities.InterimReport{Findings: []entities.Finding{{FilePath: "Crypto.java", CryptographicAssets: []entities.CryptographicAsset{conditioned, richer}}}}
+	got := DeduplicateInterimReport(report).Findings[0].CryptographicAssets
+	if len(got) != 1 {
+		t.Fatalf("want one merged asset, got %d", len(got))
+	}
+	if got[0].Metadata["parameterCondition"] != condition.Raw || len(got[0].ParameterConditions) != 1 {
+		t.Fatalf("metadata condition %q and parsed conditions %v must agree", got[0].Metadata["parameterCondition"], got[0].ParameterConditions)
+	}
+}
+
+func TestDeduplicate_SameNameWithDifferentKeySizeStaysSeparate(t *testing.T) {
+	aes128 := callAsset(10, 20, "jca.cipher.aes-a", map[string]string{"assetType": "algorithm", "algorithmName": "AES", "keySize": "128"})
+	aes256 := callAsset(10, 20, "jca.cipher.aes-b", map[string]string{"assetType": "algorithm", "algorithmName": "AES", "keySize": "256"})
+	if got := dedupFile(aes128, aes256); len(got) != 2 {
+		t.Fatalf("different key sizes are different assets, got %q", got)
 	}
 }

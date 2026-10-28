@@ -122,7 +122,7 @@ func absorbUnresolvedAssets(assets []entities.CryptographicAsset) []entities.Cry
 			continue
 		}
 		j := slices.IndexFunc(assets, func(other entities.CryptographicAsset) bool {
-			return resolvesCall(other) && spansOverlap(asset, other)
+			return resolvesCall(other) && sameCall(asset, other)
 		})
 		if j < 0 {
 			continue
@@ -186,19 +186,31 @@ func mergeSameCallAssets(assets []entities.CryptographicAsset) []entities.Crypto
 	merged := make([]entities.CryptographicAsset, 0, len(assets))
 	for _, asset := range assets {
 		i := slices.IndexFunc(merged, func(kept entities.CryptographicAsset) bool {
-			return spansOverlap(kept, asset) && describeSameAsset(kept, asset)
+			return sameCall(kept, asset) && describeSameAsset(kept, asset)
 		})
 		if i < 0 {
 			merged = append(merged, asset)
 			continue
 		}
+		base, other := merged[i], asset
 		if preference(asset) > preference(merged[i]) {
-			merged[i] = mergeAssets([]entities.CryptographicAsset{asset, merged[i]})
-		} else {
-			merged[i] = mergeAssets([]entities.CryptographicAsset{merged[i], asset})
+			base, other = asset, merged[i]
 		}
+		merged[i] = mergeAssets([]entities.CryptographicAsset{base, other})
+		if len(merged[i].ParameterConditions) == 0 {
+			merged[i].ParameterConditions = other.ParameterConditions
+			merged[i].ConditionedValue = other.ConditionedValue
+			merged[i].ConditionedValuesIncomplete = other.ConditionedValuesIncomplete
+		}
+		merged[i].OID = cmp.Or(merged[i].OID, other.OID)
 	}
 	return merged
+}
+
+// sameCall reports whether two spans cover one call: the same lines, with
+// overlapping columns. A rule spanning several statements is not one call.
+func sameCall(a, b entities.CryptographicAsset) bool {
+	return a.StartLine == b.StartLine && a.EndLine == b.EndLine && spansOverlap(a, b)
 }
 
 func describeSameAsset(a, b entities.CryptographicAsset) bool {
@@ -208,12 +220,16 @@ func describeSameAsset(a, b entities.CryptographicAsset) bool {
 	}
 	switch assetType {
 	case "algorithm":
-		if !resolvesAlgorithm(a) || !resolvesAlgorithm(b) {
-			return resolvesAlgorithm(a) != resolvesAlgorithm(b)
-		}
 		name := a.Metadata["algorithmName"]
-		return name != "" && name == b.Metadata["algorithmName"] &&
-			a.Metadata["algorithmFamily"] == b.Metadata["algorithmFamily"]
+		if name == "" || name != b.Metadata["algorithmName"] || a.Metadata["algorithmFamily"] != b.Metadata["algorithmFamily"] {
+			return false
+		}
+		for _, field := range []string{"cryptoFunction", "keySize", "algorithmMode", "algorithmPadding"} {
+			if a.Metadata[field] != "" && b.Metadata[field] != "" && a.Metadata[field] != b.Metadata[field] {
+				return false
+			}
+		}
+		return true
 	case "related-crypto-material":
 		for _, field := range []string{"materialType", "materialAlgorithm", "materialSize", "materialCurve"} {
 			if a.Metadata[field] != b.Metadata[field] {
