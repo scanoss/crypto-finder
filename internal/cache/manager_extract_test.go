@@ -264,7 +264,7 @@ func TestManager_downloadAndCache_ManifestSaveError(t *testing.T) {
 		t.Fatalf("Failed to create manifest directory: %v", err)
 	}
 
-	if err := manager.downloadAndCache(context.Background(), manager.fullRequest("dca", "latest", targetPath)); err == nil {
+	if err := manager.downloadAndCache(context.Background(), "dca", "latest", targetPath); err == nil {
 		t.Fatal("Expected error from manifest save failure")
 	}
 }
@@ -308,7 +308,7 @@ func TestManager_downloadAndCache_ExtractError(t *testing.T) {
 	})
 	manager := &Manager{apiClient: apiClient, cacheDir: t.TempDir()}
 
-	if err := manager.downloadAndCache(context.Background(), manager.fullRequest("dca", "latest", filepath.Join(manager.cacheDir, "dca", "latest"))); err == nil {
+	if err := manager.downloadAndCache(context.Background(), "dca", "latest", filepath.Join(manager.cacheDir, "dca", "latest")); err == nil {
 		t.Fatal("Expected error from invalid tarball")
 	}
 }
@@ -319,11 +319,4 @@ func TestManager_newBytesReader(t *testing.T) {
 	if _, err := reader.Read(buf); err != nil && err != io.EOF {
 		t.Fatalf("Unexpected read error: %v", err)
 	}
-}
-
-// fullRequest is the request GetRulesetPath builds, with an explicit path.
-func (m *Manager) fullRequest(name, version, path string) rulesetRequest {
-	return rulesetRequest{name: name, version: version, path: path, fetch: func(ctx context.Context) ([]byte, *api.Manifest, error) {
-		return m.apiClient.DownloadRuleset(ctx, name, version)
-	}}
 }

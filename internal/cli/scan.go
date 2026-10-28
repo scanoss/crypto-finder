@@ -116,7 +116,6 @@ var (
 	scanScannerJobs              int
 	scanOpengrepMode             string
 	scanRulePrefilter            string
-	scanNoRemoteFilter           bool
 	scanJavaJDKMajor             string
 	scanJavaJDKHomes             []string
 	scanJavaCompiledArtifact     string
@@ -216,11 +215,6 @@ func init() {
 	scanCmd.Flags().StringVar(&scanRulePrefilter, "rule-prefilter", "imports",
 		"Drop, per scanned unit (the project and each dependency batch), the rules whose library its sources never import: imports (the default) or off. "+
 			"Rules whose import requirement is unknown are always kept. OpenGrep scanner only. Can also be set via "+rulePrefilterEnv)
-	scanCmd.Flags().BoolVar(&scanNoRemoteFilter, "no-remote-filter", false,
-		"Download the whole remote ruleset instead of the rules for the target's languages and libraries. "+
-			"By default a scan without --scan-dependencies sends the SCANOSS API the languages its sources have files of and the ruleset "+
-			"libraries they use, never its import list or file names, and receives only the rules that can match; "+
-			"any failure falls back to the whole ruleset. Can also be set via "+noRemoteFilterEnv)
 	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
 	scanCmd.Flags().StringVar(&scanExportCgFormat, "export-callgraph-format", "json", "Call graph export format (only json is supported)")
@@ -797,10 +791,6 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	if scanScanner != opengrep.ScannerName && (opengrepModeExplicit(cmd.Flags().Changed("opengrep-mode"), os.LookupEnv) || rulePrefilterExplicit(cmd.Flags().Changed("rule-prefilter"), os.LookupEnv)) {
 		log.Warn().Str("scanner", scanScanner).Msg("--opengrep-mode and --rule-prefilter apply to the opengrep scanner only; ignoring them")
 	}
-	noRemoteFilter, err := resolveNoRemoteFilter(cmd.Flags().Changed("no-remote-filter"), scanNoRemoteFilter, os.LookupEnv)
-	if err != nil {
-		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
-	}
 
 	// Parse timeout
 	timeout, err := scanutil.ParseDuration(scanTimeout)
@@ -954,14 +944,6 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			defaultRulesetVersion,
 			cacheManager,
 		)
-		if builder := remoteFilterProfile(target, skipMatcher, remoteFilterOptions{
-			scanner:          scanScanner,
-			prefilter:        rulePrefilter,
-			scanDependencies: scanDependencies,
-			noRemoteFilter:   noRemoteFilter,
-		}); builder != nil {
-			remoteSource.SetProfileBuilder(builder)
-		}
 		ruleSources = append(ruleSources, remoteSource)
 	}
 
