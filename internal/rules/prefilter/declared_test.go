@@ -19,6 +19,7 @@ package prefilter
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAlwaysOnImportsKeepRule(t *testing.T) {
@@ -158,5 +159,22 @@ func TestCIncludeAfterBareCR(t *testing.T) {
 		if !keeps(t, rule, []string{"c"}, evidenceOf("c", source)) {
 			t.Errorf("an include after a bare CR must be read: %q", source)
 		}
+	}
+}
+
+func TestJSStringLiteralsLinearOnEscapedQuotes(t *testing.T) {
+	body := strings.Repeat(`__webpack_require__(\"./x\");`, 40000)
+	source := `eval("` + body + `");` + "\nconst c = require(\"crypto-js\");\n"
+	start := time.Now()
+	ev := evidenceOf("js", source)
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("reader took %v on a 1 MB eval literal", elapsed)
+	}
+	found := false
+	for _, candidate := range ev.imports[FamilyJS] {
+		found = found || candidate == "crypto-js"
+	}
+	if !found {
+		t.Error("crypto-js not read after a long escaped literal")
 	}
 }
