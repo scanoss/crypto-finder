@@ -9,7 +9,9 @@ package deduplicator
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"slices"
+	"strings"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -43,6 +45,8 @@ func (k assetGroupKey) String() string {
 //  3. For each group, merges all assets into one representative asset
 //  4. Preserves all unique metadata values from merged assets
 //  5. Merges all unique rules from all assets in the group
+//  6. Merges assets that different rules reported for one call
+//     (mergeSameCallAssets)
 //
 // Assets with different identifying characteristics (e.g., different algorithmFamily
 // or algorithmName) or at different locations are kept separate to prevent metadata confusion.
@@ -101,7 +105,106 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 		deduplicated = append(deduplicated, mergedAsset)
 	}
 
-	return deduplicated
+	return mergeSameCallAssets(deduplicated)
+}
+
+// mergeSameCallAssets merges assets that different rules reported for one
+// call: overlapping spans that describe the same asset, and an algorithm
+// whose rule could not resolve it overlapping one that names it. The merged
+// asset keeps the preferred asset's metadata, fills the gaps from the other,
+// and lists the rules of both.
+func mergeSameCallAssets(assets []entities.CryptographicAsset) []entities.CryptographicAsset {
+	merged := make([]entities.CryptographicAsset, 0, len(assets))
+	for _, asset := range assets {
+		i := slices.IndexFunc(merged, func(kept entities.CryptographicAsset) bool {
+			return spansOverlap(kept, asset) && describeSameAsset(kept, asset)
+		})
+		if i < 0 {
+			merged = append(merged, asset)
+			continue
+		}
+		if preference(asset) > preference(merged[i]) {
+			merged[i] = mergeAssets([]entities.CryptographicAsset{asset, merged[i]})
+		} else {
+			merged[i] = mergeAssets([]entities.CryptographicAsset{merged[i], asset})
+		}
+	}
+	return merged
+}
+
+func describeSameAsset(a, b entities.CryptographicAsset) bool {
+	assetType := a.Metadata["assetType"]
+	if assetType != b.Metadata["assetType"] {
+		return false
+	}
+	switch assetType {
+	case "algorithm":
+		if !resolvesAlgorithm(a) || !resolvesAlgorithm(b) {
+			return resolvesAlgorithm(a) != resolvesAlgorithm(b)
+		}
+		name := a.Metadata["algorithmName"]
+		return name != "" && name == b.Metadata["algorithmName"] &&
+			a.Metadata["algorithmFamily"] == b.Metadata["algorithmFamily"]
+	case "related-crypto-material":
+		for _, field := range []string{"materialType", "materialAlgorithm", "materialSize", "materialCurve"} {
+			if a.Metadata[field] != b.Metadata[field] {
+				return false
+			}
+		}
+		return a.Metadata["materialType"] != ""
+	default:
+		return false
+	}
+}
+
+// resolvesAlgorithm reports whether the rule told which algorithm the call
+// uses, as opposed to matching a call such as Cipher.getInstance(name).
+func resolvesAlgorithm(asset entities.CryptographicAsset) bool {
+	return asset.Metadata["algorithmName"] != "" || asset.Metadata["algorithmFamily"] != ""
+}
+
+// preference ranks which of two assets for one call keeps its metadata: one
+// that resolves its algorithm, then one found by a specific rule rather than
+// a generic one, then the one with more metadata.
+func preference(asset entities.CryptographicAsset) int {
+	rank := len(asset.Metadata)
+	if !onlyGenericRules(asset) {
+		rank += 1 << 16
+	}
+	if resolvesAlgorithm(asset) {
+		rank += 1 << 17
+	}
+	return rank
+}
+
+// onlyGenericRules reports whether every rule that found the asset is a
+// catch-all rule, which rule ids mark with a final "generic" segment.
+func onlyGenericRules(asset entities.CryptographicAsset) bool {
+	for _, rule := range asset.Rules {
+		if rule.ID != "generic" && !strings.HasSuffix(rule.ID, ".generic") {
+			return false
+		}
+	}
+	return len(asset.Rules) > 0
+}
+
+type position struct{ line, col int }
+
+func (p position) before(q position) bool {
+	return p.line < q.line || p.line == q.line && p.col < q.col
+}
+
+// spansOverlap compares 1-based, end-exclusive spans. A missing end column
+// stands for the end of the line, so line-only spans overlap on shared lines.
+func spansOverlap(a, b entities.CryptographicAsset) bool {
+	start := func(x entities.CryptographicAsset) position { return position{x.StartLine, x.StartCol} }
+	end := func(x entities.CryptographicAsset) position {
+		if x.EndCol == 0 {
+			return position{x.EndLine, math.MaxInt}
+		}
+		return position{x.EndLine, x.EndCol}
+	}
+	return start(a).before(end(b)) && start(b).before(end(a))
 }
 
 // orderAssets returns the assets ordered by start, end and then rule id and
