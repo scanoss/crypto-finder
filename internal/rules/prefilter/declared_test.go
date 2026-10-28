@@ -16,7 +16,10 @@
 
 package prefilter
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAlwaysOnImportsKeepRule(t *testing.T) {
 	rule := mustRule(t, `{"id": "r", "languages": ["java"], "message": "m", "severity": "INFO",
@@ -92,5 +95,32 @@ func TestGoImportBlockWithCommentOnOpeningLine(t *testing.T) {
 	  "metadata": {"imports": ["github.com/golang-jwt/jwt/v5"]}, "pattern": "jwt.New(...)"}`)
 	if !keeps(t, rule, []string{"go"}, evidenceOf("go", source)) {
 		t.Error("a comment with a parenthesis on the import ( line must not end the block")
+	}
+}
+
+func TestJSStringLiteralsStayInStep(t *testing.T) {
+	long := strings.Repeat("A", 700)
+	source := "const banner = \"Don't share this key\", CryptoJS = require('crypto-js');\n" +
+		"const data = \"" + long + "\"; const forge = require(\"node-forge\");\n" +
+		"const m = {'\"': \"&quot;\"}; const jose = require(`jose`);\n"
+	ev := evidenceOf("js", source)
+	for _, want := range []string{"crypto-js", "node-forge", "jose"} {
+		found := false
+		for _, candidate := range ev.imports[FamilyJS] {
+			found = found || candidate == want
+		}
+		if !found {
+			t.Errorf("%q not read from %v", want, ev.imports[FamilyJS])
+		}
+	}
+}
+
+func TestGoImportAfterCodeOnTheSameLine(t *testing.T) {
+	rule := mustRule(t, `{"id": "r", "languages": ["go"], "message": "m", "severity": "INFO",
+	  "metadata": {"imports": ["crypto/ecdh"]}, "pattern": "ecdh.X25519()"}`)
+	for _, source := range []string{"package main; import \"crypto/ecdh\"\n", "package main\n/* keep */ import \"crypto/ecdh\"\n"} {
+		if !keeps(t, rule, []string{"go"}, evidenceOf("go", source)) {
+			t.Errorf("import after code on the same line must be read: %q", source)
+		}
 	}
 }
