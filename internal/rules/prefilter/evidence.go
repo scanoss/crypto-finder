@@ -121,9 +121,6 @@ var (
 	javaImportLine   = regexp.MustCompile(`(?m)^\s*(?:import\s+(?:static\s+)?|package\s+)([\w.$*\s]+?)\s*;`)
 	pythonImportLine = regexp.MustCompile(`(?m)^[ \t]*import[ \t]+([^\n#;]+)`)
 	pythonFromLine   = regexp.MustCompile(`(?m)^[ \t]*from[ \t]+([\w.]+)[ \t]+import[ \t]*(\([^)]*\)|[^\n#;]*)`)
-	jsDoubleQuoted   = regexp.MustCompile(`"((?:[^"\\\n]|\\.){0,512})"`)
-	jsSingleQuoted   = regexp.MustCompile(`'((?:[^'\\\n]|\\.){0,512})'`)
-	jsBackQuoted     = regexp.MustCompile("`([^`\\\\]{0,512})`")
 	rustUseDecl      = regexp.MustCompile(`(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+([^;]+);`)
 	rustCrate        = regexp.MustCompile(`\bextern\s+crate\s+([A-Za-z_][A-Za-z0-9_]*)`)
 	cIncludeLine     = regexp.MustCompile(`(?m)^[ \t]*#[ \t]*include[ \t]*([^\n]*)`)
@@ -140,9 +137,10 @@ var inlineImport = map[Family]*regexp.Regexp{
 	FamilyPython: regexp.MustCompile(`([;:])([ \t]*(?:import|from)\b)`),
 	FamilyRust:   regexp.MustCompile(`([;{}\]]|\*/)([ \t]*(?:use|pub)\b)`),
 	FamilyC:      regexp.MustCompile(`(\*/)([ \t]*#)`),
-	// Go imports are read from the whole line and JS specifiers from every
-	// string literal, wherever they stand.
-	FamilyGo: nil,
+	// A Go import after a statement or a comment on the same line
+	// (`package main; import "x"`, `/* keep */ import "x"`).
+	FamilyGo: regexp.MustCompile(`(;|\*/)([ \t]*import\b)`),
+	// JS specifiers are read from every string literal, wherever they stand.
 	FamilyJS: nil,
 }
 
@@ -162,10 +160,8 @@ func (ev *Evidence) addImports(family Family, text string) {
 	case FamilyJS:
 		// A module specifier may reach require/import through a constant,
 		// so every string literal of the file is a candidate.
-		for _, re := range []*regexp.Regexp{jsDoubleQuoted, jsSingleQuoted, jsBackQuoted} {
-			for _, m := range re.FindAllStringSubmatch(text, -1) {
-				ev.add(FamilyJS, m[1])
-			}
+		for _, literal := range jsStringLiterals(text) {
+			ev.add(FamilyJS, literal)
 		}
 	case FamilyRust:
 		ev.addRustImports(text)
@@ -173,6 +169,37 @@ func (ev *Evidence) addImports(family Family, text string) {
 		ev.addCIncludes(text)
 	default:
 	}
+}
+
+// jsStringLiterals reads every string literal of a JavaScript or TypeScript
+// source in one left-to-right pass, so a quote of another kind inside a
+// literal ("Don't") or a long literal never puts the reader out of step with
+// the literals that follow. Backslash escapes are skipped; a literal left
+// open at the end of its line is dropped (template literals may span lines).
+func jsStringLiterals(text string) []string {
+	var out []string
+	for i := 0; i < len(text); i++ {
+		quote := text[i]
+		if quote != '"' && quote != '\'' && quote != '`' {
+			continue
+		}
+		j := i + 1
+		for j < len(text) && text[j] != quote {
+			if text[j] == '\\' {
+				j++
+			} else if text[j] == '\n' && quote != '`' {
+				break
+			}
+			j++
+		}
+		if j >= len(text) || text[j] != quote {
+			i = j
+			continue
+		}
+		out = append(out, text[i+1:j])
+		i = j
+	}
+	return out
 }
 
 // addGoImports reads import declarations, single and grouped. Lines outside
