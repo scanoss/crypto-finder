@@ -198,8 +198,12 @@ func (a *Aggregator) aggregateFindings(findings []entities.Finding) ([]Aggregate
 	return result, nil
 }
 
-// getAggregationKey scopes serial-less certificate identities to their source file.
+// getAggregationKey scopes serial-less certificate identities to their source
+// file, and keeps related crypto material that differs only in size apart.
 func (a *Aggregator) getAggregationKey(asset *entities.CryptographicAsset, filePath string) string {
+	if asset.Metadata["assetType"] == AssetTypeRelatedCryptoMaterial {
+		return materialIdentityOf(asset).key()
+	}
 	key := a.getAssetKey(asset)
 	if asset.Metadata["assetType"] == AssetTypeCertificate && strings.TrimSpace(asset.Metadata["certificateSerialNumber"]) == "" {
 		return filePath + "\x00" + key
@@ -209,7 +213,7 @@ func (a *Aggregator) getAggregationKey(asset *entities.CryptographicAsset, fileP
 
 // getAssetKey generates the unique key for grouping assets.
 // For algorithms, this is the CDX component name (e.g., "SHA-256", "AES-256-GCM").
-// For related-crypto-material, this is also based on the name pattern.
+// For related-crypto-material, this is the material's type, algorithm, size and curve.
 func (a *Aggregator) getAssetKey(asset *entities.CryptographicAsset) string {
 	assetType := asset.Metadata["assetType"]
 

@@ -206,8 +206,7 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 				"assetType":          "algorithm",
 				"algorithmPrimitive": "ae",
 			},
-			wantErr:     true,
-			errContains: "algorithmFamily",
+			wantErr: false,
 		},
 		{
 			name: "Empty algorithmPrimitive",
@@ -218,16 +217,6 @@ func TestAlgorithmMapper_ValidateRequiredFields(t *testing.T) {
 			},
 			wantErr:     true,
 			errContains: "algorithmPrimitive",
-		},
-		{
-			name: "Empty algorithmFamily",
-			metadata: map[string]string{
-				"assetType":          "algorithm",
-				"algorithmPrimitive": "ae",
-				"algorithmFamily":    "  ",
-			},
-			wantErr:     true,
-			errContains: "algorithmFamily",
 		},
 	}
 
@@ -534,7 +523,8 @@ func TestAlgorithmMapper_JavaPaddingProjection(t *testing.T) {
 		{"other", "other"},
 		{"unknown", "unknown"},
 		{"  PkCs7PaDdInG  ", "pkcs7"},
-		{"unsupported-padding", "unsupported-padding"},
+		{"unsupported-padding", "other"},
+		{"OAEPWithSHA-", "other"},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()

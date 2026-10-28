@@ -17,6 +17,7 @@
 package converter
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 	"strings"
@@ -35,6 +36,11 @@ func NewRelatedCryptoMapper() *RelatedCryptoMapper {
 	return &RelatedCryptoMapper{}
 }
 
+const (
+	scanossMaterialAlgorithmPropertyName = "scanoss:materialAlgorithm"
+	scanossCurvePropertyName             = "scanoss:curve"
+)
+
 // MapToComponentWithEvidence converts a related-crypto-material asset to a CycloneDX component.
 // This method does NOT build properties or evidence - those are handled by the converter.
 func (m *RelatedCryptoMapper) MapToComponentWithEvidence(asset *entities.CryptographicAsset) (*cdx.Component, error) {
@@ -46,31 +52,26 @@ func (m *RelatedCryptoMapper) MapToComponentWithEvidence(asset *entities.Cryptog
 	materialType := asset.Metadata["materialType"]
 
 	relatedCryptoMaterialProps := &cdx.RelatedCryptoMaterialProperties{}
-
-	m.addType(relatedCryptoMaterialProps, asset)
-	m.addSize(relatedCryptoMaterialProps, asset)
-
-	assetType := cdx.CryptoAssetTypeRelatedCryptoMaterial
-	cryptoProps := &cdx.CryptoProperties{
-		AssetType:                       assetType,
-		RelatedCryptoMaterialProperties: relatedCryptoMaterialProps,
-	}
-
-	bomRef := generateBOMRef()
-
-	componentName := m.getMaterialName(asset)
-
-	componentType := cdx.ComponentTypeCryptographicAsset
 	component := &cdx.Component{
-		Type:             componentType,
-		BOMRef:           bomRef,
-		Name:             componentName,
-		Description:      generateDescription(materialType),
-		CryptoProperties: cryptoProps,
+		Type:        cdx.ComponentTypeCryptographicAsset,
+		BOMRef:      generateBOMRef(),
+		Name:        m.getMaterialName(asset),
+		Description: generateDescription(materialType),
+		CryptoProperties: &cdx.CryptoProperties{
+			AssetType:                       cdx.CryptoAssetTypeRelatedCryptoMaterial,
+			RelatedCryptoMaterialProperties: relatedCryptoMaterialProps,
+		},
 		// Properties and Evidence will be set by the converter
 	}
+
+	relatedCryptoMaterialProps.Type = cdx.RelatedCryptoMaterialType(materialTypeField.value(component, materialType))
+	m.addSize(relatedCryptoMaterialProps, asset)
+
 	addCryptoFunctionProperty(component, asset)
 	addKeySizeProperties(component, asset)
+	identity := materialIdentityOf(asset)
+	addCustomProperty(component, scanossMaterialAlgorithmPropertyName, identity.algorithm)
+	addCustomProperty(component, scanossCurvePropertyName, identity.curve)
 
 	return component, nil
 }
@@ -103,25 +104,45 @@ func (m *RelatedCryptoMapper) validateRequiredFields(asset *entities.Cryptograph
 	return nil
 }
 
-// getMaterialName gets the material name for grouping purposes.
-// For related-crypto-material, we group by the material type.
-func (m *RelatedCryptoMapper) getMaterialName(asset *entities.CryptographicAsset) string {
-	materialType := asset.Metadata["materialType"]
-	if materialType == "" {
-		materialType = "unknown"
-	}
-	// For now, we group by material type
-	// In the future, we might want more sophisticated grouping
-	return materialType
+// materialIdentity is what tells one piece of related crypto material from
+// another: two RSA keys of different sizes are different material.
+type materialIdentity struct {
+	materialType string
+	algorithm    string
+	size         string
+	curve        string
 }
 
-// addType adds the type of the cryptographic related material if available.
-func (m *RelatedCryptoMapper) addType(props *cdx.RelatedCryptoMaterialProperties, asset *entities.CryptographicAsset) {
-	// Try explicit parameterSetIdentifier first
-	if relatedMaterialType, ok := asset.Metadata["materialType"]; ok && relatedMaterialType != "" {
-		props.Type = cdx.RelatedCryptoMaterialType(relatedMaterialType)
-		return
+func materialIdentityOf(asset *entities.CryptographicAsset) materialIdentity {
+	return materialIdentity{
+		materialType: cmp.Or(strings.TrimSpace(asset.Metadata["materialType"]), "unknown"),
+		algorithm:    strings.TrimSpace(asset.Metadata["materialAlgorithm"]),
+		size:         resolveRelatedCryptoMaterialSize(asset),
+		curve:        strings.TrimSpace(asset.Metadata["materialCurve"]),
 	}
+}
+
+// name joins algorithm, curve or else size, and type, such as RSA-3072-key,
+// EC-secp384r1-key or AES-256-secret-key. A curve already fixes the size.
+func (id materialIdentity) name() string {
+	parts := make([]string, 0, 3)
+	if id.algorithm != "" {
+		parts = append(parts, id.algorithm)
+	}
+	if detail := cmp.Or(id.curve, id.size); detail != "" {
+		parts = append(parts, detail)
+	}
+	return strings.Join(append(parts, id.materialType), "-")
+}
+
+// key separates material that shares a name but not a size.
+func (id materialIdentity) key() string {
+	return id.name() + "\x00" + id.size
+}
+
+// getMaterialName names the component after the material's identity.
+func (m *RelatedCryptoMapper) getMaterialName(asset *entities.CryptographicAsset) string {
+	return materialIdentityOf(asset).name()
 }
 
 func (m *RelatedCryptoMapper) addSize(props *cdx.RelatedCryptoMaterialProperties, asset *entities.CryptographicAsset) {
