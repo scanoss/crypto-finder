@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-10-28
+### Added
+- Rust callgraph contracts for the post-quantum API of `aws-lc-rs` 1.6 through
+  1.18: ML-KEM encapsulation and decapsulation keys (`aws_lc_rs::kem`), the
+  Kyber-era `unstable::kem::get_algorithm` selector, and ML-DSA key pairs,
+  signing and verification in both the `aws_lc_rs::unstable::signature`
+  (1.13 - 1.17) and `aws_lc_rs::signature` (1.18+) spellings. The algorithm
+  constant passed to each factory is reported as the operation-determining
+  argument.
+- C callgraph contracts for AWS-LC (`aws-lc.yaml`): the ML-KEM and ML-DSA
+  `EVP_PKEY_*kem*` / `EVP_PKEY_*pqdsa*` key APIs selected by NID, the
+  deterministic KEM calls, the ML-DSA signature context string, the
+  `SSL_GROUP_*` group-id setters and the `SSL_get_group_id` /
+  `SSL_get_group_name` negotiated-group getters. Symbols AWS-LC shares with
+  OpenSSL (`EVP_PKEY_encapsulate`, `SSL_CTX_set1_groups_list`, ...) keep
+  resolving through the existing OpenSSL contracts.
+- Java contracts for post-quantum APIs: `javax.crypto.KEM` (JDK 21+, encapsulator,
+  decapsulator and `Encapsulated` lifecycle) and `NamedParameterSpec`, and Bouncy
+  Castle ML-KEM, ML-DSA, SLH-DSA and LMS/HSS lightweight APIs under both package
+  spellings (`org.bouncycastle.pqc.crypto.*` up to 1.85, `org.bouncycastle.crypto.*`
+  from 1.84) plus the `org.bouncycastle.jcajce.spec` PQC parameter and KEM specs.
+- C contracts for the OpenSSL 3.5 post-quantum surface: `EVP_PKEY_sign_init_ex2` /
+  `EVP_PKEY_verify_init_ex2`, the `EVP_DigestSign`/`EVP_DigestVerify` family, the
+  authenticated and operation-selected KEM initializers, `EVP_PKEY_generate`,
+  `EVP_PKEY_fromdata`/`todata` and the `EVP_PKEY_get_*_param` getters, with the
+  algorithm-name argument (`"ML-KEM-768"`, `"ML-DSA-65"`, `"SLH-DSA-SHA2-128s"`)
+  marked on every fetch, keygen and raw-key import.
+- New `openssl-ssl` library: TLS key-exchange group and signature-algorithm lists
+  (`SSL_CTX_set1_groups_list` and the NID/`curves` spellings carry the configured
+  groups, so `X25519MLKEM768`, `SecP256r1MLKEM768`, `SecP384r1MLKEM1024` and
+  `MLKEM768` are evidence), the handshake calls and the negotiated-value getters
+  (`SSL_get_negotiated_group`, `SSL_get0_group_name`, ...).
+- Python contracts for pyca/cryptography ML-KEM (`MLKEM768`/`MLKEM1024`: key
+  generation and loading, encapsulate, decapsulate, serialization) and ML-DSA
+  (`MLDSA44/65/87`: key generation and loading, sign/verify with optional
+  context, `sign_mu`/`verify_mu`, `MLDSAMuHasher`, serialization).
+### Security
+- Upgraded `golang.org/x/crypto` to v0.52.0, `github.com/klauspost/compress` to v1.18.7, `github.com/moby/go-archive` to v0.3.0 and `github.com/moby/sys/user` to v0.4.1 to fix open Dependabot security advisories
+
 ## [0.41.1] - 2026-10-23
 ### Fixed
 - A Go dependency whose findings come from the SCANOSS API keeps them. Since
