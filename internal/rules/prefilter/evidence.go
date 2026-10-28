@@ -194,7 +194,9 @@ func (ev *Evidence) addGoImports(text string) {
 		}
 		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "import"))
 		if strings.HasPrefix(rest, "(") {
-			body := rest[1:]
+			// A ")" inside a comment on the "import (" line does not end
+			// the block.
+			body := stripGoLineComment(rest[1:])
 			if end := strings.Index(body, ")"); end >= 0 {
 				ev.addGoStrings(body[:end])
 				continue
@@ -205,6 +207,17 @@ func (ev *Evidence) addGoImports(text string) {
 		}
 		ev.addGoStrings(rest)
 	}
+}
+
+var goBlockComment = regexp.MustCompile(`/\*.*?\*/`)
+
+// stripGoLineComment drops a "//" or one-line "/* */" comment from line.
+func stripGoLineComment(line string) string {
+	line = goBlockComment.ReplaceAllString(line, "")
+	if i := strings.Index(line, "//"); i >= 0 {
+		return line[:i]
+	}
+	return line
 }
 
 func (ev *Evidence) addGoStrings(text string) {
