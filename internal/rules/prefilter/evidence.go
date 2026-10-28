@@ -66,6 +66,11 @@ func (ev *Evidence) AddFile(analyzers []string, content []byte) {
 	// A byte order mark would hide a first-line import from the line-anchored
 	// import patterns.
 	text := strings.TrimPrefix(string(content), "\uFEFF")
+	// A bare CR ends a line for compilers (classic Mac files, a stray CR in
+	// a CRLF file), so the line-anchored readers must see it as one.
+	if strings.Contains(text, "\r") {
+		text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	}
 	addTokens(ev.tokens, text)
 	for family := range families {
 		ev.addImports(family, text)
