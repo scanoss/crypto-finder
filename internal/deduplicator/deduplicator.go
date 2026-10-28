@@ -117,12 +117,13 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 func absorbUnresolvedAssets(assets []entities.CryptographicAsset) []entities.CryptographicAsset {
 	kept := make([]entities.CryptographicAsset, 0, len(assets))
 	absorbed := make([]bool, len(assets))
-	for i, asset := range assets {
-		if !unresolvedCall(asset) {
+	for i := range assets {
+		asset := &assets[i]
+		if !unresolvedCall(*asset) {
 			continue
 		}
 		j := slices.IndexFunc(assets, func(other entities.CryptographicAsset) bool {
-			return resolvesCall(other) && sameCall(asset, other)
+			return resolvesCall(other) && sameCall(*asset, other)
 		})
 		if j < 0 {
 			continue
@@ -134,9 +135,9 @@ func absorbUnresolvedAssets(assets []entities.CryptographicAsset) []entities.Cry
 			}
 		}
 	}
-	for i, asset := range assets {
+	for i := range assets {
 		if !absorbed[i] {
-			kept = append(kept, asset)
+			kept = append(kept, assets[i])
 		}
 	}
 	return kept
@@ -145,9 +146,9 @@ func absorbUnresolvedAssets(assets []entities.CryptographicAsset) []entities.Cry
 // resolvesCall reports whether the asset names the algorithm a call creates.
 func resolvesCall(asset entities.CryptographicAsset) bool {
 	switch asset.Metadata["assetType"] {
-	case "algorithm":
+	case assetTypeAlgorithm:
 		return resolvesAlgorithm(asset)
-	case "related-crypto-material":
+	case assetTypeRelatedCryptoMaterial:
 		return keyMaterial(asset) && asset.Metadata["materialAlgorithm"] != ""
 	default:
 		return false
@@ -167,9 +168,9 @@ func keyMaterial(asset entities.CryptographicAsset) bool {
 // object is created, not which algorithm, size or curve it uses.
 func unresolvedCall(asset entities.CryptographicAsset) bool {
 	switch asset.Metadata["assetType"] {
-	case "algorithm":
+	case assetTypeAlgorithm:
 		return !resolvesAlgorithm(asset)
-	case "related-crypto-material":
+	case assetTypeRelatedCryptoMaterial:
 		return keyMaterial(asset) && asset.Metadata["materialAlgorithm"] == "" && asset.Metadata["materialSize"] == "" &&
 			asset.Metadata["materialCurve"] == ""
 	default:
@@ -184,7 +185,8 @@ func unresolvedCall(asset entities.CryptographicAsset) bool {
 // and lists the rules of both.
 func mergeSameCallAssets(assets []entities.CryptographicAsset) []entities.CryptographicAsset {
 	merged := make([]entities.CryptographicAsset, 0, len(assets))
-	for _, asset := range assets {
+	for k := range assets {
+		asset := assets[k]
 		i := slices.IndexFunc(merged, func(kept entities.CryptographicAsset) bool {
 			return sameCall(kept, asset) && describeSameAsset(kept, asset)
 		})
@@ -219,7 +221,7 @@ func describeSameAsset(a, b entities.CryptographicAsset) bool {
 		return false
 	}
 	switch assetType {
-	case "algorithm":
+	case assetTypeAlgorithm:
 		name := a.Metadata["algorithmName"]
 		if name == "" || name != b.Metadata["algorithmName"] || a.Metadata["algorithmFamily"] != b.Metadata["algorithmFamily"] {
 			return false
@@ -230,7 +232,7 @@ func describeSameAsset(a, b entities.CryptographicAsset) bool {
 			}
 		}
 		return true
-	case "related-crypto-material":
+	case assetTypeRelatedCryptoMaterial:
 		for _, field := range []string{"materialType", "materialAlgorithm", "materialSize", "materialCurve"} {
 			if a.Metadata[field] != b.Metadata[field] {
 				return false
@@ -272,6 +274,11 @@ func onlyGenericRules(asset entities.CryptographicAsset) bool {
 	}
 	return len(asset.Rules) > 0
 }
+
+const (
+	assetTypeAlgorithm             = "algorithm"
+	assetTypeRelatedCryptoMaterial = "related-crypto-material"
+)
 
 type position struct{ line, col int }
 

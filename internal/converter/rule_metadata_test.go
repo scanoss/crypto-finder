@@ -24,7 +24,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-func convertAssets(t *testing.T, files map[string][]entities.CryptographicAsset) map[string]cdx.Component {
+func convertAssets(t *testing.T, files map[string][]entities.CryptographicAsset) map[string]*cdx.Component {
 	t.Helper()
 	report := &entities.InterimReport{Version: "1.1", Tool: entities.ToolInfo{Name: "test", Version: "1.0"}}
 	for path, assets := range files {
@@ -34,8 +34,9 @@ func convertAssets(t *testing.T, files map[string][]entities.CryptographicAsset)
 	if err != nil {
 		t.Fatalf("Convert() error = %v", err)
 	}
-	components := map[string]cdx.Component{}
-	for _, component := range *bom.Components {
+	components := map[string]*cdx.Component{}
+	for i := range *bom.Components {
+		component := &(*bom.Components)[i]
 		if _, dup := components[component.Name]; dup {
 			t.Fatalf("two components named %q", component.Name)
 		}
@@ -54,7 +55,7 @@ func ruleAsset(line int, ruleID string, metadata map[string]string) entities.Cry
 	}
 }
 
-func property(component cdx.Component, name string) string {
+func property(component *cdx.Component, name string) string {
 	if component.Properties == nil {
 		return ""
 	}
@@ -66,7 +67,7 @@ func property(component cdx.Component, name string) string {
 	return ""
 }
 
-func occurrenceCount(component cdx.Component) int {
+func occurrenceCount(component *cdx.Component) int {
 	if component.Evidence == nil || component.Evidence.Occurrences == nil {
 		return 0
 	}

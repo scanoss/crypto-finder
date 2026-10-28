@@ -25,7 +25,8 @@ func callAsset(startCol, endCol int, ruleID string, metadata map[string]string) 
 
 func describe(assets []entities.CryptographicAsset) []string {
 	out := make([]string, 0, len(assets))
-	for _, a := range assets {
+	for i := range assets {
+		a := &assets[i]
 		ids := make([]string, 0, len(a.Rules))
 		for _, r := range a.Rules {
 			ids = append(ids, r.ID)
