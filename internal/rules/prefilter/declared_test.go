@@ -85,3 +85,12 @@ func TestDeclaredCIncludeMatchesPathSegment(t *testing.T) {
 		t.Error("an include pattern keeps its literal matching")
 	}
 }
+
+func TestGoImportBlockWithCommentOnOpeningLine(t *testing.T) {
+	source := "package x\nimport ( // stdlib first (crypto), then third party\n\t\"crypto/ecdsa\"\n\t\"github.com/golang-jwt/jwt/v5\"\n)\n"
+	rule := mustRule(t, `{"id": "r", "languages": ["go"], "message": "m", "severity": "INFO",
+	  "metadata": {"imports": ["github.com/golang-jwt/jwt/v5"]}, "pattern": "jwt.New(...)"}`)
+	if !keeps(t, rule, []string{"go"}, evidenceOf("go", source)) {
+		t.Error("a comment with a parenthesis on the import ( line must not end the block")
+	}
+}
