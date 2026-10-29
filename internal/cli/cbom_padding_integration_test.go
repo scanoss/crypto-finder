@@ -33,26 +33,28 @@ func TestCBOMPaddingCLIContract(t *testing.T) {
 	}
 	binary := buildCryptoFinder(t, repositoryRoot(t))
 	for _, tc := range []struct {
-		name, padding, expected, invalidField string
+		name, padding, expected, mode, expectedMode string
+		kept                                        map[string]string
 	}{
-		{"java-pkcs5", "PKCS5Padding", "pkcs5", ""},
-		{"java-pkcs7", "PKCS7Padding", "pkcs7", ""},
-		{"java-none", "NoPadding", "raw", ""},
-		{"java-pkcs1", "PKCS1Padding", "pkcs1v15", ""},
-		{"java-oaep-mgf1", "OAEPWithSHA-256AndMGF1Padding", "oaep", ""},
-		{"canonical-pkcs5", "pkcs5", "pkcs5", ""},
-		{"canonical-pkcs7", "pkcs7", "pkcs7", ""},
-		{"canonical-raw", "raw", "raw", ""},
-		{"canonical-pkcs1", "pkcs1v15", "pkcs1v15", ""},
-		{"canonical-oaep", "oaep", "oaep", ""},
-		{"canonical-other", "other", "other", ""},
-		{"canonical-unknown", "unknown", "unknown", ""},
-		{"case-and-space", " \tPkCs5PaDdInG\n", "pkcs5", ""},
-		{"canonical-case", "PKCS5", "pkcs5", ""},
-		{"unknown-padding", "not-a-padding", "", "padding"},
-		{"whitespace-only", " \t", "", "padding"},
-		{"unsupported-java-padding", "ISO10126Padding", "", "padding"},
-		{"padding-in-mode", "pkcs5", "", "mode"},
+		{"java-pkcs5", "PKCS5Padding", "pkcs5", "CBC", "cbc", nil},
+		{"java-pkcs7", "PKCS7Padding", "pkcs7", "CBC", "cbc", nil},
+		{"java-none", "NoPadding", "raw", "CBC", "cbc", nil},
+		{"java-pkcs1", "PKCS1Padding", "pkcs1v15", "CBC", "cbc", nil},
+		{"java-oaep-mgf1", "OAEPWithSHA-256AndMGF1Padding", "oaep", "CBC", "cbc", nil},
+		{"canonical-pkcs5", "pkcs5", "pkcs5", "CBC", "cbc", nil},
+		{"canonical-pkcs7", "pkcs7", "pkcs7", "CBC", "cbc", nil},
+		{"canonical-raw", "raw", "raw", "CBC", "cbc", nil},
+		{"canonical-pkcs1", "pkcs1v15", "pkcs1v15", "CBC", "cbc", nil},
+		{"canonical-oaep", "oaep", "oaep", "CBC", "cbc", nil},
+		{"canonical-other", "other", "other", "CBC", "cbc", nil},
+		{"canonical-unknown", "unknown", "unknown", "CBC", "cbc", nil},
+		{"case-and-space", " \tPkCs5PaDdInG\n", "pkcs5", "CBC", "cbc", nil},
+		{"canonical-case", "PKCS5", "pkcs5", "CBC", "cbc", nil},
+		{"unknown-padding", "not-a-padding", "other", "CBC", "cbc", map[string]string{"scanoss:algorithmPadding": "not-a-padding"}},
+		{"truncated-oaep", "OAEPWithSHA-", "other", "CBC", "cbc", map[string]string{"scanoss:algorithmPadding": "OAEPWithSHA-"}},
+		{"whitespace-only", " \t", "", "CBC", "cbc", nil},
+		{"unsupported-java-padding", "ISO10126Padding", "other", "CBC", "cbc", map[string]string{"scanoss:algorithmPadding": "ISO10126Padding"}},
+		{"padding-in-mode", "pkcs5", "pkcs5", "NoPadding", "other", map[string]string{"scanoss:algorithmMode": "NoPadding"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -61,10 +63,7 @@ func TestCBOMPaddingCLIContract(t *testing.T) {
 			metadata := map[string]string{
 				"assetType": "algorithm", "algorithmPrimitive": "block-cipher",
 				"algorithmFamily": "AES", "algorithmName": "AES-CBC-PKCS5Padding",
-				"algorithmMode": "CBC", "algorithmPadding": tc.padding,
-			}
-			if tc.invalidField == "mode" {
-				metadata["algorithmMode"] = "NoPadding"
+				"algorithmMode": tc.mode, "algorithmPadding": tc.padding,
 			}
 			const sourcePath = "src/main/java/example/AESCBC.java"
 			const ruleID = "jca.algorithm.block-cipher.aes"
@@ -95,14 +94,6 @@ func TestCBOMPaddingCLIContract(t *testing.T) {
 			after, readErr := os.ReadFile(input)
 			require.NoError(t, readErr)
 			require.Equal(t, before, after, "conversion must not rewrite findings, IDs or metadata")
-			if tc.invalidField != "" {
-				require.Error(t, err)
-				require.Contains(t, string(result), ".algorithmProperties."+tc.invalidField)
-				require.Contains(t, string(result), "must be one of the following")
-				_, statErr := os.Stat(output)
-				require.ErrorIs(t, statErr, os.ErrNotExist, "invalid CBOM must not be published")
-				return
-			}
 			require.NoErrorf(t, err, "CLI output: %s", result)
 			var bom cdx.BOM
 			readJSON(t, output, &bom)
@@ -119,8 +110,21 @@ func TestCBOMPaddingCLIContract(t *testing.T) {
 			require.NotNil(t, aes.CryptoProperties)
 			props := aes.CryptoProperties.AlgorithmProperties
 			require.Equal(t, "block-cipher", string(props.Primitive))
-			require.Equal(t, "cbc", string(props.Mode))
+			require.Equal(t, tc.expectedMode, string(props.Mode))
 			require.Equal(t, tc.expected, string(props.Padding))
+			kept := map[string]string{}
+			if aes.Properties != nil {
+				for _, property := range *aes.Properties {
+					if property.Name == "scanoss:algorithmPadding" || property.Name == "scanoss:algorithmMode" {
+						kept[property.Name] = property.Value
+					}
+				}
+			}
+			if tc.kept == nil {
+				require.Empty(t, kept, "a listed value needs no raw copy")
+			} else {
+				require.Equal(t, tc.kept, kept, "an unlisted value is kept verbatim")
+			}
 			require.Empty(t, aes.CryptoProperties.OID, "ambiguous AES family must not gain an OID")
 			require.NotNil(t, aes.Evidence)
 			require.Len(t, *aes.Evidence.Occurrences, 1)

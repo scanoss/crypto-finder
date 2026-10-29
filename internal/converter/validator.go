@@ -272,6 +272,7 @@ func (v *Validator) validatePrimitive(primitive cdx.CryptoPrimitive) error {
 		cdx.CryptoPrimitiveCombiner,
 		cdx.CryptoPrimitiveXOF,
 		cdx.CryptoPrimitiveOther,
+		cdx.CryptoPrimitiveUnknown,
 	}
 
 	if slices.Contains(validPrimitives, primitive) {

@@ -29,6 +29,22 @@ import (
 // is never lost from the CBOM.
 const scanossAlgorithmFamilyPropertyName = "scanoss:algorithmFamily"
 
+// algorithmFamilyAliases maps rule spellings of a family onto the registry
+// entry that names the same family, keyed by lowercase rule spelling.
+var algorithmFamilyAliases = map[string]string{
+	"dh":             "FFDH",
+	"dhe":            "FFDH",
+	"diffie-hellman": "FFDH",
+	"diffiehellman":  "FFDH",
+	"desede":         "3DES",
+	"tripledes":      "3DES",
+	"tdea":           "3DES",
+	"ed25519":        "EdDSA",
+	"ed448":          "EdDSA",
+	"x25519":         "ECDH",
+	"x448":           "ECDH",
+}
+
 var cdxAlgorithmFamilies = sync.OnceValue(func() map[string]string {
 	var defs struct {
 		Definitions struct {
@@ -47,15 +63,20 @@ var cdxAlgorithmFamilies = sync.OnceValue(func() map[string]string {
 	return families
 })
 
-// addAlgorithmFamily writes the rule's algorithm family. The schema only
-// accepts registry spellings in algorithmFamily, so any other family goes to
-// a scanoss property instead of failing the whole BOM.
+// addAlgorithmFamily writes the rule's algorithm family, in its registry
+// spelling when the registry or an alias names it. The schema only accepts
+// registry spellings in algorithmFamily, so any other family goes to a
+// scanoss property instead of failing the whole BOM.
 func addAlgorithmFamily(component *cdx.Component, props *cdx.CryptoAlgorithmProperties, family string) {
 	family = strings.TrimSpace(family)
 	if family == "" {
 		return
 	}
-	if registered, ok := cdxAlgorithmFamilies()[strings.ToLower(family)]; ok {
+	key := strings.ToLower(family)
+	if alias, ok := algorithmFamilyAliases[key]; ok {
+		key = strings.ToLower(alias)
+	}
+	if registered, ok := cdxAlgorithmFamilies()[key]; ok {
 		props.AlgorithmFamily = registered
 		return
 	}

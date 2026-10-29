@@ -17,6 +17,7 @@
 package converter
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -32,6 +33,10 @@ type AlgorithmMapper struct{}
 // NewAlgorithmMapper creates a new algorithm mapper.
 func NewAlgorithmMapper() *AlgorithmMapper { return &AlgorithmMapper{} }
 
+// scanossUnresolvedPropertyName marks a component built from crypto calls
+// whose algorithm the scan could not resolve, such as Cipher.getInstance(x).
+const scanossUnresolvedPropertyName = "scanoss:unresolved"
+
 // MapToComponentWithEvidence converts a cryptographic asset to a CycloneDX component
 // with support for new fields (executionEnvironment, implementationPlatform).
 // This method does NOT build properties or evidence - those are handled by the converter.
@@ -40,78 +45,55 @@ func (m *AlgorithmMapper) MapToComponentWithEvidence(asset *entities.Cryptograph
 		return nil, err
 	}
 
-	algorithmPrimitive := asset.Metadata["algorithmPrimitive"]
-
-	cdxPrimitive, err := mapPrimitiveToCycloneDX(algorithmPrimitive)
-	if err != nil {
-		return nil, fmt.Errorf("invalid primitive type: %w", err)
-	}
-
-	algorithmProps := &cdx.CryptoAlgorithmProperties{
-		Primitive: cdxPrimitive,
-	}
-
-	// Add optional fields
-	m.addParameterSetIdentifier(algorithmProps, asset)
-	m.addMode(algorithmProps, asset)
-	m.addPadding(algorithmProps, asset)
-	m.addExecutionEnvironment(algorithmProps, asset)
-	m.addImplementationPlatform(algorithmProps, asset)
-	m.addCryptoFunctions(algorithmProps, asset)
-
-	algorithmName := m.getAlgorithmName(asset)
-
-	assetType := cdx.CryptoAssetTypeAlgorithm
-	cryptoProps := &cdx.CryptoProperties{
-		AssetType:           assetType,
-		AlgorithmProperties: algorithmProps,
-	}
-
-	// Projection consumes the prepared OID; it never re-resolves a claim after
-	// the terminal disposition has deliberately omitted it.
-	if asset.OID != "" {
-		cryptoProps.OID = asset.OID
-	}
-
-	bomRef := generateBOMRef()
-
-	componentType := cdx.ComponentTypeCryptographicAsset
+	algorithmProps := &cdx.CryptoAlgorithmProperties{}
 	component := &cdx.Component{
-		Type:             componentType,
-		BOMRef:           bomRef,
-		Name:             algorithmName,
-		CryptoProperties: cryptoProps,
+		Type:   cdx.ComponentTypeCryptographicAsset,
+		BOMRef: generateBOMRef(),
+		Name:   m.getAlgorithmName(asset),
+		CryptoProperties: &cdx.CryptoProperties{
+			AssetType:           cdx.CryptoAssetTypeAlgorithm,
+			AlgorithmProperties: algorithmProps,
+			// Projection consumes the prepared OID; it never re-resolves a claim after
+			// the terminal disposition has deliberately omitted it.
+			OID: asset.OID,
+		},
 		// Properties and Evidence will be set by the converter
 	}
-	addAlgorithmFamily(component, algorithmProps, asset.Metadata["algorithmFamily"])
+
+	metadata := asset.Metadata
+	algorithmProps.Primitive = cdx.CryptoPrimitive(primitiveField.value(component, metadata["algorithmPrimitive"]))
+	m.addParameterSetIdentifier(algorithmProps, asset)
+	algorithmProps.Mode = cdx.CryptoAlgorithmMode(modeField.value(component, metadata["algorithmMode"]))
+	algorithmProps.Padding = cdx.CryptoPadding(paddingField.value(component, cbomPadding(metadata["algorithmPadding"])))
+	algorithmProps.ExecutionEnvironment = cdx.CryptoExecutionEnvironment(
+		executionEnvironmentField.value(component, cmp.Or(metadata["executionEnvironment"], "software-plain-ram")))
+	algorithmProps.ImplementationPlatform = cdx.ImplementationPlatform(
+		implementationPlatformField.value(component, cmp.Or(metadata["implementationPlatform"], "x86_64")))
+	m.addCryptoFunctions(algorithmProps, asset)
+
+	addAlgorithmFamily(component, algorithmProps, metadata["algorithmFamily"])
 	addCryptoFunctionProperty(component, asset)
+	if isUnresolvedAlgorithm(asset) {
+		addCustomProperty(component, scanossUnresolvedPropertyName, "true")
+	}
 
 	return component, nil
 }
 
 // validateRequiredFields checks that all required CBOM fields are present.
 func (m *AlgorithmMapper) validateRequiredFields(asset *entities.CryptographicAsset) error {
-	// Check for assetType
 	assetType, hasAssetType := asset.Metadata["assetType"]
 	if !hasAssetType || strings.TrimSpace(assetType) == "" {
 		return fmt.Errorf("missing required field 'assetType'")
 	}
 
-	// Verify assetType is "algorithm"
 	if strings.ToLower(strings.TrimSpace(assetType)) != "algorithm" {
 		return fmt.Errorf("invalid assetType '%s' for algorithm mapper (must be 'algorithm')", assetType)
 	}
 
-	// Check for primitive
 	primitive, hasPrimitive := asset.Metadata["algorithmPrimitive"]
 	if !hasPrimitive || strings.TrimSpace(primitive) == "" {
 		return fmt.Errorf("missing required field 'algorithmPrimitive' (required for assetType='algorithm')")
-	}
-
-	// Check for family
-	family, hasFamily := asset.Metadata["algorithmFamily"]
-	if !hasFamily || strings.TrimSpace(family) == "" {
-		return fmt.Errorf("missing required field 'algorithmFamily' (required for assetType='algorithm')")
 	}
 
 	return nil
@@ -135,25 +117,8 @@ func (m *AlgorithmMapper) addParameterSetIdentifier(props *cdx.CryptoAlgorithmPr
 		Msg("Asset missing recommended field for assetType='algorithm' 'algorithmParameterSetIdentifier'")
 }
 
-// addMode adds encryption mode if available.
-func (m *AlgorithmMapper) addMode(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	if algorithmMode, ok := asset.Metadata["algorithmMode"]; ok && algorithmMode != "" {
-		// Normalize to lowercase for CycloneDX
-		modeLower := strings.ToLower(algorithmMode)
-		props.Mode = cdx.CryptoAlgorithmMode(modeLower)
-	}
-}
-
-// addPadding adds padding scheme if available.
-func (m *AlgorithmMapper) addPadding(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	if algorithmPadding, ok := asset.Metadata["algorithmPadding"]; ok && algorithmPadding != "" {
-		props.Padding = cdx.CryptoPadding(cbomPadding(algorithmPadding))
-	}
-}
-
-// cbomPadding maps CycloneDX padding spellings and unambiguous Java cipher
-// transformation names onto the CycloneDX enum. Any other value is returned
-// unchanged so strict BOM validation still rejects it.
+// cbomPadding maps unambiguous Java cipher transformation padding names onto
+// the CycloneDX enum. Any other value is returned unchanged.
 func cbomPadding(value string) string {
 	switch padding := strings.ToLower(strings.TrimSpace(value)); padding {
 	case "pkcs5padding":
@@ -166,8 +131,6 @@ func cbomPadding(value string) string {
 		return string(cdx.CryptoPaddingPKCS1v15)
 	case "oaeppadding":
 		return string(cdx.CryptoPaddingOAEP)
-	case "pkcs5", "pkcs7", "pkcs1v15", "oaep", "raw", "other", "unknown":
-		return padding
 	default:
 		// OAEPWith<digest>AndMGF1Padding, such as OAEPWithSHA-256AndMGF1Padding.
 		if strings.HasPrefix(padding, "oaepwith") && strings.HasSuffix(padding, "andmgf1padding") {
@@ -175,32 +138,6 @@ func cbomPadding(value string) string {
 		}
 		return value
 	}
-}
-
-// addExecutionEnvironment adds execution environment field.
-// Default: "software-plain-ram", can be overridden by rule metadata.
-func (m *AlgorithmMapper) addExecutionEnvironment(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	executionEnv := "software-plain-ram" // Default value
-
-	// Allow override from rule metadata
-	if envFromMetadata, ok := asset.Metadata["executionEnvironment"]; ok && envFromMetadata != "" {
-		executionEnv = envFromMetadata
-	}
-
-	props.ExecutionEnvironment = cdx.CryptoExecutionEnvironment(executionEnv)
-}
-
-// addImplementationPlatform adds implementation platform field.
-// Default: "x86_64", can be overridden by rule metadata.
-func (m *AlgorithmMapper) addImplementationPlatform(props *cdx.CryptoAlgorithmProperties, asset *entities.CryptographicAsset) {
-	platform := "x86_64" // Default value
-
-	// Allow override from rule metadata
-	if platformFromMetadata, ok := asset.Metadata["implementationPlatform"]; ok && platformFromMetadata != "" {
-		platform = platformFromMetadata
-	}
-
-	props.ImplementationPlatform = cdx.ImplementationPlatform(platform)
 }
 
 // addCryptoFunctions adds a single CycloneDX crypto function driven by the rule-level
@@ -231,9 +168,14 @@ func (m *AlgorithmMapper) addCryptoFunctions(props *cdx.CryptoAlgorithmPropertie
 // If algorithmName is specified, we use it as is.
 // Otherwise, we construct the name based on the metadata.
 // {algorithmFamily}[-{algorithmParameterSetIdentifier}][-{algorithmMode}].
+// An asset that names neither an algorithm nor a family is named
+// unknown-{algorithmPrimitive}, so unresolved calls group by primitive.
 func (m *AlgorithmMapper) getAlgorithmName(asset *entities.CryptographicAsset) string {
 	if algorithmName, ok := asset.Metadata["algorithmName"]; ok && algorithmName != "" {
 		return algorithmName
+	}
+	if isUnresolvedAlgorithm(asset) {
+		return "unknown-" + strings.ToLower(strings.TrimSpace(asset.Metadata["algorithmPrimitive"]))
 	}
 
 	algorithmFamily := asset.Metadata["algorithmFamily"]
@@ -251,4 +193,11 @@ func (m *AlgorithmMapper) getAlgorithmName(asset *entities.CryptographicAsset) s
 	}
 
 	return strings.Join(parts, "-")
+}
+
+// isUnresolvedAlgorithm reports whether a rule matched a crypto call without
+// resolving which algorithm it uses.
+func isUnresolvedAlgorithm(asset *entities.CryptographicAsset) bool {
+	return strings.TrimSpace(asset.Metadata["algorithmName"]) == "" &&
+		strings.TrimSpace(asset.Metadata["algorithmFamily"]) == ""
 }

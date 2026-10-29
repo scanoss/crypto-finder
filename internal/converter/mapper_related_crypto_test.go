@@ -17,6 +17,7 @@
 package converter
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -221,13 +222,12 @@ func TestRelatedCryptoMapper_SetsRawCryptoFunctionProperty(t *testing.T) {
 		t.Fatalf("MapToComponentWithEvidence() unexpected error: %v", err)
 	}
 
-	if component.Properties == nil || len(*component.Properties) != 1 {
-		t.Fatalf("Properties = %v, want one property", component.Properties)
+	want := []cdx.Property{
+		{Name: scanossCryptoFunctionPropertyName, Value: "load"},
+		{Name: scanossMaterialAlgorithmPropertyName, Value: "RSA"},
 	}
-
-	property := (*component.Properties)[0]
-	if property != (cdx.Property{Name: scanossCryptoFunctionPropertyName, Value: "load"}) {
-		t.Fatalf("Property = %#v, want raw cryptoFunction property", property)
+	if component.Properties == nil || !reflect.DeepEqual(*component.Properties, want) {
+		t.Fatalf("Properties = %v, want %v", component.Properties, want)
 	}
 }
 
@@ -324,7 +324,8 @@ func TestRelatedCryptoMapper_DoesNotInferSideSpecificSizeForAmbiguousMaterial(t 
 		t.Fatalf("RelatedCryptoMaterialProperties.Size = %d, want 256", *props.Size)
 	}
 
-	if component.Properties != nil {
-		t.Fatalf("Properties = %v, want nil for ambiguous material", component.Properties)
+	want := []cdx.Property{{Name: "scanoss:materialType", Value: "key-pair"}}
+	if component.Properties == nil || !reflect.DeepEqual(*component.Properties, want) {
+		t.Fatalf("Properties = %v, want only the raw material type %v", component.Properties, want)
 	}
 }

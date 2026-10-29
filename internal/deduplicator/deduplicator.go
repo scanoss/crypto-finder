@@ -9,7 +9,9 @@ package deduplicator
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"slices"
+	"strings"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -43,6 +45,8 @@ func (k assetGroupKey) String() string {
 //  3. For each group, merges all assets into one representative asset
 //  4. Preserves all unique metadata values from merged assets
 //  5. Merges all unique rules from all assets in the group
+//  6. Merges assets that different rules reported for one call
+//     (mergeSameCallAssets)
 //
 // Assets with different identifying characteristics (e.g., different algorithmFamily
 // or algorithmName) or at different locations are kept separate to prevent metadata confusion.
@@ -101,7 +105,198 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 		deduplicated = append(deduplicated, mergedAsset)
 	}
 
-	return deduplicated
+	return absorbUnresolvedAssets(mergeSameCallAssets(deduplicated))
+}
+
+// absorbUnresolvedAssets drops an asset whose rule matched only the call,
+// such as KeyPairGenerator.getInstance(name), when another asset on the same
+// span resolves what the call creates. That asset may be of another type: a
+// named ML-DSA algorithm resolves an unnamed key pair generator call. Only
+// the dropped asset's rule ids are kept, so its metadata cannot leak into an
+// asset of another type.
+func absorbUnresolvedAssets(assets []entities.CryptographicAsset) []entities.CryptographicAsset {
+	kept := make([]entities.CryptographicAsset, 0, len(assets))
+	absorbed := make([]bool, len(assets))
+	for i := range assets {
+		asset := &assets[i]
+		if !unresolvedCall(*asset) {
+			continue
+		}
+		j := slices.IndexFunc(assets, func(other entities.CryptographicAsset) bool {
+			return resolvesCall(other) && sameCall(*asset, other)
+		})
+		if j < 0 {
+			continue
+		}
+		absorbed[i] = true
+		for _, rule := range asset.Rules {
+			if !slices.ContainsFunc(assets[j].Rules, func(r entities.RuleInfo) bool { return r.ID == rule.ID }) {
+				assets[j].Rules = append(assets[j].Rules, rule)
+			}
+		}
+	}
+	for i := range assets {
+		if !absorbed[i] {
+			kept = append(kept, assets[i])
+		}
+	}
+	return kept
+}
+
+// resolvesCall reports whether the asset names the algorithm a call creates.
+func resolvesCall(asset entities.CryptographicAsset) bool {
+	switch asset.Metadata["assetType"] {
+	case assetTypeAlgorithm:
+		return resolvesAlgorithm(asset)
+	case assetTypeRelatedCryptoMaterial:
+		return keyMaterial(asset) && asset.Metadata["materialAlgorithm"] != ""
+	default:
+		return false
+	}
+}
+
+func keyMaterial(asset entities.CryptographicAsset) bool {
+	switch asset.Metadata["materialType"] {
+	case "key", "secret-key", "private-key", "public-key":
+		return true
+	default:
+		return false
+	}
+}
+
+// unresolvedCall reports whether the rule could tell only that a crypto
+// object is created, not which algorithm, size or curve it uses.
+func unresolvedCall(asset entities.CryptographicAsset) bool {
+	switch asset.Metadata["assetType"] {
+	case assetTypeAlgorithm:
+		return !resolvesAlgorithm(asset)
+	case assetTypeRelatedCryptoMaterial:
+		return keyMaterial(asset) && asset.Metadata["materialAlgorithm"] == "" && asset.Metadata["materialSize"] == "" &&
+			asset.Metadata["materialCurve"] == ""
+	default:
+		return false
+	}
+}
+
+// mergeSameCallAssets merges assets that different rules reported for one
+// call: overlapping spans that describe the same asset, and an algorithm
+// whose rule could not resolve it overlapping one that names it. The merged
+// asset keeps the preferred asset's metadata, fills the gaps from the other,
+// and lists the rules of both.
+func mergeSameCallAssets(assets []entities.CryptographicAsset) []entities.CryptographicAsset {
+	merged := make([]entities.CryptographicAsset, 0, len(assets))
+	for k := range assets {
+		asset := assets[k]
+		i := slices.IndexFunc(merged, func(kept entities.CryptographicAsset) bool {
+			return sameCall(kept, asset) && describeSameAsset(kept, asset)
+		})
+		if i < 0 {
+			merged = append(merged, asset)
+			continue
+		}
+		base, other := merged[i], asset
+		if preference(asset) > preference(merged[i]) {
+			base, other = asset, merged[i]
+		}
+		merged[i] = mergeAssets([]entities.CryptographicAsset{base, other})
+		if len(merged[i].ParameterConditions) == 0 {
+			merged[i].ParameterConditions = other.ParameterConditions
+			merged[i].ConditionedValue = other.ConditionedValue
+			merged[i].ConditionedValuesIncomplete = other.ConditionedValuesIncomplete
+		}
+		merged[i].OID = cmp.Or(merged[i].OID, other.OID)
+	}
+	return merged
+}
+
+// sameCall reports whether two spans cover one call: the same lines, with
+// overlapping columns. A rule spanning several statements is not one call.
+func sameCall(a, b entities.CryptographicAsset) bool {
+	return a.StartLine == b.StartLine && a.EndLine == b.EndLine && spansOverlap(a, b)
+}
+
+func describeSameAsset(a, b entities.CryptographicAsset) bool {
+	assetType := a.Metadata["assetType"]
+	if assetType != b.Metadata["assetType"] {
+		return false
+	}
+	switch assetType {
+	case assetTypeAlgorithm:
+		name := a.Metadata["algorithmName"]
+		if name == "" || name != b.Metadata["algorithmName"] || a.Metadata["algorithmFamily"] != b.Metadata["algorithmFamily"] {
+			return false
+		}
+		for _, field := range []string{"cryptoFunction", "keySize", "algorithmMode", "algorithmPadding"} {
+			if a.Metadata[field] != "" && b.Metadata[field] != "" && a.Metadata[field] != b.Metadata[field] {
+				return false
+			}
+		}
+		return true
+	case assetTypeRelatedCryptoMaterial:
+		for _, field := range []string{"materialType", "materialAlgorithm", "materialSize", "materialCurve"} {
+			if a.Metadata[field] != b.Metadata[field] {
+				return false
+			}
+		}
+		return a.Metadata["materialType"] != ""
+	default:
+		return false
+	}
+}
+
+// resolvesAlgorithm reports whether the rule told which algorithm the call
+// uses, as opposed to matching a call such as Cipher.getInstance(name).
+func resolvesAlgorithm(asset entities.CryptographicAsset) bool {
+	return asset.Metadata["algorithmName"] != "" || asset.Metadata["algorithmFamily"] != ""
+}
+
+// preference ranks which of two assets for one call keeps its metadata: one
+// that resolves its algorithm, then one found by a specific rule rather than
+// a generic one, then the one with more metadata.
+func preference(asset entities.CryptographicAsset) int {
+	rank := len(asset.Metadata)
+	if !onlyGenericRules(asset) {
+		rank += 1 << 16
+	}
+	if resolvesAlgorithm(asset) {
+		rank += 1 << 17
+	}
+	return rank
+}
+
+// onlyGenericRules reports whether every rule that found the asset is a
+// catch-all rule, which rule ids mark with a final "generic" segment.
+func onlyGenericRules(asset entities.CryptographicAsset) bool {
+	for _, rule := range asset.Rules {
+		if rule.ID != "generic" && !strings.HasSuffix(rule.ID, ".generic") {
+			return false
+		}
+	}
+	return len(asset.Rules) > 0
+}
+
+const (
+	assetTypeAlgorithm             = "algorithm"
+	assetTypeRelatedCryptoMaterial = "related-crypto-material"
+)
+
+type position struct{ line, col int }
+
+func (p position) before(q position) bool {
+	return p.line < q.line || p.line == q.line && p.col < q.col
+}
+
+// spansOverlap compares 1-based, end-exclusive spans. A missing end column
+// stands for the end of the line, so line-only spans overlap on shared lines.
+func spansOverlap(a, b entities.CryptographicAsset) bool {
+	start := func(x entities.CryptographicAsset) position { return position{x.StartLine, x.StartCol} }
+	end := func(x entities.CryptographicAsset) position {
+		if x.EndCol == 0 {
+			return position{x.EndLine, math.MaxInt}
+		}
+		return position{x.EndLine, x.EndCol}
+	}
+	return start(a).before(end(b)) && start(b).before(end(a))
 }
 
 // orderAssets returns the assets ordered by start, end and then rule id and

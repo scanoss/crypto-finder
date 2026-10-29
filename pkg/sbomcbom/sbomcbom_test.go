@@ -220,28 +220,34 @@ func TestGenerate_BuildsOneCBOMFromTheMinedFindings(t *testing.T) {
 	}
 }
 
-func TestGenerate_LeavesOutAComponentWhoseFindingsFailValidation(t *testing.T) {
-	const badPadding = `{"rules_version":"v1","info_code":"READY","data":[{"version":"2.0.0","findings":[{"file_path":"Rsa.java","language":"java","cryptographic_assets":[
+func TestGenerate_KeepsAComponentWhoseFindingsCarryAnUnlistedPadding(t *testing.T) {
+	const oddPadding = `{"rules_version":"v1","info_code":"READY","data":[{"version":"2.0.0","findings":[{"file_path":"Rsa.java","language":"java","cryptographic_assets":[
 	  {"start_line":1,"end_line":1,"match":"Cipher.getInstance(x)",
-	   "metadata":{"assetType":"algorithm","algorithmName":"RSA","algorithmFamily":"RSA","algorithmPrimitive":"pke","algorithmPadding":"NotAPadding"},
+	   "metadata":{"assetType":"algorithm","algorithmName":"RSA-X","algorithmFamily":"RSA","algorithmPrimitive":"pke","algorithmPadding":"NotAPadding"},
 	   "rules":[{"id":"jca.rsa"}]}]}]}]}`
 	api := &fakeAPI{answers: map[string]string{
 		"pkg:maven/org.bouncycastle/bcprov-jdk18on@1.78": bcprovAnswer,
-		"pkg:maven/com.example/broken@2.0.0":             badPadding,
+		"pkg:maven/com.example/odd@2.0.0":                oddPadding,
 	}}
 	doc := &Document{Components: []Component{
-		{PURL: "pkg:maven/com.example/broken@2.0.0"},
+		{PURL: "pkg:maven/com.example/odd@2.0.0"},
 		{PURL: "pkg:maven/org.bouncycastle/bcprov-jdk18on@1.78"},
 	}}
 	res, err := Generate(context.Background(), doc, Options{APIURL: api.serve(t), APIKey: "k"})
 	if err != nil {
 		t.Fatalf("one component's findings sank the CBOM: %v", err)
 	}
-	if res.Components[0].Status != StatusFailed || res.Components[1].Status != StatusCrypto {
-		t.Errorf("statuses %q, %q; want failed, crypto", res.Components[0].Status, res.Components[1].Status)
+	if res.Components[0].Status != StatusCrypto || res.Components[1].Status != StatusCrypto {
+		t.Errorf("statuses %q, %q; want crypto, crypto", res.Components[0].Status, res.Components[1].Status)
 	}
-	if len(*res.BOM.Dependencies) != 1 || (*res.BOM.Dependencies)[0].Ref != "pkg:maven/org.bouncycastle/bcprov-jdk18on@1.78" {
-		t.Errorf("dependencies %+v; want only bouncycastle", *res.BOM.Dependencies)
+	var padding string
+	for _, c := range *res.BOM.Components {
+		if c.Name == "RSA-X" {
+			padding = string(c.CryptoProperties.AlgorithmProperties.Padding)
+		}
+	}
+	if padding != "other" {
+		t.Errorf("RSA-X padding = %q, want other", padding)
 	}
 }
 
