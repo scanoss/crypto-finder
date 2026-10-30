@@ -149,6 +149,12 @@ type Entry struct {
 	Files     []string
 	// RootKind is the root kind a matched function gets.
 	RootKind string
+	// ID names the entry across the catalog, as
+	// <language>/<framework>:<shape>[:<directory>]:<first name>
+	// ("java/spring:decorator:RequestMapping"). The loader rejects two entries
+	// with one ID, so an export can say which entry made a function an entry
+	// point.
+	ID string
 }
 
 // HasName reports whether the entry names name, or every name. The names of a
@@ -335,9 +341,14 @@ func (c *Catalog) add(e Entry) {
 	c.entries[e.Language][e.Shape] = append(c.entries[e.Language][e.Shape], e)
 }
 
-// claim records every (shape, package, type, name) an entry matches and
-// fails when another entry, in this file or another, already claims one.
+// claim records the entry's ID and every (shape, package, type, name) it
+// matches, and fails when another entry, in this file or another, already
+// claims one.
 func claim(claims map[string]string, e *Entry) error {
+	if other, dup := claims["id|"+e.ID]; dup {
+		return fmt.Errorf("entrypoints: %s and %s both declare entry %q", other, e.File, e.ID)
+	}
+	claims["id|"+e.ID] = e.File
 	types := e.Types
 	if len(types) == 0 {
 		types = []string{""}
@@ -377,9 +388,18 @@ func Load(file string, data []byte) ([]Entry, error) {
 		}
 		entry.Framework = raw.Framework.Name
 		entry.File = file
+		entry.ID = entryID(&entry)
 		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+func entryID(e *Entry) string {
+	parts := []string{e.Language + "/" + e.Framework, string(e.Shape)}
+	if e.Directory != "" {
+		parts = append(parts, e.Directory)
+	}
+	return strings.Join(append(parts, e.Names[0]), ":")
 }
 
 func validateHeader(raw *yamlFile) error {

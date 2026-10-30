@@ -116,10 +116,10 @@ func applyGoEntryRules(root *sitter.Node, src []byte, packagePath string, analys
 		decl := &analysis.Functions[i]
 		switch {
 		case decl.ID.Type == "" && (strings.HasPrefix(decl.ID.Name, "<init:") || strings.HasPrefix(decl.ID.Name, "<varinit:")):
-			markEntry(decl, RootKindMain)
+			markEntry(decl, EntryMark{Kind: RootKindMain})
 		case decl.ID.Type != "":
-			if kind, ok := scope.interfaceMethodKind(decl); ok {
-				markEntry(decl, kind)
+			if mark, ok := scope.interfaceMethodMark(decl); ok {
+				markEntry(decl, mark)
 			}
 		}
 	}
@@ -390,10 +390,10 @@ func (s *goEntryScope) parameterType(params *sitter.Node, name string) (*sitter.
 	return nil, false
 }
 
-// interfaceMethodKind reports whether a method has the name and parameter
+// interfaceMethodMark reports whether a method has the name and parameter
 // types of a catalog interface method, each parameter type resolved through
 // the file's imports: ServeHTTP(http.ResponseWriter, *http.Request).
-func (s *goEntryScope) interfaceMethodKind(decl *FunctionDecl) (RootKind, bool) {
+func (s *goEntryScope) interfaceMethodMark(decl *FunctionDecl) (EntryMark, bool) {
 	entries := entryCatalog().Entries(entryLanguageGo, entrypoints.ShapeInterfaceMethod)
 	for i := range entries {
 		entry := &entries[i]
@@ -405,10 +405,10 @@ func (s *goEntryScope) interfaceMethodKind(decl *FunctionDecl) (RootKind, bool) 
 			matches = matches && s.parameterMatches(entry, decl.Parameters[j].Type, want)
 		}
 		if matches {
-			return catalogEntryKind(entry), true
+			return catalogEntryMark(entry), true
 		}
 	}
-	return "", false
+	return EntryMark{}, false
 }
 
 func (s *goEntryScope) parameterMatches(entry *entrypoints.Entry, written, want string) bool {
@@ -433,7 +433,7 @@ func (s *goEntryScope) registeredHandlers(root *sitter.Node, packagePath string)
 			if entry, ok := s.registration(node); ok {
 				args := node.ChildByFieldName("arguments")
 				for i := 0; i < int(args.NamedChildCount()); i++ {
-					analysis.EntryRefs = s.appendHandlerRef(analysis.EntryRefs, args.NamedChild(i), packagePath, catalogEntryKind(&entry))
+					analysis.EntryRefs = s.appendHandlerRef(analysis.EntryRefs, args.NamedChild(i), packagePath, catalogEntryMark(&entry))
 				}
 			}
 		case goNodeCompositeLiteral:
@@ -515,7 +515,7 @@ func (s *goEntryScope) handlerFields(literal *sitter.Node, packagePath string) {
 		for j := 0; j < int(body.NamedChildCount()); j++ {
 			element := body.NamedChild(j)
 			if element.Type() == "keyed_element" && element.NamedChildCount() == 2 && entry.HasName(element.NamedChild(0).Content(s.src)) {
-				s.analysis.EntryRefs = s.appendHandlerRef(s.analysis.EntryRefs, element.NamedChild(1), packagePath, catalogEntryKind(entry))
+				s.analysis.EntryRefs = s.appendHandlerRef(s.analysis.EntryRefs, element.NamedChild(1), packagePath, catalogEntryMark(entry))
 			}
 		}
 	}
@@ -568,13 +568,13 @@ func goEmbeddedQualifiedTypes(typ *sitter.Node) []*sitter.Node {
 // supertypeRefs names the methods of owner an entry makes entry points:
 // every exported one for names "*", else the ones it names.
 func supertypeRefs(entry *entrypoints.Entry, owner FunctionID) []EntryRef {
-	kind := catalogEntryKind(entry)
+	mark := catalogEntryMark(entry)
 	if entry.HasName(entrypoints.AnyName) {
-		return []EntryRef{{Function: owner, AllExported: true, Kind: kind}}
+		return []EntryRef{{Function: owner, AllExported: true, Mark: mark}}
 	}
 	refs := make([]EntryRef, 0, len(entry.Names))
 	for _, name := range entry.Names {
-		refs = append(refs, EntryRef{Function: FunctionID{Package: owner.Package, Type: owner.Type, Name: name}, Kind: kind})
+		refs = append(refs, EntryRef{Function: FunctionID{Package: owner.Package, Type: owner.Type, Name: name}, Mark: mark})
 	}
 	return refs
 }
@@ -585,13 +585,13 @@ func supertypeRefs(entry *entrypoints.Entry, owner FunctionID) []EntryRef {
 // &api{}), also through a conversion such as http.HandlerFunc(h). A method
 // value whose receiver type cannot be resolved is dropped: matching the
 // method by name alone would make every same-named method an entry point.
-func (s *goEntryScope) appendHandlerRef(refs []EntryRef, arg *sitter.Node, packagePath string, kind RootKind) []EntryRef {
+func (s *goEntryScope) appendHandlerRef(refs []EntryRef, arg *sitter.Node, packagePath string, mark EntryMark) []EntryRef {
 	if arg.Type() == "literal_element" && arg.NamedChildCount() == 1 {
 		arg = arg.NamedChild(0)
 	}
 	switch arg.Type() {
 	case goNodeIdentifier:
-		return append(refs, EntryRef{Function: FunctionID{Package: packagePath, Name: arg.Content(s.src)}, Kind: kind})
+		return append(refs, EntryRef{Function: FunctionID{Package: packagePath, Name: arg.Content(s.src)}, Mark: mark})
 	case goNodeSelectorExpression:
 		operand := arg.ChildByFieldName(goFieldOperand)
 		field := arg.ChildByFieldName(goFieldField)
@@ -599,14 +599,14 @@ func (s *goEntryScope) appendHandlerRef(refs []EntryRef, arg *sitter.Node, packa
 			return refs
 		}
 		if imported, ok := s.analysis.Imports[operand.Content(s.src)]; ok && operand.Type() == goNodeIdentifier && !s.shadowed(operand) {
-			return append(refs, EntryRef{Function: FunctionID{Package: imported, Name: field.Content(s.src)}, Kind: kind})
+			return append(refs, EntryRef{Function: FunctionID{Package: imported, Name: field.Content(s.src)}, Mark: mark})
 		}
 		if owner := s.origin(operand, 0); owner.localType != "" {
-			return append(refs, EntryRef{Function: FunctionID{Package: packagePath, Type: owner.localType, Name: field.Content(s.src)}, Kind: kind})
+			return append(refs, EntryRef{Function: FunctionID{Package: packagePath, Type: owner.localType, Name: field.Content(s.src)}, Mark: mark})
 		}
 	case goNodeCallExpression, goNodeTypeConversion:
 		if inner := arg.ChildByFieldName("arguments"); inner != nil && inner.NamedChildCount() == 1 {
-			return s.appendHandlerRef(refs, inner.NamedChild(0), packagePath, kind)
+			return s.appendHandlerRef(refs, inner.NamedChild(0), packagePath, mark)
 		}
 	}
 	return refs

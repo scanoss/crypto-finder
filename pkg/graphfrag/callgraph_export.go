@@ -25,7 +25,7 @@ import (
 )
 
 // CallgraphSchemaVersion is the inlined callgraph contract and the zero-value
-// SDK/stitch default. Local CLI exports default to the interned 6.17 contract;
+// SDK/stitch default. Local CLI exports default to the interned 6.18 contract;
 // --export-callgraph-interned-frames=false selects this compatibility render.
 // Both paths use CallgraphExportSchemaVersion to stamp the selected render.
 const CallgraphSchemaVersion = "6.14"
@@ -37,8 +37,10 @@ const CallgraphSchemaVersion = "6.14"
 // paths_kept, route_evidence and no_callers_only, root_kind on a chain's first
 // frame, the stitched unresolved_reason, and the unresolved_reason values
 // traversal_truncated, unresolved_dispatch and dependency_without_source.
-// 6.15 and 6.16 artifacts remain valid against their own published schemas.
-const CallgraphInternedSchemaVersion = "6.17"
+// 6.18 adds a chain frame's excerpt, excerpt_unavailable, entry_rule and
+// entry_call.call_site_column.
+// 6.15 to 6.17 artifacts remain valid against their own published schemas.
+const CallgraphInternedSchemaVersion = "6.18"
 
 // CallgraphExportSchemaVersion returns the stamped schema_version for a render.
 func CallgraphExportSchemaVersion(internedFrames bool) string {
@@ -376,6 +378,10 @@ type ExportEntryCall struct {
 	Aliases []string `json:"aliases,omitempty"`
 	// Line is the source line in the caller where the call is made.
 	Line int `json:"line,omitempty"`
+	// CallSiteColumn (6.18+) is the 1-based column the call expression starts
+	// at on Line. Written by the live export when the parser recorded it; the
+	// stitched export does not carry it.
+	CallSiteColumn int `json:"call_site_column,omitempty"`
 	// Parameters carries the resolved argument data-flow.
 	Parameters []ExportParameter `json:"parameters,omitempty"`
 }
@@ -529,9 +535,54 @@ type ExportChainNode struct {
 	// root-component function whose fragment recorded entry kinds
 	// (graph-fragment-1.14+); absent otherwise.
 	RootKind string `json:"root_kind,omitempty"`
+	// EntryRule (6.18+), on a main or framework_entry first frame only, is the
+	// ID of the entry-point catalog entry that recognized it, as
+	// `java/spring:decorator:RequestMapping`. Absent when language semantics
+	// made the frame an entry point (a main function, an override of an
+	// external type) and on the stitched export.
+	EntryRule string `json:"entry_rule,omitempty"`
+	// Excerpt (6.18+) is the source around the line where the chain moves on
+	// from this frame, so a reader can check each hop without the source tree.
+	// ExcerptUnavailable says why a frame has none. The stitched export has no
+	// source and writes excerpt_unavailable no_source on every frame.
+	Excerpt            *ExportExcerpt `json:"excerpt,omitempty"`
+	ExcerptUnavailable string         `json:"excerpt_unavailable,omitempty"`
 	// CryptoCall is the matched crypto invocation, present only on the terminal frame.
 	CryptoCall *ExportCryptoCall `json:"crypto_call,omitempty"`
 }
+
+// ExportExcerpt is a short window of the source the analysis read, centered on
+// the frame's focus line: the call that leads to the next frame, or the crypto
+// call on the last frame. Lines are verbatim, without trailing newline.
+type ExportExcerpt struct {
+	// StartLine is the 1-based line number of Lines[0].
+	StartLine int `json:"start_line"`
+	// FocusLine is the line the frame's evidence points at.
+	FocusLine int      `json:"focus_line"`
+	Lines     []string `json:"lines"`
+	// Truncated reports that at least one line was cut at
+	// ExcerptLineMaxRunes.
+	Truncated bool `json:"truncated,omitempty"`
+}
+
+// Excerpt bounds: the lines kept on each side of the focus line, and the runes
+// kept of one line.
+const (
+	ExcerptContextLines = 3
+	ExcerptLineMaxRunes = 240
+)
+
+// Reasons a chain frame carries no excerpt (ExportChainNode.ExcerptUnavailable).
+const (
+	// ExcerptNoSource: the frame's file is not in the scanned tree or in a
+	// dependency source directory the scan resolved, such as a dependency
+	// joined for its types only, or the export has no source (stitched).
+	ExcerptNoSource = "no_source"
+	// ExcerptUnreadable: reading the file failed.
+	ExcerptUnreadable = "unreadable"
+	// ExcerptOutOfRange: the focus line is not a line of the file.
+	ExcerptOutOfRange = "out_of_range"
+)
 
 // ExportCryptoEntryPoint is one entry in crypto_entry_points.
 type ExportCryptoEntryPoint struct {
@@ -1576,6 +1627,8 @@ func buildExportNode(frame *CallFrame, root ComponentKey, ecosystem string) Expo
 		EntryCall:          exportEntryCall(frame.EntryCall, fn),
 		EntryResolution:    string(frame.EntryResolution),
 		EntryDeclaredType:  frame.EntryDeclaredType,
+		// A fragment carries no source text.
+		ExcerptUnavailable: ExcerptNoSource,
 	}
 	// A package-level anchor (a finding inside a var/const initializer) has no
 	// resolved Function in the fragment catalog, but the frame still carries

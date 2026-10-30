@@ -84,7 +84,7 @@ func (s *goEntryScope) serverRegistration(call *sitter.Node) {
 	ref := EntryRef{
 		AllExported: true,
 		Interface:   FunctionID{Package: pkg, Type: service + goServerSuffix},
-		Kind:        catalogEntryKind(&entry),
+		Mark:        catalogEntryMark(&entry),
 	}
 	ref.GRPCRegistrar, ref.RegistrarFunc, ref.RegistrarIndex = s.registrarEvidence(args.NamedChild(registrar))
 	ref.FileImportsGRPC = s.registrarIsUntypedVariable(args.NamedChild(registrar))
@@ -467,7 +467,7 @@ func expandConstructorRefs(graph *CallGraph, refs []EntryRef) []EntryRef {
 				return
 			}
 			seen[id] = true
-			out = append(out, EntryRef{Function: id, AllExported: true, Interface: ref.Interface, Kind: ref.Kind})
+			out = append(out, EntryRef{Function: id, AllExported: true, Interface: ref.Interface, Mark: ref.Mark})
 		}
 		for _, typ := range decl.returnedTypes {
 			add(decl.ID.Package, typ)
@@ -500,7 +500,7 @@ func producerRefs(graph *CallGraph, ref *EntryRef) []EntryRef {
 		for _, typ := range decl.returnedTypes {
 			if id := (FunctionID{Package: decl.ID.Package, Type: typ}); !seen[id] {
 				seen[id] = true
-				out = append(out, EntryRef{Function: id, AllExported: true, Interface: ref.Interface, Kind: ref.Kind})
+				out = append(out, EntryRef{Function: id, AllExported: true, Interface: ref.Interface, Mark: ref.Mark})
 			}
 		}
 	}

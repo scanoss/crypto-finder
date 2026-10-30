@@ -234,8 +234,11 @@ type FunctionDecl struct {
 	Annotations []string
 	// EntryKind is set when a parser recognizes the declaration as an entry
 	// point that a framework or the runtime calls, which no call edge in the
-	// graph leads to. entryRootKind reads it first.
+	// graph leads to. entryMark reads it first.
 	EntryKind RootKind
+	// EntryRule is the ID of the catalog entry that set EntryKind, or empty
+	// when language semantics set it (main, an init function).
+	EntryRule string
 	// ImplicitCalls are calls the source makes without a call expression: a
 	// JSX element renders its component, and a function written inline as an
 	// argument runs when the call it is passed to runs (Node only). They

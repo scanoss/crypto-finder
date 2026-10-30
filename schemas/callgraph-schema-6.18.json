@@ -1,0 +1,524 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://scanoss.com/schemas/callgraph-6.18.json",
+  "title": "SCANOSS Crypto-Finder Callgraph Export (interned frames)",
+  "description": "Interned callgraph export, the local CLI default of --export-callgraph. Chain frames omit catalog identity; join through functions[] plus finding_graphs[].call_chain_indexes. scan_metadata.ecosystems lists every call graph analyzed when first-party findings span more than one supported ecosystem. 6.17 adds finding_graphs[].dependency, the analysis route counts and evidence, root_kind on a chain's first frame, and three unresolved_reason values. 6.18 adds a chain frame's excerpt, excerpt_unavailable, entry_call.call_site_column and, on a chain's first frame, entry_rule.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "scan_metadata",
+    "finding_graphs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "6.18",
+      "type": "string",
+      "description": "Interned callgraph contract, the local CLI default. The inlined compatibility render remains 6.14."
+    },
+    "scan_metadata": {
+      "$ref": "#/definitions/ScanMetadata"
+    },
+    "finding_graphs": {
+      "type": "array",
+      "description": "One reachability record per interim-report finding.",
+      "items": {
+        "$ref": "#/definitions/FindingGraph"
+      }
+    },
+    "supporting_calls": {
+      "type": "array",
+      "description": "Lifecycle and context calls associated with findings.",
+      "items": {
+        "$ref": "#/definitions/SupportingCall"
+      }
+    },
+    "functions": {
+      "type": "array",
+      "description": "Interned callable identity catalog. finding_graphs[].call_chain_indexes are 0-based positions into this array. Schema 6.15 keeps catalog identity here instead of on call_chains frames.",
+      "items": {
+        "type": "object",
+        "required": [
+          "function_name",
+          "file_path"
+        ],
+        "properties": {
+          "function_key": {
+            "type": "string"
+          },
+          "function_name": {
+            "type": "string"
+          },
+          "file_path": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "crypto_entry_points": {
+      "type": "array",
+      "description": "Reverse-reachability index keyed by callable identity: every function from which a finding is reachable, deliberately broader than the exported call_chains. crypto_entry_points[].root marks the chain roots.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "boolean",
+            "description": "True when this entry point is where a chain starts: the first root-module caller in dependency mode, or an in-degree-zero graph root in standalone mode."
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "FindingGraph": {
+      "type": "object",
+      "required": [
+        "finding_id"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string"
+        },
+        "dependency": {
+          "$ref": "#/definitions/FindingDependency"
+        },
+        "unresolved_reason": {
+          "type": "string",
+          "enum": [
+            "no_containing_function",
+            "no_crypto_call_match",
+            "language_not_analyzed",
+            "traversal_truncated",
+            "unresolved_dispatch",
+            "dependency_without_source"
+          ],
+          "description": "Why the finding could not be attributed (no_containing_function, no_crypto_call_match, language_not_analyzed, with finding_location), or why an attributed finding's reachability is unknown: a depth limit cut every route (traversal_truncated), every route crosses a name_only edge (unresolved_dispatch), or every route from the application to the finding's dependency crosses a dependency without source (dependency_without_source). Stitched exports carry unresolved_dispatch only."
+        },
+        "analysis": {
+          "$ref": "#/definitions/FindingAnalysis"
+        },
+        "call_chains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CallChain"
+          }
+        },
+        "call_chain_indexes": {
+          "type": "array",
+          "description": "Index-based routes matching call_chains order. Each inner array lists functions[] indexes for that walk.",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "CallChain": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CallChainNode"
+      }
+    },
+    "CallChainNode": {
+      "type": "object",
+      "properties": {
+        "function_name": {
+          "type": "string"
+        },
+        "file_path": {
+          "type": "string"
+        },
+        "crypto_call": {
+          "$ref": "#/definitions/TerminalCryptoCall"
+        },
+        "root_kind": {
+          "type": "string",
+          "enum": [
+            "main",
+            "framework_entry",
+            "no_callers",
+            "depth_limit"
+          ],
+          "description": "On a chain's first frame only, what that frame is: a program entry point (main), a method a framework calls (framework_entry), an application function no application code calls (no_callers; a graph root on a library scanned alone), or the frame where a depth limit stopped the walk (depth_limit). The stitched export writes it too when the fragments recorded entry kinds (graph-fragment-1.14), never depth_limit."
+        },
+        "entry_rule": {
+          "type": "string",
+          "minLength": 1,
+          "description": "On a main or framework_entry first frame only, the ID of the entry-point catalog entry that recognized it: <language>/<framework>:<shape>[:<directory>]:<first name>, as java/spring:decorator:RequestMapping. Absent when language semantics made the frame an entry point (a main function, an override of an external type), and on the stitched export."
+        },
+        "excerpt": {
+          "$ref": "#/definitions/Excerpt"
+        },
+        "excerpt_unavailable": {
+          "type": "string",
+          "enum": [
+            "no_source",
+            "unreadable",
+            "out_of_range"
+          ],
+          "description": "Why the frame has no excerpt: its file is not in the scanned tree or a dependency source directory the scan resolved, or the export has no source (no_source; the stitched export writes it on every frame), reading the file failed (unreadable), or the focus line is not a line of the file (out_of_range). Absent when excerpt is present."
+        },
+        "entry_call": {
+          "type": "object",
+          "description": "The call in the previous frame that leads to this one. Absent on a chain's first frame.",
+          "properties": {
+            "call_site_column": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "1-based column the call expression starts at on line. Written by the live export when the parser recorded it."
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "CryptoCall": {
+      "type": "object",
+      "required": [
+        "function_name",
+        "line"
+      ],
+      "properties": {
+        "function_name": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "parameter_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "parameter_roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "TerminalCryptoCall": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CryptoCall"
+        },
+        {
+          "not": {
+            "required": [
+              "resolved_key_length"
+            ]
+          }
+        }
+      ]
+    },
+    "ResolvedKeyLength": {
+      "type": "object",
+      "required": [
+        "provenance",
+        "source_call"
+      ],
+      "properties": {
+        "bits": {
+          "type": "integer"
+        },
+        "provenance": {
+          "type": "string",
+          "enum": [
+            "constant",
+            "unknown"
+          ]
+        },
+        "source_call": {
+          "$ref": "#/definitions/SourceCall"
+        },
+        "rule_declared_bits": {
+          "type": "integer"
+        },
+        "rule_conflict": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceCall": {
+      "type": "object",
+      "required": [
+        "function_name",
+        "line",
+        "parameter_index"
+      ],
+      "properties": {
+        "function_name": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "parameter_index": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SupportingCall": {
+      "type": "object",
+      "required": [
+        "supporting_id"
+      ],
+      "properties": {
+        "supporting_id": {
+          "type": "string"
+        },
+        "supporting_call": {
+          "$ref": "#/definitions/SupportingCallDeclaration"
+        }
+      },
+      "additionalProperties": true
+    },
+    "SupportingCallDeclaration": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CryptoCall"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "resolved_key_length": {
+              "$ref": "#/definitions/ResolvedKeyLength"
+            }
+          }
+        }
+      ]
+    },
+    "ScanMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ecosystem": {
+          "type": "string"
+        },
+        "root_module": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        },
+        "tool_version": {
+          "type": "string"
+        },
+        "exported_at": {
+          "type": "string"
+        },
+        "function_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edge_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "java_requested_jdk_major": {
+          "type": "string"
+        },
+        "java_runtime_version": {
+          "type": "string"
+        },
+        "java_platform_signatures_used": {
+          "type": "boolean"
+        },
+        "java_platform_signature_source": {
+          "type": "string"
+        },
+        "java_platform_signature_unavailable_reason": {
+          "type": "string"
+        },
+        "ecosystems": {
+          "type": "array",
+          "description": "Every call graph the export analyzed, the primary ecosystem first. Present only when first-party findings span more than one supported ecosystem; ecosystem, root_module, function_count and edge_count above stay those of the primary graph.",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ecosystem",
+              "root_module",
+              "function_count",
+              "edge_count"
+            ],
+            "properties": {
+              "ecosystem": {
+                "type": "string"
+              },
+              "root_module": {
+                "type": "string"
+              },
+              "function_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "edge_count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "FindingDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module"
+      ],
+      "description": "The dependency a dependency finding sits in and how the application reaches it in the resolved dependency graph, not in the call graph. Absent on first-party findings.",
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "purl": {
+          "type": "string",
+          "description": "Package URL of the dependency, versioned when the version is known."
+        },
+        "relationship": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "transitive"
+          ],
+          "description": "Absent when the dependency graph was not resolved or does not connect the dependency to the application."
+        },
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Shortest route from the application to this dependency: a direct dependency first, this dependency last, the application (scan_metadata.root_module) not listed. A route through dependencies parsed with source is preferred. Absent with relationship.",
+          "items": {
+            "$ref": "#/definitions/DependencyPathStep"
+          }
+        }
+      }
+    },
+    "DependencyPathStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module"
+      ],
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "purl": {
+          "type": "string"
+        },
+        "without_source": {
+          "type": "boolean",
+          "description": "The dependency joined the call graph without source code (types only for Java, not at all elsewhere), so no call chain crosses it. Live export only."
+        }
+      }
+    },
+    "FindingAnalysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Completeness of the finding's call_chains and parameters, and how many routes support the verdict and how strongly they were resolved.",
+      "properties": {
+        "call_chains": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "parameters": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "paths_total": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Distinct routes from a chain root to the finding the call graph holds; chains that differ only in a call-site line count once. Saturates at the largest int64 and is then a lower bound. Live export only, with a route."
+        },
+        "paths_kept": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many of those routes call_chains shows. Live export only, with a route."
+        },
+        "route_evidence": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "dispatch",
+            "name_only"
+          ],
+          "description": "Strength of the finding's strongest route, rated by its weakest call: every call resolved statically (direct), at least one interface or subclass dispatch and no name_only call (dispatch), or every route needs a name_only call (name_only, with unresolved_reason unresolved_dispatch)."
+        },
+        "no_callers_only": {
+          "type": "boolean",
+          "description": "Every root of the routes supporting the verdict has root_kind no_callers. Omitted when false. The stitched export sets it only when the fragments recorded entry kinds (graph-fragment-1.14)."
+        }
+      }
+    },
+    "Excerpt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_line",
+        "focus_line",
+        "lines"
+      ],
+      "description": "Up to seven lines of the source the analysis read, centered on the frame's focus line: the call that leads to the next frame, the crypto call on the last frame, or the function's first line when neither is known. Clipped to the file's bounds.",
+      "properties": {
+        "start_line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based line number of lines[0]."
+        },
+        "focus_line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The line the frame's evidence points at, within the window."
+        },
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "items": {
+            "type": "string"
+          },
+          "description": "Verbatim lines without line endings, each cut to 240 characters."
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when at least one line was cut at 240 characters."
+        }
+      }
+    }
+  }
+}

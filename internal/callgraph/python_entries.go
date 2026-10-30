@@ -65,9 +65,9 @@ func applyPythonEntryRules(root *sitter.Node, src []byte, filePath, packagePath 
 			scope.bases[decl.ID.Type] = decl.OwnerBases
 		}
 	}
-	kinds := make(map[int]RootKind)
+	marks := make(map[int]EntryMark)
 	scope.bindModuleNames(root, src)
-	scope.decoratedEntries(root, src, kinds)
+	scope.decoratedEntries(root, src, marks)
 	module := pythonModuleDottedPath(filePath, packagePath)
 	runsAsMain := pythonHasMainGuard(root, src)
 	// A directory-restricted entry reads the file's place inside the scanned
@@ -81,12 +81,12 @@ func applyPythonEntryRules(root *sitter.Node, src []byte, filePath, packagePath 
 		}
 		switch {
 		case decl.ID.Name == moduleInitMethodName && runsAsMain:
-			markEntry(decl, RootKindMain)
-		case kinds[decl.StartLine] != "":
-			markEntry(decl, kinds[decl.StartLine])
+			markEntry(decl, EntryMark{Kind: RootKindMain})
+		case marks[decl.StartLine].Kind != "":
+			markEntry(decl, marks[decl.StartLine])
 		case decl.ID.Type != "":
-			if kind, ok := scope.supertypeEntryKind(decl.ID.Type, decl.ID.Name, treePath, map[string]bool{}); ok {
-				markEntry(decl, kind)
+			if mark, ok := scope.supertypeEntryMark(decl.ID.Type, decl.ID.Name, treePath, map[string]bool{}); ok {
+				markEntry(decl, mark)
 			}
 		}
 	}
@@ -103,7 +103,7 @@ func pythonConsoleScriptRefs(filePath string) []EntryRef {
 	var refs []EntryRef
 	for module, functions := range pythonConsoleScripts(filePath) {
 		for function := range functions {
-			refs = append(refs, EntryRef{Function: FunctionID{Package: module, Name: function}, Module: true, Kind: RootKindMain})
+			refs = append(refs, EntryRef{Function: FunctionID{Package: module, Name: function}, Module: true, Mark: EntryMark{Kind: RootKindMain}})
 		}
 	}
 	return refs
@@ -214,23 +214,23 @@ func (s *pythonEntryScope) bindDecoratedFunction(decorated *sitter.Node, src []b
 
 // decoratedEntries records, by the line of the def, each function a catalog
 // decorator makes an entry point, at any depth.
-func (s *pythonEntryScope) decoratedEntries(node *sitter.Node, src []byte, kinds map[int]RootKind) {
+func (s *pythonEntryScope) decoratedEntries(node *sitter.Node, src []byte, marks map[int]EntryMark) {
 	if node.Type() == pythonDecoratedDefinition {
 		definition := node.ChildByFieldName("definition")
 		if definition != nil && definition.Type() == pythonNodeFunctionDefinition {
-			if _, kind, ok := s.decoratorEntry(node, src); ok {
-				kinds[int(definition.StartPoint().Row)+1] = kind
+			if _, mark, ok := s.decoratorEntry(node, src); ok {
+				marks[int(definition.StartPoint().Row)+1] = mark
 			}
 		}
 	}
 	for i := 0; i < int(node.NamedChildCount()); i++ {
-		s.decoratedEntries(node.NamedChild(i), src, kinds)
+		s.decoratedEntries(node.NamedChild(i), src, marks)
 	}
 }
 
 // decoratorEntry returns the first decorator of a decorated definition that
 // the catalog names for the module it comes from.
-func (s *pythonEntryScope) decoratorEntry(decorated *sitter.Node, src []byte) (string, RootKind, bool) {
+func (s *pythonEntryScope) decoratorEntry(decorated *sitter.Node, src []byte) (string, EntryMark, bool) {
 	catalog := entryCatalog()
 	for i := 0; i < int(decorated.NamedChildCount()); i++ {
 		decorator := decorated.NamedChild(i)
@@ -239,35 +239,35 @@ func (s *pythonEntryScope) decoratorEntry(decorated *sitter.Node, src []byte) (s
 		}
 		module, name := s.target(decorator.NamedChild(0), src)
 		if entry, ok := catalog.Match(entryLanguagePython, entrypoints.ShapeDecorator, module, "", name); ok {
-			return module, catalogEntryKind(&entry), true
+			return module, catalogEntryMark(&entry), true
 		}
 	}
-	return "", "", false
+	return "", EntryMark{}, false
 }
 
-// supertypeEntryKind reports whether method of class is one a framework
+// supertypeEntryMark reports whether method of class is one a framework
 // dispatcher calls: a catalog method of a class whose base, directly or
 // through a class of the same file, is a catalog type (a Django View, a
 // Flask MethodView). The class body (<clinit>) of a Django Migration under a
 // migrations directory counts too: the migration loader runs it.
-func (s *pythonEntryScope) supertypeEntryKind(class, method, filePath string, seen map[string]bool) (RootKind, bool) {
+func (s *pythonEntryScope) supertypeEntryMark(class, method, filePath string, seen map[string]bool) (EntryMark, bool) {
 	catalog := entryCatalog()
 	if seen[class] || !catalog.Named(entryLanguagePython, entrypoints.ShapeSupertype, method) {
-		return "", false
+		return EntryMark{}, false
 	}
 	seen[class] = true
 	for _, base := range s.bases[class] {
 		module, typeName := s.baseType(base)
 		if entry, ok := catalog.MatchInFile(entryLanguagePython, entrypoints.ShapeSupertype, module, typeName, method, filePath); ok {
-			return catalogEntryKind(&entry), true
+			return catalogEntryMark(&entry), true
 		}
 		if _, local := s.bases[base]; local {
-			if kind, ok := s.supertypeEntryKind(base, method, filePath, seen); ok {
-				return kind, true
+			if mark, ok := s.supertypeEntryMark(base, method, filePath, seen); ok {
+				return mark, true
 			}
 		}
 	}
-	return "", false
+	return EntryMark{}, false
 }
 
 // baseType resolves a base class as written to its module and name:
@@ -343,7 +343,7 @@ func (s *pythonEntryScope) registrationRefs(catalog *entrypoints.Catalog, call *
 	var refs []EntryRef
 	for i := 1; i < int(args.NamedChildCount()); i++ {
 		if ref, found := s.viewReference(args.NamedChild(i), src, module); found {
-			ref.Kind = catalogEntryKind(&entry)
+			ref.Mark = catalogEntryMark(&entry)
 			refs = append(refs, ref)
 		}
 	}

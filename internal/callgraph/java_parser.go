@@ -1056,8 +1056,8 @@ func (p *JavaParser) parseMethodDecl(
 	decl.QualifiedReturnType = qualifyJavaType(returnRaw, analysis)
 	decl.Static = javaDeclaresModifier(node, src, "static")
 	decl.Annotations = javaDeclaredAnnotations(node, src)
-	if kind, ok := javaAnnotationEntryKind(node, src, analysis); ok {
-		decl.EntryKind = kind
+	if mark, ok := javaAnnotationEntryMark(node, src, analysis); ok {
+		markEntry(decl, mark)
 	}
 
 	if body != nil {

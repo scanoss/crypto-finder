@@ -61,8 +61,8 @@ type EntryRef struct {
 	// under the root module a manifest-named project prefixes onto its own,
 	// and under no other leading segments.
 	Module bool
-	// Kind is the root kind the handler gets.
-	Kind RootKind
+	// Mark is the root kind the handler gets, and the catalog entry that gave it.
+	Mark EntryMark
 }
 
 // resolveEntryRefs marks the declarations the collected EntryRefs name. A
@@ -81,7 +81,7 @@ func resolveEntryRefs(graph *CallGraph, pythonRoots []string) {
 	for i := range refs {
 		ref := &refs[i]
 		if decl := lookupEntryRef(graph, ref.Function); decl != nil && !ref.AllExported {
-			markEntry(decl, ref.Kind)
+			markEntry(decl, ref.Mark)
 			continue
 		}
 		if !ref.AllExported && !ref.Module {
@@ -94,7 +94,7 @@ func resolveEntryRefs(graph *CallGraph, pythonRoots []string) {
 			}
 		}
 		if ref.Module {
-			markPythonModuleFunction(byPackage, *ref, pythonRoots)
+			markPythonModuleFunction(byPackage, ref, pythonRoots)
 			continue
 		}
 		markExportedMethods(byPackage, ref)
@@ -110,7 +110,7 @@ func markExportedMethods(byPackage map[string][]*FunctionDecl, ref *EntryRef) {
 	}
 	for _, decl := range byPackage[ref.Function.Package] {
 		if ref.matchesMethod(decl) && (inService == nil || (decl.OwnerType != goOwnerInterface && inService(decl))) {
-			markEntry(decl, ref.Kind)
+			markEntry(decl, ref.Mark)
 		}
 	}
 }
@@ -135,7 +135,7 @@ func uniqueEntryRefs(refs []EntryRef) []EntryRef {
 // manifest-named project prefixes onto its own modules (`probe.app.views` for
 // `import app.views`). A module nested under other segments (`probe.x.app.views`)
 // is a different module and stays unmarked.
-func markPythonModuleFunction(byPackage map[string][]*FunctionDecl, ref EntryRef, roots []string) {
+func markPythonModuleFunction(byPackage map[string][]*FunctionDecl, ref *EntryRef, roots []string) {
 	module := ref.Function.Package
 	if module == "" {
 		return
@@ -148,7 +148,7 @@ func markPythonModuleFunction(byPackage map[string][]*FunctionDecl, ref EntryRef
 	for _, pkg := range candidates {
 		for _, decl := range byPackage[pkg] {
 			if decl.ID.Type == "" && decl.ID.Name == ref.Function.Name {
-				markEntry(decl, ref.Kind)
+				markEntry(decl, ref.Mark)
 			}
 		}
 	}
@@ -176,9 +176,10 @@ func (ref *EntryRef) matchesMethod(decl *FunctionDecl) bool {
 		isExportedName(decl.ID.Name)
 }
 
-func markEntry(decl *FunctionDecl, kind RootKind) {
+func markEntry(decl *FunctionDecl, mark EntryMark) {
 	if decl != nil && decl.EntryKind == "" {
-		decl.EntryKind = kind
+		decl.EntryKind = mark.Kind
+		decl.EntryRule = mark.Rule
 	}
 }
 

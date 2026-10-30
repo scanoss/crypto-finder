@@ -42,7 +42,14 @@ var entryCatalog = sync.OnceValue(func() *entrypoints.Catalog {
 	return catalog
 })
 
-// catalogEntryKind is the root kind a matched catalog entry gives.
-func catalogEntryKind(entry *entrypoints.Entry) RootKind {
-	return RootKind(entry.RootKind)
+// EntryMark is what makes a declaration an entry point: its root kind and,
+// when a catalog entry matched, that entry's ID (entrypoints.Entry.ID).
+type EntryMark struct {
+	Kind RootKind
+	Rule string
+}
+
+// catalogEntryMark is the mark a matched catalog entry gives.
+func catalogEntryMark(entry *entrypoints.Entry) EntryMark {
+	return EntryMark{Kind: RootKind(entry.RootKind), Rule: entry.ID}
 }

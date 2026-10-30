@@ -143,16 +143,19 @@ func containsAll(path, want []string) bool {
 }
 
 // TestCallgraphSchema617_DeclaresEveryNewField: an interned export holding
-// every field 6.17 adds is stamped 6.17 and validates against the 6.17
-// schema, and the schema constrains each new field: a value of the wrong type
-// or outside its vocabulary is rejected, so an undeclared field cannot pass.
+// every field 6.17 adds validates against the 6.17 schema, and the schema
+// constrains each new field: a value of the wrong type or outside its
+// vocabulary is rejected, so an undeclared field cannot pass. The export is
+// stamped with the current version, so the test restamps it 6.17; the fields
+// later versions add sit on frames, which 6.17 leaves open.
 func TestCallgraphSchema617_DeclaresEveryNewField(t *testing.T) {
 	t.Parallel()
 	document := schema617Export(t)
 
-	if got := document["schema_version"]; got != "6.17" {
-		t.Fatalf("schema_version = %v, want 6.17", got)
+	if got := document["schema_version"]; got != graphfrag.CallgraphInternedSchemaVersion {
+		t.Fatalf("schema_version = %v, want %s", got, graphfrag.CallgraphInternedSchemaVersion)
 	}
+	document["schema_version"] = "6.17"
 	present := map[string]bool{}
 	collectFieldValues(document, present)
 	for _, want := range []string{
@@ -188,6 +191,7 @@ func TestCallgraphSchema617_DeclaresEveryNewField(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			mutated := schema617Export(t)
+			mutated["schema_version"] = "6.17"
 			if !setFirst(mutated, tc.within, nil, tc.key, tc.value) {
 				t.Fatalf("export has no %s to corrupt", name)
 			}

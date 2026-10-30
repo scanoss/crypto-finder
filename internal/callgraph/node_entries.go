@@ -64,11 +64,11 @@ func nodeEntryRefs(root *sitter.Node, src []byte, filePath, modulePath string, b
 	role := nodePackageEntryRole(filePath)
 	if role == nodeLibraryEntry {
 		for _, id := range exports {
-			refs = append(refs, EntryRef{Function: id, Kind: RootKindFrameworkEntry})
+			refs = append(refs, EntryRef{Function: id, Mark: EntryMark{Kind: RootKindFrameworkEntry}})
 		}
 	}
 	if role != nodeNotAnEntry || nodeRunsAsMain(root, src) || nodeHasScriptShebang(filePath, src) {
-		refs = append(refs, EntryRef{Function: FunctionID{Package: modulePath, Name: moduleInitMethodName}, Kind: RootKindMain})
+		refs = append(refs, EntryRef{Function: FunctionID{Package: modulePath, Name: moduleInitMethodName}, Mark: EntryMark{Kind: RootKindMain}})
 	}
 	return refs
 }
@@ -83,7 +83,7 @@ func nodeRegisteredHandlers(root *sitter.Node, src []byte, modulePath string, bi
 		case nodeCallExpression:
 			if entry, ok := nodeRouteRegistration(node, src, bindings); ok {
 				for _, id := range nodeHandlerArguments(node, src, modulePath, bindings) {
-					out = append(out, EntryRef{Function: id, Kind: catalogEntryKind(&entry)})
+					out = append(out, EntryRef{Function: id, Mark: catalogEntryMark(&entry)})
 				}
 			}
 		case javaNodeClassDeclaration, nodeClassExpression:
@@ -364,7 +364,7 @@ func nodeDecoratedEntryMethods(class *sitter.Node, src []byte, modulePath string
 			if method := member.ChildByFieldName("name"); pending != nil && method != nil {
 				out = append(out, EntryRef{
 					Function: FunctionID{Package: modulePath, Type: name.Content(src), Name: method.Content(src)},
-					Kind:     catalogEntryKind(pending),
+					Mark:     catalogEntryMark(pending),
 				})
 			}
 			pending = nil
@@ -598,14 +598,14 @@ func nodeFileConventionEntries(filePath string, exports map[string]FunctionID, d
 			(len(entry.Files) > 0 && !slices.Contains(entry.Files, stem)) {
 			continue
 		}
-		kind := catalogEntryKind(entry)
+		mark := catalogEntryMark(entry)
 		for _, name := range entry.Names {
 			if name == nodeDefaultKeyword {
 				for _, id := range defaults {
-					out = append(out, EntryRef{Function: id, Kind: kind})
+					out = append(out, EntryRef{Function: id, Mark: mark})
 				}
 			} else if id, ok := exports[name]; ok {
-				out = append(out, EntryRef{Function: id, Kind: kind})
+				out = append(out, EntryRef{Function: id, Mark: mark})
 			}
 		}
 	}

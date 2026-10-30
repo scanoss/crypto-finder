@@ -105,7 +105,7 @@ func TestServerRegistration_ResolvesTheRegisteredValue(t *testing.T) {
 			refs := grpcRefs(t, grpcImports+tc.body)
 			tc.want.AllExported = true
 			tc.want.Interface = FunctionID{Package: "example.com/gen/keys", Type: "KeysServer"}
-			tc.want.Kind = RootKindFrameworkEntry
+			tc.want.Mark = EntryMark{Kind: RootKindFrameworkEntry, Rule: "go/grpc:server_registration:Register*Server"}
 			if len(refs) != 1 || refs[0] != tc.want {
 				t.Fatalf("refs = %+v, want [%+v]", refs, tc.want)
 			}
