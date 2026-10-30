@@ -78,7 +78,9 @@ func fakeScanner(t *testing.T, f *fakeEngine, version string, mode scanner.Openg
 	}
 	t.Setenv(CoreBinaryEnv, f.core)
 	coreBinaries.Range(func(key, _ any) bool { coreBinaries.Delete(key); return true })
-	return &Scanner{executablePath: f.cli, version: version, timeout: time.Minute, mode: mode, prefilter: pf, includeGitIgnored: true}
+	// A one-minute timeout would leave the timeout retry no time past its
+	// reserve (retryBudget).
+	return &Scanner{executablePath: f.cli, version: version, timeout: 10 * time.Minute, mode: mode, prefilter: pf, includeGitIgnored: true}
 }
 
 func fixtureProject(t *testing.T) (target, rules string) {

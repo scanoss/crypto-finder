@@ -80,6 +80,8 @@ type Scanner struct {
 	// coreRulesCacheDir keeps the rules files core mode hands opengrep-core;
 	// empty writes a temporary file per scan.
 	coreRulesCacheDir string
+	// minRetryBudget overrides the constant of that name when set.
+	minRetryBudget time.Duration
 }
 
 // NewScanner creates a new OpenGrep adapter with default settings.

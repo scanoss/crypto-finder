@@ -48,6 +48,7 @@ const prefilteredIDMarker = "crypto-finder-prefiltered."
 // rule, so a failure costs time, never findings. Rules that hit OpenGrep's
 // time limit on a file run once more with a longer limit (retryTimeouts).
 func (s *Scanner) collect(ctx context.Context, base string, roots []scanner.Root, rulePaths []string) (*entities.SemgrepOutput, error) {
+	started := time.Now()
 	st := s.siteFor(base, roots, rulePaths)
 	if st.dir != "" {
 		local := *s
@@ -64,14 +65,14 @@ func (s *Scanner) collect(ctx context.Context, base string, roots []scanner.Root
 			if err != nil {
 				return nil, err
 			}
-			return s.retryTimeouts(ctx, &st, output, ran, rulePaths)
+			return s.retryTimeouts(ctx, &st, output, ran, rulePaths, time.Since(started))
 		}
 	}
 	output, err := s.collectCLI(ctx, &st, st.configs, scoped, st.rewriteID)
 	if err != nil {
 		return nil, err
 	}
-	return s.retryTimeouts(ctx, &st, output, nil, rulePaths)
+	return s.retryTimeouts(ctx, &st, output, nil, rulePaths, time.Since(started))
 }
 
 // collectPlanned is collect for the modes that plan the scan themselves.
