@@ -160,6 +160,36 @@ function viaOuterDestructure(x: any, items: number[]) {
 			not: []string{"* -> app/main.a", "* -> app/main.b", "* -> app/main.c", "* -> app/main.d"},
 		},
 		{
+			name: "name bound by an outer arrow parameter or a scope further out",
+			source: `function viaOuterArrowParam(items: any[]) {
+  return items.map(a => items.forEach(function () { setTimeout(a, 1); }));
+}
+
+const viaGrandparent = function (b: any) {
+  return function () {
+    return () => { setTimeout(b, 1); };
+  };
+};
+
+(function () {
+  var c = 1;
+  function inner() { return () => setTimeout(c, 1); }
+  return inner;
+})();
+`,
+			not: []string{"* -> app/main.a", "* -> app/main.b", "* -> app/main.c"},
+		},
+		{
+			name: "name bound only in a sibling scope still names the function",
+			source: `function binds(a: any) { return a; }
+
+function start() {
+  setTimeout(a, 1);
+}
+`,
+			want: []string{"app/main.start -> app/main.a"},
+		},
+		{
 			name: "destructured names shadow a function",
 			source: `function viaConst(x: any) {
   const { a } = x;
