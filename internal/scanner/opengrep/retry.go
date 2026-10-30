@@ -46,6 +46,18 @@ const (
 	// ran on it. Parsing counts against the first rule's limit, and a large C
 	// or C++ file takes seconds to parse on a busy host.
 	parseInterrupted = "Memprof_limits.Limit_reached"
+	// minRetryBudget and retryBudgetFactor bound the time all retry rounds
+	// of a scan take together: twice the first pass, and at least 2 min. A
+	// file where OpenGrep gave up reruns every rule of the scan, which on a
+	// few large generated files takes far longer than the first pass did.
+	minRetryBudget    = 2 * time.Minute
+	retryBudgetFactor = 2
+	// minRetryReserve and retryReserveDivisor keep part of the time the
+	// scan's own deadline leaves free of the retry: a tenth of it, and at
+	// least 1 min, for the work after the scan (the CBOM, the callgraph and
+	// the graph fragment), which a retry running to the deadline would fail.
+	minRetryReserve     = time.Minute
+	retryReserveDivisor = 10
 )
 
 // timedOut is the files a rule timed out on, with the rules per file. A file
@@ -135,26 +147,33 @@ func (s *Scanner) retryRuleTimeouts() []int {
 // silently reports fewer findings. A file where OpenGrep gave up after
 // cliTimeoutThreshold timeouts, or whose parse the limit interrupted, runs
 // every rule of the scan again, since the rules it skipped report nothing.
-// ran is the rules the scan ran; nil loads them from rulePaths. A retry the
-// scan's context stopped (a timeout or a cancellation) fails the scan, as
-// the first run would have: the caller must not take the output of a scan
-// that was cut short for the whole. Any other failure keeps the output as
-// it was.
-func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.SemgrepOutput, ran []*coreRule, rulePaths []string) (*entities.SemgrepOutput, error) {
+// ran is the rules the scan ran; nil loads them from rulePaths. firstPass
+// is how long the scan took, which sizes the retry's budget (retryBudget).
+// A retry the scan's context stopped (a timeout or a cancellation) fails the
+// scan, as the first run would have: the caller must not take the output of
+// a scan that was cut short for the whole. A retry its budget stopped, or
+// any other failure, keeps the output of the earlier runs: the timeouts of
+// the pairs it did not finish stand, so their files stay incomplete.
+func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.SemgrepOutput, ran []*coreRule, rulePaths []string, firstPass time.Duration) (*entities.SemgrepOutput, error) {
 	pending := timeouts(output.Errors)
 	if len(pending) == 0 {
 		return output, nil
 	}
+	floor := s.minRetryBudget
+	if floor == 0 {
+		floor = minRetryBudget
+	}
+	deadline, _ := ctx.Deadline() // Without one, the zero time.
+	budget, ok := retryBudget(firstPass, floor, deadline, time.Now())
+	if !ok {
+		log.Warn().Int("files", len(pending)).Msg("OpenGrep rule timeouts are not retried: the scan's deadline leaves no time")
+		return output, nil
+	}
+	retryCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
 	if ran == nil {
-		cwd, err := physicalDir(s.workDir)
-		if err == nil {
-			var ruleset *coreRuleset
-			ruleset, err = loadCoreRuleset(rulePaths, cwd)
-			if err == nil {
-				ran = ruleset.rules
-			}
-		}
-		if err != nil {
+		var err error
+		if ran, err = s.loadRan(rulePaths); err != nil {
 			log.Debug().Err(err).Msg("OpenGrep rule timeouts cannot be retried: rules unreadable")
 			return output, nil
 		}
@@ -165,10 +184,14 @@ func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.
 			break
 		}
 		started := time.Now()
-		retried, err := s.runRetry(ctx, st, plan, limit)
+		retried, err := s.runRetry(retryCtx, st, plan, limit)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, err
+			}
+			if retryCtx.Err() != nil {
+				log.Warn().Dur("budget", budget).Strs("files", plan.files).Msg("Retrying OpenGrep rule timeouts ran out of time; keeping the findings of the earlier runs")
+				break
 			}
 			log.Warn().Err(err).Int("files", len(plan.files)).Msg("Retrying OpenGrep rule timeouts failed; keeping the findings of the earlier runs")
 			break
@@ -190,6 +213,36 @@ func (s *Scanner) retryTimeouts(ctx context.Context, st *site, output *entities.
 		pending = within(timeouts(output.Errors), plan.files)
 	}
 	return output, nil
+}
+
+// loadRan reads the rules of rulePaths as the scan ran them.
+func (s *Scanner) loadRan(rulePaths []string) ([]*coreRule, error) {
+	cwd, err := physicalDir(s.workDir)
+	if err != nil {
+		return nil, err
+	}
+	ruleset, err := loadCoreRuleset(rulePaths, cwd)
+	if err != nil {
+		return nil, err
+	}
+	return ruleset.rules, nil
+}
+
+// retryBudget is the time the retry rounds of a scan whose first pass took
+// firstPass may take: retryBudgetFactor times it, and at least floor. A
+// non-zero deadline caps it to keep the reserve free (minRetryReserve); ok
+// is false when the time left is the reserve or less: there is no retry.
+func retryBudget(firstPass, floor time.Duration, deadline, now time.Time) (budget time.Duration, ok bool) {
+	budget = max(floor, retryBudgetFactor*firstPass)
+	if deadline.IsZero() {
+		return budget, true
+	}
+	left := deadline.Sub(now)
+	reserve := max(left/retryReserveDivisor, minRetryReserve)
+	if left <= reserve {
+		return 0, false
+	}
+	return min(budget, left-reserve), true
 }
 
 // within keeps the files of pending that files lists.

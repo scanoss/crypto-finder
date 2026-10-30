@@ -450,3 +450,122 @@ func TestRetryRuleTimeout(t *testing.T) {
 		}
 	}
 }
+
+// roundsEngine is a fake opengrep CLI that runs first, a shell case body,
+// for the scan, round1 for the 30 s retry and round2 for the 120 s one.
+func roundsEngine(t *testing.T, first, round1, round2 string) *fakeEngine {
+	t.Helper()
+	f := newFakeEngine(t, "unused", "")
+	script := "#!/bin/sh\necho \"cli $*\" >> " + f.log + "\n" +
+		"case \"$*\" in *--timeout\\ 120*) " + round2 + ";;\n*--timeout\\ 30*) " + round1 + ";;\n*) " + first + ";; esac\nexit 0\n"
+	if err := os.WriteFile(f.cli, []byte(script), 0o700); err != nil { // Executable test fixture.
+		t.Fatal(err)
+	}
+	return f
+}
+
+// matchResult is a result of rule id on the target, a format taking it once.
+func matchResult(id string) string {
+	return `{"check_id":"` + id + `","path":"%s","start":{"line":5,"col":12,"offset":45},"end":{"line":5,"col":24,"offset":57},` +
+		`"extra":{"message":"m","metadata":{},"metavars":{},"severity":"INFO","lines":"x"}}`
+}
+
+// slowRetry is a retry that outlasts the test's budget and then reports the
+// file scanned clean: a scan that waited for it would call the file complete.
+const slowRetry = `sleep 30; printf '{"results":[],"errors":[],"paths":{"scanned":["a.go"]}}'`
+
+// TestRetryOutOfBudgetKeepsTheFirstPass pins a retry that runs past its
+// budget, as rerunning every rule on large generated files does: the scan
+// succeeds with the first pass's findings, and the timeout of the pair the
+// retry did not finish stands, so the file stays incomplete. Waiting for the
+// retry ran a dependency scan into its deadline and failed it whole.
+func TestRetryOutOfBudgetKeepsTheFirstPass(t *testing.T) {
+	target, rules := fixtureProject(t)
+	cwd, err := physicalDir("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := configPrefix(filepath.Join(rules, "merged-rules.yaml"), cwd)
+	first := `printf '{"results":[` + matchResult(prefix+"std.sha") + `],"errors":[` + timeoutError(prefix+"x.hkdf") +
+		`]}' "$FAKE_TARGET" "$FAKE_TARGET" "$FAKE_TARGET"`
+	f := roundsEngine(t, first, slowRetry, slowRetry)
+	s := fakeScanner(t, f, "1.30.2", scanner.OpengrepModeCLI, scanner.RulePrefilterOff)
+	s.minRetryBudget = 500 * time.Millisecond
+	started := time.Now()
+	report, err := s.Scan(context.Background(), target, []string{rules}, entities.ToolInfo{})
+	if err != nil {
+		t.Fatalf("err = %v: a retry out of budget must not fail the scan", err)
+	}
+	if elapsed := time.Since(started); elapsed > 15*time.Second {
+		t.Errorf("scan took %v: the retry must stop at its budget", elapsed)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].CryptographicAssets[0].Rules[0].ID != "std.sha" {
+		t.Errorf("findings = %+v, want the first pass's std.sha", report.Findings)
+	}
+	if want := []string{filepath.Join(target, "a.go")}; !reflect.DeepEqual(report.IncompleteFiles, want) {
+		t.Errorf("incomplete files = %v, want %v: the unfinished pair's timeout stands", report.IncompleteFiles, want)
+	}
+}
+
+// TestRetryOutOfBudgetKeepsEarlierRounds pins a first retry round that
+// finishes within the budget, recovering a match and leaving another pair
+// timed out, and a second round that runs past it: the match the first
+// round recovered stays, and the pair still timed out leaves the file
+// incomplete.
+func TestRetryOutOfBudgetKeepsEarlierRounds(t *testing.T) {
+	target, rules := fixtureProject(t)
+	cwd, err := physicalDir("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := configPrefix(filepath.Join(rules, "merged-rules.yaml"), cwd)
+	first := `printf '{"results":[],"errors":[` + timeoutError(prefix+"std.sha") + `,` + timeoutError(prefix+"x.hkdf") +
+		`]}' "$FAKE_TARGET" "$FAKE_TARGET" "$FAKE_TARGET" "$FAKE_TARGET"`
+	marked := "tmp.crypto-finder-prefilter-9." + prefilteredIDMarker + prefix
+	round1 := `printf '{"results":[` + matchResult(marked+"std.sha") + `],"errors":[` + timeoutError(marked+"x.hkdf") +
+		`]}' "$FAKE_TARGET" "$FAKE_TARGET" "$FAKE_TARGET"`
+	f := roundsEngine(t, first, round1, slowRetry)
+	s := fakeScanner(t, f, "1.30.2", scanner.OpengrepModeCLI, scanner.RulePrefilterOff)
+	s.minRetryBudget = time.Second
+	report, err := s.Scan(context.Background(), target, []string{rules}, entities.ToolInfo{})
+	if err != nil {
+		t.Fatalf("err = %v: a retry out of budget must not fail the scan", err)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].CryptographicAssets[0].Rules[0].ID != "std.sha" {
+		t.Errorf("findings = %+v, want std.sha recovered by the first round", report.Findings)
+	}
+	if want := []string{filepath.Join(target, "a.go")}; !reflect.DeepEqual(report.IncompleteFiles, want) {
+		t.Errorf("incomplete files = %v, want %v: x.hkdf is still timed out", report.IncompleteFiles, want)
+	}
+	calls := strings.Split(strings.TrimSpace(f.calls(t)), "\n")
+	if len(calls) != 3 || !strings.Contains(calls[2], "--timeout 120") {
+		t.Errorf("want the scan and both retry rounds, calls:\n%s", strings.Join(calls, "\n"))
+	}
+}
+
+func TestRetryBudget(t *testing.T) {
+	now := time.Now()
+	for name, c := range map[string]struct {
+		firstPass, left time.Duration
+		want            time.Duration
+		ok              bool
+	}{
+		"floor":           {firstPass: 10 * time.Second, want: minRetryBudget, ok: true},
+		"factor":          {firstPass: 128 * time.Second, want: 256 * time.Second, ok: true},
+		"factor in reach": {firstPass: 128 * time.Second, left: 55 * time.Minute, want: 256 * time.Second, ok: true},
+		// 10 min left keep 1 min free; 20 min keep 2 min.
+		"minimum reserve": {firstPass: 10 * time.Minute, left: 10 * time.Minute, want: 9 * time.Minute, ok: true},
+		"share reserve":   {firstPass: 10 * time.Minute, left: 20 * time.Minute, want: 18 * time.Minute, ok: true},
+		"floor capped":    {firstPass: time.Second, left: 90 * time.Second, want: 30 * time.Second, ok: true},
+		"reserve only":    {firstPass: time.Second, left: time.Minute},
+		"past deadline":   {firstPass: time.Second, left: -time.Second},
+	} {
+		var deadline time.Time
+		if c.left != 0 {
+			deadline = now.Add(c.left)
+		}
+		if got, ok := retryBudget(c.firstPass, minRetryBudget, deadline, now); got != c.want || ok != c.ok {
+			t.Errorf("%s: budget = %v %v, want %v %v", name, got, ok, c.want, c.ok)
+		}
+	}
+}
