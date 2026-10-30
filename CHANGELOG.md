@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.44.0] - 2026-10-30
 ### Added
 - C++ callgraph contracts for Botan 2.x and 3.x: the `create`/`create_or_throw` factories of `HashFunction`,
   `MessageAuthenticationCode`, `Cipher_Mode`, `AEAD_Mode`, `BlockCipher`, `StreamCipher`, `KDF`, `PBKDF` and
@@ -14,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `std::unique_ptr<Botan::...>` (or the raw `Cipher_Mode*`, `KDF*` and `PBKDF*` of the Botan 2 factories),
   key, nonce, IV and associated-data setters are config and update, final, process, finish, encrypt,
   decrypt, verify_mac and derive_key are operations; key and derived-key lengths contribute `keySize`.
-  Receivers declared `auto` do not resolve, and the public-key, private-key, X.509 and TLS findings are
-  anchored on declarations, so they get no lifecycle.
+  Receivers declared `auto` resolve through the C++ receiver fix below. The public-key, private-key, X.509
+  and TLS findings are anchored on declarations, so they get no lifecycle.
 - C callgraph contracts for RELIC 0.2.0 through 0.7.0: `core_init`/`core_clean`, curve selection with `ep_param_set`
   (the curve is operation-determining) and the `ep_param_set_any*`/`pc_param_set_any` defaults, `rand_seed` and
   `rand_bytes`, the SHA-2 and BLAKE2s `md_map_*` hashes, `md_hmac`, `md_kdf`, `bc_aes_cbc_enc`/`dec`, hash to
@@ -54,6 +56,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mbedtls_pkcs5_pbkdf2_hmac_ext`, ECP/ECDH/ECDSA, the RSA padding calls at their 2.x and 3.x arities,
   `mbedtls_pk_sign` at its 2.x and 4.x arities, and the TLS version and transport settings. The library lists
   both GitHub coordinates (`Mbed-TLS/mbedtls`, `ARMmbed/mbedtls`).
+### Changed
+- The graph algorithm version is now `graph-algo-12`: C++ calls on `auto` variables, direct
+  initialization and templated calls resolve as described under Fixed. Re-mine C++ components.
+### Fixed
+- C++ calls on a variable declared `auto` (including `const auto&` and `auto x{...}`) now resolve
+  to the type the producing call returns according to the callgraph contracts, so
+  `auto h = Botan::HashFunction::create("SHA-256"); h->update(x);` is keyed as
+  `std::unique_ptr<Botan::HashFunction>.update` instead of `auto.update` and its supporting calls
+  carry their contract role. A variable bound to two different producer types in one function is
+  left unresolved.
+- C++ direct initialization (`std::unique_ptr<X> h(X::create(...))`, `X h{f()}`) now binds the
+  variable to the call, so the calls made on it are reported as the finding's supporting calls.
+- C++ templated calls are recorded without their template arguments: `f<32>(x)` was not recorded at
+  all, `ns::f<T>(x)` was recorded as `f<T>`, and `ns::f<libff::alt_bn128_pp>(x)` was split at the
+  `::` inside the template arguments. Member template calls (`obj->m<N>(x)`) remain unrecorded:
+  the C++ grammar reads them as comparisons.
 
 ## [0.43.0] - 2026-10-29
 ### Fixed
