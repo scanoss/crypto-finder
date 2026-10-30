@@ -1,0 +1,222 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: jwt-cpp
+  coordinates:
+    - Thalhammer/jwt-cpp
+  version_range: ">=0.1.0,<0.8.0"
+  description: "jwt-cpp: JWS signing on jwt::builder, verification on jwt::verifier, and the JOSE algorithm classes"
+
+# Inventory source: include/jwt-cpp/jwt.h and traits/*/defaults.h from the
+# upstream tag archives v0.1.0, v0.4.0, v0.6.0 and v0.7.2. Arities follow the
+# call site, as the C++ parser counts them: defaulted constructor parameters are
+# contracted at every arity a call can use, and the engine sign/verify methods at
+# both the pre-0.6 signature and the 0.6+ one that adds a std::error_code.
+#
+# How the calls are keyed. jwt::create(), jwt::verify() and jwt::decode() are
+# qualified free functions, so the parser emits them under the "jwt" namespace.
+# The builder and verifier they return are almost always used as a fluent chain
+# on a temporary, so the parser gives those links no receiver type. The contract
+# KB fills it in: the chain's root contract returns jwt::builder or jwt::verifier
+# and each later link is looked up on that type, carrying it past links that are
+# not contracted (set_issuer, with_issuer and the other claim calls). The
+# template-free type names are used for that reason.
+#
+# The JOSE algorithm is the class: jwt::algorithm::hs256, rs384, ps512, es256k,
+# ed25519 and so on. The detection rules report the algorithm object and take
+# its operation from the call it is passed to, so the algorithm argument of
+# builder::sign and verifier::allow_algorithm is operation-determining by type.
+# The engine sign/verify contracts are authored once on the shared base
+# (hmacsha, rsa, ecdsa, eddsa, pss), with hierarchy edges from every concrete
+# algorithm class.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: the builder claim and header setters (set_issuer,
+#   set_type, set_algorithm, set_key_id, set_payload_claim and the rest), the
+#   verifier claim checks and leeway setters (with_issuer, with_claim, leeway
+#   and the rest), the decoded_jwt, header and payload getters, the algorithm
+#   name() getters, algorithm::none, jwt::base::encode/decode and the
+#   alphabet helpers, parse_jwk/parse_jwks and the jwk/jwks getters.
+# needs-follow-up (no rule anchors them): the jwt::helper key loaders
+#   (load_public_key_from_string, load_private_key_from_string, the _ec_
+#   variants, extract_pubkey_from_cert, convert_base64_der_to_pem,
+#   create_public_key_from_rsa_components/_ec_components), the base algorithm
+#   constructors (hmacsha, rsa, ecdsa, eddsa, pss) and the evp_pkey_handle
+#   constructors.
+# skipped-unsupported: jwt::decode(token, decode_function) at arity 2. cpp-jwt
+#   declares jwt::decode too, with a required algorithms parameter, so arity 2
+#   is the one arity both libraries can be called with and the KB, which keys
+#   a free function on its namespace and arity, cannot tell them apart.
+#   Templated calls (jwt::create<traits>()) are not recorded as calls.
+# Resolution gaps (engine): a verifier or builder held in an `auto` variable
+#   resolves only inside the chain that produced it, not in later calls on the
+#   variable; a variable declared with the template arguments
+#   (jwt::verifier<jwt::default_clock, ...>) keys on that spelling; an
+#   algorithm object constructed with parentheses inside sign(...) or
+#   allow_algorithm(...) is its own finding's terminal and does not join the
+#   chain; and a concrete algorithm receiver does not resolve to the engine
+#   contracts on its base, because the C++ lookup does not walk the hierarchy.
+contracts:
+
+  # Entry points. create() and verify() start the fluent chains; decode()
+  # produces the token a verifier checks.
+  - method: jwt.create
+    arity: 0
+    return: {type: "jwt::builder", confidence: high}
+    role: factory
+  - method: jwt.verify
+    arity: 0
+    return: {type: "jwt::verifier", confidence: high}
+    role: factory
+  - method: jwt.verify
+    arity: 1
+    return: {type: "jwt::verifier", confidence: high}
+    role: factory
+  - method: jwt.decode
+    arity: 1
+    return: {type: "jwt::decoded_jwt", confidence: high}
+    role: factory
+
+  # Builder: sign(algo), sign(algo, ec), sign(algo, encode), sign(algo, encode, ec).
+  - method: jwt::builder.sign
+    arity: 1
+    return: {type: "std::string", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_type}}
+  - method: jwt::builder.sign
+    arity: 2
+    return: {type: "std::string", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_type}}
+  - method: jwt::builder.sign
+    arity: 3
+    return: {type: "std::string", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_type}}
+
+  # Verifier: the accepted algorithm, then the check itself.
+  - method: jwt::verifier.allow_algorithm
+    arity: 1
+    return: {type: "jwt::verifier", confidence: high}
+    role: config
+    parameters:
+      - {index: 0, name: alg, role: operation-determining, contributes: {property: algorithm, derivation: argument_type}}
+  - method: jwt::verifier.verify
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: jwt::verifier.verify
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # JOSE algorithm classes. HS* take the HMAC secret; the others take a PEM
+  # public key and optional private key and passwords.
+  - method: jwt::algorithm.hs256
+    arity: 1
+    return: {type: "jwt::algorithm::hs256", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: key, role: metadata-contributing, contributes: {property: keySize, derivation: argument_bit_length}}
+  - method: jwt::algorithm.hs384
+    arity: 1
+    return: {type: "jwt::algorithm::hs384", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: key, role: metadata-contributing, contributes: {property: keySize, derivation: argument_bit_length}}
+  - method: jwt::algorithm.hs512
+    arity: 1
+    return: {type: "jwt::algorithm::hs512", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: key, role: metadata-contributing, contributes: {property: keySize, derivation: argument_bit_length}}
+  - {method: jwt::algorithm.rs256, arity: 1, return: {type: "jwt::algorithm::rs256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs256, arity: 2, return: {type: "jwt::algorithm::rs256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs256, arity: 3, return: {type: "jwt::algorithm::rs256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs256, arity: 4, return: {type: "jwt::algorithm::rs256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs384, arity: 1, return: {type: "jwt::algorithm::rs384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs384, arity: 2, return: {type: "jwt::algorithm::rs384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs384, arity: 3, return: {type: "jwt::algorithm::rs384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs384, arity: 4, return: {type: "jwt::algorithm::rs384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs512, arity: 1, return: {type: "jwt::algorithm::rs512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs512, arity: 2, return: {type: "jwt::algorithm::rs512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs512, arity: 3, return: {type: "jwt::algorithm::rs512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.rs512, arity: 4, return: {type: "jwt::algorithm::rs512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps256, arity: 1, return: {type: "jwt::algorithm::ps256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps256, arity: 2, return: {type: "jwt::algorithm::ps256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps256, arity: 3, return: {type: "jwt::algorithm::ps256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps256, arity: 4, return: {type: "jwt::algorithm::ps256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps384, arity: 1, return: {type: "jwt::algorithm::ps384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps384, arity: 2, return: {type: "jwt::algorithm::ps384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps384, arity: 3, return: {type: "jwt::algorithm::ps384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps384, arity: 4, return: {type: "jwt::algorithm::ps384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps512, arity: 1, return: {type: "jwt::algorithm::ps512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps512, arity: 2, return: {type: "jwt::algorithm::ps512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps512, arity: 3, return: {type: "jwt::algorithm::ps512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ps512, arity: 4, return: {type: "jwt::algorithm::ps512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es256, arity: 1, return: {type: "jwt::algorithm::es256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es256, arity: 2, return: {type: "jwt::algorithm::es256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es256, arity: 3, return: {type: "jwt::algorithm::es256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es256, arity: 4, return: {type: "jwt::algorithm::es256", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es384, arity: 1, return: {type: "jwt::algorithm::es384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es384, arity: 2, return: {type: "jwt::algorithm::es384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es384, arity: 3, return: {type: "jwt::algorithm::es384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es384, arity: 4, return: {type: "jwt::algorithm::es384", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es512, arity: 1, return: {type: "jwt::algorithm::es512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es512, arity: 2, return: {type: "jwt::algorithm::es512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es512, arity: 3, return: {type: "jwt::algorithm::es512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es512, arity: 4, return: {type: "jwt::algorithm::es512", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es256k, arity: 1, return: {type: "jwt::algorithm::es256k", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es256k, arity: 2, return: {type: "jwt::algorithm::es256k", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es256k, arity: 3, return: {type: "jwt::algorithm::es256k", confidence: high}, role: factory}
+  - {method: jwt::algorithm.es256k, arity: 4, return: {type: "jwt::algorithm::es256k", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ed25519, arity: 1, return: {type: "jwt::algorithm::ed25519", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ed25519, arity: 2, return: {type: "jwt::algorithm::ed25519", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ed25519, arity: 3, return: {type: "jwt::algorithm::ed25519", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ed25519, arity: 4, return: {type: "jwt::algorithm::ed25519", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ed448, arity: 1, return: {type: "jwt::algorithm::ed448", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ed448, arity: 2, return: {type: "jwt::algorithm::ed448", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ed448, arity: 3, return: {type: "jwt::algorithm::ed448", confidence: high}, role: factory}
+  - {method: jwt::algorithm.ed448, arity: 4, return: {type: "jwt::algorithm::ed448", confidence: high}, role: factory}
+
+  # Engine operations on the shared bases: sign(data) and verify(data, sig)
+  # before 0.6, sign(data, ec) and verify(data, sig, ec) from 0.6. eddsa
+  # arrived with the error_code signatures.
+  - {method: jwt::algorithm::hmacsha.sign, arity: 1, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::algorithm::hmacsha.sign, arity: 2, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::algorithm::hmacsha.verify, arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: jwt::algorithm::hmacsha.verify, arity: 3, return: {type: "void", confidence: high}, role: operation}
+  - {method: jwt::algorithm::rsa.sign, arity: 1, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::algorithm::rsa.sign, arity: 2, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::algorithm::rsa.verify, arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: jwt::algorithm::rsa.verify, arity: 3, return: {type: "void", confidence: high}, role: operation}
+  - {method: jwt::algorithm::ecdsa.sign, arity: 1, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::algorithm::ecdsa.sign, arity: 2, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::algorithm::ecdsa.verify, arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: jwt::algorithm::ecdsa.verify, arity: 3, return: {type: "void", confidence: high}, role: operation}
+  - {method: jwt::algorithm::pss.sign, arity: 1, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::algorithm::pss.sign, arity: 2, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::algorithm::pss.verify, arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: jwt::algorithm::pss.verify, arity: 3, return: {type: "void", confidence: high}, role: operation}
+  - {method: jwt::algorithm::eddsa.sign, arity: 2, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::algorithm::eddsa.verify, arity: 3, return: {type: "void", confidence: high}, role: operation}
+
+hierarchy:
+  jwt::algorithm::hs256: [jwt::algorithm::hmacsha]
+  jwt::algorithm::hs384: [jwt::algorithm::hmacsha]
+  jwt::algorithm::hs512: [jwt::algorithm::hmacsha]
+  jwt::algorithm::rs256: [jwt::algorithm::rsa]
+  jwt::algorithm::rs384: [jwt::algorithm::rsa]
+  jwt::algorithm::rs512: [jwt::algorithm::rsa]
+  jwt::algorithm::ps256: [jwt::algorithm::pss]
+  jwt::algorithm::ps384: [jwt::algorithm::pss]
+  jwt::algorithm::ps512: [jwt::algorithm::pss]
+  jwt::algorithm::es256: [jwt::algorithm::ecdsa]
+  jwt::algorithm::es384: [jwt::algorithm::ecdsa]
+  jwt::algorithm::es512: [jwt::algorithm::ecdsa]
+  jwt::algorithm::es256k: [jwt::algorithm::ecdsa]
+  jwt::algorithm::ed25519: [jwt::algorithm::eddsa]
+  jwt::algorithm::ed448: [jwt::algorithm::eddsa]
