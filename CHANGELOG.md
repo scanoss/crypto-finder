@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- C++ callgraph contracts for Botan 2.x and 3.x: the `create`/`create_or_throw` factories of `HashFunction`,
+  `MessageAuthenticationCode`, `Cipher_Mode`, `AEAD_Mode`, `BlockCipher`, `StreamCipher`, `KDF`, `PBKDF` and
+  `PasswordHashFamily`, and Botan 2's `get_cipher_mode`, `get_kdf` and `get_pbkdf`, are factories whose
+  algorithm spec (and cipher direction) is operation-determining. On the object a factory returns, held as
+  `std::unique_ptr<Botan::...>` (or the raw `Cipher_Mode*`, `KDF*` and `PBKDF*` of the Botan 2 factories),
+  key, nonce, IV and associated-data setters are config and update, final, process, finish, encrypt,
+  decrypt, verify_mac and derive_key are operations; key and derived-key lengths contribute `keySize`.
+  Receivers declared `auto` do not resolve, and the public-key, private-key, X.509 and TLS findings are
+  anchored on declarations, so they get no lifecycle.
 
 ## [0.43.0] - 2026-10-29
 ### Fixed

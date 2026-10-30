@@ -317,6 +317,33 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	"c|wc_HmacSetKey_ex|3":             unitBytes,
 	"c|wc_Rc2SetKey|2":                 unitBytes,
 	"c|wc_MakeRsaKey|1":                unitBits,
+	// cpp/botan.yaml: set_key lengths, KDF/PBKDF output lengths and the
+	// PasswordHashFamily output_length are documented in bytes.
+	"cpp|Botan::Cipher_Mode.set_key|1":                                unitBytes,
+	"cpp|Botan::KDF.derive_key|0":                                     unitBytes,
+	"cpp|Botan::KDF.kdf|1":                                            unitBytes,
+	"cpp|Botan::PBKDF.derive_key|0":                                   unitBytes,
+	"cpp|Botan::PBKDF.pbkdf|1":                                        unitBytes,
+	"cpp|Botan::PBKDF.pbkdf_iterations|0":                             unitBytes,
+	"cpp|Botan::PBKDF.pbkdf_iterations|1":                             unitBytes,
+	"cpp|Botan::PBKDF.pbkdf_timed|0":                                  unitBytes,
+	"cpp|Botan::PBKDF.pbkdf_timed|1":                                  unitBytes,
+	"cpp|std::unique_ptr<Botan::AEAD_Mode>.set_key|1":                 unitBytes,
+	"cpp|std::unique_ptr<Botan::BlockCipher>.set_key|1":               unitBytes,
+	"cpp|std::unique_ptr<Botan::Cipher_Mode>.set_key|1":               unitBytes,
+	"cpp|std::unique_ptr<Botan::KDF>.derive_key|0":                    unitBytes,
+	"cpp|std::unique_ptr<Botan::KDF>.kdf|1":                           unitBytes,
+	"cpp|std::unique_ptr<Botan::MessageAuthenticationCode>.set_key|1": unitBytes,
+	"cpp|std::unique_ptr<Botan::PasswordHash>.derive_key|1":           unitBytes,
+	"cpp|std::unique_ptr<Botan::PasswordHashFamily>.tune|0":           unitBytes,
+	"cpp|std::unique_ptr<Botan::PasswordHashFamily>.tune_params|0":    unitBytes,
+	"cpp|std::unique_ptr<Botan::PBKDF>.derive_key|0":                  unitBytes,
+	"cpp|std::unique_ptr<Botan::PBKDF>.pbkdf|1":                       unitBytes,
+	"cpp|std::unique_ptr<Botan::PBKDF>.pbkdf_iterations|0":            unitBytes,
+	"cpp|std::unique_ptr<Botan::PBKDF>.pbkdf_iterations|1":            unitBytes,
+	"cpp|std::unique_ptr<Botan::PBKDF>.pbkdf_timed|0":                 unitBytes,
+	"cpp|std::unique_ptr<Botan::PBKDF>.pbkdf_timed|1":                 unitBytes,
+	"cpp|std::unique_ptr<Botan::StreamCipher>.set_key|1":              unitBytes,
 }
 
 func TestKeySizeRolesAreUnitAudited(t *testing.T) {
