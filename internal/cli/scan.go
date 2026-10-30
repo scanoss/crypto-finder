@@ -212,8 +212,8 @@ func init() {
 		"How the OpenGrep scanner runs: core (the default: opengrep-core directly, skipping the Python wrapper's "+
 			"startup and rule loading; falls back to cli whenever it cannot run, and is only used with OpenGrep versions it was verified against) "+
 			"or cli (the opengrep command; opts out of core). Can also be set via "+opengrepModeEnv)
-	scanCmd.Flags().StringVar(&scanRulePrefilter, "rule-prefilter", "off",
-		"Drop, per scanned unit (the project and each dependency batch), the rules whose library its sources never import: off or imports. "+
+	scanCmd.Flags().StringVar(&scanRulePrefilter, "rule-prefilter", "imports",
+		"Drop, per scanned unit (the project and each dependency batch), the rules whose library its sources never import: imports (the default) or off. "+
 			"Rules whose import requirement is unknown are always kept. OpenGrep scanner only. Can also be set via "+rulePrefilterEnv)
 	scanCmd.Flags().StringVar(&scanFindingsCache, "findings-cache", "", fmt.Sprintf("FindingsCache backend: %v (default: %s; can also be set via SCANOSS_FINDINGS_CACHE_BACKEND)", AllowedFindingsCacheBackends, config.DefaultFindingsCacheBackend))
 	scanCmd.Flags().StringVar(&scanExportCallgraph, "export-callgraph", "", "Export the crypto-scoped call graph to a file")
@@ -788,7 +788,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	if err != nil {
 		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
-	if scanScanner != opengrep.ScannerName && (opengrepModeExplicit(cmd.Flags().Changed("opengrep-mode"), os.LookupEnv) || rulePrefilter != scanner.RulePrefilterOff) {
+	if scanScanner != opengrep.ScannerName && (opengrepModeExplicit(cmd.Flags().Changed("opengrep-mode"), os.LookupEnv) || rulePrefilterExplicit(cmd.Flags().Changed("rule-prefilter"), os.LookupEnv)) {
 		log.Warn().Str("scanner", scanScanner).Msg("--opengrep-mode and --rule-prefilter apply to the opengrep scanner only; ignoring them")
 	}
 

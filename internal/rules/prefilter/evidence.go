@@ -66,6 +66,11 @@ func (ev *Evidence) AddFile(analyzers []string, content []byte) {
 	// A byte order mark would hide a first-line import from the line-anchored
 	// import patterns.
 	text := strings.TrimPrefix(string(content), "\uFEFF")
+	// A bare CR ends a line for compilers (classic Mac files, a stray CR in
+	// a CRLF file), so the line-anchored readers must see it as one.
+	if strings.Contains(text, "\r") {
+		text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	}
 	addTokens(ev.tokens, text)
 	for family := range families {
 		ev.addImports(family, text)
@@ -121,12 +126,9 @@ var (
 	javaImportLine   = regexp.MustCompile(`(?m)^\s*(?:import\s+(?:static\s+)?|package\s+)([\w.$*\s]+?)\s*;`)
 	pythonImportLine = regexp.MustCompile(`(?m)^[ \t]*import[ \t]+([^\n#;]+)`)
 	pythonFromLine   = regexp.MustCompile(`(?m)^[ \t]*from[ \t]+([\w.]+)[ \t]+import[ \t]*(\([^)]*\)|[^\n#;]*)`)
-	jsDoubleQuoted   = regexp.MustCompile(`"((?:[^"\\\n]|\\.){0,512})"`)
-	jsSingleQuoted   = regexp.MustCompile(`'((?:[^'\\\n]|\\.){0,512})'`)
-	jsBackQuoted     = regexp.MustCompile("`([^`\\\\]{0,512})`")
 	rustUseDecl      = regexp.MustCompile(`(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+([^;]+);`)
 	rustCrate        = regexp.MustCompile(`\bextern\s+crate\s+([A-Za-z_][A-Za-z0-9_]*)`)
-	cIncludeLine     = regexp.MustCompile(`(?m)^[ \t]*#[ \t]*include[ \t]*([^\n]*)`)
+	cIncludeLine     = regexp.MustCompile(`(?m)^[ \t\f\v]*#[ \t\f\v]*include[ \t]*([^\n]*)`)
 	whitespaceRun    = regexp.MustCompile(`\s+`)
 )
 
@@ -139,10 +141,11 @@ var inlineImport = map[Family]*regexp.Regexp{
 	FamilyJava:   regexp.MustCompile(`([;{}]|\*/)([ \t]*(?:import|package)\b)`),
 	FamilyPython: regexp.MustCompile(`([;:])([ \t]*(?:import|from)\b)`),
 	FamilyRust:   regexp.MustCompile(`([;{}\]]|\*/)([ \t]*(?:use|pub)\b)`),
-	FamilyC:      regexp.MustCompile(`(\*/)([ \t]*#)`),
-	// Go imports are read from the whole line and JS specifiers from every
-	// string literal, wherever they stand.
-	FamilyGo: nil,
+	FamilyC:      regexp.MustCompile(`(\*/)([ \t\f\v]*#)`),
+	// A Go import after a statement or a comment on the same line
+	// (`package main; import "x"`, `/* keep */ import "x"`).
+	FamilyGo: regexp.MustCompile(`(;|\*/)([ \t]*import\b)`),
+	// JS specifiers are read from every string literal, wherever they stand.
 	FamilyJS: nil,
 }
 
@@ -162,10 +165,8 @@ func (ev *Evidence) addImports(family Family, text string) {
 	case FamilyJS:
 		// A module specifier may reach require/import through a constant,
 		// so every string literal of the file is a candidate.
-		for _, re := range []*regexp.Regexp{jsDoubleQuoted, jsSingleQuoted, jsBackQuoted} {
-			for _, m := range re.FindAllStringSubmatch(text, -1) {
-				ev.add(FamilyJS, m[1])
-			}
+		for _, literal := range jsStringLiterals(text) {
+			ev.add(FamilyJS, literal)
 		}
 	case FamilyRust:
 		ev.addRustImports(text)
@@ -175,10 +176,54 @@ func (ev *Evidence) addImports(family Family, text string) {
 	}
 }
 
+// jsStringLiterals reads the string literals of a JavaScript or TypeScript
+// source without parsing it: a candidate literal starts at every quote and
+// ends at the next unescaped quote of the same kind (a newline ends a
+// single- or double-quoted one). A quote inside a comment or a regex
+// literal (`/["']/g`, "it's") then yields a wrong candidate besides, never
+// instead of, the real literals after it, so the result is a superset of
+// the file's literals and can only keep more rules. A candidate is read for
+// at most jsMaxSpecifier bytes and a longer one is kept as that prefix: the
+// bound keeps the reader linear on long literals full of escaped quotes
+// (webpack eval bundles), and the prefix still extends any module it names.
+func jsStringLiterals(text string) []string {
+	var out []string
+	for i := 0; i < len(text); i++ {
+		quote := text[i]
+		if quote != '"' && quote != '\'' && quote != '`' {
+			continue
+		}
+		j := i + 1
+		limit := min(len(text), i+1+jsMaxSpecifier)
+		for j < limit && text[j] != quote {
+			if text[j] == '\\' {
+				j++
+			} else if text[j] == '\n' && quote != '`' {
+				break
+			}
+			j++
+		}
+		switch {
+		case j < limit && text[j] == quote:
+			out = append(out, text[i+1:j])
+		case j == limit && limit < len(text):
+			out = append(out, text[i+1:limit])
+		}
+	}
+	return out
+}
+
+// jsMaxSpecifier is how far a JS string-literal candidate is read, in bytes.
+const jsMaxSpecifier = 1024
+
 // addGoImports reads import declarations, single and grouped. Lines outside
 // any declaration that merely start with "import" only add candidates.
 func (ev *Evidence) addGoImports(text string) {
+	text = stripGoComments(text)
 	inBlock := false
+	// pending marks an "import" keyword alone on its line: the "(" of its
+	// block may follow on the next line.
+	pending := false
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if inBlock {
@@ -189,10 +234,20 @@ func (ev *Evidence) addGoImports(text string) {
 			ev.addGoStrings(trimmed)
 			continue
 		}
+		if pending && trimmed != "" {
+			pending = false
+			trimmed = "import " + trimmed
+		}
 		if !strings.HasPrefix(trimmed, "import") {
 			continue
 		}
-		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "import"))
+		// A comment between "import" and "(" or in the "(" line is not
+		// part of the declaration.
+		rest := strings.TrimSpace(stripGoLineComment(strings.TrimPrefix(trimmed, "import")))
+		if rest == "" {
+			pending = true
+			continue
+		}
 		if strings.HasPrefix(rest, "(") {
 			body := rest[1:]
 			if end := strings.Index(body, ")"); end >= 0 {
@@ -205,6 +260,53 @@ func (ev *Evidence) addGoImports(text string) {
 		}
 		ev.addGoStrings(rest)
 	}
+}
+
+var goBlockComment = regexp.MustCompile(`/\*.*?\*/`)
+
+// stripGoLineComment drops a "//" or one-line "/* */" comment from line.
+func stripGoLineComment(line string) string {
+	line = goBlockComment.ReplaceAllString(line, "")
+	if i := strings.Index(line, "//"); i >= 0 {
+		return line[:i]
+	}
+	return line
+}
+
+// stripGoComments blanks every comment of a Go source, keeping newlines, so
+// a ")" or an "import" inside a comment that spans lines never reads as
+// code. A comment marker inside a string literal is blanked too, which only
+// drops candidates that were never import paths.
+func stripGoComments(text string) string {
+	b := []byte(text)
+	for i := 0; i < len(b); i++ {
+		if b[i] != '/' || i+1 >= len(b) {
+			continue
+		}
+		var end int
+		switch b[i+1] {
+		case '/':
+			end = i + 2
+			for end < len(b) && b[end] != '\n' {
+				end++
+			}
+		case '*':
+			end = i + 2
+			for end+1 < len(b) && (b[end] != '*' || b[end+1] != '/') {
+				end++
+			}
+			end = min(end+2, len(b))
+		default:
+			continue
+		}
+		for k := i; k < end; k++ {
+			if b[k] != '\n' {
+				b[k] = ' '
+			}
+		}
+		i = end - 1
+	}
+	return string(b)
 }
 
 func (ev *Evidence) addGoStrings(text string) {
