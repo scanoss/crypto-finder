@@ -55,6 +55,34 @@ int load_request(const unsigned char *buf, size_t len) {
 }
 `
 
+// PSA keeps its key attributes and multipart operations in caller-owned structs
+// passed by address first, so the attribute setters and the update/finish calls
+// share the object the finding's call is made on.
+const cPSAKeyGenerationConsumer = `#include <psa/crypto.h>
+
+psa_status_t make_key(psa_key_id_t *key) {
+    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_ENCRYPT);
+    psa_set_key_type(&attributes, PSA_KEY_TYPE_AES);
+    psa_set_key_bits(&attributes, 256);
+    psa_status_t status = psa_generate_key(&attributes, key);
+    psa_reset_key_attributes(&attributes);
+    return status;
+}
+`
+
+const cPSAHashConsumer = `#include <psa/crypto.h>
+
+psa_status_t sha256(const uint8_t *in, size_t len, uint8_t *out, size_t *olen) {
+    psa_hash_operation_t op = PSA_HASH_OPERATION_INIT;
+    psa_hash_setup(&op, PSA_ALG_SHA_256);
+    psa_hash_update(&op, in, len);
+    psa_status_t status = psa_hash_finish(&op, out, 32, olen);
+    psa_hash_abort(&op);
+    return status;
+}
+`
+
 func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 	t.Parallel()
 
@@ -63,6 +91,7 @@ func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 		asset           entities.CryptographicAsset
 		want            map[string]string
 		absent          []string
+		keyBits         map[string]int
 	}{
 		{
 			name: "openssl evp digest context",
@@ -102,6 +131,33 @@ func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 				"mbedtls_x509_csr_free": "",
 			},
 		},
+		{
+			name: "psa key attributes configure the generated key",
+			file: "keygen.c",
+			src:  cPSAKeyGenerationConsumer,
+			asset: cAsset(8, 8, 44, 55, "psa_status_t status = psa_generate_key(&attributes, key);",
+				"c.crypto.mbedtls.psa-key-generation", map[string]string{"assetType": "algorithm"}),
+			want: map[string]string{
+				"psa_set_key_usage_flags":  "config",
+				"psa_set_key_type":         "config",
+				"psa_set_key_bits":         "config",
+				"psa_reset_key_attributes": "",
+			},
+			keyBits: map[string]int{"psa_set_key_bits": 256},
+		},
+		{
+			name: "psa multipart hash operation",
+			file: "digest.c",
+			src:  cPSAHashConsumer,
+			asset: cAsset(5, 5, 25, 40, "psa_hash_setup(&op, PSA_ALG_SHA_256);",
+				"c.mbedtls.algorithm.hash.sha-2.psa-alg",
+				map[string]string{"assetType": "algorithm", "algorithmName": "SHA-256", "api": "psa_crypto"}),
+			want: map[string]string{
+				"psa_hash_update": "operation",
+				"psa_hash_finish": "operation",
+				"psa_hash_abort":  "",
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -129,13 +185,22 @@ func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 
 			fragment := buildGraphFragmentExport(result)
 			got := map[string]string{}
+			gotBits := map[string]int{}
 			var fragmentIDs []string
 			for i := range fragment.SupportingCalls {
 				s := &fragment.SupportingCalls[i]
 				if s.SupportingCall != nil {
 					got[s.SupportingCall.FunctionName] = s.Category
+					if kl := s.SupportingCall.ResolvedKeyLength; kl != nil && kl.Bits != nil {
+						gotBits[s.SupportingCall.FunctionName] = *kl.Bits
+					}
 				}
 				fragmentIDs = append(fragmentIDs, s.SupportingID)
+			}
+			for symbol, bits := range tc.keyBits {
+				if gotBits[symbol] != bits {
+					t.Errorf("%s: resolved key length %d bits, want %d; got %v", symbol, gotBits[symbol], bits, gotBits)
+				}
 			}
 			for symbol, category := range tc.want {
 				gotCategory, ok := got[symbol]

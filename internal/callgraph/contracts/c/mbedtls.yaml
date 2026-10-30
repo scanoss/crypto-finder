@@ -4,15 +4,38 @@ library:
   name: mbedtls
   coordinates:
     - mbedtls
-  version_range: ">=3.6.7,<4.0.0"
-  description: "Mbed TLS 3.6 LTS public cryptographic APIs"
+    - Mbed-TLS/mbedtls
+    - ARMmbed/mbedtls
+  version_range: ">=2.0.0,<5.0.0"
+  description: "Mbed TLS legacy mbedtls_* cryptographic, X.509 and TLS APIs"
 
 # Inventory sources: Mbed TLS 3.6.7 public headers, crypto_rules mbedtls.yaml
 # blob 077e379cb77b02ce182623b54660796aa24efb8f, and mbedtls_rsa_gen_key from
 # the key-generation rule added by crypto_rules#206. All 29 mbedtls_* symbols
-# selected by those rules are contracted. PSA-only symbols are outside this
-# ticket's mbedtls_* scope. covered-existing/skipped-unsupported/needs-follow-up:
-# none. Protocol and certificate lifecycle calls are included where rules exist.
+# selected by those rules are contracted. Protocol and certificate lifecycle
+# calls are included where rules exist.
+#
+# Extended for crypto_rules#501 (semgrep-rules/c/mbedtls/{algorithm,
+# related-crypto-material,protocol}) from the public headers of the upstream
+# tags mbedtls-2.0.0, mbedtls-2.16.12, mbedtls-2.28.10, v3.0.0, v3.6.6, v4.0.0
+# and v4.1.0 (with the TF-PSA-Crypto commits those two pin). ARMmbed/mbedtls is
+# the same repository under its former owner, so one contract serves both
+# coordinates. Where a function changed arity (the RSA padding calls dropped
+# their mode and RNG arguments in 3.0, mbedtls_pk_sign is 8/9/7 across 2.x/3.x/
+# 4.x) each arity is its own contract. The *_ret hashes and the plain hashes
+# returned void before 3.0 and int after; the int form is used. In 4.x the
+# legacy cipher, hash, RSA and ECC functions are private, so their contracts
+# end at 3.6. PSA Crypto (psa_*) lives in mbedtls-psa.yaml.
+#
+# Dispositions for #501 anchors not contracted here:
+# skipped-unsupported (no such function in any tag; the rule regex names it):
+#   mbedtls_gcm_encrypt_and_tag, mbedtls_gcm_star_encrypt_and_tag,
+#   mbedtls_gcm_star_auth_decrypt, mbedtls_ccm_crypt_and_tag,
+#   mbedtls_chachapoly_crypt_and_tag, mbedtls_chachapoly_star_*.
+# needs-follow-up (lifecycle siblings no rule anchors): mbedtls_*_init/free for
+#   aes/gcm/ccm/chachapoly/ecdh/ecdsa/ecp, mbedtls_{gcm,ccm,chachapoly}_setkey,
+#   mbedtls_aes_xts_setkey_*, mbedtls_pkcs5_pbkdf2_hmac, mbedtls_ecdsa_sign_det,
+#   mbedtls_ssl_config_init.
 contracts:
 
   # Leighton-Micali signatures.
@@ -246,4 +269,619 @@ contracts:
     return: {type: int, confidence: high}
     role: config
 
+  # Additional pk/LMS arities: mbedtls_pk_sign is 8 in 2.x and 7 in 4.x; 4.x drops the LMS RNG arguments.
+  - method: mbedtls_lms_generate_private_key
+    arity: 5
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+      - index: 2
+        name: otstype
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+      - index: 4
+        name: seed_size
+        role: metadata-contributing
+        contributes: {property: seedLength, derivation: argument_value}
+  - method: mbedtls_lms_sign
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: msg_size
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: mbedtls_pk_sign
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: hash_len
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+  - method: mbedtls_pk_sign
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: hash_len
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+
+  # Cipher and digest selection by type enum.
+  - method: mbedtls_cipher_info_from_type
+    arity: 1
+    return: {type: "const mbedtls_cipher_info_t*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: cipher_type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_md_info_from_type
+    arity: 1
+    return: {type: "const mbedtls_md_info_t*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: md_type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # AES block-cipher modes. keybits is a count of bits (aes.h).
+  - method: mbedtls_aes_setkey_enc
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keybits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: mbedtls_aes_setkey_dec
+    arity: 3
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keybits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: mbedtls_aes_crypt_ecb
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mode
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: mbedtls_aes_crypt_cbc
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mode
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: mbedtls_aes_crypt_cfb128
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mode
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: mbedtls_aes_crypt_cfb8
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mode
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: mbedtls_aes_crypt_ofb
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_aes_crypt_ctr
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_aes_crypt_xts
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mode
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+
+  # AEAD one-shot calls (GCM, CCM, CCM*, ChaCha20-Poly1305).
+  - method: mbedtls_gcm_crypt_and_tag
+    arity: 11
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: mode
+        role: operation-determining
+        contributes: {property: operation, derivation: argument_value}
+  - method: mbedtls_gcm_auth_decrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ccm_encrypt_and_tag
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ccm_auth_decrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ccm_star_encrypt_and_tag
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ccm_star_auth_decrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_chachapoly_encrypt_and_tag
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_chachapoly_auth_decrypt
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+
+  # One-shot hashes. is224/is384 pick the truncated SHA-2 variant.
+  - method: mbedtls_md5
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_md5_ret
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ripemd160
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ripemd160_ret
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_sha1
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_sha1_ret
+    arity: 3
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_sha256
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: is224
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_sha256_ret
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: is224
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_sha512
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: is384
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_sha512_ret
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: is384
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_sha3
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: id
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # HMAC and KDFs. keylen is a byte count (md.h).
+  - method: mbedtls_md_hmac
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: md_info
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: mbedtls_hkdf
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: md
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 8
+        name: okm_len
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: mbedtls_pkcs5_pbkdf2_hmac_ext
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: md_type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 5
+        name: iteration_count
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 6
+        name: key_length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  # Elliptic-curve groups, key generation and ECDH.
+  - method: mbedtls_ecp_group_load
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: id
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: mbedtls_ecp_gen_key
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: grp_id
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: mbedtls_ecp_read_key
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: grp_id
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: mbedtls_ecdsa_genkey
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: gid
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: mbedtls_ecdh_setup
+    arity: 2
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: grp_id
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: mbedtls_ecdh_calc_secret
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ecdh_compute_shared
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+
+  # ECDSA. write_signature gained sig_size in 3.0 (8 -> 9 arguments).
+  - method: mbedtls_ecdsa_write_signature
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_ecdsa_write_signature
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_ecdsa_write_signature_restartable
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_ecdsa_write_signature_restartable
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_ecdsa_sign
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ecdsa_sign_det_ext
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 6
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_ecdsa_sign_restartable
+    arity: 11
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ecdsa_read_signature
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ecdsa_read_signature_restartable
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ecdsa_verify
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_ecdsa_verify_restartable
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+
+  # RSA padding-specific calls: 2.x arity (with mode and RNG) first, then 3.x.
+  - method: mbedtls_rsa_rsaes_oaep_encrypt
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_rsa_rsaes_oaep_encrypt
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_rsa_rsaes_oaep_decrypt
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_rsa_rsaes_oaep_decrypt
+    arity: 9
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_rsa_rsaes_pkcs1_v15_encrypt
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_rsa_rsaes_pkcs1_v15_encrypt
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_rsa_rsaes_pkcs1_v15_decrypt
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_rsa_rsaes_pkcs1_v15_decrypt
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+  - method: mbedtls_rsa_rsassa_pkcs1_v15_sign
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pkcs1_v15_sign
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pkcs1_v15_verify
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pkcs1_v15_verify
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pss_sign
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pss_sign
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pss_sign_ext
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pss_verify
+    arity: 8
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pss_verify
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pss_verify_ext
+    arity: 10
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 7
+        name: mgf1_hash_id
+        role: metadata-contributing
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+  - method: mbedtls_rsa_rsassa_pss_verify_ext
+    arity: 7
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: md_alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: mgf1_hash_id
+        role: metadata-contributing
+        contributes: {property: maskGenerationFunction, derivation: argument_value}
+
+  # TLS configuration: version bounds and stream/datagram transport.
+  - method: mbedtls_ssl_config_defaults
+    arity: 4
+    return: {type: int, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: transport
+        role: operation-determining
+        contributes: {property: protocol, derivation: argument_value}
+  - method: mbedtls_ssl_conf_min_tls_version
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: tls_version
+        role: operation-determining
+        contributes: {property: protocolVersion, derivation: argument_value}
+  - method: mbedtls_ssl_conf_max_tls_version
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: tls_version
+        role: operation-determining
+        contributes: {property: protocolVersion, derivation: argument_value}
+  - method: mbedtls_ssl_conf_min_version
+    arity: 3
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: minor
+        role: operation-determining
+        contributes: {property: protocolVersion, derivation: argument_value}
+  - method: mbedtls_ssl_conf_max_version
+    arity: 3
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: minor
+        role: operation-determining
+        contributes: {property: protocolVersion, derivation: argument_value}
 hierarchy: {}
