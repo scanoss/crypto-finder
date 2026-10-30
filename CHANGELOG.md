@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.2] - 2026-10-30
+### Fixed
+- The JavaScript/TypeScript call graph no longer takes time quadratic in the size of a bundled
+  file. Every function re-read the bodies of all the functions around it, so a bundle that wraps
+  thousands of functions in one wrapper, such as `@stencil/core`'s 13 MB `compiler/stencil.js`,
+  kept the call graph building past the 60-minute scan timeout. The names each scope binds are
+  now read once per file; that file parses in about 30 seconds and the graph is unchanged.
+
 ## [0.44.1] - 2026-10-30
 ### Fixed
 - The timeout retry now has a time budget: all its rounds together take at most twice the scan's
