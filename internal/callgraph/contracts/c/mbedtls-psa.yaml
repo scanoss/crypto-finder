@@ -1,0 +1,554 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: mbedtls-psa
+  coordinates:
+    - Mbed-TLS/mbedtls
+    - ARMmbed/mbedtls
+    - Mbed-TLS/TF-PSA-Crypto
+  version_range: ">=2.22.0,<5.0.0"
+  description: "PSA Crypto API (psa_*) as shipped by Mbed TLS 2.22+ and TF-PSA-Crypto"
+
+# A sibling of mbedtls.yaml rather than more of it: PSA Crypto has its own
+# version line (in-tree from Mbed TLS 2.22.0; Mbed TLS 4.x takes it from the
+# TF-PSA-Crypto submodule) and its own coordinate, and a library name is unique
+# per ecosystem, so mbedtls.yaml cannot carry a second range.
+#
+# Inventory sources: include/psa/crypto.h, crypto_extra.h, crypto_compat.h and
+# crypto_struct.h from the upstream tags mbedtls-2.22.0, mbedtls-2.28.10,
+# v3.0.0 and v3.6.6, and TF-PSA-Crypto 76920edd (pinned by v4.0.0) and 29160dd8
+# (pinned by v4.1.0). Every contracted function keeps the same arity in every
+# tag that declares it. The anchors come from crypto_rules#501: psa-crypto,
+# psa-sign, psa-key-generation, psa-mac and psa-aead in mbedtls.yaml name calls
+# directly, and every algorithm rule matches a PSA_ALG_* identifier inside any
+# psa_*(...) call, so each psa_* function taking a psa_algorithm_t is anchored.
+# PSA_ALG_* and PSA_KEY_TYPE_* arguments are operation-determining; key bits
+# contribute keySize.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-unsupported (named by a rule, declared in no tag): psa_set_key_identifier,
+#   psa_set_key_owner_id.
+# skipped-non-crypto: psa_*_abort, psa_destroy_key, psa_purge_key,
+#   psa_reset_key_attributes and psa_close_key (teardown, left uncontracted like
+#   mbedtls_*_free); psa_get_key_{type,bits,algorithm,usage_flags,id,lifetime,
+#   enrollment_algorithm} and psa_key_derivation_get_capacity (attribute reads);
+#   psa_open_key, psa_{set,get,clear}_key_slot_number, psa_register_se_driver,
+#   psa_key_id_is_builtin, psa_key_handle_is_null (key storage);
+#   psa_can_do_hash/cipher, psa_interruptible_{get,set}_max_ops,
+#   psa_*_get_num_ops, psa_extend_key_usage_flags; psa_key_policy_init and the
+#   psa_crypto_driver_* driver-side calls.
+# needs-follow-up (crypto, but no #501 rule anchors them): psa_generate_random,
+#   psa_random_*, psa_set/get_key_domain_parameters, the PAKE API (psa_pake_*),
+#   the 4.x interruptible key generation, agreement and export (*_iop_*), the
+#   4.1 XOF API (psa_xof_*), and the interruptible operation_init helpers.
+contracts:
+
+  # Library initialisation.
+  - method: psa_crypto_init
+    arity: 0
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+
+  # Key attributes. psa_set_key_bits takes a count of bits (crypto.h).
+  - method: psa_key_attributes_init
+    arity: 0
+    return: {type: "psa_key_attributes_t", confidence: high}
+    role: factory
+  - method: psa_set_key_type
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_set_key_bits
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: psa_set_key_algorithm
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_set_key_enrollment_algorithm
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: alg2
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_set_key_usage_flags
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+  - method: psa_set_key_id
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+  - method: psa_set_key_lifetime
+    arity: 2
+    return: {type: void, confidence: high}
+    role: config
+  - method: psa_get_key_attributes
+    arity: 2
+    return: {type: "psa_status_t", confidence: high}
+    role: output
+
+  # Key creation, copy and export. generate_key_ext is 3.6 only; _custom is 3.6.1+ and TF-PSA-Crypto.
+  - method: psa_generate_key
+    arity: 2
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_generate_key_ext
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_generate_key_custom
+    arity: 5
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_import_key
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: factory
+  - method: psa_copy_key
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: factory
+  - method: psa_export_key
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: output
+  - method: psa_export_public_key
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: output
+
+  # Hash: one-shot, then multipart on a psa_hash_operation_t.
+  - method: psa_hash_compute
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_hash_compare
+    arity: 5
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_hash_operation_init
+    arity: 0
+    return: {type: "psa_hash_operation_t", confidence: high}
+    role: factory
+  - method: psa_hash_setup
+    arity: 2
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_hash_update
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_hash_finish
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_hash_verify
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_hash_clone
+    arity: 2
+    return: {type: "psa_status_t", confidence: high}
+    role: factory
+
+  # MAC: one-shot, then multipart on a psa_mac_operation_t.
+  - method: psa_mac_compute
+    arity: 7
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_mac_verify
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_mac_operation_init
+    arity: 0
+    return: {type: "psa_mac_operation_t", confidence: high}
+    role: factory
+  - method: psa_mac_sign_setup
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_mac_verify_setup
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_mac_update
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_mac_sign_finish
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_mac_verify_finish
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+
+  # Unauthenticated cipher: one-shot, then multipart on a psa_cipher_operation_t.
+  - method: psa_cipher_encrypt
+    arity: 7
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_cipher_decrypt
+    arity: 7
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_cipher_operation_init
+    arity: 0
+    return: {type: "psa_cipher_operation_t", confidence: high}
+    role: factory
+  - method: psa_cipher_encrypt_setup
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_cipher_decrypt_setup
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_cipher_generate_iv
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+  - method: psa_cipher_set_iv
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+  - method: psa_cipher_update
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_cipher_finish
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+
+  # AEAD: one-shot, then multipart on a psa_aead_operation_t.
+  - method: psa_aead_encrypt
+    arity: 11
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_aead_decrypt
+    arity: 11
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_aead_operation_init
+    arity: 0
+    return: {type: "psa_aead_operation_t", confidence: high}
+    role: factory
+  - method: psa_aead_encrypt_setup
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_aead_decrypt_setup
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_aead_set_lengths
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+  - method: psa_aead_generate_nonce
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+  - method: psa_aead_set_nonce
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+  - method: psa_aead_update_ad
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_aead_update
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_aead_finish
+    arity: 7
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_aead_verify
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+
+  # Asymmetric signature and encryption. psa_asymmetric_sign/verify are the 2.x names (removed in 3.0).
+  - method: psa_sign_message
+    arity: 7
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_verify_message
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_sign_hash
+    arity: 7
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_verify_hash
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_asymmetric_sign
+    arity: 7
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_asymmetric_verify
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_sign_hash_start
+    arity: 5
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_sign_hash_complete
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_verify_hash_start
+    arity: 7
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_verify_hash_complete
+    arity: 1
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_asymmetric_encrypt
+    arity: 9
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_asymmetric_decrypt
+    arity: 9
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # Key agreement. psa_key_agreement is TF-PSA-Crypto (Mbed TLS 4.x) only.
+  - method: psa_raw_key_agreement
+    arity: 7
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_key_agreement
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # Key derivation on a psa_key_derivation_operation_t. output_length is a byte count.
+  - method: psa_key_derivation_operation_init
+    arity: 0
+    return: {type: "psa_key_derivation_operation_t", confidence: high}
+    role: factory
+  - method: psa_key_derivation_setup
+    arity: 2
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: alg
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: psa_key_derivation_set_capacity
+    arity: 2
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+  - method: psa_key_derivation_input_bytes
+    arity: 4
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+  - method: psa_key_derivation_input_integer
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+  - method: psa_key_derivation_input_key
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: config
+  - method: psa_key_derivation_key_agreement
+    arity: 5
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_key_derivation_output_bytes
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: output_length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: psa_key_derivation_output_key
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_key_derivation_output_key_ext
+    arity: 5
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_key_derivation_output_key_custom
+    arity: 6
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_key_derivation_verify_bytes
+    arity: 3
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+  - method: psa_key_derivation_verify_key
+    arity: 2
+    return: {type: "psa_status_t", confidence: high}
+    role: operation
+hierarchy: {}

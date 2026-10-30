@@ -42,6 +42,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `obj.header().algo(...)` resolves. The algorithm, algorithm-list and key findings nested in a
   `jwt_object` initializer or a `jwt::decode` call get no lifecycle, and calls written unqualified after
   `using namespace jwt::params` do not resolve.
+- C callgraph contracts for the PSA Crypto API (`c/mbedtls-psa.yaml`), as shipped by Mbed TLS 2.22 through 3.6 and
+  by TF-PSA-Crypto for Mbed TLS 4.x: `psa_crypto_init`, the key attribute setters (`psa_set_key_type` and
+  `psa_set_key_algorithm` are operation-determining, `psa_set_key_bits` contributes `keySize` in bits), key
+  generation, import, copy and export, one-shot and multipart hash, MAC, cipher and AEAD calls, sign/verify,
+  asymmetric encryption, raw and 4.x key agreement, and key derivation. Every `psa_*` call that takes a
+  `PSA_ALG_*` argument marks it operation-determining.
+- C callgraph contracts for the legacy Mbed TLS calls the algorithm, key and TLS rules anchor on: cipher and
+  digest type selection, AES modes (`mbedtls_aes_setkey_enc`/`dec` contribute `keySize` in bits), GCM, CCM and
+  ChaCha20-Poly1305, the one-shot hashes, `mbedtls_md_hmac` (`keySize` in bytes), `mbedtls_hkdf`,
+  `mbedtls_pkcs5_pbkdf2_hmac_ext`, ECP/ECDH/ECDSA, the RSA padding calls at their 2.x and 3.x arities,
+  `mbedtls_pk_sign` at its 2.x and 4.x arities, and the TLS version and transport settings. The library lists
+  both GitHub coordinates (`Mbed-TLS/mbedtls`, `ARMmbed/mbedtls`).
 
 ## [0.43.0] - 2026-10-29
 ### Fixed

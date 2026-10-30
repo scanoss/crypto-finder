@@ -228,7 +228,12 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	"c|xcbc_memory_multi|2":                unitBytes,
 	"c|xts_start|3":                        unitBytes,
 	// c/mbedtls.yaml
-	"c|mbedtls_rsa_gen_key|3": unitBits,
+	"c|mbedtls_rsa_gen_key|3":    unitBits,
+	"c|mbedtls_aes_setkey_enc|2": unitBits,
+	"c|mbedtls_aes_setkey_dec|2": unitBits,
+	"c|mbedtls_md_hmac|2":        unitBytes,
+	// c/mbedtls-psa.yaml
+	"c|psa_set_key_bits|1": unitBits,
 	// c/monocypher.yaml
 	"c|crypto_blake2b_general|3":      unitBytes,
 	"c|crypto_blake2b_general_init|3": unitBytes,
