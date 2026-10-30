@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func parseNodeSource(t *testing.T, src string) *FileAnalysis {
+func parseNodeSource(t testing.TB, src string) *FileAnalysis {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "lib.js"), []byte(src), 0o600); err != nil {

@@ -4,6 +4,7 @@
 package callgraph
 
 import (
+	"maps"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -100,9 +101,10 @@ type nodeScope struct {
 	// variable of the same name is not the receiver.
 	own      map[string]bool
 	shadowed map[string]bool
-	vars     map[string]nodeTypeRef
-	// names caches localNames once the scope is complete.
-	names map[string]bool
+	// enclosing holds the names the functions around this one declare, which
+	// shadow a module variable of the same name too.
+	enclosing nodeNameSet
+	vars      map[string]nodeTypeRef
 }
 
 // nodeProjectImports lists the local names bound to a module of the scanned
@@ -277,7 +279,7 @@ func (f *nodeFileTypes) constructed(expr *sitter.Node, src []byte, scope *nodeSc
 			return nodeTypeRef{}, false
 		}
 		first, suffix := splitNodeMemberObject(object.Content(src))
-		binding, bound := f.bindings.lookup(scope.localNames(), first)
+		binding, bound := f.bindings.lookupNames(scope.localNames(), first)
 		if !bound || !f.project[first] {
 			return nodeTypeRef{}, false
 		}
@@ -288,23 +290,14 @@ func (f *nodeFileTypes) constructed(expr *sitter.Node, src []byte, scope *nodeSc
 }
 
 func (s *nodeScope) declares(name string) bool {
-	return s != nil && (s.own[name] || s.shadowed[name])
+	return s != nil && (s.own[name] || s.shadowed[name] || s.enclosing.has(name))
 }
 
-func (s *nodeScope) localNames() map[string]bool {
+func (s *nodeScope) localNames() nodeNameSet {
 	if s == nil {
 		return nil
 	}
-	if s.names == nil {
-		s.names = make(map[string]bool, len(s.own)+len(s.shadowed))
-		for name := range s.own {
-			s.names[name] = true
-		}
-		for name := range s.shadowed {
-			s.names[name] = true
-		}
-	}
-	return s.names
+	return append(nodeNameSet{s.own, s.shadowed}, s.enclosing...)
 }
 
 // initializerType types the value a declaration, field or assignment stores:
@@ -313,7 +306,7 @@ func (s *nodeScope) localNames() map[string]bool {
 func (f *nodeFileTypes) initializerType(value *sitter.Node, src []byte, scope *nodeScope) (nodeTypeRef, bool) {
 	switch value.Type() {
 	case nodeMemberExpression:
-		if iface, ok := nodeWebCryptoInterface(value, src, f.bindings.webCryptoScope(f.bindings.withModuleVariables(scope.localNames()))); ok {
+		if iface, ok := nodeWebCryptoInterface(value, src, f.bindings.webCryptoScopeNames(append(scope.localNames(), f.bindings.withModuleVariables(nil)))); ok {
 			return nodeTypeRef{name: iface}, true
 		}
 	case nodeNewExpression:
@@ -429,7 +422,7 @@ func (p *NodeParser) declareVarType(declarator *sitter.Node, src []byte, facts *
 // destructures from the WebCrypto Crypto object; every other name the pattern
 // writes is dropped as usual.
 func (f *nodeFileTypes) declareWebCryptoPattern(pattern, value *sitter.Node, src []byte, scope *nodeScope, facts *nodeTypeFacts) {
-	iface, ok := nodeWebCryptoInterface(value, src, f.bindings.webCryptoScope(f.bindings.withModuleVariables(scope.localNames())))
+	iface, ok := nodeWebCryptoInterface(value, src, f.bindings.webCryptoScopeNames(append(scope.localNames(), f.bindings.withModuleVariables(nil))))
 	if !ok || iface != nodeCryptoType {
 		poisonNodePattern(pattern, src, facts)
 		return
@@ -481,7 +474,7 @@ func (p *NodeParser) scopeFor(params, body *sitter.Node, own map[string]bool, sr
 		if single := body.Parent().ChildByFieldName("parameter"); single != nil && single.Type() == goNodeIdentifier {
 			scope.shadowed[single.Content(src)] = true
 		}
-		collectEnclosingFunctionNames(body.Parent(), src, scope.shadowed)
+		scope.enclosing = p.enclosingFunctionNames(body.Parent(), src)
 	}
 	previous := p.scope
 	p.scope = scope
@@ -490,28 +483,40 @@ func (p *NodeParser) scopeFor(params, body *sitter.Node, own map[string]bool, sr
 	return scope
 }
 
-// collectEnclosingFunctionNames adds every name a function around n declares:
+// enclosingFunctionNames returns every name a function around n declares:
 // its parameters and variables. A nested function reads such a name from the
 // enclosing function, never from the module, so it is shadowed there; its type
 // is not followed.
-func collectEnclosingFunctionNames(n *sitter.Node, src []byte, into map[string]bool) {
+func (p *NodeParser) enclosingFunctionNames(n *sitter.Node, src []byte) nodeNameSet {
+	var names nodeNameSet
 	for outer := n.Parent(); outer != nil; outer = outer.Parent() {
 		switch outer.Type() {
 		case nodeFunctionDeclaration, nodeGeneratorDeclaration, "generator_function", nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition:
 		default:
 			continue
 		}
-		params := outer.ChildByFieldName("parameters")
-		body := outer.ChildByFieldName("body")
-		for name := range collectNodeLocalNames(params, body, src) {
-			into[name] = true
-		}
-		collectNodeWrittenNames(params, src, into)
-		collectNodeWrittenNames(body, src, into)
-		if single := outer.ChildByFieldName("parameter"); single != nil && single.Type() == goNodeIdentifier {
-			into[single.Content(src)] = true
+		collect := func() map[string]bool { return p.declaredFunctionNames(outer, src) }
+		if p.names == nil {
+			names = append(names, collect())
+		} else {
+			names = append(names, cachedNodeScopeNames(p.names.enclosing, outer, collect))
 		}
 	}
+	return names
+}
+
+// declaredFunctionNames returns the names fn declares, as a function nested
+// in it sees them.
+func (p *NodeParser) declaredFunctionNames(fn *sitter.Node, src []byte) map[string]bool {
+	params := fn.ChildByFieldName("parameters")
+	body := fn.ChildByFieldName("body")
+	names := maps.Clone(p.scopeLocalNames(fn, src))
+	collectNodeWrittenNames(params, src, names)
+	collectNodeWrittenNames(body, src, names)
+	if single := fn.ChildByFieldName("parameter"); single != nil && single.Type() == goNodeIdentifier {
+		names[single.Content(src)] = true
+	}
+	return names
 }
 
 // collectNodeWrittenNames adds the names a destructuring declaration, a loop

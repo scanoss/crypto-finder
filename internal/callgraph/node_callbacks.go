@@ -44,7 +44,7 @@ var nodeElectronIPCAPIs = map[string]callbackAPI{
 // imported module, or `this.method`. Functions written inline are
 // declarations of their own, reached by nodeImplicitCalls, and a name the
 // function itself binds (a parameter, a local) names no declared function.
-func nodeCallbackReferences(body *sitter.Node, src []byte, filePath, packagePath, owner string, imports nodeBindings, locals, own map[string]bool) []FunctionCall {
+func nodeCallbackReferences(body *sitter.Node, src []byte, filePath, packagePath, owner string, imports nodeBindings, locals map[string]bool, own nodeNameSet) []FunctionCall {
 	var out []FunctionCall
 	var walk func(node *sitter.Node)
 	walk = func(node *sitter.Node) {
@@ -78,7 +78,7 @@ func nodeCallbackReferences(body *sitter.Node, src []byte, filePath, packagePath
 
 // nodeCallbackCall returns the callback API a call or `new` expression
 // invokes, and its argument list.
-func nodeCallbackCall(node *sitter.Node, src []byte, imports nodeBindings, own map[string]bool) (callbackAPI, *sitter.Node, bool) {
+func nodeCallbackCall(node *sitter.Node, src []byte, imports nodeBindings, own nodeNameSet) (callbackAPI, *sitter.Node, bool) {
 	switch node.Type() {
 	case nodeCallExpression:
 	case "new_expression":
@@ -109,7 +109,7 @@ func nodeCallbackCall(node *sitter.Node, src []byte, imports nodeBindings, own m
 }
 
 // nodeMemberCallbackAPI returns the callback API a method call invokes.
-func nodeMemberCallbackAPI(function *sitter.Node, src []byte, imports nodeBindings, own map[string]bool) (callbackAPI, bool) {
+func nodeMemberCallbackAPI(function *sitter.Node, src []byte, imports nodeBindings, own nodeNameSet) (callbackAPI, bool) {
 	object := function.ChildByFieldName("object")
 	property := function.ChildByFieldName("property")
 	if object == nil || property == nil {
@@ -118,22 +118,22 @@ func nodeMemberCallbackAPI(function *sitter.Node, src []byte, imports nodeBindin
 	objectText, method := object.Content(src), property.Content(src)
 	first, _ := splitNodeMemberObject(objectText)
 	if first == "ipcMain" {
-		binding, imported := imports.lookup(own, first)
+		binding, imported := imports.lookupNames(own, first)
 		api, ok := nodeElectronIPCAPIs[method]
 		return api, ok && imported && binding.module == "electron"
 	}
 	if api, ok := nodeGlobalCallbackAPIs[objectText+"."+method]; ok {
 		return api, nodeIsGlobal(first, imports, own)
 	}
-	if _, imported := imports.lookup(own, first); imported {
+	if _, imported := imports.lookupNames(own, first); imported {
 		return callbackAPI{}, false
 	}
 	api, ok := nodeMethodCallbackAPIs[method]
 	return api, ok
 }
 
-func nodeIsGlobal(name string, imports nodeBindings, own map[string]bool) bool {
-	return !own[name] && !nodeIsImported(name, imports)
+func nodeIsGlobal(name string, imports nodeBindings, own nodeNameSet) bool {
+	return !own.has(name) && !nodeIsImported(name, imports)
 }
 
 func nodeIsImported(name string, imports nodeBindings) bool {
@@ -142,7 +142,7 @@ func nodeIsImported(name string, imports nodeBindings) bool {
 }
 
 // nodeCallbackTarget resolves a callback argument to the function it names.
-func nodeCallbackTarget(arg *sitter.Node, src []byte, packagePath, owner string, imports nodeBindings, locals, own map[string]bool) (FunctionID, bool) {
+func nodeCallbackTarget(arg *sitter.Node, src []byte, packagePath, owner string, imports nodeBindings, locals map[string]bool, own nodeNameSet) (FunctionID, bool) {
 	for arg != nil && nodeIsTransparentWrapper(arg.Type()) {
 		if arg.NamedChildCount() == 0 {
 			return FunctionID{}, false
@@ -155,7 +155,7 @@ func nodeCallbackTarget(arg *sitter.Node, src []byte, packagePath, owner string,
 	switch arg.Type() {
 	case goNodeIdentifier:
 		name := arg.Content(src)
-		if own[name] {
+		if own.has(name) {
 			return FunctionID{}, false
 		}
 		return nodeNamedReference(name, packagePath, imports, locals), true
@@ -176,7 +176,7 @@ func nodeIsTransparentWrapper(nodeType string) bool {
 }
 
 // nodeMemberCallbackTarget resolves `this.method` and `module.fn`.
-func nodeMemberCallbackTarget(arg *sitter.Node, src []byte, packagePath, owner string, imports nodeBindings, own map[string]bool) (FunctionID, bool) {
+func nodeMemberCallbackTarget(arg *sitter.Node, src []byte, packagePath, owner string, imports nodeBindings, own nodeNameSet) (FunctionID, bool) {
 	object := arg.ChildByFieldName("object")
 	property := arg.ChildByFieldName("property")
 	if object == nil || property == nil || property.Type() != "property_identifier" {
@@ -190,7 +190,7 @@ func nodeMemberCallbackTarget(arg *sitter.Node, src []byte, packagePath, owner s
 		return FunctionID{Package: packagePath, Type: owner, Name: name}, true
 	}
 	first, suffix := splitNodeMemberObject(object.Content(src))
-	if binding, ok := imports.lookup(own, first); ok && !strings.ContainsAny(object.Content(src), "()[]") {
+	if binding, ok := imports.lookupNames(own, first); ok && !strings.ContainsAny(object.Content(src), "()[]") {
 		pkg, _ := binding.qualify(suffix, name)
 		return FunctionID{Package: pkg, Name: name}, true
 	}
