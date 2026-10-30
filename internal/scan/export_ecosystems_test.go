@@ -156,7 +156,7 @@ func TestMultiEcosystemExportMatchesItsSchema(t *testing.T) {
 		}
 		schema := "callgraph-schema.json"
 		if interned {
-			schema = "callgraph-schema-6.17.json"
+			schema = "callgraph-schema-6.18.json"
 		}
 		assertJSONMatchesSchema(t, filepath.Join("..", "..", "schemas", schema), outputPath)
 

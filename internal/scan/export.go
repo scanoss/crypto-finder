@@ -150,6 +150,8 @@ type exportBuildContext struct {
 	dependencyPaths map[string]dependency.Path
 	// dependencyVersions is the resolved version of each dependency module.
 	dependencyVersions map[string]string
+	// excerptSource reads the chain-frame excerpts. Built on first use.
+	excerptSource *sourceExcerpts
 }
 
 type callGraphExportV2 struct {
@@ -310,6 +312,7 @@ type callGraphEntryCall struct {
 	Aliases            []string              `json:"aliases,omitempty"`
 	FilePath           string                `json:"file_path"`
 	Line               int                   `json:"line"`
+	CallSiteColumn     int                   `json:"call_site_column,omitempty"`
 	Parameters         []callGraphParameter  `json:"parameters,omitempty"`
 	InferredReturn     *exportInferredReturn `json:"inferred_return,omitempty"`
 }
@@ -380,6 +383,14 @@ type callGraphChainNode struct {
 	// RootKind, on a chain's first frame only, says what that frame is; see
 	// graphfrag.ExportChainNode.RootKind.
 	RootKind string `json:"root_kind,omitempty"`
+	// EntryRule, Excerpt and ExcerptUnavailable: see the fields of the same
+	// name on graphfrag.ExportChainNode.
+	EntryRule          string                   `json:"entry_rule,omitempty"`
+	Excerpt            *graphfrag.ExportExcerpt `json:"excerpt,omitempty"`
+	ExcerptUnavailable string                   `json:"excerpt_unavailable,omitempty"`
+	// sourcePath is the file the frame's function is declared in, as the
+	// graph holds it, for reading the excerpt.
+	sourcePath string
 }
 
 type callGraphCryptoEntryPoint struct {
@@ -1929,6 +1940,7 @@ func buildFindingGraph(ctx *exportBuildContext, finding entities.Finding, asset 
 	fg.CallChains, traced = buildCallChains(ctx, containingFn, cryptoCall)
 	var chainsFilteredAway, chainsNarrowed bool
 	fg.CallChains, chainsFilteredAway, chainsNarrowed = narrowChainsByCondition(ctx, containingFn, cryptoCall, asset, fg.CallChains)
+	attachChainExcerpts(ctx, fg.CallChains)
 	refuted := traced && chainsFilteredAway
 	traced, truncated, depthLimited, guessed := findingTraceFlags(ctx, containingFn, fg.CallChains, traced, refuted, chainsNarrowed)
 	applyLiveReachabilityState(&fg, containingFn, ctx, traced, truncated, depthLimited, guessed)
@@ -3978,11 +3990,22 @@ func materializeCallChainNodes(
 		}
 		if len(path) > 0 {
 			path[0].RootKind = string(chain.RootKind)
+			path[0].EntryRule = chainEntryRule(ctx, chain)
 		}
 		enrichCallChain(path)
 		result[i] = path
 	}
 	return result
+}
+
+// chainEntryRule is the catalog entry that made a chain's first frame an
+// entry point, or empty when none did.
+func chainEntryRule(ctx *exportBuildContext, chain callgraph.CallChain) string {
+	if len(chain.Steps) == 0 || (chain.RootKind != callgraph.RootKindMain && chain.RootKind != callgraph.RootKindFrameworkEntry) {
+		return ""
+	}
+	mark, _ := ctx.sharedTracer().EntryPoint(ctx.graph.Functions[chain.Steps[0].Function.String()], ctx.userPackages)
+	return mark.Rule
 }
 
 // expandCallChainCallSites preserves distinct invocations when one caller
@@ -4345,6 +4368,7 @@ func buildChainNode(
 		StartLine:          startLine,
 		DependencyInfo:     location.DependencyInfo,
 		InferredReturn:     cloneExportInferredReturn(meta.InferredReturn),
+		sourcePath:         actualPath,
 	}
 }
 
@@ -4382,9 +4406,10 @@ func buildEntryCall(
 	location = normalizeExportPath(ctx, call.FilePath)
 	calleeFn := graph.Functions[call.Callee.String()]
 	entryCall := &callGraphEntryCall{
-		FilePath:   location.FilePath,
-		Line:       call.Line,
-		Parameters: mergeCallParameters(ctx, &callerID, &call.Callee, calleeFn, call.Arguments, call.ArgumentSources, location.FilePath, call.Line),
+		FilePath:       location.FilePath,
+		Line:           call.Line,
+		CallSiteColumn: call.StartCol,
+		Parameters:     mergeCallParameters(ctx, &callerID, &call.Callee, calleeFn, call.Arguments, call.ArgumentSources, location.FilePath, call.Line),
 	}
 	meta, _ := buildCallExportFunctionMetadata(ctx, call, calleeFn)
 	applyExportFunctionMetadataToEntryCall(entryCall, meta)

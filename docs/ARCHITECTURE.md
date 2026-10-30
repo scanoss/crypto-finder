@@ -48,7 +48,7 @@ target source tree
    ▼
 6. Enrichment + export    Exact OID preparation (internal/oid); writers (internal/output,
    (internal/enricher,     internal/converter) emit interim JSON or CycloneDX CBOM;
-                            internal/scan,         --export-callgraph defaults to the schema-6.17 interned export;
+                            internal/scan,         --export-callgraph defaults to the schema-6.18 interned export;
                             pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.14 fragment
 ```
 
@@ -161,11 +161,11 @@ Four independent version numbers ship in the outputs — do not conflate them:
 | Version | Constant | Current | Bumps when |
 |---------|----------|---------|------------|
 | Interim report format | `schema.InterimFormatVersion` | `1.7` | The findings.json envelope changes |
-| Callgraph export schema | `graphfrag.CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | SDK `6.14`; CLI `6.17` | The partner-facing reachability contract changes |
+| Callgraph export schema | `graphfrag.CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | SDK `6.14`; CLI `6.18` | The partner-facing reachability contract changes |
 | Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.14` | The fragment wire format changes |
 | Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-7` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
 
-Schema `6.17` (interned frames, introduced in `6.15`, the optional `scan_metadata.ecosystems` list of `6.16`, and the optional dependency, route-analysis, `root_kind` and `unresolved_reason` additions of `6.17`) is the local CLI default and an opt-in SDK interned render (`ScanMeta.InternedFrames`). Explicit `--export-callgraph-interned-frames=false` restores CLI `6.14`. Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
+Schema `6.18` (interned frames, introduced in `6.15`, the optional `scan_metadata.ecosystems` list of `6.16`, the optional dependency, route-analysis, `root_kind` and `unresolved_reason` additions of `6.17`, and the frame `excerpt`, `excerpt_unavailable`, `entry_rule` and `entry_call.call_site_column` of `6.18`) is the local CLI default and an opt-in SDK interned render (`ScanMeta.InternedFrames`). Explicit `--export-callgraph-interned-frames=false` restores CLI `6.14`. Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
 
 `TestGraphAlgoVersionGuard` (`pkg/graphfrag/graph_algo_guard_test.go`) enforces the `GraphAlgoVersion` rule. It builds a small app-plus-dependency corpus per ecosystem, hashes the structural part of each fragment export (functions, internal edges, external calls), and fails when a hash changes while `GraphAlgoVersion` still equals the version in `pkg/graphfrag/testdata/graph_algo_guard.golden.json`. After a bump, record the new hashes with `go test ./pkg/graphfrag/ -run TestGraphAlgoVersionGuard -update`. That command refuses to run without a bump. Use `-update -force` only for an edit to the guard's own fixtures, or for a change the PR explains does not invalidate cached graphs.
 

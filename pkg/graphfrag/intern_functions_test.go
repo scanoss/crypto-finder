@@ -78,8 +78,8 @@ func TestToCallgraphExport_ContractsFrameIdentityIntoCatalog(t *testing.T) {
 	if out.SchemaVersion != CallgraphInternedSchemaVersion {
 		t.Fatalf("schema_version = %q, want %q", out.SchemaVersion, CallgraphInternedSchemaVersion)
 	}
-	if CallgraphInternedSchemaVersion != "6.17" {
-		t.Fatalf("CallgraphInternedSchemaVersion = %q, want 6.17", CallgraphInternedSchemaVersion)
+	if CallgraphInternedSchemaVersion != "6.18" {
+		t.Fatalf("CallgraphInternedSchemaVersion = %q, want 6.18", CallgraphInternedSchemaVersion)
 	}
 	if len(out.FindingGraphs) != 1 {
 		t.Fatalf("FindingGraphs len = %d, want 1", len(out.FindingGraphs))
@@ -310,5 +310,32 @@ func assertJSONCatalogHasIdentity(t *testing.T, document map[string]any) {
 	first, _ := funcs[0].(map[string]any)
 	if first["function_name"] == nil || first["file_path"] == nil {
 		t.Fatalf("catalog row missing identity: %#v", first)
+	}
+}
+
+// TestToCallgraphExport_StitchedFramesHaveNoSource: a fragment carries no
+// source text, so every stitched frame says it has no excerpt and why.
+func TestToCallgraphExport_StitchedFramesHaveNoSource(t *testing.T) {
+	t.Parallel()
+
+	root, deps, frags := chainEntryFixture()
+	res, err := Stitch(root, deps, frags)
+	if err != nil {
+		t.Fatalf("Stitch: %v", err)
+	}
+	out := res.ToCallgraphExport(root, ScanMeta{RootModule: "com.acme:app", Ecosystem: "java", InternedFrames: true})
+	frames := 0
+	for _, fg := range out.FindingGraphs {
+		for _, chain := range fg.CallChains {
+			for _, frame := range chain {
+				frames++
+				if frame.Excerpt != nil || frame.ExcerptUnavailable != ExcerptNoSource || frame.EntryRule != "" {
+					t.Errorf("stitched frame excerpt %+v, excerpt_unavailable %q, entry_rule %q; want no_source only", frame.Excerpt, frame.ExcerptUnavailable, frame.EntryRule)
+				}
+			}
+		}
+	}
+	if frames == 0 {
+		t.Fatal("stitched export has no frames")
 	}
 }
