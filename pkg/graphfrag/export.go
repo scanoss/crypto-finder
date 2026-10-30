@@ -84,7 +84,12 @@ const SchemaVersion = "graph-fragment-1.14"
 //
 // graph-algo-11: a class assigned to Node exports (`module.exports = class Key
 // {..}`, `exports.Key = class {..}`) declares its methods, which were missing.
-const GraphAlgoVersion = "graph-algo-11"
+//
+// graph-algo-12: C++ calls on an `auto` variable take the type the producing
+// call's contract returns, a direct initializer (`T v(f())`, `auto v{f()}`)
+// binds its variable, and a templated callee is recorded without its template
+// arguments (`std::make_unique<T>()` calls std::make_unique).
+const GraphAlgoVersion = "graph-algo-12"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is

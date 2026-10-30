@@ -293,6 +293,8 @@ func (p *CPPParser) parseFunction(node *sitter.Node, src []byte, filePath, packa
 	return decl
 }
 
+const cppNodeQualifiedIdentifier = "qualified_identifier"
+
 func cppVariableTypes(parameters []FunctionParameter) map[string]string {
 	types := make(map[string]string)
 	for _, parameter := range parameters {
@@ -314,10 +316,31 @@ func recordCPPDeclarationTypes(node *sitter.Node, src []byte, types map[string]s
 		if sameSyntaxNode(child, typeNode) {
 			continue
 		}
-		if name := cDeclaratorName(child, src); name != "" {
+		if name := cppBoundVariableName(child, src); name != "" {
 			types[name] = typeName
 		}
 	}
+}
+
+// cppBoundVariableName names the variable a declarator binds. Unlike C's
+// cDeclaratorName it descends a reference declarator (`const auto& m = f()`),
+// which tree-sitter-cpp gives no `declarator` field.
+func cppBoundVariableName(node *sitter.Node, src []byte) string {
+	if node == nil {
+		return ""
+	}
+	switch node.Type() {
+	case cNodeIdentifier:
+		return node.Content(src)
+	case "reference_declarator":
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			if name := cppBoundVariableName(node.NamedChild(i), src); name != "" {
+				return name
+			}
+		}
+		return ""
+	}
+	return cppBoundVariableName(node.ChildByFieldName("declarator"), src)
 }
 
 func cppParameters(declarator *sitter.Node, src []byte) []FunctionParameter {
@@ -379,7 +402,7 @@ func cppDeclaratorIdentity(node *sitter.Node, src []byte) (name, typeName string
 	switch node.Type() {
 	case cNodeIdentifier, "field_identifier":
 		return node.Content(src), ""
-	case "qualified_identifier":
+	case cppNodeQualifiedIdentifier:
 		parts := strings.Split(strings.TrimPrefix(node.Content(src), "::"), "::")
 		return parts[len(parts)-1], strings.Join(parts[:len(parts)-1], "::")
 	default:
@@ -448,20 +471,77 @@ func (p *CPPParser) parseCall(node *sitter.Node, src []byte, filePath, packagePa
 				call.Callee.Linkage = LinkageInternal
 			}
 		}
-	case "qualified_identifier":
-		parts := strings.Split(strings.TrimPrefix(function.Content(src), "::"), "::")
-		if len(parts) < 2 {
+	case "template_function":
+		name := cppTemplateFunctionName(function, src, variableTypes)
+		if name == "" {
 			return nil
 		}
-		call.Callee.Name = parts[len(parts)-1]
-		call.Callee.Type = strings.Join(parts[:len(parts)-1], "::")
+		call.Callee.Name = name
+		call.Callee.Package = cFunctionPackage(packagePath, filePath, call.Callee.Name, staticFunctions)
+	case cppNodeQualifiedIdentifier:
+		scope, name := cppQualifiedCallee(function, src)
+		if scope == "" || name == "" {
+			return nil
+		}
+		call.Callee.Name = name
+		call.Callee.Type = scope
 		if localTypes[call.Callee.Type+"::"+call.Callee.Name] {
 			call.Callee.Linkage = LinkageInternal
 		}
 	default:
+		// `obj->m<N>(x)` never reaches here: tree-sitter-cpp cannot tell a
+		// member template call from `(obj->m < N) > (x)` without knowing m is a
+		// template, and parses it as that comparison. It stays unrecorded.
 		return nil
 	}
 	return call
+}
+
+// cppTemplateFunctionName names a free templated callee without its template
+// arguments: `f<32>(x)` calls f. tree-sitter-cpp reads two things that are
+// not calls the same way, and both yield "": the casts (`static_cast<T>(x)`),
+// and the comparison `a < b > (c)`, recognized by a being a variable in scope.
+func cppTemplateFunctionName(node *sitter.Node, src []byte, variableTypes map[string]string) string {
+	name := node.ChildByFieldName("name")
+	if name == nil || name.Type() != cNodeIdentifier {
+		return ""
+	}
+	text := name.Content(src)
+	switch text {
+	case "static_cast", "dynamic_cast", "const_cast", "reinterpret_cast":
+		return ""
+	}
+	if _, isVariable := variableTypes[text]; isVariable {
+		return ""
+	}
+	return text
+}
+
+// cppQualifiedCallee splits a qualified callee into its scope and name by
+// walking the syntax tree, so a `::` inside template arguments
+// (`ns::f<libff::alt_bn128_pp>`) is never taken for a scope separator. A
+// templated name loses its argument list: the call is to `ns::f`. Template
+// arguments in the scope stay (`Foo<T>::create`), as a declared type keeps them.
+func cppQualifiedCallee(node *sitter.Node, src []byte) (scope, name string) {
+	var scopes []string
+	for node != nil && node.Type() == cppNodeQualifiedIdentifier {
+		if s := node.ChildByFieldName("scope"); s != nil {
+			scopes = append(scopes, s.Content(src))
+		}
+		node = node.ChildByFieldName("name")
+	}
+	if node == nil {
+		return "", ""
+	}
+	name = node.Content(src)
+	if node.Type() == "template_function" {
+		base := node.ChildByFieldName("name")
+		if base == nil {
+			return "", ""
+		}
+		name = base.Content(src)
+	}
+	return strings.Join(scopes, "::"), name
 }
 
 func (p *CPPParser) extractReturnSources(body *sitter.Node, src []byte, filePath, packagePath string, staticFunctions, localTypes map[string]bool, variableTypes map[string]string) []SourceNode {
@@ -524,7 +604,35 @@ func cppCallChainContext(node *sitter.Node, src []byte) (chainID, assignedVar st
 			chainID = fmt.Sprintf("%d", root.StartByte())
 		}
 	}
-	return chainID, cAssignedVar(root, src)
+	return chainID, cppAssignedVar(root, src)
+}
+
+// cppAssignedVar names the variable a call's result initializes or is
+// assigned to. Beyond C's `T v = f()` and `v = f()` it accepts C++ direct
+// initialization, where the call is the only element of the initializer:
+// `std::unique_ptr<X> v(f())`, `auto v{f()}`, `X v{f()}`. A multi-argument
+// initializer (`X v(f(), n)`) constructs a new object rather than binding the
+// call's result, so it binds nothing.
+func cppAssignedVar(node *sitter.Node, src []byte) string {
+	value := node
+	if parent := node.Parent(); parent != nil && (parent.Type() == "argument_list" || parent.Type() == "initializer_list") && parent.NamedChildCount() == 1 {
+		value = parent
+	}
+	parent := value.Parent()
+	if parent == nil {
+		return ""
+	}
+	switch parent.Type() {
+	case "init_declarator":
+		if sameSyntaxNode(parent.ChildByFieldName("value"), value) {
+			return cppBoundVariableName(parent.ChildByFieldName("declarator"), src)
+		}
+	case "assignment_expression":
+		if sameSyntaxNode(value, node) {
+			return cAssignedVar(node, src)
+		}
+	}
+	return ""
 }
 
 func cppChainRoot(node *sitter.Node) *sitter.Node {
