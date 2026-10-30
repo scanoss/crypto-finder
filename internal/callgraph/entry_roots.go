@@ -58,20 +58,20 @@ func rootKindRank(kind RootKind) int {
 	}
 }
 
-// entryRootKind reports whether decl is a recognized entry point, and which
-// kind. isUserType tells whether a fully qualified type belongs to the
-// application.
-func (t *Tracer) entryRootKind(decl *FunctionDecl, isUserType func(string) bool) (RootKind, bool) {
+// entryMark reports whether decl is a recognized entry point, its kind, and
+// the catalog entry that recognized it. isUserType tells whether a fully
+// qualified type belongs to the application.
+func (t *Tracer) entryMark(decl *FunctionDecl, isUserType func(string) bool) (EntryMark, bool) {
 	if decl == nil || isTestDeclaration(decl) {
-		return "", false
+		return EntryMark{}, false
 	}
 	if decl.EntryKind != "" {
-		return decl.EntryKind, true
+		return EntryMark{Kind: decl.EntryKind, Rule: decl.EntryRule}, true
 	}
 	if isMainFunction(decl) {
-		return RootKindMain, true
+		return EntryMark{Kind: RootKindMain}, true
 	}
-	return t.javaCallbackEntryKind(decl, isUserType)
+	return t.javaCallbackEntryMark(decl, isUserType)
 }
 
 func isMainFunction(decl *FunctionDecl) bool {
@@ -85,14 +85,14 @@ func isMainFunction(decl *FunctionDecl) bool {
 	return decl.Static && len(decl.Parameters) == 1
 }
 
-// javaCallbackEntryKind recognizes a Java method that code outside the
+// javaCallbackEntryMark recognizes a Java method that code outside the
 // application calls: an @Override of a method of an external type
 // (HttpHandler.handle, Runnable.run), or a container callback the catalog
 // names on a subtype of a container type, which is often written without
 // @Override (HttpServlet.doPost).
-func (t *Tracer) javaCallbackEntryKind(decl *FunctionDecl, isUserType func(string) bool) (RootKind, bool) {
+func (t *Tracer) javaCallbackEntryMark(decl *FunctionDecl, isUserType func(string) bool) (EntryMark, bool) {
 	if decl.Static || decl.ID.Type == "" {
-		return "", false
+		return EntryMark{}, false
 	}
 	owner := decl.ID.Type
 	if decl.ID.Package != "" {
@@ -101,12 +101,12 @@ func (t *Tracer) javaCallbackEntryKind(decl *FunctionDecl, isUserType func(strin
 	for _, annotation := range decl.Annotations {
 		if annotation == "Override" {
 			if t.hasExternalSupertype(owner, isUserType, map[string]bool{}) {
-				return RootKindFrameworkEntry, true
+				return EntryMark{Kind: RootKindFrameworkEntry}, true
 			}
 			break
 		}
 	}
-	return t.javaSupertypeEntryKind(decl, owner, isUserType)
+	return t.javaSupertypeEntryMark(decl, owner, isUserType)
 }
 
 // hasExternalSupertype reports whether typeName extends or implements, directly
@@ -134,12 +134,13 @@ func (t *Tracer) hasExternalSupertype(typeName string, isUserType func(string) b
 	return false
 }
 
-// EntryKind reports whether decl is a recognized entry point (main or
-// framework_entry), the way a chain root is classified. userPackages is the
+// EntryPoint reports whether decl is a recognized entry point (main or
+// framework_entry), the way a chain root is classified, and the catalog entry
+// that recognized it. userPackages is the
 // application's package set, or nil when the scan has no user code: types the
 // scan declares then count as the application's own. It lets a producer record
 // the kind next to the function, since only the scan that holds the entry-point
 // catalog match and the type hierarchy can tell.
-func (t *Tracer) EntryKind(decl *FunctionDecl, userPackages map[string]bool) (RootKind, bool) {
-	return t.entryRootKind(decl, func(typeName string) bool { return t.isUserType(typeName, userPackages) })
+func (t *Tracer) EntryPoint(decl *FunctionDecl, userPackages map[string]bool) (EntryMark, bool) {
+	return t.entryMark(decl, func(typeName string) bool { return t.isUserType(typeName, userPackages) })
 }

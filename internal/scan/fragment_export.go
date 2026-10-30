@@ -1238,8 +1238,8 @@ func buildGraphFragmentFunction(ctx *exportBuildContext, id callgraph.FunctionID
 		fn.FilePath = normalizeExportPath(ctx, decl.FilePath).FilePath
 		fn.StartLine = decl.StartLine
 		fn.EndLine = decl.EndLine
-		if kind, ok := ctx.sharedTracer().EntryKind(decl, ctx.userPackages); ok {
-			fn.EntryKind = string(kind)
+		if mark, ok := ctx.sharedTracer().EntryPoint(decl, ctx.userPackages); ok {
+			fn.EntryKind = string(mark.Kind)
 		}
 	}
 	return fn

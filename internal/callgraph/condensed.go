@@ -174,9 +174,9 @@ func (t *Tracer) walk(target FunctionID, userPackages map[string]bool, maxDepth 
 	isUserType := func(typeName string) bool { return t.isUserType(typeName, userPackages) }
 	if userPackages != nil && t.isUserFunction(targetKey, userPackages) &&
 		len(t.knownCallers(targetKey, "", userPackages)) == 0 {
-		if kind, ok := t.entryRootKind(t.graph.Functions[targetKey], isUserType); ok {
+		if mark, ok := t.entryMark(t.graph.Functions[targetKey], isUserType); ok {
 			reach.Terminal[targetKey] = true
-			out.rootKinds[targetKey] = kind
+			out.rootKinds[targetKey] = mark.Kind
 		}
 	}
 
@@ -189,11 +189,11 @@ func (t *Tracer) walk(target FunctionID, userPackages map[string]bool, maxDepth 
 		if _, classified := out.rootKinds[key]; classified {
 			continue
 		}
-		kind, ok := t.entryRootKind(t.graph.Functions[key], isUserType)
+		mark, ok := t.entryMark(t.graph.Functions[key], isUserType)
 		if !ok {
-			kind = RootKindNoCallers
+			mark.Kind = RootKindNoCallers
 		}
-		out.rootKinds[key] = kind
+		out.rootKinds[key] = mark.Kind
 	}
 	return out
 }

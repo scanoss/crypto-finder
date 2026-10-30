@@ -144,6 +144,14 @@ func TestLoadFS_DetectsConflicts(t *testing.T) {
 			files: fstest.MapFS{"python/express.yaml": {Data: []byte(expressYAML)}},
 			want:  []string{"does not match its directory"},
 		},
+		"same entry ID twice": {
+			files: fstest.MapFS{"node/express.yaml": {Data: []byte(expressYAML + `  - shape: registration_call
+    from: [express-extra]
+    names: [get]
+    root_kind: framework_entry
+`)}},
+			want: []string{`"node/express:registration_call:get"`},
+		},
 		"malformed file": {
 			files: fstest.MapFS{"node/express.yaml": {Data: []byte("schema_version: [")}},
 			want:  []string{"node/express.yaml"},
@@ -171,6 +179,31 @@ func TestLoadFS_DetectsConflicts(t *testing.T) {
 	}
 	if entry, ok := catalog.Match("node", ShapeRegistrationCall, "koa", "", "get"); !ok || entry.Framework != "koa" || entry.Path != PathRequired {
 		t.Errorf("Match(koa get) = %+v, %v; want the koa entry with the default path rule", entry, ok)
+	}
+}
+
+// TestLoadEmbedded_EntryIDs: every entry carries an ID an export can quote,
+// and two entries that differ only by directory keep distinct IDs.
+func TestLoadEmbedded_EntryIDs(t *testing.T) {
+	t.Parallel()
+	catalog, err := LoadEmbedded()
+	if err != nil {
+		t.Fatalf("LoadEmbedded: %v", err)
+	}
+	if entry, ok := catalog.Match("java", ShapeDecorator, "org.springframework.web.bind.annotation", "", "GetMapping"); !ok || entry.ID != "java/spring:decorator:RequestMapping" {
+		t.Errorf("GetMapping entry ID = %q, want java/spring:decorator:RequestMapping", entry.ID)
+	}
+	ids := map[string]bool{}
+	for _, entry := range catalog.Entries("node", ShapeFileConvention) {
+		if entry.ID == "" || ids[entry.ID] {
+			t.Errorf("file_convention entry ID %q is empty or repeated", entry.ID)
+		}
+		ids[entry.ID] = true
+	}
+	for _, want := range []string{"node/nextjs:file_convention:app:default", "node/nextjs:file_convention:pages:default"} {
+		if !ids[want] {
+			t.Errorf("file_convention IDs %v lack %q", ids, want)
+		}
 	}
 }
 

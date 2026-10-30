@@ -187,7 +187,7 @@ func TestNodeParser_ShebangImportModuleKeepsTopLevelBesideSameStemFile(t *testin
 			rooted = append(rooted, ref)
 		}
 	}
-	if len(rooted) != 1 || rooted[0].Function != mjs.Functions[0].ID || rooted[0].Kind != RootKindMain {
+	if len(rooted) != 1 || rooted[0].Function != mjs.Functions[0].ID || rooted[0].Mark.Kind != RootKindMain {
 		t.Fatalf("shebang module entry refs = %v, want main for %v", mjs.EntryRefs, mjs.Functions[0].ID)
 	}
 	for _, ref := range ts.EntryRefs {

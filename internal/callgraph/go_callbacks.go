@@ -188,7 +188,7 @@ func (s *goEntryScope) assignedHandlerFields(assign *sitter.Node, packagePath st
 		}
 		for j := range entries {
 			if entry := &entries[j]; entry.Covers(owner.pkg) && entry.HasType(owner.typeName) && entry.HasName(field.Content(s.src)) {
-				s.analysis.EntryRefs = s.appendHandlerRef(s.analysis.EntryRefs, value, packagePath, catalogEntryKind(entry))
+				s.analysis.EntryRefs = s.appendHandlerRef(s.analysis.EntryRefs, value, packagePath, catalogEntryMark(entry))
 			}
 		}
 	}

@@ -28,13 +28,13 @@ import (
 // whose annotation a container reads by reflection, and callbacks a container
 // calls on a subtype of one of its types.
 
-// javaAnnotationEntryKind returns the root kind of the first annotation on a
+// javaAnnotationEntryMark returns the entry mark of the first annotation on a
 // method declaration that the catalog names. An annotation is resolved to its
 // type the way javac does: a qualified name as written, else a single-type
 // import, else an on-demand import, else the file's own package. So
 // @GetMapping counts only when the file imports it from Spring, and an
 // annotation of the same simple name from another package does not.
-func javaAnnotationEntryKind(node *sitter.Node, src []byte, analysis *FileAnalysis) (RootKind, bool) {
+func javaAnnotationEntryMark(node *sitter.Node, src []byte, analysis *FileAnalysis) (EntryMark, bool) {
 	catalog := entryCatalog()
 	for _, written := range javaWrittenAnnotations(node, src) {
 		simple := written[strings.LastIndex(written, ".")+1:]
@@ -43,11 +43,11 @@ func javaAnnotationEntryKind(node *sitter.Node, src []byte, analysis *FileAnalys
 		}
 		for _, pkg := range javaAnnotationPackages(written, analysis) {
 			if entry, ok := catalog.Match(entryLanguageJava, entrypoints.ShapeDecorator, pkg, "", simple); ok {
-				return catalogEntryKind(&entry), true
+				return catalogEntryMark(&entry), true
 			}
 		}
 	}
-	return "", false
+	return EntryMark{}, false
 }
 
 // javaAnnotationPackages lists the packages an annotation name can denote,
@@ -62,15 +62,15 @@ func javaAnnotationPackages(written string, analysis *FileAnalysis) []string {
 	return append(append([]string(nil), analysis.WildcardImports...), analysis.PackagePath)
 }
 
-// javaSupertypeEntryKind reports whether decl is a callback a container
+// javaSupertypeEntryMark reports whether decl is a callback a container
 // calls on a subtype of one of its types, often written without @Override:
 // a method the catalog names on a type that extends or implements, through
 // application supertypes, a catalog type such as HttpServlet.
-func (t *Tracer) javaSupertypeEntryKind(decl *FunctionDecl, owner string, isUserType func(string) bool) (RootKind, bool) {
+func (t *Tracer) javaSupertypeEntryMark(decl *FunctionDecl, owner string, isUserType func(string) bool) (EntryMark, bool) {
 	catalog := entryCatalog()
 	name := BaseFunctionName(decl.ID.Name)
 	if !catalog.Named(entryLanguageJava, entrypoints.ShapeSupertype, name) {
-		return "", false
+		return EntryMark{}, false
 	}
 	for _, external := range t.externalSupertypes(owner, isUserType, map[string]bool{}) {
 		dot := strings.LastIndex(external, ".")
@@ -78,10 +78,10 @@ func (t *Tracer) javaSupertypeEntryKind(decl *FunctionDecl, owner string, isUser
 			continue
 		}
 		if entry, ok := catalog.Match(entryLanguageJava, entrypoints.ShapeSupertype, external[:dot], external[dot+1:], name); ok {
-			return catalogEntryKind(&entry), true
+			return catalogEntryMark(&entry), true
 		}
 	}
-	return "", false
+	return EntryMark{}, false
 }
 
 // externalSupertypes lists the types outside the application that typeName
