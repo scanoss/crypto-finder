@@ -356,6 +356,10 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	"cpp|std::unique_ptr<Botan::PBKDF>.pbkdf_timed|0":                 unitBytes,
 	"cpp|std::unique_ptr<Botan::PBKDF>.pbkdf_timed|1":                 unitBytes,
 	"cpp|std::unique_ptr<Botan::StreamCipher>.set_key|1":              unitBytes,
+	// cpp/jwt-cpp.yaml: the HS* constructors take the HMAC secret itself.
+	"cpp|jwt::algorithm.hs256|0": unitMaterial,
+	"cpp|jwt::algorithm.hs384|0": unitMaterial,
+	"cpp|jwt::algorithm.hs512|0": unitMaterial,
 }
 
 func TestKeySizeRolesAreUnitAudited(t *testing.T) {

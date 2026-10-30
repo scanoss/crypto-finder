@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vBNN, Paillier, Damgard-Jurik, subgroup Paillier, Benaloh, BGN and Boneh-Franklin IBE calls, at every arity a
   release declares. The modulus size of the key generators and the AES and HMAC key length are `keySize`
   parameter roles. Big-integer, field and point arithmetic is not contracted.
+- C++ callgraph contracts for jwt-cpp 0.1 to 0.7: `jwt::create()` and `jwt::verify()` are factories of the
+  builder and verifier, `builder::sign` is the signing operation and `verifier::allow_algorithm` the
+  algorithm configuration, with the JOSE algorithm object they take (`jwt::algorithm::hs256`, `rs384`,
+  `ps512`, `es256k`, `ed25519` and the rest) operation-determining by type, and `verifier::verify` is the
+  verification operation. The fluent chains these calls are written as resolve from the chain's root, past
+  the claim setters and checks. The JOSE algorithm constructors are factories, the HS* secret contributes
+  `keySize`, and the engine `sign`/`verify` of the `hmacsha`, `rsa`, `ecdsa`, `eddsa` and `pss` bases are
+  operations. `jwt::decode(token)` is a factory; its arity-2 form is shared with cpp-jwt and left
+  uncontracted. A verifier held in an `auto` variable resolves only within its chain, and an algorithm
+  constructed with parentheses inside `sign(...)` is its own terminal.
 
 ## [0.43.0] - 2026-10-29
 ### Fixed
