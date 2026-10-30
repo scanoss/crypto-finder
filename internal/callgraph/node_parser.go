@@ -6,7 +6,6 @@ package callgraph
 import (
 	"context"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -51,6 +50,9 @@ type NodeParser struct {
 	// being parsed while ParseFile runs; see node_receiver_types.go.
 	file  *nodeFileTypes
 	scope *nodeScope
+	// names caches the names each scope of the file binds while ParseFile
+	// runs.
+	names *nodeScopeNames
 }
 
 // NewNodeParser creates a parser for JavaScript, TypeScript, and TSX source files.
@@ -191,6 +193,8 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	}
 	defer tree.Close()
 	defer p.anchors.reset()
+	p.names = newNodeScopeNames()
+	defer func() { p.names = nil }()
 
 	analysis := &FileAnalysis{
 		FilePath:    filePath,
@@ -263,7 +267,12 @@ type nodeBindings map[string]nodeBinding
 // lookup returns the import that name refers to unless a local declaration
 // shadows it.
 func (b nodeBindings) lookup(locals map[string]bool, name string) (nodeBinding, bool) {
-	if locals[name] {
+	return b.lookupNames(nodeNameSet{locals}, name)
+}
+
+// lookupNames is lookup with the locals held as a nodeNameSet.
+func (b nodeBindings) lookupNames(locals nodeNameSet, name string) (nodeBinding, bool) {
+	if locals.has(name) {
 		return nodeBinding{}, false
 	}
 	binding, ok := b[name]
@@ -274,9 +283,14 @@ func (b nodeBindings) lookup(locals map[string]bool, name string) (nodeBinding, 
 // resolution needs them: an import binds a name, a local declaration shadows
 // the global crypto object.
 func (b nodeBindings) webCryptoScope(locals map[string]bool) webCryptoScope {
+	return b.webCryptoScopeNames(nodeNameSet{locals})
+}
+
+// webCryptoScopeNames is webCryptoScope with the locals held as a nodeNameSet.
+func (b nodeBindings) webCryptoScopeNames(locals nodeNameSet) webCryptoScope {
 	return webCryptoScope{
-		bound:    func(name string) (nodeBinding, bool) { return b.lookup(locals, name) },
-		declared: func(name string) bool { return locals[name] },
+		bound:    func(name string) (nodeBinding, bool) { return b.lookupNames(locals, name) },
+		declared: locals.has,
 	}
 }
 
@@ -754,8 +768,7 @@ func (p *NodeParser) appendClassInit(body *sitter.Node, inits []*sitter.Node, sr
 	locals := bindings.withModuleVariables(own)
 	if p.file != nil {
 		previous := p.scope
-		p.scope = &nodeScope{own: own, shadowed: make(map[string]bool)}
-		collectEnclosingFunctionNames(body, src, p.scope.shadowed)
+		p.scope = &nodeScope{own: own, shadowed: make(map[string]bool), enclosing: p.enclosingFunctionNames(body, src)}
 		defer func() { p.scope = previous }()
 	}
 	for _, init := range inits {
@@ -795,14 +808,14 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 		decl.OwnerName = owner
 		decl.FunctionType = javaFunctionTypeMethod
 	}
-	own := collectNodeLocalNames(params, body, src)
+	own := p.scopeLocalNames(node, src)
 	locals := imports.withModuleVariables(own)
 	previousScope := p.scope
 	p.scope = p.scopeFor(params, body, own, src)
 	defer func() { p.scope = previousScope }()
 	decl.Calls = p.extractCalls(body, src, filePath, packagePath, owner, imports, locals)
 	decl.ImplicitCalls = nodeImplicitCalls(body, src, filePath, packagePath, imports, locals)
-	decl.ImplicitCalls = append(decl.ImplicitCalls, nodeCallbackReferences(body, src, filePath, packagePath, owner, imports, locals, nodeBoundNames(node, params, body, src))...)
+	decl.ImplicitCalls = append(decl.ImplicitCalls, nodeCallbackReferences(body, src, filePath, packagePath, owner, imports, locals, p.nodeBoundNames(node, own, src))...)
 	decl.ModuleVars = imports.moduleReceivers(decl.Calls, own)
 	if p.file != nil {
 		if ref, ok := p.file.annotatedClass(node.ChildByFieldName("return_type"), src); ok {
@@ -896,23 +909,88 @@ func nodeParameters(node *sitter.Node, src []byte) []FunctionParameter {
 	return params
 }
 
+// nodeNameSet is the union of the name sets it holds, read without merging
+// them: the sets of enclosing scopes are shared by every function inside them.
+type nodeNameSet []map[string]bool
+
+func (s nodeNameSet) has(name string) bool {
+	for _, names := range s {
+		if names[name] {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeScopeKey identifies a scope node within the tree of one file.
+type nodeScopeKey struct {
+	start, end uint32
+	kind       string
+}
+
+// nodeScopeNames caches, per scope node of the file being parsed, the names
+// the scope binds. Every function reads the names of all its enclosing
+// scopes, so without it a bundle, which wraps thousands of functions in one
+// IIFE, walks the IIFE body once per function.
+type nodeScopeNames struct {
+	locals    map[nodeScopeKey]map[string]bool
+	enclosing map[nodeScopeKey]map[string]bool
+}
+
+func newNodeScopeNames() *nodeScopeNames {
+	return &nodeScopeNames{
+		locals:    make(map[nodeScopeKey]map[string]bool),
+		enclosing: make(map[nodeScopeKey]map[string]bool),
+	}
+}
+
+func cachedNodeScopeNames(cache map[nodeScopeKey]map[string]bool, scope *sitter.Node, collect func() map[string]bool) map[string]bool {
+	key := nodeScopeKey{start: scope.StartByte(), end: scope.EndByte(), kind: scope.Type()}
+	if names, ok := cache[key]; ok {
+		return names
+	}
+	names := collect()
+	cache[key] = names
+	return names
+}
+
+// scopeLocalNames returns collectNodeLocalNames of a scope's parameters and
+// body. The map is shared: callers must not write to it.
+func (p *NodeParser) scopeLocalNames(scope *sitter.Node, src []byte) map[string]bool {
+	collect := func() map[string]bool {
+		return collectNodeLocalNames(scope.ChildByFieldName("parameters"), scope.ChildByFieldName("body"), src)
+	}
+	if p.names == nil {
+		return collect()
+	}
+	return cachedNodeScopeNames(p.names.locals, scope, collect)
+}
+
 // nodeBoundNames returns the names a function and every function enclosing it
 // bind (parameters, locals, destructured names): a callback argument with one
 // of them is a value from some scope, not the module-level function it spells.
-func nodeBoundNames(fn, params, body *sitter.Node, src []byte) map[string]bool {
-	names := collectNodeLocalNames(params, body, src)
+// own is the function's collectNodeLocalNames.
+func (p *NodeParser) nodeBoundNames(fn *sitter.Node, own map[string]bool, src []byte) nodeNameSet {
+	names := nodeNameSet{own}
 	for scope := fn.Parent(); scope != nil; scope = scope.Parent() {
 		if isNodeNestedScope(scope.Type()) && scope.Type() != javaNodeClassDeclaration && scope.Type() != nodeClassExpression {
-			maps.Copy(names, collectNodeLocalNames(scope.ChildByFieldName("parameters"), scope.ChildByFieldName("body"), src))
-			if single := scope.ChildByFieldName("parameter"); single != nil {
-				collectNodePatternNames(single, src, names)
-			}
+			names = append(names, p.scopeLocalNames(scope, src))
+			names = appendNodeSingleParameter(names, scope, src)
 		}
 	}
-	if single := fn.ChildByFieldName("parameter"); single != nil {
-		collectNodePatternNames(single, src, names)
+	return appendNodeSingleParameter(names, fn, src)
+}
+
+// appendNodeSingleParameter adds the names the unparenthesised parameter of an
+// arrow function binds, which collectNodeLocalNames does not see.
+func appendNodeSingleParameter(names nodeNameSet, fn *sitter.Node, src []byte) nodeNameSet {
+	single := fn.ChildByFieldName("parameter")
+	if single == nil {
+		return names
 	}
-	return names
+	bound := make(map[string]bool)
+	collectNodePatternNames(single, src, bound)
+	return append(names, bound)
 }
 
 func collectNodeLocalNames(params, body *sitter.Node, src []byte) map[string]bool {
