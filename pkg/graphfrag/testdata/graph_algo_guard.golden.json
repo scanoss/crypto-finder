@@ -1,5 +1,5 @@
 {
-  "graph_algo_version": "graph-algo-11",
+  "graph_algo_version": "graph-algo-12",
   "ecosystems": {
     "c": {
       "sha256": "8ba67f18003dc8c422e9409c0d5f3d1262ae289843488d5f138abe22bcb38d34",
@@ -8,7 +8,7 @@
       "external_calls": 9
     },
     "cpp": {
-      "sha256": "029ad1f2f06c8d494d1dda7590aed8db4a42971b1b74b331f20e0e36b4721fc3",
+      "sha256": "3b9cd62a123c0e7366eabca0516911a39788cf744933728a3156815a4b640b9a",
       "functions": 4,
       "internal_edges": 1,
       "external_calls": 7

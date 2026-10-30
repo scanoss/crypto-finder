@@ -384,7 +384,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 }
 
 // resolveCalleesByContract corrects call targets with the KB's return types:
-// fluent-chain links, Python chains, and Go/Node assigned-variable receivers.
+// fluent-chain links, Python chains, and Go/C++/Node assigned-variable receivers.
 func (b *Builder) resolveCalleesByContract(graph *CallGraph, kb *contracts.KnowledgeBase) {
 	perf.Time("callgraph.build.fluent_contract", func() { resolveFluentChainCalleesByContract(graph, kb) })
 	if b.ecosystem == ecosystemPython {
@@ -395,6 +395,7 @@ func (b *Builder) resolveCalleesByContract(graph *CallGraph, kb *contracts.Knowl
 	}
 	perf.Time("callgraph.build.assigned_var_callees", func() {
 		resolveGoAssignedVarCallees(graph, kb, b.ecosystem)
+		resolveCPPDeducedReceiverCallees(graph, kb, b.ecosystem)
 		resolveNodeAssignedVarCallees(graph, kb)
 		respellGoPointerReceivers(graph, b.ecosystem)
 	})
