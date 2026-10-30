@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decrypt, verify_mac and derive_key are operations; key and derived-key lengths contribute `keySize`.
   Receivers declared `auto` do not resolve, and the public-key, private-key, X.509 and TLS findings are
   anchored on declarations, so they get no lifecycle.
+- C callgraph contracts for RELIC 0.2.0 through 0.7.0: `core_init`/`core_clean`, curve selection with `ep_param_set`
+  (the curve is operation-determining) and the `ep_param_set_any*`/`pc_param_set_any` defaults, `rand_seed` and
+  `rand_bytes`, the SHA-2 and BLAKE2s `md_map_*` hashes, `md_hmac`, `md_kdf`, `bc_aes_cbc_enc`/`dec`, hash to
+  curve (`ep_map`, `ep2_map`, `g1_map`, `g2_map`, `*_map_dst`), the `pc_map`, `pc_map_sim`, `pc_exp` and `pp_map_*`
+  pairings, and the `relic_cp.h` RSA, Rabin, ECDH, ECMQV, SOK, ECIES, ECDSA, EC-Schnorr, BLS, BBS, CL, PS, ZSS,
+  vBNN, Paillier, Damgard-Jurik, subgroup Paillier, Benaloh, BGN and Boneh-Franklin IBE calls, at every arity a
+  release declares. The modulus size of the key generators and the AES and HMAC key length are `keySize`
+  parameter roles. Big-integer, field and point arithmetic is not contracted.
 
 ## [0.43.0] - 2026-10-29
 ### Fixed

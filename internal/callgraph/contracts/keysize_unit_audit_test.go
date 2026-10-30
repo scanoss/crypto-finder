@@ -255,6 +255,18 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	"c|EVP_PKEY_CTX_set_dh_paramgen_prime_len|1": unitBits,
 	"c|DH_generate_parameters_ex|1":              unitBits,
 	"c|DH_generate_parameters|0":                 unitBits,
+	// c/relic.yaml
+	"c|bc_aes_cbc_enc|5":   unitBytes,
+	"c|bc_aes_cbc_dec|5":   unitBytes,
+	"c|md_hmac|4":          unitBytes,
+	"c|cp_rsa_gen|2":       unitBits,
+	"c|cp_rsa_gen_basic|2": unitBits,
+	"c|cp_rsa_gen_quick|2": unitBits,
+	"c|cp_rabin_gen|2":     unitBits,
+	"c|cp_phpe_gen|2":      unitBits,
+	"c|cp_ghpe_gen|2":      unitBits,
+	"c|cp_shpe_gen|3":      unitBits,
+	"c|cp_bdpe_gen|3":      unitBits,
 	// c/rnp.yaml
 	"c|rnp_op_generate_set_bits|1": unitBits,
 	"c|rnp_generate_key_rsa|1":     unitBits,
