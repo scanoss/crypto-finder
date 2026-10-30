@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operations. `jwt::decode(token)` is a factory; its arity-2 form is shared with cpp-jwt and left
   uncontracted. A verifier held in an `auto` variable resolves only within its chain, and an algorithm
   constructed with parentheses inside `sign(...)` is its own terminal.
+- C++ callgraph contracts for cpp-jwt 1.x: `jwt::params::algorithm`, `algorithms`, `secret` and `verify` are
+  factories, with the algorithm and the accepted algorithm list operation-determining; `jwt::decode` is the
+  verification operation at every arity from 2 to 11, its algorithm list operation-determining;
+  `jwt_object::secret` and `jwt_header::algo` are config, and `jwt_object::signature`, `jwt_object::verify`
+  and the `jwt_signature` engine are operations. `jwt_object::header()` carries its return type, so
+  `obj.header().algo(...)` resolves. The algorithm, algorithm-list and key findings nested in a
+  `jwt_object` initializer or a `jwt::decode` call get no lifecycle, and calls written unqualified after
+  `using namespace jwt::params` do not resolve.
 
 ## [0.43.0] - 2026-10-29
 ### Fixed

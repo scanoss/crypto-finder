@@ -1,0 +1,124 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: cpp-jwt
+  coordinates:
+    - arun11299/cpp-jwt
+  version_range: ">=1.0.0,<2.0.0"
+  description: "cpp-jwt: JWS signing on jwt::jwt_object, verification with jwt::decode, and the jwt::params factories"
+
+# Inventory source: include/jwt/jwt.hpp, parameters.hpp, algorithm.hpp and
+# base64.hpp from the upstream tag archives v1.0, v1.2 and v1.5.1, which declare
+# the same signatures for everything contracted here.
+#
+# How the calls are keyed. The jwt::params factories and jwt::decode are
+# qualified free functions, which the parser emits under their namespace
+# ("jwt::params", "jwt"); calls written unqualified after
+# `using namespace jwt::params` have no namespace and resolve to nothing.
+# jwt_object, jwt_header and jwt_signature methods key on the declared
+# receiver type.
+#
+# jwt::decode is variadic: decode(token, algorithms(...), [error_code,]
+# params...), where the parameters are secret, leeway, verify, issuer, aud,
+# sub, validate_iat and validate_jti, each at most once. It is contracted at
+# every arity from 2 (token and algorithms) to 11. The algorithms argument is
+# always at index 1. jwt-cpp declares jwt::decode too, as decode(token) and
+# decode(token, decode_function); cpp-jwt's required algorithms parameter
+# keeps it off arity 1, which jwt-cpp contracts, and arity 2 is contracted
+# here, the form cpp-jwt code writes.
+#
+# jwt_object::header() is contracted for its return type only. It carries no
+# lifecycle role, but it lets the chain obj.header().algo(...) resolve its algo
+# link to jwt::jwt_header.algo.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: jwt::params::payload, headers, leeway, issuer, aud, sub,
+#   validate_iat, validate_jti and nbf; jwt_object payload(), the header and
+#   payload setters, add_claim, remove_claim, has_claim and the secret()
+#   getter; jwt_header add_header, remove_header, has_header, typ and the
+#   algo() getter; jwt_payload and jwt_header encode/decode/base64 helpers;
+#   jwt::base64_encode, base64_decode, base64_uri_encode, base64_uri_decode;
+#   jwt::str_to_alg and alg_to_str.
+# skipped-unsupported: the jwt_object, jwt_header and jwt_signature
+#   constructors, which are almost always declarations with an initializer
+#   (jwt::jwt_object obj{...}) and are not recorded as calls; the HMACSign<>
+#   and PEMSign<> engines, whose templated scope the parser does not split.
+# Anchor note: the algorithm, algorithms and secret findings are the
+#   arguments of jwt::params calls nested in a jwt_object initializer or a
+#   jwt::decode call, so those terminals bind no variable and have no
+#   lifecycle. The anchors that do are jwt_object::secret (the object's other
+#   calls, signature() among them) and header().algo (the header() link).
+contracts:
+
+  # jwt::params factories that carry the algorithm, the accepted algorithms,
+  # the key and the verify switch into jwt_object or jwt::decode.
+  - method: jwt::params.algorithm
+    arity: 1
+    return: {type: "jwt::params::detail::algorithm_param", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: alg, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: jwt::params.algorithms
+    arity: 1
+    return: {type: "jwt::params::detail::algorithms_param", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: seq, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: jwt::params.secret
+    arity: 1
+    return: {type: "jwt::params::detail::secret_param", confidence: high}
+    role: factory
+  - method: jwt::params.verify
+    arity: 1
+    return: {type: "jwt::params::detail::verify_param", confidence: high}
+    role: factory
+
+  # jwt::decode verifies the signature against the accepted algorithms
+  # unless verify(false) is passed.
+  - {method: jwt.decode, arity: 2, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+  - {method: jwt.decode, arity: 3, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+  - {method: jwt.decode, arity: 4, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+  - {method: jwt.decode, arity: 5, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+  - {method: jwt.decode, arity: 6, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+  - {method: jwt.decode, arity: 7, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+  - {method: jwt.decode, arity: 8, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+  - {method: jwt.decode, arity: 9, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+  - {method: jwt.decode, arity: 10, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+  - {method: jwt.decode, arity: 11, return: {type: "jwt::jwt_object", confidence: high}, role: operation, parameters: [{index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}]}
+
+  # jwt_object: the key, the signature, and verification of a decoded object.
+  - method: jwt::jwt_object.secret
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: jwt::jwt_object.signature
+    arity: 0
+    return: {type: "std::string", confidence: high}
+    role: operation
+  - method: jwt::jwt_object.signature
+    arity: 1
+    return: {type: "std::string", confidence: high}
+    role: operation
+  - method: jwt::jwt_object.verify
+    arity: 2
+    return: {type: "std::error_code", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: algos, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: jwt::jwt_object.header
+    arity: 0
+    return: {type: "jwt::jwt_header", confidence: high}
+
+  # jwt_header: the algorithm the object signs with.
+  - method: jwt::jwt_header.algo
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 0, name: alg, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+
+  # jwt_signature: the signing and verification engine behind jwt_object.
+  - {method: jwt::jwt_signature.encode, arity: 3, return: {type: "std::string", confidence: high}, role: operation}
+  - {method: jwt::jwt_signature.verify, arity: 3, return: {type: "jwt::verify_result_t", confidence: high}, role: operation}
+
+hierarchy: {}
