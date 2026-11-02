@@ -230,6 +230,9 @@ not in the parser.
 - After the merge, the `Post-merge QA` workflow drives the touched features with an agent
   and comments a verdict per feature on the PR; a `fail` opens an issue. See "Post-merge
   QA" in `.claude/skills/verify/SKILL.md`.
+- Metrics: every Monday the `Delivery metrics` workflow writes CI minutes and QA usage per
+  PR, revert rate and red-main incidents per week into the one `Delivery metrics` issue;
+  `go run ./scripts/deliverymetrics` prints the same tables locally, read-only.
 - Stop and ask the owner after three red fix-push rounds on one PR, or at a design decision.
 - Once merge risk lands, high-risk PRs wait for the owner to merge them.
 
