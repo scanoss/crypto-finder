@@ -38,6 +38,9 @@ var (
 	prMergeRe    = regexp.MustCompile(`\bpr\s+merge\b`)
 	pullsMergeRe = regexp.MustCompile(`(?:repos/([^/\s]+)/([^/\s]+)/)?pulls/([^/\s]*)/merge`)
 	graphqlRe    = regexp.MustCompile(`(?i)mergePullRequest|enablePullRequestAutoMerge`)
+	// redirectionRe matches a shell redirection with its target, such as
+	// 2>&1, >file, > file, 2>/dev/null or &>x. It is not an argument.
+	redirectionRe = regexp.MustCompile(`(?:\d+|&)?(?:>>?|<)(?:&(?:\d+|-)|\s*[^\s;&|<>()]+)`)
 	// segmentEndRe ends the arguments of one gh pr merge.
 	segmentEndRe = regexp.MustCompile(`[;&|\n)]`)
 	// elsewhereRe flags a command that may run gh in another repository than
@@ -77,7 +80,7 @@ func findMerges(cmd string) []mergeTarget {
 	text := normalize(cmd)
 	var out []mergeTarget
 	for _, loc := range prMergeRe.FindAllStringIndex(text, -1) {
-		rest := text[loc[1]:]
+		rest := redirectionRe.ReplaceAllString(text[loc[1]:], " ")
 		if end := segmentEndRe.FindStringIndex(rest); end != nil {
 			rest = rest[:end[0]]
 		}

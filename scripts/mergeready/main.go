@@ -63,6 +63,7 @@ type ghCLI struct{}
 func (ghCLI) run(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
+	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
 	cmd := exec.CommandContext(ctx, "gh", args...)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
