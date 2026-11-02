@@ -164,3 +164,9 @@ go run ./scripts/featuremap check-pr --base origin/main --head HEAD --body-file 
 ```
 
 Evidence stays on the PR. Never commit `bin/verify/evidence/` to the tree. See "How the map is checked" in [`features/README.md`](features/README.md) for the glob rules and how to replay them.
+
+## Post-merge QA
+
+After every merge to `main`, `.github/workflows/post-merge-qa.yml` runs this skill with an agent. `go run ./scripts/featuremap select --base <merge>^1 --head <merge>` picks the features the merge touched, with the same globs `check-pr` uses (at most `QA_MAX_FEATURES`, default 5; the rest are named in the report). A merge that touches none stops there. Otherwise the job installs opengrep, runs `build.sh` and `doctor.sh`, and hands `.github/post-merge-qa.md` to `claude -p`. The agent drives each feature with `bash .claude/skills/verify/scripts/run.sh <id> [lang]`, reads its evidence, and answers `pass`, `fail` or `unreachable` per feature. It may run only these scripts and read-only commands, and write only under `bin/verify/evidence/` and `/tmp`. A second job comments the verdict table on the merged PR, edited in place on a re-run, and opens an issue on a `fail`. No verdict (turn cap, crash, malformed output) turns that job red. The evidence is uploaded as the `post-merge-qa-evidence` artifact.
+
+QA is off, with a notice, until the repository has the `CLAUDE_CODE_OAUTH_TOKEN` secret. To replay a merged PR, run the workflow by hand with its number. To reproduce the agent's view locally, run `run.sh` for the features `select` prints; the agent sees nothing else.

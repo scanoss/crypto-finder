@@ -227,6 +227,9 @@ not in the parser.
   (`.claude/skills/verify/scripts/run.sh <id>`). Check it before pushing with
   `go run ./scripts/featuremap check-pr --base origin/main --head HEAD --body-file <file>`;
   the `PR hygiene` workflow runs the same check.
+- After the merge, the `Post-merge QA` workflow drives the touched features with an agent
+  and comments a verdict per feature on the PR; a `fail` opens an issue. See "Post-merge
+  QA" in `.claude/skills/verify/SKILL.md`.
 - Stop and ask the owner after three red fix-push rounds on one PR, or at a design decision.
 - Once merge risk lands, high-risk PRs wait for the owner to merge them.
 

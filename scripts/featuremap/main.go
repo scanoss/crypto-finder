@@ -22,6 +22,8 @@
 //	go run ./scripts/featuremap check-docs
 //	go run ./scripts/featuremap check-pr --base <sha> --head <sha> --body-file <path>
 //	go run ./scripts/featuremap replay [--rev origin/main] [-n 60]
+//	go run ./scripts/featuremap select --base <rev> --head <rev> [--max 5]
+//	go run ./scripts/featuremap qa-result --file <claude -p output>
 //
 // check-docs fails unless every feature file has the five H2 sections of the
 // map's README, in order, its "## Code paths" lists at least one backticked glob,
@@ -40,6 +42,18 @@
 // commits of rev against its parent, with an empty body, and prints how many
 // features each commit would have asked for and which globs matched most often.
 // Run it after changing globs.
+//
+// select prints, space-separated, the features the diff from base to head
+// touches, with the same matching as check-pr: at most --max of them, in id
+// order, the rest named on stderr. It prints an empty line when the change
+// touches no feature. The post-merge QA workflow drives what it prints.
+//
+// qa-result reads the JSON that `claude -p --output-format json --json-schema`
+// wrote for the post-merge QA and prints "structured_output=<verdicts>" and
+// "usage=<turns, duration, tokens>" for GITHUB_OUTPUT. A missing file, a run
+// that hit the turn cap and an answer outside the schema print
+// "structured_output={}", which the workflow's report job fails on. It exits 0
+// either way, so the evidence still uploads.
 //
 // Globs follow git pathspec glob rules, anchored at the repository root: "*",
 // "?" and "[...]" match within one path segment, and a "**" segment matches
@@ -91,7 +105,10 @@ func (p *printer) printf(format string, a ...any) {
 // errFailed marks a check that ran and found problems, already printed.
 var errFailed = errors.New("check failed")
 
-const usage = "usage: featuremap check-docs | check-pr --base SHA --head SHA --body-file PATH | replay [--rev REV] [-n N]"
+// errUsage marks arguments a subcommand refused; it exits 2.
+var errUsage = errors.New("usage")
+
+const usage = "usage: featuremap check-docs | check-pr --base SHA --head SHA --body-file PATH | replay [--rev REV] [-n N] | select --base REV --head REV [--max N] | qa-result --file PATH"
 
 // run runs one subcommand and returns its exit code. Output that could not be
 // written turns a success into a failure.
@@ -117,6 +134,8 @@ func dispatch(args []string, stdout, stderr *printer) int {
 	bodyFile := fs.String("body-file", "", "file holding the PR body, for check-pr")
 	rev := fs.String("rev", "origin/main", "branch to replay, for replay")
 	n := fs.Int("n", 60, "number of first-parent commits to replay, for replay")
+	limit := fs.Int("max", 5, "most features one run drives, for select")
+	file := fs.String("file", "", "the agent's JSON output, for qa-result")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
@@ -132,12 +151,20 @@ func dispatch(args []string, stdout, stderr *printer) int {
 		err = runCheckPR(*root, *base, *head, *bodyFile, stdout)
 	case "replay":
 		err = runReplay(*root, *rev, *n, stdout)
+	case "select":
+		err = runSelect(*root, *base, *head, *limit, stdout, stderr)
+	case "qa-result":
+		err = runQAResult(*file, stdout, stderr)
 	default:
 		stderr.println(usage)
 		return 2
 	}
 	if err == nil {
 		return 0
+	}
+	if errors.Is(err, errUsage) {
+		stderr.println(err)
+		return 2
 	}
 	if !errors.Is(err, errFailed) {
 		stderr.println("featuremap:", err)
