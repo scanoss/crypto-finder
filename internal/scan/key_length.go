@@ -392,13 +392,29 @@ func resolvedKeyLengthFromProducer(ctx *exportBuildContext, node *exportSourceNo
 				ParameterIndex: *role.Index,
 			},
 		}
-		if bits, ok := resolveContractKeyBits(argument.Value, role.Contributes.Derivation); ok {
+		if bits, ok := resolveContractKeyBits(producerArgumentValue(argument), role.Contributes.Derivation); ok {
 			resolved.Bits = &bits
 			resolved.Provenance = keyLengthProvenanceConstant
 		}
 		return resolved
 	}
 	return nil
+}
+
+// producerArgumentValue returns the text a producer's argument stands for. A
+// literal is its own value. A variable, field or parameter
+// (`new ECGenParameterSpec(curve)` inside a helper) stands for the one value
+// its sources agree on, which for a parameter is the value every call site
+// passes. A call result keeps its expression: derivations such as curve
+// constructors read the call itself.
+func producerArgumentValue(argument *exportSourceNode) string {
+	switch argument.Type {
+	case sourceNodeTypeVariable, sourceNodeTypeField, sourceNodeTypeParameter:
+		if value, ok := resolveSimpleExportSourceValueNode(*argument); ok {
+			return value
+		}
+	}
+	return argument.Value
 }
 
 func sourceNodeLine(node *exportSourceNode) int {

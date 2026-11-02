@@ -1,8 +1,10 @@
 # shellcheck shell=bash disable=SC2016 # sourced by run.sh; jq filters stay single-quoted
 # Driver for features/callgraph-export.md. Sourced by run.sh.
 #
-# Fixture: testdata/projects/transitive_reachability/go with
-# --scan-dependencies, so chains cross app -> liba -> libb.
+# Fixtures: testdata/projects/transitive_reachability/go with
+# --scan-dependencies, so chains cross app -> liba -> libb; and
+# testdata/projects/key_params_across_methods/java, whose key sizes and curves
+# are fixed in a different method from the KeyPairGenerator the rule matches.
 
 drive() {
 	copy_fixture "$FIXTURES/transitive_reachability/go"
@@ -47,4 +49,22 @@ drive() {
 	expect_jq "--export-callgraph-max-chains 1 caps every finding at one chain" "$EVID/callgraph-6.14.json" \
 		'all(.finding_graphs[]; ((.call_chains // []) | length) <= 1)'
 	expect_jq "--export-callgraph-entry-points adds crypto_entry_points" "$EVID/callgraph-6.14.json" 'has("crypto_entry_points")'
+
+	# 3. Key size and curve resolved across methods (Java, no dependencies).
+	# Each finding's size is read the way consumers read it: finding_graphs[]
+	# .supporting_call_ids joined to supporting_calls[].supporting_call
+	# .resolved_key_length. "none" means no supporting call carries bits.
+	cp -R "$FIXTURES/key_params_across_methods/java" "$BOX/work/keyparams"
+	local keys="$EVID/callgraph-key-params.json"
+	cf export-key-params --error-format json scan --scanner opengrep --no-remote-rules --findings-cache none --languages java \
+		--rules "$RULES_DIR/key-params-across-methods.yaml" --output "$EVID/findings-key-params.json" --export-callgraph "$keys" "$BOX/work/keyparams"
+	expect "key-params scan exit code" "$CF_EXIT" 0
+	expect "resolved key bits per KeyPairGenerator finding (line:bits)" \
+		"$(jq -r -n --slurpfile f "$EVID/findings-key-params.json" --slurpfile g "$keys" '
+			($g[0].supporting_calls // [] | map({key: .supporting_id, value: .supporting_call.resolved_key_length.bits}) | from_entries) as $bits
+			| [$f[0].findings[].cryptographic_assets[] | .finding_id as $id
+			   | ([$g[0].finding_graphs[] | select(.finding_id == $id) | .supporting_call_ids[]? | $bits[.] // empty] | unique) as $b
+			   | "\(.start_line):\(if ($b | length) == 1 then $b[0] else "none" end)"]
+			| sort_by(split(":")[0] | tonumber) | join(",")' 2>/dev/null)" \
+		"14:3072,21:4096,28:2048,33:none,40:3072,47:384"
 }
