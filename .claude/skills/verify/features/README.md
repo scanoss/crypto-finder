@@ -34,7 +34,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 2. `How to get to it (user POV)` lists the commands and flags a user types.
 3. `Driving it with run.sh` starts with `Preconditions:` and pairs each user action with the exact invocation and the observable result the driver asserts.
 4. `Gotchas` lists traps that waste or invalidate a run.
-5. `Code paths` lists repo-relative globs of the code that implements the feature: its own commands, packages and handlers. It leaves out shared primitives (`internal/failure`, `internal/utils`, `internal/config`), generated code and tests. Use it to decide which features a diff touches.
+5. `Code paths` lists repo-relative globs of the code that implements the feature: its own commands, packages and handlers. It leaves out shared primitives (`internal/failure`, `internal/utils`, `internal/config`), the per-library knowledge-base YAML under `internal/callgraph/contracts/<ecosystem>/` (no drive exercises one library's entry, and it is validated when it loads), generated code and tests. `go run ./scripts/featuremap check-pr` uses these globs to decide which features a diff touches; see "How the map is checked" below.
 
 ## Features
 
@@ -44,3 +44,11 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [convert-cbom](./convert-cbom.md): `convert` and `scan --format cyclonedx` to a CycloneDX 1.7 CBOM.
 - [cbom-from-sbom](./cbom-from-sbom.md): the `cbom` subcommand building a CBOM for an SBOM's components from API-mined findings (driven against a local stub).
 - [callgraph-export](./callgraph-export.md): `--export-callgraph` (schema 6.18 / 6.14), chain budget, entry-point index, and `--export-graph-fragment`.
+
+## How the map is checked
+
+`go run ./scripts/featuremap check-docs` fails when a feature file lacks one of the five sections or has them out of order, when its `Code paths` lists no backticked glob, when a glob matches no file of `git ls-files`, or when the `Features` list above does not link exactly the feature files. Run it after editing this directory.
+
+`go run ./scripts/featuremap check-pr --base <sha> --head <sha> --body-file <file>` maps the files a pull request changes to features through their globs. A rename counts its old and new path; `*_test.go` and `testdata/` never count. The PR body must then name each touched feature under `## Evidence`, as `<id>: <evidence>` or `<id>: N/A: <reason>`. An id counts only as a whole token, so `reachability-dependencies` does not name a feature called `reachability`. The `PR hygiene` workflow runs both checks.
+
+Globs follow git pathspec glob rules, anchored at the repository root: `*`, `?` and `[...]` stay within one path segment, and a `**` segment matches zero or more segments. Err narrow. A glob that is too wide costs every PR an `N/A` line; one that is too narrow lets a change through unnamed. After changing globs, run `go run ./scripts/featuremap replay --rev origin/main -n 60` and check how many recent commits would have asked for each feature and which globs matched most.

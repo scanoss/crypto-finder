@@ -53,7 +53,10 @@ Preconditions:
 - `internal/engine/orchestrator.go`
 - `internal/scan/export.go`
 - `internal/scan/export_ecosystems.go`
-- `internal/callgraph/**`
+- `internal/callgraph/*.go`
+- `internal/callgraph/contracts/contracts.go`
+- `internal/callgraph/entrypoints/**`
+- `internal/engine/rule_entrypoint_synthesis*.go`
 - `pkg/graphfrag/callgraph_export.go`
 - `pkg/graphfrag/stitch*.go`
 - `pkg/graphfrag/ingest.go`
