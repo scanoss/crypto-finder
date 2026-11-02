@@ -1,0 +1,286 @@
+name: Post-merge QA
+
+# After a merge to main, an agent drives the verify features the change touched
+# (.claude/skills/verify/features/, matched by their `## Code paths` with
+# `go run ./scripts/featuremap select`) through the verify skill's run.sh, the
+# way an engineer does before calling a PR done, and reports one verdict per
+# feature on the merged PR. A `fail` opens an issue. A merge that touches no
+# feature stops before anything is built or installed.
+#
+# QA IS OFF until the owner adds the CLAUDE_CODE_OAUTH_TOKEN repository secret
+# (from `claude setup-token` run as the CI Claude seat); until then the job
+# prints a notice and stops. The QA_MODEL repository variable picks the model
+# (default `haiku`), QA_MAX_FEATURES caps the features one run drives (default
+# 5) and QA_MAX_TURNS caps the agent's turns (default 80).
+#
+# The agent is the Claude Code CLI, installed with npm at the version Earnie
+# pins, on the subscription seat (no API key, no per-run bill). Not
+# anthropics/claude-code-action: it pulls oven-sh/setup-bun, which an
+# organization allowing only its own and GitHub's actions refuses.
+#
+# The agent's shell is not the boundary. The boundaries are: merged code only
+# (never pull_request); the verify skill's guard, which refuses remote rules,
+# real API keys and API URLs other than a local stub; a job token that can only
+# read; file writes limited to the evidence directory and /tmp; and a second
+# job, which runs no agent, as the only writer.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "A merged PR to run QA for"
+        required: true
+
+concurrency:
+  # One run per merged commit; a later merge never cancels an earlier one's QA.
+  group: ${{ github.workflow }}-${{ github.sha }}-${{ inputs.pr }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    name: post-merge QA
+    # Read only: pull-requests to find the merged PR of a commit.
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OPENGREP_VERSION: v1.22.0
+      OPENGREP_AMD64_SHA256: 45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319
+    outputs:
+      pr: ${{ steps.change.outputs.pr }}
+      sha: ${{ steps.change.outputs.sha }}
+      ids: ${{ steps.features.outputs.ids }}
+      left: ${{ steps.features.outputs.left }}
+      result: ${{ steps.result.outputs.structured_output }}
+      usage: ${{ steps.result.outputs.usage }}
+      evidence: ${{ steps.upload.outputs.artifact-url }}
+    steps:
+      # The merged PR and the range it changed. main squash-merges, so a PR's
+      # change is its merge commit against that commit's first parent. A push
+      # without a PR is the pushed range.
+      - name: Find the change
+        id: change
+        uses: actions/github-script@v7
+        env:
+          PR_INPUT: ${{ inputs.pr }}
+          BEFORE: ${{ github.event.before }}
+        with:
+          script: |
+            let pr = null;
+            if (process.env.PR_INPUT) {
+              pr = (await github.rest.pulls.get({ ...context.repo, pull_number: Number(process.env.PR_INPUT) })).data;
+              if (!pr.merged_at) { core.setFailed(`PR #${pr.number} is not merged`); return; }
+            } else {
+              const prs = (await github.rest.repos.listPullRequestsAssociatedWithCommit({ ...context.repo, commit_sha: context.sha })).data;
+              pr = prs.find((p) => p.merged_at && p.base.ref === 'main') || null;
+            }
+            const sha = pr ? pr.merge_commit_sha : context.sha;
+            const before = process.env.BEFORE || '';
+            const base = !pr && /^[0-9a-f]{40}$/.test(before) && !/^0+$/.test(before) ? before : `${sha}^1`;
+            core.setOutput('pr', pr ? String(pr.number) : '');
+            core.setOutput('sha', sha);
+            core.setOutput('base', base);
+      # The binary is built from the commit under test: a run by hand for an
+      # older PR checks out that PR's merge commit, not main's tip.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.change.outputs.sha }}
+          fetch-depth: 0
+      # The QA tooling comes from the workflow's own commit, which an older
+      # merge commit may predate. The feature files stay the tested commit's.
+      - name: Use this workflow's QA tooling
+        if: steps.change.outputs.sha != github.sha
+        run: git checkout "$GITHUB_SHA" -- scripts/featuremap .github/post-merge-qa.md .claude/skills/verify/scripts
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.x
+      - name: Pick the features
+        id: features
+        env:
+          QA_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          BASE: ${{ steps.change.outputs.base }}
+          HEAD: ${{ steps.change.outputs.sha }}
+          MAX: ${{ vars.QA_MAX_FEATURES || 5 }}
+        run: |
+          set -euo pipefail
+          go run ./scripts/featuremap select --base "$BASE" --head "$HEAD" --max "$MAX" \
+            > "$RUNNER_TEMP/qa-ids.txt" 2> "$RUNNER_TEMP/qa-left.txt"
+          ids="$(cat "$RUNNER_TEMP/qa-ids.txt")"
+          left="$(sed -n 's/^not driven this run (over --max [0-9]*): //p' "$RUNNER_TEMP/qa-left.txt")"
+          cat "$RUNNER_TEMP/qa-left.txt" >&2
+          if [ -n "$ids" ] && [ "$QA_KEY" != true ]; then
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not set; post-merge QA is off (would drive: $ids)."
+            ids=""
+          fi
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+          echo "left=$left" >> "$GITHUB_OUTPUT"
+          if [ -z "$ids" ]; then echo "::notice::Nothing to drive."; fi
+      # opengrep exactly as nightly-e2e.yml and Dockerfile.test install it. Go
+      # is set up above; python3 (with venv), cargo and node come with the
+      # runner, which covers every language the drives use. Java is not driven.
+      - name: Install pinned opengrep
+        if: steps.features.outputs.ids != ''
+        run: |
+          install_dir="$HOME/.opengrep/cli/${OPENGREP_VERSION}"
+          mkdir -p "$install_dir"
+          curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86" -o "$install_dir/opengrep"
+          echo "${OPENGREP_AMD64_SHA256}  $install_dir/opengrep" | sha256sum -c -
+          chmod a+x "$install_dir/opengrep"
+          "$install_dir/opengrep" --version
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Build the binary
+        if: steps.features.outputs.ids != ''
+        run: |
+          set -euo pipefail
+          bash .claude/skills/verify/scripts/build.sh
+          bash .claude/skills/verify/scripts/doctor.sh
+      - name: Write the prompt
+        if: steps.features.outputs.ids != ''
+        env:
+          PR: ${{ steps.change.outputs.pr }}
+          SHA: ${{ steps.change.outputs.sha }}
+          IDS: ${{ steps.features.outputs.ids }}
+        run: |
+          set -euo pipefail
+          change="a direct push"; [ -n "$PR" ] && change="PR #$PR"
+          sed -e "s|{{CHANGE}}|$change|" -e "s|{{SHA}}|$SHA|" -e "s|{{FEATURES}}|$IDS|" \
+            .github/post-merge-qa.md > "$RUNNER_TEMP/qa-prompt.md"
+      - name: Install Claude Code
+        if: steps.features.outputs.ids != ''
+        run: npm install -g @anthropic-ai/claude-code@2.1.312
+      # Its own timeout, inside the job's: a job that times out counts as
+      # cancelled, and the evidence and the report would be lost with it.
+      # Write and Edit reach only the evidence and /tmp: file-path permissions
+      # are Edit(...) rules, which govern Write too, and a bare Edit or Write
+      # would grant every path. No subagents: one agent, one bill. A run that
+      # hits the turn cap reports no verdict, which fails the report job.
+      - name: Drive the features
+        id: qa
+        if: steps.features.outputs.ids != ''
+        timeout-minutes: 30
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ""
+          QA_MODEL: ${{ vars.QA_MODEL || 'haiku' }}
+          # A config directory of the job's own: no login or settings of the
+          # runner user's leak in, and nothing is left behind.
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude
+          DISABLE_AUTOUPDATER: "1"
+          DO_NOT_TRACK: "1"
+          MAX_TURNS: ${{ vars.QA_MAX_TURNS || 80 }}
+        run: |
+          set -uo pipefail
+          claude -p "$(cat "$RUNNER_TEMP/qa-prompt.md")" --model "${QA_MODEL:-haiku}" --max-turns "$MAX_TURNS" \
+            --allowedTools "Read,Glob,Grep,Edit(/${{ github.workspace }}/bin/verify/evidence/**),Edit(//tmp/**),Bash(bash .claude/skills/verify/scripts/*),Bash(jq:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*)" \
+            --disallowedTools Agent \
+            --json-schema '{"type":"object","required":["features"],"properties":{"features":{"type":"array","items":{"type":"object","required":["id","verdict","summary"],"properties":{"id":{"type":"string"},"verdict":{"enum":["pass","fail","unreachable"]},"summary":{"type":"string"}}}}}}' \
+            --output-format json > "$RUNNER_TEMP/qa-result.json" && status=0 || status=$?
+          echo "claude exited $status"
+          exit "$status"
+      # The verdicts, or "{}": the report job reads them. A failed agent still
+      # reaches this step, so its error and turn count are in the log.
+      - name: Read the verdicts
+        id: result
+        if: always() && steps.features.outputs.ids != ''
+        run: go run ./scripts/featuremap qa-result --file "$RUNNER_TEMP/qa-result.json" >> "$GITHUB_OUTPUT"
+      # Only the evidence leaves the runner. The drives refuse real API keys,
+      # so the only secret that could reach it is the agent's own token: if it
+      # appears anywhere, everything is deleted and nothing is uploaded.
+      - name: Check the evidence holds no secret
+        id: guard
+        if: always() && steps.features.outputs.ids != ''
+        env:
+          QA_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          evidence="$GITHUB_WORKSPACE/bin/verify/evidence"
+          [ -d "$evidence" ] || exit 0
+          if [ -n "$QA_KEY" ] && grep -rqaF -- "$QA_KEY" "$evidence"; then
+            echo "::error::the agent's token reached the QA evidence; deleting it, nothing is uploaded."
+            rm -rf "$evidence"
+            exit 1
+          fi
+      - name: Upload the evidence
+        id: upload
+        if: ${{ !cancelled() && steps.features.outputs.ids != '' && steps.guard.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-merge-qa-evidence
+          path: ${{ github.workspace }}/bin/verify/evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # The only job that can write, and it runs no agent: one comment on the merged
+  # PR (edited in place on a re-run), and an issue for a `fail`. No verdict at
+  # all (turn cap, crash, malformed output, a failed build) fails the job.
+  report:
+    name: post-merge QA report
+    needs: qa
+    if: ${{ always() && needs.qa.outputs.ids != '' }}
+    permissions:
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report
+        uses: actions/github-script@v7
+        env:
+          RESULT: ${{ needs.qa.outputs.result }}
+          USAGE: ${{ needs.qa.outputs.usage }}
+          PR: ${{ needs.qa.outputs.pr }}
+          SHA: ${{ needs.qa.outputs.sha }}
+          IDS: ${{ needs.qa.outputs.ids }}
+          LEFT: ${{ needs.qa.outputs.left }}
+          ARTIFACT: ${{ needs.qa.outputs.evidence }}
+        with:
+          script: |
+            const marker = '<!-- post-merge-qa -->';
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            let features = [];
+            try { features = JSON.parse(process.env.RESULT || '{}').features || []; } catch (e) { features = []; }
+            let usage = {};
+            try { usage = JSON.parse(process.env.USAGE || '{}'); } catch (e) { usage = {}; }
+            const icon = { pass: '✅', fail: '❌', unreachable: '⚪' };
+            const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+            const ids = process.env.IDS.split(' ').filter(Boolean);
+            const rows = features.map((f) => `| \`${cell(f.id)}\` | ${icon[f.verdict] || '?'} ${f.verdict} | ${cell(f.summary)} |`);
+            const missing = ids.filter((id) => !features.some((f) => f.id === id));
+            const evidence = process.env.ARTIFACT ? `[evidence](${process.env.ARTIFACT})` : 'no evidence uploaded';
+            const agent = usage.turns !== undefined ? `Agent: ${usage.turns} turns, ${Math.round((usage.duration_ms || 0) / 1000)}s. <!-- post-merge-qa-usage ${JSON.stringify({ ...usage, run: context.runId })} -->` : '';
+            const body = [
+              marker,
+              `**Post-merge QA** at \`${process.env.SHA.slice(0, 9)}\`: [run](${run}), ${evidence}`,
+              agent,
+              process.env.LEFT ? `Not driven (over QA_MAX_FEATURES): ${process.env.LEFT}` : '',
+              '',
+              '| Feature | Verdict | What the agent saw |',
+              '|---|---|---|',
+              ...rows,
+              ...missing.map((id) => `| \`${id}\` | ❓ no verdict | the agent did not report it |`),
+            ].join('\n');
+            if (process.env.PR) {
+              const issue_number = Number(process.env.PR);
+              const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number, per_page: 100 });
+              const mine = comments.find((c) => c.user && c.user.type === 'Bot' && (c.body || '').startsWith(marker));
+              if (mine) await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body });
+              else await github.rest.issues.createComment({ ...context.repo, issue_number, body });
+            }
+            await core.summary.addRaw(body).write();
+            const failed = features.filter((f) => f.verdict === 'fail');
+            if (failed.length) {
+              const where = process.env.PR ? `#${process.env.PR}` : process.env.SHA.slice(0, 9);
+              const title = `Post-merge QA failed after ${where}: ${failed.map((f) => f.id).join(', ')}`;
+              const open = await github.paginate(github.rest.issues.listForRepo, { ...context.repo, state: 'open', per_page: 100 });
+              const known = open.find((i) => !i.pull_request && i.title === title);
+              if (known) await github.rest.issues.createComment({ ...context.repo, issue_number: known.number, body });
+              else await github.rest.issues.create({ ...context.repo, title, body });
+            }
+            if (!features.length) core.setFailed(`no verdict from the QA agent: ${run}`);
+            else if (missing.length) core.setFailed(`no verdict for ${missing.join(', ')}`);
