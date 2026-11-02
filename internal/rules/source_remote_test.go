@@ -93,7 +93,7 @@ func newRemoteRuleSourceTestClient(
 		}),
 	}
 
-	return api.NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+	return api.NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient).WithRetryDelay(time.Millisecond)
 }
 
 func TestNewRemoteRuleSource(t *testing.T) {

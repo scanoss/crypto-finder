@@ -49,10 +49,14 @@ RUN go version && \
     semgrep --version && \
     opengrep --version
 
+# The race runtime sleeps 1s before every process exit by default. Tests that
+# re-exec the test binary as a fake scanner paid it once per run.
+ENV GORACE=atexit_sleep_ms=0
+
 # Set working directory
 WORKDIR /workspace
 
-# Default command runs tests. internal/callgraph alone takes about 10 minutes
-# under -race with coverage on CI runners, which is go test's default
-# per-package timeout.
+# Default command runs tests. The 30m timeout is headroom over go test's
+# 10-minute per-package default, not an expected duration: the whole suite
+# takes a few minutes under -race with coverage on 4 cores.
 CMD ["go", "test", "-v", "-race", "-timeout", "30m", "-coverprofile=coverage.out", "-covermode=atomic", "./..."]
