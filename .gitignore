@@ -10,6 +10,10 @@ coverage.html
 tmp/
 .*/
 !.github
+# Track the shared Claude Code settings (the merge hook); keep local and agent state ignored.
+!.claude/
+.claude/*
+!.claude/settings.json
 .idea/
 demo/
 # Local Pi runtime state

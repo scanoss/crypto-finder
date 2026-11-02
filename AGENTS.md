@@ -207,6 +207,23 @@ matching and a chain-root/best-resolved heuristic — but precision on multi-cal
 drops. Library-specific fluent/return-type resolution belongs in the contract KB above,
 not in the parser.
 
+## Pull requests and merging
+
+`main` has no branch protection; this rule and `scripts/mergeready` are the merge gate.
+
+- The agent that opens a PR drives it to mergeable: every check green, no merge
+  conflict, and every review comment either fixed or answered with a reply that names
+  the fixing commit or says why not.
+- Before merging, run `go run ./scripts/mergeready check --pr <n>`. It exits 0 only when
+  the PR is ready and otherwise lists every reason.
+- A `PreToolUse` hook in `.claude/settings.json` runs the same check on any Bash command
+  that merges a PR, and blocks it when the PR is not ready or cannot be identified. Fix
+  the reasons; never work around the hook. It reads commands as text, so write text that
+  only mentions a merge (a commit message, a PR body) with a file tool, not an `echo`.
+- The `Merge audit` workflow comments on any PR that merged before its checks were green.
+- Stop and ask the owner after three red fix-push rounds on one PR, or at a design decision.
+- Once merge risk lands, high-risk PRs wait for the owner to merge them.
+
 ## Agent skills
 
 ### Issue tracker
