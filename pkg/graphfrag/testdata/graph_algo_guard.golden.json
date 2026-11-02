@@ -1,5 +1,5 @@
 {
-  "graph_algo_version": "graph-algo-12",
+  "graph_algo_version": "graph-algo-13",
   "ecosystems": {
     "c": {
       "sha256": "8ba67f18003dc8c422e9409c0d5f3d1262ae289843488d5f138abe22bcb38d34",
@@ -38,9 +38,9 @@
       "external_calls": 11
     },
     "rust": {
-      "sha256": "7ab5ad13f249ccc6e3ba48ae6adf51c3a1514b66ddd226478a3182ff123ff17a",
+      "sha256": "c89d74d978b784f62cd377c077d503ba5a3a51fb0ee3e93a1d1091577877a441",
       "functions": 5,
-      "internal_edges": 1,
+      "internal_edges": 3,
       "external_calls": 11
     }
   }
