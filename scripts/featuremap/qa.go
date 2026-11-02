@@ -37,6 +37,9 @@ func selectFeatures(features []feature, changed []string, limit int) (chosen, le
 // touched, with the same matching check-pr uses. Over limit, the rest are named
 // on stderr and not printed, so one large merge cannot run up the agent's turns.
 func runSelect(root, base, head string, limit int, stdout, stderr *printer) error {
+	if base == "" || head == "" || limit < 1 {
+		return fmt.Errorf("%w: select needs --base, --head and a --max of at least 1", errUsage)
+	}
 	features, err := loadRepoFeatures(root)
 	if err != nil {
 		return err
@@ -139,10 +142,13 @@ func truncate(s string, n int) string {
 }
 
 // runQAResult prints parseQAResult's outputs on stdout (for GITHUB_OUTPUT) and
-// its notices on stderr. It always succeeds: a missing verdict is the report
+// its notices on stderr. Given a --file, it succeeds: a missing verdict is the report
 // job's failure, so the evidence still uploads.
 func runQAResult(file string, stdout, stderr *printer) error {
-	raw, err := os.ReadFile(file) //nolint:gosec // G703: CI helper; the result file is a flag
+	if file == "" {
+		return fmt.Errorf("%w: qa-result needs --file", errUsage)
+	}
+	raw, err := os.ReadFile(file) // #nosec G703 -- CI helper; the result file is a flag
 	outputs, notices := parseQAResult(raw, err)
 	for _, n := range notices {
 		stderr.println(n)

@@ -86,7 +86,7 @@ func (j ghJob) step(t *testing.T, name string) (int, ghStep) {
 
 func TestQAWorkflowRunsOnlyOnMergedCode(t *testing.T) {
 	w, _ := loadQAWorkflow(t)
-	var events []string
+	events := make([]string, 0, len(w.On))
 	for e := range w.On {
 		events = append(events, e)
 	}

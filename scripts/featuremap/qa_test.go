@@ -36,7 +36,9 @@ func TestSelectFeatures(t *testing.T) {
 		{
 			"over the cap the rest are named, not driven",
 			[]string{"internal/callgraph/builder.go", "internal/dependency/go/mod.go", "internal/cli/scan.go"},
-			2, []string{"reachability", "reachability-dependencies"}, []string{"scan"},
+			2,
+			[]string{"reachability", "reachability-dependencies"},
+			[]string{"scan"},
 		},
 	}
 	for _, tt := range tests {

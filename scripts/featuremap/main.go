@@ -105,6 +105,9 @@ func (p *printer) printf(format string, a ...any) {
 // errFailed marks a check that ran and found problems, already printed.
 var errFailed = errors.New("check failed")
 
+// errUsage marks arguments a subcommand refused; it exits 2.
+var errUsage = errors.New("usage")
+
 const usage = "usage: featuremap check-docs | check-pr --base SHA --head SHA --body-file PATH | replay [--rev REV] [-n N] | select --base REV --head REV [--max N] | qa-result --file PATH"
 
 // run runs one subcommand and returns its exit code. Output that could not be
@@ -149,16 +152,8 @@ func dispatch(args []string, stdout, stderr *printer) int {
 	case "replay":
 		err = runReplay(*root, *rev, *n, stdout)
 	case "select":
-		if *base == "" || *head == "" || *limit < 1 {
-			stderr.println("select needs --base, --head and a --max of at least 1")
-			return 2
-		}
 		err = runSelect(*root, *base, *head, *limit, stdout, stderr)
 	case "qa-result":
-		if *file == "" {
-			stderr.println("qa-result needs --file")
-			return 2
-		}
 		err = runQAResult(*file, stdout, stderr)
 	default:
 		stderr.println(usage)
@@ -166,6 +161,10 @@ func dispatch(args []string, stdout, stderr *printer) int {
 	}
 	if err == nil {
 		return 0
+	}
+	if errors.Is(err, errUsage) {
+		stderr.println(err)
+		return 2
 	}
 	if !errors.Is(err, errFailed) {
 		stderr.println("featuremap:", err)
