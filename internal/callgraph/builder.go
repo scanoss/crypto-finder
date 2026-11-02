@@ -590,7 +590,7 @@ func (b *Builder) skipWalkDirectory(path, name string) bool {
 	if b.skipMatcher == nil {
 		return false
 	}
-	return b.skipMatcher.ShouldSkip(filepath.ToSlash(path), true)
+	return skip.ShouldSkipUnder(b.skipMatcher, b.packageRoot, path, true)
 }
 
 func (b *Builder) collectParseDirs(dir, importPath string) []parseDirWork {
@@ -866,7 +866,7 @@ func (b *Builder) skipSourceFile(analysis *FileAnalysis) bool {
 	if b.skipMatcher == nil {
 		return false
 	}
-	return b.skipMatcher.ShouldSkip(filepath.ToSlash(analysis.FilePath), false)
+	return skip.ShouldSkipUnder(b.skipMatcher, b.packageRoot, analysis.FilePath, false)
 }
 
 // applyEcosystemAnalysisHooks runs the per-analysis, ecosystem-specific

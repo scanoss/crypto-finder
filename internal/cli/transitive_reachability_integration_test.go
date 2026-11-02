@@ -50,6 +50,13 @@ type transitiveFinding struct {
 	knownGap string
 }
 
+// npmBareSpecifierGap is why libb's live npm hashing reads unreachable: a call
+// through a package name (`transliba.used()` after `require("transliba")`) is
+// keyed by the bare specifier, transliba.used, while the dependency declares
+// transliba/index.used, so the call graph never joins the app to liba nor liba
+// to libb.
+const npmBareSpecifierGap = "calls through an npm package name are not joined to the package's main module, so the app never reaches liba or libb"
+
 // transitiveReachabilityCase names a fixture under
 // testdata/projects/transitive_reachability/<language>: app/ is the target, it
 // depends on liba/, which depends on libb/. Only app/ and libb/ hash.
@@ -63,12 +70,6 @@ type transitiveReachabilityCase struct {
 	libb     string
 	findings []transitiveFinding
 }
-
-// nodeModulesGap is why npm dependency findings read not_applicable today:
-// the call-graph builder matches the default skip names against a file's
-// absolute path, so every file under node_modules is dropped from the graph
-// and a dependency finding has no containing function.
-const nodeModulesGap = "the call-graph builder skips every file under node_modules, so dependency findings have no containing function and read not_applicable"
 
 // The moat case: app (no crypto in the path) -> liba (no crypto) -> libb
 // (crypto). libb's hashing the app reaches through liba must read reachable
@@ -120,8 +121,8 @@ func TestTransitiveReachability(t *testing.T) {
 			findings: []transitiveFinding{
 				{module: appModule, file: "index.js", line: 5, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule}},
 				{module: appModule, file: "index.js", line: 9, reachability: graphfrag.ReachabilityUnreachable},
-				{module: "translibb", file: "index.js", line: 5, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "transliba", "translibb"}, knownGap: nodeModulesGap},
-				{module: "translibb", file: "index.js", line: 9, reachability: graphfrag.ReachabilityUnreachable, knownGap: nodeModulesGap},
+				{module: "translibb", file: "index.js", line: 5, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "transliba", "translibb"}, knownGap: npmBareSpecifierGap},
+				{module: "translibb", file: "index.js", line: 9, reachability: graphfrag.ReachabilityUnreachable},
 			},
 		},
 		{

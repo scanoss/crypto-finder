@@ -31,6 +31,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 const (
@@ -258,7 +259,7 @@ func pythonSignatureFingerprintVisitor(root string, include *includeScope, diges
 		if !pythonSignatureFingerprintEligibleFile(entry) || (include != nil && !include.files[path]) {
 			return nil
 		}
-		if pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(path), false) {
+		if skip.ShouldSkipUnder(pythonDependencySkipMatcher, root, path, false) {
 			return nil
 		}
 		data, rel, ok := pythonSignatureFingerprintInput(root, path, entry)
@@ -278,7 +279,7 @@ func pythonSignatureFingerprintWalkFailure(entry fs.DirEntry) error {
 }
 
 func pythonSignatureFingerprintDir(root, path string, entry fs.DirEntry) error {
-	if path != root && (strings.HasPrefix(entry.Name(), ".") || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(path), true)) {
+	if path != root && (strings.HasPrefix(entry.Name(), ".") || skip.ShouldSkipUnder(pythonDependencySkipMatcher, root, path, true)) {
 		return fs.SkipDir
 	}
 	return nil

@@ -215,10 +215,9 @@ func pythonVenvWithDependency(t *testing.T) []string {
 // create one.
 func newPythonVenv(t *testing.T) (venv, sitePackages string) {
 	t.Helper()
-	// Not named "venv": the call-graph builder matches the default skip
-	// names against absolute paths, so a "venv" segment would drop every
-	// installed package from the graph.
-	venv = filepath.Join(t.TempDir(), "pyenv")
+	// Named "venv", a default skip name: the call graph must still take in
+	// the packages installed below it.
+	venv = filepath.Join(t.TempDir(), "venv")
 	if output, err := exec.CommandContext(t.Context(), "python3", "-m", "venv", venv).CombinedOutput(); err != nil {
 		t.Skipf("python3 -m venv unavailable: %v\n%s", err, output)
 	}

@@ -227,7 +227,7 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 
 	signatures := make(map[string]pythonSignature)
 	hierarchy := make(map[string][]string)
-	r.walkDistribution(root.Dir, root.ImportPath, newIncludeScope(root.Dir, root.IncludeFiles), parser, signatures, hierarchy)
+	r.walkDistribution(root.Dir, root.Dir, root.ImportPath, newIncludeScope(root.Dir, root.IncludeFiles), parser, signatures, hierarchy)
 
 	if r.cache != nil {
 		entry := &CachedPythonSignatureIndex{
@@ -253,9 +253,10 @@ func (r *PythonDependencyTypeResolver) indexDistribution(root PackageDir, parser
 // descending into subdirectories under the growing dotted importPath.
 // An unreadable directory degrades silently (12.6): the caller simply
 // receives whatever was indexed before the failure. A non-nil include limits
-// indexing to its files.
+// indexing to its files. The skip names apply below root only, so a
+// distribution installed in a virtualenv named venv is still indexed.
 func (r *PythonDependencyTypeResolver) walkDistribution(
-	dir, importPath string,
+	root, dir, importPath string,
 	include *includeScope,
 	parser pythonDependencyParser,
 	signatures map[string]pythonSignature,
@@ -269,7 +270,7 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 
 	for _, name := range selectPythonDistFiles(entries) {
 		full := filepath.Join(dir, name)
-		if (include != nil && !include.files[full]) || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(full), false) {
+		if (include != nil && !include.files[full]) || skip.ShouldSkipUnder(pythonDependencySkipMatcher, root, full, false) {
 			continue
 		}
 		r.indexDistributionFile(full, importPath, parser, signatures, hierarchy)
@@ -281,10 +282,10 @@ func (r *PythonDependencyTypeResolver) walkDistribution(
 		}
 		name := entry.Name()
 		child := filepath.Join(dir, name)
-		if strings.HasPrefix(name, ".") || (include != nil && !include.walk[child]) || pythonDependencySkipMatcher.ShouldSkip(filepath.ToSlash(child), true) {
+		if strings.HasPrefix(name, ".") || (include != nil && !include.walk[child]) || skip.ShouldSkipUnder(pythonDependencySkipMatcher, root, child, true) {
 			continue
 		}
-		r.walkDistribution(child, pythonDependencySubPackagePath(importPath, name), include, parser, signatures, hierarchy)
+		r.walkDistribution(root, child, pythonDependencySubPackagePath(importPath, name), include, parser, signatures, hierarchy)
 	}
 }
 
