@@ -1,0 +1,68 @@
+{
+  "measured": {
+    "date": "2026-11-02",
+    "commit": "10a06abd504275dadc358d0b5d80c005d647c11e",
+    "machine": "AMD Ryzen 9 9955HX 16-Core (32 logical cores), 92 GiB RAM, Linux 7.0.0 x86_64, go1.26.0, gcc 13.3.0, opengrep 1.22.0",
+    "method": "Three runs of `budgets.sh all`; `measured` is the highest of the three. Each run takes the median of 11 runs for startup and of 5 runs (after one warm-up) for scan wall time, and the highest peak RSS of those 5. Spread across the three runs: size identical, startup 15/15/15 ms, deps_go 305/308/306 ms and 99964/99712/99532 KB, polyglot 401/399/400 ms and 113324/113192/113288 KB."
+  },
+  "budgets": {
+    "binary_size_bytes": {
+      "kind": "deterministic",
+      "unit": "bytes",
+      "measured": 45361912,
+      "limit": 49898104,
+      "why": "Measured size plus 10%. Two builds of one tree match byte for byte; the CI runner's checkout and module-cache paths (no -trimpath in the release build) and a newer go1.26 patch move it by well under 1% (-trimpath alone saves 98656 bytes here). A breach means new code or a new dependency added over 4 MB: re-measure and raise it in the same PR only when that growth is intended."
+    },
+    "startup_help_ms": {
+      "kind": "noisy",
+      "unit": "ms",
+      "measured": 15,
+      "limit": 250,
+      "why": "CLI startup has no published threshold, so this is a loose limit: about 16 times the measured median, room for a slow shared CI runner, and still under a 300 ms stall at startup, which it must catch (planted with a sleep in main)."
+    },
+    "startup_version_ms": {
+      "kind": "noisy",
+      "unit": "ms",
+      "measured": 15,
+      "limit": 250,
+      "why": "Same reasoning as startup_help_ms: `version` must not do more work at startup than `--help`."
+    },
+    "scan_deps_go_wall_ms": {
+      "kind": "noisy",
+      "unit": "ms",
+      "measured": 308,
+      "limit": 3000,
+      "why": "Loose limit, about 10 times the measured median: a 4-core CI runner is several times slower than the measuring machine and opengrep start-up dominates. It catches a scan that starts hanging, retrying or re-resolving the dependency tree, not a 20% slowdown."
+    },
+    "scan_deps_go_peak_rss_kb": {
+      "kind": "noisy",
+      "unit": "KB",
+      "measured": 99964,
+      "limit": 200000,
+      "why": "Twice the highest measured peak. GC timing and the number of dependency workers (one per core) move it; doubling the working set on a 3-module fixture means a leak or an unbounded cache."
+    },
+    "scan_polyglot_wall_ms": {
+      "kind": "noisy",
+      "unit": "ms",
+      "measured": 401,
+      "limit": 4000,
+      "why": "Loose limit, about 10 times the measured median, for the same reasons as scan_deps_go_wall_ms; this scan builds two call graphs (Java and TypeScript)."
+    },
+    "scan_polyglot_peak_rss_kb": {
+      "kind": "noisy",
+      "unit": "KB",
+      "measured": 113324,
+      "limit": 230000,
+      "why": "About twice the highest measured peak, for the same reasons as scan_deps_go_peak_rss_kb."
+    }
+  },
+  "tracked": {
+    "ci_test_suite_seconds": {
+      "note": "Not a budget and not checked by budgets.sh: the duration of the `Run tests with coverage` step of the last 10 successful `Test & Coverage` runs on main (gh run list --workflow test.yml --branch main --status success, then the jobs API), measured 2026-11-02. Re-read it when CI feels slow.",
+      "runs": 10,
+      "median": 505.5,
+      "max": 524,
+      "min": 416
+    }
+  }
+}
