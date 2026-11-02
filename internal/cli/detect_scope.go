@@ -133,7 +133,7 @@ func buildDetectionScope(ctx context.Context, target string, entries []string) (
 		}
 	}
 
-	ignored, err := gitIgnoredPaths(ctx, targetAbs, paths)
+	ignored, err := gitIgnoredInTarget(ctx, targetAbs, paths)
 	if err != nil {
 		return nil, stats, err
 	}
@@ -183,11 +183,27 @@ func resolveDetectionEntry(target, targetAbs, entry string) (string, entryKind, 
 	return rel, entryFile, nil
 }
 
+// gitIgnoredInTarget is gitIgnoredPaths as the scanner's walk of dir sees
+// it: a dir its enclosing work tree ignores is a work tree of its own there.
+func gitIgnoredInTarget(ctx context.Context, dir string, rels []string) (map[string]struct{}, error) {
+	workTree, err := scanner.IgnoredTargetWorkTree(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := workTree.Close(); err != nil {
+			log.Warn().Err(err).Msg("could not remove a temporary Git repository")
+		}
+	}()
+	return gitIgnoredPaths(ctx, dir, rels, workTree.Env())
+}
+
 // gitIgnoredPaths returns the subset of rels, relative to dir, that git
 // ignores. Tracked files are never reported, matching the files a git-aware
 // walk lists. Outside a work tree, or without git, nothing is ignored: the
-// scanner then walks without consulting .gitignore either.
-func gitIgnoredPaths(ctx context.Context, dir string, rels []string) (map[string]struct{}, error) {
+// scanner then walks without consulting .gitignore either. env adds the
+// variables of a scanner.WorkTree, so git answers as the scanner's walk does.
+func gitIgnoredPaths(ctx context.Context, dir string, rels []string, env map[string]string) (map[string]struct{}, error) {
 	if len(rels) == 0 {
 		return nil, nil
 	}
@@ -198,6 +214,12 @@ func gitIgnoredPaths(ctx context.Context, dir string, rels []string) (map[string
 	}
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "check-ignore", "--stdin", "-z")
 	cmd.Stdin = &input
+	if len(env) > 0 {
+		cmd.Env = cmd.Environ()
+		for name, value := range env {
+			cmd.Env = append(cmd.Env, name+"="+value)
+		}
+	}
 	out, err := cmd.Output()
 	var exitErr *exec.ExitError
 	switch {
