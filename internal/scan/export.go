@@ -39,6 +39,7 @@ const (
 	sourceNodeTypeValue            = "VALUE"
 	sourceNodeTypeCallResult       = "CALL_RESULT"
 	sourceNodeTypeField            = "FIELD"
+	sourceNodeTypeVariable         = "VARIABLE"
 	callGraphExportProgress        = 100
 	callGraphExportMaxChains       = graphfrag.DefaultMaxChainsPerOp // emit budget
 	maxExportSourceResolutionDepth = 8
@@ -2374,7 +2375,8 @@ func supportingCallKeyLength(call *callGraphSupportingCall) *graphfrag.ResolvedK
 // the call graph rather than from rule metadata. It locates the finding's
 // terminal crypto call, enumerates the lifecycle calls of the crypto object it
 // identifies (see deriveObjectLifecycleCalls), and renders each as a
-// supporting-call entry.
+// supporting-call entry. When the method returns that object, its lifecycle in
+// the callers that keep it is added too (see returnedObjectLifecycleCalls).
 // When the terminal call itself fixes the key size it is appended as one more
 // entry (see terminalKeySizeSupportingCall).
 func deriveRawSupportingCallsForFinding(ctx *exportBuildContext, finding entities.Finding, asset entities.CryptographicAsset) []callGraphSupportingCall {
@@ -2397,11 +2399,15 @@ func deriveRawSupportingCallsForFinding(ctx *exportBuildContext, finding entitie
 		return nil
 	}
 	lifecycle := deriveObjectLifecycleCalls(containingFn, terminal)
+	returned := returnedObjectLifecycleCalls(ctx, containingFn, terminal)
 	contractCalls := deriveContractSupportingCalls(ctx, asset)
-	out := make([]callGraphSupportingCall, 0, len(lifecycle)+len(contractCalls))
+	out := make([]callGraphSupportingCall, 0, len(lifecycle)+len(returned)+len(contractCalls))
 	out = append(out, contractCalls...)
 	for _, c := range lifecycle {
 		out = append(out, buildDerivedSupportingCall(ctx, containingFn, c))
+	}
+	for _, site := range returned {
+		out = append(out, buildDerivedSupportingCall(ctx, site.fn, site.call))
 	}
 	if own := terminalKeySizeSupportingCall(ctx, containingFn, terminal); own != nil {
 		out = append(out, *own)
@@ -3267,8 +3273,31 @@ func resolveIncomingParameterSources(ctx *exportBuildContext, calleeID *callgrap
 			matches = append(matches, resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[parameterIndex], depth+1))
 		}
 	}
-	if len(matches) != 1 {
+	return agreedIncomingSources(matches)
+}
+
+// agreedIncomingSources picks the provenance of a parameter from its call
+// sites. One call site is its provenance. Several call sites count only when
+// every one of them passes the same constant (a literal, or a constant the
+// graph folded to one), and then the first site in caller order stands for
+// them all. Call sites that pass different values, or any value the graph
+// cannot fold, give no provenance: picking one would invent the value of the
+// others.
+func agreedIncomingSources(matches [][]callgraph.SourceNode) []callgraph.SourceNode {
+	switch len(matches) {
+	case 0:
 		return nil
+	case 1:
+		return matches[0]
+	}
+	first, ok := resolveSimpleCallgraphSourceValue(matches[0])
+	if !ok {
+		return nil
+	}
+	for _, match := range matches[1:] {
+		if value, ok := resolveSimpleCallgraphSourceValue(match); !ok || value != first {
+			return nil
+		}
 	}
 	return matches[0]
 }
@@ -3623,7 +3652,7 @@ func resolveSimpleExportSourceValueNode(node exportSourceNode) (string, bool) {
 			return "", false
 		}
 		return value, true
-	case "VARIABLE", sourceNodeTypeField, sourceNodeTypeParameter:
+	case sourceNodeTypeVariable, sourceNodeTypeField, sourceNodeTypeParameter:
 		return resolveSimpleExportSourceValue(node.SourceNodes)
 	case sourceNodeTypeCallResult:
 		return resolveDirectExportReturnValue(node.SourceNodes)
