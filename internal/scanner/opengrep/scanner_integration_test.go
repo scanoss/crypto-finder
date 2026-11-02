@@ -266,3 +266,19 @@ func TestScanner_Integration_Scan_Timeout(t *testing.T) {
 		t.Log("Warning: Expected timeout error (may pass if scan is very fast)")
 	}
 }
+
+// TestScanner_Integration_InitializeMissingXDGConfigHome pins #812: opengrep
+// fails when XDG_CONFIG_HOME names a directory that does not exist, which a
+// fresh or sandboxed environment can do.
+func TestScanner_Integration_InitializeMissingXDGConfigHome(t *testing.T) {
+	checkOpengrepAvailable(t)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "missing", "config"))
+
+	s := NewScanner()
+	if err := s.Initialize(context.Background(), scanner.Config{Timeout: 30 * time.Second}); err != nil {
+		t.Fatalf("Initialize() with a missing XDG_CONFIG_HOME: %v", err)
+	}
+	if s.version == "" {
+		t.Error("Version should be detected after initialization")
+	}
+}

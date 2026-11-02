@@ -23,7 +23,9 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -155,6 +157,7 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 		)
 	}
 	s.executablePath = path
+	ensureConfigHome(os.Getenv(configHomeEnv))
 
 	// Get opengrep version
 	s.version, err = s.discovery.get(ctx, s.executablePath, func() (string, bool, error) {
@@ -188,6 +191,7 @@ func (s *Scanner) Initialize(ctx context.Context, config scanner.Config) error {
 	}
 	if config.Env != nil {
 		s.env = maps.Clone(config.Env)
+		ensureConfigHome(s.env[configHomeEnv])
 	}
 	if config.ExtraArgs != nil {
 		s.extraArgs = slices.Clone(config.ExtraArgs)
@@ -317,6 +321,25 @@ func (s *Scanner) GetInfo() scanner.Info {
 		Name:        ScannerName,
 		Version:     s.version,
 		Description: "Static analysis tool for detecting cryptographic algorithm usage with taint analysis",
+	}
+}
+
+// configHomeEnv names the directory opengrep keeps its settings and log in.
+const configHomeEnv = "XDG_CONFIG_HOME"
+
+// ensureConfigHome creates dir, the XDG_CONFIG_HOME opengrep runs with.
+// opengrep resolves that directory at startup and exits before doing anything
+// when it does not exist, which a fresh or sandboxed environment can cause.
+// The XDG Base Directory spec asks applications to create it. A relative or
+// empty value is not a valid XDG_CONFIG_HOME and is left alone, and a
+// directory that cannot be created is left for opengrep to report.
+func ensureConfigHome(dir string) {
+	if dir == "" || !filepath.IsAbs(dir) {
+		return
+	}
+	// #nosec G703 -- dir is the user's own XDG_CONFIG_HOME, which opengrep needs to exist.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		log.Debug().Err(err).Str("dir", dir).Msg("could not create " + configHomeEnv + " for opengrep")
 	}
 }
 
