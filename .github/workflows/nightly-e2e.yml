@@ -1,7 +1,8 @@
 name: Nightly e2e
 # Runs the reachability end-to-end tests that need the network, such as the
 # Java case of TestTransitiveReachability, which downloads Maven plugins. They
-# skip on pull requests unless CRYPTO_FINDER_NETWORK_TESTS=1 is set.
+# skip on pull requests unless CRYPTO_FINDER_NETWORK_TESTS=1 is set. Also
+# holds the noisy budgets (startup, scan time, peak memory) of the verify skill.
 #
 # The tests run on the runner rather than in Dockerfile.test: the runner
 # already has Maven, python3 and cargo, and only opengrep and a JDK are added.
@@ -53,19 +54,63 @@ jobs:
           GORACE: atexit_sleep_ms=0
         run: go test -race -run 'TestTransitiveReachability|TestProjectReachabilityMatchesDependencyScan' -v ./internal/cli/
 
+  # Startup and scan timings and peak memory against the loose limits in
+  # .claude/skills/verify/budgets.json. They are too noisy for PRs; binary
+  # size runs on every PR in lint.yml.
+  budgets:
+    runs-on: ubuntu-latest
+    env:
+      OPENGREP_VERSION: v1.22.0
+      OPENGREP_AMD64_SHA256: 45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.x
+
+      - name: Install pinned opengrep
+        run: |
+          install_dir="$HOME/.opengrep/cli/${OPENGREP_VERSION}"
+          mkdir -p "$install_dir"
+          curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86" -o "$install_dir/opengrep"
+          echo "${OPENGREP_AMD64_SHA256}  $install_dir/opengrep" | sha256sum -c -
+          chmod a+x "$install_dir/opengrep"
+          "$install_dir/opengrep" --version
+          echo "$install_dir" >> "$GITHUB_PATH"
+
+      - name: Install GNU time
+        run: |
+          if [ ! -x /usr/bin/time ]; then
+            sudo apt-get update && sudo apt-get install -y time
+          fi
+
+      - name: Check the startup and scan budgets
+        run: |
+          .claude/skills/verify/scripts/build.sh
+          .claude/skills/verify/scripts/budgets.sh startup scan
+
+      - name: Upload budget evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: budgets-evidence
+          path: bin/verify/evidence/budgets/
+
   # A red nightly must be visible without opening Actions: one tracked issue,
   # opened on the first red run, commented on later red runs, and closed by the
   # next green one.
   red-nightly:
-    needs: e2e
-    if: always() && github.ref == 'refs/heads/main' && (needs.e2e.result == 'success' || needs.e2e.result == 'failure')
+    needs: [e2e, budgets]
+    if: always() && github.ref == 'refs/heads/main' && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped')
     runs-on: ubuntu-latest
     permissions:
       issues: write
     steps:
       - uses: actions/github-script@v7
         env:
-          RESULT: ${{ needs.e2e.result }}
+          RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
         with:
           script: |
             const title = 'Nightly e2e is red';
