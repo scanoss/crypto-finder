@@ -44,7 +44,7 @@ Note: `--error-format json` also disables log output and colors so stderr carrie
 
 | Stage | Pipeline phase |
 |-------|----------------|
-| `input` | CLI argument/flag validation |
+| `input` | CLI argument/flag validation, and reading the input file of `convert` and `cbom` |
 | `config` | Configuration, cache, and Java runtime initialization |
 | `rules` | Rule source loading |
 | `scan` | Language detection and scanner execution |
@@ -62,7 +62,7 @@ The stage column shows the typical stage; the stage is assigned where the error 
 | Code | Typical stage | Meaning | Typical cause |
 |------|---------------|---------|---------------|
 | `unknown_error` | `unknown` | Unclassified failure | A plain error escaped without boundary wrapping |
-| `invalid_arguments` | `input` | Flag/argument validation failed | Bad flag value, missing required flag, unknown backend/format |
+| `invalid_arguments` | `input` | Flag/argument validation failed | Bad flag value, missing required flag, unknown backend/format; an input file that `convert` or `cbom` cannot read or parse |
 | `invalid_timeout` | `input` | Unparseable duration | `--timeout` / `--max-stale-age` not in `10m` / `1h` / `30d` / `2w` form |
 | `config_initialization_failed` | `config` | Configuration could not be initialized | Unreadable/invalid config file or environment |
 | `java_runtime_config_invalid` | `config` | Java runtime selection invalid | Bad `--java-jdk-major` / malformed `--java-jdk-home <major>=<path>` |
