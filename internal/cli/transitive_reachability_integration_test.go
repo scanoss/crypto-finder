@@ -47,11 +47,14 @@ type transitiveFinding struct {
 }
 
 // transitiveReachabilityCase names a fixture under
-// testdata/projects/transitive_reachability/<language>: app/ is the target, it
+// testdata/projects/transitive_reachability/<fixture>: app/ is the target, it
 // depends on liba/, which depends on libb/. Only app/ and libb/ hash.
 type transitiveReachabilityCase struct {
 	language string
-	tools    []string
+	// fixture is the fixture directory and the subtest name. Empty means
+	// the language's own fixture.
+	fixture string
+	tools   []string
 	// needsNetwork marks a case whose toolchain downloads build plugins. It
 	// runs only when networkTestsEnv is set to 1.
 	needsNetwork bool
@@ -138,8 +141,7 @@ func TestTransitiveReachability(t *testing.T) {
 			// Maven downloads its plugins even though liba and libb are
 			// installed from the fixture, into a local repository of the
 			// test's own that the scan reaches through MAVEN_OPTS. Each
-			// project has a groupId of its own: Java packages under the
-			// application's groupId count as application code.
+			// project has a groupId of its own.
 			language: "java", tools: []string{"mvn", "java"}, needsNetwork: true,
 			env:  mavenRepositoryWithTransitiveChain,
 			liba: "example.transliba:transliba", libb: "example.translibb:translibb",
@@ -150,9 +152,36 @@ func TestTransitiveReachability(t *testing.T) {
 				{module: "example.translibb:translibb", file: "Hashing.java", line: 18, reachability: graphfrag.ReachabilityUnreachable},
 			},
 		},
+		{
+			// The java case with one groupId for app, liba and libb, as an
+			// in-house library has: their packages all sit under it. The
+			// groupId names no application code, so liba's unused stays a
+			// dependency function and is no chain root.
+			language: "java", fixture: "java_shared_groupid", tools: []string{"mvn", "java"}, needsNetwork: true,
+			env:  mavenRepositoryWithTransitiveChain,
+			liba: "example.shared:transliba", libb: "example.shared:translibb",
+			findings: []transitiveFinding{
+				{module: appModule, file: "Main.java", line: 19, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule}},
+				{module: appModule, file: "Main.java", line: 23, reachability: graphfrag.ReachabilityUnreachable},
+				{module: "example.shared:translibb", file: "Hashing.java", line: 13, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "example.shared:transliba", "example.shared:translibb"}},
+				{module: "example.shared:translibb", file: "Hashing.java", line: 18, reachability: graphfrag.ReachabilityUnreachable},
+			},
+		},
 	}
 	for _, tc := range cases {
-		t.Run(tc.language, func(t *testing.T) {
+		fixtureDir := tc.fixture
+		switch {
+		case fixtureDir != "":
+		case tc.language == "javascript":
+			fixtureDir = "node"
+		default:
+			fixtureDir = tc.language
+		}
+		name := tc.fixture
+		if name == "" {
+			name = tc.language
+		}
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			var missing []string
 			for _, tool := range tc.tools {
@@ -165,10 +194,6 @@ func TestTransitiveReachability(t *testing.T) {
 			}
 			if len(missing) > 0 {
 				t.Skip(strings.Join(missing, "; "))
-			}
-			fixtureDir := tc.language
-			if fixtureDir == "javascript" {
-				fixtureDir = "node"
 			}
 			work := t.TempDir()
 			fixture := filepath.Join(work, "fixture")

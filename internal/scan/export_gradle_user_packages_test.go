@@ -61,8 +61,8 @@ func TestExportUserPackages_IncludesJavaPackagesFromProjectSources(t *testing.T)
 	}
 
 	got := exportUserPackages(result)
-	if !got["crypto-finder-fixture"] {
-		t.Fatalf("user packages = %#v, want Gradle root module retained", got)
+	if _, ok := got["crypto-finder-fixture"]; ok {
+		t.Fatalf("user packages = %#v, want the Gradle project name left out once sources name the packages", got)
 	}
 	if !got["com.acme.earnie"] {
 		t.Fatalf("user packages = %#v, want Java package from project sources", got)

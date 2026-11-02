@@ -215,11 +215,12 @@ func TestProjectUserPackages_MatchesFirstPartyUniverseOfResolvedRun(t *testing.T
 	full := exportUserPackages(fixture.result(true))
 	project := projectUserPackages(fixture.result(false))
 
-	want := map[string]bool{"example.com/app": true}
-	if !maps.Equal(full, want) {
+	// The resolved run also records the dependency's package as not user
+	// code; the user code itself is the same.
+	if want := map[string]bool{"example.com/app": true, "example.com/lib": false}; !maps.Equal(full, want) {
 		t.Fatalf("resolved run user packages = %v, want %v", full, want)
 	}
-	if !maps.Equal(project, want) {
+	if want := map[string]bool{"example.com/app": true}; !maps.Equal(project, want) {
 		t.Fatalf("project user packages = %v, want %v", project, want)
 	}
 }
