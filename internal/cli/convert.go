@@ -27,6 +27,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/enricher"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/output"
 )
 
@@ -118,7 +119,7 @@ func runConvert(_ *cobra.Command, args []string) error {
 	// Determine input source
 	reader, inputSource, closeFunc, err := getInputReader(args)
 	if err != nil {
-		return err
+		return failure.Wrap(err, failure.CodeInvalidArguments, failure.StageInput, "failed to read the interim input")
 	}
 	if closeFunc != nil {
 		defer closeFunc()
@@ -128,7 +129,9 @@ func runConvert(_ *cobra.Command, args []string) error {
 	var report entities.InterimReport
 	decoder := json.NewDecoder(reader)
 	if err := decoder.Decode(&report); err != nil {
-		return fmt.Errorf("failed to parse interim JSON from %s: %w", inputSource, err)
+		return failure.Wrap(err, failure.CodeInvalidArguments, failure.StageInput,
+			fmt.Sprintf("failed to parse interim JSON from %s", inputSource),
+			failure.WithDetail("input", inputSource))
 	}
 
 	log.Info().
