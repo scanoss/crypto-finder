@@ -10,8 +10,9 @@
 - `cg-chain-route` makes the transitive chain start at `example.com/transapp.main` and end in `example.com/translibb`.
 - `cg-max-chains` caps the chains per finding with `--export-callgraph-max-chains N`.
 - `cg-entry-points` adds `crypto_entry_points` with `--export-callgraph-entry-points`, and leaves it absent by default.
-- `fragment-schema` gives the graph fragment `schema_version` `graph-fragment-1.14`, with functions, edges and crypto annotations.
+- `fragment-schema` gives the graph fragment `schema_version` `graph-fragment-1.15`, with functions, edges and crypto annotations.
 - `cg-key-params` resolves `supporting_calls[].supporting_call.resolved_key_length` for a Java `KeyPairGenerator` whose size or curve is fixed in another method: a parameter every caller fills with the same constant, and a generator a helper returns to a caller that initializes it.
+- `annotate-key-params` makes `annotate --import-fragment` re-derive the same key sizes from the scan's graph fragment, the returned generator included, through `functions[].returns_calls`.
 
 ## How to get to it (user POV)
 
@@ -24,7 +25,7 @@ Preconditions:
 
 - `doctor.sh` reports `lang go: ready`.
 - Fixture `testdata/projects/transitive_reachability/go` scanned with `--scan-dependencies`, using `testdata/rules/transitive-reachability.yaml`.
-- Fixture `testdata/projects/key_params_across_methods/java` scanned with `--languages java` (no dependencies, so no Maven), using `testdata/rules/key-params-across-methods.yaml`, which matches only `KeyPairGenerator.getInstance($ALG)`.
+- Fixture `testdata/projects/key_params_across_methods/java` scanned with `--languages java` (no dependencies, so no Maven), using `testdata/rules/key-params-across-methods.yaml`, which matches only `KeyPairGenerator.getInstance($ALG)`, then annotated with the same rules from the scan's graph fragment.
 
 - **Drive it.** Run `.claude/skills/verify/scripts/run.sh callgraph-export`. It exits 0, and `evidence/callgraph-export/verdict.txt` reads `VERDICT: PASS`.
 - **Default export plus fragment.** `scan ... --export-callgraph callgraph.json --export-graph-fragment graph-fragment.json` exits 0, with these results:
@@ -35,13 +36,14 @@ Preconditions:
   - every reachable graph has in-range `call_chain_indexes`;
   - one libb chain runs from `example.com/transapp.main` to `example.com/translibb`;
   - there is no `crypto_entry_points`.
-- **Fragment.** `graph-fragment.json` has `schema_version: "graph-fragment-1.14"`, plus non-empty `functions`, edges and `crypto_annotations`.
+- **Fragment.** `graph-fragment.json` has `schema_version: "graph-fragment-1.15"`, plus non-empty `functions`, edges and `crypto_annotations`.
 - **Legacy and options.** `--export-callgraph-interned-frames=false --export-callgraph-entry-points --export-callgraph-max-chains 1` exits 0, with these results in `callgraph-6.14.json`:
   - `schema_version` is `"6.14"`;
   - every frame of a reachable chain has `function_name`;
   - no finding has more than one chain;
   - `crypto_entry_points` is present.
-- **Key size across methods.** `scan --languages java --rules .../key-params-across-methods.yaml --output findings-key-params.json --export-callgraph callgraph-key-params.json` exits 0. Joining each `getInstance` finding's `finding_graphs[].supporting_call_ids` to `supporting_calls[].supporting_call.resolved_key_length.bits` gives `14:3072,21:4096,28:2048,33:none,40:3072,47:384` (line:bits in `Keys.java`): a literal next to `getInstance`, a size parameter both callers fill with 4096, a returned generator the caller initializes to 2048, callers that disagree (no size), a `static final` constant through a parameter, and an EC curve name through a parameter.
+- **Key size across methods.** `scan --languages java --rules .../key-params-across-methods.yaml --output findings-key-params.json --export-callgraph callgraph-key-params.json --export-graph-fragment graph-fragment-key-params.json` exits 0. Joining each `getInstance` finding's `finding_graphs[].supporting_call_ids` to `supporting_calls[].supporting_call.resolved_key_length.bits` gives `14:3072,21:4096,28:2048,33:none,40:3072,47:384` (line:bits in `Keys.java`): a literal next to `getInstance`, a size parameter both callers fill with 4096, a returned generator the caller initializes to 2048, callers that disagree (no size), a `static final` constant through a parameter, and an EC curve name through a parameter.
+- **Annotate from the fragment.** `annotate --languages java --rules .../key-params-across-methods.yaml --import-fragment graph-fragment-key-params.json --source <fixture> --output annotate-key-params.json` exits 0. Joining each `crypto_annotations[].supporting_call_ids` to `supporting_calls[].supporting_call.resolved_key_length.bits` gives the same `14:3072,21:4096,28:2048,33:none,40:3072,47:384`. A fragment without `returns_calls` (before `graph-fragment-1.15`) gives `28:none`.
 
 ## Gotchas
 
@@ -54,6 +56,9 @@ Preconditions:
 ## Code paths
 
 - `internal/cli/scan.go`
+- `internal/cli/annotate.go`
+- `internal/scan/annotate*.go`
+- `internal/scan/fragment_export.go`
 - `internal/scan/export.go`
 - `internal/scan/export_ecosystems.go`
 - `internal/scan/key_length*.go`

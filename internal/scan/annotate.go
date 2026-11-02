@@ -60,7 +60,7 @@ func buildAnnotateExport(report *oid.ResolvedReport, fragment graphfrag.Fragment
 	out.ScanMetadata.RulesVersion = report.Rules.Version
 
 	opsByFindingID := indexFragmentOpsByFindingID(fragment)
-	edgesByCaller := fragmentEdgesByCaller(fragment)
+	idx := newAnnotateIndex(fragment)
 
 	for _, finding := range report.Findings {
 		for i := range finding.CryptographicAssets {
@@ -72,12 +72,12 @@ func buildAnnotateExport(report *oid.ResolvedReport, fragment graphfrag.Fragment
 			// the terminal edge so a new rule's finding still carries the same
 			// invocation detail a full scan would emit — no live callgraph.
 			if op.CryptoCall == nil {
-				op.CryptoCall = annotateTerminalCryptoCall(fragment, edgesByCaller, finding, asset)
+				op.CryptoCall = annotateTerminalCryptoCall(fragment, idx, finding, asset)
 			}
 			// Re-derive this finding's supporting->finding FK from the cached edges
 			// (graph-fragment 1.5). Object-precise, so it matches the full export's
 			// crypto_annotation.supporting_call_ids for the same source + rules.
-			op.SupportingCallIDs = supportingIDsFromAnnotate(annotateSupportingForAsset(fragment, edgesByCaller, finding, asset))
+			op.SupportingCallIDs = supportingIDsFromAnnotate(annotateSupportingForAsset(fragment, idx, finding, asset))
 			out.CryptoAnnotations = append(out.CryptoAnnotations, op)
 		}
 	}

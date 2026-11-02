@@ -4,6 +4,7 @@
 package scan
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -25,6 +26,10 @@ type fragEdge struct {
 	endCol    int
 	identity  objectIdentity
 	entryCall *graphfrag.CallSite
+	// exact is true when the producer resolved the call to calleeKey exactly,
+	// so calleeKey is the function the source call names. A dispatch or
+	// name-only edge leads to one candidate implementation of it instead.
+	exact bool
 }
 
 // view projects the edge onto the shared candidateView so the annotate path runs
@@ -75,6 +80,7 @@ func fragmentEdgesByCaller(fragment graphfrag.Fragment) map[string][]fragEdge {
 			endCol:    e.EndCol,
 			identity:  objectIdentity{ReceiverVar: e.ReceiverVar, AssignedVar: e.AssignedVar, ChainID: e.ChainID},
 			entryCall: e.EntryCall,
+			exact:     e.Resolution == graphfrag.ResolutionExact,
 		})
 	}
 	for i := range fragment.InternalEdges {
@@ -87,6 +93,7 @@ func fragmentEdgesByCaller(fragment graphfrag.Fragment) map[string][]fragEdge {
 			endCol:    e.EndCol,
 			identity:  objectIdentity{ReceiverVar: e.ReceiverVar, AssignedVar: e.AssignedVar, ChainID: e.ChainID},
 			entryCall: e.EntryCall,
+			exact:     e.Resolution == graphfrag.ResolutionExact,
 		})
 	}
 	for _, edges := range out {
@@ -104,6 +111,70 @@ func fragmentEdgesByCaller(fragment graphfrag.Fragment) map[string][]fragEdge {
 	return out
 }
 
+// annotateIndex is a cached fragment indexed for annotate: each function's
+// edges in source order, and the callers and returned calls the
+// returned-object walk reads. It is the fragment's returnedObjectGraph.
+type annotateIndex struct {
+	edgesByCaller map[string][]fragEdge
+	functions     map[string]*graphfrag.Function
+	callersOf     map[string][]string
+}
+
+func newAnnotateIndex(fragment graphfrag.Fragment) *annotateIndex {
+	idx := &annotateIndex{
+		edgesByCaller: fragmentEdgesByCaller(fragment),
+		functions:     make(map[string]*graphfrag.Function, len(fragment.Functions)),
+		callersOf:     make(map[string][]string),
+	}
+	for i := range fragment.Functions {
+		idx.functions[fragment.Functions[i].Signature] = &fragment.Functions[i]
+	}
+	for _, callerKey := range sortedKeys(idx.edgesByCaller) {
+		if idx.functions[callerKey] == nil {
+			continue
+		}
+		seen := map[string]bool{}
+		for i := range idx.edgesByCaller[callerKey] {
+			e := &idx.edgesByCaller[callerKey][i]
+			if e.exact && idx.functions[e.calleeKey] != nil && !seen[e.calleeKey] {
+				seen[e.calleeKey] = true
+				idx.callersOf[e.calleeKey] = append(idx.callersOf[e.calleeKey], callerKey)
+			}
+		}
+	}
+	return idx
+}
+
+func (idx *annotateIndex) callers(fnKey string) []string {
+	return idx.callersOf[fnKey]
+}
+
+// calls names an edge's callee only when the edge is exact, the one case the
+// live walk's call names the same function.
+func (idx *annotateIndex) calls(fnKey string) []returnedObjectCall {
+	edges := idx.edgesByCaller[fnKey]
+	out := make([]returnedObjectCall, len(edges))
+	for i := range edges {
+		out[i].identity = edges[i].identity
+		if edges[i].exact {
+			out[i].callee = edges[i].calleeKey
+		}
+	}
+	return out
+}
+
+// returnsCall reads the function's returns_calls. A fragment without it
+// (graph-fragment-1.14 and older) returns nothing, so annotate follows no
+// returned object, as before.
+func (idx *annotateIndex) returnsCall(fnKey string, call int) bool {
+	fn := idx.functions[fnKey]
+	edges := idx.edgesByCaller[fnKey]
+	if fn == nil || call < 0 || call >= len(edges) || !edges[call].exact {
+		return false
+	}
+	return slices.Contains(fn.ReturnsCalls, edges[call].calleeKey)
+}
+
 // deriveAnnotateSupportingCalls re-derives the object-lifecycle supporting calls
 // for the detected (terminal) findings using ONLY the cached fragment's enriched
 // edges — no live call graph. It mirrors the live exporter: select lifecycle
@@ -114,7 +185,7 @@ func deriveAnnotateSupportingCalls(report *oid.ResolvedReport, fragment graphfra
 	if report == nil {
 		return nil
 	}
-	edgesByCaller := fragmentEdgesByCaller(fragment)
+	idx := newAnnotateIndex(fragment)
 	keyLengthsByID := make(map[string]*graphfrag.ResolvedKeyLength, len(fragment.SupportingCalls))
 	for i := range fragment.SupportingCalls {
 		supporting := &fragment.SupportingCalls[i]
@@ -130,7 +201,7 @@ func deriveAnnotateSupportingCalls(report *oid.ResolvedReport, fragment graphfra
 		finding := &report.Findings[i]
 		for a := range finding.CryptographicAssets {
 			asset := finding.CryptographicAssets[a]
-			calls := annotateSupportingForAsset(fragment, edgesByCaller, *finding, asset)
+			calls := annotateSupportingForAsset(fragment, idx, *finding, asset)
 			// The cached bits are structural and survive a rules refresh, but the
 			// rule-vs-callgraph conflict marker is rule-derived: clone the cached
 			// evidence per asset and recompute the marker against the fresh rule
@@ -152,9 +223,13 @@ func deriveAnnotateSupportingCalls(report *oid.ResolvedReport, fragment graphfra
 	return out
 }
 
+// annotateSupportingForAsset derives a finding's supporting calls from the
+// cached fragment: the lifecycle of its object in its own function, then, when
+// the function returns that object, its lifecycle in the callers that keep it
+// (returnedObjectSites, the walk a scan runs).
 func annotateSupportingForAsset(
 	fragment graphfrag.Fragment,
-	edgesByCaller map[string][]fragEdge,
+	idx *annotateIndex,
 	finding entities.Finding,
 	asset entities.CryptographicAsset,
 ) []graphfrag.GraphFragmentSupporting {
@@ -162,16 +237,21 @@ func annotateSupportingForAsset(
 	if !ok {
 		return nil
 	}
-	edges := edgesByCaller[fn.Signature]
+	edges := idx.edgesByCaller[fn.Signature]
 	terminalIdx := terminalEdgeIndex(edges, asset)
 	if terminalIdx < 0 {
 		return nil
 	}
-	return annotateLifecycleSiblings(fn, finding.FilePath, edges, terminalIdx)
+	out := annotateLifecycleSiblings(&fn, finding.FilePath, edges, terminalIdx)
+	for _, site := range returnedObjectSites(idx, fn.Signature, terminalIdx) {
+		caller := idx.functions[site.fnKey]
+		out = append(out, buildAnnotateSupportingFromEdge(caller, caller.FilePath, idx.edgesByCaller[site.fnKey][site.call]))
+	}
+	return out
 }
 
 func annotateLifecycleSiblings(
-	fn graphfrag.Function,
+	fn *graphfrag.Function,
 	sourcePath string,
 	edges []fragEdge,
 	terminalIdx int,
@@ -335,7 +415,7 @@ func symbolMatchesFunction(symbol, functionName string) bool {
 // buildAnnotateSupportingFromEdge renders one supporting-call entry from a
 // fragment edge + its containing function, reproducing the live exporter's shape
 // via the shared id-based metadata helpers and the edge's carried call-site args.
-func buildAnnotateSupportingFromEdge(fn graphfrag.Function, sourcePath string, e fragEdge) graphfrag.GraphFragmentSupporting {
+func buildAnnotateSupportingFromEdge(fn *graphfrag.Function, sourcePath string, e fragEdge) graphfrag.GraphFragmentSupporting {
 	call := fragmentCryptoCallFromEdge(e)
 	return graphfrag.GraphFragmentSupporting{
 		SupportingID:       supportingIDFromParts(sourcePath, e.line, e.calleeKey),
@@ -400,12 +480,12 @@ func fragmentCallMetadata(e fragEdge) (string, string, string, []string) {
 // annotateTerminalCryptoCall re-derives the terminal crypto_call for a finding
 // from the cached fragment's edges. Returns nil when the finding's containing
 // function or terminal edge cannot be located.
-func annotateTerminalCryptoCall(fragment graphfrag.Fragment, edgesByCaller map[string][]fragEdge, finding entities.Finding, asset entities.CryptographicAsset) *graphfrag.GraphFragmentCryptoCall {
+func annotateTerminalCryptoCall(fragment graphfrag.Fragment, idx *annotateIndex, finding entities.Finding, asset entities.CryptographicAsset) *graphfrag.GraphFragmentCryptoCall {
 	fn, ok := annotateContainingFunction(fragment, finding.FilePath, asset.StartLine)
 	if !ok {
 		return nil
 	}
-	edges := edgesByCaller[fn.Signature]
+	edges := idx.edgesByCaller[fn.Signature]
 	ti := terminalEdgeIndex(edges, asset)
 	if ti < 0 {
 		return nil

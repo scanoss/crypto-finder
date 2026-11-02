@@ -35,7 +35,7 @@ drive() {
 		 | any(. == ["example.com/transapp.main", "example.com/translibb"])'
 	expect_jq "no crypto_entry_points index unless asked" "$cg" 'has("crypto_entry_points") | not'
 
-	expect "graph fragment schema_version" "$(jq -r .schema_version "$frag" 2>/dev/null)" graph-fragment-1.14
+	expect "graph fragment schema_version" "$(jq -r .schema_version "$frag" 2>/dev/null)" graph-fragment-1.15
 	expect_jq "graph fragment has functions, edges and crypto annotations" "$frag" \
 		'(.functions | length) > 0 and (.internal_edges_compact != null or .internal_edge_strings != null) and (.crypto_annotations | length) > 0'
 
@@ -55,9 +55,11 @@ drive() {
 	# .supporting_call_ids joined to supporting_calls[].supporting_call
 	# .resolved_key_length. "none" means no supporting call carries bits.
 	cp -R "$FIXTURES/key_params_across_methods/java" "$BOX/work/keyparams"
-	local keys="$EVID/callgraph-key-params.json"
+	local keys="$EVID/callgraph-key-params.json" keysfrag="$EVID/graph-fragment-key-params.json"
+	local want_bits="14:3072,21:4096,28:2048,33:none,40:3072,47:384"
 	cf export-key-params --error-format json scan --scanner opengrep --no-remote-rules --findings-cache none --languages java \
-		--rules "$RULES_DIR/key-params-across-methods.yaml" --output "$EVID/findings-key-params.json" --export-callgraph "$keys" "$BOX/work/keyparams"
+		--rules "$RULES_DIR/key-params-across-methods.yaml" --output "$EVID/findings-key-params.json" --export-callgraph "$keys" \
+		--export-graph-fragment "$keysfrag" "$BOX/work/keyparams"
 	expect "key-params scan exit code" "$CF_EXIT" 0
 	expect "resolved key bits per KeyPairGenerator finding (line:bits)" \
 		"$(jq -r -n --slurpfile f "$EVID/findings-key-params.json" --slurpfile g "$keys" '
@@ -66,5 +68,19 @@ drive() {
 			   | ([$g[0].finding_graphs[] | select(.finding_id == $id) | .supporting_call_ids[]? | $bits[.] // empty] | unique) as $b
 			   | "\(.start_line):\(if ($b | length) == 1 then $b[0] else "none" end)"]
 			| sort_by(split(":")[0] | tonumber) | join(",")' 2>/dev/null)" \
-		"14:3072,21:4096,28:2048,33:none,40:3072,47:384"
+		"$want_bits"
+
+	# 4. annotate re-derives the same sizes from the cached fragment, the
+	# returned generator (line 28) included.
+	cf annotate-key-params --error-format json annotate --scanner opengrep --no-remote-rules --languages java \
+		--rules "$RULES_DIR/key-params-across-methods.yaml" --import-fragment "$keysfrag" --source "$BOX/work/keyparams" \
+		--output "$EVID/annotate-key-params.json"
+	expect "key-params annotate exit code" "$CF_EXIT" 0
+	expect "annotate resolved key bits per KeyPairGenerator finding (line:bits)" \
+		"$(jq -r '
+			(.supporting_calls // [] | map({key: .supporting_id, value: .supporting_call.resolved_key_length.bits}) | from_entries) as $bits
+			| [.crypto_annotations[] | ([.supporting_call_ids[]? | $bits[.] // empty] | unique) as $b
+			   | "\(.start_line):\(if ($b | length) == 1 then $b[0] else "none" end)"]
+			| sort_by(split(":")[0] | tonumber) | join(",")' "$EVID/annotate-key-params.json" 2>/dev/null)" \
+		"$want_bits"
 }

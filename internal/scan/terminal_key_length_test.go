@@ -13,6 +13,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
@@ -445,8 +446,13 @@ func TestTerminalKeyLength_UnclearUnitStaysAbsent(t *testing.T) {
 }
 
 type terminalExportResult struct {
-	live      callGraphExportV2
-	stitched  graphfrag.CallgraphExport
+	live     callGraphExportV2
+	stitched graphfrag.CallgraphExport
+	// fragment is the full scan's graph fragment, and annotate the export
+	// `annotate` re-derives from that fragment with the same rules.
+	fragment  graphfrag.GraphFragmentExport
+	annotate  graphfrag.GraphFragmentExport
+	report    *oid.ResolvedReport
 	findingID string
 }
 
@@ -502,7 +508,8 @@ func terminalExportsWithSiblings(t *testing.T, ecosystem, file, source string, s
 	result := &engine.DepScanResult{Report: report, CallGraph: graph, ProjectRoot: dir, Ecosystem: ecosystem}
 
 	live := buildCallGraphExportV2(result)
-	fragmentBytes, err := json.Marshal(buildGraphFragmentExport(result))
+	fullFragment := buildGraphFragmentExport(result)
+	fragmentBytes, err := json.Marshal(fullFragment)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +524,10 @@ func terminalExportsWithSiblings(t *testing.T, ecosystem, file, source string, s
 	}
 	stitchedExport := stitched.ToCallgraphExport(component, graphfrag.ScanMeta{Ecosystem: ecosystem})
 
-	return terminalExportResult{live: live, stitched: stitchedExport, findingID: findingID}
+	resolved := prepareOIDFixtureReport(t, report)
+	annotate := buildAnnotateExport(resolved, fragment)
+
+	return terminalExportResult{live: live, stitched: stitchedExport, fragment: fullFragment, annotate: annotate, report: resolved, findingID: findingID}
 }
 
 func keyLengthViaSupportingCallIDs(t *testing.T, graphs []callGraphExportFinding, supporting []callGraphSupportingCall, findingID, function string) *graphfrag.ResolvedKeyLength {

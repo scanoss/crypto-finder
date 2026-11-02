@@ -48,6 +48,7 @@ func EncodeFragment(frag Fragment) ([]byte, error) {
 			DisplaySymbol:      fn.DisplaySymbol,
 			Aliases:            append([]string(nil), fn.Aliases...),
 			EntryKind:          frag.EntryKinds[fn.Signature],
+			ReturnsCalls:       append([]string(nil), fn.ReturnsCalls...),
 		})
 	}
 	for i := range frag.InternalEdges {

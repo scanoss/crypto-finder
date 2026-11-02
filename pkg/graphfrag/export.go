@@ -50,7 +50,12 @@ import (
 // a chain root its root_kind and a finding its no_callers_only. A fragment
 // without scan_metadata.entry_kinds (1.13 and older) decodes with no entry
 // kinds and the stitcher claims neither for its functions.
-const SchemaVersion = "graph-fragment-1.14"
+//
+// 1.15 adds returns_calls on a function: the callees of the calls whose result
+// it returns. Annotate reads it to follow a crypto object a helper returns into
+// the callers that configure it, as a scan does. A fragment without it (1.14
+// and older) decodes with no returned calls, and annotate follows none.
+const SchemaVersion = "graph-fragment-1.15"
 
 // GraphAlgoVersion identifies the callgraph-CONSTRUCTION algorithm version. It
 // is independent of the binary version (cf_version) and the wire schema
@@ -100,7 +105,11 @@ const SchemaVersion = "graph-fragment-1.14"
 // directory enter the graph; and a Node call made through a package name
 // (`require('pkg').fn()`, `import { fn } from 'pkg'`) is an edge to the
 // function the package's entry module exports.
-const GraphAlgoVersion = "graph-algo-14"
+//
+// graph-algo-15: functions carry returns_calls, the calls whose result they
+// return, so annotate can follow a returned crypto object into its callers. A
+// structural graph cached under graph-algo-14 has none.
+const GraphAlgoVersion = "graph-algo-15"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
@@ -249,7 +258,13 @@ type GraphFragmentFunction struct {
 	// EntryKind (1.14+) is "main" or "framework_entry" for a function the
 	// producing scan recognized as an entry point: a program entry, or a method
 	// a framework or the runtime calls, which no call edge leads to.
-	EntryKind      string          `json:"entry_kind,omitempty"`
+	EntryKind string `json:"entry_kind,omitempty"`
+	// ReturnsCalls (1.15+) lists, sorted, the callee keys of the calls whose
+	// result the function returns (`return f()`, or `x = f(); return x`), each
+	// a callee the function calls exactly once. Annotate reads it to follow a
+	// returned crypto object into its callers. Absent when the function returns
+	// no such call or the producer did not record it (1.14 and older).
+	ReturnsCalls   []string        `json:"returns_calls,omitempty"`
 	InferredReturn json.RawMessage `json:"-"`
 }
 

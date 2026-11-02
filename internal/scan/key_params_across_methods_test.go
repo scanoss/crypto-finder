@@ -4,6 +4,7 @@
 package scan
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -105,6 +106,7 @@ func TestKeyParamsAcrossMethods_ResolveFromCallersAndReturns(t *testing.T) {
 			for name, got := range map[string]*graphfrag.ResolvedKeyLength{
 				"live":     keyLengthViaSupportingCallIDs(t, exports.live.FindingGraphs, exports.live.SupportingCalls, exports.findingID, jcaInitialize),
 				"stitched": keyLengthViaStitchedSupportingCallIDs(t, exports.stitched, exports.findingID, jcaInitialize),
+				"annotate": fragmentKeyLength(&exports.annotate, exports.findingID, jcaInitialize),
 			} {
 				if got == nil {
 					t.Fatalf("%s: no initialize supporting call carries resolved_key_length", name)
@@ -154,6 +156,31 @@ class Keys {
 	if want := "12:2048,18:4096"; got != want {
 		t.Fatalf("supporting key bits by line = %q, want %q", got, want)
 	}
+	if annotated := fragmentBitsByLine(&exports.annotate, exports.findingID); annotated != got {
+		t.Fatalf("annotate supporting key bits by line = %q, want the live %q", annotated, got)
+	}
+}
+
+// TestKeyParamsAcrossMethods_AnnotateMatchesFullFragment pins that `annotate`,
+// re-deriving supporting calls from the cached fragment, gives each finding of
+// the across-methods cases the same supporting calls as the full scan's
+// fragment, the caller-side calls on a returned generator included.
+func TestKeyParamsAcrossMethods_AnnotateMatchesFullFragment(t *testing.T) {
+	for _, method := range []string{"literalSize(", "sizeParameter(", "returned(", "disagreeingCallers(", "constantParameter(", "curveParameter("} {
+		t.Run(method, func(t *testing.T) {
+			line := lineAfter(t, keyParamsAcrossMethodsSource, "static KeyPair "+method, "static KeyPairGenerator "+method)
+			match := strings.TrimSpace(strings.Split(keyParamsAcrossMethodsSource, "\n")[line-1])
+			match = match[strings.Index(match, "KeyPairGenerator.getInstance"):strings.LastIndex(match, ";")]
+			exports := terminalExports(t, "java", "Keys.java", keyParamsAcrossMethodsSource, line, match, jcaGetInstance, "")
+			full, annotated := fragmentSupportingIDs(&exports.fragment, exports.findingID), fragmentSupportingIDs(&exports.annotate, exports.findingID)
+			if full == "" || full != annotated {
+				t.Fatalf("annotate supporting ids = %q, full fragment = %q", annotated, full)
+			}
+			if full, annotated := fragmentBitsByLine(&exports.fragment, exports.findingID), fragmentBitsByLine(&exports.annotate, exports.findingID); full != annotated {
+				t.Fatalf("annotate key bits by line = %q, full fragment = %q", annotated, full)
+			}
+		})
+	}
 }
 
 // TestKeyParamsAcrossMethods_DepthBounds pins both bounds: a size passed
@@ -188,6 +215,10 @@ func TestKeyParamsAcrossMethods_DepthBounds(t *testing.T) {
 			got := keyLengthViaSupportingCallIDs(t, exports.live.FindingGraphs, exports.live.SupportingCalls, exports.findingID, jcaInitialize)
 			if resolved := got != nil && got.Bits != nil; resolved != tc.wantBits {
 				t.Errorf("%d helpers: resolved = %v (%#v), want %v", tc.helpers, resolved, got, tc.wantBits)
+			}
+			annotated := fragmentKeyLength(&exports.annotate, exports.findingID, jcaInitialize)
+			if resolved := annotated != nil && annotated.Bits != nil; resolved != tc.wantBits {
+				t.Errorf("%d helpers: annotate resolved = %v (%#v), want %v", tc.helpers, resolved, annotated, tc.wantBits)
 			}
 		}
 	})
@@ -279,6 +310,95 @@ func supportingBitsByLine(graphs []callGraphExportFinding, supporting []callGrap
 					pairs = append(pairs, fmt.Sprintf("%d:%d", supporting[j].StartLine, *call.ResolvedKeyLength.Bits))
 				}
 			}
+		}
+	}
+	sort.Strings(pairs)
+	return strings.Join(pairs, ",")
+}
+
+// TestKeyParamsAcrossMethods_AnnotateOldFragmentFollowsNoReturn pins that a
+// fragment exported before graph-fragment-1.15, which has no returns_calls,
+// still loads, and that annotate then derives what it did before: the
+// generator's own-method lifecycle only, without the caller-side calls.
+func TestKeyParamsAcrossMethods_AnnotateOldFragmentFollowsNoReturn(t *testing.T) {
+	line := lineAfter(t, keyParamsAcrossMethodsSource, "static KeyPairGenerator returned(")
+	exports := terminalExports(t, "java", "Keys.java", keyParamsAcrossMethodsSource, line, `KeyPairGenerator.getInstance("RSA")`, jcaGetInstance, "")
+	if got := fragmentSupportingIDs(&exports.annotate, exports.findingID); got == "" {
+		t.Fatal("annotate on a 1.15 fragment joined no supporting call to the returned generator")
+	}
+
+	old := exports.fragment
+	old.SchemaVersion = "graph-fragment-1.14"
+	old.Functions = append([]graphfrag.GraphFragmentFunction(nil), old.Functions...)
+	recorded := false
+	for i := range old.Functions {
+		recorded = recorded || len(old.Functions[i].ReturnsCalls) > 0
+		old.Functions[i].ReturnsCalls = nil
+	}
+	if !recorded {
+		t.Fatal("the full fragment records no returns_calls")
+	}
+	data, err := json.Marshal(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "returns_calls") {
+		t.Fatal("the trimmed fragment still carries returns_calls")
+	}
+	fragment, err := graphfrag.DecodeFragment(graphfrag.ComponentKey{}, data)
+	if err != nil {
+		t.Fatalf("a graph-fragment-1.14 fragment must still decode: %v", err)
+	}
+	annotate := buildAnnotateExport(exports.report, fragment)
+	if got := fragmentSupportingIDs(&annotate, exports.findingID); got != "" {
+		t.Fatalf("annotate on a 1.14 fragment joined supporting calls %q, want none: `returned` makes no call on the generator", got)
+	}
+}
+
+// fragmentSupportingIDs renders the supporting_call_ids of a graph fragment's
+// finding, sorted and comma-joined.
+func fragmentSupportingIDs(export *graphfrag.GraphFragmentExport, findingID string) string {
+	var ids []string
+	for i := range export.CryptoAnnotations {
+		if export.CryptoAnnotations[i].FindingID == findingID {
+			ids = append(ids, export.CryptoAnnotations[i].SupportingCallIDs...)
+		}
+	}
+	sort.Strings(ids)
+	return strings.Join(ids, ",")
+}
+
+// fragmentSupportingCalls returns the supporting calls a graph fragment joins
+// to a finding.
+func fragmentSupportingCalls(export *graphfrag.GraphFragmentExport, findingID string) []*graphfrag.GraphFragmentSupporting {
+	var out []*graphfrag.GraphFragmentSupporting
+	for _, id := range strings.Split(fragmentSupportingIDs(export, findingID), ",") {
+		for i := range export.SupportingCalls {
+			if export.SupportingCalls[i].SupportingID == id && export.SupportingCalls[i].SupportingCall != nil {
+				out = append(out, &export.SupportingCalls[i])
+			}
+		}
+	}
+	return out
+}
+
+// fragmentKeyLength returns the key-length evidence of the first supporting
+// call to function that a graph fragment joins to a finding.
+func fragmentKeyLength(export *graphfrag.GraphFragmentExport, findingID, function string) *graphfrag.ResolvedKeyLength {
+	for _, call := range fragmentSupportingCalls(export, findingID) {
+		if call.SupportingCall.FunctionName == function && call.SupportingCall.ResolvedKeyLength != nil {
+			return call.SupportingCall.ResolvedKeyLength
+		}
+	}
+	return nil
+}
+
+// fragmentBitsByLine is supportingBitsByLine for a graph fragment.
+func fragmentBitsByLine(export *graphfrag.GraphFragmentExport, findingID string) string {
+	var pairs []string
+	for _, call := range fragmentSupportingCalls(export, findingID) {
+		if keyLength := call.SupportingCall.ResolvedKeyLength; keyLength != nil && keyLength.Bits != nil {
+			pairs = append(pairs, fmt.Sprintf("%d:%d", call.StartLine, *keyLength.Bits))
 		}
 	}
 	sort.Strings(pairs)

@@ -1,5 +1,5 @@
 {
-  "graph_algo_version": "graph-algo-14",
+  "graph_algo_version": "graph-algo-15",
   "ecosystems": {
     "c": {
       "sha256": "8ba67f18003dc8c422e9409c0d5f3d1262ae289843488d5f138abe22bcb38d34",
@@ -14,13 +14,13 @@
       "external_calls": 7
     },
     "go": {
-      "sha256": "a0eca9ac403598c9db2e3aa2b06863ecec80ca7f7dc9fd329dd74685b1b28944",
+      "sha256": "0c70fb8180c229032d1475cc2e3956d7c907b1e2ff153343ea2676a4e9dd367d",
       "functions": 9,
       "internal_edges": 12,
       "external_calls": 7
     },
     "java": {
-      "sha256": "9d33ddd0a0eb87de5ccc8ae01b9bbe53132b4f70f6c04accfc6b1e8ee2970e79",
+      "sha256": "ae90a76a3e750f2def08e4fef930e73b8be66004054dab76a45840f59ed3d5c5",
       "functions": 6,
       "internal_edges": 7,
       "external_calls": 10
@@ -38,7 +38,7 @@
       "external_calls": 11
     },
     "rust": {
-      "sha256": "c89d74d978b784f62cd377c077d503ba5a3a51fb0ee3e93a1d1091577877a441",
+      "sha256": "fa32a27773584895144bb2c486d27511bd2ecde78800ced6f6811aa25ceb9191",
       "functions": 5,
       "internal_edges": 3,
       "external_calls": 11

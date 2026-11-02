@@ -195,7 +195,7 @@ func TestGraphFragmentCryptoOp_JSONRoundTrip(t *testing.T) {
 // 1.14 adds entry_kind on functions and scan_metadata.entry_kinds.
 func TestSchemaVersion_Is_1_14(t *testing.T) {
 	t.Parallel()
-	if SchemaVersion != "graph-fragment-1.14" {
-		t.Errorf("SchemaVersion = %q, want graph-fragment-1.14", SchemaVersion)
+	if SchemaVersion != "graph-fragment-1.15" {
+		t.Errorf("SchemaVersion = %q, want graph-fragment-1.15", SchemaVersion)
 	}
 }

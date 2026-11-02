@@ -1320,14 +1320,14 @@ func projectForwardClosure(fc *forwardClosure, root ComponentKey, ecosystem stri
 
 	// calleeFns resolves an edge's `to` endpoint to its rich Function identity
 	// for entry_call projection (mirrors how backward frames stamp the callee).
-	calleeFns := map[graphNode]Function{
-		{Component: fc.anchor.Component, Function: fc.anchor.Signature}: fc.anchor.Function,
+	calleeFns := map[graphNode]*Function{
+		{Component: fc.anchor.Component, Function: fc.anchor.Signature}: &fc.anchor.Function,
 	}
 
 	nodes := make([]ExportForwardNode, 0, len(fc.nodes))
 	for i := range fc.nodes {
 		n := &fc.nodes[i]
-		calleeFns[n.node] = n.frame.Function
+		calleeFns[n.node] = &n.frame.Function
 		en := ExportForwardNode{
 			FunctionKey:        n.frame.Function.Signature,
 			FunctionName:       n.frame.Function.FunctionName,
@@ -1426,7 +1426,7 @@ func projectAmbiguousCalls(groups []SuppressedEdge, root ComponentKey, ecosystem
 				DeclaringType:      frame.Function.DeclaringType,
 				ReturnType:         frame.Function.ReturnType,
 				ParameterTypes:     parameterTypes,
-				EntryCall:          exportEntryCall(frame.EntryCall, frame.Function),
+				EntryCall:          exportEntryCall(frame.EntryCall, &frame.Function),
 			}
 			if frame.Component != root {
 				candidate.DependencyInfo = exportDependencyInfo(frame, ecosystem)
@@ -1624,7 +1624,7 @@ func buildExportNode(frame *CallFrame, root ComponentKey, ecosystem string) Expo
 		Aliases:            append([]string(nil), fn.Aliases...),
 		FilePath:           fn.FilePath,
 		StartLine:          fn.StartLine,
-		EntryCall:          exportEntryCall(frame.EntryCall, fn),
+		EntryCall:          exportEntryCall(frame.EntryCall, &frame.Function),
 		EntryResolution:    string(frame.EntryResolution),
 		EntryDeclaredType:  frame.EntryDeclaredType,
 		// A fragment carries no source text.
@@ -1672,9 +1672,12 @@ func moduleFromFrame(frame *CallFrame) string {
 
 // exportEntryCall converts a *CallSite to an *ExportEntryCall. Returns nil if
 // cs is nil.
-func exportEntryCall(cs *CallSite, fn Function) *ExportEntryCall {
+func exportEntryCall(cs *CallSite, fn *Function) *ExportEntryCall {
 	if cs == nil {
 		return nil
+	}
+	if fn == nil {
+		fn = &Function{}
 	}
 	ec := &ExportEntryCall{
 		FunctionName:       fn.FunctionName,
