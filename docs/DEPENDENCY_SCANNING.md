@@ -1105,7 +1105,7 @@ The extensible architecture makes adding a new language a matter of implementing
 
 The `MavenResolver` uses a **three-tier fallback strategy** to maximize dependency recovery, especially for multi-module projects:
 
-Every Maven invocation receives `-Dmaven.repo.local=<user-home>/.m2/repository`, so Maven writes artifacts to the same repository that Crypto Finder reads even when the JVM reports a different `user.home`. The operating-system user home is `HOME` on Unix and `USERPROFILE` on Windows.
+Before its first resolution command the resolver asks Maven for its local repository with `mvn help:evaluate -Dexpression=settings.localRepository -DforceStdout` in the project directory, so `settings.xml`, `MAVEN_OPTS` and `.mvn/maven.config` all apply. It asks once per resolver. Every later Maven invocation, including the isolated source fallback that runs outside the project, receives `-Dmaven.repo.local=<that repository>`, so Maven writes artifacts to the repository Crypto Finder reads. When Maven gives no usable answer, the resolver logs a warning and uses `<user-home>/.m2/repository`, where the operating-system user home is `HOME` on Unix and `USERPROFILE` on Windows.
 
 **Tier 1 — Reactor with `--fail-never`** (always attempted):
 - Runs `mvn dependency:list --fail-never -DappendOutput=true -DincludeScope=compile`
@@ -1118,15 +1118,15 @@ Every Maven invocation receives `-Dmaven.repo.local=<user-home>/.m2/repository`,
 - Modules that fail are skipped; dependencies from succeeding modules are deduplicated and collected
 
 **Tier 3 — Local install + retry** (if Tier 2 yields zero dependencies and inter-module failure is detected):
-- Runs `mvn install -DskipTests --fail-never` to build all modules locally, populating `~/.m2/repository` with inter-module artifacts
+- Runs `mvn install -DskipTests --fail-never` to build all modules locally, populating the local repository with inter-module artifacts
 - Retries Tier 1 after install
 - This is expensive (requires compilation) but is the only way to resolve inter-module transitive dependencies
 
 After dependency listing, the resolver also runs:
-- **`mvn dependency:sources`** — downloads `-sources.jar` files to `~/.m2/repository/` (best-effort; ~65% of Java libraries publish source JARs)
+- **`mvn dependency:sources`** — downloads `-sources.jar` files to the local repository (best-effort; ~65% of Java libraries publish source JARs)
 - **`mvn dependency:tree --fail-never -DappendOutput=true`** — builds the dependency graph adjacency list (best-effort)
 
-Dependencies without source JARs are included in the resolution results but without a source directory. They are skipped for source scanning and logged explicitly; if the compiled artifact is present in `~/.m2/repository`, Java bytecode indexing can still use it as a type-only dependency.
+Dependencies without source JARs are included in the resolution results but without a source directory. They are skipped for source scanning and logged explicitly; if the compiled artifact is present in the local repository, Java bytecode indexing can still use it as a type-only dependency.
 
 #### Gradle Resolution Details
 

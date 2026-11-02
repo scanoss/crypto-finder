@@ -24,14 +24,20 @@ const (
 	mavenDependencyPluginVersion   = "3.6.1"
 	sourceFallbackProgressInterval = 10
 	// sourceFallbackMaxWorkers caps concurrent isolated `mvn :get` invocations
-	// during per-dependency source fallback. Maven serializes writes to ~/.m2
-	// internally; on top of that each invocation forks a JVM, so going beyond
-	// ~8 yields diminishing returns and wastes RAM.
+	// during per-dependency source fallback. Maven serializes writes to the
+	// local repository internally; on top of that each invocation forks a JVM,
+	// so going beyond ~8 yields diminishing returns and wastes RAM.
 	sourceFallbackMaxWorkers = 8
 	// mavenDependencyTreeTimeout bounds best-effort graph metadata extraction.
 	// If tree extraction is slow or flaky, dependency scanning falls back to the
 	// old conservative all-dependencies callgraph input set.
 	mavenDependencyTreeTimeout = 2 * time.Minute
+	// mavenHelpPluginVersion pins the plugin that reports the local repository.
+	// -DforceStdout needs 3.1.0 or later.
+	mavenHelpPluginVersion = "3.5.1"
+	// mavenLocalRepositoryTimeout bounds the help:evaluate call that asks Maven
+	// for its local repository. It may download the help plugin on first use.
+	mavenLocalRepositoryTimeout = 2 * time.Minute
 )
 
 // pomProject represents the minimal pom.xml structure needed for resolution.
@@ -77,11 +83,19 @@ type mavenSourceSummary struct {
 // MavenResolver resolves Java/Maven dependencies using the `mvn` tool.
 type MavenResolver struct {
 	javaRuntime javaruntime.Config
+
+	// evaluateLocalRepository runs Maven in projectDir and returns the stdout of
+	// help:evaluate for settings.localRepository. Tests replace it.
+	evaluateLocalRepository func(ctx context.Context, projectDir string) (string, error)
+	localRepoOnce           sync.Once
+	localRepo               string
 }
 
 // NewMavenResolver creates a new Maven dependency resolver.
 func NewMavenResolver() *MavenResolver {
-	return &MavenResolver{}
+	r := &MavenResolver{}
+	r.evaluateLocalRepository = r.runHelpEvaluateLocalRepository
+	return r
 }
 
 // SetJavaRuntime configures which Java runtime Maven commands should use.
@@ -132,6 +146,10 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 		return result, nil
 	}
 
+	// Ask Maven for its local repository before any other invocation, so it is
+	// evaluated in the project directory, where .mvn/maven.config applies.
+	r.localRepository(ctx, targetDir)
+
 	depsResult, err := r.listDependencies(ctx, targetDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Maven dependencies: %w", err)
@@ -151,7 +169,7 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 		return nil, fmt.Errorf("failed to create source cache: %w", err)
 	}
 
-	m2Repo := r.findM2Repository()
+	m2Repo := r.localRepository(ctx, targetDir)
 	sourceSummary := r.downloadSources(ctx, targetDir, deps, m2Repo, cache)
 
 	// Step 5: Extract source JARs to cache and attach source dirs when available.
@@ -235,7 +253,7 @@ func (r *MavenResolver) listDependencyTree(ctx context.Context, targetDir string
 		"--fail-never",
 	)
 	cmd.Dir = targetDir
-	if err := r.configureMavenCommand(cmd); err != nil {
+	if err := r.configureMavenCommand(ctx, cmd); err != nil {
 		return nil, err
 	}
 
@@ -304,7 +322,7 @@ func (r *MavenResolver) runMavenCommand(ctx context.Context, opts mavenCommandOp
 	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
 	cmd := exec.CommandContext(ctx, "mvn", opts.args...)
 	cmd.Dir = opts.dir
-	if err := r.configureMavenCommand(cmd); err != nil {
+	if err := r.configureMavenCommand(ctx, cmd); err != nil {
 		return nil, err
 	}
 
@@ -339,11 +357,18 @@ func (r *MavenResolver) runMavenCommand(ctx context.Context, opts mavenCommandOp
 	return result, err
 }
 
-func (r *MavenResolver) configureMavenCommand(cmd *exec.Cmd) error {
-	if m2Repo := r.findM2Repository(); m2Repo != "" {
+// configureMavenCommand pins the local repository and the Java runtime of a
+// Maven invocation. The repository is passed explicitly so that commands run
+// outside the project, such as the isolated source fallback, write where
+// Crypto Finder reads.
+func (r *MavenResolver) configureMavenCommand(ctx context.Context, cmd *exec.Cmd) error {
+	if m2Repo := r.localRepository(ctx, cmd.Dir); m2Repo != "" {
 		cmd.Args = append(cmd.Args, "-Dmaven.repo.local="+m2Repo)
 	}
+	return r.configureJavaRuntime(cmd)
+}
 
+func (r *MavenResolver) configureJavaRuntime(cmd *exec.Cmd) error {
 	selection, err := javaruntime.ResolveExplicitSelection(r.javaRuntime)
 	if err != nil {
 		return err
@@ -491,7 +516,7 @@ func (r *MavenResolver) listDependencies(ctx context.Context, targetDir string) 
 		"--fail-never",
 	)
 	cmd.Dir = targetDir
-	if err := r.configureMavenCommand(cmd); err != nil {
+	if err := r.configureMavenCommand(ctx, cmd); err != nil {
 		return nil, err
 	}
 
@@ -705,8 +730,72 @@ func (r *MavenResolver) logSourceFallbackOutcome(summary mavenSourceSummary) {
 		Msg("Isolated Maven source fallback completed successfully")
 }
 
-// findM2Repository returns the path to the local Maven repository.
-func (r *MavenResolver) findM2Repository() string {
+// localRepository returns the local repository Maven uses for projectDir, as
+// Maven reports it: settings.xml, -Dmaven.repo.local in MAVEN_OPTS or
+// .mvn/maven.config, and -s all apply. It asks once per resolver; when Maven
+// gives no usable answer it falls back to $HOME/.m2/repository.
+func (r *MavenResolver) localRepository(ctx context.Context, projectDir string) string {
+	r.localRepoOnce.Do(func() {
+		evalCtx, cancel := context.WithTimeout(ctx, mavenLocalRepositoryTimeout)
+		defer cancel()
+		stdout, err := r.evaluateLocalRepository(evalCtx, projectDir)
+		if err == nil {
+			if repo, ok := parseEvaluatedLocalRepository(stdout, projectDir); ok {
+				r.localRepo = repo
+				log.Info().Str("repository", repo).Msg("Using the Maven local repository Maven reports")
+				return
+			}
+			err = fmt.Errorf("no usable path in help:evaluate output %q", truncate(stdout, 500))
+		}
+		r.localRepo = defaultM2Repository()
+		log.Warn().Err(err).Str("repository", r.localRepo).
+			Msg("Could not ask Maven for its local repository; using the default")
+	})
+	return r.localRepo
+}
+
+// runHelpEvaluateLocalRepository asks Maven for settings.localRepository in
+// projectDir. It passes no -Dmaven.repo.local of its own, which Maven would
+// only echo back.
+func (r *MavenResolver) runHelpEvaluateLocalRepository(ctx context.Context, projectDir string) (string, error) {
+	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
+	cmd := exec.CommandContext(ctx, "mvn",
+		fmt.Sprintf("org.apache.maven.plugins:maven-help-plugin:%s:evaluate", mavenHelpPluginVersion),
+		"-Dexpression=settings.localRepository",
+		"-DforceStdout",
+		"-q", "-B", "-N",
+	)
+	cmd.Dir = projectDir
+	if err := r.configureJavaRuntime(cmd); err != nil {
+		return "", err
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("mvn help:evaluate: %w stderr: %s", err, truncate(stderr.String(), 500))
+	}
+	return stdout.String(), nil
+}
+
+// parseEvaluatedLocalRepository reads the path help:evaluate prints. With
+// -DforceStdout the value is the last thing on stdout, after any warnings
+// Maven or the JVM print there. A relative path is relative to projectDir,
+// where Maven ran.
+func parseEvaluatedLocalRepository(stdout, projectDir string) (string, bool) {
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	value := strings.TrimSpace(lines[len(lines)-1])
+	if value == "" || value == "null" || strings.Contains(value, "${") || strings.HasPrefix(value, "[") {
+		return "", false
+	}
+	if !filepath.IsAbs(value) {
+		value = filepath.Join(projectDir, value)
+	}
+	return filepath.Clean(value), true
+}
+
+// defaultM2Repository is Maven's default local repository under HOME.
+func defaultM2Repository() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
@@ -830,7 +919,7 @@ func (r *MavenResolver) resolveSourceDir(dep Dependency, m2Repo string, cache *S
 		return dir
 	}
 
-	// Locate source JAR in ~/.m2/repository/
+	// Locate the source JAR in the local repository.
 	sourceJAR := r.sourceJarPath(dep, m2Repo)
 	if sourceJAR == "" {
 		return ""
@@ -964,7 +1053,7 @@ func (r *MavenResolver) resolveModuleDependencies(ctx context.Context, targetDir
 		"-DoutputAbsoluteArtifactFilename=false",
 	)
 	cmd.Dir = targetDir
-	if err := r.configureMavenCommand(cmd); err != nil {
+	if err := r.configureMavenCommand(ctx, cmd); err != nil {
 		return nil, false, err
 	}
 
@@ -1043,7 +1132,7 @@ func containsString(values []string, want string) bool {
 }
 
 // installModules runs `mvn install -DskipTests` to build all modules locally,
-// making inter-module artifacts available in ~/.m2/repository.
+// making inter-module artifacts available in the local repository.
 // This is Tier 3: expensive but resolves inter-module transitive dependencies.
 func (r *MavenResolver) installModules(ctx context.Context, targetDir string) error {
 	result, err := r.runMavenCommand(ctx, mavenCommandOptions{

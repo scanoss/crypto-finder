@@ -2,6 +2,7 @@ package dependency
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -235,19 +236,25 @@ exit 0
 	}
 }
 
-func TestMavenResolver_Resolve_UsesHomeLocalRepository(t *testing.T) {
-	home := t.TempDir()
-	setTestHome(t, home)
-
-	project := t.TempDir()
+// fakeMavenProject writes a project depending on org.example:lib:1.2.3 and a
+// fake mvn on PATH. The fake answers help:evaluate with evaluateOutput and
+// evaluateExit, records every invocation's arguments, and drops the source
+// JAR into whatever -Dmaven.repo.local dependency:sources receives.
+func fakeMavenProject(t *testing.T, evaluateOutput string, evaluateExit int) (project, argsCapture string) {
+	t.Helper()
+	project = t.TempDir()
 	pom := `<project><groupId>com.acme</groupId><artifactId>app</artifactId><dependencies><dependency><groupId>org.example</groupId><artifactId>lib</artifactId><version>1.2.3</version></dependency></dependencies></project>`
 	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o600); err != nil {
 		t.Fatalf("write pom.xml: %v", err)
 	}
+	evaluateFile := filepath.Join(t.TempDir(), "evaluate.txt")
+	if err := os.WriteFile(evaluateFile, []byte(evaluateOutput), 0o600); err != nil {
+		t.Fatalf("write evaluate output: %v", err)
+	}
 
 	sourceFixture := filepath.Join(t.TempDir(), "lib-1.2.3-sources.jar")
 	createZipArchive(t, sourceFixture, map[string]string{"src/Lib.java": "class Lib {}"})
-	argsCapture := filepath.Join(t.TempDir(), "maven-args.txt")
+	argsCapture = filepath.Join(t.TempDir(), "maven-args.txt")
 	binDir := t.TempDir()
 	writeExecutable(t, binDir, "mvn", fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' "$*" >> %q
@@ -260,6 +267,10 @@ for arg in "$@"; do
   esac
 done
 case " $* " in
+  *":evaluate "*)
+    cat %q
+    exit %d
+    ;;
   *" dependency:list "*)
     cat > "$out" <<'EOF_LIST'
 org.example:lib:jar:1.2.3:compile
@@ -281,39 +292,171 @@ EOF_TREE
     ;;
 esac
 exit 0
-`, argsCapture, sourceFixture))
+`, argsCapture, evaluateFile, evaluateExit, sourceFixture))
 	prependPath(t, binDir)
+	return project, argsCapture
+}
+
+// assertMavenInvocations checks that Maven was first asked for its local
+// repository, without a repository of its own, and that every later
+// invocation received wantRepo.
+func assertMavenInvocations(t *testing.T, argsCapture, wantRepo string) {
+	t.Helper()
+	data, err := os.ReadFile(argsCapture)
+	if err != nil {
+		t.Fatalf("read Maven args: %v", err)
+	}
+	invocations := strings.Split(strings.TrimSpace(string(data)), "\n")
+	evaluations := 0
+	wantArg := "-Dmaven.repo.local=" + wantRepo
+	for i, invocation := range invocations {
+		if strings.Contains(invocation, ":evaluate ") {
+			evaluations++
+			if i != 0 {
+				t.Fatalf("help:evaluate ran as invocation %d, want first: %q", i, invocations)
+			}
+			if strings.Contains(invocation, "-Dmaven.repo.local=") {
+				t.Fatalf("help:evaluate must not pass its own local repository: %s", invocation)
+			}
+			continue
+		}
+		if !strings.Contains(invocation, wantArg) {
+			t.Fatalf("Maven invocation missing %q: %s", wantArg, invocation)
+		}
+	}
+	if evaluations != 1 {
+		t.Fatalf("help:evaluate ran %d times, want once: %q", evaluations, invocations)
+	}
+}
+
+func TestMavenResolver_Resolve_UsesLocalRepositoryMavenReports(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	configured := filepath.Join(t.TempDir(), "configured repo")
+	// The JVM and Maven may print warnings to stdout ahead of the value, and
+	// -DforceStdout prints the value with no trailing newline.
+	project, argsCapture := fakeMavenProject(t, "WARNING: A terminally deprecated method in sun.misc.Unsafe has been called\n"+configured, 0)
 
 	result, err := NewMavenResolver().Resolve(context.Background(), project)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 
-	data, err := os.ReadFile(argsCapture)
-	if err != nil {
-		t.Fatalf("read Maven args: %v", err)
-	}
-	wantArg := "-Dmaven.repo.local=" + filepath.Join(home, ".m2", "repository")
-	for _, invocation := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		if !strings.Contains(invocation, wantArg) {
-			t.Fatalf("Maven invocation missing %q: %s", wantArg, invocation)
-		}
-	}
+	assertMavenInvocations(t, argsCapture, configured)
 	if len(result.Dependencies) != 1 || result.Dependencies[0].Dir == "" {
-		t.Fatalf("expected dependency sources under HOME local repository, got %#v", result.Dependencies)
+		t.Fatalf("expected dependency sources under the configured local repository, got %#v", result.Dependencies)
+	}
+	wantJar := filepath.Join(configured, "org", "example", "lib", "1.2.3", "lib-1.2.3-sources.jar")
+	if got := result.Dependencies[0].SourceArchivePath; got != wantJar {
+		t.Fatalf("SourceArchivePath = %q, want %q", got, wantJar)
 	}
 }
 
-func TestMavenResolver_ConfigureMavenCommand_UsesHomeLocalRepository(t *testing.T) {
+func TestMavenResolver_Resolve_FallsBackToHomeLocalRepository(t *testing.T) {
+	cases := map[string]struct {
+		output string
+		exit   int
+	}{
+		"help:evaluate fails":   {output: "[ERROR] plugin not found", exit: 1},
+		"empty output":          {output: "", exit: 0},
+		"unevaluated property":  {output: "${settings.localRepository}", exit: 0},
+		"only whitespace lines": {output: "\n  \n", exit: 0},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			setTestHome(t, home)
+			project, argsCapture := fakeMavenProject(t, tc.output, tc.exit)
+
+			result, err := NewMavenResolver().Resolve(context.Background(), project)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+
+			assertMavenInvocations(t, argsCapture, filepath.Join(home, ".m2", "repository"))
+			if len(result.Dependencies) != 1 || result.Dependencies[0].Dir == "" {
+				t.Fatalf("expected dependency sources under HOME local repository, got %#v", result.Dependencies)
+			}
+		})
+	}
+}
+
+func TestParseEvaluatedLocalRepository(t *testing.T) {
+	project := filepath.Join(string(os.PathSeparator), "work", "app")
+	abs := filepath.Join(string(os.PathSeparator), "opt", "maven repo", "repository")
+	cases := []struct {
+		name, stdout, want string
+		ok                 bool
+	}{
+		{name: "plain path", stdout: abs, want: abs, ok: true},
+		{name: "path with spaces and trailing newline", stdout: abs + "\n", want: abs, ok: true},
+		{name: "warnings before the path", stdout: "WARNING: unsafe\nWARNING: will be removed\n" + abs, want: abs, ok: true},
+		{name: "relative to the project", stdout: "target/repo", want: filepath.Join(project, "target", "repo"), ok: true},
+		{name: "empty", stdout: "", ok: false},
+		{name: "null", stdout: "null", ok: false},
+		{name: "unevaluated", stdout: "${settings.localRepository}", ok: false},
+		{name: "log line", stdout: "[INFO] BUILD FAILURE", ok: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := parseEvaluatedLocalRepository(tc.stdout, project)
+			if ok != tc.ok || got != tc.want {
+				t.Fatalf("parseEvaluatedLocalRepository(%q) = %q, %v; want %q, %v", tc.stdout, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
+func TestMavenResolver_LocalRepository_AsksMavenOncePerResolver(t *testing.T) {
+	r := NewMavenResolver()
+	calls := 0
+	configured := filepath.Join(t.TempDir(), "repo")
+	r.evaluateLocalRepository = func(context.Context, string) (string, error) {
+		calls++
+		return configured, nil
+	}
+
+	for _, dir := range []string{t.TempDir(), t.TempDir(), t.TempDir()} {
+		if got := r.localRepository(context.Background(), dir); got != configured {
+			t.Fatalf("localRepository = %q, want %q", got, configured)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("asked Maven %d times, want once", calls)
+	}
+}
+
+func TestMavenResolver_LocalRepository_FailureFallsBackOnce(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)
+	r := NewMavenResolver()
+	calls := 0
+	r.evaluateLocalRepository = func(context.Context, string) (string, error) {
+		calls++
+		return "", errors.New("mvn: not found")
+	}
+
+	want := filepath.Join(home, ".m2", "repository")
+	for range 2 {
+		if got := r.localRepository(context.Background(), t.TempDir()); got != want {
+			t.Fatalf("localRepository = %q, want %q", got, want)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("asked Maven %d times, want once", calls)
+	}
+}
+
+func TestMavenResolver_ConfigureMavenCommand_UsesReportedLocalRepository(t *testing.T) {
+	configured := filepath.Join(t.TempDir(), "repo")
+	r := NewMavenResolver()
+	r.evaluateLocalRepository = func(context.Context, string) (string, error) { return configured, nil }
 
 	cmd := exec.CommandContext(context.Background(), "mvn", "dependency:tree")
-	if err := NewMavenResolver().configureMavenCommand(cmd); err != nil {
+	if err := r.configureMavenCommand(context.Background(), cmd); err != nil {
 		t.Fatalf("configureMavenCommand: %v", err)
 	}
 
-	want := "-Dmaven.repo.local=" + filepath.Join(home, ".m2", "repository")
+	want := "-Dmaven.repo.local=" + configured
 	matches := 0
 	for _, arg := range cmd.Args {
 		if arg == want {

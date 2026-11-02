@@ -79,3 +79,14 @@ rules:
       crypto:
         assetType: algorithm
         algorithmPrimitive: hash
+
+  - id: java.transitive-reachability.message-digest
+    message: Detected MessageDigest hashing
+    severity: INFO
+    languages:
+      - java
+    pattern: MessageDigest.getInstance($ALG)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: hash
