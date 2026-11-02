@@ -58,6 +58,9 @@ type Client struct {
 	httpClient *http.Client
 	baseURL    string
 	apiKey     string
+	// retryDelay is the wait before the first download retry; it doubles
+	// on each later retry.
+	retryDelay time.Duration
 }
 
 // NewClient creates a new API client.
@@ -77,7 +80,15 @@ func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *C
 		httpClient: httpClient,
 		baseURL:    baseURL,
 		apiKey:     apiKey,
+		retryDelay: config.DefaultRetryDelay,
 	}
+}
+
+// WithRetryDelay sets the wait before the first download retry; it doubles
+// on each later retry. It returns c.
+func (c *Client) WithRetryDelay(delay time.Duration) *Client {
+	c.retryDelay = delay
+	return c
 }
 
 // DownloadRuleset downloads a ruleset tarball from the API
@@ -94,7 +105,7 @@ func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]b
 
 	// Implement retry logic with exponential backoff
 	var lastErr error
-	delay := config.DefaultRetryDelay
+	delay := c.retryDelay
 
 	for attempt := 0; attempt <= config.DefaultMaxRetries; attempt++ {
 		if attempt > 0 {

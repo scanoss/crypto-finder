@@ -27,6 +27,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/scanoss/crypto-finder/internal/config"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -77,7 +79,9 @@ func newTestClient(t *testing.T, apiKey string, handler func(http.ResponseWriter
 		}),
 	}
 
-	return NewClientWithHTTPClient("https://api.example.com", apiKey, httpClient)
+	// Retries wait milliseconds, not the production backoff, so a test that
+	// exhausts every retry stays fast.
+	return NewClientWithHTTPClient("https://api.example.com", apiKey, httpClient).WithRetryDelay(time.Millisecond)
 }
 
 func TestNewClient(t *testing.T) {
@@ -281,9 +285,9 @@ func TestClient_DownloadRuleset_500ServerError(t *testing.T) {
 		t.Fatal("Expected error for 500 response")
 	}
 
-	// Should retry (default is 3 attempts, so total 4 requests)
-	if attemptCount <= 1 {
-		t.Errorf("Expected multiple retry attempts, got %d", attemptCount)
+	// The first request plus every retry.
+	if want := config.DefaultMaxRetries + 1; attemptCount != want {
+		t.Errorf("Expected %d requests, got %d", want, attemptCount)
 	}
 }
 
@@ -372,7 +376,7 @@ func TestClient_DownloadRuleset_ContextCanceledDuringRetryBackoff(t *testing.T) 
 		if attemptCount == 1 {
 			time.AfterFunc(10*time.Millisecond, cancel)
 		}
-	})
+	}).WithRetryDelay(time.Hour)
 
 	_, _, err := client.DownloadRuleset(ctx, "dca", "latest")
 	if !errors.Is(err, context.Canceled) {

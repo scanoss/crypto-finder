@@ -97,7 +97,7 @@ func newMockAPIClient(handler func(http.ResponseWriter, *http.Request)) *api.Cli
 		}),
 	}
 
-	return api.NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
+	return api.NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient).WithRetryDelay(time.Millisecond)
 }
 
 // createMockTarballClient creates an API client that returns a minimal valid tarball.

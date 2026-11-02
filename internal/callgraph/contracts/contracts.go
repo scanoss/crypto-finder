@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -784,7 +785,28 @@ func emptyKB() *KnowledgeBase {
 // Returns an empty *KnowledgeBase (nil error) if the ecosystem is unknown or
 // the directory has no YAML files. Returns an error if any file cannot be read,
 // fails validation, or if two files declare the same library.name.
+//
+// The embedded files never change, so each ecosystem is parsed once per
+// process and every caller shares the result. Callers must treat the
+// returned KnowledgeBase as read-only.
 func LoadEmbedded(ecosystem string) (*KnowledgeBase, error) {
+	embeddedKBsMu.Lock()
+	load, ok := embeddedKBs[ecosystem]
+	if !ok {
+		load = sync.OnceValues(func() (*KnowledgeBase, error) { return loadEmbedded(ecosystem) })
+		embeddedKBs[ecosystem] = load
+	}
+	embeddedKBsMu.Unlock()
+	return load()
+}
+
+// embeddedKBs maps an ecosystem to the loader that parses its KB once.
+var (
+	embeddedKBsMu sync.Mutex
+	embeddedKBs   = map[string]func() (*KnowledgeBase, error){}
+)
+
+func loadEmbedded(ecosystem string) (*KnowledgeBase, error) {
 	fsys, dir := embedFSFor(ecosystem)
 	if fsys == nil {
 		return emptyKB(), nil
