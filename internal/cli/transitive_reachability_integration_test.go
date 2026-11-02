@@ -52,6 +52,9 @@ type transitiveFinding struct {
 type transitiveReachabilityCase struct {
 	language string
 	tools    []string
+	// needsNetwork marks a case whose toolchain downloads build plugins. It
+	// runs only when networkTestsEnv is set to 1.
+	needsNetwork bool
 	// env prepares the dependencies of fixture/app and returns extra
 	// variables for the run.
 	env      func(t *testing.T, fixture string) []string
@@ -59,6 +62,9 @@ type transitiveReachabilityCase struct {
 	libb     string
 	findings []transitiveFinding
 }
+
+// networkTestsEnv opts in to the cases that need the network.
+const networkTestsEnv = "CRYPTO_FINDER_NETWORK_TESTS"
 
 // The moat case: app (no crypto in the path) -> liba (no crypto) -> libb
 // (crypto). libb's hashing the app reaches through liba must read reachable
@@ -128,14 +134,37 @@ func TestTransitiveReachability(t *testing.T) {
 				{module: "translibb", file: "lib.rs", line: 12, reachability: graphfrag.ReachabilityUnreachable},
 			},
 		},
+		{
+			// Maven downloads its plugins even though liba and libb are
+			// installed from the fixture, into a local repository of the
+			// test's own that the scan reaches through MAVEN_OPTS. Each
+			// project has a groupId of its own: Java packages under the
+			// application's groupId count as application code.
+			language: "java", tools: []string{"mvn", "java"}, needsNetwork: true,
+			env:  mavenRepositoryWithTransitiveChain,
+			liba: "example.transliba:transliba", libb: "example.translibb:translibb",
+			findings: []transitiveFinding{
+				{module: appModule, file: "Main.java", line: 19, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule}},
+				{module: appModule, file: "Main.java", line: 23, reachability: graphfrag.ReachabilityUnreachable},
+				{module: "example.translibb:translibb", file: "Hashing.java", line: 13, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "example.transliba:transliba", "example.translibb:translibb"}},
+				{module: "example.translibb:translibb", file: "Hashing.java", line: 18, reachability: graphfrag.ReachabilityUnreachable},
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.language, func(t *testing.T) {
 			t.Parallel()
+			var missing []string
 			for _, tool := range tc.tools {
 				if _, err := exec.LookPath(tool); err != nil {
-					t.Skipf("%s not installed", tool)
+					missing = append(missing, tool+" not installed")
 				}
+			}
+			if tc.needsNetwork && os.Getenv(networkTestsEnv) != "1" {
+				missing = append(missing, networkTestsEnv+"=1 not set, and this case needs the network")
+			}
+			if len(missing) > 0 {
+				t.Skip(strings.Join(missing, "; "))
 			}
 			fixtureDir := tc.language
 			if fixtureDir == "javascript" {
@@ -309,6 +338,24 @@ func cargoWithIsolatedHome(t *testing.T, _ string) []string {
 		}
 	}
 	return env
+}
+
+// mavenRepositoryWithTransitiveChain installs fixture/libb and then
+// fixture/liba, each with its sources JAR, into a local repository in a
+// temporary directory, and points the scan at it through MAVEN_OPTS. HOME is
+// isolated as well, so neither the install nor the scan touches ~/.m2.
+func mavenRepositoryWithTransitiveChain(t *testing.T, fixture string) []string {
+	t.Helper()
+	env := isolatedHome(t)
+	repo := t.TempDir()
+	for _, lib := range []string{"libb", "liba"} {
+		cmd := exec.CommandContext(t.Context(), "mvn", "-q", "-B", "install", "-DskipTests", "-Dmaven.repo.local="+repo)
+		cmd.Dir = filepath.Join(fixture, lib)
+		cmd.Env = append(withoutEnv(os.Environ(), "MAVEN_OPTS"), env...)
+		output, err := cmd.CombinedOutput()
+		require.NoErrorf(t, err, "mvn install %s:\n%s", lib, output)
+	}
+	return append(env, "MAVEN_OPTS=-Dmaven.repo.local="+repo)
 }
 
 // packageSources reads every file under dir, keyed by its path inside dir.
