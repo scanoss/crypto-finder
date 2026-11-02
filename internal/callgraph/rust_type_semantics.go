@@ -2970,17 +2970,38 @@ func (c *rustTypeCtx) walkRustScoped(node *sitter.Node, visit rustVisitor) {
 	case rustSyms.closureExpression:
 		c.walkRustClosure(node, nil, visit)
 		return
-	case rustSyms.callExpression:
-		if !visit(node, c) {
-			return
-		}
-		c.walkRustCallChildren(node, visit)
+	case rustSyms.callExpression, rustSyms.macroInvocation:
+		c.walkRustInvocation(node, visit)
 		return
 	}
 	if !visit(node, c) {
 		return
 	}
 	c.walkRustChildren(node, visit)
+}
+
+// walkRustInvocation walks a call or a macro invocation. A macro's arguments
+// are walked a second time re-parsed as code, in the scope the macro is invoked
+// in: `assert!(c.verify(m))` evaluates `c.verify(m)` right there, with the
+// bindings in effect at the macro.
+func (c *rustTypeCtx) walkRustInvocation(node *sitter.Node, visit rustVisitor) {
+	if !visit(node, c) {
+		return
+	}
+	if node.Symbol() == rustSyms.callExpression {
+		c.walkRustCallChildren(node, visit)
+		return
+	}
+	c.walkRustChildren(node, visit)
+	if c.parser == nil {
+		return
+	}
+	tree := c.parser.parseRustMacroArguments(node, c.src)
+	if tree == nil {
+		return
+	}
+	defer tree.Close()
+	c.walkRustScoped(tree.RootNode(), visit)
 }
 
 func (c *rustTypeCtx) walkRustChildren(node *sitter.Node, visit rustVisitor) {

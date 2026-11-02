@@ -84,6 +84,12 @@ type RustParser struct {
 	// instance and clone, the same way crateIndex is: the KB does not depend
 	// on which worker asked for it.
 	kb *contracts.KnowledgeBase
+	// macroParser re-parses macro invocation arguments as expressions (see
+	// parseRustMacroArguments), and macroBuf is its reusable input buffer.
+	// Both are per instance: tree-sitter parsers are not reentrant, and
+	// CloneParser builds a fresh instance for each worker.
+	macroParser *sitter.Parser
+	macroBuf    []byte
 }
 
 // NewRustParser creates a new Rust source parser backed by tree-sitter.
@@ -1307,6 +1313,94 @@ func (p *RustParser) extractCalls(body *sitter.Node, ctx *rustTypeCtx, filePath 
 		return true
 	})
 	return calls
+}
+
+// rustNonEvaluatingMacros are the macros whose arguments parse as expressions
+// but are never evaluated: they quote or stringify their tokens. A call written
+// inside them is not a call the enclosing function makes.
+var rustNonEvaluatingMacros = map[string]bool{
+	"stringify":           true,
+	"quote":               true,
+	"quote_spanned":       true,
+	"parse_quote":         true,
+	"parse_quote_spanned": true,
+}
+
+// parseRustMacroArguments re-parses a macro invocation's arguments as Rust
+// code, returning the tree (the caller closes it) or nil when they are not an
+// expression.
+//
+// Tree-sitter leaves a macro's arguments as an opaque token_tree, so a call
+// written inside `println!("{:?}", fingerprint(data))` had no call_expression
+// and produced no edge. Expression macros — the std formatting and assert
+// family, `vec!`, `dbg!`, and any other whose arguments are a comma-separated
+// expression list — evaluate those arguments in the enclosing function, so
+// their calls are that function's calls.
+//
+// The token tree is parsed in place: the parser reads only the token tree's
+// own byte range of a buffer laid out like the file, followed by a `;` that
+// makes it an expression statement. Every node of the result therefore has the
+// byte offsets, lines and columns it has in the file, so the regular call
+// extraction runs on it unchanged against the file's source.
+//
+// Only `(..)` and `[..]` arguments that parse WITHOUT an error are accepted.
+// A `{..}` body (`tokio::select!`, `thread_local!`) or a DSL such as
+// `tracing::info!(field = %f(x))` is not an expression list, and taking the
+// fragments error recovery salvages from it would invent edges. A
+// `macro_rules!` definition is a macro_definition, not an invocation, and is
+// never reached here.
+func (p *RustParser) parseRustMacroArguments(node *sitter.Node, src []byte) *sitter.Tree {
+	name := nodeFieldText(node, "macro", src)
+	if i := strings.LastIndex(name, "::"); i >= 0 {
+		name = name[i+2:]
+	}
+	if rustNonEvaluatingMacros[name] {
+		return nil
+	}
+	count := int(node.NamedChildCount())
+	if count == 0 {
+		return nil
+	}
+	args := node.NamedChild(count - 1)
+	start, end := args.StartByte(), args.EndByte()
+	if args.Type() != rustNodeTokenTree || int(end) > len(src) || end <= start {
+		return nil
+	}
+	if open := src[start]; open != '(' && open != '[' {
+		return nil
+	}
+
+	// Bytes outside the included range are never read, so the buffer is reused
+	// across invocations and only the token tree is copied into it.
+	size := int(end) + 1
+	if cap(p.macroBuf) < size {
+		p.macroBuf = make([]byte, size)
+	}
+	buf := p.macroBuf[:size]
+	copy(buf[start:end], src[start:end])
+	buf[end] = ';'
+	endPoint := args.EndPoint()
+	endPoint.Column++
+
+	if p.macroParser == nil {
+		p.macroParser = sitter.NewParser()
+		p.macroParser.SetLanguage(rust.GetLanguage())
+	}
+	p.macroParser.SetIncludedRanges([]sitter.Range{{
+		StartPoint: args.StartPoint(),
+		EndPoint:   endPoint,
+		StartByte:  start,
+		EndByte:    end + 1,
+	}})
+	tree, err := p.macroParser.ParseCtx(context.TODO(), nil, buf)
+	if err != nil {
+		return nil
+	}
+	if root := tree.RootNode(); root.HasError() || root.NamedChildCount() != 1 {
+		tree.Close()
+		return nil
+	}
+	return tree
 }
 
 // parseCallExpr parses a call_expression into a FunctionCall.
