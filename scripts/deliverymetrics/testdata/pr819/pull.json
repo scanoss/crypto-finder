@@ -1,0 +1,1 @@
+{"body":"","created_at":"2026-11-02T14:25:00Z","head":{"ref":"fix/scan-target-under-ignored-dir"},"merge_commit_sha":"907d32dfa0ce1596b8230bd7a8fe788b64457380","merged_at":"2026-11-02T14:44:01Z","number":819,"title":"fix(scanner): scan a target its Git repository ignores as its own work tree","updated_at":"2026-11-02T15:21:16Z"}
