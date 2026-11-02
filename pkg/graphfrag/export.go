@@ -89,7 +89,11 @@ const SchemaVersion = "graph-fragment-1.14"
 // call's contract returns, a direct initializer (`T v(f())`, `auto v{f()}`)
 // binds its variable, and a templated callee is recorded without its template
 // arguments (`std::make_unique<T>()` calls std::make_unique).
-const GraphAlgoVersion = "graph-algo-12"
+//
+// graph-algo-13: a Rust call written inside a macro's parenthesized or
+// bracketed expression arguments (`println!("{:?}", f(x))`) is an edge from
+// the enclosing function.
+const GraphAlgoVersion = "graph-algo-13"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
