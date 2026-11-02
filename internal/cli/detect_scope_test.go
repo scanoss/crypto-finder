@@ -104,3 +104,20 @@ func TestBuildDetectionScope_DropsGitIgnoredUntrackedFiles(t *testing.T) {
 		"a git-aware walk lists tracked files even when they match .gitignore, and skips untracked ignored ones")
 	require.Equal(t, 1, stats.gitIgnored)
 }
+
+func TestBuildDetectionScope_TargetIgnoredByParentRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := writeScopeTree(t, "sub/app/kept.go", "sub/app/skip.go")
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("sub/\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "sub", "app", ".gitignore"), []byte("skip.go\n"), 0o600))
+	out, err := exec.CommandContext(t.Context(), "git", "init", "-q", root).CombinedOutput()
+	require.NoErrorf(t, err, "git init: %s", out)
+
+	scope, stats, err := buildDetectionScope(t.Context(), filepath.Join(root, "sub", "app"), []string{"kept.go", "skip.go"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"kept.go"}, scope.Paths,
+		"the parent's .gitignore does not empty a target it ignores; the target's own .gitignore still applies")
+	require.Equal(t, 1, stats.gitIgnored)
+}

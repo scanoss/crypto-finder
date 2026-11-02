@@ -250,6 +250,12 @@ func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.Detect
 		}
 	}
 
+	s, closeWorkTree, err := s.forTarget(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	defer closeWorkTree()
+
 	var opengrepResults *entities.SemgrepOutput
 	if outcome == nil {
 		var err error
@@ -285,6 +291,33 @@ func (s *Scanner) scan(ctx context.Context, target string, scope *scanner.Detect
 	report := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(opengrepResults, toolInfo, target, rulePaths, s.disableDedup)
 
 	return report, nil
+}
+
+// forTarget returns the scanner that scans target. When the enclosing Git
+// work tree ignores target, that is a copy of s whose environment points git
+// at a work tree of target's own (scanner.IgnoredTargetWorkTree); otherwise
+// it is s. Call the returned func when the scan ends.
+func (s *Scanner) forTarget(ctx context.Context, target string) (*Scanner, func(), error) {
+	if s.includeGitIgnored {
+		return s, func() {}, nil
+	}
+	workTree, err := scanner.IgnoredTargetWorkTree(ctx, fsPath(s.workDir, target))
+	if err != nil {
+		return nil, nil, failure.Wrap(err, failure.CodeScannerInitializationFailed, failure.StageScan,
+			"failed to prepare a Git work tree for a target its repository ignores",
+			failure.WithDetail("scanner", ScannerName))
+	}
+	if workTree == nil {
+		return s, func() {}, nil
+	}
+	log.Debug().Str("target", target).Msg("the enclosing Git work tree ignores the target; scanning it as a work tree of its own")
+	scoped := *s
+	scoped.env = workTree.WithEnv(s.env)
+	return &scoped, func() {
+		if err := workTree.Close(); err != nil {
+			log.Warn().Err(err).Msg("could not remove a temporary Git repository")
+		}
+	}, nil
 }
 
 // run executes one opengrep process in dir and parses its JSON output,
