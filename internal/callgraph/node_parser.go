@@ -1128,6 +1128,7 @@ func (p *NodeParser) parseNodeCall(node *sitter.Node, src []byte, filePath, pack
 			pkg, last := binding.qualify()
 			if last == "" {
 				last = name
+				call.nodeModuleValue = true
 			}
 			call.Callee = FunctionID{Package: pkg, Name: last}
 		}

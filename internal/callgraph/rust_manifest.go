@@ -674,7 +674,7 @@ func rustCrateSourceWalk(root, path string, entry fs.DirEntry, err error, matche
 		return nil
 	}
 	if entry.IsDir() {
-		if path != root && (strings.HasPrefix(entry.Name(), ".") || matcher.ShouldSkip(filepath.ToSlash(path), true)) {
+		if path != root && (strings.HasPrefix(entry.Name(), ".") || skip.ShouldSkipUnder(matcher, root, path, true)) {
 			return fs.SkipDir
 		}
 		return nil
@@ -682,7 +682,7 @@ func rustCrateSourceWalk(root, path string, entry fs.DirEntry, err error, matche
 	if filepath.Ext(path) != ".rs" {
 		return nil
 	}
-	if matcher.ShouldSkip(filepath.ToSlash(path), false) {
+	if skip.ShouldSkipUnder(matcher, root, path, false) {
 		return nil
 	}
 	*paths = append(*paths, path)

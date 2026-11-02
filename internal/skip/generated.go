@@ -64,20 +64,27 @@ func NewMatcher(patterns []string, generatedPolicy bool) SkipMatcher {
 
 // ShouldSkip reports whether path should be excluded from scanning.
 func (m *sourceMatcher) ShouldSkip(path string, isDir bool) bool {
+	return m.shouldSkipRelative(path, filepath.ToSlash(path), isDir)
+}
+
+// shouldSkipRelative matches the patterns and the shaded and vendored-copy
+// segments against rel, the part of path below the walked root. The protobuf
+// keep-list looks at the whole path, which names the module or package the
+// runtime was installed as, and the header check reads path.
+func (m *sourceMatcher) shouldSkipRelative(path, rel string, isDir bool) bool {
 	if isDir {
-		return m.paths.ShouldSkip(path, true)
+		return m.paths.ShouldSkip(rel, true)
 	}
 	if !m.generatedPolicy {
-		return m.paths.ShouldSkip(path, false)
+		return m.paths.ShouldSkip(rel, false)
 	}
-	slash := filepath.ToSlash(path)
-	if pathHasSegment(slash, "shaded") {
+	if pathHasSegment(rel, "shaded") {
 		return true
 	}
-	if isProtobufRuntimePath(slash) && !isVendoredCopyPath(slash) {
+	if isProtobufRuntimePath(filepath.ToSlash(path)) && !isVendoredCopyPath(rel) {
 		return false
 	}
-	if m.paths.ShouldSkip(path, false) {
+	if m.paths.ShouldSkip(rel, false) {
 		return true
 	}
 	return hasGeneratedSourceHeader(path)

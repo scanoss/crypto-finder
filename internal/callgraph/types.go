@@ -438,6 +438,11 @@ type FunctionCall struct {
 	// no function of the module: while Callee.Type stays empty the caller index
 	// draws no edge to a same-named module function.
 	nodeUnboundMember bool
+	// nodeModuleValue marks a Node call of an imported module value itself:
+	// a default import, or `const f = require('m')` with `f(..)`. The callee
+	// name is then the local binding, and the call reaches the module's
+	// default export (module.exports for CommonJS).
+	nodeModuleValue bool
 	// nodeUntyped is the callee before a receiver type that the builder still
 	// checks was applied: a default-imported class, or an unannotated field.
 	nodeUntyped FunctionID

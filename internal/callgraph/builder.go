@@ -120,6 +120,9 @@ type Builder struct {
 	// pythonProjectRoots are the nested Python project directories of the
 	// current project-local package (see discoverPythonProjectRoots).
 	pythonProjectRoots map[string]struct{}
+	// nodePackageDirs maps each Node package of the build, by import path, to
+	// its directory, for linkNodePackageCalls.
+	nodePackageDirs map[string]string
 	// pythonDependencyNames are the top-level module names of the build's
 	// versioned (dependency) packages, which a vendored project may not claim.
 	pythonDependencyNames map[string]bool
@@ -276,6 +279,7 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	parseSpan := perf.Start("callgraph.build.parse")
 	b.resetPythonBuildState()
 	b.pythonDependencyNames = pythonDependencyTopLevelNames(packages)
+	b.nodePackageDirs = nodePackageDirs(b.ecosystem, packages)
 	b.artifacts = newArtifactScopeFor(b.ecosystem, b.artifactGraph)
 	graph.artifacts = b.artifacts
 	log.Info().Int("packages", len(packages)).Msg("Parsing source files for call graph")
@@ -408,6 +412,7 @@ func (b *Builder) indexCallers(graph *CallGraph) {
 	pruneGoPredeclaredCalls(graph, b.ecosystem)
 	resolveGoFieldReceiverCalls(graph, b.ecosystem)
 	resolveNodeTypedReceivers(graph)
+	b.linkNodePackageCalls(graph)
 	b.buildCallerIndex(graph)
 }
 
@@ -590,7 +595,7 @@ func (b *Builder) skipWalkDirectory(path, name string) bool {
 	if b.skipMatcher == nil {
 		return false
 	}
-	return b.skipMatcher.ShouldSkip(filepath.ToSlash(path), true)
+	return skip.ShouldSkipUnder(b.skipMatcher, b.packageRoot, path, true)
 }
 
 func (b *Builder) collectParseDirs(dir, importPath string) []parseDirWork {
@@ -866,7 +871,7 @@ func (b *Builder) skipSourceFile(analysis *FileAnalysis) bool {
 	if b.skipMatcher == nil {
 		return false
 	}
-	return b.skipMatcher.ShouldSkip(filepath.ToSlash(analysis.FilePath), false)
+	return skip.ShouldSkipUnder(b.skipMatcher, b.packageRoot, analysis.FilePath, false)
 }
 
 // applyEcosystemAnalysisHooks runs the per-analysis, ecosystem-specific

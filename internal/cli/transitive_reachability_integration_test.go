@@ -44,10 +44,6 @@ type transitiveFinding struct {
 	// chain lists, in order, the modules a reachable finding's call chain
 	// must pass through, from the application to the finding.
 	chain []string
-	// knownGap, when set, names the product gap that makes this finding's
-	// reachability read wrong today, and skips only the reachability and
-	// chain assertions.
-	knownGap string
 }
 
 // transitiveReachabilityCase names a fixture under
@@ -63,12 +59,6 @@ type transitiveReachabilityCase struct {
 	libb     string
 	findings []transitiveFinding
 }
-
-// nodeModulesGap is why npm dependency findings read not_applicable today:
-// the call-graph builder matches the default skip names against a file's
-// absolute path, so every file under node_modules is dropped from the graph
-// and a dependency finding has no containing function.
-const nodeModulesGap = "the call-graph builder skips every file under node_modules, so dependency findings have no containing function and read not_applicable"
 
 // The moat case: app (no crypto in the path) -> liba (no crypto) -> libb
 // (crypto). libb's hashing the app reaches through liba must read reachable
@@ -120,8 +110,8 @@ func TestTransitiveReachability(t *testing.T) {
 			findings: []transitiveFinding{
 				{module: appModule, file: "index.js", line: 5, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule}},
 				{module: appModule, file: "index.js", line: 9, reachability: graphfrag.ReachabilityUnreachable},
-				{module: "translibb", file: "index.js", line: 5, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "transliba", "translibb"}, knownGap: nodeModulesGap},
-				{module: "translibb", file: "index.js", line: 9, reachability: graphfrag.ReachabilityUnreachable, knownGap: nodeModulesGap},
+				{module: "translibb", file: "index.js", line: 5, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "transliba", "translibb"}},
+				{module: "translibb", file: "index.js", line: 9, reachability: graphfrag.ReachabilityUnreachable},
 			},
 		},
 		{
@@ -180,11 +170,6 @@ func TestTransitiveReachability(t *testing.T) {
 							route = append(route, step.Module)
 						}
 						require.Equal(t, []string{tc.liba, tc.libb}, route, "dependency path to %s", want.module)
-					}
-					// Attribution is asserted above even for a known gap,
-					// which only excuses the reachability verdict.
-					if want.knownGap != "" {
-						t.Skipf("known gap: %s (read %s)", want.knownGap, v.graph.Reachability)
 					}
 					require.Equal(t, want.reachability, v.graph.Reachability, "reachability of %s", key)
 					if want.chain != nil {
