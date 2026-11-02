@@ -1,0 +1,13 @@
+rules:
+  - id: java.key-params-across-methods.keypairgenerator
+    message: Detected a JCA KeyPairGenerator
+    severity: INFO
+    languages:
+      - java
+    pattern: KeyPairGenerator.getInstance($ALG)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: pke
+        operation: keygen
+        api: java.security.KeyPairGenerator.getInstance
