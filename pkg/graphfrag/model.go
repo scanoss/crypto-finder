@@ -121,6 +121,9 @@ type Function struct {
 	DisplaySymbol string
 	// Aliases contains alternate customer-facing names for this function.
 	Aliases []string
+	// ReturnsCalls lists the callee keys of the calls whose result the
+	// function returns (1.15+). Nil for older fragments.
+	ReturnsCalls []string
 }
 
 // CallSite carries the per-edge call-site invocation detail: the line number and

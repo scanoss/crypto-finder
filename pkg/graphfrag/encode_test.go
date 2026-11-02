@@ -7,7 +7,7 @@ import "testing"
 
 // TestEncodeFragment_RoundTripsStructuralIdentity verifies EncodeFragment ->
 // DecodeFragment preserves the structural payload the annotate import depends on:
-// function line ranges, edge keys, the graph-fragment-1.4 object identity
+// function line ranges and returns_calls, edge keys, the graph-fragment-1.4 object identity
 // (receiver_var/assigned_var/chain_id), Raw, and entry_call args.
 func TestEncodeFragment_RoundTripsStructuralIdentity(t *testing.T) {
 	t.Parallel()
@@ -18,6 +18,7 @@ func TestEncodeFragment_RoundTripsStructuralIdentity(t *testing.T) {
 			Signature: "com.app.(Svc).run#0", FunctionName: "com.app.Svc.run",
 			DeclaringType: "Svc",
 			FilePath:      "Svc.java", StartLine: 4, EndLine: 11,
+			ReturnsCalls: []string{"com.app.(Svc).helper#0"},
 		}},
 		ExternalCalls: []ExternalCall{{
 			Caller: "com.app.(Svc).run#0", TargetSignature: "org.bc.(Gen).init#1",
@@ -50,6 +51,9 @@ func TestEncodeFragment_RoundTripsStructuralIdentity(t *testing.T) {
 	}
 	if got.Functions[0].DeclaringType != "Svc" {
 		t.Fatalf("function declaring type lost: %q, want Svc", got.Functions[0].DeclaringType)
+	}
+	if calls := got.Functions[0].ReturnsCalls; len(calls) != 1 || calls[0] != "com.app.(Svc).helper#0" {
+		t.Fatalf("function returns_calls lost: %q", calls)
 	}
 	if len(got.ExternalCalls) != 1 {
 		t.Fatalf("external calls len = %d, want 1", len(got.ExternalCalls))

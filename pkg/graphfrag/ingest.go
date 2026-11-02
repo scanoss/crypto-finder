@@ -64,6 +64,7 @@ func appendFragmentFunctions(frag *Fragment, functions []GraphFragmentFunction) 
 			FilePath:                      fn.FilePath,
 			DisplaySymbol:                 fn.DisplaySymbol,
 			Aliases:                       append([]string(nil), fn.Aliases...),
+			ReturnsCalls:                  append([]string(nil), fn.ReturnsCalls...),
 		})
 	}
 }

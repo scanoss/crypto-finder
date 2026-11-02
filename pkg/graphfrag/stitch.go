@@ -2253,7 +2253,8 @@ func composeDependencyEntryPoints(
 	out.composedRawFindings = make(map[string]map[string]bool)
 	out.composedRoutes = make(map[string]map[string][]graphNode)
 	for _, key := range keys {
-		appendComposedResult(root, rootFunctions[key], composed[key], hasIncoming, out)
+		fn := rootFunctions[key]
+		appendComposedResult(root, &fn, composed[key], hasIncoming, out)
 	}
 }
 
@@ -2451,7 +2452,7 @@ func (c *composedEntry) merge(
 
 // appendComposedResult converts one composed entry into the Result's served
 // form, tracking per-finding minimum composed depth and root classification.
-func appendComposedResult(root ComponentKey, fn Function, entry *composedEntry, hasIncoming map[graphNode]bool, out *Result) {
+func appendComposedResult(root ComponentKey, fn *Function, entry *composedEntry, hasIncoming map[graphNode]bool, out *Result) {
 	ep := CryptoEntryPoint{
 		FunctionKey:        fn.Signature,
 		FunctionName:       fn.FunctionName,

@@ -7,6 +7,4 @@
   (`KeyPairGenerator kpg = newKpg(); kpg.initialize(2048)`) now gets the
   caller's configuration calls as supporting calls of the finding that created
   it, with their resolved size. Parameters are followed through at most four
-  calls and returned objects through at most three helpers. The
-  `annotate` command, which re-derives supporting calls from a cached graph
-  fragment, does not follow returned objects yet.
+  calls and returned objects through at most three helpers.

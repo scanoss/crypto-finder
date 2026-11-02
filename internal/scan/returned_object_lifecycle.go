@@ -3,7 +3,11 @@
 
 package scan
 
-import "github.com/scanoss/crypto-finder/internal/callgraph"
+import (
+	"sort"
+
+	"github.com/scanoss/crypto-finder/internal/callgraph"
+)
 
 // maxReturnedObjectDepth bounds how many methods a crypto object is followed
 // through when each one returns it to its caller. A helper that returns the
@@ -11,16 +15,38 @@ import "github.com/scanoss/crypto-finder/internal/callgraph"
 // counts as two.
 const maxReturnedObjectDepth = 3
 
-// objectSite is one call in the lifecycle of a crypto object, with the method
-// it is written in.
-type objectSite struct {
-	fn   *callgraph.FunctionDecl
-	call *callgraph.FunctionCall
+// returnedObjectGraph is what the returned-object walk reads from a graph: the
+// live call graph during a scan (liveReturnedObjectGraph), or the edges of a
+// cached graph fragment during annotate (fragmentReturnedObjectGraph). Both
+// run the same walk, so annotate follows a returned object exactly as a scan
+// does.
+type returnedObjectGraph interface {
+	// callers returns the keys of the functions that call fnKey, in key order.
+	callers(fnKey string) []string
+	// calls returns the calls fnKey makes, in source order.
+	calls(fnKey string) []returnedObjectCall
+	// returnsCall reports whether fnKey returns the object its call at index
+	// call produces.
+	returnsCall(fnKey string, call int) bool
 }
 
-// returnedObjectLifecycleCalls follows the object a terminal call produces out
-// of its method when the method returns it, and collects the object's
-// lifecycle in every caller that keeps it:
+// returnedObjectCall is one call as the walk sees it: the function it calls
+// and the object it is made on or bound to.
+type returnedObjectCall struct {
+	callee   string
+	identity objectIdentity
+}
+
+// returnedObjectSite is one call in the lifecycle of a returned object: the
+// call at index call in the function fnKey.
+type returnedObjectSite struct {
+	fnKey string
+	call  int
+}
+
+// returnedObjectSites follows the object a terminal call produces out of its
+// method when the method returns it, and collects the object's lifecycle in
+// every caller that keeps it:
 //
 //	static KeyPairGenerator newKpg() { return KeyPairGenerator.getInstance("RSA"); }
 //	KeyPairGenerator kpg = newKpg(); kpg.initialize(2048);
@@ -34,35 +60,27 @@ type objectSite struct {
 //
 // The walk is deterministic (callers in key order, calls in source order) and
 // stops after maxReturnedObjectDepth methods or at a method already visited.
-func returnedObjectLifecycleCalls(ctx *exportBuildContext, fn *callgraph.FunctionDecl, terminal *callgraph.FunctionCall) []objectSite {
-	visited := map[string]bool{}
-	return collectReturnedObjectSites(ctx, fn, terminal, 0, visited)
+func returnedObjectSites(g returnedObjectGraph, fnKey string, terminal int) []returnedObjectSite {
+	return collectReturnedObjectSites(g, fnKey, terminal, 0, map[string]bool{})
 }
 
-func collectReturnedObjectSites(ctx *exportBuildContext, fn *callgraph.FunctionDecl, producer *callgraph.FunctionCall, depth int, visited map[string]bool) []objectSite {
-	if ctx == nil || ctx.graph == nil || depth >= maxReturnedObjectDepth || !returnsCallResult(fn, producer) {
-		return nil
-	}
-	fnKey := fn.ID.String()
-	if visited[fnKey] {
+func collectReturnedObjectSites(g returnedObjectGraph, fnKey string, producer, depth int, visited map[string]bool) []returnedObjectSite {
+	if depth >= maxReturnedObjectDepth || visited[fnKey] || !g.returnsCall(fnKey, producer) {
 		return nil
 	}
 	visited[fnKey] = true
 
-	var out []objectSite
-	for _, callerKey := range ctx.reverseCallersOf(fnKey) {
-		caller := ctx.graph.Functions[callerKey]
-		if caller == nil {
-			continue
-		}
-		for i := range caller.Calls {
-			if caller.Calls[i].Callee.String() != fnKey {
+	var out []returnedObjectSite
+	for _, callerKey := range g.callers(fnKey) {
+		calls := g.calls(callerKey)
+		for i := range calls {
+			if calls[i].callee != fnKey {
 				continue
 			}
-			for _, j := range returnedObjectCallIndices(caller, i) {
-				out = append(out, objectSite{fn: caller, call: &caller.Calls[j]})
+			for _, j := range returnedObjectCallIndices(calls, i) {
+				out = append(out, returnedObjectSite{fnKey: callerKey, call: j})
 			}
-			out = append(out, collectReturnedObjectSites(ctx, caller, &caller.Calls[i], depth+1, visited)...)
+			out = append(out, collectReturnedObjectSites(g, callerKey, i, depth+1, visited)...)
 		}
 	}
 	return out
@@ -70,14 +88,99 @@ func collectReturnedObjectSites(ctx *exportBuildContext, fn *callgraph.FunctionD
 
 // returnedObjectCallIndices returns the lifecycle of the object a call returns
 // in its caller, the same selection a factory terminal gets.
-func returnedObjectCallIndices(caller *callgraph.FunctionDecl, callIdx int) []int {
-	identities := make([]objectIdentity, len(caller.Calls))
-	for i := range caller.Calls {
-		c := &caller.Calls[i]
-		identities[i] = objectIdentity{ReceiverVar: c.ReceiverVar, AssignedVar: c.AssignedVar, ChainID: c.ChainID}
+func returnedObjectCallIndices(calls []returnedObjectCall, callIdx int) []int {
+	identities := make([]objectIdentity, len(calls))
+	for i := range calls {
+		identities[i] = calls[i].identity
 	}
 	identities[callIdx].ReceiverVar = ""
 	return lifecycleCallIndices(identities, callIdx)
+}
+
+// objectSite is one call in the lifecycle of a crypto object, with the method
+// it is written in.
+type objectSite struct {
+	fn   *callgraph.FunctionDecl
+	call *callgraph.FunctionCall
+}
+
+// returnedObjectLifecycleCalls runs returnedObjectSites on the live call graph.
+func returnedObjectLifecycleCalls(ctx *exportBuildContext, fn *callgraph.FunctionDecl, terminal *callgraph.FunctionCall) []objectSite {
+	if ctx == nil || ctx.graph == nil || fn == nil || terminal == nil {
+		return nil
+	}
+	terminalIdx := -1
+	for i := range fn.Calls {
+		if &fn.Calls[i] == terminal {
+			terminalIdx = i
+		}
+	}
+	if terminalIdx < 0 {
+		return nil
+	}
+	g := liveReturnedObjectGraph{ctx: ctx}
+	sites := returnedObjectSites(g, fn.ID.String(), terminalIdx)
+	out := make([]objectSite, 0, len(sites))
+	for _, site := range sites {
+		caller := ctx.graph.Functions[site.fnKey]
+		out = append(out, objectSite{fn: caller, call: &caller.Calls[site.call]})
+	}
+	return out
+}
+
+// liveReturnedObjectGraph is the live call graph as a returnedObjectGraph.
+type liveReturnedObjectGraph struct {
+	ctx *exportBuildContext
+}
+
+func (g liveReturnedObjectGraph) callers(fnKey string) []string {
+	var out []string
+	for _, key := range g.ctx.reverseCallersOf(fnKey) {
+		if g.ctx.graph.Functions[key] != nil {
+			out = append(out, key)
+		}
+	}
+	return out
+}
+
+func (g liveReturnedObjectGraph) calls(fnKey string) []returnedObjectCall {
+	fn := g.ctx.graph.Functions[fnKey]
+	if fn == nil {
+		return nil
+	}
+	out := make([]returnedObjectCall, len(fn.Calls))
+	for i := range fn.Calls {
+		c := &fn.Calls[i]
+		out[i] = returnedObjectCall{
+			callee:   c.Callee.String(),
+			identity: objectIdentity{ReceiverVar: c.ReceiverVar, AssignedVar: c.AssignedVar, ChainID: c.ChainID},
+		}
+	}
+	return out
+}
+
+func (g liveReturnedObjectGraph) returnsCall(fnKey string, call int) bool {
+	fn := g.ctx.graph.Functions[fnKey]
+	return fn != nil && call >= 0 && call < len(fn.Calls) && returnsCallResult(fn, &fn.Calls[call])
+}
+
+// returnedCallees lists, sorted, the callees whose call result fn returns
+// under returnsCallResult. Each names one call, since returnsCallResult only
+// accepts a callee fn calls once. A graph fragment records the list on the
+// function as returns_calls, which is all the walk needs to run on the
+// fragment.
+func returnedCallees(fn *callgraph.FunctionDecl) []string {
+	if fn == nil || len(fn.ReturnSources) == 0 {
+		return nil
+	}
+	var out []string
+	for i := range fn.Calls {
+		if returnsCallResult(fn, &fn.Calls[i]) {
+			out = append(out, fn.Calls[i].Callee.String())
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // returnsCallResult reports whether fn returns the object call produces:
