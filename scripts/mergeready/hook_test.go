@@ -60,6 +60,18 @@ func TestFindMerges(t *testing.T) {
 		{"mention in an echo", `echo "then gh pr merge 12"`, []string{"pr view 12 --json number,url"}},
 		{"mention in a commit message", `git commit -m "docs: run gh pr merge 12 after check"`, []string{"unresolved"}},
 
+		{"stderr to stdout", "gh pr merge 12 --squash 2>&1", []string{"pr view 12 --json number,url"}},
+		{"stderr to stdout, piped", "gh pr merge 12 2>&1 | tail -5", []string{"pr view 12 --json number,url"}},
+		{"stdout to a file", "gh pr merge 12 >out.txt", []string{"pr view 12 --json number,url"}},
+		{"stdout to a file, spaced", "gh pr merge 12 > out.txt --squash", []string{"pr view 12 --json number,url"}},
+		{"append to a file", "gh pr merge 12 >> log", []string{"pr view 12 --json number,url"}},
+		{"stderr to /dev/null", "gh pr merge 12 2>/dev/null", []string{"pr view 12 --json number,url"}},
+		{"both to a file", "gh pr merge 12 &>x", []string{"pr view 12 --json number,url"}},
+		{"redirection before the number", "gh pr merge 2>/dev/null 12", []string{"pr view 12 --json number,url"}},
+		{"redirection, no argument", "gh pr merge --squash 2>&1", []string{"pr view --json number,url"}},
+		{"redirection, two arguments", "gh pr merge 12 13 2>&1", []string{"unresolved"}},
+		{"redirection after cd", "cd ../other && gh pr merge 12 2>&1", []string{"unresolved"}},
+
 		{"git status", "git status", nil},
 		{"disable auto-merge", "gh pr merge 12 --disable-auto", nil},
 		{"view", "gh pr view 12", nil},
@@ -120,6 +132,11 @@ func TestRunHook(t *testing.T) {
 		{name: "not Bash", stdin: event(t, "Write", "gh pr merge 12"), code: 0, noCalls: true},
 		{name: "ready", stdin: event(t, "Bash", "gh pr merge 12 --squash"), responses: resolved(readyPR()), code: 0},
 		{name: "ready via the API", stdin: event(t, "Bash", "gh api -X PUT repos/o/r/pulls/12/merge"), responses: readyPR(), code: 0},
+		{name: "ready, output redirected", stdin: event(t, "Bash", "gh pr merge 12 --squash 2>&1"), responses: resolved(readyPR()), code: 0},
+		{
+			name: "not ready, output redirected", stdin: event(t, "Bash", "gh pr merge 12 2>/dev/null"), responses: resolved(notReady), code: 2,
+			stderr: `o/r#12: check "test" finished with failure`,
+		},
 		{
 			name: "not ready", stdin: event(t, "Bash", "gh pr merge 12 --squash"), responses: resolved(notReady), code: 2,
 			stderr: `o/r#12: check "test" finished with failure`,
