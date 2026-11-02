@@ -2,7 +2,9 @@
 # Test Docker Image
 # ============================================================================
 # This image is used for running integration tests in CI/CD and locally.
-# It includes Go, semgrep, and opengrep to support scanner integration tests.
+# It includes Go, semgrep, and opengrep to support scanner integration tests,
+# plus python3-venv and cargo so the Python and Rust dependency reachability
+# tests run in CI instead of skipping.
 
 FROM golang:1.26@sha256:5c3f3f28a273c9b61698b2d34f18375929790ab1f1d3835d032d21e2b31eae0c
 
@@ -15,6 +17,8 @@ ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3=3.13.5-1 \
     python3-pip=25.1.1+dfsg-1 \
+    python3-venv=3.13.5-1 \
+    cargo=1.85.1+dfsg1-1+deb13u1 \
     curl=8.14.1-2+deb13u7 \
     ca-certificates=20250419 \
     && rm -rf /var/lib/apt/lists/*

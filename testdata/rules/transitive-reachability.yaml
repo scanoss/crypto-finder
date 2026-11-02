@@ -1,0 +1,81 @@
+# Synthetic rules for the app -> liba -> libb transitive reachability fixtures
+# under testdata/projects/transitive_reachability. They match only the calls
+# those fixtures make and are not detection rules.
+rules:
+  - id: go.transitive-reachability.sha256
+    message: Detected SHA-256 hashing
+    severity: INFO
+    languages:
+      - go
+    pattern: sha256.Sum256($DATA)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: SHA-2
+        algorithmName: SHA-256
+        algorithmPrimitive: hash
+
+  - id: go.transitive-reachability.sha512
+    message: Detected SHA-512 hashing
+    severity: INFO
+    languages:
+      - go
+    pattern: sha512.Sum512($DATA)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: SHA-2
+        algorithmName: SHA-512
+        algorithmPrimitive: hash
+
+  - id: go.transitive-reachability.md5
+    message: Detected MD5 hashing
+    severity: INFO
+    languages:
+      - go
+    pattern: md5.Sum($DATA)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmFamily: MD5
+        algorithmName: MD5
+        algorithmPrimitive: hash
+
+  - id: python.transitive-reachability.hashlib
+    message: Detected hashlib hashing
+    severity: INFO
+    languages:
+      - python
+    pattern-either:
+      - pattern: hashlib.sha256(...)
+      - pattern: hashlib.sha512(...)
+      - pattern: hashlib.md5(...)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: hash
+
+  - id: javascript.transitive-reachability.create-hash
+    message: Detected Node crypto hashing
+    severity: INFO
+    languages:
+      - javascript
+    pattern: crypto.createHash($ALG)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: hash
+
+  - id: rust.transhash.digest
+    message: Detected hashing through the transhash crate
+    severity: INFO
+    languages:
+      - rust
+    pattern-either:
+      - pattern: Sha256::digest($DATA)
+      - pattern: Sha512::digest($DATA)
+      - pattern: Md5::digest($DATA)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: hash
