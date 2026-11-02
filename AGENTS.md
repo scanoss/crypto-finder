@@ -221,6 +221,12 @@ not in the parser.
   the reasons; never work around the hook. It reads commands as text, so write text that
   only mentions a merge (a commit message, a PR body) with a file tool, not an `echo`.
 - The `Merge audit` workflow comments on any PR that merged before its checks were green.
+- A PR body needs a `## Evidence` section naming every feature the diff touches (a changed
+  file matching a glob in a `.claude/skills/verify/features/<id>.md` `## Code paths`), as
+  `<id>: <evidence>` or `<id>: N/A: <reason>`. Evidence comes from the verify skill
+  (`.claude/skills/verify/scripts/run.sh <id>`). Check it before pushing with
+  `go run ./scripts/featuremap check-pr --base origin/main --head HEAD --body-file <file>`;
+  the `PR hygiene` workflow runs the same check.
 - Stop and ask the owner after three red fix-push rounds on one PR, or at a design decision.
 - Once merge risk lands, high-risk PRs wait for the owner to merge them.
 

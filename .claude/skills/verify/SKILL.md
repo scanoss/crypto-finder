@@ -134,3 +134,14 @@ All helpers live in `scripts/`:
 To add a feature, write `features/<id>.md` and `scripts/drive/<id>.sh` (a `drive` function, plus `LANGS`/`DEFAULT_LANG` if it is per language). Then run it until it passes, and break it once to watch it fail.
 
 Keep the map honest as the CLI changes with `/maintain-verification-skill`.
+
+## The map in pull requests
+
+Each feature file's `## Code paths` globs tie a diff to the features it touches. Every PR body names each touched feature under `## Evidence`, as `<id>: <evidence>` (the `VERDICT` line and evidence path of `run.sh <id>`, or a link to them) or `<id>: N/A: <reason>`. Two commands enforce this, and the `PR hygiene` workflow runs both:
+
+```bash
+go run ./scripts/featuremap check-docs        # sections, live globs, index matches the files
+go run ./scripts/featuremap check-pr --base origin/main --head HEAD --body-file body.md
+```
+
+Evidence stays on the PR. Never commit `bin/verify/evidence/` to the tree. See "How the map is checked" in [`features/README.md`](features/README.md) for the glob rules and how to replay them.

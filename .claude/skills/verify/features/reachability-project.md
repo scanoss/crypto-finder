@@ -43,7 +43,9 @@ Preconditions:
 - `internal/cli/scan.go`
 - `internal/scan/export.go`
 - `internal/scan/export_ecosystems.go`
-- `internal/callgraph/**`
+- `internal/callgraph/*.go`
+- `internal/callgraph/contracts/contracts.go`
+- `internal/callgraph/entrypoints/**`
 - `internal/deadcode/**`
 - `pkg/graphfrag/callgraph_export.go`
 - `pkg/graphfrag/stitch*.go`
