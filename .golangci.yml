@@ -195,6 +195,14 @@ linters:
           - gosec
           - errcheck
 
+      # internal/scanner predates revive's stdlib-name check (text/scanner);
+      # the name is part of the package's API. The check reports it on an
+      # arbitrary file of the package, so a path exclusion is the stable fix.
+      - path: internal/scanner/
+        linters:
+          - revive
+        text: "avoid package names that conflict with Go standard library package names"
+
       # Exclude godot for TODO comments
       - source: "// TODO"
         linters:
