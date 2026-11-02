@@ -99,13 +99,13 @@ guard_args() {
 		esac
 	done
 	case $sub in
-	scan)
+	scan | annotate)
 		local has_no_remote=0 rules=0
 		for arg in "$@"; do
 			case $arg in
 			--no-remote-rules) has_no_remote=1 ;;
 			--api-key* | --api-url* | --rules-dir* | --no-cache)
-				die "refusing scan with $arg: drives use only testdata/rules via --rules"
+				die "refusing $sub with $arg: drives use only testdata/rules via --rules"
 				;;
 			esac
 			if [[ $prev == --rules || $prev == -r ]]; then
@@ -117,8 +117,8 @@ guard_args() {
 			fi
 			prev=$arg
 		done
-		((has_no_remote)) || die "refusing scan without --no-remote-rules"
-		((rules > 0)) || die "refusing scan without a --rules file from $RULES_DIR"
+		((has_no_remote)) || die "refusing $sub without --no-remote-rules"
+		((rules > 0)) || die "refusing $sub without a --rules file from $RULES_DIR"
 		;;
 	cbom)
 		local url=""
