@@ -3761,13 +3761,10 @@ func looksLikeEnumConstantExpr(expr string) bool {
 // is a stand-in for the containing function. What that stands for depends on the
 // mode, which is why the caller — not this function — decides what it means:
 //
-//   - with dependencies scanned, ctx.userPackages holds the root module plus
-//     packages of functions whose files live in the project tree (not a
-//     dependency source dir). The tracer keeps only chains reaching that set,
-//     so an empty traceback means no path from user code exists: the crypto is
-//     present but unreachable. Java Gradle projects often have a project-name
-//     root module that is not a package prefix; the source-path packages are
-//     what make those chains collect.
+//   - with dependencies scanned, ctx.userPackages holds the user packages
+//     projectUserPackages derives from the project tree. The tracer keeps only
+//     chains reaching them, so an empty traceback means no path from user code
+//     exists: the crypto is present but unreachable.
 //   - on the mine path ctx.userPackages is nil, there is no user code to reach,
 //     and an empty traceback simply means the function is a graph root — which
 //     for a library is its public API, the most valuable entry point of all.
@@ -4131,34 +4128,62 @@ func exportUserPackages(result *engine.DepScanResult) map[string]bool {
 	return projectUserPackages(result)
 }
 
-// projectUserPackages is the user universe: the root module a manifest
-// declares, when there is one, plus the package of every function whose file
-// lives in the project tree. RootModule is a build-tool coordinate. For Go
-// that is also the import prefix; for Java it is Maven groupId or, on Gradle
-// with no group, the project name. The project name is not a Java package, so
-// tracing against it alone drops every chain that starts in application
-// sources (#372). A root no manifest names has an empty RootModule, and its
-// top-level modules carry the empty package, which is a member like any other:
-// the tracer matches it exactly and never as a prefix.
+// projectUserPackages is the user universe, as a map from package to whether
+// it is user code. Its true entries are the root module a manifest declares,
+// when that is an import prefix of the application's packages, plus the
+// package of every function whose file lives in the project tree. Its false
+// entries are the packages declared only by files of a resolved dependency.
+//
+// RootModule is a build-tool coordinate. For Go it is also the import prefix.
+// For Java it is the Maven groupId or, on Gradle with no group, the project
+// name, and neither names application code: an in-house dependency shares the
+// application's groupId, and its packages sit under it, so the groupId would
+// make the dependency's uncalled public functions chain roots. Java user
+// packages therefore come from the project's sources, which also cover a
+// project name that is not a package at all (#372) and every reactor module,
+// since the modules live in the project tree. Only when no function lies in
+// the project tree, as when the result names no project root, does the
+// groupId stand in for them.
+//
+// The false entries matter because the tracer matches a user package as a
+// prefix of its sub-packages: a dependency package under an application
+// package or under the Go module path is still the dependency's. The tracer
+// takes the closest declared ancestor, so the dependency's own entry wins. A
+// package declared by both the project and a dependency stays user code.
+//
+// A root no manifest names has an empty RootModule, and its top-level modules
+// carry the empty package, which is a member like any other: the tracer
+// matches it exactly and never as a prefix.
 func projectUserPackages(result *engine.DepScanResult) map[string]bool {
 	pkgs := make(map[string]bool)
-	if root := strings.TrimSpace(result.RootModule); root != "" {
-		pkgs[root] = true
+	sourced := addSourcePackages(pkgs, result)
+	if root := strings.TrimSpace(result.RootModule); root != "" && (result.Ecosystem != ecosystemJava || !sourced) {
+		if _, declared := pkgs[root]; !declared {
+			pkgs[root] = true
+		}
 	}
-	addProjectSourcePackages(pkgs, result)
-	if len(pkgs) == 0 {
-		return nil
+	for _, user := range pkgs {
+		if user {
+			return pkgs
+		}
 	}
-	return pkgs
+	// No user code at all: a set of only dependency packages would reach
+	// nothing, where nil keeps the tracer's no-user-code behavior.
+	return nil
 }
 
-func addProjectSourcePackages(pkgs map[string]bool, result *engine.DepScanResult) {
+// addSourcePackages marks the package of every function in the project tree
+// as user code, and the package of every function in a dependency directory as
+// not user code unless the project declares it too. It reports whether any
+// function lies in the project tree.
+func addSourcePackages(pkgs map[string]bool, result *engine.DepScanResult) bool {
 	if result.CallGraph == nil {
-		return
+		return false
 	}
 	if strings.TrimSpace(result.ProjectRoot) == "" {
-		return
+		return false
 	}
+	sourced := false
 	artifacts := newExportArtifacts(result)
 	projectRoot := artifacts.absPath(artifacts.projectRoot)
 	depDirs := make(map[string]bool, len(artifacts.dependencies))
@@ -4166,34 +4191,60 @@ func addProjectSourcePackages(pkgs map[string]bool, result *engine.DepScanResult
 		depDirs[artifacts.absPath(dep.Dir)] = true
 	}
 	// A graph declares many functions per file, so each file is placed once.
-	inProject := make(map[string]bool)
+	placed := make(map[string]sourceOwner)
+	dependencyPackages := make(map[string]bool)
 	for _, fn := range result.CallGraph.Functions {
 		if fn == nil || strings.TrimSpace(fn.FilePath) == "" {
 			continue
 		}
-		inside, seen := inProject[fn.FilePath]
+		owner, seen := placed[fn.FilePath]
 		if !seen {
-			inside = isProjectSourceFile(artifacts.absPath(fn.FilePath), projectRoot, depDirs)
-			inProject[fn.FilePath] = inside
+			owner = placeSourceFile(artifacts.absPath(fn.FilePath), projectRoot, depDirs)
+			placed[fn.FilePath] = owner
 		}
-		if inside {
+		switch owner {
+		case ownerProject:
 			pkgs[fn.ID.Package] = true
+			sourced = true
+		case ownerDependency:
+			dependencyPackages[fn.ID.Package] = true
+		case ownerOutside:
 		}
 	}
+	for pkg := range dependencyPackages {
+		if _, declared := pkgs[pkg]; !declared {
+			pkgs[pkg] = false
+		}
+	}
+	return sourced
 }
 
-// isProjectSourceFile reports whether the absolute file lies under the
-// project root and under no dependency directory, by walking its ancestors.
-func isProjectSourceFile(file, projectRoot string, depDirs map[string]bool) bool {
+// sourceOwner is who a source file belongs to.
+type sourceOwner int
+
+const (
+	// ownerOutside is a file under neither the project root nor a dependency.
+	ownerOutside sourceOwner = iota
+	ownerProject
+	ownerDependency
+)
+
+// placeSourceFile tells whether the absolute file lies under a dependency
+// directory, else under the project root, by walking its ancestors. A
+// dependency directory inside the project tree owns its files.
+func placeSourceFile(file, projectRoot string, depDirs map[string]bool) sourceOwner {
 	inside := false
 	for dir := file; ; {
 		if depDirs[dir] {
-			return false
+			return ownerDependency
 		}
 		inside = inside || dir == projectRoot
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return inside
+			if inside {
+				return ownerProject
+			}
+			return ownerOutside
 		}
 		dir = parent
 	}

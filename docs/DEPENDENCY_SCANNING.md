@@ -56,7 +56,7 @@ The [`Resolver` interface](../internal/dependency/resolver.go) discovers all dep
 | `Dir`     | `~/go/pkg/mod/golang.org/x/crypto@v0.17.0` | `~/.crypto-finder/cache/sources/org.bouncycastle:bcprov-jdk18on/1.77/` | `~/.local/lib/python3.x/site-packages/cryptography/` | `~/.cargo/registry/src/.../ring-0.17.8/` | Filesystem path to scan |
 | `Files` | `[.../x/crypto@v0.17.0/chacha20poly1305/chacha20poly1305.go, ...]` | unset | `[.../site-packages/google/auth/_helpers.py, ...]` for a namespace distribution, `[.../site-packages/configobj/__init__.py, ..., .../site-packages/validate/__init__.py]` for one with several top-level roots, otherwise unset | unset | The only files of `Dir` the dependency's source holds: the Go files the host build compiles in Go's imported packages, or a Python distribution's own files in a shared namespace directory; unset scans all of `Dir` |
 
-The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is the default user-code prefix. For Java, packages of functions whose files live in the scanned project tree are also user code. That matters for Gradle projects that omit `group` and therefore export a project name rather than a Java package prefix.
+The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is the Go user-code prefix. Packages of functions whose files live in the scanned project tree are also user code. For Java they are the whole of it: the groupId (or, on Gradle with no `group`, the project name) is not a user-code prefix, because an in-house dependency shares the application's groupId and its packages sit under it. The groupId stands in only when no function lies in the project tree. A package declared by a dependency's files is never user code through a prefix: the closest declared package wins, so `com.acme.crypto` from a dependency stays a dependency under an application package `com.acme`.
 
 ### Step 2: Load & Filter Rules
 
@@ -449,7 +449,7 @@ Dependencies:
   golang.org/x/sys          v0.28.0   ~/go/pkg/mod/golang.org/x/sys@v0.28.0
 ```
 
-The `RootModule` (`example.com/crypto-test`) is the Go user-code prefix — any package whose import path starts with it is **user code**. Java additionally treats packages declared in project source files as user code, even when `RootModule` is a Gradle project name rather than a package prefix. Everything else is a dependency.
+The `RootModule` (`example.com/crypto-test`) is the Go user-code prefix — any package whose import path starts with it is **user code**. Java uses only the packages declared in project source files, never the groupId or Gradle project name, so a dependency sharing the application's groupId is still a dependency. Everything else is a dependency.
 
 ### Step 3: Scan Dependencies in Parallel
 

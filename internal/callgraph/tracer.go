@@ -2,6 +2,7 @@ package callgraph
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -198,24 +199,28 @@ func (t *Tracer) enqueueCallers(
 
 // isUserPackage checks if the given package path belongs to user code.
 // sep is the package path separator ("/" for Go, "." for Java).
+//
+// userPackages maps a package to whether it is user code. A package belongs
+// to its closest entry: itself, else its nearest ancestor package. So a user
+// package covers its sub-packages, and a false entry for a dependency package
+// takes that package, and its own sub-packages, back out from under a user
+// ancestor. A package with no entry and no entered ancestor is not user code.
+// The empty package is the scan root itself when no manifest names it; it owns
+// no sub-packages, so it matches exactly and never as an ancestor.
 func isUserPackage(pkg string, userPackages map[string]bool, sep string) bool {
-	// Direct match
-	if userPackages[pkg] {
-		return true
+	if user, declared := userPackages[pkg]; declared {
+		return user
 	}
-	// Check if pkg is a sub-package of any user package. The empty package is
-	// the scan root itself when no manifest names it; it owns no sub-packages,
-	// so it matches exactly and never as a prefix.
-	for userPkg := range userPackages {
-		if userPkg == "" {
-			continue
+	for ancestor := pkg; ; {
+		cut := strings.LastIndex(ancestor, sep)
+		if cut <= 0 {
+			return false
 		}
-		prefix := userPkg + sep
-		if len(pkg) >= len(prefix) && pkg[:len(prefix)] == prefix {
-			return true
+		ancestor = ancestor[:cut]
+		if user, declared := userPackages[ancestor]; declared {
+			return user
 		}
 	}
-	return false
 }
 
 // chainReachesUserCode checks if any step in the chain belongs to a user package.
