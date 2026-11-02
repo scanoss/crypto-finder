@@ -147,6 +147,9 @@ type reachabilityPass struct {
 	verdicts           []reachabilityVerdict
 	byID               map[string]reachabilityVerdict
 	dependencyFindings int
+	// report and export are the raw outputs, for assertions beyond verdicts.
+	report entities.InterimReport
+	export graphfrag.CallgraphExport
 }
 
 func runReachabilityPass(t *testing.T, binary string, env []string, rules, language, target, outDir string, extra ...string) reachabilityPass {
@@ -164,13 +167,12 @@ func runReachabilityPass(t *testing.T, binary string, env []string, rules, langu
 	output, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "crypto-finder %s output:\n%s", strings.Join(extra, " "), output)
 
-	var report entities.InterimReport
-	readJSON(t, findingsPath, &report)
-	var export graphfrag.CallgraphExport
-	readJSON(t, callgraphPath, &export)
+	pass := reachabilityPass{byID: map[string]reachabilityVerdict{}}
+	readJSON(t, findingsPath, &pass.report)
+	readJSON(t, callgraphPath, &pass.export)
+	report, export := &pass.report, &pass.export
 
 	locations := map[string]string{}
-	pass := reachabilityPass{byID: map[string]reachabilityVerdict{}}
 	for _, finding := range report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[i]
@@ -201,26 +203,56 @@ func isolatedHome(t *testing.T) []string {
 // documented difference rather than the contract under test.
 func pythonVenvWithDependency(t *testing.T) []string {
 	t.Helper()
-	venv := filepath.Join(t.TempDir(), "venv")
+	venv, sitePackages := newPythonVenv(t)
+	installVenvPackage(t, sitePackages, "reachlib", map[string]string{
+		"__init__.py": "import hashlib\n\n\ndef digest(data):\n    return hashlib.sha256(data).hexdigest()\n",
+	})
+	return append(isolatedHome(t), "VIRTUAL_ENV="+venv)
+}
+
+// newPythonVenv creates an empty venv in a temporary directory and returns it
+// with its site-packages directory. It skips the test when python3 cannot
+// create one.
+func newPythonVenv(t *testing.T) (venv, sitePackages string) {
+	t.Helper()
+	// Not named "venv": the call-graph builder matches the default skip
+	// names against absolute paths, so a "venv" segment would drop every
+	// installed package from the graph.
+	venv = filepath.Join(t.TempDir(), "pyenv")
 	if output, err := exec.CommandContext(t.Context(), "python3", "-m", "venv", venv).CombinedOutput(); err != nil {
 		t.Skipf("python3 -m venv unavailable: %v\n%s", err, output)
 	}
 	out, err := exec.CommandContext(t.Context(), filepath.Join(venv, "bin", "python"), "-c", `import sysconfig; print(sysconfig.get_paths()["purelib"])`).Output()
 	require.NoError(t, err, "locate venv site-packages")
-	sitePackages := strings.TrimSpace(string(out))
-	distInfo := filepath.Join(sitePackages, "reachlib-1.0.0.dist-info")
-	files := map[string]string{
-		filepath.Join(sitePackages, "reachlib", "__init__.py"): "import hashlib\n\n\ndef digest(data):\n    return hashlib.sha256(data).hexdigest()\n",
-		filepath.Join(distInfo, "METADATA"):                    "Metadata-Version: 2.1\nName: reachlib\nVersion: 1.0.0\n",
-		filepath.Join(distInfo, "RECORD"):                      "reachlib/__init__.py,,\nreachlib-1.0.0.dist-info/METADATA,,\nreachlib-1.0.0.dist-info/RECORD,,\n",
-		filepath.Join(distInfo, "top_level.txt"):               "reachlib\n",
-		filepath.Join(distInfo, "INSTALLER"):                   "pip\n",
+	return venv, strings.TrimSpace(string(out))
+}
+
+// installVenvPackage installs an import package named name, version 1.0.0,
+// into sitePackages the way pip leaves it, without pip or a network: the
+// package files (keyed by path inside the package) plus a dist-info whose
+// METADATA declares requires as Requires-Dist.
+func installVenvPackage(t *testing.T, sitePackages, name string, sources map[string]string, requires ...string) {
+	t.Helper()
+	distInfo := filepath.Join(sitePackages, name+"-1.0.0.dist-info")
+	metadata := "Metadata-Version: 2.1\nName: " + name + "\nVersion: 1.0.0\n"
+	for _, req := range requires {
+		metadata += "Requires-Dist: " + req + "\n"
 	}
-	for path, content := range files {
-		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
-		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	var record strings.Builder
+	files := map[string]string{}
+	for rel, content := range sources {
+		files[filepath.Join(sitePackages, name, rel)] = content
+		record.WriteString(path.Join(name, filepath.ToSlash(rel)) + ",,\n")
 	}
-	return append(isolatedHome(t), "VIRTUAL_ENV="+venv)
+	record.WriteString(name + "-1.0.0.dist-info/METADATA,,\n" + name + "-1.0.0.dist-info/RECORD,,\n")
+	files[filepath.Join(distInfo, "METADATA")] = metadata
+	files[filepath.Join(distInfo, "RECORD")] = record.String()
+	files[filepath.Join(distInfo, "top_level.txt")] = name + "\n"
+	files[filepath.Join(distInfo, "INSTALLER")] = "pip\n"
+	for file, content := range files {
+		require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o750))
+		require.NoError(t, os.WriteFile(file, []byte(content), 0o600))
+	}
 }
 
 func withoutEnv(env []string, key string) []string {

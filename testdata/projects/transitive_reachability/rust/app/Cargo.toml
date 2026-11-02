@@ -1,0 +1,8 @@
+[package]
+name = "transapp"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+transhash = { path = "../hash" }
+transliba = { path = "../liba" }

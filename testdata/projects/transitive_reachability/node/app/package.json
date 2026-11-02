@@ -1,0 +1,8 @@
+{
+  "name": "transapp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "transliba": "1.0.0"
+  }
+}
