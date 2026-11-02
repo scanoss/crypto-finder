@@ -84,7 +84,7 @@ func (p *printer) println(a ...any) {
 
 func (p *printer) printf(format string, a ...any) {
 	if p.err == nil {
-		_, p.err = fmt.Fprintf(p.w, format, a...) //nolint:gosec // G705: plain text to a terminal or a CI log, not a web page
+		_, p.err = fmt.Fprintf(p.w, format, a...) // #nosec G705 -- plain text to a terminal or a CI log, not a web page
 	}
 }
 
