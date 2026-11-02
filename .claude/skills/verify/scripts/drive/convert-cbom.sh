@@ -43,14 +43,13 @@ drive() {
 	echo '{"not":"a report"' >"$BOX/work/broken.json"
 	cf convert-broken --error-format json convert "$BOX/work/broken.json" --output "$EVID/cbom-broken.json"
 	expect "convert of broken JSON exit code" "$CF_EXIT" 1
-	# The code is unknown_error today (convert does not type parse failures);
-	# assert the JSON error and its message, not a code no test pins.
-	local message
-	message=$(grep '^{' "$EVID/convert-broken.stderr" | tail -1 | jq -r '.message // empty' 2>/dev/null || true)
-	if [[ $message == "failed to parse interim JSON"* ]]; then
-		pass "convert of broken JSON reports the parse failure ($(error_code "$EVID/convert-broken.stderr"))"
+	# Malformed input is a typed failure: invalid_arguments (#811).
+	local code
+	code=$(error_code "$EVID/convert-broken.stderr")
+	if [[ $code == "invalid_arguments" ]]; then
+		pass "convert of broken JSON reports invalid_arguments"
 	else
-		fail "convert of broken JSON: JSON error message '$message'"
+		fail "convert of broken JSON: error code '$code', want invalid_arguments"
 	fi
 	if [[ -e $EVID/cbom-broken.json ]]; then
 		fail "convert of broken JSON still wrote $EVID/cbom-broken.json"

@@ -32,7 +32,7 @@ Preconditions:
 ## Gotchas
 
 - "Strict mapping": an asset whose rule metadata is incomplete is left out of the CBOM, without an error. A CBOM with fewer components than the report has assets is not automatically a bug. Check the rule metadata first.
-- The invalid-input error code is `unknown_error` with stage `unknown` today: `convert` does not type its parse failure. The driver asserts the message, not the code. If that changes, update this note and the check.
+- Malformed or missing input fails with `invalid_arguments` at stage `input` (exit 1), like `cbom` does for an unreadable SBOM. Other `convert` failures (writer, conversion) are still untyped.
 - No separate validation command exists. Schema validation happens inside `convert`/`--format cyclonedx` (`internal/converter/validator.go`), so a written CBOM is a validated one.
 
 ## Code paths
