@@ -474,8 +474,8 @@ func (s *NodeShapes) exportValue(m *nodeShapeModule, name string, depth int) (*s
 				return value, vm
 			}
 		case nodeExpressionStatement:
-			if value := nodeShapeCommonJSExport(stmt, name, m.src); value != nil {
-				return value, m
+			if value, vm := s.commonJSExportValue(m, stmt, name, depth); value != nil {
+				return value, vm
 			}
 		}
 	}
@@ -580,6 +580,20 @@ func (s *NodeShapes) moduleShape(m *nodeShapeModule, depth int) nodeShape {
 
 // nodeShapeCommonJSExport reads `exports.name = v`, `module.exports.name = v`,
 // `module.exports = {name: v}` and, for "default", `module.exports = v`.
+// commonJSExportValue returns the value stmt assigns to the CommonJS export
+// name. `module.exports = { used }` exports the binding used, which is
+// followed to its declaration.
+func (s *NodeShapes) commonJSExportValue(m *nodeShapeModule, stmt *sitter.Node, name string, depth int) (*sitter.Node, *nodeShapeModule) {
+	value := nodeShapeCommonJSExport(stmt, name, m.src)
+	if value == nil {
+		return nil, nil
+	}
+	if value.Type() == nodeShorthandProperty {
+		return s.binding(m, value, name, depth)
+	}
+	return value, m
+}
+
 func nodeShapeCommonJSExport(stmt *sitter.Node, name string, src []byte) *sitter.Node {
 	if stmt.NamedChildCount() == 0 || stmt.NamedChild(0).Type() != nodeAssignmentExpression {
 		return nil
@@ -594,15 +608,27 @@ func nodeShapeCommonJSExport(stmt *sitter.Node, name string, src []byte) *sitter
 	case target == nodeModuleExportsTarget && name == nodeDefaultExport:
 		return right
 	case target == nodeModuleExportsTarget && right.Type() == nodeObjectLiteral:
-		for i := 0; i < int(right.NamedChildCount()); i++ {
-			if p := right.NamedChild(i); p.Type() == nodePair {
-				if key := p.ChildByFieldName("key"); key != nil && unquoteNodeString(key.Content(src)) == name {
-					return p.ChildByFieldName("value")
-				}
-			}
-		}
+		return nodeObjectLiteralEntry(right, name, src)
 	case target == nodeCommonJSExportsObject+"."+name || target == nodeModuleExportsTarget+"."+name:
 		return right
+	}
+	return nil
+}
+
+// nodeObjectLiteralEntry returns the value obj gives key name: a pair's value,
+// or the shorthand property itself, which names a binding.
+func nodeObjectLiteralEntry(obj *sitter.Node, name string, src []byte) *sitter.Node {
+	for i := 0; i < int(obj.NamedChildCount()); i++ {
+		switch p := obj.NamedChild(i); p.Type() {
+		case nodePair:
+			if key := p.ChildByFieldName("key"); key != nil && unquoteNodeString(key.Content(src)) == name {
+				return p.ChildByFieldName("value")
+			}
+		case nodeShorthandProperty:
+			if p.Content(src) == name {
+				return p
+			}
+		}
 	}
 	return nil
 }

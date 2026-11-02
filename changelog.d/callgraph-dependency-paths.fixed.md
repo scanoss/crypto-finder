@@ -9,3 +9,11 @@
   `not_applicable` for its own findings too. The exclusions now apply only
   inside the project or dependency being graphed, so these findings get real
   reachability verdicts.
+- JavaScript and TypeScript calls made through an npm package name
+  (`require('pkg')`, `import { fn } from 'pkg'`, `import fn from 'pkg'`,
+  scoped `@scope/pkg` and subpaths such as `pkg/sub`) now reach the function
+  the package's entry module exports, resolved from its package.json
+  `exports`, `main` or `index.js`. Crypto in an npm dependency that the
+  application calls, directly or through other packages, now reads
+  `reachable` with a call chain into the dependency. Calls the KB models under the package name (such as
+  `jsonwebtoken.sign`) and Node built-ins keep their current handling.

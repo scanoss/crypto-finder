@@ -44,18 +44,7 @@ type transitiveFinding struct {
 	// chain lists, in order, the modules a reachable finding's call chain
 	// must pass through, from the application to the finding.
 	chain []string
-	// knownGap, when set, names the product gap that makes this finding's
-	// reachability read wrong today, and skips only the reachability and
-	// chain assertions.
-	knownGap string
 }
-
-// npmBareSpecifierGap is why libb's live npm hashing reads unreachable: a call
-// through a package name (`transliba.used()` after `require("transliba")`) is
-// keyed by the bare specifier, transliba.used, while the dependency declares
-// transliba/index.used, so the call graph never joins the app to liba nor liba
-// to libb.
-const npmBareSpecifierGap = "calls through an npm package name are not joined to the package's main module, so the app never reaches liba or libb"
 
 // transitiveReachabilityCase names a fixture under
 // testdata/projects/transitive_reachability/<language>: app/ is the target, it
@@ -121,7 +110,7 @@ func TestTransitiveReachability(t *testing.T) {
 			findings: []transitiveFinding{
 				{module: appModule, file: "index.js", line: 5, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule}},
 				{module: appModule, file: "index.js", line: 9, reachability: graphfrag.ReachabilityUnreachable},
-				{module: "translibb", file: "index.js", line: 5, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "transliba", "translibb"}, knownGap: npmBareSpecifierGap},
+				{module: "translibb", file: "index.js", line: 5, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "transliba", "translibb"}},
 				{module: "translibb", file: "index.js", line: 9, reachability: graphfrag.ReachabilityUnreachable},
 			},
 		},
@@ -181,11 +170,6 @@ func TestTransitiveReachability(t *testing.T) {
 							route = append(route, step.Module)
 						}
 						require.Equal(t, []string{tc.liba, tc.libb}, route, "dependency path to %s", want.module)
-					}
-					// Attribution is asserted above even for a known gap,
-					// which only excuses the reachability verdict.
-					if want.knownGap != "" {
-						t.Skipf("known gap: %s (read %s)", want.knownGap, v.graph.Reachability)
 					}
 					require.Equal(t, want.reachability, v.graph.Reachability, "reachability of %s", key)
 					if want.chain != nil {
