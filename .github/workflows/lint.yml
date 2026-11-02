@@ -30,3 +30,10 @@ jobs:
 
       - name: Run pinned golangci-lint
         run: make lint
+
+      # Binary size is deterministic for a build, so it is the one budget
+      # held on every PR. Timings run nightly only (nightly-e2e.yml).
+      - name: Check the binary size budget
+        run: |
+          .claude/skills/verify/scripts/build.sh
+          .claude/skills/verify/scripts/budgets.sh size

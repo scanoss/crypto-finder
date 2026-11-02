@@ -114,6 +114,24 @@ Proof standards:
 - `cbom` talks to a local stub because the real API is an external system behind a production HTTP boundary. Its evidence includes `api-requests.jsonl`, the requests the binary actually sent.
 - A feature map entry lists sub-features. Driving one entry point does not verify the others.
 
+## Budgets
+
+```bash
+.claude/skills/verify/scripts/budgets.sh [all|size|startup|scan]...
+```
+
+This measures what a change can make worse and holds it to [`budgets.json`](budgets.json):
+
+- `size`: the size of a build with the release ldflags (`-s -w` plus the version `-X` flags, as the Makefile and `.goreleaser.yml` build it). It is deterministic, so its limit is the measured size plus 10%.
+- `startup`: the median wall time of 11 runs of `--help` and of `version`.
+- `scan`: the median wall time and the highest peak RSS (GNU `/usr/bin/time -f %M`) of 5 runs, after one warm-up run, of two fixed scans: the `reachability-dependencies` go fixture with `--scan-dependencies`, and `polyglot_reachability` with `--export-callgraph-project-reachability`.
+
+Timings and memory are noisy, so they hold only loose limits that catch a stall or a leak, not a 20% slowdown. Every run goes through the same sandbox and guards as a drive. It prints `PASS <key> <value> within its budget <limit>` or `FAIL <key> <value> over its budget <limit>` per metric, exits 1 on any breach and 2 when it refused to run, and writes `measured.tsv`, `samples.tsv` (every run), `transcript.txt` and `verdict.txt` to `bin/verify/evidence/budgets/`. startup and scan need `build.sh` first.
+
+`budgets.json` records each budget's measured value, its limit and a `why`, plus the date, commit, machine and method of the measurement. Never invent a number: change a limit only after measuring three runs of `budgets.sh` (take the highest), and update `measured` with it. `go run ./scripts/budgetcheck` (and its test) fails on a budget the script does not measure, a metric with no budget, a limit with no `why`, a limit below its measurement, and a deterministic limit more than 10% over its measurement. The `METRICS` line of `budgets.sh` is the list it reads.
+
+CI runs `size` on every PR (`lint.yml`) and `startup scan` nightly (`nightly-e2e.yml`), never timings on PRs. `tracked` in `budgets.json` holds the CI test-suite duration for reference. No check reads it.
+
 ## Cleanup
 
 ```bash
@@ -130,6 +148,7 @@ All helpers live in `scripts/`:
 - `drive/<feature-id>.sh`: one driver per feature file, sourced by `run.sh`.
 - `verdicts.jq` and `check-findings.jq`: the reachability join and its expectations.
 - `api-stub.py`: the local component-findings endpoint for `cbom`, serving synthetic data only.
+- `budgets.sh`: the budget checker (see "Budgets" above).
 
 To add a feature, write `features/<id>.md` and `scripts/drive/<id>.sh` (a `drive` function, plus `LANGS`/`DEFAULT_LANG` if it is per language). Then run it until it passes, and break it once to watch it fail.
 
