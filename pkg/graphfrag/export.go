@@ -93,7 +93,14 @@ const SchemaVersion = "graph-fragment-1.14"
 // graph-algo-13: a Rust call written inside a macro's parenthesized or
 // bracketed expression arguments (`println!("{:?}", f(x))`) is an edge from
 // the enclosing function.
-const GraphAlgoVersion = "graph-algo-13"
+//
+// graph-algo-14: the default exclusions (node_modules, venv, build, ...) match
+// only directories inside the project or dependency being graphed, so npm
+// packages, packages in a virtualenv named venv and checkouts under such a
+// directory enter the graph; and a Node call made through a package name
+// (`require('pkg').fn()`, `import { fn } from 'pkg'`) is an edge to the
+// function the package's entry module exports.
+const GraphAlgoVersion = "graph-algo-14"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
