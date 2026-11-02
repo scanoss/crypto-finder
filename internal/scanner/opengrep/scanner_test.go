@@ -19,6 +19,9 @@ package opengrep
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -253,6 +256,36 @@ func TestInitialize_Canceled(t *testing.T) {
 	}
 	if structured, ok := failure.As(err); !ok || structured.Code != failure.CodeScannerCancelled {
 		t.Fatalf("Initialize() error = %v, want scanner_canceled", err)
+	}
+}
+
+// TestInitialize_CreatesMissingConfigHome fakes opengrep 1.22.0, which exits
+// at startup when XDG_CONFIG_HOME names a missing directory (#812).
+func TestInitialize_CreatesMissingConfigHome(t *testing.T) {
+	originalLookPath := lookPath
+	originalCommandOutput := commandOutput
+	defer func() {
+		lookPath = originalLookPath
+		commandOutput = originalCommandOutput
+	}()
+
+	configHome := filepath.Join(t.TempDir(), "missing", "config")
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	lookPath = func(_ string) (string, error) {
+		return "/usr/local/bin/opengrep", nil
+	}
+	commandOutput = func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		if _, err := os.Stat(os.Getenv("XDG_CONFIG_HOME")); err != nil {
+			return nil, fmt.Errorf("fake opengrep: %w", err)
+		}
+		return []byte("1.22.0"), nil
+	}
+
+	if err := NewScanner().Initialize(context.Background(), scanner.Config{}); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if info, err := os.Stat(configHome); err != nil || !info.IsDir() {
+		t.Fatalf("%s was not created: %v", configHome, err)
 	}
 }
 
