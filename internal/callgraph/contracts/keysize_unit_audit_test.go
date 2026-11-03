@@ -127,6 +127,9 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	"go|crypto/rsa.GenerateMultiPrimeKey|2":         unitBits,
 	// go/vault-sdk.yaml
 	"go|github.com/hashicorp/vault/sdk/helper/kdf.CounterMode|4": unitBits,
+	// c/gmssl.yaml: the GCM context takes the SM4 key length in bytes.
+	"c|sm4_gcm_encrypt_init|2": unitBytes,
+	"c|sm4_gcm_decrypt_init|2": unitBytes,
 	// c/gnutls.yaml
 	"c|gnutls_hmac_init|3":             unitBytes,
 	"c|gnutls_hmac_fast|2":             unitBytes,
@@ -282,6 +285,10 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	"c|rnp_generate_key_ex|3":      unitBits,
 	// c/tinycrypt.yaml
 	"c|tc_hmac_set_key|2": unitBytes,
+	// c/tongsuo.yaml
+	"c|PAILLIER_KEY_generate_key|1": unitBits,
+	"c|TSAPI_SM4Decrypt|2":          unitBytes,
+	"c|TSAPI_SM4Encrypt|2":          unitBytes,
 	// c/wolfssl-wolfcrypt.yaml
 	"c|wc_AesCcmSetKey|2":              unitBytes,
 	"c|wc_AesCtrSetKey|2":              unitBytes,
