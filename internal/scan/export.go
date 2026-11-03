@@ -2316,24 +2316,45 @@ func concreteArgumentTypes(params []callGraphParameter) []callGraphParameter {
 }
 
 // constructedType is the one class the source nodes construct, or "" when they
-// construct none or more than one. A constructor's call result is named
-// Class.Class (Java) or Class.<init>.
+// construct none or more than one. Nodes nest (a VARIABLE holds the
+// CALL_RESULT that assigned it), so the whole tree is read. A constructor's call
+// target is Class.<init>; its display name, Class.Class (Java).
 func constructedType(nodes []exportSourceNode) string {
-	found := ""
-	for _, node := range nodes {
-		if node.Type != "CALL_RESULT" {
-			continue
+	found, ambiguous := "", false
+	var walk func([]exportSourceNode, int)
+	walk = func(nodes []exportSourceNode, depth int) {
+		if depth > 8 {
+			return
 		}
-		class, method := splitLastDot(node.Name)
-		if class == "" || (method != "<init>" && method != lastDotSegment(class)) {
-			continue
+		for _, node := range nodes {
+			if node.Type == "CALL_RESULT" {
+				if class := constructorClass(node.CallTarget, node.Name); class != "" {
+					if found != "" && found != class {
+						ambiguous = true
+					}
+					found = class
+				}
+			}
+			walk(node.SourceNodes, depth+1)
 		}
-		if found != "" && found != class {
-			return ""
-		}
-		found = class
+	}
+	walk(nodes, 0)
+	if ambiguous {
+		return ""
 	}
 	return found
+}
+
+// constructorClass is the class a constructor call target names, from the
+// first of names that names one.
+func constructorClass(names ...string) string {
+	for _, name := range names {
+		class, method := splitLastDot(name)
+		if class != "" && (method == "<init>" || method == lastDotSegment(class)) {
+			return class
+		}
+	}
+	return ""
 }
 
 func splitLastDot(name string) (string, string) {

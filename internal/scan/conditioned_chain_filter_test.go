@@ -188,8 +188,16 @@ func entryChain(caller string, sources ...exportSourceNode) []callGraphChainNode
 	}
 }
 
+// constructed is the source node of `new Class()` as the export writes it: the
+// call target is Class.<init>, with no name.
 func constructed(class string) exportSourceNode {
-	return exportSourceNode{Type: "CALL_RESULT", Name: class + "." + class[strings.LastIndex(class, ".")+1:]}
+	return exportSourceNode{Type: "CALL_RESULT", Value: "new " + class[strings.LastIndex(class, ".")+1:] + "()", CallTarget: class + ".<init>"}
+}
+
+// assignedFrom is a variable whose value a constructor produced, as iText's
+// AESCipher passes it: `BlockCipher aes = new AESFastEngine(); new CBCBlockCipher(aes)`.
+func assignedFrom(variable string, value exportSourceNode) exportSourceNode {
+	return exportSourceNode{Type: "VARIABLE", Name: variable, DeclaredType: "org.bouncycastle.crypto.BlockCipher", SourceNodes: []exportSourceNode{value}}
 }
 
 // TestFilterEntryPointConditionedCallChains_ReadsTheEnteringArgument pins the
@@ -202,8 +210,7 @@ func TestFilterEntryPointConditionedCallChains_ReadsTheEnteringArgument(t *testi
 	des := entryChain("org.bouncycastle.crypto.engines.(DESedeWrapEngine).init#2",
 		constructed("org.bouncycastle.crypto.engines.DESedeEngine"))
 	aes := entryChain("com.itextpdf.text.pdf.crypto.(AESCipher).<init>#3",
-		exportSourceNode{Type: "VARIABLE", Name: "aes"},
-		constructed("org.bouncycastle.crypto.engines.AESFastEngine"))
+		assignedFrom("aes", constructed("org.bouncycastle.crypto.engines.AESFastEngine")))
 
 	got := filterEntryPointConditionedCallChains([][]callGraphChainNode{aes, des}, conditions)
 	if len(got) != 1 || got[0][0].FunctionKey != des[0].FunctionKey {
@@ -223,7 +230,7 @@ func TestFilterEntryPointConditionedCallChains_UnknownNeverRefutes(t *testing.T)
 	declaredOnly := entryChain("com.example.(A).run#1", exportSourceNode{Type: "PARAMETER", Name: "engine"})
 	ambiguous := entryChain("com.example.(B).run#1",
 		constructed("org.bouncycastle.crypto.engines.DESedeEngine"),
-		constructed("org.bouncycastle.crypto.engines.AESEngine"))
+		assignedFrom("engine", constructed("org.bouncycastle.crypto.engines.AESEngine")))
 	noEntry := []callGraphChainNode{{FunctionKey: "com.example.(C).run#1"}, {FunctionKey: "org.bouncycastle.crypto.modes.(CBCBlockCipher).<init>#1"}}
 
 	got := filterEntryPointConditionedCallChains([][]callGraphChainNode{declaredOnly, ambiguous, noEntry}, conditions)
