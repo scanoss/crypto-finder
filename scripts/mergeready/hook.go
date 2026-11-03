@@ -48,7 +48,33 @@ var (
 	elsewhereRe = regexp.MustCompile(`\b(cd|pushd)\s|GH_REPO|GH_HOST`)
 	nameRe      = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 	pullURLRe   = regexp.MustCompile(`^https://[^/]+/([^/]+/[^/]+)/pull/(\d+)$`)
+
+	// acceptLabelRe is riskLabel however it is spelled; labelRe a command that
+	// may touch a label (gh pr edit --add-label, the labels endpoint, GraphQL).
+	acceptLabelRe = regexp.MustCompile(`(?i)risk[\W_]*accepted`)
+	labelRe       = regexp.MustCompile(`(?i)label`)
+	labelWriteRe  = regexp.MustCompile(`add-label|remove-label|/labels\b|(?i:addLabels|removeLabels|clearLabels)`)
+	// unreadValuesRe flags label names the command does not spell out: a
+	// file, stdin or a variable.
+	unreadValuesRe = regexp.MustCompile(`--input\b|(^|\s)-F\s|=@|\s@\S|\$`)
 )
+
+// labelProblems refuses a command that could add or remove riskLabel: that
+// label is a person accepting a medium or high merge risk, never an agent.
+func labelProblems(cmd string) []string {
+	if !labelRe.MatchString(cmd) {
+		return nil
+	}
+	if acceptLabelRe.MatchString(normalize(cmd)) {
+		return []string{"the " + riskLabel + " label is a person's decision on a medium or high risk merge; " +
+			"an agent never adds or removes it. Ask the person to add it in GitHub"}
+	}
+	if labelWriteRe.MatchString(cmd) && unreadValuesRe.MatchString(cmd) {
+		return []string{"a label write whose label names come from a file, stdin or a variable cannot be " +
+			"checked for the " + riskLabel + " label; name the labels in the command"}
+	}
+	return nil
+}
 
 // prMergeValueFlags are the gh pr merge flags that take a value.
 var prMergeValueFlags = map[string]bool{
@@ -208,6 +234,7 @@ func runHook(ctx context.Context, stdin io.Reader, stderr *printer, g gh) (code 
 	if ev.ToolName != "Bash" {
 		return 0
 	}
+	problems = append(problems, labelProblems(ev.ToolInput.Command)...)
 	seen := map[string]bool{}
 	for _, t := range findMerges(ev.ToolInput.Command) {
 		repo, number, err := resolve(ctx, g, ev.Cwd, t)
@@ -228,7 +255,7 @@ func runHook(ctx context.Context, stdin io.Reader, stderr *printer, g gh) (code 
 }
 
 func blockMessage(w *printer, problems []string) {
-	w.println("Merge blocked by scripts/mergeready:")
+	w.println("Blocked by scripts/mergeready:")
 	for _, p := range problems {
 		w.println("- " + p)
 	}

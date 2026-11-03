@@ -23,13 +23,18 @@
 //
 //	go run ./scripts/mergeready check --pr 12 [--repo owner/name]
 //	go run ./scripts/mergeready audit --sha <merge commit> [--repo owner/name] [--comment]
+//	go run ./scripts/mergeready risk --pr 12 --verdicts <file> [--dry-run] [--repo owner/name]
 //	go run ./scripts/mergeready hook < event.json
 //
 // check exits 0 when the pull request is ready and 1 with one reason per line
 // when it is not. audit exits 0 whatever it finds; the comment it posts with
-// --comment is the signal. hook is a Claude Code PreToolUse hook: it exits 2,
-// which blocks the tool call, when a Bash command merges a pull request that
-// is not ready or that it cannot identify.
+// --comment is the signal. risk scores the verdicts of the merge-risk skill
+// (.claude/skills/merge-risk/SKILL.md), raises the level to the floor of the
+// changed paths and keeps one merge-risk comment on the pull request, which
+// check requires for the head commit. hook is a Claude Code PreToolUse hook:
+// it exits 2, which blocks the tool call, when a Bash command merges a pull
+// request that is not ready or that it cannot identify, or could touch the
+// risk-accepted label.
 package main
 
 import (
@@ -146,7 +151,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdoutW, stderrW i
 }
 
 func dispatch(ctx context.Context, args []string, stdin io.Reader, stdout, stderr *printer, g gh) int {
-	const usage = "usage: mergeready check --pr N [--repo o/r] | audit --sha SHA [--repo o/r] [--comment] | hook"
+	const usage = "usage: mergeready check --pr N [--repo o/r] | audit --sha SHA [--repo o/r] [--comment] | " +
+		"risk --pr N --verdicts FILE [--dry-run] [--repo o/r] | hook"
 	if len(args) == 0 {
 		stderr.println(usage)
 		return 2
@@ -160,10 +166,23 @@ func dispatch(ctx context.Context, args []string, stdin io.Reader, stdout, stder
 	sha := fs.String("sha", "", "merge commit, for audit")
 	repo := fs.String("repo", "", "owner/name; defaults to the repository of the current directory")
 	comment := fs.Bool("comment", false, "audit: comment on a pull request that merged early")
+	verdictsFile := fs.String("verdicts", "", "risk: JSON verdicts from the merge-risk skill")
+	dryRun := fs.Bool("dry-run", false, "risk: print the assessment, post nothing")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
 	switch args[0] {
+	case "risk":
+		if *pr <= 0 || *verdictsFile == "" {
+			stderr.println("risk needs --pr and --verdicts")
+			return 2
+		}
+		c, err := newClient(ctx, g, *repo)
+		if err != nil {
+			stderr.println(err)
+			return 1
+		}
+		return runRisk(ctx, c, *pr, *verdictsFile, *dryRun, stdout, stderr)
 	case "check":
 		if *pr <= 0 {
 			stderr.println("check needs --pr")
