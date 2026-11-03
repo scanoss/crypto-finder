@@ -2058,8 +2058,23 @@ func filterChainsByCondition(
 	if cryptoCall != nil {
 		matchedCall = ruleMatchedCall(ctx, containingFn, asset)
 	}
-	kept = filterConditionedCallChains(chains, asset.ParameterConditions, matchedCall)
+	if isEntryPointAnchor(asset) {
+		kept = filterEntryPointConditionedCallChains(chains, asset.ParameterConditions)
+	} else {
+		kept = filterConditionedCallChains(chains, asset.ParameterConditions, matchedCall)
+	}
 	return kept, len(chains) > 0 && len(kept) == 0
+}
+
+// isEntryPointAnchor reports that the asset was synthesized on a library API's
+// declaration (engine.SyntheticEntryPointRuleID), not matched on a call.
+func isEntryPointAnchor(asset entities.CryptographicAsset) bool {
+	for _, rule := range asset.Rules {
+		if rule.ID == engine.SyntheticEntryPointRuleID {
+			return true
+		}
+	}
+	return false
 }
 
 // recordRouteCounts copies what the containing function's trace recorded about
@@ -2250,6 +2265,119 @@ func filterConditionedCallChains(
 	conditions []paramcondition.Condition,
 	matchedCall *callGraphCalledFunction,
 ) [][]callGraphChainNode {
+	return filterChainsByConditionVerdict(chains, conditions, func(chain []callGraphChainNode) []callGraphParameter {
+		terminal := chain[len(chain)-1]
+		call := terminal.CryptoCall
+		if matchedCall != nil {
+			call = chainCalledFunction(terminal.EntryCall, matchedCall)
+		}
+		if call == nil {
+			return nil
+		}
+		return call.Parameters
+	})
+}
+
+// filterEntryPointConditionedCallChains is filterConditionedCallChains for a
+// finding anchored on a function's declaration rather than on a call inside it:
+// a synthesized library API entry point. Its parameterCondition describes the
+// API's own arguments (param[0]:type==...DESedeEngine on CBCBlockCipher.<init>),
+// so each chain answers it with the arguments of the call that enters the
+// anchor, the terminal frame's entry call. Without this every route to the API
+// read unknown and survived, so a CBC cipher built over AES in one library made
+// the 3DES variant of the same constructor reachable.
+func filterEntryPointConditionedCallChains(
+	chains [][]callGraphChainNode,
+	conditions []paramcondition.Condition,
+) [][]callGraphChainNode {
+	return filterChainsByConditionVerdict(chains, conditions, func(chain []callGraphChainNode) []callGraphParameter {
+		entry := chain[len(chain)-1].EntryCall
+		if entry == nil {
+			return nil
+		}
+		return concreteArgumentTypes(entry.Parameters)
+	})
+}
+
+// concreteArgumentTypes returns params with each Type replaced by the concrete
+// type its value was built as, when a constructor call produced it, and emptied
+// otherwise. An entry call records the callee's declared parameter type
+// (BlockCipher), which says nothing about the engine passed in: comparing a
+// type condition against it would refute every route. Only a constructor names
+// the runtime type; several distinct ones, or none, leave the type unknown, and
+// unknown never refutes.
+func concreteArgumentTypes(params []callGraphParameter) []callGraphParameter {
+	out := make([]callGraphParameter, len(params))
+	for i, param := range params {
+		out[i] = param
+		out[i].Type = constructedType(param.SourceNodes)
+	}
+	return out
+}
+
+// constructedType is the one class the source nodes construct, or "" when they
+// construct none or more than one. Nodes nest (a VARIABLE holds the
+// CALL_RESULT that assigned it), so the whole tree is read. A constructor's call
+// target is Class.<init>; its display name, Class.Class (Java).
+func constructedType(nodes []exportSourceNode) string {
+	found, ambiguous := "", false
+	var walk func([]exportSourceNode, int)
+	walk = func(nodes []exportSourceNode, depth int) {
+		if depth > 8 {
+			return
+		}
+		for i := range nodes {
+			node := &nodes[i]
+			if node.Type == "CALL_RESULT" {
+				if class := constructorClass(node.CallTarget, node.Name); class != "" {
+					if found != "" && found != class {
+						ambiguous = true
+					}
+					found = class
+				}
+			}
+			walk(node.SourceNodes, depth+1)
+		}
+	}
+	walk(nodes, 0)
+	if ambiguous {
+		return ""
+	}
+	return found
+}
+
+// constructorClass is the class a constructor call target names, from the
+// first of names that names one.
+func constructorClass(names ...string) string {
+	for _, name := range names {
+		class, method := splitLastDot(name)
+		if class != "" && (method == constructorMethodName || method == lastDotSegment(class)) {
+			return class
+		}
+	}
+	return ""
+}
+
+func splitLastDot(name string) (string, string) {
+	i := strings.LastIndex(name, ".")
+	if i <= 0 || i == len(name)-1 {
+		return "", ""
+	}
+	return name[:i], name[i+1:]
+}
+
+func lastDotSegment(name string) string {
+	return name[strings.LastIndex(name, ".")+1:]
+}
+
+// filterChainsByConditionVerdict is the verdict logic both filters share;
+// paramsOf returns the arguments a chain answers the conditions with, nil when
+// it has none.
+func filterChainsByConditionVerdict(
+	chains [][]callGraphChainNode,
+	conditions []paramcondition.Condition,
+	paramsOf func([]callGraphChainNode) []callGraphParameter,
+) [][]callGraphChainNode {
 	if len(conditions) == 0 {
 		return chains
 	}
@@ -2260,16 +2388,12 @@ func filterConditionedCallChains(
 		if len(chain) == 0 {
 			continue
 		}
-		terminal := chain[len(chain)-1]
-		call := terminal.CryptoCall
-		if matchedCall != nil {
-			call = chainCalledFunction(terminal.EntryCall, matchedCall)
-		}
-		if call == nil {
+		params := paramsOf(chain)
+		if params == nil {
 			verdicts[i] = conditionUnknown
 			continue
 		}
-		verdicts[i] = evaluateParameterConditions(conditions, call.Parameters)
+		verdicts[i] = evaluateParameterConditions(conditions, params)
 		anyMatched = anyMatched || verdicts[i] == conditionMatched
 	}
 
