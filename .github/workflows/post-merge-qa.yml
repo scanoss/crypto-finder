@@ -66,7 +66,7 @@ jobs:
       # without a PR is the pushed range.
       - name: Find the change
         id: change
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           PR_INPUT: ${{ inputs.pr }}
           BEFORE: ${{ github.event.before }}
@@ -88,7 +88,7 @@ jobs:
             core.setOutput('base', base);
       # The binary is built from the commit under test: a run by hand for an
       # older PR checks out that PR's merge commit, not main's tip.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.change.outputs.sha }}
           fetch-depth: 0
@@ -98,7 +98,7 @@ jobs:
         if: steps.change.outputs.sha != github.sha
         run: git checkout "$GITHUB_SHA" -- scripts/featuremap .github/post-merge-qa.md .claude/skills/verify/scripts
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: 1.26.x
       - name: Pick the features
@@ -209,7 +209,7 @@ jobs:
       - name: Upload the evidence
         id: upload
         if: ${{ !cancelled() && steps.features.outputs.ids != '' && steps.guard.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: post-merge-qa-evidence
           path: ${{ github.workspace }}/bin/verify/evidence/
@@ -230,7 +230,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Report
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           RESULT: ${{ needs.qa.outputs.result }}
           USAGE: ${{ needs.qa.outputs.usage }}

@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run Crypto Finder
         run: |
@@ -138,7 +138,7 @@ jobs:
             scan --output /workspace/results.json /workspace/src
 
       - name: Upload results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: crypto-scan-results
@@ -164,7 +164,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run Crypto Finder with custom rules
         run: |
@@ -184,7 +184,7 @@ jobs:
             convert /workspace/results.json --output /workspace/cbom.json
 
       - name: Upload CBOM
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         with:
           name: crypto-cbom
           path: cbom.json
@@ -248,7 +248,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run Crypto Finder with dependency scanning
         run: |
