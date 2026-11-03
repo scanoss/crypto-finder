@@ -22,6 +22,11 @@ func TestLoadEmbeddedCIncludesOpenSSLEVPContracts(t *testing.T) {
 		arity                              int
 	}{
 		{"EVP_aes_256_gcm", "const EVP_CIPHER*", "factory", "", 0},
+		{"EVP_sm4_cbc", "const EVP_CIPHER*", "factory", "", 0},
+		{"EVP_sm4_cfb", "const EVP_CIPHER*", "factory", "", 0},
+		{"EVP_aria_256_gcm", "const EVP_CIPHER*", "factory", "", 0},
+		{"EVP_camellia_128_cfb8", "const EVP_CIPHER*", "factory", "", 0},
+		{"EVP_seed_ofb", "const EVP_CIPHER*", "factory", "", 0},
 		{"EVP_CIPHER_fetch", "EVP_CIPHER*", "factory", "algorithm", 3},
 		{"EVP_CipherInit_ex", "int", "config", "algorithm", 6},
 		{"EVP_sha256", "const EVP_MD*", "factory", "", 0},
@@ -62,6 +67,23 @@ func TestLoadEmbeddedCIncludesOpenSSLEVPContracts(t *testing.T) {
 			}
 			t.Fatalf("contract parameters = %#v, want contribution for %q", contract.Parameters, tt.property)
 		})
+	}
+}
+
+// The SM4 AEAD constructors are Tongsuo symbols, not OpenSSL ones.
+func TestOpenSSLEVPHasNoSM4AEADConstructors(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("c")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(c): %v", err)
+	}
+	for _, method := range []string{"EVP_sm4_gcm", "EVP_sm4_ccm"} {
+		for _, contract := range kb.ContractsFor(method, 0) {
+			if contract.SourceLibrary == "openssl-evp" {
+				t.Fatalf("%s is contracted by openssl-evp", method)
+			}
+		}
 	}
 }
 
