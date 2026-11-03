@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenSSL contracts for the SM4, Camellia, ARIA and SEED cipher constructors
   (`EVP_sm4_cbc`, `EVP_aria_256_gcm`, ...), so their findings carry the same call
   context as AES.
+- Contracts for the GM/T libraries sm-crypto (npm), gmssl, gmssl-python and
+  snowland-smx (PyPI), so their SM2, SM3, SM4, SM9 and ZUC findings carry call
+  context.
 
 ## [0.46.0] - 2026-11-03
 ### Added
