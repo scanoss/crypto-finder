@@ -107,6 +107,9 @@ var auditedKeySizeRoles = map[string]keySizeUnit{
 	// go/sigstore.yaml
 	"go|github.com/sigstore/sigstore/pkg/signature.NewRSAPKCS1v15SignerVerifier|1": unitBits,
 	"go|github.com/sigstore/sigstore/pkg/signature.NewRSAPSSSignerVerifier|1":      unitBits,
+	// go/tjfoc-gmsm.yaml and go/emmansun-gmsm.yaml: the SM4 key is a 16-byte slice.
+	"go|github.com/tjfoc/gmsm/sm4.NewCipher|0":    unitMaterial,
+	"go|github.com/emmansun/gmsm/sm4.NewCipher|0": unitMaterial,
 	// go/stdlib-crypto.yaml
 	"go|crypto/aes.NewCipher|0":              unitMaterial,
 	"go|crypto/des.NewCipher|0":              unitMaterial,
