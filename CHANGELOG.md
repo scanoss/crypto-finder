@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-11-03
+### Added
+- Graph fragments are now `graph-fragment-1.15`: each function may carry
+  `returns_calls`, the callee keys of the calls whose result it returns. `annotate
+  --import-fragment` reads it to follow a key generator a helper returns
+  (`KeyPairGenerator kpg = newKpg(); kpg.initialize(2048)`) into its callers, so
+  the callers' configuration calls and their `resolved_key_length` are supporting
+  calls of the finding, as in a scan, through at most three helpers. A fragment
+  exported before 1.15 still loads, and `annotate` follows no returned object
+  for it; re-export the fragment to get them.
+### Changed
+- The graph algorithm version is now `graph-algo-15` (from `graph-algo-12`), so cached
+  structural graphs are rebuilt. Calls inside Rust macro arguments are call edges; npm
+  dependency sources, Python packages in a virtualenv named `venv` and projects checked out
+  under a directory named like a default exclusion enter the call graph, and Node calls made
+  through a package name link to the package's exported function (all under Fixed); functions
+  carry `returns_calls` (under Added). Re-mine Rust, npm and Python components, and re-mine
+  components to let `annotate` follow returned objects in them.
+- Scans build call graphs faster: each language's built-in knowledge base of
+  crypto library types is now parsed once per run instead of once per call
+  graph, and a dependency scan builds a call graph for every dependency it
+  analyzes.
+### Fixed
+- The call graph matched the default exclusions (`node_modules`, `venv`,
+  `build`, `dist`, `target`, `docs`, `vendor`, ...) against every directory
+  above a source file, not only those inside the scanned project or
+  dependency. npm dependency sources, all of which sit in `node_modules`, never
+  entered the call graph, so every JavaScript dependency finding read
+  reachability `not_applicable`; Python packages installed in a virtualenv
+  named `venv` were left out the same way; and a project checked out under a
+  directory with one of those names (for example `/ci/build/myrepo`) got
+  `not_applicable` for its own findings too. The exclusions now apply only
+  inside the project or dependency being graphed, so these findings get real
+  reachability verdicts.
+- JavaScript and TypeScript calls made through an npm package name
+  (`require('pkg')`, `import { fn } from 'pkg'`, `import fn from 'pkg'`,
+  scoped `@scope/pkg` and subpaths such as `pkg/sub`) now reach the function
+  the package's entry module exports, resolved from its package.json
+  `exports`, `main` or `index.js`. Crypto in an npm dependency that the
+  application calls, directly or through other packages, now reads
+  `reachable` with a call chain into the dependency. Calls the KB models under the package name (such as
+  `jsonwebtoken.sign`) and Node built-ins keep their current handling.
+- `convert` now reports an input file it cannot open or parse, such as malformed
+  findings JSON, as `invalid_arguments` at stage `input` instead of
+  `unknown_error` / `unknown`, so CI parsers can tell bad input from internal
+  failures. The exit code stays `1`.
+- A Java dependency that shares the application's Maven groupId, such as an
+  in-house library, was treated as application code: its functions the
+  application never calls became chain roots, so crypto behind them read
+  `reachable` in the callgraph export. Application code is now the packages the
+  project's own sources declare, every reactor module included, so such a
+  dependency gets its real verdict. A dependency package under an application
+  package is a dependency for every ecosystem.
+- The callgraph export lost the key size or curve when a key generator was
+  created in one method and configured in another. A size passed as an
+  argument (`genKey("RSA", 4096)` into `kpg.initialize(size)`, or a curve name
+  into `new ECGenParameterSpec(curve)`) now resolves as `resolved_key_length`
+  when every call site passes the same literal or constant; call sites that
+  disagree still report no size. A generator returned by a helper
+  (`KeyPairGenerator kpg = newKpg(); kpg.initialize(2048)`) now gets the
+  caller's configuration calls as supporting calls of the finding that created
+  it, with their resolved size. Parameters are followed through at most four
+  calls and returned objects through at most three helpers.
+- Java dependency scanning of Maven projects now uses the Maven local repository
+  configured in `settings.xml`, `MAVEN_OPTS` or `.mvn/maven.config` to find
+  dependency sources, instead of always using `~/.m2/repository`. Before, every
+  Maven command the scan ran was pointed at `~/.m2/repository`, so artifacts were
+  downloaded again and a dependency installed only in the configured repository
+  could not be resolved or scanned. Crypto Finder now asks Maven for the
+  repository once per scan and passes it to every Maven command it runs; when
+  Maven cannot report it, the scan logs a warning and uses `~/.m2/repository`.
+- `scan` no longer fails with `scanner_initialization_failed` when
+  `XDG_CONFIG_HOME` names a directory that does not exist, as in a fresh or
+  sandboxed environment. crypto-finder now creates that directory before it
+  runs opengrep, which exits at startup without it.
+- The JavaScript/TypeScript call graph no longer takes time quadratic in the size of a bundled
+  file. Every function re-read the bodies of all the functions around it, so a bundle that wraps
+  thousands of functions in one wrapper, such as `@stencil/core`'s 13 MB `compiler/stencil.js`,
+  kept the call graph building past the 60-minute scan timeout. The names each scope binds are
+  now read once per file; that file parses in about 30 seconds and the graph is unchanged.
+- Rust crypto calls reached through a call written inside a macro's arguments, such as
+  `println!("{:?}", fingerprint(data))`, `format!`, `assert!` or `vec![..]`, were reported
+  `unreachable`: the call graph had no edge for a call inside a macro invocation. Calls in a
+  macro's parenthesized or bracketed expression arguments are now edges from the enclosing
+  function, so those findings get correct reachability and call chains. Brace-delimited macro
+  bodies, non-expression arguments and the non-evaluating `stringify!` and `quote!` still add
+  no calls.
+- `scan` no longer drops the target's own findings when the target sits inside
+  a directory that the enclosing Git repository's `.gitignore` excludes, such
+  as a checkout copied under an ignored `bin/`. Such a target is now scanned as
+  a repository of its own: the `.gitignore` files inside it still apply, and
+  those above it do not. `--detect-paths-from` filters the same way. A target
+  the repository does not ignore is scanned as before.
+
 ## [0.45.0] - 2026-10-30
 ### Added
 - Callgraph export schema `6.18`, the new `--export-callgraph` default: every chain frame carries
