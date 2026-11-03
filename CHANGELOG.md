@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Go contracts for `github.com/tjfoc/gmsm` and `github.com/emmansun/gmsm` (SM2, SM3,
   SM4 with its cipher modes, and SM9), so findings in code that uses them carry
   call context.
+- Contracts for the GM/T libraries sm-crypto (npm), gmssl, gmssl-python and
+  snowland-smx (PyPI), so their SM2, SM3, SM4, SM9 and ZUC findings carry call
+  context.
 
 ## [0.46.0] - 2026-11-03
 ### Added
