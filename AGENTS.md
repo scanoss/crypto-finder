@@ -214,12 +214,30 @@ not in the parser.
 - The agent that opens a PR drives it to mergeable: every check green, no merge
   conflict, and every review comment either fixed or answered with a reply that names
   the fixing commit or says why not.
+- Claude reviews every PR once, when it is opened or marked ready (`.github/workflows/pr-review.yml`,
+  on the CI Claude seat, against `REVIEW.md` as `main` has it). It comments as
+  `claude[bot]`; the gate requires a comment or review from it and a reply to each of its
+  inline comments. After fixes that need another look, comment `@claude review`. The
+  workflow cannot review a PR that changes `pr-review.yml`; a person's approval or the
+  `risk-accepted` label stands in for the review then.
+- Every PR needs a merge-risk assessment of its head commit, posted by its author with the
+  `merge-risk` skill (`.claude/skills/merge-risk/SKILL.md`,
+  `go run ./scripts/mergeready risk --pr <n> --verdicts <file>`), again after every push.
+  The changed paths set a floor the gate recomputes: CI and release workflows, the merge
+  gate and release packaging are high; `go.mod`/`go.sum`, output contracts and CI check
+  configuration are medium. Low: the agent merges. Medium or high: a person decides, with
+  an approving review of the head commit from someone other than the author, or the
+  `risk-accepted` label added after the latest assessment. Tell them and wait. An agent
+  never adds or removes that label.
 - Before merging, run `go run ./scripts/mergeready check --pr <n>`. It exits 0 only when
-  the PR is ready and otherwise lists every reason.
+  the PR is ready (checks green, no conflict, no request for changes, Claude's review with
+  every inline comment answered, and the merge-risk rule above) and otherwise lists every
+  reason.
 - A `PreToolUse` hook in `.claude/settings.json` runs the same check on any Bash command
-  that merges a PR, and blocks it when the PR is not ready or cannot be identified. Fix
-  the reasons; never work around the hook. It reads commands as text, so write text that
-  only mentions a merge (a commit message, a PR body) with a file tool, not an `echo`.
+  that merges a PR, and blocks it when the PR is not ready or cannot be identified. It also
+  blocks any command that could add or remove the `risk-accepted` label. Fix the reasons;
+  never work around the hook. It reads commands as text, so write text that only mentions
+  a merge or that label (a commit message, a PR body) with a file tool, not an `echo`.
 - The `Merge audit` workflow comments on any PR that merged before its checks were green.
 - A PR body needs a `## Evidence` section naming every feature the diff touches (a changed
   file matching a glob in a `.claude/skills/verify/features/<id>.md` `## Code paths`), as
@@ -234,7 +252,6 @@ not in the parser.
   PR, revert rate and red-main incidents per week into the one `Delivery metrics` issue;
   `go run ./scripts/deliverymetrics` prints the same tables locally, read-only.
 - Stop and ask the owner after three red fix-push rounds on one PR, or at a design decision.
-- Once merge risk lands, high-risk PRs wait for the owner to merge them.
 
 ## Agent skills
 
