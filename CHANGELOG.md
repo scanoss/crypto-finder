@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- OpenSSL contracts for the SM4, Camellia, ARIA and SEED cipher constructors
+  (`EVP_sm4_cbc`, `EVP_aria_256_gcm`, ...), so their findings carry the same call
+  context as AES.
 
 ## [0.46.0] - 2026-11-03
 ### Added

@@ -8,7 +8,8 @@ library:
 
 # Inventory sources: OpenSSL 3.6.2 public headers, crypto_rules commit
 # 39597ad26c0a968aa927592ca8ac29698018dea1, and the key-generation rules added
-# by crypto_rules#206. The list is limited to callable libcrypto APIs selected
+# by crypto_rules#206, plus the SM4, Camellia, ARIA and SEED cipher constructors
+# of OpenSSL 3.5 evp.h. The list is limited to callable libcrypto APIs selected
 # by those detection rules: the EVP high-level surface plus the deprecated
 # low-level RSA/DSA key-generation entry points the rules still match.
 #
@@ -148,6 +149,266 @@ contracts:
     return: {type: "const EVP_CIPHER*", confidence: high}
     role: factory
   - method: EVP_des_ede3_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_cfb1
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_cfb8
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_128_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_cfb1
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_cfb8
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_192_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_cfb1
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_cfb8
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_aria_256_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_128_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_128_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_128_cfb1
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_128_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_128_cfb8
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_128_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_128_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_128_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_192_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_192_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_192_cfb1
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_192_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_192_cfb8
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_192_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_192_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_192_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_256_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_256_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_256_cfb1
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_256_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_256_cfb8
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_256_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_256_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_camellia_256_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_seed_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_seed_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_seed_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_seed_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_seed_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_sm4_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_sm4_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_sm4_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_sm4_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_sm4_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_sm4_ofb
     arity: 0
     return: {type: "const EVP_CIPHER*", confidence: high}
     role: factory
