@@ -1,0 +1,130 @@
+name: PR review
+
+# Claude reviews a pull request once, when it is opened or marked ready, against
+# REVIEW.md as the base branch has it. It runs anthropics/claude-code-action on
+# the CI Claude seat (CLAUDE_CODE_OAUTH_TOKEN, from `claude setup-token` run as
+# that seat, the secret post-merge-qa.yml uses), so a review spends the seat's
+# limits, not API credits. It comments as claude[bot] through the Claude GitHub
+# App, which is what scripts/mergeready reads: the pull request needs a comment
+# or review from claude[bot], and every inline comment of it needs a reply.
+#
+# Another pass on new commits: comment `@claude review` on the pull request (an
+# OWNER, MEMBER or COLLABORATOR). Not on every push: one pass per pull request
+# is what the seat can carry, and the author asks again when a fix needs a
+# second look.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    name: claude review
+    # Drafts wait for ready_for_review. Forks and Dependabot get no secrets.
+    # On a comment: only `@claude review` on a pull request, from someone who
+    # can write.
+    if: >-
+      (github.event_name == 'pull_request'
+        && !github.event.pull_request.draft
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && github.actor != 'dependabot[bot]')
+      || (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && startsWith(github.event.comment.body, '@claude review')
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    # At job level, not the workflow's: every comment on a pull request starts
+    # a run whose job is skipped, and a workflow-level group would cancel the
+    # review with it.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      # The action trades the job's OIDC token for a Claude GitHub App token,
+      # so its comments come from claude[bot].
+      id-token: write
+    steps:
+      # A comment does not say where the pull request's code comes from, and an
+      # issue_comment run holds the repository's secrets: review only a pull
+      # request whose head is in this repository.
+      - name: Find the pull request
+        id: pr
+        uses: actions/github-script@v9
+        env:
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        with:
+          script: |
+            const pr = (await github.rest.pulls.get({ ...context.repo, pull_number: Number(process.env.PR) })).data;
+            if (pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed(`PR #${pr.number} comes from ${pr.head.repo?.full_name ?? 'a deleted fork'}; not reviewed`);
+              return;
+            }
+            core.setOutput('number', String(pr.number));
+            core.setOutput('sha', pr.head.sha);
+            // The review guide as the base branch has it: a pull request that
+            // edits REVIEW.md must not soften its own review.
+            const guide = await github.rest.repos.getContent({ ...context.repo, path: 'REVIEW.md', ref: pr.base.sha });
+            require('fs').writeFileSync(`${process.env.RUNNER_TEMP}/review-guide.md`, Buffer.from(guide.data.content, 'base64'));
+
+      - uses: actions/checkout@v7
+        with:
+          # On a comment the event's ref is main: review the pull request's head.
+          ref: ${{ steps.pr.outputs.sha }}
+          fetch-depth: 1
+
+      # A review that cannot run (the seat out of its limits, an expired token)
+      # must not turn the checks red. The step's outcome feeds the next step
+      # instead, and scripts/mergeready asks for Claude's comment or review on
+      # its own; it does not hold a merge on this job.
+      - name: Review
+        id: review
+        continue-on-error: true
+        uses: anthropics/claude-code-action@ea2298eeead3535f6cef2ded5fd8ccabeb6b50b4 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ steps.pr.outputs.number }}
+
+            Review this pull request. The PR's head is checked out in the working directory.
+
+            1. Read the review guide at ${{ runner.temp }}/review-guide.md: the base branch's REVIEW.md, which this PR cannot change. It says what to flag, what never to flag, and how to grade severity. Then read AGENTS.md at the root and the AGENTS.md of each directory the diff touches.
+            2. Read the diff with `gh pr diff ${{ steps.pr.outputs.number }}` and the description with `gh pr view ${{ steps.pr.outputs.number }}`. Read the surrounding code before you claim a bug: name the input or state that breaks and what the user then sees.
+            3. For each finding, post ONE inline comment on the line with `mcp__github_inline_comment__create_inline_comment` (`confirmed: true`). Start it with 🔴 when you can name the input that breaks and the consequence, 🟡 (optional) for a smaller issue or a question, 🟣 pre-existing for a problem the PR did not introduce. Say what breaks, for whom, and how to fix it.
+            4. Finish with one top-level comment, `gh pr comment ${{ steps.pr.outputs.number }} --body ...`, that lists the findings in a line each, or says you found none.
+
+            Do not approve or request changes, do not edit files, do not push. Do not repeat what lint, tests or PR hygiene already check.
+          claude_args: |
+            --model ${{ vars.REVIEW_MODEL || 'opus' }}
+            --max-turns ${{ vars.REVIEW_MAX_TURNS || 60 }}
+            --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*)"
+            --disallowedTools "Agent,Edit,Write,Read(//proc/**)"
+
+      # The action hides why Claude failed. Its execution log is on the runner:
+      # print the result line (the error text, no prompt or token) so a failed
+      # review says why, and warn instead of failing the job.
+      - name: Say why the review did not run
+        if: steps.review.outcome == 'failure'
+        env:
+          LOG: ${{ steps.review.outputs.execution_file }}
+        run: |
+          log="${LOG:-$RUNNER_TEMP/claude-execution-output.json}"
+          why="$(python3 - "$log" <<'PY'
+          import json, sys
+          try:
+              entries = json.load(open(sys.argv[1]))
+          except Exception as e:
+              print(f"no execution log ({e})")
+              sys.exit(0)
+          result = next((e for e in reversed(entries) if e.get("type") == "result"), {})
+          print(str(result.get("result") or result.get("subtype") or "no result")[:500].replace("\n", " "))
+          PY
+          )"
+          echo "::warning::Claude did not review this pull request: $why. Comment \`@claude review\` once it is fixed."
+          echo "Claude did not review this pull request: $why" >> "$GITHUB_STEP_SUMMARY"
