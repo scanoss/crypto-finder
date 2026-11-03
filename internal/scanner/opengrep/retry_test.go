@@ -569,3 +569,19 @@ func TestRetryBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestUnfilteredPass(t *testing.T) {
+	for name, c := range map[string]struct {
+		elapsed  time.Duration
+		ran, all int
+		want     time.Duration
+	}{
+		"every rule":  {elapsed: time.Minute, ran: 100, all: 100, want: time.Minute},
+		"prefiltered": {elapsed: time.Minute, ran: 25, all: 100, want: 4 * time.Minute},
+		"no rule ran": {elapsed: time.Second, ran: 0, all: 100, want: time.Second},
+	} {
+		if got := unfilteredPass(c.elapsed, c.ran, c.all); got != c.want {
+			t.Errorf("%s: unfilteredPass = %v, want %v", name, got, c.want)
+		}
+	}
+}

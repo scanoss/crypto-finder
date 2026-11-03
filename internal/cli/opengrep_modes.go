@@ -68,13 +68,15 @@ func opengrepModeExplicit(flagSet bool, lookupEnv func(string) (string, bool)) b
 }
 
 // resolveRulePrefilter returns the rule prefilter: an explicit
-// --rule-prefilter wins over SCANOSS_RULE_PREFILTER; neither keeps it off.
+// --rule-prefilter wins over SCANOSS_RULE_PREFILTER; neither drops, per
+// scanned unit, the rules of libraries it never imports. --rule-prefilter
+// off or SCANOSS_RULE_PREFILTER=off opts out.
 func resolveRulePrefilter(flagSet bool, flagValue string, lookupEnv func(string) (string, bool)) (scanner.RulePrefilter, error) {
 	source, value := "--rule-prefilter", flagValue
 	if !flagSet {
 		raw, ok := lookupEnv(rulePrefilterEnv)
 		if !ok || strings.TrimSpace(raw) == "" {
-			return scanner.RulePrefilterOff, nil
+			return scanner.RulePrefilterImports, nil
 		}
 		source, value = rulePrefilterEnv, raw
 	}
@@ -83,6 +85,16 @@ func resolveRulePrefilter(flagSet bool, flagValue string, lookupEnv func(string)
 		return scanner.RulePrefilterOff, fmt.Errorf("%s: %w", source, err)
 	}
 	return prefilter, nil
+}
+
+// rulePrefilterExplicit reports whether the user chose a rule prefilter, by
+// flag or SCANOSS_RULE_PREFILTER, rather than leaving the default.
+func rulePrefilterExplicit(flagSet bool, lookupEnv func(string) (string, bool)) bool {
+	if flagSet {
+		return true
+	}
+	raw, ok := lookupEnv(rulePrefilterEnv)
+	return ok && strings.TrimSpace(raw) != ""
 }
 
 // opengrepCoreRulesCacheDir returns where core mode keeps opengrep-core
