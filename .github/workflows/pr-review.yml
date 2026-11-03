@@ -69,10 +69,21 @@ jobs:
             core.setOutput('sha', pr.head.sha);
             // The review guide as the base branch has it: a pull request that
             // edits REVIEW.md must not soften its own review.
-            const guide = await github.rest.repos.getContent({ ...context.repo, path: 'REVIEW.md', ref: pr.base.sha });
+            // A base without REVIEW.md (the pull request that adds it) has no
+            // guide to review against: skip, and let a person decide it.
+            let guide;
+            try {
+              guide = await github.rest.repos.getContent({ ...context.repo, path: 'REVIEW.md', ref: pr.base.sha });
+            } catch (err) {
+              if (err.status !== 404) throw err;
+              core.notice(`The base of PR #${pr.number} has no REVIEW.md; not reviewed`);
+              core.setOutput('skip', 'true');
+              return;
+            }
             require('fs').writeFileSync(`${process.env.RUNNER_TEMP}/review-guide.md`, Buffer.from(guide.data.content, 'base64'));
 
-      - uses: actions/checkout@v7
+      - if: steps.pr.outputs.skip != 'true'
+        uses: actions/checkout@v7
         with:
           # On a comment the event's ref is main: review the pull request's head.
           ref: ${{ steps.pr.outputs.sha }}
@@ -84,6 +95,7 @@ jobs:
       # its own; it does not hold a merge on this job.
       - name: Review
         id: review
+        if: steps.pr.outputs.skip != 'true'
         continue-on-error: true
         uses: anthropics/claude-code-action@ea2298eeead3535f6cef2ded5fd8ccabeb6b50b4 # v1
         with:
