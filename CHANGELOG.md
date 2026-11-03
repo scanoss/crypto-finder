@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Contracts for the GM/T libraries sm-crypto (npm), gmssl, gmssl-python and
   snowland-smx (PyPI), so their SM2, SM3, SM4, SM9 and ZUC findings carry call
   context.
+- C contracts for GmSSL and for the Tongsuo-only APIs, so SM2, SM3, SM4, SM9 and
+  ZUC findings in code that uses them carry call context.
 
 ## [0.46.0] - 2026-11-03
 ### Added

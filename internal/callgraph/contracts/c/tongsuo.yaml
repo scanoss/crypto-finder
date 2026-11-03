@@ -1,0 +1,381 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: tongsuo
+  coordinates:
+    - Tongsuo-Project/Tongsuo
+  description: "Tongsuo-only symbols: SM4-GCM/CCM, white-box SM4, ZUC EEA3, SM3_*, SM2 threshold, TSAPI/SDF wrappers, Paillier, EC-ElGamal and NTLS (TLCP)"
+
+# Inventory source: the diff of Tongsuo 8.5.0 include/openssl/*.h against
+# OpenSSL 3.5.9. Tongsuo is an OpenSSL fork, so this file declares ONLY the
+# symbols OpenSSL does not have; the shared EVP and SSL APIs (EVP_sm4_cbc,
+# EVP_sm3, EVP_DigestSignInit, SSL_CTX_set_ciphersuites, ...) stay with
+# openssl-evp.yaml and openssl-ssl.yaml.
+#
+# Dispositions for the rest of the Tongsuo-only surface:
+#   skipped-non-crypto: BABASSL_* accessors, QUIC, syslog, engine and method
+#     tables (BN_METHOD_*, EC_POINT_METHOD_*), *_free/_dup/_copy/_print,
+#     ciphertext encode/decode.
+#   needs-follow-up: delegated credentials (DC_*, SSL_*_dc*), Bulletproofs,
+#     NIZK and ZKP gadgets, Paillier and EC-ElGamal homomorphic arithmetic,
+#     the TSAPI_SDF_Encrypt/Decrypt/CalculateMAC device calls (algorithm chosen
+#     by a device ID) and the TSAPI key import/export helpers.
+
+contracts:
+  - method: EC_ELGAMAL_bn_encrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EC_ELGAMAL_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EC_ELGAMAL_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: EVP_eea3
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_sm4_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_sm4_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_baiwu_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_baiwu_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_baiwu_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_baiwu_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_baiwu_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_baiwu_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_baiwu_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_wsise_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_wsise_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_wsise_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_wsise_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_wsise_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_wsise_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_wsise_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_xiaolai_cbc
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_xiaolai_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_xiaolai_cfb128
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_xiaolai_ctr
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_xiaolai_ecb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_xiaolai_gcm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_xiaolai_ofb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: NTLS_client_method
+    arity: 0
+    return: {type: "const SSL_METHOD*", confidence: high}
+    role: factory
+  - method: NTLS_method
+    arity: 0
+    return: {type: "const SSL_METHOD*", confidence: high}
+    role: factory
+  - method: NTLS_server_method
+    arity: 0
+    return: {type: "const SSL_METHOD*", confidence: high}
+    role: factory
+  - method: PAILLIER_KEY_generate_key
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: PAILLIER_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: PAILLIER_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SM2_THRESHOLD_decrypt1
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SM2_THRESHOLD_decrypt2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SM2_THRESHOLD_decrypt3
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SM2_THRESHOLD_sign1_final
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SM2_THRESHOLD_sign1_init
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: digest
+        role: operation-determining
+        contributes: {property: digest, derivation: argument_value}
+  - method: SM2_THRESHOLD_sign1_oneshot
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: type
+        role: operation-determining
+        contributes: {property: digest, derivation: argument_value}
+  - method: SM2_THRESHOLD_sign1_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SM2_THRESHOLD_sign2
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SM2_THRESHOLD_sign3
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SM3_Final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SM3_Init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SM3_Update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SSL_CTX_enable_force_ntls
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: SSL_CTX_enable_ntls
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: SSL_CTX_enable_sm_tls13_strict
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: SSL_CTX_use_enc_PrivateKey
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_CTX_use_enc_PrivateKey_file
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_CTX_use_enc_certificate
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_CTX_use_enc_certificate_file
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_CTX_use_sign_PrivateKey
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_CTX_use_sign_PrivateKey_file
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_CTX_use_sign_certificate
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_CTX_use_sign_certificate_file
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_enable_force_ntls
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: SSL_enable_ntls
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: SSL_enable_sm_tls13_strict
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: SSL_use_enc_PrivateKey
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_use_enc_PrivateKey_file
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_use_enc_certificate
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_use_enc_certificate_file
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_use_sign_PrivateKey
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_use_sign_PrivateKey_file
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_use_sign_certificate
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: SSL_use_sign_certificate_file
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: TSAPI_GenerateSM2KeyWithIndex
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: TSAPI_SDF_InternalDecrypt_ECC
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: TSAPI_SDF_InternalEncrypt_ECC
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: TSAPI_SDF_InternalSign_ECC
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: TSAPI_SM2Decrypt
+    arity: 4
+    return: {type: "unsigned char*", confidence: high}
+    role: operation
+  - method: TSAPI_SM2DecryptWithISK
+    arity: 4
+    return: {type: "unsigned char*", confidence: high}
+    role: operation
+  - method: TSAPI_SM2Encrypt
+    arity: 4
+    return: {type: "unsigned char*", confidence: high}
+    role: operation
+  - method: TSAPI_SM2EncryptWithISK
+    arity: 4
+    return: {type: "unsigned char*", confidence: high}
+    role: operation
+  - method: TSAPI_SM2Keygen
+    arity: 0
+    return: {type: "EVP_PKEY*", confidence: high}
+    role: operation
+  - method: TSAPI_SM2Sign
+    arity: 4
+    return: {type: "unsigned char*", confidence: high}
+    role: operation
+  - method: TSAPI_SM2Verify
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: TSAPI_SM3
+    arity: 3
+    return: {type: "unsigned char*", confidence: high}
+    role: operation
+  - method: TSAPI_SM4Decrypt
+    arity: 8
+    return: {type: "unsigned char*", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: mode
+        role: operation-determining
+        contributes: {property: mode, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: TSAPI_SM4Encrypt
+    arity: 8
+    return: {type: "unsigned char*", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: mode
+        role: operation-determining
+        contributes: {property: mode, derivation: argument_value}
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
