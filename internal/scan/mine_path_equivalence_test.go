@@ -172,6 +172,9 @@ func oracleFragmentEntryPointChains(
 	if cryptoCall != nil {
 		matchedCall = ruleMatchedCall(ctx, containingFn, asset)
 	}
+	if isEntryPointAnchor(asset) {
+		return filterEntryPointConditionedCallChains(chains, asset.ParameterConditions)
+	}
 	return filterConditionedCallChains(chains, asset.ParameterConditions, matchedCall)
 }
 

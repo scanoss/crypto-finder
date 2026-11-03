@@ -17,6 +17,7 @@
 package scan
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
@@ -168,5 +169,65 @@ func TestFilterConditionedCallChains_EmptyChainAlwaysDropped(t *testing.T) {
 	got := filterConditionedCallChains([][]callGraphChainNode{{}}, conditions, nil)
 	if len(got) != 0 {
 		t.Fatalf("empty chain kept: got %d chains, want 0", len(got))
+	}
+}
+
+// entryChain builds a route into a synthesized API entry point (the anchor is
+// the declaration of CBCBlockCipher.<init>) whose entering call passes an
+// argument declared as BlockCipher and built from the given source nodes.
+func entryChain(caller string, sources ...exportSourceNode) []callGraphChainNode {
+	return []callGraphChainNode{
+		{FunctionKey: caller},
+		{
+			FunctionKey: "org.bouncycastle.crypto.modes.(CBCBlockCipher).<init>#1",
+			EntryCall: &callGraphEntryCall{
+				FunctionName: "org.bouncycastle.crypto.modes.CBCBlockCipher.<init>",
+				Parameters:   []callGraphParameter{{ParameterIndex: 0, Type: "BlockCipher", SourceNodes: sources}},
+			},
+		},
+	}
+}
+
+func constructed(class string) exportSourceNode {
+	return exportSourceNode{Type: "CALL_RESULT", Name: class + "." + class[strings.LastIndex(class, ".")+1:]}
+}
+
+// TestFilterEntryPointConditionedCallChains_ReadsTheEnteringArgument pins the
+// 3DES/AES case from nordvault: bcprov's CBCBlockCipher.<init> is reached with a
+// DESedeEngine from DESedeWrapEngine.init and with an AESFastEngine from
+// iText's AESCipher. The 3DES-CBC entry point (param[0]:type==DESedeEngine)
+// keeps only the route that passes a DESedeEngine.
+func TestFilterEntryPointConditionedCallChains_ReadsTheEnteringArgument(t *testing.T) {
+	conditions := []paramcondition.Condition{mustCondition(t, "param[0]:type==org.bouncycastle.crypto.engines.DESedeEngine")}
+	des := entryChain("org.bouncycastle.crypto.engines.(DESedeWrapEngine).init#2",
+		constructed("org.bouncycastle.crypto.engines.DESedeEngine"))
+	aes := entryChain("com.itextpdf.text.pdf.crypto.(AESCipher).<init>#3",
+		exportSourceNode{Type: "VARIABLE", Name: "aes"},
+		constructed("org.bouncycastle.crypto.engines.AESFastEngine"))
+
+	got := filterEntryPointConditionedCallChains([][]callGraphChainNode{aes, des}, conditions)
+	if len(got) != 1 || got[0][0].FunctionKey != des[0].FunctionKey {
+		t.Fatalf("kept %d routes, want only the DESedeEngine one", len(got))
+	}
+
+	if got := filterEntryPointConditionedCallChains([][]callGraphChainNode{aes}, conditions); len(got) != 0 {
+		t.Fatalf("an AES-only entry point kept %d routes for the 3DES variant, want 0", len(got))
+	}
+}
+
+// The declared parameter type is an interface: it never refutes, and neither
+// does an argument built by two different constructors or a route with no
+// entering call.
+func TestFilterEntryPointConditionedCallChains_UnknownNeverRefutes(t *testing.T) {
+	conditions := []paramcondition.Condition{mustCondition(t, "param[0]:type==org.bouncycastle.crypto.engines.DESedeEngine")}
+	declaredOnly := entryChain("com.example.(A).run#1", exportSourceNode{Type: "PARAMETER", Name: "engine"})
+	ambiguous := entryChain("com.example.(B).run#1",
+		constructed("org.bouncycastle.crypto.engines.DESedeEngine"),
+		constructed("org.bouncycastle.crypto.engines.AESEngine"))
+	noEntry := []callGraphChainNode{{FunctionKey: "com.example.(C).run#1"}, {FunctionKey: "org.bouncycastle.crypto.modes.(CBCBlockCipher).<init>#1"}}
+
+	got := filterEntryPointConditionedCallChains([][]callGraphChainNode{declaredOnly, ambiguous, noEntry}, conditions)
+	if len(got) != 3 {
+		t.Fatalf("kept %d undecidable routes, want all 3", len(got))
 	}
 }
