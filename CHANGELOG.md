@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.1] - 2026-11-03
+### Fixed
+- A library API entry point whose rule carries a `parameterCondition` (the
+  3DES-CBC variant of BouncyCastle's `CBCBlockCipher(BlockCipher)`, for
+  example) now keeps only the routes whose call into the API passes a matching
+  argument. Before, every route to the API counted, so a CBC cipher built over
+  AES in one library made the 3DES variant reachable. A type condition is read
+  from the class the argument was constructed as (`new DESedeEngine()`); an
+  argument whose class is not known still never drops a route.
+
 ## [0.46.0] - 2026-11-03
 ### Added
 - Graph fragments are now `graph-fragment-1.15`: each function may carry
