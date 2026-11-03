@@ -60,12 +60,12 @@ func (s *Scanner) collect(ctx context.Context, base string, roots []scanner.Root
 		scoped = scoped || root.Scope != nil
 	}
 	if s.mode == scanner.OpengrepModeCore || s.prefilter == scanner.RulePrefilterImports {
-		output, ran, handled, err := s.collectPlanned(ctx, &st, rulePaths, scoped)
+		output, ran, all, handled, err := s.collectPlanned(ctx, &st, rulePaths, scoped)
 		if handled {
 			if err != nil {
 				return nil, err
 			}
-			return s.retryTimeouts(ctx, &st, output, ran, rulePaths, time.Since(started))
+			return s.retryTimeouts(ctx, &st, output, ran, rulePaths, unfilteredPass(time.Since(started), len(ran), all))
 		}
 	}
 	output, err := s.collectCLI(ctx, &st, st.configs, scoped, st.rewriteID)
@@ -77,18 +77,18 @@ func (s *Scanner) collect(ctx context.Context, base string, roots []scanner.Root
 
 // collectPlanned is collect for the modes that plan the scan themselves.
 // handled is false when the plain CLI scan must run instead; ran is the
-// rules the scan ran.
-func (s *Scanner) collectPlanned(ctx context.Context, st *site, rulePaths []string, scoped bool) (output *entities.SemgrepOutput, ran []*coreRule, handled bool, err error) {
+// rules the scan ran, out of all in the rule set.
+func (s *Scanner) collectPlanned(ctx context.Context, st *site, rulePaths []string, scoped bool) (output *entities.SemgrepOutput, ran []*coreRule, all int, handled bool, err error) {
 	started := time.Now()
 	cwd, err := physicalDir(s.workDir)
 	if err != nil {
 		s.fallback("working directory unavailable", err)
-		return nil, nil, false, nil
+		return nil, nil, 0, false, nil
 	}
 	ruleset, err := loadCoreRuleset(rulePaths, cwd)
 	if err != nil {
 		s.fallback("rules unreadable for core mode or the prefilter", err)
-		return nil, nil, false, nil
+		return nil, nil, 0, false, nil
 	}
 	plan, err := enumerateTargets(ctx, targetOptions{
 		targets:           targetStrings(st.targets()),
@@ -101,10 +101,10 @@ func (s *Scanner) collectPlanned(ctx context.Context, st *site, rulePaths []stri
 	}, languagesOf(ruleset.rules))
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, nil, true, s.contextFailure(ctx, time.Since(started))
+			return nil, nil, 0, true, s.contextFailure(ctx, time.Since(started))
 		}
 		s.fallback("targets need the opengrep CLI", err)
-		return nil, nil, false, nil
+		return nil, nil, 0, false, nil
 	}
 
 	// A scoped scan (--detect-paths-from) reads only the listed files, whose
@@ -123,29 +123,40 @@ func (s *Scanner) collectPlanned(ctx context.Context, st *site, rulePaths []stri
 		output, err := s.collectCore(ctx, ruleset, rules, plan, inspection.nosem)
 		if err == nil {
 			st.nameOutput(output)
-			return output, rules, true, nil
+			return output, rules, len(ruleset.rules), true, nil
 		}
 		if ctx.Err() != nil {
-			return nil, nil, true, s.contextFailure(ctx, time.Since(started))
+			return nil, nil, 0, true, s.contextFailure(ctx, time.Since(started))
 		}
 		s.fallback("opengrep-core did not run", err)
 	}
 
 	if len(rules) == len(ruleset.rules) {
 		output, err := s.collectCLI(ctx, st, st.configs, scoped, st.rewriteID)
-		return output, rules, true, err
+		return output, rules, len(ruleset.rules), true, err
 	}
 	if len(rules) == 0 {
-		return &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}, rules, true, nil
+		return &entities.SemgrepOutput{Results: []entities.SemgrepResult{}, Errors: []entities.SemgrepError{}}, rules, len(ruleset.rules), true, nil
 	}
 	filtered, cleanup, err := writePrefilteredRules(rules)
 	if err != nil {
 		s.fallback("prefiltered rules could not be written", err)
-		return nil, nil, false, nil
+		return nil, nil, 0, false, nil
 	}
 	defer cleanup()
 	output, err = s.collectCLI(ctx, st, []string{filtered}, scoped, restorePrefilteredID)
-	return output, rules, true, err
+	return output, rules, len(ruleset.rules), true, err
+}
+
+// unfilteredPass is how long a scan that took elapsed running ran of all
+// rules would have taken with every rule. It sizes the retry budget
+// (retryBudget), which must not shrink with the prefilter: a timed-out rule
+// costs as much to retry whatever else the scan skipped.
+func unfilteredPass(elapsed time.Duration, ran, all int) time.Duration {
+	if ran <= 0 || ran >= all {
+		return elapsed
+	}
+	return time.Duration(float64(elapsed) * float64(all) / float64(ran))
 }
 
 // collectCore runs opengrep-core when core mode supports the scan. nosem
