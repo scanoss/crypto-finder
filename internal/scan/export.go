@@ -2326,7 +2326,8 @@ func constructedType(nodes []exportSourceNode) string {
 		if depth > 8 {
 			return
 		}
-		for _, node := range nodes {
+		for i := range nodes {
+			node := &nodes[i]
 			if node.Type == "CALL_RESULT" {
 				if class := constructorClass(node.CallTarget, node.Name); class != "" {
 					if found != "" && found != class {
@@ -2350,7 +2351,7 @@ func constructedType(nodes []exportSourceNode) string {
 func constructorClass(names ...string) string {
 	for _, name := range names {
 		class, method := splitLastDot(name)
-		if class != "" && (method == "<init>" || method == lastDotSegment(class)) {
+		if class != "" && (method == constructorMethodName || method == lastDotSegment(class)) {
 			return class
 		}
 	}
