@@ -1,0 +1,159 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: tjfoc-gmsm
+  coordinates:
+    - "github.com/tjfoc/gmsm"
+  version_range: ">=1.4.0,<2.0.0"
+  description: "tjfoc GM/T library: SM2 signature, encryption and key exchange, SM3, SM4 and its mode helpers"
+
+# Inventory source: github.com/tjfoc/gmsm v1.4.1 module source from the Go module proxy,
+# packages sm2, sm3, sm4. Detection rules: scanoss/crypto_rules go/tjfoc-gmsm.
+contracts:
+  - method: github.com/tjfoc/gmsm/sm2.(*PrivateKey).Decrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.(*PrivateKey).DecryptAsn1
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.(*PrivateKey).Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.(*PublicKey).EncryptAsn1
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.(*PublicKey).Sm3Digest
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.(*PublicKey).Verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.Decrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.DecryptAsn1
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.Encrypt
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.EncryptAsn1
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.GenerateKey
+    arity: 1
+    return: { type: "*github.com/tjfoc/gmsm/sm2.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/tjfoc/gmsm/sm2.KeyExchangeA
+    arity: 7
+    return: { type: github.com/tjfoc/gmsm/sm2.s1, confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.KeyExchangeB
+    arity: 7
+    return: { type: github.com/tjfoc/gmsm/sm2.s1, confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.P256Sm2
+    arity: 0
+    return: { type: crypto/elliptic.Curve, confidence: high }
+    role: factory
+  - method: github.com/tjfoc/gmsm/sm2.Sm2Sign
+    arity: 4
+    return: { type: "*math/big.Int", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.Sm2Verify
+    arity: 5
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.Verify
+    arity: 4
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm2.ZA
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm3.(*SM3).Sum
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm3.New
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: github.com/tjfoc/gmsm/sm3.Sm3Sum
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.(*Sm4Cipher).Decrypt
+    arity: 2
+    return: { type: error, confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.(*Sm4Cipher).Encrypt
+    arity: 2
+    return: { type: error, confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.GCMDecrypt
+    arity: 4
+    return: { type: github.com/tjfoc/gmsm/sm4.P, confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.GCMEncrypt
+    arity: 4
+    return: { type: github.com/tjfoc/gmsm/sm4.C, confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.NewCipher
+    arity: 1
+    return: { type: crypto/cipher.Block, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
+  - method: github.com/tjfoc/gmsm/sm4.ReadKeyFromPem
+    arity: 2
+    return: { type: github.com/tjfoc/gmsm/sm4.SM4Key, confidence: high }
+    role: factory
+  - method: github.com/tjfoc/gmsm/sm4.ReadKeyFromPemFile
+    arity: 2
+    return: { type: github.com/tjfoc/gmsm/sm4.SM4Key, confidence: high }
+    role: factory
+  - method: github.com/tjfoc/gmsm/sm4.SetIV
+    arity: 1
+    return: { type: error, confidence: high }
+    role: config
+  - method: github.com/tjfoc/gmsm/sm4.Sm4CFB
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.Sm4Cbc
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.Sm4Ecb
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.Sm4GCM
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.Sm4OFB
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/tjfoc/gmsm/sm4.WriteKeyToPem
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/tjfoc/gmsm/sm4.WriteKeyToPemFile
+    arity: 3
+    return: { type: error, confidence: high }
+    role: output
+hierarchy: {}
