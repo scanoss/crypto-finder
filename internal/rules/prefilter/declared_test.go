@@ -163,12 +163,19 @@ func TestCIncludeAfterBareCR(t *testing.T) {
 }
 
 func TestJSStringLiteralsLinearOnEscapedQuotes(t *testing.T) {
-	body := strings.Repeat(`__webpack_require__(\"./x\");`, 40000)
-	source := `eval("` + body + `");` + "\nconst c = require(\"crypto-js\");\n"
-	start := time.Now()
-	ev := evidenceOf("js", source)
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Errorf("reader took %v on a 1 MB eval literal", elapsed)
+	read := func(calls int) (time.Duration, *Evidence) {
+		body := strings.Repeat(`__webpack_require__(\"./x\");`, calls)
+		source := `eval("` + body + `");` + "\nconst c = require(\"crypto-js\");\n"
+		start := time.Now()
+		ev := evidenceOf("js", source)
+		return time.Since(start), ev
+	}
+	// A ratio, not a wall time: -race slows the reader a hundredfold. Four
+	// times the input takes about 4x when linear, 16x when quadratic.
+	small, _ := read(10000)
+	large, ev := read(40000)
+	if ratio := float64(large) / float64(max(small, time.Microsecond)); ratio > 10 {
+		t.Errorf("reader took %v on 250 KB and %v on 1 MB of eval literal (%.1fx)", small, large, ratio)
 	}
 	found := false
 	for _, candidate := range ev.imports[FamilyJS] {
