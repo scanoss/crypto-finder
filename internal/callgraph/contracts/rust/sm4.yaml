@@ -1,0 +1,84 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: sm4
+  coordinates:
+    - sm4
+  version_range: ">=0.1.0,<0.7.0"
+  description: "RustCrypto SM4 raw block cipher"
+
+# Inventory: sm4 0.1.0, 0.3.0, 0.5.1, 0.6.0 src/lib.rs. Contracts sit on the concrete types; the
+# shared `cipher` traits are blanket-implemented and carry no algorithm identity.
+# skipped-non-crypto: AlgorithmName/Debug/Drop/zeroize impls and the private key schedule.
+# `new_varkey` is the block-cipher 0.7/0.8 slice constructor (sm4 0.1.0-0.3.0); 0.0.x is
+# a placeholder and an unrelated block-cipher-trait release.
+
+contracts:
+  - method: sm4::Sm4.new
+    arity: 1
+    return: {type: "sm4::Sm4", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: sm4::Sm4.new_from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: sm4::Sm4.new_varkey
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: sm4::Sm4.encrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: sm4::Sm4.encrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: sm4::Sm4.decrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: sm4::Sm4.decrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+
+hierarchy:
+  sm4::Sm4:
+    - core::any::Any
+  core::any::Any: []

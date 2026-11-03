@@ -1,0 +1,185 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: camellia
+  coordinates:
+    - camellia
+  version_range: ">=0.1.0,<0.3.0"
+  description: "RustCrypto Camellia raw block cipher (RFC 3713)"
+
+# Inventory: camellia 0.1.0 src/camellia.rs (impl_camellia!), 0.2.1 src/lib.rs. Contracts sit on the concrete types; the
+# shared `cipher` traits are blanket-implemented and carry no algorithm identity.
+# skipped-non-crypto: AlgorithmName/Debug/Drop/zeroize impls and the private key schedule.
+
+contracts:
+  - method: camellia::Camellia128.new
+    arity: 1
+    return: {type: "camellia::Camellia128", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: camellia::Camellia128.new_from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: camellia::Camellia128.encrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: camellia::Camellia128.encrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: camellia::Camellia128.decrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: camellia::Camellia128.decrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: camellia::Camellia192.new
+    arity: 1
+    return: {type: "camellia::Camellia192", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: camellia::Camellia192.new_from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: camellia::Camellia192.encrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: camellia::Camellia192.encrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: camellia::Camellia192.decrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: camellia::Camellia192.decrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: camellia::Camellia256.new
+    arity: 1
+    return: {type: "camellia::Camellia256", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: camellia::Camellia256.new_from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: camellia::Camellia256.encrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: camellia::Camellia256.encrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: camellia::Camellia256.decrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: camellia::Camellia256.decrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+
+hierarchy:
+  camellia::Camellia128:
+    - core::any::Any
+  camellia::Camellia192:
+    - core::any::Any
+  camellia::Camellia256:
+    - core::any::Any
+  core::any::Any: []

@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   context.
 - C contracts for GmSSL and for the Tongsuo-only APIs, so SM2, SM3, SM4, SM9 and
   ZUC findings in code that uses them carry call context.
+- Contracts for the RustCrypto `sm2`, `sm3`, `sm4`, `aria` and `camellia` crates, so
+  their findings carry call context and the block ciphers report the key size.
 
 ## [0.46.0] - 2026-11-03
 ### Added
