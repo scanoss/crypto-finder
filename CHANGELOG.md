@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-11-04
+### Added
+- C contracts for GmSSL, including its generic digest and block-cipher API, and
+  for the Tongsuo-only APIs, so SM2, SM3, SM4, SM9 and ZUC findings in code that
+  uses them carry call context.
+- Go contracts for `github.com/tjfoc/gmsm` and `github.com/emmansun/gmsm` (SM2,
+  SM3, SM4 with its cipher modes, and SM9 including its key exchange), so
+  findings in code that uses them carry call context.
+- Contracts for the GM/T libraries sm-crypto (npm), gmssl, gmssl-python and
+  snowland-smx (PyPI), so their SM2, SM3, SM4, SM9 and ZUC findings carry call
+  context.
+- OpenSSL contracts for the SM4, Camellia, ARIA and SEED cipher constructors
+  (`EVP_sm4_cbc`, `EVP_aria_256_gcm`, ...), so their findings carry the same
+  call context as AES.
+- OpenSSL `SSL_CTX_set_cipher_list`, `SSL_set_cipher_list`,
+  `SSL_CTX_set_ciphersuites` and `SSL_set_ciphersuites` now report their list
+  argument as the configured cipher suites, including Tongsuo's SM suites.
+- `scan` and `annotate` accept `--ruleset-version` to fetch a specific release of the
+  remote ruleset (for example `--ruleset-version v1.39.0`) instead of `latest`, so a scan
+  can be rerun later with identical rules. The default stays `latest`. The version in the
+  report's `rules` block is still the concrete release that was used. The flag cannot be
+  combined with `--no-remote-rules`, and anything other than `latest` or a release
+  version is rejected.
+- Contracts for the RustCrypto `sm2`, `sm3`, `sm4`, `aria` and `camellia` crates,
+  so their findings carry call context and the block ciphers report the key size.
+### Changed
+- `scan --rule-prefilter` now defaults to `imports`: for the project and each
+  dependency batch, the rules for libraries its sources never import are
+  skipped before the scanner runs. Rules whose import requirement is unknown
+  and rules declaring `metadata.imports: ["*"]` are always kept. Pass
+  `--rule-prefilter off` or set `SCANOSS_RULE_PREFILTER=off` to run every
+  rule. The prefilter is part of the dependency findings cache identity, so
+  the first dependency scan after upgrading does not reuse cached results.
+
 ## [0.46.3] - 2026-11-04
 ### Fixed
 - Library entry points now take their crypto metadata only from rules of the
