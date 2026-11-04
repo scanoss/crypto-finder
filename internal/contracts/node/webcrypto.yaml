@@ -1,0 +1,183 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: webcrypto
+  coordinates:
+    - webcrypto
+    - crypto.webcrypto
+    - node:crypto.webcrypto
+  description: "Web Cryptography API: SubtleCrypto operations and Crypto.getRandomValues, in browsers and in Node"
+
+# Inventory source: the W3C Web Cryptography API (WebIDL for SubtleCrypto and
+# Crypto, Editor's Draft 2025) and nodejs/node doc/api/webcrypto.md (main).
+#
+# SPELLINGS. The parser names every WebCrypto call after its WebIDL
+# interface: `crypto.subtle.encrypt(..)`, `globalThis.crypto.subtle...`,
+# `window.crypto.subtle...`, Node's `require('crypto').webcrypto.subtle...` or
+# `import { webcrypto } from 'node:crypto'`, and a `subtle` object held in a
+# variable or destructured all emit `SubtleCrypto.<method>`;
+# `crypto.getRandomValues(..)` on the global object or on the Node crypto
+# module emits `Crypto.getRandomValues`. One key per method covers them all.
+#
+# RETURN TYPES are the values the promises resolve to, as the other Node KBs
+# type async functions. generateKey resolves to a CryptoKey for a symmetric
+# algorithm (AES-*, HMAC) and to a CryptoKeyPair for an asymmetric one
+# (RSA-*, ECDSA, ECDH, Ed25519, X25519); it is typed CryptoKey here, the
+# material the operations consume, since no contract declares a method on
+# either type and the `when` grammar compares literals, not the `name` of an
+# algorithm object.
+#
+# ALGORITHM SELECTION. The algorithm argument is a string ("SHA-256",
+# "PBKDF2") or a dictionary ({ name: "AES-GCM", length: 256 }); it is marked
+# operation-determining so a rule's parameterCondition can read the string
+# form, and so a dictionary written at the call site reaches the
+# conditioned-finding evaluator as an expression. A key size written inside
+# the dictionary (length, modulusLength, namedCurve) is not derived: the
+# property that carries it depends on the dictionary's own `name`, which an
+# argument_property derivation cannot select on.
+#
+# ROLES. factory creates or loads key material (generateKey, importKey,
+# deriveKey, unwrapKey); operation performs the cryptography; output
+# serializes a key (exportKey, wrapKey).
+#
+# INVENTORY. contracted: every entry below.
+# skipped-non-crypto: Crypto.randomUUID (a v4 UUID from the CSPRNG, no
+#   algorithm selected; the Node module's own randomUUID is not WebCrypto).
+# skipped-informative-return: CryptoKey.algorithm, .type, .extractable,
+#   .usages; CryptoKeyPair.privateKey, .publicKey (attributes, not calls).
+# needs-follow-up: Node's `webcrypto.subtle.getPublicKey` (Node 23+, not in
+#   the W3C API); Ed25519/X25519/ML-KEM/ML-DSA algorithm names once rules
+#   cover them.
+
+contracts:
+  # ── Digest ──────────────────────────────────────────────────────────────
+  # digest(algorithm, data)
+  - method: SubtleCrypto.digest
+    arity: 2
+    return: { type: ArrayBuffer, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: data, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+
+  # ── Encryption ──────────────────────────────────────────────────────────
+  # encrypt(algorithm, key, data) / decrypt(algorithm, key, data)
+  - method: SubtleCrypto.encrypt
+    arity: 3
+    return: { type: ArrayBuffer, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 2, name: data, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+  - method: SubtleCrypto.decrypt
+    arity: 3
+    return: { type: ArrayBuffer, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 2, name: data, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+
+  # ── Signatures and MACs ─────────────────────────────────────────────────
+  # sign(algorithm, key, data) / verify(algorithm, key, signature, data)
+  - method: SubtleCrypto.sign
+    arity: 3
+    return: { type: ArrayBuffer, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 2, name: data, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: SubtleCrypto.verify
+    arity: 4
+    return: { type: boolean, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 2, name: signature, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+      - { index: 3, name: data, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+
+  # ── Key material ────────────────────────────────────────────────────────
+  # generateKey(algorithm, extractable, keyUsages)
+  - method: SubtleCrypto.generateKey
+    arity: 3
+    return: { type: CryptoKey, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  # importKey(format, keyData, algorithm, extractable, keyUsages)
+  - method: SubtleCrypto.importKey
+    arity: 5
+    return: { type: CryptoKey, confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, name: keyData, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 2, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  # exportKey(format, key)
+  - method: SubtleCrypto.exportKey
+    arity: 2
+    return: { type: ArrayBuffer, confidence: high }
+    role: output
+    parameters:
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+
+  # ── Key derivation ──────────────────────────────────────────────────────
+  # deriveKey(algorithm, baseKey, derivedKeyType, extractable, keyUsages)
+  - method: SubtleCrypto.deriveKey
+    arity: 5
+    return: { type: CryptoKey, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: baseKey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 2, name: derivedKeyType, role: metadata-contributing, contributes: { property: keyType, derivation: argument_value } }
+  # deriveBits(algorithm, baseKey, length): length in bits; optional since the
+  # 2024 draft, so the two-argument call is its own entry.
+  - method: SubtleCrypto.deriveBits
+    arity: 3
+    return: { type: ArrayBuffer, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: baseKey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 2, name: length, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+  - method: SubtleCrypto.deriveBits
+    arity: 2
+    return: { type: ArrayBuffer, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: algorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: baseKey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+
+  # ── Key wrapping ────────────────────────────────────────────────────────
+  # wrapKey(format, key, wrappingKey, wrapAlgorithm)
+  - method: SubtleCrypto.wrapKey
+    arity: 4
+    return: { type: ArrayBuffer, confidence: high }
+    role: output
+    parameters:
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 3, name: wrapAlgorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  # unwrapKey(format, wrappedKey, unwrappingKey, unwrapAlgorithm,
+  # unwrappedKeyAlgorithm, extractable, keyUsages)
+  - method: SubtleCrypto.unwrapKey
+    arity: 7
+    return: { type: CryptoKey, confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, name: wrappedKey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 3, name: unwrapAlgorithm, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 4, name: unwrappedKeyAlgorithm, role: metadata-contributing, contributes: { property: keyType, derivation: argument_value } }
+
+  # ── Random ──────────────────────────────────────────────────────────────
+  # getRandomValues(array): fills and returns the caller's typed array.
+  - method: Crypto.getRandomValues
+    arity: 1
+    return: { type: ArrayBufferView, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: array, role: metadata-contributing, contributes: { property: output, derivation: argument_value } }
+
+hierarchy: {}

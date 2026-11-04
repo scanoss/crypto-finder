@@ -203,7 +203,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 
 Detection (rules-based scanning) covers whatever languages the ruleset covers. Call graph construction and reachability analysis support these ecosystems:
 
-| Ecosystem | Call graph parser | Contract knowledge bases (`internal/callgraph/contracts/`) |
+| Ecosystem | Call graph parser | Contract knowledge bases (`internal/contracts/`) |
 |-----------|-------------------|-------------------------------------------------------------|
 | C | yes | OpenSSL EVP, libsodium, Mbed TLS, wolfSSL/wolfCrypt |
 | C++ | yes | Crypto++ (SHA-256 hash lifecycle) |

@@ -1,0 +1,77 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: gliderlabs-ssh
+  coordinates:
+    - "github.com/gliderlabs/ssh"
+  version_range: ">=0.1.0,<1.0.0"
+  description: "gliderlabs/ssh SSH server facade"
+
+# Inventory source: github.com/gliderlabs/ssh v0.3.8 module source from the Go
+# module proxy. The facade wraps golang.org/x/crypto/ssh (covered by
+# golang-x-crypto.yaml); the crypto-relevant boundary is server construction,
+# host-key material, and the authentication option factories. Session I/O,
+# context plumbing, port-forwarding callbacks, and the agent helpers are
+# structural and stay uncontracted.
+contracts:
+  - method: github.com/gliderlabs/ssh.Serve
+    arity: 3
+    varargs: true
+    return: { type: error, confidence: high }
+    role: operation
+  - method: github.com/gliderlabs/ssh.ListenAndServe
+    arity: 3
+    varargs: true
+    return: { type: error, confidence: high }
+    role: operation
+  - method: github.com/gliderlabs/ssh.HostKeyFile
+    arity: 1
+    return: { type: github.com/gliderlabs/ssh.Option, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: filepath, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/gliderlabs/ssh.HostKeyPEM
+    arity: 1
+    return: { type: github.com/gliderlabs/ssh.Option, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: bytes, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/gliderlabs/ssh.PasswordAuth
+    arity: 1
+    return: { type: github.com/gliderlabs/ssh.Option, confidence: high }
+    role: config
+  - method: github.com/gliderlabs/ssh.PublicKeyAuth
+    arity: 1
+    return: { type: github.com/gliderlabs/ssh.Option, confidence: high }
+    role: config
+  - method: github.com/gliderlabs/ssh.KeyboardInteractiveAuth
+    arity: 1
+    return: { type: github.com/gliderlabs/ssh.Option, confidence: high }
+    role: config
+  - method: github.com/gliderlabs/ssh.KeysEqual
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: ak, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+      - { index: 1, name: bk, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/gliderlabs/ssh.(*Server).AddHostKey
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/gliderlabs/ssh.(*Server).ListenAndServe
+    arity: 0
+    return: { type: error, confidence: high }
+    role: operation
+  - method: github.com/gliderlabs/ssh.(*Server).Serve
+    arity: 1
+    return: { type: error, confidence: high }
+    role: operation
+  - method: github.com/gliderlabs/ssh.(*Server).SetOption
+    arity: 1
+    return: { type: error, confidence: high }
+    role: config
+
+hierarchy: {}

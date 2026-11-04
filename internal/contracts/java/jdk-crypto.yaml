@@ -1,0 +1,791 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jdk-crypto
+  description: "JDK Java Cryptography Architecture (JCA) and Java Cryptography Extension (JCE) standard library contracts"
+
+# JCA/JCE Knowledge Base — 50 contract entries + 33 hierarchy edges
+# Hand-curated for the callgraph-inferred-types v1 inference engine.
+# Schema version 2 — library block required.
+
+contracts:
+  # --- KeyGenerator ---
+  - method: javax.crypto.KeyGenerator.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.KeyGenerator
+      confidence: high
+
+  - method: javax.crypto.KeyGenerator.generateKey
+    arity: 0
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  - method: javax.crypto.KeyGenerator.init
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keyBits
+        role: metadata-contributing
+        # The JCA keysize argument is already expressed in bits, so the value
+        # itself is the evidence (argument_bit_length is for key material whose
+        # length yields the bits, e.g. a byte array).
+        contributes: { property: keySize, derivation: argument_value }
+
+  # --- KeyPairGenerator ---
+  - method: java.security.KeyPairGenerator.getInstance
+    arity: 1
+    return:
+      type: java.security.KeyPairGenerator
+      confidence: high
+
+  - method: java.security.KeyPairGenerator.generateKeyPair
+    arity: 0
+    return:
+      type: java.security.KeyPair
+      confidence: high
+
+  # initialize(int) and initialize(int, SecureRandom). The AlgorithmParameterSpec
+  # overloads share these arities but carry no key size of their own; their size
+  # lives on the spec constructor below, so only the int form is contracted here.
+  - method: java.security.KeyPairGenerator.initialize
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keyBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  - method: java.security.KeyPairGenerator.initialize
+    arity: 2
+    parameter_types: [int, java.security.SecureRandom]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+    parameters:
+      - index: 0
+        name: keyBits
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  # --- SecretKeyFactory ---
+  - method: javax.crypto.SecretKeyFactory.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.SecretKeyFactory
+      confidence: high
+
+  - method: javax.crypto.SecretKeyFactory.generateSecret
+    arity: 1
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  # --- KeyFactory ---
+  - method: java.security.KeyFactory.getInstance
+    arity: 1
+    return:
+      type: java.security.KeyFactory
+      confidence: high
+
+  - method: java.security.KeyFactory.generatePublic
+    arity: 1
+    return:
+      type: java.security.PublicKey
+      confidence: high
+
+  - method: java.security.KeyFactory.generatePrivate
+    arity: 1
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+
+  # --- SSLContext ---
+  # SSLContext.getInstance(protocol[, provider]). The protocol selects the TLS
+  # version family; the provider, when named, is what routes the context to
+  # an implementation such as Bouncy Castle's "BCJSSE".
+  - method: javax.net.ssl.SSLContext.getInstance
+    arity: 1
+    return:
+      type: javax.net.ssl.SSLContext
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: protocol
+        role: operation-determining
+        contributes: { property: protocolVersion, derivation: argument_value }
+
+  - method: javax.net.ssl.SSLContext.getInstance
+    arity: 2
+    return:
+      type: javax.net.ssl.SSLContext
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: protocol
+        role: operation-determining
+        contributes: { property: protocolVersion, derivation: argument_value }
+      - index: 1
+        name: provider
+        role: metadata-contributing
+        contributes: { property: provider, derivation: argument_value }
+
+  # --- Cipher ---
+  - method: javax.crypto.Cipher.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.Cipher
+      confidence: high
+
+  - method: javax.crypto.Cipher.getInstance
+    arity: 2
+    return:
+      type: javax.crypto.Cipher
+      confidence: high
+
+  - method: javax.crypto.Cipher.doFinal
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: javax.crypto.Cipher.doFinal
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: javax.crypto.Cipher.update
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  # Cipher.unwrap — argument-conditional on arg[2] (the wrap mode constant)
+  - method: javax.crypto.Cipher.unwrap
+    arity: 3
+    when:
+      arg_index: 2
+      arg_value_in:
+        - "javax.crypto.Cipher.SECRET_KEY"
+        - "Cipher.SECRET_KEY"
+        - "3"
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  - method: javax.crypto.Cipher.unwrap
+    arity: 3
+    when:
+      arg_index: 2
+      arg_value_in:
+        - "javax.crypto.Cipher.PRIVATE_KEY"
+        - "Cipher.PRIVATE_KEY"
+        - "2"
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+
+  - method: javax.crypto.Cipher.unwrap
+    arity: 3
+    when:
+      arg_index: 2
+      arg_value_in:
+        - "javax.crypto.Cipher.PUBLIC_KEY"
+        - "Cipher.PUBLIC_KEY"
+        - "1"
+    return:
+      type: java.security.PublicKey
+      confidence: high
+
+  - method: javax.crypto.Cipher.wrap
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  # --- MessageDigest ---
+  - method: java.security.MessageDigest.getInstance
+    arity: 1
+    return:
+      type: java.security.MessageDigest
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  - method: java.security.MessageDigest.digest
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: java.security.MessageDigest.digest
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  # --- Mac ---
+  - method: javax.crypto.Mac.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.Mac
+      confidence: high
+
+  - method: javax.crypto.Mac.doFinal
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: javax.crypto.Mac.doFinal
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+
+  # --- Signature ---
+  - method: java.security.Signature.getInstance
+    arity: 1
+    return:
+      type: java.security.Signature
+      confidence: high
+
+  - method: java.security.Signature.sign
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  # --- KeyStore ---
+  - method: java.security.KeyStore.getInstance
+    arity: 1
+    return:
+      type: java.security.KeyStore
+      confidence: high
+
+  - method: java.security.KeyStore.getKey
+    arity: 2
+    return:
+      type: java.security.Key
+      confidence: medium
+
+  - method: java.security.KeyStore.getCertificate
+    arity: 1
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+
+  # --- KeyAgreement ---
+  - method: javax.crypto.KeyAgreement.getInstance
+    arity: 1
+    return:
+      type: javax.crypto.KeyAgreement
+      confidence: high
+
+  - method: javax.crypto.KeyAgreement.generateSecret
+    arity: 0
+    return:
+      type: byte[]
+      confidence: high
+
+  - method: javax.crypto.KeyAgreement.generateSecret
+    arity: 1
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+
+  # --- AlgorithmParameters ---
+  - method: java.security.AlgorithmParameters.getInstance
+    arity: 1
+    return:
+      type: java.security.AlgorithmParameters
+      confidence: high
+
+  # --- AlgorithmParameterGenerator ---
+  - method: java.security.AlgorithmParameterGenerator.getInstance
+    arity: 1
+    return:
+      type: java.security.AlgorithmParameterGenerator
+      confidence: high
+
+  # --- SecureRandom ---
+  - method: java.security.SecureRandom.getInstance
+    arity: 1
+    return:
+      type: java.security.SecureRandom
+      confidence: high
+
+  - method: java.security.SecureRandom.getInstanceStrong
+    arity: 0
+    return:
+      type: java.security.SecureRandom
+      confidence: high
+
+  # --- Constructor contracts ---
+
+  # SecretKeySpec constructors: (byte[], String) and (byte[], int, int, String)
+  - method: javax.crypto.spec.SecretKeySpec.<init>
+    arity: 2
+    parameter_types: ["byte[]", java.lang.String]
+    canonical_return_type: javax.crypto.spec.SecretKeySpec
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        # The whole array is the key here, so its length in bits is the key size.
+        contributes: { property: keySize, derivation: argument_bit_length }
+      - index: 1
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  - method: javax.crypto.spec.SecretKeySpec.<init>
+    arity: 4
+    parameter_types: ["byte[]", int, int, java.lang.String]
+    canonical_return_type: javax.crypto.spec.SecretKeySpec
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+    parameters:
+      # This overload keys on the `len` byte count, not on the array's own
+      # length, and no derivation models a byte count. Reporting the array
+      # length would overstate the key size, so no keySize role is declared —
+      # the size stays unresolved rather than wrong.
+      - index: 3
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # Key-generation parameter specs. The key size lives on the spec constructor,
+  # then reaches KeyPairGenerator.initialize(spec) through the argument sources.
+  - method: java.security.spec.RSAKeyGenParameterSpec.<init>
+    arity: 2
+    parameter_types: [int, java.math.BigInteger]
+    canonical_return_type: java.security.spec.RSAKeyGenParameterSpec
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: keysize
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  - method: java.security.spec.RSAKeyGenParameterSpec.<init>
+    arity: 3
+    parameter_types: [int, java.math.BigInteger, java.security.spec.AlgorithmParameterSpec]
+    canonical_return_type: java.security.spec.RSAKeyGenParameterSpec
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: keysize
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+  - method: java.security.spec.ECGenParameterSpec.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.spec.ECGenParameterSpec
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: stdName
+        role: metadata-contributing
+        # A standard curve name, not a size: the field size comes from the curve.
+        contributes: { property: keySize, derivation: argument_curve_bits }
+
+  # IvParameterSpec constructor: (byte[])
+  - method: javax.crypto.spec.IvParameterSpec.<init>
+    arity: 1
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+
+  # GCMParameterSpec constructor: (int, byte[])
+  - method: javax.crypto.spec.GCMParameterSpec.<init>
+    arity: 2
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+
+  # RSAPublicKeySpec constructor: (BigInteger, BigInteger)
+  - method: java.security.spec.RSAPublicKeySpec.<init>
+    arity: 2
+    return:
+      type: java.security.spec.KeySpec
+      confidence: high
+
+  # RSAPrivateKeySpec constructor: (BigInteger, BigInteger)
+  - method: java.security.spec.RSAPrivateKeySpec.<init>
+    arity: 2
+    return:
+      type: java.security.spec.KeySpec
+      confidence: high
+
+  # X509EncodedKeySpec constructor: (byte[])
+  - method: java.security.spec.X509EncodedKeySpec.<init>
+    arity: 1
+    return:
+      type: java.security.spec.EncodedKeySpec
+      confidence: high
+
+  # PKCS8EncodedKeySpec constructor: (byte[])
+  - method: java.security.spec.PKCS8EncodedKeySpec.<init>
+    arity: 1
+    return:
+      type: java.security.spec.EncodedKeySpec
+      confidence: high
+
+  # --- javax.crypto.KEM (JDK 21+, JEP 452) ---
+  # Nested classes use the dotted owner.Nested form the Java parser produces
+  # (javaNestedTypeName), the same spelling aws-kms.yaml uses for
+  # EncryptRequest.Builder. The algorithm string of getInstance selects the
+  # KEM (for example "ML-KEM", "ML-KEM-768" on JDK 24+, or a provider name
+  # such as "DHKEM"); it is recorded only on these new entries, so the
+  # existing getInstance contracts keep their shape.
+  - method: javax.crypto.KEM.getInstance
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: javax.crypto.KEM
+    return:
+      type: javax.crypto.KEM
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # getInstance(String, Provider) and getInstance(String, String) share arity 2.
+  - method: javax.crypto.KEM.getInstance
+    arity: 2
+    return:
+      type: javax.crypto.KEM
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 1
+        name: provider
+        role: metadata-contributing
+        contributes: { property: provider, derivation: argument_value }
+
+  - method: javax.crypto.KEM.getAlgorithm
+    arity: 0
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+
+  # newEncapsulator(PublicKey), (PublicKey, SecureRandom),
+  # (PublicKey, AlgorithmParameterSpec, SecureRandom)
+  - method: javax.crypto.KEM.newEncapsulator
+    arity: 1
+    parameter_types: [java.security.PublicKey]
+    canonical_return_type: javax.crypto.KEM.Encapsulator
+    return:
+      type: javax.crypto.KEM.Encapsulator
+      confidence: high
+    role: factory
+
+  - method: javax.crypto.KEM.newEncapsulator
+    arity: 2
+    parameter_types: [java.security.PublicKey, java.security.SecureRandom]
+    canonical_return_type: javax.crypto.KEM.Encapsulator
+    return:
+      type: javax.crypto.KEM.Encapsulator
+      confidence: high
+    role: factory
+
+  - method: javax.crypto.KEM.newEncapsulator
+    arity: 3
+    parameter_types: [java.security.PublicKey, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom]
+    canonical_return_type: javax.crypto.KEM.Encapsulator
+    return:
+      type: javax.crypto.KEM.Encapsulator
+      confidence: high
+    role: factory
+
+  # newDecapsulator(PrivateKey), (PrivateKey, AlgorithmParameterSpec)
+  - method: javax.crypto.KEM.newDecapsulator
+    arity: 1
+    parameter_types: [java.security.PrivateKey]
+    canonical_return_type: javax.crypto.KEM.Decapsulator
+    return:
+      type: javax.crypto.KEM.Decapsulator
+      confidence: high
+    role: factory
+
+  - method: javax.crypto.KEM.newDecapsulator
+    arity: 2
+    parameter_types: [java.security.PrivateKey, java.security.spec.AlgorithmParameterSpec]
+    canonical_return_type: javax.crypto.KEM.Decapsulator
+    return:
+      type: javax.crypto.KEM.Decapsulator
+      confidence: high
+    role: factory
+
+  # Encapsulator.encapsulate() and encapsulate(from, to, algorithm): the
+  # three-argument form names the algorithm of the derived SecretKey
+  # (for example "AES"), not the KEM.
+  - method: javax.crypto.KEM.Encapsulator.encapsulate
+    arity: 0
+    parameter_types: []
+    canonical_return_type: javax.crypto.KEM.Encapsulated
+    return:
+      type: javax.crypto.KEM.Encapsulated
+      confidence: high
+    role: operation
+
+  - method: javax.crypto.KEM.Encapsulator.encapsulate
+    arity: 3
+    parameter_types: [int, int, java.lang.String]
+    canonical_return_type: javax.crypto.KEM.Encapsulated
+    return:
+      type: javax.crypto.KEM.Encapsulated
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: algorithm
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+
+  - method: javax.crypto.KEM.Encapsulator.secretSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+
+  - method: javax.crypto.KEM.Encapsulator.encapsulationSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+
+  # Encapsulated(SecretKey, byte[], byte[]) and its accessors.
+  - method: javax.crypto.KEM.Encapsulated.<init>
+    arity: 3
+    parameter_types: [javax.crypto.SecretKey, "byte[]", "byte[]"]
+    canonical_return_type: javax.crypto.KEM.Encapsulated
+    return:
+      type: javax.crypto.KEM.Encapsulated
+      confidence: high
+    role: factory
+
+  - method: javax.crypto.KEM.Encapsulated.key
+    arity: 0
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: output
+
+  - method: javax.crypto.KEM.Encapsulated.encapsulation
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  - method: javax.crypto.KEM.Encapsulated.params
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  # Decapsulator.decapsulate(byte[]) and decapsulate(byte[], from, to, algorithm)
+  - method: javax.crypto.KEM.Decapsulator.decapsulate
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: operation
+
+  - method: javax.crypto.KEM.Decapsulator.decapsulate
+    arity: 4
+    parameter_types: ["byte[]", int, int, java.lang.String]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: operation
+    parameters:
+      - index: 3
+        name: algorithm
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+
+  - method: javax.crypto.KEM.Decapsulator.secretSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+
+  - method: javax.crypto.KEM.Decapsulator.encapsulationSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+
+  # NamedParameterSpec(String): the name selects the algorithm or parameter
+  # set ("X25519", "Ed448", and on JDK 24+ "ML-KEM-768", "ML-DSA-65"). The
+  # JDK 24 static fields ML_KEM_512/768/1024 and ML_DSA_44/65/87 are field
+  # reads, which this KB cannot contract. Returns the base spec type like the
+  # other spec constructors above so KeyPairGenerator.initialize(spec) joins.
+  - method: java.security.spec.NamedParameterSpec.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.spec.NamedParameterSpec
+    return:
+      type: java.security.spec.AlgorithmParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: stdName
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+
+
+hierarchy:
+  javax.net.ssl.SSLContext:
+    - java.lang.Object
+  # JCA Key family
+  javax.crypto.SecretKey:
+    - java.security.Key
+  java.security.PrivateKey:
+    - java.security.Key
+  java.security.PublicKey:
+    - java.security.Key
+  java.security.interfaces.RSAPrivateKey:
+    - java.security.PrivateKey
+    - java.security.interfaces.RSAKey
+  java.security.interfaces.RSAPublicKey:
+    - java.security.PublicKey
+    - java.security.interfaces.RSAKey
+
+  # KeySpec family
+  java.security.spec.EncodedKeySpec:
+    - java.security.spec.KeySpec
+  java.security.spec.X509EncodedKeySpec:
+    - java.security.spec.EncodedKeySpec
+  java.security.spec.PKCS8EncodedKeySpec:
+    - java.security.spec.EncodedKeySpec
+  java.security.spec.RSAPublicKeySpec:
+    - java.security.spec.KeySpec
+  java.security.spec.RSAPrivateKeySpec:
+    - java.security.spec.KeySpec
+
+  # Concrete spec classes that double as keys
+  javax.crypto.spec.SecretKeySpec:
+    - javax.crypto.SecretKey
+    - java.security.spec.KeySpec
+
+  # AlgorithmParameterSpec family
+  javax.crypto.spec.IvParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  javax.crypto.spec.GCMParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  javax.crypto.spec.PBEParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  java.security.spec.RSAKeyGenParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  java.security.spec.ECGenParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+
+  # Certificate family
+  java.security.cert.X509Certificate:
+    - java.security.cert.Certificate
+  java.security.cert.Certificate:
+    - java.lang.Object
+
+  # JCA engine classes
+  javax.crypto.Cipher:
+    - java.lang.Object
+  javax.crypto.KeyGenerator:
+    - java.lang.Object
+  javax.crypto.SecretKeyFactory:
+    - java.lang.Object
+  javax.crypto.Mac:
+    - java.lang.Object
+  javax.crypto.KeyAgreement:
+    - java.lang.Object
+  java.security.MessageDigest:
+    - java.security.MessageDigestSpi
+    - java.lang.Object
+  java.security.Signature:
+    - java.security.SignatureSpi
+    - java.lang.Object
+  java.security.KeyFactory:
+    - java.lang.Object
+  java.security.KeyPairGenerator:
+    - java.security.KeyPairGeneratorSpi
+    - java.lang.Object
+  java.security.KeyStore:
+    - java.lang.Object
+  java.security.AlgorithmParameters:
+    - java.lang.Object
+  java.security.AlgorithmParameterGenerator:
+    - java.lang.Object
+  java.security.SecureRandom:
+    - java.util.Random
+  java.util.Random:
+    - java.lang.Object
+  java.security.KeyPair:
+    - java.lang.Object
+
+  # Root anchors
+  java.security.Key:
+    - java.lang.Object
+  java.security.spec.KeySpec:
+    - java.lang.Object
+  java.security.spec.AlgorithmParameterSpec:
+    - java.lang.Object
+
+  # javax.crypto.KEM (JDK 21+) and its nested result/engine classes
+  javax.crypto.KEM:
+    - java.lang.Object
+  javax.crypto.KEM.Encapsulator:
+    - java.lang.Object
+  javax.crypto.KEM.Decapsulator:
+    - java.lang.Object
+  javax.crypto.KEM.Encapsulated:
+    - java.lang.Object
+  java.security.spec.NamedParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  java.lang.String:
+    - java.lang.Object

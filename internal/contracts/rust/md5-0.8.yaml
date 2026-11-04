@@ -1,0 +1,41 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: md5-0.8
+  coordinates:
+    - md5
+  version_range: ">=0.8.0,<0.9.0"
+  description: "The md5 crate's 0.8-and-later additions: Context::finalize and Context::default"
+
+# THE 0.8.0 ADDITIONS, SPLIT OUT SO `md5.yaml` DOES NOT OVER-CLAIM ITS RANGE.
+# `version_range` is declared per library and a file may only claim versions for
+# which every entry is true (`biscuit-jwks.yaml:11-17`). These two entries do not
+# exist before 0.8.0:
+#
+#   Context::finalize   0.8.0 src/lib.rs:120   (and 0.8.1 :120)
+#   Context::default    0.8.0 src/lib.rs:158   (impl Default for Context)
+#
+# Everything reachable from 0.1.0 is in `md5.yaml`, including `Context::compute`,
+# which 0.8.0 keeps as a `#[deprecated(since = "0.8.0")]` call to `finalize`
+# (src/lib.rs:153) rather than removing.
+#
+# The keys are the ones the parser emits, read off a parsed call the same way
+# `md5.yaml`'s were; see that file's header for the method. Both files key on
+# `md5::Context`, which RustCrypto's `md-5` does not have -- the two crates
+# compile to the same lib name `md5`, and disjoint key sets are the only thing
+# separating them.
+contracts:
+  - method: md5::Context.finalize
+    arity: 0
+    return: {type: md5::Digest, confidence: high}
+    parameter_types: []
+    canonical_return_type: "md5::Digest"
+    role: output
+  - method: md5::Context.default
+    arity: 0
+    return: {type: md5::Context, confidence: high}
+    parameter_types: []
+    canonical_return_type: "md5::Context"
+    role: factory
+
+hierarchy: {}

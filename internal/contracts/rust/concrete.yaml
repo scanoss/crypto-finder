@@ -1,0 +1,833 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: concrete
+  coordinates:
+    - concrete
+  version_range: ">=0.1.4,<3.0.0"
+  description: "Concrete: Zama's TFHE library and FHE compiler"
+
+# API read from the published crate sources at 0.1.4, 0.1.5, 0.1.11,
+# 0.2.0-beta.0, 0.2.0-beta.2, 0.2.0, 0.2.1, 2.10.1-rc1 and 2.11.0 -- not from
+# documentation. Every method and arity below is traced to a `pub fn` in one of
+# those archives.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y and an exported
+# call graph agreed: a probe calling all three APIs came back as
+# `concrete.LWE.encode_encrypt(?, ?, ?)` and
+# `concrete::client.ClientFunction.prepare_input(?, ?)` with empty
+# parameter_types, which is what an absent contract looks like.
+#
+# KEYS ARE READ OFF THE EXPORTED GRAPH, NOT ASSUMED. The emitted call-site FQNs
+# are `concrete.<Type>.<method>` for the crate-root types, `concrete.<fn>` for
+# the two free functions, and `concrete::<module>.<Type>.<method>` for the
+# module-qualified ones; `rustAuthoredKey` (contracts.go:267) moves the
+# second-to-last dot, so the authored keys are `concrete::<Type>.<method>`,
+# `concrete.<fn>` and `concrete::<module>::<Type>.<method>`.
+#
+# MODULE SEGMENTS ARE NOT UNIFORM, AND THE KEYS FOLLOW THE CONSUMER'S IMPORT.
+# The 0.1.x types are re-exported at the crate root, so `use concrete::LWE`
+# emits `concrete.LWE.encode_encrypt` with no module segment. The 2.x types are
+# NOT: `mod ffi` is private and `common`, `client` and `server` re-export from
+# it, so `use concrete::common::Keyset` emits `concrete::common.Keyset.new` and
+# a key without the module would never resolve. 0.1.4 and 0.1.5 additionally
+# expose the same crate-root types through `concrete::crypto_api`, which is a
+# third spelling; the entries for it are marked and cover only the constructors
+# the rules match.
+#
+# VERSION RANGE STARTS AT 0.1.4, NOT 0.1.0. The crate name changed hands.
+# concrete 0.1.0, 0.1.1 and 0.1.2 are "A prototype computer language" by a
+# different author under GPL-3.0-or-later (0.1.0 Cargo.toml), and 0.1.0's entire
+# `src/lib.rs` is a `#[cfg(test)] mod tests`. Those three releases have no API to
+# type. Zama's FHE library begins at 0.1.4.
+#
+# THREE ERAS, ONE CRATE NAME, AND NO KEY COLLIDES BETWEEN THEM. 0.1.4-0.1.11 is
+# the LWE/RLWE ciphertext API; 0.2.0-beta.0-0.2.1 is the high-level API that
+# later became the tfhe crate; 2.10.1-rc1 and 2.11.0 are cxx bindings to the
+# Concrete compiler. Every entry below is unique on (method, arity) across the
+# three, so one version_range covers all of them without any entry contradicting
+# another. The one method whose ARITY changes is `Keyset::new`, which takes three
+# arguments in 2.10.1-rc1 and four in 2.11.0 (src/ffi.rs:1076, and the bridge
+# declaration at :161); both are declared, which is what keying on method+arity
+# is for.
+#
+# ERA 2 TRAIT IMPLS ARE PER TYPE, so a (type, method) pair the crate never
+# implements is not compilable Rust and is not declared. `encrypt` exists for
+# FheBool, FheUint8 and FheUint16 only; `try_encrypt` for every FheUint width;
+# `try_encrypt_trivial` for FheUint2/3/4 from beta.2 onwards. FheUint12 has no
+# FheEncrypt impl in any release.
+#
+# `FheBool::encrypt_trivial` IS NOT DECLARED, AND THE REASON IS A `cfg` ONE LINE
+# ABOVE THE IMPL RATHER THAN THE IMPL ITSELF. `impl FheTrivialEncrypt<bool> for
+# FheBool` is present in the beta sources (beta.0 booleans/static.rs:118) and is
+# gated by `#[cfg(feature = "__newer_booleans")]` on the line above it. No
+# published Cargo.toml declares that feature -- it appears only as a
+# commented-out line in Cargo.toml.orig -- and cargo rejects an unknown feature,
+# so no consumer can compile the call in any release. Reading the impl without
+# the attribute above it is how a fabricated symbol gets declared.
+#
+# `ServerKey::new` IS ABSENT DELIBERATELY: it is `pub(crate)` (0.2.0
+# src/keys.rs:153), so a consumer cannot call it. `set_server_key` is
+# `role: config`, not an operation -- it installs the evaluation key into
+# thread-local state, and the homomorphic work happens in the operations.
+#
+# PROGRAMMABLE BOOTSTRAPPING IS DECLARED UNDER BOTH OF ITS ERA 2 SPELLINGS,
+# which do not overlap: `bivariate_pbs` is `pub fn` on GenericShortInt in
+# 0.2.0-beta.0, beta.1 and beta.2 (beta.0 shortints/static/types.rs:160) and
+# becomes `pub(super)` at 0.2.0, where `bivariate_function` takes over as the
+# public name (0.2.0 shortints/types/base.rs:223, integers/types/base.rs:292).
+# `map` and `apply` are the other Era 2 evaluation entry points and are
+# deliberately NOT declared: those two names carry no crate identity at all.
+#
+# FOUR ConfigBuilder METHODS CARRY THE TFHE SECURITY PARAMETERS and are declared
+# for that reason -- enable_custom_bool/uint2/uint3/uint4, present in all five
+# Era 2 releases. enable_custom_uint8/uint12/uint16 exist in the three betas and
+# are gone at 0.2.0, so they are NOT declared: a version_range may claim only
+# versions for which every entry holds.
+#
+# THREE ENTRIES ARRIVE PART-WAY THROUGH THE DECLARED RANGE and that is stated
+# rather than hidden: VectorLWE.decrypt_raw and
+# VectorLWE.encode_encrypt_several_encoders arrive at 0.1.5
+# (0.1.5 src/crypto_api/vector_lwe/mod.rs:537,307) and FheUint2/3/4's
+# try_encrypt_trivial at 0.2.0-beta.2 (shortints/types/base.rs:193). An entry
+# that does not yet exist cannot be called, so it produces no false attribution;
+# what a range may not do is declare a signature that is WRONG for part of it,
+# and none here does.
+#
+# COMPILER PLUMBING IS NOT TYPED. `compiler::compile`, CompilationOptions,
+# Library, the protocol.rs info structs, Tensor, TransportValue serialization,
+# `src/tfhe/` (a tfhe-rs conversion layer, 2.11.0 only) and `src/utils/` carry no
+# cryptographic operation, and typing them would extend the KB into the compiler
+# toolchain. The three info structs DO appear as parameter_types below, because
+# that is what the crypto constructors take.
+#
+# ERA 3'S RECEIVER METHODS TAKE `Pin<&mut Self>`, AND THAT PRODUCES TWO CALL
+# SHAPES, both declared. Called on a receiver whose type the graph knows, they
+# resolve at the declared arity (`cf.prepare_input(value, 0)` ->
+# `concrete::client.ClientFunction.prepare_input(?, ?)`). Written as an
+# explicit-self path call, which is what a consumer holding a `UniquePtr` writes
+# (`ServerFunction::call(sf.pin_mut(), &keys, args)`), the receiver occupies an
+# argument slot and the arity is one higher; measured on an exported graph as
+# `concrete::server.ServerFunction.call(?, ?, ?)`. Both are compilable Rust and
+# both are declared.
+#
+# KNOWN LIMIT, MEASURED, NOT A DEFECT IN THIS FILE: the idiomatic
+# `sf.pin_mut().call(&keys, args)` chain resolves to the CONSUMER'S crate, not to
+# concrete, because `pin_mut()` belongs to `cxx::UniquePtr` and no KB types it.
+# An exported graph of such a probe emits `<consumer>.call(?, ?)`. The rules
+# still detect that spelling; it is the contract join that cannot follow it, and
+# typing another library's method here would be wrong.
+#
+# `return.type` CARRIES THE CRYPTO OBJECT AND `canonical_return_type` THE
+# DECLARED ONE, which is the split every Era 1 and Era 3 entry needs. Era 1's
+# constructors return `Result<T, CryptoAPIError>` and Era 3's return
+# `cxx::UniquePtr<T>`; a chain walk wants the T, and a reader wants the truth,
+# so the T is in `return.type` and the full declared return in
+# `canonical_return_type`. Both are what the export reads to fill a signature,
+# and an exported call graph of a three-era probe resolves every key below.
+#
+# CONFIDENCE IS `high` THROUGHOUT except where the declared return is a bare
+# generic parameter the call site alone cannot resolve: Era 2's `try_encrypt`
+# returns `Result<Self, Self::Error>` and its `decrypt` returns the trait's `T`,
+# which is why those carry the concrete type only where a per-type impl fixes it
+# (FheUint8 -> u8, FheUint16 -> u16, FheBool -> bool) and `u64` where the generic
+# GenericInteger impl does (integers/types/base.rs:95).
+
+contracts:
+  # --- Era 1: 0.1.4 .. 0.1.11, the LWE/RLWE ciphertext API ---------------
+  - method: concrete::Encoder.new
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["f64", "f64", "usize", "usize"]
+    canonical_return_type: "core::result::Result<concrete::Encoder, concrete::CryptoAPIError>"
+    role: factory
+  - method: concrete::Encoder.new_centered
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["f64", "f64", "usize", "usize"]
+    canonical_return_type: "core::result::Result<concrete::Encoder, concrete::CryptoAPIError>"
+    role: factory
+  - method: concrete::Plaintext.encode
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[f64]", "concrete::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::Plaintext, concrete::CryptoAPIError>"
+    role: factory
+  - method: concrete::LWESecretKey.new
+    arity: 1
+    return: { type: concrete::LWESecretKey, confidence: high }
+    parameter_types: ["concrete::LWEParams"]
+    canonical_return_type: "concrete::LWESecretKey"
+    role: factory
+  - method: concrete::LWESecretKey.new_raw
+    arity: 2
+    return: { type: concrete::LWESecretKey, confidence: high }
+    parameter_types: ["usize", "f64"]
+    canonical_return_type: "concrete::LWESecretKey"
+    role: factory
+  - method: concrete::RLWESecretKey.new
+    arity: 1
+    return: { type: concrete::RLWESecretKey, confidence: high }
+    parameter_types: ["concrete::RLWEParams"]
+    canonical_return_type: "concrete::RLWESecretKey"
+    role: factory
+  - method: concrete::RLWESecretKey.new_raw
+    arity: 3
+    return: { type: concrete::RLWESecretKey, confidence: high }
+    parameter_types: ["usize", "usize", "f64"]
+    canonical_return_type: "concrete::RLWESecretKey"
+    role: factory
+  - method: concrete::LWEBSK.new
+    arity: 4
+    return: { type: concrete::LWEBSK, confidence: high }
+    parameter_types: ["concrete::LWESecretKey", "concrete::RLWESecretKey", "usize", "usize"]
+    canonical_return_type: "concrete::LWEBSK"
+    role: factory
+  - method: concrete::LWEKSK.new
+    arity: 4
+    return: { type: concrete::LWEKSK, confidence: high }
+    parameter_types: ["concrete::LWESecretKey", "concrete::LWESecretKey", "usize", "usize"]
+    canonical_return_type: "concrete::LWEKSK"
+    role: factory
+  - method: concrete::LWE.zero
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["usize"]
+    canonical_return_type: "core::result::Result<concrete::LWE, concrete::CryptoAPIError>"
+    role: factory
+  - method: concrete::LWE.encode_encrypt
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey", "f64", "concrete::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::LWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::LWE.encrypt_raw
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey", "concrete::Torus"]
+    canonical_return_type: "core::result::Result<(), concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::LWE.decrypt_decode
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey"]
+    canonical_return_type: "core::result::Result<f64, concrete::CryptoAPIError>"
+    role: output
+  - method: concrete::LWE.decrypt_decode_round
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey"]
+    canonical_return_type: "core::result::Result<f64, concrete::CryptoAPIError>"
+    role: output
+  - method: concrete::LWE.bootstrap
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWEBSK"]
+    canonical_return_type: "core::result::Result<concrete::LWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::LWE.bootstrap_with_function
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWEBSK", "F", "concrete::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::LWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::LWE.keyswitch
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWEKSK"]
+    canonical_return_type: "core::result::Result<concrete::LWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::LWE.mul_from_bootstrap
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWE", "concrete::LWEBSK"]
+    canonical_return_type: "core::result::Result<concrete::LWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorLWE.zero
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["usize", "usize"]
+    canonical_return_type: "core::result::Result<concrete::VectorLWE, concrete::CryptoAPIError>"
+    role: factory
+  - method: concrete::VectorLWE.encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey", "concrete::Plaintext"]
+    canonical_return_type: "core::result::Result<concrete::VectorLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorLWE.encode_encrypt
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey", "&[f64]", "concrete::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::VectorLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorLWE.encode_encrypt_several_encoders
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey", "&[f64]", "&[concrete::Encoder]"]
+    canonical_return_type: "core::result::Result<concrete::VectorLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorLWE.encrypt_inplace
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey", "concrete::Plaintext"]
+    canonical_return_type: "core::result::Result<(), concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorLWE.encrypt_raw
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey", "&[concrete::Torus]"]
+    canonical_return_type: "core::result::Result<(), concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorLWE.decrypt_decode
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey"]
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<f64>, concrete::CryptoAPIError>"
+    role: output
+  - method: concrete::VectorLWE.decrypt_decode_round
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey"]
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<f64>, concrete::CryptoAPIError>"
+    role: output
+  - method: concrete::VectorLWE.decrypt_raw
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWESecretKey"]
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u64>, concrete::CryptoAPIError>"
+    role: output
+  - method: concrete::VectorLWE.keyswitch
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWEKSK"]
+    canonical_return_type: "core::result::Result<concrete::VectorLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorLWE.bootstrap_nth
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWEBSK", "usize"]
+    canonical_return_type: "core::result::Result<concrete::VectorLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorLWE.bootstrap_nth_with_function
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::LWEBSK", "F", "concrete::Encoder", "usize"]
+    canonical_return_type: "core::result::Result<concrete::VectorLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorLWE.mul_from_bootstrap_nth
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::VectorLWE", "concrete::LWEBSK", "usize", "usize"]
+    canonical_return_type: "core::result::Result<concrete::VectorLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorRLWE.zero
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["usize", "usize", "usize"]
+    canonical_return_type: "core::result::Result<concrete::VectorRLWE, concrete::CryptoAPIError>"
+    role: factory
+  - method: concrete::VectorRLWE.encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::RLWESecretKey", "concrete::Plaintext"]
+    canonical_return_type: "core::result::Result<concrete::VectorRLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorRLWE.encrypt_packed
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::RLWESecretKey", "concrete::Plaintext"]
+    canonical_return_type: "core::result::Result<concrete::VectorRLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorRLWE.encode_encrypt
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::RLWESecretKey", "&[f64]", "concrete::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::VectorRLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorRLWE.encode_encrypt_packed
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::RLWESecretKey", "&[f64]", "concrete::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::VectorRLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorRLWE.encrypt_packed_raw
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::RLWESecretKey", "&[concrete::Torus]"]
+    canonical_return_type: "core::result::Result<(), concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::VectorRLWE.decrypt_decode
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::RLWESecretKey"]
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<f64>, concrete::CryptoAPIError>"
+    role: output
+  - method: concrete::VectorRLWE.decrypt_decode_round
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::RLWESecretKey"]
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<f64>, concrete::CryptoAPIError>"
+    role: output
+  - method: concrete::VectorRLWE.decrypt_with_encoders
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::RLWESecretKey"]
+    canonical_return_type: "core::result::Result<(alloc::vec::Vec<f64>, alloc::vec::Vec<concrete::Encoder>), concrete::CryptoAPIError>"
+    role: output
+  # --- Era 1, the 0.1.4-0.1.5 `crypto_api` module spelling ---------------
+  # `pub mod crypto_api` plus `pub use crypto_api::*` (0.1.4 src/lib.rs:9,20)
+  # makes every type above reachable under a second path. The module is gone
+  # from 0.1.6. Only the constructors the rules match are duplicated here.
+  - method: concrete::crypto_api::LWESecretKey.new
+    arity: 1
+    return: { type: concrete::crypto_api::LWESecretKey, confidence: high }
+    parameter_types: ["concrete::crypto_api::LWEParams"]
+    canonical_return_type: "concrete::crypto_api::LWESecretKey"
+    role: factory
+  - method: concrete::crypto_api::LWESecretKey.new_raw
+    arity: 2
+    return: { type: concrete::crypto_api::LWESecretKey, confidence: high }
+    parameter_types: ["usize", "f64"]
+    canonical_return_type: "concrete::crypto_api::LWESecretKey"
+    role: factory
+  - method: concrete::crypto_api::RLWESecretKey.new
+    arity: 1
+    return: { type: concrete::crypto_api::RLWESecretKey, confidence: high }
+    parameter_types: ["concrete::crypto_api::RLWEParams"]
+    canonical_return_type: "concrete::crypto_api::RLWESecretKey"
+    role: factory
+  - method: concrete::crypto_api::RLWESecretKey.new_raw
+    arity: 3
+    return: { type: concrete::crypto_api::RLWESecretKey, confidence: high }
+    parameter_types: ["usize", "usize", "f64"]
+    canonical_return_type: "concrete::crypto_api::RLWESecretKey"
+    role: factory
+  - method: concrete::crypto_api::LWEBSK.new
+    arity: 4
+    return: { type: concrete::crypto_api::LWEBSK, confidence: high }
+    parameter_types: ["concrete::crypto_api::LWESecretKey", "concrete::crypto_api::RLWESecretKey", "usize", "usize"]
+    canonical_return_type: "concrete::crypto_api::LWEBSK"
+    role: factory
+  - method: concrete::crypto_api::LWEKSK.new
+    arity: 4
+    return: { type: concrete::crypto_api::LWEKSK, confidence: high }
+    parameter_types: ["concrete::crypto_api::LWESecretKey", "concrete::crypto_api::LWESecretKey", "usize", "usize"]
+    canonical_return_type: "concrete::crypto_api::LWEKSK"
+    role: factory
+  - method: concrete::crypto_api::LWE.encode_encrypt
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::crypto_api::LWESecretKey", "f64", "concrete::crypto_api::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::crypto_api::LWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::crypto_api::VectorLWE.encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::crypto_api::LWESecretKey", "concrete::crypto_api::Plaintext"]
+    canonical_return_type: "core::result::Result<concrete::crypto_api::VectorLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::crypto_api::VectorLWE.encode_encrypt
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::crypto_api::LWESecretKey", "&[f64]", "concrete::crypto_api::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::crypto_api::VectorLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::crypto_api::VectorRLWE.encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::crypto_api::RLWESecretKey", "concrete::crypto_api::Plaintext"]
+    canonical_return_type: "core::result::Result<concrete::crypto_api::VectorRLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::crypto_api::VectorRLWE.encrypt_packed
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::crypto_api::RLWESecretKey", "concrete::crypto_api::Plaintext"]
+    canonical_return_type: "core::result::Result<concrete::crypto_api::VectorRLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::crypto_api::VectorRLWE.encode_encrypt
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::crypto_api::RLWESecretKey", "&[f64]", "concrete::crypto_api::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::crypto_api::VectorRLWE, concrete::CryptoAPIError>"
+    role: operation
+  - method: concrete::crypto_api::VectorRLWE.encode_encrypt_packed
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::crypto_api::RLWESecretKey", "&[f64]", "concrete::crypto_api::Encoder"]
+    canonical_return_type: "core::result::Result<concrete::crypto_api::VectorRLWE, concrete::CryptoAPIError>"
+    role: operation
+  # --- Era 2: 0.2.0-beta.0 .. 0.2.1, the high-level API ------------------
+  - method: concrete.generate_keys
+    arity: 1
+    return: { type: "(concrete::ClientKey, concrete::ServerKey)", confidence: high }
+    parameter_types: ["concrete::Config"]
+    canonical_return_type: "(concrete::ClientKey, concrete::ServerKey)"
+    role: factory
+  - method: concrete.set_server_key
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["concrete::ServerKey"]
+    canonical_return_type: "()"
+    role: config
+  - method: concrete::ClientKey.generate
+    arity: 1
+    return: { type: concrete::ClientKey, confidence: high }
+    parameter_types: ["concrete::Config"]
+    canonical_return_type: "concrete::ClientKey"
+    role: factory
+  - method: concrete::ClientKey.generate_server_key
+    arity: 0
+    return: { type: concrete::ServerKey, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ServerKey"
+    role: factory
+  - method: concrete::ConfigBuilder.all_enabled
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: factory
+  - method: concrete::ConfigBuilder.all_disabled
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: factory
+  - method: concrete::ConfigBuilder.build
+    arity: 0
+    return: { type: concrete::Config, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::Config"
+    role: factory
+  - method: concrete::ConfigBuilder.enable_default_bool
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.enable_default_uint2
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.enable_default_uint3
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.enable_default_uint4
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.enable_default_uint8
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.enable_default_uint12
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.enable_default_uint16
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.disable_bool
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.disable_uint2
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.disable_uint3
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.disable_uint4
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.disable_uint8
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.disable_uint12
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.disable_uint16
+    arity: 0
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: []
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::FheBool.encrypt
+    arity: 2
+    return: { type: concrete::FheBool, confidence: high }
+    parameter_types: ["bool", "concrete::ClientKey"]
+    canonical_return_type: "concrete::FheBool"
+    role: operation
+  - method: concrete::FheBool.decrypt
+    arity: 1
+    return: { type: bool, confidence: high }
+    parameter_types: ["concrete::ClientKey"]
+    canonical_return_type: "bool"
+    role: output
+  - method: concrete::FheUint8.encrypt
+    arity: 2
+    return: { type: concrete::FheUint8, confidence: high }
+    parameter_types: ["u8", "concrete::ClientKey"]
+    canonical_return_type: "concrete::FheUint8"
+    role: operation
+  - method: concrete::FheUint8.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u8", "concrete::ClientKey"]
+    canonical_return_type: "core::result::Result<concrete::FheUint8, concrete::OutOfRangeError>"
+    role: operation
+  - method: concrete::FheUint8.decrypt
+    arity: 1
+    return: { type: u8, confidence: high }
+    parameter_types: ["concrete::ClientKey"]
+    canonical_return_type: "u8"
+    role: output
+  - method: concrete::FheUint16.encrypt
+    arity: 2
+    return: { type: concrete::FheUint16, confidence: high }
+    parameter_types: ["u16", "concrete::ClientKey"]
+    canonical_return_type: "concrete::FheUint16"
+    role: operation
+  - method: concrete::FheUint16.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u16", "concrete::ClientKey"]
+    canonical_return_type: "core::result::Result<concrete::FheUint16, concrete::OutOfRangeError>"
+    role: operation
+  - method: concrete::FheUint16.decrypt
+    arity: 1
+    return: { type: u16, confidence: high }
+    parameter_types: ["concrete::ClientKey"]
+    canonical_return_type: "u16"
+    role: output
+  - method: concrete::FheUint12.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u16", "concrete::ClientKey"]
+    canonical_return_type: "core::result::Result<concrete::FheUint12, concrete::OutOfRangeError>"
+    role: operation
+  - method: concrete::FheUint12.decrypt
+    arity: 1
+    return: { type: u64, confidence: high }
+    parameter_types: ["concrete::ClientKey"]
+    canonical_return_type: "u64"
+    role: output
+  - method: concrete::FheUint2.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u8", "concrete::ClientKey"]
+    canonical_return_type: "core::result::Result<concrete::FheUint2, concrete::OutOfRangeError>"
+    role: operation
+  - method: concrete::FheUint2.try_encrypt_trivial
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u8"]
+    canonical_return_type: "core::result::Result<concrete::FheUint2, concrete::OutOfRangeError>"
+    role: operation
+  - method: concrete::FheUint2.decrypt
+    arity: 1
+    return: { type: u8, confidence: high }
+    parameter_types: ["concrete::ClientKey"]
+    canonical_return_type: "u8"
+    role: output
+  - method: concrete::FheUint3.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u8", "concrete::ClientKey"]
+    canonical_return_type: "core::result::Result<concrete::FheUint3, concrete::OutOfRangeError>"
+    role: operation
+  - method: concrete::FheUint3.try_encrypt_trivial
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u8"]
+    canonical_return_type: "core::result::Result<concrete::FheUint3, concrete::OutOfRangeError>"
+    role: operation
+  - method: concrete::FheUint3.decrypt
+    arity: 1
+    return: { type: u8, confidence: high }
+    parameter_types: ["concrete::ClientKey"]
+    canonical_return_type: "u8"
+    role: output
+  - method: concrete::FheUint4.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u8", "concrete::ClientKey"]
+    canonical_return_type: "core::result::Result<concrete::FheUint4, concrete::OutOfRangeError>"
+    role: operation
+  - method: concrete::FheUint4.try_encrypt_trivial
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u8"]
+    canonical_return_type: "core::result::Result<concrete::FheUint4, concrete::OutOfRangeError>"
+    role: operation
+  - method: concrete::FheUint4.decrypt
+    arity: 1
+    return: { type: u8, confidence: high }
+    parameter_types: ["concrete::ClientKey"]
+    canonical_return_type: "u8"
+    role: output
+  # --- Era 3: 2.10.1-rc1 and 2.11.0, the compiler's cxx bindings --------
+  - method: concrete::common::SecretCsprng.new
+    arity: 1
+    return: { type: concrete::common::SecretCsprng, confidence: high }
+    parameter_types: ["u128"]
+    canonical_return_type: "cxx::UniquePtr<concrete::common::SecretCsprng>"
+    role: factory
+  - method: concrete::common::EncryptionCsprng.new
+    arity: 1
+    return: { type: concrete::common::EncryptionCsprng, confidence: high }
+    parameter_types: ["u128"]
+    canonical_return_type: "cxx::UniquePtr<concrete::common::EncryptionCsprng>"
+    role: factory
+  - method: concrete::common::Keyset.new
+    arity: 3
+    return: { type: concrete::common::Keyset, confidence: high }
+    parameter_types: ["concrete::protocol::KeysetInfo", "concrete::common::SecretCsprng", "concrete::common::EncryptionCsprng"]
+    canonical_return_type: "cxx::UniquePtr<concrete::common::Keyset>"
+    role: factory
+  - method: concrete::common::Keyset.new
+    arity: 4
+    return: { type: concrete::common::Keyset, confidence: high }
+    parameter_types: ["concrete::protocol::KeysetInfo", "concrete::common::SecretCsprng", "concrete::common::EncryptionCsprng", "alloc::vec::Vec<concrete::common::LweSecretKey>"]
+    canonical_return_type: "cxx::UniquePtr<concrete::common::Keyset>"
+    role: factory
+  - method: concrete::common::Keyset.get_client
+    arity: 0
+    return: { type: concrete::common::ClientKeyset, confidence: high }
+    parameter_types: []
+    canonical_return_type: "cxx::UniquePtr<concrete::common::ClientKeyset>"
+    role: factory
+  - method: concrete::common::Keyset.get_server
+    arity: 0
+    return: { type: concrete::common::ServerKeyset, confidence: high }
+    parameter_types: []
+    canonical_return_type: "cxx::UniquePtr<concrete::common::ServerKeyset>"
+    role: factory
+  - method: concrete::client::ClientFunction.new_encrypted
+    arity: 3
+    return: { type: concrete::client::ClientFunction, confidence: high }
+    parameter_types: ["concrete::protocol::CircuitInfo", "concrete::common::ClientKeyset", "concrete::common::EncryptionCsprng"]
+    canonical_return_type: "cxx::UniquePtr<concrete::client::ClientFunction>"
+    role: factory
+  - method: concrete::client::ClientFunction.prepare_input
+    arity: 2
+    return: { type: concrete::common::TransportValue, confidence: high }
+    parameter_types: ["concrete::common::Value", "usize"]
+    canonical_return_type: "cxx::UniquePtr<concrete::common::TransportValue>"
+    role: operation
+  - method: concrete::client::ClientFunction.process_output
+    arity: 2
+    return: { type: concrete::common::Value, confidence: high }
+    parameter_types: ["concrete::common::TransportValue", "usize"]
+    canonical_return_type: "cxx::UniquePtr<concrete::common::Value>"
+    role: output
+  - method: concrete::client::ClientModule.new_encrypted
+    arity: 3
+    return: { type: concrete::client::ClientModule, confidence: high }
+    parameter_types: ["concrete::protocol::ProgramInfo", "concrete::common::ClientKeyset", "concrete::common::EncryptionCsprng"]
+    canonical_return_type: "cxx::UniquePtr<concrete::client::ClientModule>"
+    role: factory
+  - method: concrete::server::ServerFunction.call
+    arity: 2
+    return: { type: "alloc::vec::Vec<concrete::common::TransportValue>", confidence: high }
+    parameter_types: ["concrete::common::ServerKeyset", "alloc::vec::Vec<concrete::common::TransportValue>"]
+    canonical_return_type: "alloc::vec::Vec<cxx::UniquePtr<concrete::common::TransportValue>>"
+    role: operation
+  - method: concrete::server::ServerFunction.new
+    arity: 3
+    return: { type: concrete::server::ServerFunction, confidence: high }
+    parameter_types: ["concrete::protocol::CircuitInfo", "*mut concrete::c_void", "bool"]
+    canonical_return_type: "cxx::UniquePtr<concrete::server::ServerFunction>"
+    role: factory
+  - method: concrete::server::ServerFunction.call
+    arity: 3
+    return: { type: "alloc::vec::Vec<concrete::common::TransportValue>", confidence: high }
+    parameter_types: ["core::pin::Pin<&mut concrete::server::ServerFunction>", "concrete::common::ServerKeyset", "alloc::vec::Vec<concrete::common::TransportValue>"]
+    canonical_return_type: "alloc::vec::Vec<cxx::UniquePtr<concrete::common::TransportValue>>"
+    role: operation
+  - method: concrete::client::ClientFunction.prepare_input
+    arity: 3
+    return: { type: concrete::common::TransportValue, confidence: high }
+    parameter_types: ["core::pin::Pin<&mut concrete::client::ClientFunction>", "concrete::common::Value", "usize"]
+    canonical_return_type: "cxx::UniquePtr<concrete::common::TransportValue>"
+    role: operation
+  - method: concrete::client::ClientFunction.process_output
+    arity: 3
+    return: { type: concrete::common::Value, confidence: high }
+    parameter_types: ["core::pin::Pin<&mut concrete::client::ClientFunction>", "concrete::common::TransportValue", "usize"]
+    canonical_return_type: "cxx::UniquePtr<concrete::common::Value>"
+    role: output
+  - method: concrete::FheUint3.bivariate_pbs
+    arity: 2
+    return: { type: concrete::FheUint3, confidence: high }
+    parameter_types: ["concrete::FheUint3", "F"]
+    canonical_return_type: "concrete::FheUint3"
+    role: operation
+  - method: concrete::FheUint8.bivariate_function
+    arity: 2
+    return: { type: concrete::FheUint8, confidence: high }
+    parameter_types: ["concrete::FheUint8", "F"]
+    canonical_return_type: "concrete::FheUint8"
+    role: operation
+  - method: concrete::ConfigBuilder.enable_custom_bool
+    arity: 1
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: ["concrete::FheBoolParameters"]
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.enable_custom_uint2
+    arity: 1
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: ["concrete::FheUint2Parameters"]
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.enable_custom_uint3
+    arity: 1
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: ["concrete::FheUint3Parameters"]
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::ConfigBuilder.enable_custom_uint4
+    arity: 1
+    return: { type: concrete::ConfigBuilder, confidence: high }
+    parameter_types: ["concrete::FheUint4Parameters"]
+    canonical_return_type: "concrete::ConfigBuilder"
+    role: config
+  - method: concrete::crypto_api::VectorLWE.encode_encrypt_several_encoders
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["concrete::crypto_api::LWESecretKey", "&[f64]", "&[concrete::crypto_api::Encoder]"]
+    canonical_return_type: "core::result::Result<concrete::crypto_api::VectorLWE, concrete::CryptoAPIError>"
+    role: operation

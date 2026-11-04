@@ -1,0 +1,427 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: ecdsa
+  coordinates:
+    - ecdsa
+  version_range: ">=0.18,<1.0"
+  description: >-
+    python-ecdsa lifecycle contracts — SigningKey/VerifyingKey generation,
+    loading, signing, verification, serialization, and the ECDH key-agreement
+    wrapper. Verified against ecdsa 0.19.2 (ecdsa/keys.py, ecdsa/ecdh.py).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#208)
+#
+# Scope: the caller-visible surface re-exported by ecdsa/__init__.py —
+# SigningKey, VerifyingKey (keys.py) and ECDH (ecdh.py). Every public
+# (non "_"-prefixed) method was inventoried against the ecdsa 0.19.2 wheel
+# source. Disposition legend: contracted | covered-existing |
+# skipped-non-crypto | skipped-informative-return | skipped-unsupported |
+# needs-follow-up.
+#
+# ecdsa.SigningKey (keys.py; direct SigningKey() raises — factories only)
+#   generate                          contracted (factory)   — rules api anchor;
+#                                                              default curve NIST192p,
+#                                                              default hash sha1
+#   from_secret_exponent              contracted (factory)   — rules api anchor
+#   from_string                       contracted (factory)   — rules api anchor
+#   from_pem / from_der               contracted (factory)   — rules api anchors
+#   sign                              contracted (operation) — rules api anchor
+#   sign_deterministic                contracted (operation) — rules api anchor (RFC 6979)
+#   sign_digest                       contracted (operation) — rules api anchor
+#   sign_digest_deterministic         contracted (operation) — rules api anchor
+#   sign_number                       contracted (operation) — raw (r, s) tuple
+#   get_verifying_key                 contracted (output)    — extracts the paired
+#                                                              VerifyingKey
+#   to_string / to_pem / to_der / to_ssh
+#                                     contracted (output)    — key-material serialization
+#   privkey / verifying_key / curve / default_hashfunc / baselen attributes
+#                                     skipped-informative-return — attributes, not calls
+#
+# ecdsa.VerifyingKey (keys.py; direct VerifyingKey() raises — factories only)
+#   from_string / from_pem / from_der contracted (factory)   — rules api anchors
+#   from_public_point                 contracted (factory)   — rules api anchor
+#   from_public_key_recovery          contracted (factory)   — returns a LIST of
+#   from_public_key_recovery_with_digest                        candidate keys; modeled
+#                                     contracted (factory)      as builtins.list
+#   verify / verify_digest            contracted (operation) — rules api anchors; return
+#                                                              True or raise
+#                                                              BadSignatureError
+#   precompute                        skipped-unsupported    — returns None and only
+#                                                              mutates internal tables;
+#                                                              no lifecycle information
+#   to_string / to_pem / to_der / to_ssh
+#                                     contracted (output)
+#   pubkey / curve / default_hashfunc attributes
+#                                     skipped-informative-return — attributes, not calls
+#
+# ecdsa.ECDH (ecdh.py; the only directly-constructed class)
+#   <init>                            contracted (factory)   — attr-call and <init>
+#                                                              spellings
+#   generate_private_key              contracted (factory)   — generates own key pair,
+#                                                              returns own public key
+#   load_private_key[_bytes|_der|_pem]
+#                                     contracted (config)    — mutates the ECDH object,
+#                                                              returns own public key
+#   load_received_public_key[_bytes|_der|_pem]
+#                                     contracted (config)    — mutates, returns None
+#   set_curve                         contracted (config)
+#   get_public_key                    contracted (output)
+#   generate_sharedsecret_bytes       contracted (operation) — rules-relevant KEX terminal
+#   generate_sharedsecret             contracted (operation) — int-domain variant
+#
+# ecdsa.curves (Curve class, NIST*/SECP*/BRAINPOOL*/Ed* constants, find_curve,
+# curve_by_name)                      skipped-non-crypto     — curve parameter objects
+#                                                              passed as arguments; the
+#                                                              curve NAME reaches findings
+#                                                              via rules metadata, not via
+#                                                              return-type inference
+# ecdsa.eddsa (PrivateKey/PublicKey)  needs-follow-up        — internal EdDSA engine,
+#                                                              reached via curve=Ed25519 on
+#                                                              SigningKey; direct use is
+#                                                              rare and rules don't cover
+#                                                              it yet
+# ecdsa.util sigencode_*/sigdecode_*  skipped-non-crypto     — encoding strategy callables
+# ecdsa.der / ellipticcurve / numbertheory
+#                                     skipped-non-crypto     — low-level internals
+#
+# Note on `when:` conditionals: none are declared. Return types never depend
+# on argument values (the curve argument selects key parameters, not the
+# return type).
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── ecdsa.SigningKey — generation and loading ──────────────────────────────
+
+  - method: ecdsa.SigningKey.generate
+    arity: 0
+    return:
+      type: ecdsa.SigningKey
+      confidence: high
+    role: factory
+
+  - method: ecdsa.SigningKey.from_secret_exponent
+    arity: 1
+    return:
+      type: ecdsa.SigningKey
+      confidence: high
+    role: factory
+
+  - method: ecdsa.SigningKey.from_string
+    arity: 1
+    return:
+      type: ecdsa.SigningKey
+      confidence: high
+    role: factory
+
+  - method: ecdsa.SigningKey.from_pem
+    arity: 1
+    return:
+      type: ecdsa.SigningKey
+      confidence: high
+    role: factory
+
+  - method: ecdsa.SigningKey.from_der
+    arity: 1
+    return:
+      type: ecdsa.SigningKey
+      confidence: high
+    role: factory
+
+  # ── ecdsa.SigningKey — signing operations ──────────────────────────────────
+
+  - method: ecdsa.SigningKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: ecdsa.SigningKey.sign_deterministic
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: ecdsa.SigningKey.sign_digest
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: ecdsa.SigningKey.sign_digest_deterministic
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: ecdsa.SigningKey.sign_number
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  # ── ecdsa.SigningKey — extraction and serialization ────────────────────────
+
+  - method: ecdsa.SigningKey.get_verifying_key
+    arity: 0
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: output
+
+  - method: ecdsa.SigningKey.to_string
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: ecdsa.SigningKey.to_pem
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: ecdsa.SigningKey.to_der
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: ecdsa.SigningKey.to_ssh
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── ecdsa.VerifyingKey — loading ───────────────────────────────────────────
+
+  - method: ecdsa.VerifyingKey.from_string
+    arity: 1
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: factory
+
+  - method: ecdsa.VerifyingKey.from_pem
+    arity: 1
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: factory
+
+  - method: ecdsa.VerifyingKey.from_der
+    arity: 1
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: factory
+
+  - method: ecdsa.VerifyingKey.from_public_point
+    arity: 1
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: factory
+
+  # Public-key recovery returns a list of candidate VerifyingKeys.
+  - method: ecdsa.VerifyingKey.from_public_key_recovery
+    arity: 3
+    return:
+      type: builtins.list
+      confidence: high
+    role: factory
+
+  - method: ecdsa.VerifyingKey.from_public_key_recovery_with_digest
+    arity: 3
+    return:
+      type: builtins.list
+      confidence: high
+    role: factory
+
+  # ── ecdsa.VerifyingKey — verification ──────────────────────────────────────
+
+  # verify/verify_digest return True or raise BadSignatureError.
+  - method: ecdsa.VerifyingKey.verify
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+
+  - method: ecdsa.VerifyingKey.verify_digest
+    arity: 2
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+
+  # ── ecdsa.VerifyingKey — serialization ─────────────────────────────────────
+
+  - method: ecdsa.VerifyingKey.to_string
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: ecdsa.VerifyingKey.to_pem
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: ecdsa.VerifyingKey.to_der
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: ecdsa.VerifyingKey.to_ssh
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── ecdsa.ECDH — key agreement ─────────────────────────────────────────────
+
+  # `import ecdsa; ecdsa.ECDH(...)` — module-attribute call spelling.
+  - method: ecdsa.ECDH
+    arity: 0
+    return:
+      type: ecdsa.ECDH
+      confidence: high
+    role: factory
+
+  # `from ecdsa import ECDH; ECDH(...)` — constructor spelling.
+  - method: ecdsa.ECDH.<init>
+    arity: 0
+    return:
+      type: ecdsa.ECDH
+      confidence: high
+    role: factory
+
+  - method: ecdsa.ECDH.set_curve
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: ecdsa.ECDH.generate_private_key
+    arity: 0
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: factory
+
+  - method: ecdsa.ECDH.load_private_key
+    arity: 1
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: config
+
+  - method: ecdsa.ECDH.load_private_key_bytes
+    arity: 1
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: config
+
+  - method: ecdsa.ECDH.load_private_key_der
+    arity: 1
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: config
+
+  - method: ecdsa.ECDH.load_private_key_pem
+    arity: 1
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: config
+
+  - method: ecdsa.ECDH.get_public_key
+    arity: 0
+    return:
+      type: ecdsa.VerifyingKey
+      confidence: high
+    role: output
+
+  - method: ecdsa.ECDH.load_received_public_key
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: ecdsa.ECDH.load_received_public_key_bytes
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: ecdsa.ECDH.load_received_public_key_der
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: ecdsa.ECDH.load_received_public_key_pem
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: ecdsa.ECDH.generate_sharedsecret_bytes
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: ecdsa.ECDH.generate_sharedsecret
+    arity: 0
+    return:
+      type: builtins.int
+      confidence: high
+    role: operation
+
+hierarchy:
+  ecdsa.SigningKey:
+    - builtins.object
+  ecdsa.VerifyingKey:
+    - builtins.object
+  ecdsa.ECDH:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.int:
+    - builtins.object
+  builtins.list:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  builtins.object: []

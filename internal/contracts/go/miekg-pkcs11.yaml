@@ -1,0 +1,216 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: miekg-pkcs11
+  coordinates:
+    - "github.com/miekg/pkcs11"
+  version_range: ">=1.0.1,<2.0.0"
+  description: "miekg/pkcs11 PKCS#11 binding"
+
+# Inventory source: github.com/miekg/pkcs11 v1.0.1 and v1.1.1 module sources
+# from the Go module proxy (the exported surface is identical across the
+# committed range). The binding mirrors Cryptoki: the *Init calls carry the
+# mechanism (the algorithm selector, exposed as an `algorithm` parameter
+# role), single-shot and Update calls perform the operation, and *Final calls
+# extract results. Session/slot/token management (Initialize, Finalize,
+# GetSlotList, FindObjects*, attribute getters, CloseSession, Logout,
+# InitToken, InitPIN, CopyObject, SetOperationState, ...) is structural and
+# stays uncontracted; SignRecoverInit/VerifyRecoverInit follow their siblings
+# but are rare and covered by the generic Init rules on the detection side.
+contracts:
+  - method: github.com/miekg/pkcs11.New
+    arity: 1
+    return: { type: "*github.com/miekg/pkcs11.Ctx", confidence: high }
+    role: factory
+  - method: github.com/miekg/pkcs11.NewMechanism
+    arity: 2
+    return: { type: "*github.com/miekg/pkcs11.Mechanism", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: mech, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.NewAttribute
+    arity: 2
+    return: { type: "*github.com/miekg/pkcs11.Attribute", confidence: high }
+    role: factory
+  - method: github.com/miekg/pkcs11.NewGCMParams
+    arity: 3
+    return: { type: "*github.com/miekg/pkcs11.GCMParams", confidence: high }
+    role: config
+  - method: github.com/miekg/pkcs11.NewOAEPParams
+    arity: 4
+    return: { type: "*github.com/miekg/pkcs11.OAEPParams", confidence: high }
+    role: config
+  - method: github.com/miekg/pkcs11.NewECDH1DeriveParams
+    arity: 3
+    return: { type: "*github.com/miekg/pkcs11.ECDH1DeriveParams", confidence: high }
+    role: config
+  - method: github.com/miekg/pkcs11.NewPSSParams
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: config
+  - method: github.com/miekg/pkcs11.(*Ctx).OpenSession
+    arity: 2
+    return: { type: "github.com/miekg/pkcs11.SessionHandle", confidence: high }
+    role: factory
+  - method: github.com/miekg/pkcs11.(*Ctx).Login
+    arity: 3
+    return: { type: "error", confidence: high }
+    role: config
+    parameters:
+      - { index: 2, name: pin, role: metadata-contributing, contributes: { property: password, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).GenerateKey
+    arity: 3
+    return: { type: "github.com/miekg/pkcs11.ObjectHandle", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).GenerateKeyPair
+    arity: 4
+    return: { type: "github.com/miekg/pkcs11.ObjectHandle", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).DeriveKey
+    arity: 4
+    return: { type: "github.com/miekg/pkcs11.ObjectHandle", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).WrapKey
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).UnwrapKey
+    arity: 5
+    return: { type: "github.com/miekg/pkcs11.ObjectHandle", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 3, name: wrappedKey, role: metadata-contributing, contributes: { property: encryptedKeyMaterial, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).GenerateRandom
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: length, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).SeedRandom
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: config
+    parameters:
+      - { index: 1, name: seed, role: metadata-contributing, contributes: { property: seed, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).EncryptInit
+    arity: 3
+    return: { type: "error", confidence: high }
+    role: config
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).DecryptInit
+    arity: 3
+    return: { type: "error", confidence: high }
+    role: config
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).SignInit
+    arity: 3
+    return: { type: "error", confidence: high }
+    role: config
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).VerifyInit
+    arity: 3
+    return: { type: "error", confidence: high }
+    role: config
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).DigestInit
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: config
+    parameters:
+      - { index: 1, name: m, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).Encrypt
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: message, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).EncryptUpdate
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/miekg/pkcs11.(*Ctx).EncryptFinal
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/miekg/pkcs11.(*Ctx).Decrypt
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: cipher, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).DecryptUpdate
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/miekg/pkcs11.(*Ctx).DecryptFinal
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/miekg/pkcs11.(*Ctx).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: message, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).SignUpdate
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: operation
+  - method: github.com/miekg/pkcs11.(*Ctx).SignFinal
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/miekg/pkcs11.(*Ctx).Verify
+    arity: 3
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: data, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+      - { index: 2, name: signature, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).VerifyUpdate
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: operation
+  - method: github.com/miekg/pkcs11.(*Ctx).VerifyFinal
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: signature, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).Digest
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: message, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: github.com/miekg/pkcs11.(*Ctx).DigestUpdate
+    arity: 2
+    return: { type: "error", confidence: high }
+    role: operation
+  - method: github.com/miekg/pkcs11.(*Ctx).DigestFinal
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/miekg/pkcs11.(*Ctx).SignRecover
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/miekg/pkcs11.(*Ctx).VerifyRecover
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+
+hierarchy: {}

@@ -1,0 +1,410 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: secp256k1
+  coordinates:
+    - secp256k1
+  version_range: ">=0.1.0,<0.33.0"
+  description: "Rust bindings to libsecp256k1: ECDSA, BIP-340 Schnorr, ECDH and BIP-324 ElligatorSwift over secg/secp256k1"
+
+# EVERY KEY BELOW WAS READ OFF AN EXPORTED CALL GRAPH, then converted.
+# `crypto-finder scan --export-callgraph` on a probe consumer emitted
+# `secp256k1::ecdh.SharedSecret.new(?, ?)` and `secp256k1.SecretKey.new(?)` —
+# the `(?)` shape an ABSENT contract takes — and `rustAuthoredKey`
+# (internal/callgraph/contracts/contracts.go:267) moves the second-to-last dot
+# to `::` when this file loads, so the authored key is
+# `secp256k1::ecdh::SharedSecret.new`. The free function
+# `secp256k1::ecdh.shared_secret_point` has only one dot and is therefore
+# authored exactly as emitted.
+#
+# MODULE SEGMENTS ARE NOT UNIFORM IN THIS CRATE, AND BOTH SPELLINGS ARE REAL.
+# `SecretKey`, `PublicKey`, `Keypair` and `XOnlyPublicKey` live in a private
+# `key` module that the crate root re-exports, so a consumer reaching them
+# emits NO module segment (`secp256k1.SecretKey.new`). `ecdh`, `ecdsa`,
+# `schnorr` and `ellswift` are `pub mod`, so those emit one
+# (`secp256k1::ecdh.SharedSecret.new`). Both were observed in one probe.
+#
+# AND THE `key` MODULE WAS PUBLIC ONCE. 0.20.3 lib.rs:147 is `pub mod key;`
+# while 0.21.3 lib.rs:200 is `mod key;`, so `secp256k1::key::SecretKey::new(..)`
+# is compilable Rust for 0.1.0 - 0.20.x and nothing else. Consumers of those
+# versions emit `secp256k1::key.SecretKey.new`, a DIFFERENT key from the
+# re-exported one, so both are carried. Dropping the module-qualified pair
+# would leave every pre-0.21 consumer joining nothing.
+#
+# API READ AT 0.31.1 unless a line says otherwise. Each arity that differs
+# across the range is carried as its own entry with the versions named, because
+# an arity is part of the key: `SecretKey::new` is `(secp, rng)` at 0.11.6
+# key.rs:118 and `(rng)` at 0.31.1 key.rs:200, and `SharedSecret::new` is
+# `(secp, point, scalar)` at 0.11.6 ecdh.rs:32 and `(point, scalar)` at 0.15.5
+# ecdh.rs:31.
+#
+# skipped-non-crypto: the encoding surface — `Message::from_slice` /
+#   `from_digest` / `from_digest_slice` / `from_hashed_data`,
+#   `SecretKey::from_slice` / `from_byte_array` / `secret_bytes`,
+#   `PublicKey::from_slice` / `serialize` / `serialize_uncompressed`,
+#   `XOnlyPublicKey::from_slice` / `serialize`, `ecdsa::Signature::from_der` /
+#   `from_compact` / `serialize_der` / `serialize_compact` / `normalize_s`,
+#   `RecoverableSignature::from_compact` / `serialize_compact` / `to_standard`,
+#   `RecoveryId::from_i32`, `SharedSecret::from_bytes` / `from_slice` /
+#   `secret_bytes`, and the Display/FromStr/serde impls. All move bytes.
+# skipped-non-crypto: the BIP-32 / BIP-341 tweak arithmetic — `add_tweak`,
+#   `mul_tweak`, `add_exp_tweak`, `add_xonly_tweak`, `tweak_add_assign`,
+#   `tweak_add_check`, `combine`, `combine_keys`, `negate`, and `Scalar`.
+# skipped-non-crypto: `Secp256k1::new` / `gen_new` / `signing_only` /
+#   `verification_only` / `preallocated_*`, `randomize`, `seeded_randomize`,
+#   and the `Keypair` accessors `secret_key` / `public_key` /
+#   `x_only_public_key` / `secret_bytes`. A context allocates a libsecp256k1
+#   scratch buffer; it computes nothing.
+# WHERE parameter_types IS OMITTED, AND WHY. `version_range` is declared per
+# LIBRARY, not per entry, so it may not cover a version for which any declared
+# signature is false. The MESSAGE parameter changed inside this range twice:
+# the ECDSA methods take `&Message` for 0.21.0-0.30.x and `impl Into<Message>`
+# from 0.31.0 (0.30.0 vs 0.31.1 ecdsa/mod.rs `pub fn sign_ecdsa`), and the
+# Schnorr methods take `&Message` for 0.20.0-0.29.x and `&[u8]` from 0.30.0
+# (0.29.1 vs 0.30.0 schnorr.rs `pub fn sign_schnorr`). Method plus arity
+# therefore does not identify one signature across the range for those 16
+# entries, so `parameter_types` is omitted on them rather than declared as one
+# era's and wrong for the other -- the same choice ssh2.yaml makes for
+# `handshake`. Their roles and return types ARE still declared, which is what a
+# chain walk needs to travel to the next link; the cost is that an exported
+# signature renders their arguments as `(?)`.
+#
+contracts:
+  # ---- ECDSA and shared key material -------------------------------------
+  # 0.19.0 key.rs:115 onward: the context argument is gone.
+  - method: secp256k1::SecretKey.new
+    arity: 1
+    return: {type: "secp256k1::SecretKey", confidence: high}
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  # 0.11.6 key.rs:118: `new(secp, rng)`. Same name, different arity.
+  - method: secp256k1::SecretKey.new
+    arity: 2
+    return: {type: "secp256k1::SecretKey", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&mut rand::Rng"]
+    role: factory
+  # The `secp256k1::key::` spelling, compilable 0.1.0 - 0.20.x only.
+  - method: secp256k1::key::SecretKey.new
+    arity: 1
+    return: {type: "secp256k1::SecretKey", confidence: high}
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  - method: secp256k1::key::SecretKey.new
+    arity: 2
+    return: {type: "secp256k1::SecretKey", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&mut rand::Rng"]
+    role: factory
+  # 0.31.1 key.rs:441. Arity 2 since 0.2.0; 0.1.0 key.rs:118 takes a third
+  # `compressed: bool` and is not contracted. 0.9.2 key.rs:145 still wraps the
+  # result in a Result; the bare return declared here holds from 0.10.0.
+  - method: secp256k1::PublicKey.from_secret_key
+    arity: 2
+    return: {type: "secp256k1::PublicKey", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&secp256k1::SecretKey"]
+    role: factory
+  - method: secp256k1::key::PublicKey.from_secret_key
+    arity: 2
+    return: {type: "secp256k1::PublicKey", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&secp256k1::SecretKey"]
+    role: factory
+  # 0.21.0 key.rs:369 onward: uses the global context instead of a passed one.
+  - method: secp256k1::PublicKey.from_secret_key_global
+    arity: 1
+    return: {type: "secp256k1::PublicKey", confidence: high}
+    parameter_types: ["&secp256k1::SecretKey"]
+    role: factory
+  # 0.31.1 lib.rs. Present as a context method in every version in the range,
+  # but 0.1.0-0.9.2 lib.rs:484 wrap the pair in a Result and 0.10.0 lib.rs:545
+  # onward return it bare; the modern form is declared.
+  - method: secp256k1::Secp256k1.generate_keypair
+    arity: 1
+    return: {type: "(secp256k1::SecretKey, secp256k1::PublicKey)", confidence: high}
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  # 0.1.0 lib.rs:330 took a `compressed: bool` second argument, and it is the
+  # ONLY version with this arity -- there it returns a Result, not the bare
+  # tuple the arity-1 form returns from 0.10.0 on.
+  - method: secp256k1::Secp256k1.generate_keypair
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&mut rand::Rng", "bool"]
+    role: factory
+  # 0.21.0 lib.rs:496 adds a FREE function of the same name on the global
+  # context. It emits without a type segment, so its key has one dot.
+  - method: secp256k1.generate_keypair
+    arity: 1
+    return: {type: "(secp256k1::SecretKey, secp256k1::PublicKey)", confidence: high}
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  # 0.21.0 ecdsa/mod.rs:345 onward.
+  - method: secp256k1::Secp256k1.sign_ecdsa
+    arity: 2
+    return: {type: "secp256k1::ecdsa::Signature", confidence: high}
+    role: operation
+  - method: secp256k1::Secp256k1.sign_ecdsa_low_r
+    arity: 2
+    return: {type: "secp256k1::ecdsa::Signature", confidence: high}
+    role: operation
+  - method: secp256k1::Secp256k1.sign_ecdsa_grind_r
+    arity: 3
+    return: {type: "secp256k1::ecdsa::Signature", confidence: high}
+    role: operation
+  # 0.24.0 ecdsa/mod.rs:288.
+  - method: secp256k1::Secp256k1.sign_ecdsa_with_noncedata
+    arity: 3
+    return: {type: "secp256k1::ecdsa::Signature", confidence: high}
+    role: operation
+  - method: secp256k1::Secp256k1.verify_ecdsa
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  # 0.21.0 recovery.rs:164 onward.
+  - method: secp256k1::Secp256k1.sign_ecdsa_recoverable
+    arity: 2
+    return: {type: "secp256k1::ecdsa::RecoverableSignature", confidence: high}
+    role: operation
+  # 0.24.0 recovery.rs:197.
+  - method: secp256k1::Secp256k1.sign_ecdsa_recoverable_with_noncedata
+    arity: 3
+    return: {type: "secp256k1::ecdsa::RecoverableSignature", confidence: high}
+    role: operation
+  - method: secp256k1::Secp256k1.recover_ecdsa
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  # 0.21.0 key.rs:292 onward: sign through the global context.
+  - method: secp256k1::SecretKey.sign_ecdsa
+    arity: 1
+    return: {type: "secp256k1::ecdsa::Signature", confidence: high}
+    role: operation
+  # ---- the pre-rename ECDSA names, 0.1.0 - 0.25.x -------------------------
+  # 0.24.3 ecdsa/mod.rs:252. Deprecated at 0.21 and removed AT 0.25.0.
+  # 0.1.0-0.11.x return `Result<Signature, Error>` (0.4.2 lib.rs:460) and the
+  # `ecdsa` module does not exist before 0.21, so the type named here is the
+  # 0.21-0.24 spelling.
+  - method: secp256k1::Secp256k1.sign
+    arity: 2
+    return: {type: "secp256k1::ecdsa::Signature", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&secp256k1::SecretKey"]
+    role: operation
+  - method: secp256k1::Secp256k1.verify
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&secp256k1::ecdsa::Signature", "&secp256k1::PublicKey"]
+    role: operation
+  # 0.4.2 lib.rs:471,491. Present 0.2.0 - 0.24.x, removed at 0.25.0.
+  # `sign_recoverable` returns a Result only through 0.11.x; from 0.12.0 it
+  # returns `RecoverableSignature` bare (0.15.5 recovery/mod.rs:151), which is
+  # what most of the range does and what is declared.
+  - method: secp256k1::Secp256k1.sign_recoverable
+    arity: 2
+    return: {type: "secp256k1::ecdsa::RecoverableSignature", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&secp256k1::SecretKey"]
+    role: operation
+  - method: secp256k1::Secp256k1.recover
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&secp256k1::ecdsa::RecoverableSignature"]
+    role: operation
+  # 0.20.3 lib.rs:773 and :762. Present 0.20.x - 0.24.x under these names; at
+  # 0.20 the returned type is `secp256k1::Signature`, the `ecdsa` module
+  # arriving only at 0.21.
+  - method: secp256k1::Secp256k1.sign_low_r
+    arity: 2
+    return: {type: "secp256k1::ecdsa::Signature", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&secp256k1::SecretKey"]
+    role: operation
+  - method: secp256k1::Secp256k1.sign_grind_r
+    arity: 3
+    return: {type: "secp256k1::ecdsa::Signature", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&secp256k1::SecretKey", "usize"]
+    role: operation
+  # 0.1.0 lib.rs:366,388,426. These three exist in 0.1.x AND NOWHERE ELSE:
+  # 0.2.4 already carries sign_recoverable / recover in their place.
+  - method: secp256k1::Secp256k1.sign_compact
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&secp256k1::SecretKey"]
+    role: operation
+  - method: secp256k1::Secp256k1.recover_compact
+    arity: 4
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&[u8]", "bool", "secp256k1::RecoveryId"]
+    role: operation
+  - method: secp256k1::Secp256k1.verify_raw
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&[u8]", "&secp256k1::PublicKey"]
+    role: operation
+  # ---- BIP-340 Schnorr ----------------------------------------------------
+  # `Keypair` from 0.28.0 key.rs:798; `KeyPair` up to 0.27.0 key.rs:802. Both
+  # spellings are carried because the committed range spans the rename.
+  - method: secp256k1::Keypair.new
+    arity: 2
+    return: {type: "secp256k1::Keypair", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&mut rand::Rng"]
+    role: factory
+  - method: secp256k1::KeyPair.new
+    arity: 2
+    return: {type: "secp256k1::KeyPair", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&mut rand::Rng"]
+    role: factory
+  - method: secp256k1::Keypair.new_global
+    arity: 1
+    return: {type: "secp256k1::Keypair", confidence: high}
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  - method: secp256k1::KeyPair.new_global
+    arity: 1
+    return: {type: "secp256k1::KeyPair", confidence: high}
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  # Derives the x-only public half through secp256k1_keypair_create
+  # (0.29.1 key.rs:794), an EC scalar multiplication rather than a decode.
+  - method: secp256k1::Keypair.from_secret_key
+    arity: 2
+    return: {type: "secp256k1::Keypair", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&secp256k1::SecretKey"]
+    role: factory
+  - method: secp256k1::KeyPair.from_secret_key
+    arity: 2
+    return: {type: "secp256k1::KeyPair", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&secp256k1::SecretKey"]
+    role: factory
+  - method: secp256k1::Keypair.from_seckey_slice
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&[u8]"]
+    role: factory
+  - method: secp256k1::KeyPair.from_seckey_slice
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&[u8]"]
+    role: factory
+  - method: secp256k1::Keypair.from_seckey_str
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&str"]
+    role: factory
+  - method: secp256k1::KeyPair.from_seckey_str
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&str"]
+    role: factory
+  # 0.20.3 schnorrsig.rs:197,148 — the same two constructors before `KeyPair`
+  # moved into key.rs at 0.21. A 0.20.x consumer emits this module segment.
+  - method: secp256k1::schnorrsig::KeyPair.new
+    arity: 2
+    return: {type: "secp256k1::KeyPair", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&mut rand::Rng"]
+    role: factory
+  # 0.20.3 schnorrsig.rs:148 takes the secret key BY VALUE, not by reference.
+  - method: secp256k1::schnorrsig::KeyPair.from_secret_key
+    arity: 2
+    return: {type: "secp256k1::KeyPair", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "secp256k1::SecretKey"]
+    role: factory
+  # 0.20.3 schnorrsig.rs:554, 0.20.x - 0.26.x.
+  - method: secp256k1::Secp256k1.generate_schnorrsig_keypair
+    arity: 1
+    return: {type: "(secp256k1::KeyPair, secp256k1::schnorrsig::PublicKey)", confidence: high}
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  # 0.31.1 schnorr.rs:143,148,153,165. `sign_schnorr` and `verify_schnorr` also
+  # name the PRE-BIP340 scheme on 0.5.x - 0.9.x (0.5.6 schnorr.rs:60,78); the
+  # contract is the same call either way, so both eras join here. It is the
+  # RULE metadata that withholds the standard name for those two, not this file.
+  - method: secp256k1::Secp256k1.sign_schnorr
+    arity: 2
+    return: {type: "secp256k1::schnorr::Signature", confidence: high}
+    role: operation
+  - method: secp256k1::Secp256k1.sign_schnorr_no_aux_rand
+    arity: 2
+    return: {type: "secp256k1::schnorr::Signature", confidence: high}
+    role: operation
+  - method: secp256k1::Secp256k1.sign_schnorr_with_aux_rand
+    arity: 3
+    return: {type: "secp256k1::schnorr::Signature", confidence: high}
+    role: operation
+  - method: secp256k1::Secp256k1.sign_schnorr_with_rng
+    arity: 3
+    return: {type: "secp256k1::schnorr::Signature", confidence: high}
+    role: operation
+  - method: secp256k1::Secp256k1.verify_schnorr
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  # 0.20.3 schnorrsig.rs:481,525 — the deprecated spellings, 0.20.x - 0.26.x.
+  - method: secp256k1::Secp256k1.schnorrsig_sign
+    arity: 2
+    return: {type: "secp256k1::schnorr::Signature", confidence: high}
+    parameter_types: ["&secp256k1::Message", "&secp256k1::KeyPair"]
+    role: operation
+  # No `parameter_types`: the x-only public key type is
+  # `secp256k1::schnorrsig::PublicKey` at 0.20.3 (schnorrsig.rs:83,525) and
+  # `secp256k1::XOnlyPublicKey` from 0.21, and the signature type moves with it,
+  # so method plus arity does not identify one signature across the two
+  # releases this method exists in.
+  - method: secp256k1::Secp256k1.schnorrsig_verify
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  # 0.30.0 key.rs:1035: the no-aux-rand sibling of `Keypair::sign_schnorr`.
+  # The rules match `kp.sign_schnorr_no_aux_rand(msg)` and it is the commonest
+  # Schnorr spelling in real consumers, so leaving it uncontracted would resolve
+  # the rule and join nothing.
+  - method: secp256k1::Keypair.sign_schnorr_no_aux_rand
+    arity: 1
+    return: {type: "secp256k1::schnorr::Signature", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: operation
+  # 0.21.0 key.rs:879 onward: sign through the global context.
+  - method: secp256k1::Keypair.sign_schnorr
+    arity: 1
+    return: {type: "secp256k1::schnorr::Signature", confidence: high}
+    role: operation
+  - method: secp256k1::KeyPair.sign_schnorr
+    arity: 1
+    return: {type: "secp256k1::schnorr::Signature", confidence: high}
+    role: operation
+  # ---- ECDH ---------------------------------------------------------------
+  # 0.15.5 ecdh.rs:31 onward.
+  - method: secp256k1::ecdh::SharedSecret.new
+    arity: 2
+    return: {type: "secp256k1::ecdh::SharedSecret", confidence: high}
+    parameter_types: ["&secp256k1::PublicKey", "&secp256k1::SecretKey"]
+    role: operation
+  # 0.11.6 ecdh.rs:32 — the context-first form, 0.2.0 - 0.14.x.
+  - method: secp256k1::ecdh::SharedSecret.new
+    arity: 3
+    return: {type: "secp256k1::ecdh::SharedSecret", confidence: high}
+    parameter_types: ["&secp256k1::Secp256k1", "&secp256k1::PublicKey", "&secp256k1::SecretKey"]
+    role: operation
+  # 0.17.2 ecdh.rs:186 - 0.21.3 ecdh.rs:160. It returns
+  # `Result<SharedSecret, Error>` at 0.17-0.18 and the bare value from 0.19.0,
+  # which is what is declared.
+  - method: secp256k1::ecdh::SharedSecret.new_with_hash
+    arity: 3
+    return: {type: "secp256k1::ecdh::SharedSecret", confidence: high}
+    parameter_types: ["&secp256k1::PublicKey", "&secp256k1::SecretKey", "impl FnMut([u8; 32], [u8; 32]) -> secp256k1::ecdh::SharedSecret"]
+    role: operation
+  # 0.22.2 ecdh.rs:149 — a FREE function, so its emitted key has one dot and
+  # rustAuthoredKey leaves it alone.
+  - method: secp256k1::ecdh.shared_secret_point
+    arity: 2
+    return: {type: "[u8; 64]", confidence: high}
+    parameter_types: ["&secp256k1::PublicKey", "&secp256k1::SecretKey"]
+    role: operation
+  # 0.28.0 ellswift.rs:176,206 — BIP-324 x-only ECDH.
+  - method: secp256k1::ellswift::ElligatorSwift.shared_secret
+    arity: 5
+    return: {type: "secp256k1::ellswift::ElligatorSwiftSharedSecret", confidence: high}
+    parameter_types: ["secp256k1::ellswift::ElligatorSwift", "secp256k1::ellswift::ElligatorSwift", "secp256k1::SecretKey", "impl Into<secp256k1::ellswift::Party>", "Option<&[u8]>"]
+    role: operation
+  - method: secp256k1::ellswift::ElligatorSwift.shared_secret_with_hasher
+    arity: 5
+    return: {type: "secp256k1::ellswift::ElligatorSwiftSharedSecret", confidence: high}
+    parameter_types: ["secp256k1::ellswift::ElligatorSwift", "secp256k1::ellswift::ElligatorSwift", "secp256k1::SecretKey", "impl Into<secp256k1::ellswift::Party>", "impl FnMut([u8; 32], [u8; 64], [u8; 64]) -> secp256k1::ellswift::ElligatorSwiftSharedSecret"]
+    role: operation
+
+hierarchy: {}

@@ -1,0 +1,189 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "node-crypto"
+  coordinates:
+    - "crypto"
+    - "node:crypto"
+  description: "Node.js built-in crypto module: key sizes of generateKeyPair, generateKeyPairSync, generateKey and generateKeySync"
+
+# THIS KB EXISTS FOR ONE REASON: THE KEY SIZE OF A NODE KEY-GENERATION CALL SITS
+# INSIDE AN OPTIONS OBJECT, NOT IN A POSITIONAL ARGUMENT. `crypto.generateKeyPairSync(
+# 'rsa', { modulusLength: 2048 })` fixes its size in a property of the second
+# argument, and which property depends on the first argument. A parameter role
+# can name that property with `argument_property`, and the evaluator reads it
+# from an object literal only: a variable, a spread, a computed key or a
+# non-literal value reports no size. The first argument must be a string
+# literal too, or no contract matches (a `when` compares the literal).
+#
+# Read from nodejs/node doc/api/crypto.md (main):
+#   generateKeyPair(type, options, callback) and generateKeyPairSync(type,
+#   options): `modulusLength` is "Key size in bits (RSA, DSA)", `primeLength` is
+#   "Prime length in bits (DH)", `namedCurve` is "Name of the curve to use (EC)".
+#   generateKey(type, options, callback) and generateKeySync(type, options):
+#   `length` is "The bit length of the key to generate" for type 'hmac' or 'aes'.
+# Every derivation below is therefore bits (argument_value) except the curve,
+# whose field size is looked up from the OpenSSL name (argument_curve_bits).
+#
+# ONE ENTRY PER SPELLING OF THE MODULE. A consumer's import decides the prefix
+# the parser emits: `require('crypto')` gives `crypto.`, `require('node:crypto')`
+# gives `node:crypto.`, and the same holds for `import` and a destructured name.
+# The callback forms carry one more argument than the sync forms.
+#
+# NOT CONTRACTED, ON PURPOSE: key types without a size option (ed25519, ed448,
+# x25519, x448 and the post-quantum types), `dh` with a `groupName` or `prime`
+# instead of `primeLength`, and `crypto.createECDH(curve)`, which no rule detects.
+# A type outside the literals below matches no entry and yields no size.
+contracts:
+  # crypto.generateKeyPairSync
+  - method: "crypto.generateKeyPairSync"
+    arity: 2
+    when: { arg_index: 0, arg_value_in: ['"rsa"', '"rsa-pss"', '"dsa"'] }
+    return: { type: "crypto.KeyPairSyncResult", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: modulusLength }
+  - method: "crypto.generateKeyPairSync"
+    arity: 2
+    when: { arg_index: 0, arg_value_in: ['"dh"'] }
+    return: { type: "crypto.KeyPairSyncResult", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: primeLength }
+  - method: "crypto.generateKeyPairSync"
+    arity: 2
+    when: { arg_index: 0, arg_value_in: ['"ec"'] }
+    return: { type: "crypto.KeyPairSyncResult", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits, argument_property: namedCurve }
+  # crypto.generateKeyPair
+  - method: "crypto.generateKeyPair"
+    arity: 3
+    when: { arg_index: 0, arg_value_in: ['"rsa"', '"rsa-pss"', '"dsa"'] }
+    return: { type: "void", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: modulusLength }
+  - method: "crypto.generateKeyPair"
+    arity: 3
+    when: { arg_index: 0, arg_value_in: ['"dh"'] }
+    return: { type: "void", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: primeLength }
+  - method: "crypto.generateKeyPair"
+    arity: 3
+    when: { arg_index: 0, arg_value_in: ['"ec"'] }
+    return: { type: "void", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits, argument_property: namedCurve }
+  # crypto.generateKeySync
+  - method: "crypto.generateKeySync"
+    arity: 2
+    when: { arg_index: 0, arg_value_in: ['"aes"', '"hmac"'] }
+    return: { type: "crypto.KeyObject", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: length }
+  # crypto.generateKey
+  - method: "crypto.generateKey"
+    arity: 3
+    when: { arg_index: 0, arg_value_in: ['"aes"', '"hmac"'] }
+    return: { type: "void", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: length }
+  # node:crypto.generateKeyPairSync
+  - method: "node:crypto.generateKeyPairSync"
+    arity: 2
+    when: { arg_index: 0, arg_value_in: ['"rsa"', '"rsa-pss"', '"dsa"'] }
+    return: { type: "crypto.KeyPairSyncResult", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: modulusLength }
+  - method: "node:crypto.generateKeyPairSync"
+    arity: 2
+    when: { arg_index: 0, arg_value_in: ['"dh"'] }
+    return: { type: "crypto.KeyPairSyncResult", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: primeLength }
+  - method: "node:crypto.generateKeyPairSync"
+    arity: 2
+    when: { arg_index: 0, arg_value_in: ['"ec"'] }
+    return: { type: "crypto.KeyPairSyncResult", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits, argument_property: namedCurve }
+  # node:crypto.generateKeyPair
+  - method: "node:crypto.generateKeyPair"
+    arity: 3
+    when: { arg_index: 0, arg_value_in: ['"rsa"', '"rsa-pss"', '"dsa"'] }
+    return: { type: "void", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: modulusLength }
+  - method: "node:crypto.generateKeyPair"
+    arity: 3
+    when: { arg_index: 0, arg_value_in: ['"dh"'] }
+    return: { type: "void", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: primeLength }
+  - method: "node:crypto.generateKeyPair"
+    arity: 3
+    when: { arg_index: 0, arg_value_in: ['"ec"'] }
+    return: { type: "void", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits, argument_property: namedCurve }
+  # node:crypto.generateKeySync
+  - method: "node:crypto.generateKeySync"
+    arity: 2
+    when: { arg_index: 0, arg_value_in: ['"aes"', '"hmac"'] }
+    return: { type: "crypto.KeyObject", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: length }
+  # node:crypto.generateKey
+  - method: "node:crypto.generateKey"
+    arity: 3
+    when: { arg_index: 0, arg_value_in: ['"aes"', '"hmac"'] }
+    return: { type: "void", confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value, argument_property: length }

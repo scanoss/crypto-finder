@@ -1,0 +1,66 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: cotp
+  coordinates:
+    - tilkinsc/COTP
+  version_range: ">=1.0.0,<2.0.0"
+  description: "COTP C++ wrapper: TOTP, HOTP and OTP object lifecycles"
+
+# Inventory sources: cotp.hpp (namespace COTP) from the upstream tag archives
+# v1.0.0 and v1.1.1. The wrapper's methods keep their arity across both, except
+# OTP::random_base32, which drops its character-set argument in v1.1.1.
+#
+# Constructing a COTP::TOTP, HOTP or OTP object is a declaration, not a call, so
+# there is nothing to contract for it; the object's methods are keyed on the
+# receiver type the C++ parser emits. at/now/next/generate produce a code;
+# verify and compare check one.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: valid_until and timecode (time arithmetic), byte_secret,
+#   build_uri and data_struct accessors, the destructors.
+# Resolution gap: receivers declared through `using namespace COTP` resolve to the
+# unqualified type and are not contracted keys, as for the other C++ entries.
+contracts:
+
+  # TOTP.
+  - method: COTP::TOTP.now
+    arity: 1
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: COTP::TOTP.at
+    arity: 3
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: COTP::TOTP.verify
+    arity: 3
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+
+  # HOTP.
+  - method: COTP::HOTP.at
+    arity: 2
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: COTP::HOTP.next
+    arity: 1
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: COTP::HOTP.compare
+    arity: 2
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+
+  # OTP.
+  - method: COTP::OTP.generate
+    arity: 2
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: COTP::OTP.random_base32
+    arity: 2
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: COTP::OTP.random_base32
+    arity: 3
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation

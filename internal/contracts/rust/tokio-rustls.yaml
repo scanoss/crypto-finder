@@ -1,0 +1,119 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: tokio-rustls
+  coordinates:
+    - tokio-rustls
+    - tokio_rustls
+  version_range: ">=0.1.0,<0.27.0"
+  description: "Async TLS session establishment over rustls for tokio"
+
+# API read at tokio-rustls 0.26.4 (src/client.rs, src/server.rs) for the modern
+# surface and at 0.6.0 (src/lib.rs) for the legacy free functions.
+# Cross-checked at 0.8.0, 0.10.0, 0.12.0, 0.23.1 and 0.25.0.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y and an exported
+# call graph agreed: a consumer calling TlsConnector::connect produced
+# `tokio_rustls.TlsConnector.connect(?, ?)` with empty parameter_types, which is
+# what an absent contract looks like. The consumer's own functions in the same
+# graph resolved fully, so the gap was the contract and not the parser.
+#
+# THIS CRATE CONTAINS NO CRYPTOGRAPHY. Measured across all 58 stable releases in
+# the committed matrix: zero occurrences of CryptoProvider, cipher_suites,
+# kx_groups, SignatureScheme or any provider name in `src/`. Every cipher, curve
+# and protocol decision belongs to rustls, which this crate re-exports
+# (`pub use rustls;`, lib.rs:49, present from 0.12.0). What is typed here is
+# session establishment: the boundary a consumer crosses to reach rustls.
+#
+# KEY SHAPES, READ OFF AN EXPORTED GRAPH RATHER THAN ASSUMED. Type methods emit
+# `tokio_rustls.TlsConnector.connect` -- two dots -- which the Rust key
+# normalisation rewrites to the authored `tokio_rustls::TlsConnector.connect`.
+# The crate-root free functions emit `tokio_rustls.connect_async_with_session`,
+# one dot, which rustAuthoredKey returns unchanged (contracts.go:267), so they
+# are authored with a dot and NOT with "::".
+#
+# ARITIES READ FROM THE DECLARATIONS (self excluded):
+#   TlsConnector::from(Arc<ClientConfig>)              client.rs:116  -> 1
+#   TlsConnector.connect(domain, stream)               client.rs:40   -> 2
+#   TlsConnector.connect_with(domain, stream, f)       client.rs:48   -> 3
+#   TlsConnector.early_data(flag)                      client.rs:34   -> 1
+#   TlsAcceptor::from(Arc<ServerConfig>)               server.rs:23   -> 1
+#   TlsAcceptor.accept(stream)                         server.rs:31   -> 1
+#   TlsAcceptor.accept_with(stream, f)                 server.rs:38   -> 2
+#   LazyConfigAcceptor::new(acceptor, io)              server.rs:81   -> 2
+#   connect_async_with_session(stream, session)        0.6.0 lib.rs:54 -> 2
+#   accept_async_with_session(stream, session)         0.6.0 lib.rs:75 -> 2
+#
+# THE PRE-0.8 EXTENSION-TRAIT METHODS ARE DELIBERATELY ABSENT, AND THAT IS A
+# MEASURED LIMIT RATHER THAN AN OMISSION. 0.1.0-0.7.2 exposed
+# `ClientConfigExt::connect_async` and `ServerConfigExt::accept_async` as trait
+# methods implemented on `Arc<rustls::ClientConfig>` / `Arc<rustls::ServerConfig>`
+# (0.6.0 lib.rs:44-52, 64-72). The receiver is therefore a RUSTLS type, not a
+# tokio-rustls one, and an exported graph confirms the consequence: a consumer
+# calling `client_config.connect_async(domain, tcp)` emits
+# `<consumer_crate>.connect_async(?, ?)`, attributed to the consumer, never to
+# tokio_rustls. A contract keyed `tokio_rustls::ClientConfigExt.connect_async`
+# would never join, so writing one would create the appearance of coverage
+# without any. The rules still detect those call sites through the import guard;
+# it is the call-graph attribution that cannot be recovered without receiver
+# typing. The two free functions those traits delegate to ARE typed below, and
+# they are the part of the legacy era a graph can attribute.
+#
+# `with_alpn` / `TlsConnectorWithAlpn` (0.26.3+, client.rs:103) is absent for the
+# same reason the rules do not match it: ALPN selects an application protocol and
+# carries no cryptographic operation.
+contracts:
+  - method: tokio_rustls::TlsConnector.from
+    arity: 1
+    return: { type: tokio_rustls::TlsConnector, confidence: high }
+    parameter_types: ["std::sync::Arc<rustls::ClientConfig>"]
+    role: factory
+  - method: tokio_rustls::TlsConnector.connect
+    arity: 2
+    return: { type: tokio_rustls::Connect, confidence: high }
+    parameter_types: ["rustls::pki_types::ServerName<'static>", "IO"]
+    role: operation
+  - method: tokio_rustls::TlsConnector.connect_with
+    arity: 3
+    return: { type: tokio_rustls::Connect, confidence: high }
+    parameter_types: ["rustls::pki_types::ServerName<'static>", "IO", "F"]
+    role: operation
+  - method: tokio_rustls::TlsConnector.early_data
+    arity: 1
+    return: { type: tokio_rustls::TlsConnector, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: tokio_rustls::TlsAcceptor.from
+    arity: 1
+    return: { type: tokio_rustls::TlsAcceptor, confidence: high }
+    parameter_types: ["std::sync::Arc<rustls::ServerConfig>"]
+    role: factory
+  - method: tokio_rustls::TlsAcceptor.accept
+    arity: 1
+    return: { type: tokio_rustls::Accept, confidence: high }
+    parameter_types: ["IO"]
+    role: operation
+  - method: tokio_rustls::TlsAcceptor.accept_with
+    arity: 2
+    return: { type: tokio_rustls::Accept, confidence: high }
+    parameter_types: ["IO", "F"]
+    role: operation
+  - method: tokio_rustls::LazyConfigAcceptor.new
+    arity: 2
+    return: { type: tokio_rustls::LazyConfigAcceptor, confidence: high }
+    parameter_types: ["rustls::server::Acceptor", "IO"]
+    role: factory
+  # Crate-root free functions, 0.6.0-0.7.2. Authored with a dot, not "::":
+  # a one-dot call-site key has no module/type separator to move.
+  - method: tokio_rustls.connect_async_with_session
+    arity: 2
+    return: { type: tokio_rustls::ConnectAsync, confidence: high }
+    parameter_types: ["S", "rustls::ClientSession"]
+    role: operation
+  - method: tokio_rustls.accept_async_with_session
+    arity: 2
+    return: { type: tokio_rustls::AcceptAsync, confidence: high }
+    parameter_types: ["S", "rustls::ServerSession"]
+    role: operation
+
+hierarchy: {}

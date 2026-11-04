@@ -1,0 +1,327 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: googleauth
+  coordinates:
+    - "com.warrenstrange:googleauth"
+  version_range: ">=0.4.3,<2.0"
+  description: "GoogleAuth: TOTP shared-secret generation, code calculation and authorization, RFC 6238"
+
+# Inventory source: the library's own sources jars at every version from 0.4.3 to
+# 1.5.0. No signature is renamed or retyped across that range, so one file
+# serves all of it. Entries that exist in only part of the range are still
+# contracted, since a version that does not declare one never calls it.
+#   0.6.0 adds authorize and authorizeUser with an explicit time.
+#   1.1.0 adds getTotpPassword and getTotpPasswordOfUser.
+#   1.1.2 adds HmacHashFunction and setHmacHashFunction; earlier versions are
+#     HMAC-SHA1 only.
+#   1.1.3 removes the static GoogleAuthenticatorKey.getQRBarcodeURL.
+#   1.1.4 adds the public GoogleAuthenticatorKey.Builder.
+#   1.2.0 adds setNumberOfScratchCodes; 1.4.0 adds setSecretBits.
+#
+# Secret generation, code calculation and authorization are contracted twice,
+# on GoogleAuthenticator and on IGoogleAuthenticator. A call site resolves to the
+# receiver's declared type, and callers hold the authenticator through either.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-informative-return: the GoogleAuthenticatorConfig getters and
+#     GoogleAuthenticatorKey.getConfig, which read back configuration whose
+#     setters are contracted below.
+#   skipped-non-crypto: GoogleAuthenticator.getCredentialRepository and
+#     setCredentialRepository, and ICredentialRepository itself, which the
+#     consumer implements to store secrets rather than calling into the library;
+#     the KeyRepresentation enum, a Base32 or Base64 encoding choice; the
+#     GoogleAuthenticatorException constructors.
+#   rule-owned: the HmacHashFunction constants, which the detection rules match
+#     directly to name the MAC.
+contracts:
+
+  # The authenticator. The no-argument constructor uses the default
+  # configuration, which is HMAC-SHA1; the other takes it from the caller.
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.<init>
+    arity: 0
+    canonical_return_type: com.warrenstrange.googleauth.GoogleAuthenticator
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticator, confidence: high}
+    role: factory
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.<init>
+    arity: 1
+    parameter_types: [com.warrenstrange.googleauth.GoogleAuthenticatorConfig]
+    canonical_return_type: com.warrenstrange.googleauth.GoogleAuthenticator
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticator, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: config
+        role: operation-determining
+        contributes: {property: parameters, derivation: argument_type}
+
+  # Shared-secret generation. The overload with a user name also saves the new
+  # credentials through the configured repository.
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.createCredentials
+    arity: 0
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey, confidence: high}
+    role: factory
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.createCredentials
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey, confidence: high}
+    role: factory
+
+  # Code calculation. The secret overloads receive the key material directly;
+  # the user overloads load it from the repository.
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.getTotpPassword
+    arity: 1
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.getTotpPassword
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.getTotpPasswordOfUser
+    arity: 1
+    return: {type: int, confidence: high}
+    role: operation
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.getTotpPasswordOfUser
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+
+  # Code authorization, the same split between secret and user.
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.authorize
+    arity: 2
+    return: {type: boolean, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.authorize
+    arity: 3
+    return: {type: boolean, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.authorizeUser
+    arity: 2
+    return: {type: boolean, confidence: high}
+    role: operation
+  - method: com.warrenstrange.googleauth.GoogleAuthenticator.authorizeUser
+    arity: 3
+    return: {type: boolean, confidence: high}
+    role: operation
+
+  # The same lifecycle reached through the interface.
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.createCredentials
+    arity: 0
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey, confidence: high}
+    role: factory
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.createCredentials
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey, confidence: high}
+    role: factory
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.getTotpPassword
+    arity: 1
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: secret, role: metadata-contributing, contributes: {property: secret, derivation: argument_value}}
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.getTotpPassword
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: secret, role: metadata-contributing, contributes: {property: secret, derivation: argument_value}}
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.getTotpPasswordOfUser
+    arity: 1
+    return: {type: int, confidence: high}
+    role: operation
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.getTotpPasswordOfUser
+    arity: 2
+    return: {type: int, confidence: high}
+    role: operation
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.authorize
+    arity: 2
+    return: {type: boolean, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: secret, role: metadata-contributing, contributes: {property: secret, derivation: argument_value}}
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.authorize
+    arity: 3
+    return: {type: boolean, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: secret, role: metadata-contributing, contributes: {property: secret, derivation: argument_value}}
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.authorizeUser
+    arity: 2
+    return: {type: boolean, confidence: high}
+    role: operation
+  - method: com.warrenstrange.googleauth.IGoogleAuthenticator.authorizeUser
+    arity: 3
+    return: {type: boolean, confidence: high}
+    role: operation
+
+  # The generated credentials.
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.getKey
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.getVerificationCode
+    arity: 0
+    return: {type: int, confidence: high}
+    role: output
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.getScratchCodes
+    arity: 0
+    return: {type: java.util.List, confidence: high}
+    role: output
+
+  # Provisioning URLs embed the shared secret, so they are outputs that carry key
+  # material rather than formatting helpers.
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.getQRBarcodeURL
+    arity: 3
+    return: {type: java.lang.String, confidence: high}
+    role: output
+    parameters:
+      - index: 2
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorQRGenerator.getOtpAuthURL
+    arity: 3
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorQRGenerator.getOtpAuthTotpURL
+    arity: 3
+    return: {type: java.lang.String, confidence: high}
+    role: output
+
+  # Rebuilding credentials from a stored secret.
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder.setKey
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder.setConfig
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder, confidence: high}
+    role: config
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder.setVerificationCode
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder, confidence: high}
+    role: config
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder.setScratchCodes
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder, confidence: high}
+    role: config
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder.build
+    arity: 0
+    canonical_return_type: com.warrenstrange.googleauth.GoogleAuthenticatorKey
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorKey, confidence: high}
+    role: factory
+
+  # Configuration. The hash function selects the MAC, and the secret size is the
+  # key size of every code the authenticator computes.
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder.<init>
+    arity: 0
+    canonical_return_type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder, confidence: high}
+    role: factory
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder.setHmacHashFunction
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: hmacHashFunction
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder.setSecretBits
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: secretBits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder.setCodeDigits
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: codeDigits
+        role: metadata-contributing
+        contributes: {property: parameters, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder.setTimeStepSizeInMillis
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: timeStepSizeInMillis
+        role: metadata-contributing
+        contributes: {property: parameters, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder.setWindowSize
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: windowSize
+        role: metadata-contributing
+        contributes: {property: parameters, derivation: argument_value}
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder.setKeyRepresentation
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder, confidence: high}
+    role: config
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder.setNumberOfScratchCodes
+    arity: 1
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder, confidence: high}
+    role: config
+  - method: com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder.build
+    arity: 0
+    canonical_return_type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig
+    return: {type: com.warrenstrange.googleauth.GoogleAuthenticatorConfig, confidence: high}
+    role: factory
+
+hierarchy:
+  com.warrenstrange.googleauth.GoogleAuthenticator:
+    - com.warrenstrange.googleauth.IGoogleAuthenticator
+  com.warrenstrange.googleauth.IGoogleAuthenticator:
+    - java.lang.Object
+  com.warrenstrange.googleauth.GoogleAuthenticatorKey:
+    - java.lang.Object
+  com.warrenstrange.googleauth.GoogleAuthenticatorKey.Builder:
+    - java.lang.Object
+  com.warrenstrange.googleauth.GoogleAuthenticatorConfig:
+    - java.lang.Object
+  com.warrenstrange.googleauth.GoogleAuthenticatorConfig.GoogleAuthenticatorConfigBuilder:
+    - java.lang.Object

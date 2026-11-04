@@ -1,0 +1,199 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: sm2
+  coordinates:
+    - sm2
+  version_range: ">=0.13.0,<0.15.0"
+  description: "RustCrypto SM2 elliptic curve: SM2DSA signatures and SM2 encryption"
+
+# Inventory: sm2 0.13.3 (dsa only) and 0.14.0 (dsa and pke), plus elliptic-curve 0.13/0.14 for
+# the `SecretKey` alias. 0.0.1 is an unrelated pre-RustCrypto release and is out of range.
+# sign/verify hash Z_A || M with SM3; encrypt/decrypt and their `_der` forms default to SM3.
+# skipped-non-crypto: byte/SEC1/DER conversions, Signature encoding, Display/serde, arithmetic.
+
+contracts:
+  - method: sm2::SecretKey.random
+    arity: 1
+    return: {type: "sm2::SecretKey", confidence: high}
+    parameter_types: ["&mut impl rand_core::CryptoRng"]
+    role: factory
+  - method: sm2::SecretKey.generate
+    arity: 0
+    return: {type: "sm2::SecretKey", confidence: high}
+    role: factory
+  - method: sm2::SecretKey.generate_from_rng
+    arity: 1
+    return: {type: "sm2::SecretKey", confidence: high}
+    parameter_types: ["&mut impl rand_core::CryptoRng"]
+    role: factory
+  - method: sm2::SecretKey.try_generate_from_rng
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&mut impl rand_core::CryptoRng"]
+    role: factory
+  - method: sm2::SecretKey.public_key
+    arity: 0
+    return: {type: "sm2::PublicKey", confidence: high}
+    role: output
+  - method: sm2::dsa::SigningKey.new
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&str", "&sm2::SecretKey"]
+    role: factory
+  - method: sm2::dsa::SigningKey.from_bytes
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&str", "&sm2::FieldBytes"]
+    role: factory
+  - method: sm2::dsa::SigningKey.from_slice
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&str", "&[u8]"]
+    role: factory
+  - method: sm2::dsa::SigningKey.from_nonzero_scalar
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&str", "sm2::NonZeroScalar"]
+    role: factory
+  - method: sm2::dsa::SigningKey.verifying_key
+    arity: 0
+    return: {type: "&sm2::dsa::VerifyingKey", confidence: high}
+    role: output
+  - method: sm2::dsa::SigningKey.sign
+    arity: 1
+    return: {type: "sm2::dsa::Signature", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: sm2::dsa::SigningKey.try_sign
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: sm2::dsa::SigningKey.sign_with_rng
+    arity: 2
+    return: {type: "sm2::dsa::Signature", confidence: high}
+    role: operation
+  - method: sm2::dsa::SigningKey.try_sign_with_rng
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  - method: sm2::dsa::SigningKey.sign_prehash
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: sm2::dsa::SigningKey.sign_prehash_with_rng
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  - method: sm2::dsa::VerifyingKey.new
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&str", "sm2::PublicKey"]
+    role: factory
+  - method: sm2::dsa::VerifyingKey.from_sec1_bytes
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&str", "&[u8]"]
+    role: factory
+  - method: sm2::dsa::VerifyingKey.from_affine
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&str", "sm2::AffinePoint"]
+    role: factory
+  - method: sm2::dsa::VerifyingKey.verify
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  - method: sm2::dsa::VerifyingKey.verify_prehash
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  - method: sm2::pke::EncryptingKey.new
+    arity: 1
+    return: {type: "sm2::pke::EncryptingKey", confidence: high}
+    parameter_types: ["sm2::PublicKey"]
+    role: factory
+  - method: sm2::pke::EncryptingKey.new_with_mode
+    arity: 2
+    return: {type: "sm2::pke::EncryptingKey", confidence: high}
+    parameter_types: ["sm2::PublicKey", "sm2::pke::Mode"]
+    role: factory
+  - method: sm2::pke::EncryptingKey.from_sec1_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: sm2::pke::EncryptingKey.from_affine
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["sm2::AffinePoint"]
+    role: factory
+  - method: sm2::pke::EncryptingKey.encrypt
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  - method: sm2::pke::EncryptingKey.encrypt_der
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  - method: sm2::pke::EncryptingKey.encrypt_digest
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  - method: sm2::pke::EncryptingKey.encrypt_der_digest
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  - method: sm2::pke::DecryptingKey.new
+    arity: 1
+    return: {type: "sm2::pke::DecryptingKey", confidence: high}
+    parameter_types: ["sm2::SecretKey"]
+    role: factory
+  - method: sm2::pke::DecryptingKey.new_with_mode
+    arity: 2
+    return: {type: "sm2::pke::DecryptingKey", confidence: high}
+    parameter_types: ["sm2::NonZeroScalar", "sm2::pke::Mode"]
+    role: factory
+  - method: sm2::pke::DecryptingKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&sm2::FieldBytes"]
+    role: factory
+  - method: sm2::pke::DecryptingKey.from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: sm2::pke::DecryptingKey.from_nonzero_scalar
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["sm2::NonZeroScalar"]
+    role: factory
+  - method: sm2::pke::DecryptingKey.encrypting_key
+    arity: 0
+    return: {type: "&sm2::pke::EncryptingKey", confidence: high}
+    role: output
+  - method: sm2::pke::DecryptingKey.decrypt
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: sm2::pke::DecryptingKey.decrypt_der
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: sm2::pke::DecryptingKey.decrypt_digest
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: sm2::pke::DecryptingKey.decrypt_der_digest
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: operation
+
+hierarchy: {}

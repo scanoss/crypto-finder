@@ -1,0 +1,192 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: passlib
+  coordinates:
+    - passlib
+  version_range: ">=1.7,<2.0"
+  description: "Passlib public password hash APIs and CryptContext"
+
+contracts:
+  - method: passlib.context.CryptContext.<init>
+    arity: 0
+    return: { type: passlib.context.CryptContext, confidence: high }
+    role: factory
+  - method: passlib.context.CryptContext.hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: passlib.context.CryptContext.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+
+  - method: passlib.hash.bcrypt.using
+    arity: 0
+    return: { type: passlib.hash.bcrypt, confidence: high }
+    role: factory
+  - method: passlib.hash.bcrypt.hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: passlib.hash.bcrypt.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+  - method: passlib.handlers.bcrypt.bcrypt.using
+    arity: 0
+    return: { type: passlib.handlers.bcrypt.bcrypt, confidence: high }
+    role: factory
+  - method: passlib.handlers.bcrypt.bcrypt.hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: passlib.handlers.bcrypt.bcrypt.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+
+  - method: passlib.hash.argon2.using
+    arity: 0
+    return: { type: passlib.hash.argon2, confidence: high }
+    role: factory
+  - method: passlib.hash.argon2.hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: passlib.hash.argon2.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+  - method: passlib.handlers.argon2.argon2.using
+    arity: 0
+    return: { type: passlib.handlers.argon2.argon2, confidence: high }
+    role: factory
+  - method: passlib.handlers.argon2.argon2.hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: passlib.handlers.argon2.argon2.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+
+  - method: passlib.hash.scrypt.using
+    arity: 0
+    return: { type: passlib.hash.scrypt, confidence: high }
+    role: factory
+  - method: passlib.hash.scrypt.hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: passlib.hash.scrypt.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+  - method: passlib.handlers.scrypt.scrypt.using
+    arity: 0
+    return: { type: passlib.handlers.scrypt.scrypt, confidence: high }
+    role: factory
+  - method: passlib.handlers.scrypt.scrypt.hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: passlib.handlers.scrypt.scrypt.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+
+  # Concrete Passlib handler/backend methods used when mining Passlib's own source.
+  # These APIs are terminal crypto entry points; role-tagged sibling/base methods
+  # provide semantic supporting-call context for direct rule findings.
+  - method: passlib.handlers._BcryptBackend._calc_checksum
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+  - method: passlib.handlers._PyBcryptBackend._calc_checksum_raw
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+  - method: passlib.handlers._BuiltinBackend._calc_checksum
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+  - method: passlib.handlers._BcryptCommon._prepare_digest_args
+    arity: 1
+    return: { type: builtins.tuple, confidence: high }
+    role: config
+  - method: passlib.handlers._BcryptCommon._get_config
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: config
+  - method: passlib.handlers._BcryptCommon._generate_salt
+    arity: 0
+    return: { type: builtins.str, confidence: high }
+    role: config
+
+  - method: passlib.handlers._CffiBackend.hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+  - method: passlib.handlers._CffiBackend.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+  - method: passlib.handlers._PureBackend._calc_checksum
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+  - method: passlib.handlers._Argon2Common.using
+    arity: 0
+    return: { type: passlib.handlers._Argon2Common, confidence: high }
+    role: config
+  - method: passlib.handlers._Argon2Common._get_backend_type
+    arity: 1
+    return: { type: builtins.object, confidence: high }
+    role: config
+  - method: passlib.handlers.scrypt._calc_checksum
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+  - method: passlib.handlers.scrypt.using
+    arity: 0
+    return: { type: passlib.handlers.scrypt, confidence: high }
+    role: config
+  - method: passlib.handlers.scrypt._generate_salt
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: config
+
+hierarchy:
+  passlib.context.CryptContext:
+    - builtins.object
+  passlib.hash.bcrypt:
+    - builtins.object
+  passlib.hash.argon2:
+    - builtins.object
+  passlib.hash.scrypt:
+    - builtins.object
+  passlib.handlers.bcrypt.bcrypt:
+    - builtins.object
+  passlib.handlers.argon2.argon2:
+    - builtins.object
+  passlib.handlers.scrypt.scrypt:
+    - builtins.object
+  passlib.handlers._BcryptBackend:
+    - passlib.handlers._BcryptCommon
+  passlib.handlers._PyBcryptBackend:
+    - passlib.handlers._BcryptCommon
+  passlib.handlers._BuiltinBackend:
+    - passlib.handlers._BcryptCommon
+  passlib.handlers._BcryptCommon:
+    - builtins.object
+  passlib.handlers._CffiBackend:
+    - passlib.handlers._Argon2Common
+  passlib.handlers._PureBackend:
+    - passlib.handlers._Argon2Common
+  passlib.handlers._Argon2Common:
+    - builtins.object
+  passlib.handlers.scrypt:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.object: []

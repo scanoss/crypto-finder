@@ -1,0 +1,116 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "ssh2"
+  coordinates:
+    - "ssh2"
+  version_range: ">=1.0.0"
+  description: "ssh2: a pure-JavaScript SSH-2 client and server"
+
+# A consumer builds a client, connects, and reads keys through the utilities:
+#
+#     const { Client, Server, utils } = require('ssh2');
+#     const conn = new Client();                          // factory
+#     conn.connect({ host, username, privateKey });       // operation: SSH-2 transport
+#     const key = utils.parseKey(pem, passphrase);        // factory
+#     const sig = key.sign(data);                         // operation
+#     const keys = utils.generateKeyPairSync('ed25519');  // operation
+#
+# Declared for 1.x. From 1.0 the package exports `Client`, `Server` and `utils`
+# by name; the 0.x line exported the Client constructor itself as the module,
+# which the parser keys by the consumer's local name, so it is not declared.
+#
+# `connect` returns the client from 1.0. `parseKey` returns one parsed key
+# (an array only for a multi-key file, which `sign` and `verify` are then
+# called on per element) and `generateKeyPair`/`generateKeyPairSync` exist from
+# 1.13.0. `ParsedKey.sign(data[, algo])` and `verify(data, signature[, algo])`
+# take an optional hash algorithm as the last argument, so both arities are
+# declared.
+#
+# Deliberately NOT contracted: the channel and session methods (`exec`,
+# `shell`, `sftp`, `forwardIn`, `forwardOut`, `subsys`, `end`), the agents,
+# the HTTP agents and `Server.listen`. They run inside a session that
+# `connect` established, or accept connections, and add no cryptographic step.
+# `ParsedKey.isPrivateKey` and `equals` report on a key without computing.
+contracts:
+  - method: "ssh2.Client.<init>"
+    arity: 0
+    return: { type: "ssh2.Client", confidence: high }
+    role: factory
+  - method: "ssh2.Client.connect"
+    arity: 1
+    return: { type: "ssh2.Client", confidence: high }
+    role: operation
+  - method: "ssh2.Server.<init>"
+    arity: 1
+    return: { type: "ssh2.Server", confidence: high }
+    role: factory
+  - method: "ssh2.Server.<init>"
+    arity: 2
+    return: { type: "ssh2.Server", confidence: high }
+    role: factory
+
+  # Key generation: the options object carries bits, cipher, passphrase and
+  # rounds; the callback form returns nothing. The callback is optional in
+  # every version that has the function (keygen.js defaults it to a no-op), so
+  # the one-argument form is a real call.
+  - method: "ssh2.utils.generateKeyPairSync"
+    arity: 1
+    return: { type: "ssh2.GeneratedKeyPair", confidence: high }
+    role: operation
+  - method: "ssh2.utils.generateKeyPairSync"
+    arity: 2
+    return: { type: "ssh2.GeneratedKeyPair", confidence: high }
+    role: operation
+  - method: "ssh2.utils.generateKeyPair"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "ssh2.utils.generateKeyPair"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "ssh2.utils.generateKeyPair"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+
+  # Key parsing decodes and, given a passphrase, decrypts the key.
+  - method: "ssh2.utils.parseKey"
+    arity: 1
+    return: { type: "ssh2.ParsedKey", confidence: high }
+    role: factory
+  - method: "ssh2.utils.parseKey"
+    arity: 2
+    return: { type: "ssh2.ParsedKey", confidence: high }
+    role: factory
+  - method: "ssh2.ParsedKey.sign"
+    arity: 1
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "ssh2.ParsedKey.sign"
+    arity: 2
+    return: { type: "Buffer", confidence: high }
+    role: operation
+  - method: "ssh2.ParsedKey.verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "ssh2.ParsedKey.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "ssh2.ParsedKey.getPrivatePEM"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "ssh2.ParsedKey.getPublicPEM"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  # The README documents a string; the source returns the Buffer built by the
+  # key parser (genOpenSSHRSAPub and its siblings allocate a Buffer).
+  - method: "ssh2.ParsedKey.getPublicSSH"
+    arity: 0
+    return: { type: "Buffer", confidence: high }
+    role: output

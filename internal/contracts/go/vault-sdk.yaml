@@ -1,0 +1,92 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: vault-sdk
+  coordinates:
+    - "github.com/hashicorp/vault/sdk"
+  version_range: ">=0.1.0,<1.0.0"
+  description: "HashiCorp Vault SDK crypto helpers (keysutil transit, kdf, certutil)"
+
+# Inventory source: github.com/hashicorp/vault/sdk v0.9.2 module source from
+# the Go module proxy. Contracted boundary per the family audit: the keysutil
+# transit policy lifecycle, the SP 800-108 counter-mode KDF, and certutil key
+# parsing. The key type/algorithm lives in PolicyConfig/Policy state and is
+# capture-side. Storage, logical framework, plugin plumbing, base62/compress/
+# json helpers, and the salt/locksutil utilities are out of the crypto
+# boundary (skipped-non-crypto); cryptoutil's small blake2b wrapper and
+# managed-key interfaces are bounded follow-ups.
+contracts:
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.NewPolicy
+    arity: 1
+    return: { type: "*github.com/hashicorp/vault/sdk/helper/keysutil.Policy", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: config, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.NewLockManager
+    arity: 2
+    return: { type: "*github.com/hashicorp/vault/sdk/helper/keysutil.LockManager", confidence: high }
+    role: factory
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.(*LockManager).GetPolicy
+    arity: 3
+    return: { type: "*github.com/hashicorp/vault/sdk/helper/keysutil.Policy", confidence: high }
+    role: factory
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.(*Policy).Encrypt
+    arity: 4
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.(*Policy).Decrypt
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.(*Policy).Sign
+    arity: 6
+    return: { type: "*github.com/hashicorp/vault/sdk/helper/keysutil.SigningResult", confidence: high }
+    role: operation
+    parameters:
+      - { index: 3, name: hashAlgorithm, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.(*Policy).VerifySignature
+    arity: 6
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: hashAlgorithm, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.(*Policy).HMACKey
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.(*Policy).Rotate
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.(*Policy).Import
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/hashicorp/vault/sdk/helper/keysutil.(*Policy).Backup
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: output
+  - method: github.com/hashicorp/vault/sdk/helper/kdf.CounterMode
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 4, name: bits, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: github.com/hashicorp/vault/sdk/helper/kdf.HMACSHA256PRF
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/hashicorp/vault/sdk/helper/certutil.ParsePEMKey
+    arity: 1
+    return: { type: "crypto.Signer", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: keyPem, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/hashicorp/vault/sdk/helper/certutil.ParsePEMBundle
+    arity: 1
+    return: { type: "*github.com/hashicorp/vault/sdk/helper/certutil.ParsedCertBundle", confidence: high }
+    role: factory
+hierarchy: {}

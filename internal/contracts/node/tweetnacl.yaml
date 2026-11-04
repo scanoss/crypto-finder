@@ -1,0 +1,101 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "tweetnacl"
+  coordinates:
+    - "tweetnacl"
+  version_range: ">=0.14.0"
+  description: "tweetnacl: NaCl box, secretbox, sign, scalarMult and hash in pure JavaScript"
+
+# Functions hang off the module object and its function-valued properties, so
+# `nacl.box.open.after` is a key like any other. Arities from nacl.d.ts (1.0.3),
+# checked on 0.14.5.
+contracts:
+
+  # Public-key authenticated encryption.
+  - method: "tweetnacl.box"
+    arity: 4
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.box.open"
+    arity: 4
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.box.before"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.box.after"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.box.open.after"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.box.keyPair"
+    arity: 0
+    return: { type: "tweetnacl.BoxKeyPair", confidence: high }
+    role: factory
+  - method: "tweetnacl.box.keyPair.fromSecretKey"
+    arity: 1
+    return: { type: "tweetnacl.BoxKeyPair", confidence: high }
+    role: factory
+
+  # Secret-key authenticated encryption.
+  - method: "tweetnacl.secretbox"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.secretbox.open"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+
+  # Signatures.
+  - method: "tweetnacl.sign"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.sign.open"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.sign.detached"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.sign.detached.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "tweetnacl.sign.keyPair"
+    arity: 0
+    return: { type: "tweetnacl.SignKeyPair", confidence: high }
+    role: factory
+  - method: "tweetnacl.sign.keyPair.fromSecretKey"
+    arity: 1
+    return: { type: "tweetnacl.SignKeyPair", confidence: high }
+    role: factory
+  - method: "tweetnacl.sign.keyPair.fromSeed"
+    arity: 1
+    return: { type: "tweetnacl.SignKeyPair", confidence: high }
+    role: factory
+
+  # Scalar multiplication, hashing and randomness.
+  - method: "tweetnacl.scalarMult"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.scalarMult.base"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.hash"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "tweetnacl.randomBytes"
+    arity: 1
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation

@@ -1,0 +1,45 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: oath-from-hex
+  coordinates:
+    - oath
+  version_range: ">=0.1.2,<0.11.0"
+  description: "oath's hex-decoding helper, typed so a consumer's call to it carries a declared signature"
+
+# `from_hex(data: &str) -> Result<Vec<u8>, &str>` -- 0.1.4 lib.rs:11,
+# 0.10.2 lib.rs:48. It arrives at 0.1.2 and is absent from 0.0.3, 0.1.0 and
+# 0.1.1, which is why it does not sit in oath.yaml: that file's range covers
+# every release and this symbol does not exist across it.
+#
+# THIS IS NOT CRYPTOGRAPHY AND NO RULE MATCHES IT, and both halves of that are
+# deliberate. It wraps `rustc_hex::from_hex` / `rustc_serialize`'s hex decoder
+# and computes nothing; matching it would report hex decoding as an OTP
+# operation. It is typed anyway because a contract entry carries no crypto
+# assertion -- only an arity, a return type and a role -- and an entry point a
+# consumer reaches is worth having a declared signature for. It is the same line
+# rust/otpauth draws around `to_uri` and rust/totp-rs around `from_url`.
+#
+# WHAT THIS ENTRY DOES *NOT* DO, MEASURED RATHER THAN ASSUMED. An earlier
+# revision of this header claimed it "keeps the chain the crate's own README
+# shows resolvable" -- that
+#
+#     let seed = oath::from_hex("ff").unwrap();
+#     oath::totp_raw(seed.as_slice(), 6, 0, 30);
+#
+# would otherwise leave the `Vec<u8>` with no declared origin. That was a guess
+# and it is wrong. An exported call graph over exactly that consumer contains no
+# `oath.from_hex` node at all -- not in `finding_graphs`, not in `call_chains` --
+# and the argument renders as `argument_expression: "seed.as_slice()"` with the
+# entry present exactly as it does without it. `from_hex` is not itself a crypto
+# call, so nothing roots a chain at it. The entry is correct and harmless; the
+# chain-resolution benefit is not demonstrated, and is not claimed.
+contracts:
+  - method: oath.from_hex
+    arity: 1
+    return: { type: "core::result::Result<alloc::vec::Vec<u8>, &str>", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, &str>"
+    parameter_types: ["&str"]
+    role: output
+
+hierarchy: {}

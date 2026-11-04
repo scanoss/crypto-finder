@@ -1,0 +1,58 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jsonwebtoken-root-crypto
+  coordinates:
+    - jsonwebtoken
+  version_range: ">=2.0.0,<7.0.0"
+  description: "jsonwebtoken's low-level sign and verify while they were re-exported at the crate root, before the 7.0 key types"
+
+# THESE TWO KEYS EXIST ONLY BECAUSE OF A RE-EXPORT, AND THE RE-EXPORT WAS
+# REMOVED. 2.0.0 through 6.0.1 re-export `crypto::sign` and `crypto::verify` at
+# the crate root (2.0.3 lib.rs:28-29; 6.0.1 lib.rs:23
+# `pub use crypto::{sign, verify, Algorithm};`), so a consumer writing
+# `use jsonwebtoken::{sign, verify};` produces `jsonwebtoken.sign(?, ?, ?)` and
+# `jsonwebtoken.verify(?, ?, ?, ?)` -- CRATE-ROOT FREE FUNCTIONS, one dot each,
+# authored exactly as emitted. 7.0.0 drops the re-export and the same functions
+# are reachable only as `jsonwebtoken::crypto::sign`, which emits a DIFFERENT key
+# and is typed in jsonwebtoken-8.yaml. The two spellings are separate keys, not
+# aliases, which is why they are separate entries in separate files.
+#
+# The signatures below are the 2.0.0-6.0.1 ones: the key is a bare `&[u8]`
+# because `EncodingKey`/`DecodingKey` do not exist yet (2.0.3 crypto.rs:69,103;
+# 6.0.1 crypto.rs:94,134).
+#
+# THE FLOOR IS 2.0.0 BECAUSE THE RETURN CHANGES THERE, NOT BECAUSE THE FUNCTIONS
+# APPEAR THERE, AND THE DIFFERENCE MATTERS TO A READER. Both are already public
+# crate-root functions in the 1.1.x line -- 1.1.7 lib.rs:132
+# `pub fn sign(data: &str, secret: &[u8], algorithm: Algorithm) -> String` and
+# lib.rs:143 `pub fn verify(signature: &str, data: &str, secret: &[u8],
+# algorithm: Algorithm) -> bool` -- at the SAME arities declared below, but
+# returning a bare `String` and `bool` rather than a `Result`. 0.1.0, 0.2.0 and
+# 1.0.0 have neither.
+#
+# A KB entry holds one return per method+arity and divergent returns under one
+# key are a HARD LOAD ERROR (contracts.go:936-968, Rule 2), so the 1.1.x era
+# cannot be declared alongside this one and is deliberately not declared at all.
+# The consequence is stated rather than hidden: `version_range` is parsed and
+# never consulted at lookup, so a 1.1.x call site resolves against the entries
+# below and is rendered with `Result<...>` where the source has a bare value.
+# That affects one row of this family's mined sample, 1.1.7. The alternative --
+# declaring the 1.1.x form instead -- would be wrong for the five releases the
+# range actually names, so the larger era is the one declared.
+contracts:
+  - method: jsonwebtoken.sign
+    arity: 3
+    return: { type: "alloc::string::String", confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str", "&[u8]", "jsonwebtoken::Algorithm"]
+    role: operation
+
+  - method: jsonwebtoken.verify
+    arity: 4
+    return: { type: "bool", confidence: high }
+    canonical_return_type: "core::result::Result<bool, jsonwebtoken::errors::Error>"
+    parameter_types: ["&str", "&str", "&[u8]", "jsonwebtoken::Algorithm"]
+    role: operation
+
+hierarchy: {}

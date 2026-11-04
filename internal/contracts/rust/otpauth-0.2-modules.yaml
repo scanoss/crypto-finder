@@ -1,0 +1,81 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: otpauth-0.2-modules
+  coordinates:
+    - otpauth
+  version_range: ">=0.2.0,<0.4.0"
+  description: "otpauth's PUBLIC hotp/totp module spellings, which compile only through 0.3.0"
+
+# THE MODULE-QUALIFIED SPELLING, SPLIT OUT BECAUSE IT STOPS COMPILING AT 0.4.0.
+# 0.2.0 declares `pub mod hotp; pub mod totp;` beside the crate-root `pub use`,
+# so a consumer on 0.2.0-0.3.0 may write `otpauth::hotp::HOTP::new(..)`. 0.4.0
+# makes both modules private (`mod hotp;` / `mod totp;`, lib.rs:45-46) and only
+# the crate-root spelling compiles from there on.
+#
+# THE KEY FOLLOWS THE CONSUMER'S IMPORT, NOT THE DEFINING MODULE. A consumer who
+# writes the module path emits `otpauth::hotp.HOTP.generate`, which the Rust key
+# normalization rewrites to the authored `otpauth::hotp::HOTP.generate`. That is
+# a DIFFERENT key from `otpauth::HOTP.generate`, so both have to exist or the
+# module spelling resolves nothing. Verified on an exported call graph over a
+# probe that writes both.
+#
+# ONLY THE METHODS THAT EVER COMPILED WITH THIS SPELLING ARE HERE.
+# `from_base32`, `from_bytes` and `base32_secret` arrive at 0.4.1, by which point
+# the modules are already private, so `otpauth::hotp::HOTP::from_base32` is not
+# compilable Rust in any published release and is deliberately absent.
+#
+# The integer parameters are `usize` at 0.2.x and `u64` at 0.3.0; `new` takes
+# `&str` at 0.2.0-0.2.1 and `S: Into<String>` from 0.2.2. Neither changes the
+# key, the arity or the return type. `parameter_types` records the 0.3.0 form.
+contracts:
+  - method: otpauth::hotp::HOTP.new
+    arity: 1
+    return: { type: otpauth::HOTP, confidence: high }
+    canonical_return_type: otpauth::HOTP
+    parameter_types: ["S"]
+    role: factory
+  - method: otpauth::hotp::HOTP.generate
+    arity: 1
+    return: { type: u32, confidence: high }
+    canonical_return_type: u32
+    parameter_types: ["u64"]
+    role: operation
+  - method: otpauth::hotp::HOTP.verify
+    arity: 3
+    return: { type: bool, confidence: high }
+    canonical_return_type: bool
+    parameter_types: ["u32", "u64", "u64"]
+    role: operation
+  - method: otpauth::hotp::HOTP.to_uri
+    arity: 3
+    return: { type: alloc::string::String, confidence: high }
+    canonical_return_type: alloc::string::String
+    parameter_types: ["S", "S", "u64"]
+    role: output
+  - method: otpauth::totp::TOTP.new
+    arity: 1
+    return: { type: otpauth::TOTP, confidence: high }
+    canonical_return_type: otpauth::TOTP
+    parameter_types: ["S"]
+    role: factory
+  - method: otpauth::totp::TOTP.generate
+    arity: 2
+    return: { type: u32, confidence: high }
+    canonical_return_type: u32
+    parameter_types: ["u64", "u64"]
+    role: operation
+  - method: otpauth::totp::TOTP.verify
+    arity: 3
+    return: { type: bool, confidence: high }
+    canonical_return_type: bool
+    parameter_types: ["u32", "u64", "u64"]
+    role: operation
+  - method: otpauth::totp::TOTP.to_uri
+    arity: 2
+    return: { type: alloc::string::String, confidence: high }
+    canonical_return_type: alloc::string::String
+    parameter_types: ["S", "S"]
+    role: output
+
+hierarchy: {}

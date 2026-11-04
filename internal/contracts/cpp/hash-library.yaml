@@ -1,0 +1,91 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: hash-library
+  coordinates:
+    - stbrumme/hash-library
+  version_range: ">=7"
+  description: "stbrumme hash-library: MD5, SHA-1, SHA-256, SHA-3 and Keccak object lifecycles"
+
+# Inventory sources: md5.h, sha1.h, sha256.h, sha3.h, keccak.h, crc32.h and
+# hmac.h from the upstream tag archives hash_library_v7 and hash_library_v8
+# (the tags are not semantic versions), which declare the same methods.
+#
+# The library has no namespace, so the keys are the bare class names the C++
+# parser emits. Constructing a hasher (SHA3 sha3(SHA3::Bits256)) is a
+# declaration, not a call, so there is nothing to contract for it. add streams
+# input into the object; getHash returns the digest as hex, or writes the raw
+# bytes into a caller buffer for MD5, SHA1 and SHA256.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: CRC32 (a checksum), reset, processBlock and
+#   processBuffer (private).
+# needs-follow-up: the call operator (sha256(text), sha256(data, n)), which the
+#   C++ parser does not emit as a method call on the object, and the free
+#   template function hmac<HashMethod>(...), since C++ free functions have no
+#   receiver binding.
+# Resolution gap: receivers declared `auto` do not resolve to a contracted key,
+#   as for the other C++ entries.
+contracts:
+
+  # MD5: streaming input and digest.
+  - method: MD5.add
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: MD5.getHash
+    arity: 0
+    return: {type: "std::string", confidence: high}
+    role: output
+  - method: MD5.getHash
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+
+  # SHA1: streaming input and digest.
+  - method: SHA1.add
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: SHA1.getHash
+    arity: 0
+    return: {type: "std::string", confidence: high}
+    role: output
+  - method: SHA1.getHash
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+
+  # SHA256: streaming input and digest.
+  - method: SHA256.add
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: SHA256.getHash
+    arity: 0
+    return: {type: "std::string", confidence: high}
+    role: output
+  - method: SHA256.getHash
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: output
+
+  # SHA3: streaming input and digest.
+  - method: SHA3.add
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: SHA3.getHash
+    arity: 0
+    return: {type: "std::string", confidence: high}
+    role: output
+
+  # Keccak: streaming input and digest.
+  - method: Keccak.add
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: Keccak.getHash
+    arity: 0
+    return: {type: "std::string", confidence: high}
+    role: output

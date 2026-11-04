@@ -1,0 +1,185 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: aria
+  coordinates:
+    - aria
+  version_range: ">=0.1.0,<0.3.0"
+  description: "RustCrypto ARIA raw block cipher (RFC 5794)"
+
+# Inventory: aria 0.1.0 src/lib.rs (impl_aria!), 0.2.0 src/lib.rs and src/aria{128,192,256}.rs. Contracts sit on the concrete types; the
+# shared `cipher` traits are blanket-implemented and carry no algorithm identity.
+# skipped-non-crypto: AlgorithmName/Debug/Drop/zeroize impls and the private key schedule.
+
+contracts:
+  - method: aria::Aria128.new
+    arity: 1
+    return: {type: "aria::Aria128", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aria::Aria128.new_from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aria::Aria128.encrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aria::Aria128.encrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aria::Aria128.decrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aria::Aria128.decrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aria::Aria192.new
+    arity: 1
+    return: {type: "aria::Aria192", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aria::Aria192.new_from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aria::Aria192.encrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aria::Aria192.encrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aria::Aria192.decrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aria::Aria192.decrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aria::Aria256.new
+    arity: 1
+    return: {type: "aria::Aria256", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aria::Aria256.new_from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aria::Aria256.encrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aria::Aria256.encrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aria::Aria256.decrypt_block
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aria::Aria256.decrypt_blocks
+    arity: 1
+    return: {type: "()", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+
+hierarchy:
+  aria::Aria128:
+    - core::any::Any
+  aria::Aria192:
+    - core::any::Any
+  aria::Aria256:
+    - core::any::Any
+  core::any::Any: []

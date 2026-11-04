@@ -1,0 +1,619 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: gpg
+  coordinates:
+    - gpg
+  version_range: ">=1.7.2b7,<2.1"
+  description: >-
+    gpg — the GnuPG project's own GPGME Python binding. Context lifecycle:
+    construction (which selects the protocol), the four OpenPGP/CMS message
+    operations, OpenPGP key and subkey generation, key certification, and
+    keyring import, export and lookup. Read from the sdists of 1.7.2-beta7,
+    1.8.0, 1.10.0 and 2.0.0 — the four releases PyPI publishes and the four
+    rows the committed CSV carries (gpg/core.py, gpg/results.py, gpgme.i,
+    helpers.c).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT THIS LIBRARY IS, AND WHAT THAT MEANS FOR A CONTRACT.
+#
+# `gpg` is a SWIG wrapper over the C library libgpgme, which drives the `gpg`
+# executable. Almost no cryptography is implemented in the Python this
+# contract describes: `Context.encrypt` builds two `gpg.Data` buffers and calls
+# `self.op_encrypt(...)`, which `GpgmeWrapper.__getattr__` forwards to
+# `gpgme.gpgme_op_encrypt` by name (2.0.0 gpg/core.py:128-176, 254-351).
+#
+# SO NOTHING BELOW CLAIMS A `gpgme_op_*` NAME. Those are libgpgme's symbols,
+# reached through dynamic attribute forwarding rather than declared anywhere in
+# this distribution, and a contract entry for one would be this KB asserting
+# ownership of the layer underneath. Every `method:` key here resolves to a
+# `def` this package's own sources declare, at the file and line cited beside
+# it.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW THESE KEYS WERE OBTAINED. Every one was read off an EXPORTED CALL GRAPH
+# with crypto-finder built from this worktree, then re-exported after each edit
+# until nothing moved. None was written from the API.
+#
+#   crypto-finder scan --no-remote-rules --rules-dir <rules> \
+#     --export-callgraph /tmp/cg.json <probe consumer package>
+#   jq -r '.finding_graphs[]?.call_chains[]?[]? | select(.crypto_call)
+#          | .crypto_call.canonical_signature' /tmp/cg.json | sort -u
+#
+# BEFORE THIS FILE EXISTED the export keyed every receiver call on the
+# CONSUMER'S VARIABLE PATH — `gpgprobe317.ctx.encrypt(?, ?)`,
+# `gpgprobe317.ctx.create_key(?, ?)`, fifteen of them, all with empty
+# `parameter_types` — which no contract can ever join. The four factory entries
+# below are what type the receiver, so they are load bearing for every
+# operation entry under them.
+#
+# FOUR CONSTRUCTOR KEYS, AND THEY DO NOT COVER EACH OTHER. Measured, one call
+# per line, on a probe consumer package:
+#
+#   from gpg import Context;        Context()        -> gpg.Context.<init>
+#   import gpg;                     gpg.Context()    -> gpg.Context
+#   from gpg.core import Context;   Context()        -> gpg.core.Context.<init>
+#   import gpg.core;           gpg.core.Context()    -> gpg.core.Context
+#
+# Two independent splits are at work and both must be declared:
+#   * THE `<init>` SUFFIX appears for the from-import spelling and NOT for the
+#     module-attribute spelling. The already-merged `python/ecdsa` and
+#     `python/eth-hash` contracts record the same pair.
+#   * THE MODULE PATH FOLLOWS THE CONSUMER'S IMPORT. `Context` is defined in
+#     `gpg/core.py` and re-exported from the package root (2.0.0
+#     gpg/__init__.py:129, and :107 in all three 1.x releases), and real
+#     consumers write both — the sdist's own documentation writes
+#     `gpg.Context` 50 times and `gpg.core.Context` once
+#     (2.0.0 doc/rst/gpgme-python-howto.rst). Each spelling therefore carries
+#     its own factory whose return type is spelled to match its own key, so the
+#     chains close within one spelling, and every operation is declared twice.
+#
+#   Also measured: `import gpg.core as gpgcore; gpgcore.Context()` emits
+#   `gpg.core.Context`, so the module alias is resolved and does NOT leak the
+#   consumer's variable name into the key. That is worth stating because it was
+#   a live limitation earlier in this campaign.
+#
+# THE KEY FOR A DEFINITION DROPS THE MODULE FILE NAME AND KEEPS THE DIRECTORY
+# PATH, AND THAT IS WHY `gpg.core.Context.*` ALONE WOULD NOT BE ENOUGH.
+# Measured by scanning the 2.0.0 package tree itself with a one-call probe
+# module added, `root_module` empty:
+#
+#   gpg.Context.encrypt              gpg/core.py
+#   gpg.Context.decrypt              gpg/core.py
+#   gpg.Context.sign                 gpg/core.py
+#   gpg.Context.verify               gpg/core.py
+#   gpg.Context.create_key           gpg/core.py
+#   gpg.Context.create_subkey        gpg/core.py
+#   gpg.Context.key_sign             gpg/core.py
+#   gpg.Context.key_import           gpg/core.py
+#   gpg.Context.key_export           gpg/core.py
+#   gpg.Context.key_export_minimal   gpg/core.py
+#   gpg.Context.key_export_secret    gpg/core.py
+#   gpg.Context.keylist              gpg/core.py
+#   gpg.Context.get_key              gpg/core.py
+#
+# Thirteen declarations in `gpg/core.py`, and every one is keyed `gpg.*` — the
+# `core` segment is GONE. So the DEFINITION-side key is the root spelling, and
+# it is the root spelling the rules' `metadata.crypto.api` values name, while
+# the `gpg.core.Context.*` entries exist for the CALL side, where a
+# deep-importing consumer's receiver needs typing. Two spellings, two jobs.
+#
+# `root_module` IS SUPPLIED BY THIS PACKAGE'S OWN MANIFEST, WHICH IS WHY THE
+# PREFIX IS NOT A HAZARD HERE. 2.0.0 ships `pyproject.toml` with
+# `[project] name = "gpg"`; 1.10.0, 1.8.0 and 1.7.2-beta7 ship none, and for
+# them `gpg/` is the only directory holding an `__init__.py`, so
+# `DetectRootModule` returns empty rather than falling back to the archive
+# directory name. Measured both ways on the same tree: with the manifest
+# present the probe function keys as `gpg.gpg.probe`, and with it removed as
+# `gpg.probe`. The doubled prefix is an artefact of scanning an extracted
+# archive in place with a manifest-supplied root; mining supplies the module
+# root from the resolver, and the keys above are the ones to declare.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# ARITY: ONE ENTRY PER METHOD, AT THE REQUIRED-ARGUMENT COUNT.
+# `ContractsForTolerant` tries an exact-arity match and, for a Python KB only,
+# falls back to a name-only match with the lowest-arity candidate as the
+# deterministic tiebreak — precisely because Python default arguments and
+# keyword arguments mean one crypto call site appears at several arities. Every
+# method here takes optional trailing arguments (`sink`, `passphrase`,
+# `always_trust`, `mode`, `expires_in`, `secret`, ...), so the declared arity is
+# the required-argument count and the tolerant fallback covers the rest.
+# `create_key` and `create_subkey` are the exception: they are declared at
+# arity 2 so that the `algorithm=` argument has an index to attach to, and the
+# one-argument spelling reaches them through the same fallback.
+#
+# THE `algorithm=` ARGUMENT IS THE ONLY METADATA-CONTRIBUTING PARAMETER IN THIS
+# API, AND CONTRACTING IT IS WHAT PUTS THE KEY SIZE IN THE EXPORT.
+# `create_key(userid, algorithm=None, ...)` forwards the value verbatim to
+# `op_createkey` (2.0.0 gpg/core.py:774-776, 843-845); the docstring documents
+# `"rsa"`, `"rsa2048"` and `"future-default"` (:791-794) and the sdist's own
+# documentation writes `algorithm="rsa3072"`
+# (doc/rst/gpgme-python-howto.rst:2502). The detection rules publish
+# `algorithmFamily: RSA` but no `keyLength`, because rule metadata requires a
+# literal integer and enumerating one rule per modulus size would double that
+# file for a value already in the matched line. `keyType`/`argument_value` is
+# the right layer for it: the exact string the call site wrote reaches the
+# export as argument evidence. `keyType` is the property the already-merged
+# `python/jwcrypto`, `python/authlib` and `python/hvac` contracts use for the
+# same shape (a key-generation argument naming the key type).
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PER-SYMBOL VERSION WINDOWS, INTERSECTED. `version_range` covers the four
+# committed CSV rows. PyPI's `1.7.2-beta7` normalizes to `1.7.2b7` under
+# PEP 503/440, which sorts BELOW `1.7.2`, so the lower bound is written
+# `1.7.2b7`; `crypto-tier0-python.csv` spells the same release
+# `pkg:pypi/gpg,1.7.2-beta7` and that spelling is what the PURL keeps.
+#
+#   ALL FOUR RELEASES   Context, encrypt, decrypt, sign, verify, keylist,
+#                       get_key
+#   >= 1.10.0           create_key, create_subkey, key_sign
+#   >= 2.0.0            key_import, key_export, key_export_minimal,
+#                       key_export_secret
+#
+# Each boundary was read from the archive named AND from the archive on the
+# other side of it — `grep -n 'def create\|def key_' gpg/core.py` returns
+# nothing at 1.7.2-beta7 and 1.8.0, and only the four `key_add_uid` /
+# `key_revoke_uid` / `key_sign` / `key_tofu_policy` names at 1.10.0.
+#
+# NO DISJOINT PAIR EXISTS, so there is nothing to pin with an
+# impossible-combination fixture, and that is a measurement rather than an
+# assumption. The three windows NEST — [1.7.2b7, 2.0.0] contains
+# [1.10.0, 2.0.0] contains [2.0.0, 2.0.0] — so every pair of symbols declared
+# here is compilable together at 2.0.0. Checked in the other direction too:
+# nothing this file claims was REMOVED across the range. 2.0.0 does drop
+# `examples/`, `Context.op_trustlist_all` / `op_trustlist_next` and renames
+# `gpg/constants/import.py` to `import_type.py`, and none of those is a symbol
+# declared here.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# RETURN TYPES, EACH TRACED RATHER THAN ASSUMED.
+#   encrypt / decrypt / sign / verify   builtins.tuple. `encrypt` returns
+#     `self.__read__(sink, ciphertext), result, sig_result` (2.0.0 :350) and
+#     `sign` returns a 2-tuple (:516); `decrypt` (:473) and `verify` (:578)
+#     both return the `results` tuple they assembled.
+#   create_key / create_subkey          gpg.GenkeyResult. Both end in
+#     `return self.op_genkey_result()` (:862, :944). That forwards to
+#     `gpgme_op_genkey_result`, whose SWIG typemap is
+#     `wrapresult(gpgme_genkey_result_t, "GenkeyResult")` (gpgme.i:464), and
+#     `_gpg_wrap_result` imports the sibling `results` module and looks the
+#     class up by name (helpers.c:313-333) — so the fragile C struct comes back
+#     as `gpg/results.py:124 class GenkeyResult`. The KEY is spelled `gpg.`
+#     rather than `gpg.results.` for the same reason `Context` is: the
+#     definition key drops the module file name, measured above on the thirteen
+#     `gpg/core.py` declarations in the same directory.
+#   key_import                          gpg.ImportResult, by the same route
+#     (gpgme.i:463, gpg/results.py:120).
+#   key_export / _minimal / _secret     builtins.bytes at LOW confidence, and
+#     the confidence is the honest part: each ends `if len(pk_result) > 0:
+#     result = pk_result else: result = None` (2.0.0 :654-659), and the
+#     docstring says so — "If there are no matching keys it returns None". The
+#     type is bytes-or-None and nothing at the call site decides which.
+#   keylist                             builtins.generator. `keylist` is a
+#     generator function: it `yield`s inside a `while` loop (:770) and has no
+#     `return`, so calling it produces a generator regardless of arguments.
+#   key_sign                            builtins.NoneType. The body ends at
+#     `self.op_keysign(...)` with no `return` (:1008).
+#   get_key                             builtins.object at LOW confidence. It
+#     returns the raw SWIG `gpgme_key_t` (:1247) — `grep -n '^class Key'
+#     gpg/*.py` finds nothing in any of the four releases, and `gpgme.i` has no
+#     `wrapresult` for it, so this distribution declares no Python type for a
+#     key. Naming `gpgme.gpgme_key_t` would be claiming the layer below;
+#     `builtins.object` states what is knowable.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# `parameter_types` IS DECLARED FOR FOUR METHODS AND OMITTED FOR THE REST, ON
+# PURPOSE. The field is for a method+arity that identifies ONE unambiguous
+# signature. `create_key(userid, algorithm)`, `create_subkey(key, algorithm)`,
+# `key_sign(key)` and `get_key(fpr)` are exactly that. The four message
+# operations and `key_import` are NOT, and the reason is traced rather than
+# assumed: `encrypt` forwards `plaintext` VERBATIM to
+# `self.op_encrypt(recipients, flags, plaintext, ciphertext)` (2.0.0
+# gpg/core.py:316 and :318) and its docstring documents no type for it at all
+# (:265-295 names every OTHER argument and omits this one). The accepted forms
+# are decided by the SWIG input typemap `%typemap(in) gpgme_data_t DATAIN`
+# (gpgme.i:168), applied to `plaintext`, `cipher`, `sig`, `signed_text`,
+# `keydata` and the rest at gpgme.i:303-307, which calls
+# `_gpg_obj2gpgme_data_t` (helpers.c:238). That function accepts FOUR distinct
+# shapes: an object with `fileno()`, an object with `getbuffer()`, any
+# buffer-protocol object, and an object carrying `_ctype` — that is, a file, a
+# BytesIO, raw bytes, and a `gpg.Data`. Declaring `builtins.bytes` would be
+# right for one of the four and wrong for the other three, so those entries
+# carry no `parameter_types` and the exported signature renders `(?)` for
+# them. That is the accurate answer, not a missing one.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# DISPOSITION OF THE REST OF THE PUBLIC SURFACE
+#   Context.assuan_transact,
+#   Context.interact, Context.op_edit   skipped-non-crypto — the Assuan wire
+#                                       protocol and gpg's interactive key
+#                                       editor. They transport commands; the
+#                                       cryptography they may cause is chosen
+#                                       by the text the consumer sends.
+#   Context.key_add_uid,
+#   Context.key_revoke_uid,
+#   Context.key_tofu_policy             skipped-non-crypto — user-id and trust
+#                                       bookkeeping on an existing key
+#                                       (2.0.0 :946, :958, :1011).
+#   Context.set_passphrase_cb,
+#   set_progress_cb, set_status_cb,
+#   set_engine_info, wait               skipped-non-crypto — callback and
+#                                       engine plumbing.
+#   Context.signers / pinentry_mode /
+#   protocol / home_dir                 skipped-unsupported — properties, not
+#                                       calls, so a contract cannot key them.
+#                                       `protocol` is read by the detection
+#                                       rules at the CONSTRUCTOR instead, which
+#                                       is where its value is stated.
+#   Context.op_keylist_all,
+#   op_keylist_next,
+#   op_trustlist_all, op_trustlist_next skipped-non-crypto — the raw iteration
+#                                       protocol underneath `keylist`, spelled
+#                                       with libgpgme's `op_` prefix.
+#                                       Contracting them would double-count
+#                                       every `keylist` call.
+#   gpg.Data and every Data.new_from_*  skipped-non-crypto — a buffer. It holds
+#                                       the bytes an operation reads or writes
+#                                       and computes nothing.
+#   gpg.core.pubkey_algo_name,
+#   pubkey_algo_string, hash_algo_name,
+#   get_protocol_name,
+#   addrspec_from_uid                   skipped-informative-return — they
+#                                       render a value GnuPG already chose into
+#                                       a display string (2.0.0 :1648-1710).
+#                                       Contracting `hash_algo_name` as a
+#                                       digest would publish an algorithm the
+#                                       consumer is READING, not selecting.
+#   gpg.core.check_version,
+#   engine_check_version,
+#   get_engine_info, set_engine_info,
+#   set_locale, wait                    skipped-non-crypto — module-level
+#                                       engine and locale plumbing.
+#   gpg.results.* classes               skipped-informative-return — data
+#                                       holders wrapping a C result struct.
+#                                       Two of them appear above as RETURN
+#                                       TYPES, which is the only role they have
+#                                       here.
+#   gpg.errors.*                        skipped-non-crypto — exception types.
+#   gpg.util.process_constants,
+#   percent_escape                      skipped-non-crypto — and
+#                                       `process_constants` is the reason
+#                                       `gpg.constants.md.*` and
+#                                       `gpg.constants.pk.*` are absent from
+#                                       this file entirely: those modules
+#                                       define no names statically, they copy
+#                                       whatever the compiled SWIG `gpgme`
+#                                       module exports at import time
+#                                       (gpg/constants/md.py:21,
+#                                       gpg/util.py:26-40), so the names belong
+#                                       to libgpgme's headers rather than to
+#                                       this distribution.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── Context construction — the four factory keys ────────────────────────────
+  # `Context.__init__` (2.0.0 gpg/core.py:198; :176 in all three 1.x releases)
+  # takes only keyword arguments, so the required-argument count is 0. Its
+  # `protocol=constants.PROTOCOL_OpenPGP` default (2.0.0 :204, 1.x :178) is
+  # what the detection rules read to separate OpenPGP from CMS; a contract
+  # cannot express it, so it is not attempted here.
+
+  # `import gpg; gpg.Context(..)` — the module-attribute spelling, which emits
+  # no `.<init>` segment.
+  - method: gpg.Context
+    arity: 0
+    return:
+      type: gpg.Context
+      confidence: high
+    role: factory
+
+  # `from gpg import Context; Context(..)` — the root re-export, which does.
+  - method: gpg.Context.<init>
+    arity: 0
+    return:
+      type: gpg.Context
+      confidence: high
+    role: factory
+
+  # `import gpg.core; gpg.core.Context(..)`, and the resolved module alias
+  # `import gpg.core as gpgcore; gpgcore.Context(..)`.
+  - method: gpg.core.Context
+    arity: 0
+    return:
+      type: gpg.core.Context
+      confidence: high
+    role: factory
+
+  # `from gpg.core import Context; Context(..)`.
+  - method: gpg.core.Context.<init>
+    arity: 0
+    return:
+      type: gpg.core.Context
+      confidence: high
+    role: factory
+
+  # ── Message operations on gpg.Context ───────────────────────────────────────
+  # All four exist in every released version: 1.7.2-beta7 and 1.8.0
+  # gpg/core.py:207, 289, 373, 416; 1.10.0 :228, 316, 406, 449; 2.0.0 :254,
+  # 352, 475, 518.
+
+  - method: gpg.Context.encrypt
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: gpg.Context.decrypt
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: gpg.Context.sign
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: gpg.Context.verify
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  # ── Key generation on gpg.Context — 1.10.0 and later ────────────────────────
+  # 1.10.0 gpg/core.py:547 and :625; 2.0.0 :774 and :864. Absent from 1.8.0 and
+  # 1.7.2-beta7. Declared at arity 2 so `algorithm=` has an index; the
+  # one-argument spelling reaches the same entry through the Python name-only
+  # tolerant fallback.
+
+  - method: gpg.Context.create_key
+    arity: 2
+    parameter_types:
+      - builtins.str
+      - builtins.str
+    return:
+      type: gpg.GenkeyResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: userid
+        role: none
+      - index: 1
+        name: algorithm
+        role: metadata-contributing
+        contributes:
+          property: keyType
+          derivation: argument_value
+
+  - method: gpg.Context.create_subkey
+    arity: 2
+    parameter_types:
+      - builtins.object
+      - builtins.str
+    return:
+      type: gpg.GenkeyResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: none
+      - index: 1
+        name: algorithm
+        role: metadata-contributing
+        contributes:
+          property: keyType
+          derivation: argument_value
+
+  # An OpenPGP certification signature over another key's user ids. 1.10.0
+  # gpg/core.py:721; 2.0.0 :970. Returns nothing.
+  - method: gpg.Context.key_sign
+    arity: 1
+    parameter_types:
+      - builtins.object
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # ── Keyring material on gpg.Context ─────────────────────────────────────────
+  # `key_import` and the three `key_export*` methods are 2.0.0 only
+  # (gpg/core.py:580, 627, 661, 696). `keylist` and `get_key` exist in every
+  # released version (1.7.2-beta7 and 1.8.0 :476 and :673; 1.10.0 :512 and
+  # :969; 2.0.0 :737 and :1220).
+
+  - method: gpg.Context.key_import
+    arity: 1
+    return:
+      type: gpg.ImportResult
+      confidence: high
+    role: operation
+
+  - method: gpg.Context.key_export
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: operation
+
+  - method: gpg.Context.key_export_minimal
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: operation
+
+  - method: gpg.Context.key_export_secret
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: operation
+
+  - method: gpg.Context.keylist
+    arity: 0
+    return:
+      type: builtins.generator
+      confidence: high
+    role: operation
+
+  - method: gpg.Context.get_key
+    arity: 1
+    parameter_types:
+      - builtins.str
+    return:
+      type: builtins.object
+      confidence: low
+    role: operation
+
+  # ── The same thirteen operations on gpg.core.Context ────────────────────────
+  # NOT REDUNDANCY. A consumer importing `Context` from `gpg.core` produces
+  # receiver keys under `gpg.core.Context.*`, measured above, and neither
+  # spelling resolves the other. The file, line and version window for each
+  # method are the ones cited on its `gpg.Context.*` twin; only the key differs.
+
+  - method: gpg.core.Context.encrypt
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: gpg.core.Context.decrypt
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: gpg.core.Context.sign
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: gpg.core.Context.verify
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+
+  - method: gpg.core.Context.create_key
+    arity: 2
+    parameter_types:
+      - builtins.str
+      - builtins.str
+    return:
+      type: gpg.GenkeyResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: userid
+        role: none
+      - index: 1
+        name: algorithm
+        role: metadata-contributing
+        contributes:
+          property: keyType
+          derivation: argument_value
+
+  - method: gpg.core.Context.create_subkey
+    arity: 2
+    parameter_types:
+      - builtins.object
+      - builtins.str
+    return:
+      type: gpg.GenkeyResult
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: none
+      - index: 1
+        name: algorithm
+        role: metadata-contributing
+        contributes:
+          property: keyType
+          derivation: argument_value
+
+  - method: gpg.core.Context.key_sign
+    arity: 1
+    parameter_types:
+      - builtins.object
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: gpg.core.Context.key_import
+    arity: 1
+    return:
+      type: gpg.ImportResult
+      confidence: high
+    role: operation
+
+  - method: gpg.core.Context.key_export
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: operation
+
+  - method: gpg.core.Context.key_export_minimal
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: operation
+
+  - method: gpg.core.Context.key_export_secret
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: low
+    role: operation
+
+  - method: gpg.core.Context.keylist
+    arity: 0
+    return:
+      type: builtins.generator
+      confidence: high
+    role: operation
+
+  - method: gpg.core.Context.get_key
+    arity: 1
+    parameter_types:
+      - builtins.str
+    return:
+      type: builtins.object
+      confidence: low
+    role: operation
+
+hierarchy:
+  gpg.Context:
+    - builtins.object
+  gpg.core.Context:
+    - builtins.object
+  gpg.GenkeyResult:
+    - builtins.object
+  gpg.ImportResult:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object
+  builtins.generator:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  builtins.object: []

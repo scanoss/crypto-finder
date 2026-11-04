@@ -1,0 +1,467 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: aes
+  coordinates:
+    - aes
+  version_range: ">=0.1.0,<0.10.0"
+  description: "RustCrypto AES (Rijndael) raw block cipher"
+
+# Inventory sources: the aes crate source read at 0.9.1 (src/lib.rs doc example,
+# src/macros.rs `define_aes_impl!`, src/soft.rs invocations), cross-checked
+# against 0.8.4, 0.7.5, 0.3.2 and 0.1.0. The concrete types and the call
+# spelling `Aes128::new(&key)` / `cipher.encrypt_block(&mut block)` are
+# unchanged across that whole range; only the traits behind them were renamed
+# (`NewBlockCipher` -> `KeyInit`, `BlockEncrypt` -> `BlockCipherEncrypt`).
+# Contracts therefore sit on the concrete types, not on the shared `cipher`
+# traits, which are blanket-implemented and carry no algorithm identity.
+#
+# Method keys are the call-site FQN with the module/type separator in Rust form,
+# which is what contracts.rustAuthoredKey produces from the dot-joined key the
+# parser emits: the call site `aes.Aes128.new` is authored `aes::Aes128.new`.
+#
+# The second KeyInit constructor was renamed across the range this file spans,
+# # and both spellings are live in the committed Tier 0 version list:
+# #
+# #   new_varkey      block-cipher-trait 0.6, block-cipher 0.8, cipher 0.2
+# #   new_from_slice  cipher 0.3 and later, crypto-common 0.1 and later
+# #
+# # Both are inventoried, so the older half of the range is not a silent gap.
+#
+# The `Aes*Enc` / `Aes*Dec` split-role types arrived in 0.8. Each implements one
+# direction only, so each carries its own construction AND its own operations
+# rather than sharing the combined type's keys.
+#
+# aes 0.0.0 is an empty placeholder release with no code, so the range starts at
+# 0.1.0.
+#
+# skipped-non-crypto: the `hazmat` module (cipher-round primitives for building
+# other constructions), and the private backend-selection types under
+# soft/ni/armv8/x86.
+contracts:
+  - method: aes::Aes128.new
+    arity: 1
+    return: {type: aes::Aes128, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes128.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes128.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes128.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes128.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes128.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes128.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes192.new
+    arity: 1
+    return: {type: aes::Aes192, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes192.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes192.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes192.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes192.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes192.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes192.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes256.new
+    arity: 1
+    return: {type: aes::Aes256, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes256.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes256.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes256.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes256.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes256.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes256.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes128Enc.new
+    arity: 1
+    return: {type: aes::Aes128Enc, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes128Enc.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes128Enc.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes128Enc.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes128Dec.new
+    arity: 1
+    return: {type: aes::Aes128Dec, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes128Dec.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes128Dec.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes128Dec.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes192Enc.new
+    arity: 1
+    return: {type: aes::Aes192Enc, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes192Enc.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes192Enc.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes192Enc.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes192Dec.new
+    arity: 1
+    return: {type: aes::Aes192Dec, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes192Dec.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes192Dec.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes192Dec.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes256Enc.new
+    arity: 1
+    return: {type: aes::Aes256Enc, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes256Enc.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes256Enc.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes256Enc.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: aes::Aes256Dec.new
+    arity: 1
+    return: {type: aes::Aes256Dec, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes256Dec.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: aes::Aes256Dec.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: aes::Aes256Dec.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+
+hierarchy:
+  aes::Aes128:
+    - core::any::Any
+  aes::Aes192:
+    - core::any::Any
+  aes::Aes256:
+    - core::any::Any
+  aes::Aes128Enc:
+    - core::any::Any
+  aes::Aes128Dec:
+    - core::any::Any
+  aes::Aes192Enc:
+    - core::any::Any
+  aes::Aes192Dec:
+    - core::any::Any
+  aes::Aes256Enc:
+    - core::any::Any
+  aes::Aes256Dec:
+    - core::any::Any
+  core::any::Any: []

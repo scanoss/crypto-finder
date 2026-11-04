@@ -1,0 +1,101 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: russh
+  coordinates:
+    - russh
+  version_range: ">=0.34.0,<0.62.0"
+  description: "SSH client and server protocol implementation"
+
+# API read at russh 0.61.2 (src/client/mod.rs), with each older spelling read at
+# the version it appeared or was removed:
+#
+#   0.34.0  authenticate_future, authenticate_none, authenticate_password,
+#           authenticate_publickey; connect at src/client/mod.rs:963
+#   0.40.2  authenticate_keyboard_interactive_start / _respond added
+#   0.45.0  authenticate_openssh_cert added
+#   0.49.2  authenticate_future removed, authenticate_publickey_with added
+#   0.50.0  russh-keys folded into russh: it leaves Cargo.toml and a src/keys/
+#           module appears, so load_secret_key and friends move from
+#           russh_keys:: to russh::keys:: (src/keys/mod.rs:200, :220, :249)
+#   0.61.2  authenticate_certificate_with added
+#
+# Every spelling is contracted, including ones a given version does not ship:
+# nothing resolves to an absent method, whereas omitting one leaves a real call
+# site untyped.
+#
+# A NOTE ON WHAT THIS DOES AND DOES NOT RECOVER. The authenticate methods hang
+# off a Handle that a consumer obtains as `connect(...).await.unwrap()`. The
+# contract types `connect` itself, but the await-then-unwrap chain is not
+# modelled, so a receiver bound that way still resolves to the consumer's own
+# package. Contracting the methods is still correct and is what makes them
+# resolve wherever the receiver IS typed; it is recorded here rather than
+# claimed to do more than it does.
+contracts:
+  - method: russh::client.connect
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: russh::client.connect_stream
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: russh::client::Handle.authenticate_none
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: russh::client::Handle.authenticate_password
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: russh::client::Handle.authenticate_publickey
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: russh::client::Handle.authenticate_publickey_with
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: russh::client::Handle.authenticate_openssh_cert
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: russh::client::Handle.authenticate_certificate_with
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: russh::client::Handle.authenticate_future
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: russh::client::Handle.authenticate_keyboard_interactive_start
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: russh::client::Handle.authenticate_keyboard_interactive_respond
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: russh::keys.load_secret_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: russh::keys.decode_secret_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: russh::keys.load_public_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: russh::keys.parse_public_key_base64
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str"]
+    role: factory
+  - method: russh::keys.load_openssh_certificate
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+
+hierarchy: {}

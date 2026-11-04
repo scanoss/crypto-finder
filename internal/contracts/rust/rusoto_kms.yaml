@@ -1,0 +1,160 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rusoto_kms
+  coordinates:
+    - rusoto_kms
+  version_range: ">=0.25.0,<0.49.0"
+  description: "rusoto_kms: the rusoto AWS SDK client for AWS Key Management Service"
+
+# KEYS READ OFF THE EXPORTED GRAPH, NOT WRITTEN FROM THE API. A probe consumer calling all ten operations emits
+# `rusoto_kms.KmsClient.<method>(?)` with empty parameter_types, and the
+# constructors emit `rusoto_kms.KmsClient.new(?)` and
+# `rusoto_kms.KmsClient.new_with_client(?, ?)`. `KmsClient` and every request
+# type are `pub use generated::*` from the crate root (lib.rs:17 at 0.48.0), so
+# no key carries a module segment. The authored form below then applies
+# rustAuthoredKey's one substitution — the second-to-last dot becomes `::` —
+# which is what the loader expects.
+#
+# THE SIGNATURE CHANGED THREE TIMES INSIDE THE PUBLISHED RANGE, and the shape is
+# read per era from the sources rather than copied between them:
+#
+#   0.25.0 .. 0.31.0  synchronous `fn encrypt(&self, input: &EncryptRequest)
+#                     -> Result<EncryptResponse, EncryptError>`, request BY
+#                     REFERENCE (0.25.0 generated.rs:3581)
+#   0.32.0            still by reference, now returning
+#                     `RusotoFuture<Response, Error>` (generated.rs:4709)
+#   0.33.0 .. 0.42.0  by value, `RusotoFuture<Response, Error>`
+#                     (0.33.0 generated.rs:4790)
+#   0.43.0 .. 0.48.0  `async fn` returning
+#                     `Result<Response, RusotoError<Error>>` (0.48.0
+#                     generated.rs:4969)
+#
+# THE ARITY IS ONE IN EVERY ERA, which is what makes a single entry per method
+# correct: the request struct is the only argument throughout, by reference or
+# by value. The KB holds one return type per method+arity, so `return.type` is
+# `core::result::Result` — right for the synchronous 0.25.0-0.31.0 era and for
+# the async 0.43.0-0.48.0 era, which is every version any published consumer of
+# this crate uses. On the 0.32.0-0.42.0 `RusotoFuture` era the effect is the
+# limitation snow.yaml already records: the link does not propagate, so the
+# receiver stays unresolved. It never resolves to a WRONG type.
+#
+# `canonical_return_type` IS NARROWER THAN `return.type`, AND IT IS THE MODERN
+# SPELLING ONLY. It names `RusotoError`, and that type does not exist in the
+# crate before 0.40.0 — 0.25.0-0.31.0 return a bare
+# `Result<EncryptResponse, EncryptError>` (0.25.0 generated.rs:3581, 0 hits for
+# `RusotoError` at 0.25.0, 0.31.0, 0.32.0 and 0.33.0). So on that early era the
+# canonical string is the 0.43.0+ signature rather than that era's, while the
+# `return.type` a chain walk follows stays correct. Recorded here rather than
+# papered over: the alternative is a second library file for seven versions no
+# published consumer uses, which is the split md5-0.8.yaml earns and this does
+# not. `parameter_types` carry the by-value spelling for the same reason.
+#
+# THE CONSTRUCTOR SET CHANGED FOUR TIMES, and `new` genuinely has two arities:
+#   0.25.0 .. 0.32.0  `new(dispatcher, credentials, region)` on the generic
+#                     `KmsClient<P, D>` (0.25.0 generated.rs:3668)
+#   0.32.0 only       `simple(region)` (generated.rs:4838)
+#   0.33.0 ..         `new(region)` and `new_with(dispatcher, credentials,
+#                     region)` (0.33.0 generated.rs:4913, 4920)
+#   0.41.0 ..         `new_with_client(client, region)` (0.41.0
+#                     generated.rs:4069)
+# The method+arity index keys the two `new`s apart. Declaring the constructors
+# is what lets a later `client.encrypt(..)` resolve its receiver to
+# `rusoto_kms::KmsClient` rather than staying unknown.
+#
+# WHAT IS DELIBERATELY NOT DECLARED. The key-management surface — create_key,
+# describe_key, get_public_key, get_parameters_for_import, import_key_material
+# and the grant/alias/rotation calls — is outside this family's planned scope,
+# which is the cryptographic operation set. `generate_mac` and `verify_mac` do
+# NOT EXIST in this crate at any version: KMS HMAC keys shipped after rusoto was
+# archived. rusoto is deprecated in favour of aws-sdk-kms, which is a separate
+# family with its own contract (rust/aws-sdk-kms.yaml); the two share no key,
+# because that crate's operations are fluent builders taking zero arguments
+# while these take one request struct.
+
+contracts:
+  - method: rusoto_kms::KmsClient.new
+    arity: 1
+    return: { type: rusoto_kms::KmsClient, confidence: high }
+    parameter_types: ["rusoto_core::region::Region"]
+    role: factory
+  - method: rusoto_kms::KmsClient.new
+    arity: 3
+    return: { type: rusoto_kms::KmsClient, confidence: high }
+    parameter_types: ["rusoto_core::request::DispatchSignedRequest", "rusoto_core::credential::ProvideAwsCredentials", "rusoto_core::region::Region"]
+    role: factory
+  - method: rusoto_kms::KmsClient.new_with
+    arity: 3
+    return: { type: rusoto_kms::KmsClient, confidence: high }
+    parameter_types: ["rusoto_core::request::DispatchSignedRequest", "rusoto_core::credential::ProvideAwsCredentials", "rusoto_core::region::Region"]
+    role: factory
+  - method: rusoto_kms::KmsClient.new_with_client
+    arity: 2
+    return: { type: rusoto_kms::KmsClient, confidence: high }
+    parameter_types: ["rusoto_core::Client", "rusoto_core::region::Region"]
+    role: factory
+  - method: rusoto_kms::KmsClient.simple
+    arity: 1
+    return: { type: rusoto_kms::KmsClient, confidence: high }
+    parameter_types: ["rusoto_core::region::Region"]
+    role: factory
+  - method: rusoto_kms::KmsClient.encrypt
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::EncryptResponse, rusoto_core::RusotoError<rusoto_kms::EncryptError>>"
+    parameter_types: ["rusoto_kms::EncryptRequest"]
+    role: operation
+  - method: rusoto_kms::KmsClient.decrypt
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::DecryptResponse, rusoto_core::RusotoError<rusoto_kms::DecryptError>>"
+    parameter_types: ["rusoto_kms::DecryptRequest"]
+    role: operation
+  - method: rusoto_kms::KmsClient.re_encrypt
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::ReEncryptResponse, rusoto_core::RusotoError<rusoto_kms::ReEncryptError>>"
+    parameter_types: ["rusoto_kms::ReEncryptRequest"]
+    role: operation
+  - method: rusoto_kms::KmsClient.generate_data_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::GenerateDataKeyResponse, rusoto_core::RusotoError<rusoto_kms::GenerateDataKeyError>>"
+    parameter_types: ["rusoto_kms::GenerateDataKeyRequest"]
+    role: factory
+  - method: rusoto_kms::KmsClient.generate_data_key_without_plaintext
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::GenerateDataKeyWithoutPlaintextResponse, rusoto_core::RusotoError<rusoto_kms::GenerateDataKeyWithoutPlaintextError>>"
+    parameter_types: ["rusoto_kms::GenerateDataKeyWithoutPlaintextRequest"]
+    role: factory
+  - method: rusoto_kms::KmsClient.generate_data_key_pair
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::GenerateDataKeyPairResponse, rusoto_core::RusotoError<rusoto_kms::GenerateDataKeyPairError>>"
+    parameter_types: ["rusoto_kms::GenerateDataKeyPairRequest"]
+    role: factory
+  - method: rusoto_kms::KmsClient.generate_data_key_pair_without_plaintext
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::GenerateDataKeyPairWithoutPlaintextResponse, rusoto_core::RusotoError<rusoto_kms::GenerateDataKeyPairWithoutPlaintextError>>"
+    parameter_types: ["rusoto_kms::GenerateDataKeyPairWithoutPlaintextRequest"]
+    role: factory
+  - method: rusoto_kms::KmsClient.sign
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::SignResponse, rusoto_core::RusotoError<rusoto_kms::SignError>>"
+    parameter_types: ["rusoto_kms::SignRequest"]
+    role: operation
+  - method: rusoto_kms::KmsClient.verify
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::VerifyResponse, rusoto_core::RusotoError<rusoto_kms::VerifyError>>"
+    parameter_types: ["rusoto_kms::VerifyRequest"]
+    role: operation
+  - method: rusoto_kms::KmsClient.generate_random
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    canonical_return_type: "core::result::Result<rusoto_kms::GenerateRandomResponse, rusoto_core::RusotoError<rusoto_kms::GenerateRandomError>>"
+    parameter_types: ["rusoto_kms::GenerateRandomRequest"]
+    role: operation

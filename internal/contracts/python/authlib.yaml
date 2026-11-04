@@ -1,0 +1,515 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: authlib
+  coordinates:
+    - Authlib
+  version_range: ">=1.0,<2.0"
+  description: >-
+    Authlib JOSE lifecycle contracts — JWS/JWE serialization and
+    deserialization, JWT encode/decode (class and module-level instance), and
+    JsonWebKey/Key generation and import. Verified against Authlib 1.6.12
+    (authlib/jose/rfc7515, rfc7516, rfc7517, rfc7518, rfc7519, rfc8037).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#208)
+#
+# Scope: the authlib.jose public surface (authlib/jose/__init__.py exports).
+# OAuth/OIDC modules are out of scope (no direct crypto terminals; they
+# delegate to jose). Every public (non "_"-prefixed) method of
+# JsonWebSignature, JsonWebEncryption, JsonWebToken (and its module-level
+# `jwt` instance), JsonWebKey, Key/OctKey/RSAKey/ECKey/OKPKey and KeySet was
+# inventoried against the Authlib 1.6.12 wheel source. Disposition legend:
+# contracted | covered-existing | skipped-non-crypto |
+# skipped-informative-return | skipped-unsupported | needs-follow-up.
+#
+# IMPORTANT — namespace discipline vs pyjwt/python-jose: authlib call sites
+# resolve to `authlib.jose.*` (`from authlib.jose import jwt` →
+# authlib.jose.jwt.encode). The bare `jwt.encode` FQN belongs to PyJWT
+# (pyjwt.yaml) and MUST NOT be declared here: authlib's encode returns BYTES
+# while PyJWT's returns str, so a bare declaration would hard-fail the
+# cross-library merge.
+#
+# authlib.jose.JsonWebSignature (rfc7515/jws.py)
+#   <init>                    contracted (factory)     — attr-call + <init> spellings
+#   serialize_compact         contracted (operation)   — rules api anchor; returns bytes
+#   serialize_json            contracted (operation)   — rules api anchor; returns dict
+#   serialize                 contracted (operation)   — compact/JSON dispatcher; modeled
+#                                                         as the dominant compact (bytes)
+#   deserialize_compact/_json/deserialize
+#                             contracted (operation)   — JWSObject is a dict subclass;
+#                                                         modeled as builtins.dict
+#   register_algorithm        contracted (config)
+#
+# authlib.jose.JsonWebEncryption (rfc7516/jwe.py)
+#   <init>                    contracted (factory)     — rules api anchor; attr + <init>
+#   serialize_compact         contracted (operation)   — rules api anchor; returns bytes
+#   serialize_json            contracted (operation)   — returns dict
+#   serialize                 contracted (operation)   — modeled as compact (bytes)
+#   deserialize_compact/_json/deserialize
+#                             contracted (operation)   — {"header", "payload"} dict
+#   register_algorithm        contracted (config)
+#   parse_json                skipped-non-crypto       — JSON shape parsing, no crypto
+#
+# authlib.jose.JsonWebToken (rfc7519/jwt.py) and module-level instance
+#   <init>                    contracted (factory)     — rules api anchor; algorithms
+#                                                         allow-list is REQUIRED (arity 1)
+#   encode                    contracted (operation)   — rules api anchor; returns BYTES
+#   decode                    contracted (operation)   — JWTClaims is a dict subclass;
+#                                                         modeled as builtins.dict
+#   authlib.jose.jwt.encode/decode
+#                             contracted (operation)   — pre-instantiated module instance
+#                                                         (authlib/jose/__init__.py); same
+#                                                         semantics as the class methods
+#   check_sensitive_data      skipped-non-crypto       — claims hygiene check
+#
+# authlib.jose.JsonWebKey (rfc7517/jwk.py; pure classmethod dispatcher)
+#   generate_key              contracted (factory)     — kty argument selects the key
+#                                                         class; modeled as the shared
+#                                                         authlib.jose.Key base
+#   import_key                contracted (factory)     — rules api anchor
+#   import_key_set            contracted (factory)
+#
+# Concrete key classes (rfc7518, rfc8037)
+#   OctKey/RSAKey/ECKey/OKPKey.generate_key
+#                             contracted (factory)     — precise per-class return types
+#   OctKey/RSAKey/ECKey/OKPKey.import_key
+#                             contracted (factory)
+#   ECKey/OKPKey.exchange_shared_key
+#                             contracted (operation)   — ECDH/X25519/X448 shared secret
+#   RSAKey.import_dict_key    skipped-non-crypto       — internal dict-import override
+#                                                         reached via import_key
+#   OctKey/AsymmetricKey.get_op_key
+#                             needs-follow-up          — returns a pyca cryptography key
+#                                                         object; candidate for cross-KB
+#                                                         reachability into
+#                                                         pyca-cryptography.yaml
+#
+# Shared key surface (declared once on authlib.jose.Key per KB convention;
+# as_pem/as_der/as_bytes/as_dict are defined on AsymmetricKey but reached
+# through Key-typed values produced by JsonWebKey.import_key/generate_key).
+# KNOWN ENGINE GAP (e2e-verified, issue #208): fluent-chain callee rewriting
+# (resolveChainLinkCallees) looks up <returnType>.<method> without walking
+# kb.Hierarchy, so a chain rooted at a CONCRETE factory
+# (RSAKey.generate_key().as_pem()) does not resolve these base-declared
+# methods; chains rooted at JsonWebKey.import_key/generate_key (which return
+# the Key base type) do. Export-time role categorization honors the hierarchy
+# (typeOrAncestor), so per KB convention the contracts stay on the base
+# rather than being duplicated onto the four concrete classes.
+#   thumbprint                contracted (operation)   — RFC 7638 SHA-256 thumbprint
+#   as_json                   contracted (output)
+#   as_dict                   contracted (output)
+#   as_bytes/as_pem/as_der    contracted (output)
+#   tokens / kid properties   skipped-informative-return — properties, not calls
+#   check_key_op              skipped-non-crypto       — key-op policy validation
+#
+# authlib.jose.KeySet (rfc7517/key_set.py)
+#   <init>                    contracted (factory)
+#   find_by_kid               contracted (output)
+#   as_dict / as_json         contracted (output)
+#
+# Deprecated authlib.jose.jwk module (loads/dumps shims)
+#                             skipped-non-crypto       — deprecated aliases over
+#                                                         JsonWebKey.import_key
+#
+# Note on `when:` conditionals: none are declared. The "alg"/"enc" header
+# values and the kty argument select crypto algorithms and key classes, never
+# a different Python return type at the granularity this KB models (the shared
+# authlib.jose.Key base covers the kty dispatch).
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── JsonWebSignature ───────────────────────────────────────────────────────
+
+  # `import authlib.jose; authlib.jose.JsonWebSignature(...)` — attr spelling.
+  - method: authlib.jose.JsonWebSignature
+    arity: 0
+    return:
+      type: authlib.jose.JsonWebSignature
+      confidence: high
+    role: factory
+
+  # `from authlib.jose import JsonWebSignature; JsonWebSignature(...)`.
+  - method: authlib.jose.JsonWebSignature.<init>
+    arity: 0
+    return:
+      type: authlib.jose.JsonWebSignature
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.JsonWebSignature.register_algorithm
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: authlib.jose.JsonWebSignature.serialize_compact
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebSignature.serialize_json
+    arity: 3
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  # serialize dispatches compact vs JSON on the header shape; the dominant
+  # compact path (bytes) is modeled.
+  - method: authlib.jose.JsonWebSignature.serialize
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebSignature.deserialize_compact
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebSignature.deserialize_json
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebSignature.deserialize
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  # ── JsonWebEncryption ──────────────────────────────────────────────────────
+
+  - method: authlib.jose.JsonWebEncryption
+    arity: 0
+    return:
+      type: authlib.jose.JsonWebEncryption
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.JsonWebEncryption.<init>
+    arity: 0
+    return:
+      type: authlib.jose.JsonWebEncryption
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.JsonWebEncryption.register_algorithm
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: authlib.jose.JsonWebEncryption.serialize_compact
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebEncryption.serialize_json
+    arity: 3
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebEncryption.serialize
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebEncryption.deserialize_compact
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebEncryption.deserialize_json
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebEncryption.deserialize
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  # ── JsonWebToken and the module-level jwt instance ─────────────────────────
+
+  - method: authlib.jose.JsonWebToken
+    arity: 1
+    return:
+      type: authlib.jose.JsonWebToken
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.JsonWebToken.<init>
+    arity: 1
+    return:
+      type: authlib.jose.JsonWebToken
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.JsonWebToken.encode
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.JsonWebToken.decode
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  # Module-level pre-instantiated `jwt` (authlib/jose/__init__.py):
+  # `from authlib.jose import jwt; jwt.encode(header, payload, key)`.
+  - method: authlib.jose.jwt.encode
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.jwt.decode
+    arity: 2
+    return:
+      type: builtins.dict
+      confidence: high
+    role: operation
+
+  # ── JsonWebKey — key generation and import ─────────────────────────────────
+
+  - method: authlib.jose.JsonWebKey.generate_key
+    arity: 2
+    return:
+      type: authlib.jose.Key
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: kty
+        role: metadata-contributing
+        contributes:
+          property: keyType
+          derivation: argument_value
+
+  - method: authlib.jose.JsonWebKey.import_key
+    arity: 1
+    return:
+      type: authlib.jose.Key
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.JsonWebKey.import_key_set
+    arity: 1
+    return:
+      type: authlib.jose.KeySet
+      confidence: high
+    role: factory
+
+  # ── concrete key classes ───────────────────────────────────────────────────
+
+  - method: authlib.jose.OctKey.generate_key
+    arity: 0
+    return:
+      type: authlib.jose.OctKey
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.OctKey.import_key
+    arity: 1
+    return:
+      type: authlib.jose.OctKey
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.RSAKey.generate_key
+    arity: 0
+    return:
+      type: authlib.jose.RSAKey
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.RSAKey.import_key
+    arity: 1
+    return:
+      type: authlib.jose.RSAKey
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.ECKey.generate_key
+    arity: 0
+    return:
+      type: authlib.jose.ECKey
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.ECKey.import_key
+    arity: 1
+    return:
+      type: authlib.jose.ECKey
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.ECKey.exchange_shared_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.OKPKey.generate_key
+    arity: 0
+    return:
+      type: authlib.jose.OKPKey
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.OKPKey.import_key
+    arity: 1
+    return:
+      type: authlib.jose.OKPKey
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.OKPKey.exchange_shared_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  # ── shared key surface (authlib.jose.Key base) ─────────────────────────────
+
+  - method: authlib.jose.Key.thumbprint
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+
+  - method: authlib.jose.Key.as_json
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: authlib.jose.Key.as_dict
+    arity: 0
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: authlib.jose.Key.as_bytes
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: authlib.jose.Key.as_pem
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: authlib.jose.Key.as_der
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── KeySet ─────────────────────────────────────────────────────────────────
+
+  - method: authlib.jose.KeySet
+    arity: 1
+    return:
+      type: authlib.jose.KeySet
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.KeySet.<init>
+    arity: 1
+    return:
+      type: authlib.jose.KeySet
+      confidence: high
+    role: factory
+
+  - method: authlib.jose.KeySet.find_by_kid
+    arity: 1
+    return:
+      type: authlib.jose.Key
+      confidence: high
+    role: output
+
+  - method: authlib.jose.KeySet.as_dict
+    arity: 0
+    return:
+      type: builtins.dict
+      confidence: high
+    role: output
+
+  - method: authlib.jose.KeySet.as_json
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+hierarchy:
+  authlib.jose.OctKey:
+    - authlib.jose.Key
+  authlib.jose.RSAKey:
+    - authlib.jose.AsymmetricKey
+  authlib.jose.ECKey:
+    - authlib.jose.AsymmetricKey
+  authlib.jose.OKPKey:
+    - authlib.jose.AsymmetricKey
+  authlib.jose.AsymmetricKey:
+    - authlib.jose.Key
+  authlib.jose.Key:
+    - builtins.object
+  authlib.jose.JsonWebSignature:
+    - builtins.object
+  authlib.jose.JsonWebEncryption:
+    - builtins.object
+  authlib.jose.JsonWebToken:
+    - builtins.object
+  authlib.jose.KeySet:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.dict:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  builtins.object: []

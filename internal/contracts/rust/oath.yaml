@@ -1,0 +1,96 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: oath
+  coordinates:
+    - oath
+  version_range: ">=0.0.3,<0.11.0"
+  description: "HOTP over HMAC-SHA1 in the oath crate (avacariu/rust-oath), the two entry points every published version shares"
+
+# THE KEYS WERE READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API.
+# A probe consumer calling each entry point the way real consumers do was scanned
+# with `crypto-finder scan --no-remote-rules --rules-dir <rules>
+# --export-callgraph`, and every call came back with empty parameter types:
+#
+#   oath.hotp(?, ?, ?)                        oath.totp_custom(?, ?, ?, ?, ?)
+#   oath.hotp_raw(?, ?, ?)                    oath.totp_custom(?, ?, ?, ?, ?, ?)
+#   oath.hotp_custom(?, ?, ?, ?)              oath.totp_custom_time(?, ?, ?, ?, ?, ?)
+#   oath.totp(?, ?, ?, ?)                     oath.totp_now(?, ?, ?, ?, ?)
+#   oath.totp_raw(?, ?, ?, ?)                 oath.totp_raw_custom_time(?, ?, ?, ?, ?, ?)
+#   oath.ocra(?, ?, ?, ?, ?, ?, ?)            oath.totp_raw_now(?, ?, ?, ?, ?)
+#   oath.ocra_debug(?, ?, ?, ?, ?, ?, ?)
+#
+# The `(?, ?)` with empty parameter types is what an ABSENT contract looks like,
+# which is what the matrix reported as `contract_gap=Y`. `progress.json` carried
+# `finder: "n/a"` with disposition `not_applicable` for this family; the exported
+# graph above settles that against the tree, and the matrix is right.
+#
+# EVERY KEY IN THIS FAMILY IS AUTHORED WITH A DOT, NOT WITH "::", AND THAT IS THE
+# OPPOSITE OF THE USUAL RUST RULE. `oath` exports no type with a method -- its
+# only exported type is the bare `HashType` enum -- so every entry point is a
+# CRATE-ROOT FREE FUNCTION and every emitted key carries exactly ONE dot.
+# `rustAuthoredKey` (contracts.go:267) moves the second-to-last dot to "::" only
+# when the key has at least two dots, and returns a shorter key UNCHANGED, so for
+# this family the authored key IS the emitted key. Authoring `oa::th.hotp` -- the
+# mechanical application of the substitution -- would load without error and join
+# nothing. rustls-native-certs and tokio-rustls record the same for their
+# crate-root free functions.
+#
+# THE FAMILY IS SPLIT ACROSS FOUR FILES SO THAT NO `version_range` OVER-CLAIMS.
+# The crate has two API eras that share only two identifiers:
+#   oath.yaml           >=0.0.3,<0.11.0  hotp / hotp_raw, true in every release
+#   oath-0.1.yaml       >=0.0.3,<0.2.0   the pre-0.10 totp/hotp_custom surface
+#   oath-0.10.yaml      >=0.10.1,<0.11.0 the 0.10 TOTP-with-HashType surface,
+#                                        plus OCRA
+#   oath-from-hex.yaml  >=0.1.2,<0.11.0  the hex helper, which arrives at 0.1.2
+# `version_range` is parsed and never consulted at lookup, so a range that
+# over-claims is a silent false statement rather than a caught error.
+#
+# THE HASH IS NOT A PARAMETER OF EITHER ENTRY POINT HERE, AND THAT IS A FACT
+# ABOUT THE LIBRARY. Both hardcode SHA-1 in every published version: 0.1.4
+# lib.rs:62 `let hash = Sha1::new()`, 0.10.2 lib.rs:111
+# `hmac_and_truncate::<Sha1>`. `hotp` delegates to `hotp_raw` throughout. The
+# 0.10 file's entry points DO take a selector, and declare it.
+#
+# THE SIGNATURES ARE IDENTICAL ACROSS BOTH ERAS EXCEPT FOR ONE SPELLING: `digits`
+# is `usize` at 0.0.3 and `u32` from 0.1.0 on (0.1.0 lib.rs:35). Neither the key,
+# the arity nor the return type changes, so both eras resolve against these
+# entries; `parameter_types` records the current spelling.
+#
+# NO PARAMETER CONTRIBUTES `keyMaterial`, AND THAT IS DELIBERATE. The Go OTP
+# contract (go/gotp.yaml) declares the secret as a metadata-contributing
+# `keyMaterial` with `argument_value`, which reads the argument's value; for this
+# crate the secret is very often a byte-string literal at the call site, and
+# lifting it into the served payload would publish the shared secret. Only
+# non-secret call-site facts are contributed: the digit count, the time step, the
+# selected hash and the OCRA suite.
+contracts:
+  # `hotp_raw(key: &[u8], counter: u64, digits: u32) -> u64`
+  # 0.1.4 lib.rs:61, 0.10.2 lib.rs:108.
+  - method: oath.hotp_raw
+    arity: 3
+    return: { type: u64, confidence: high }
+    canonical_return_type: "u64"
+    parameter_types: ["&[u8]", "u64", "u32"]
+    role: operation
+    parameters:
+      - index: 2
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+
+  # `hotp(key: &str, counter: u64, digits: u32) -> Result<u64, &str>`
+  # The hex-string front end for `hotp_raw`. 0.1.4 lib.rs:66, 0.10.2 lib.rs:135.
+  - method: oath.hotp
+    arity: 3
+    return: { type: "core::result::Result<u64, &str>", confidence: high }
+    canonical_return_type: "core::result::Result<u64, &str>"
+    parameter_types: ["&str", "u64", "u32"]
+    role: operation
+    parameters:
+      - index: 2
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+
+hierarchy: {}

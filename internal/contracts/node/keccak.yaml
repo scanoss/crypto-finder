@@ -1,0 +1,56 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "keccak"
+  coordinates:
+    - "keccak"
+  version_range: ">=2.0.0"
+  description: "keccak: Keccak, SHA-3 and SHAKE digests over a native or JS sponge"
+
+# THE MODULE EXPORT IS THE FUNCTION and the algorithm is its first argument, so
+# this KB is one factory plus the chain that factory opens. Four entries.
+#
+# ONE Hash TYPE RATHER THAN TEN, and that is forced by the shape rather than
+# chosen for brevity. The algorithm arrives as a STRING ARGUMENT, so a
+# per-algorithm type could not resolve `createKeccakHash(alg)` with a variable --
+# the same reasoning as the jwa KB, and the opposite of js-sha3 and js-sha256
+# where a distinct export per algorithm makes a distinct type the right call.
+# Reading the literal is the rules' job.
+#
+# WHAT THE KB CANNOT SAY, AND THE RULES CAN, is that `keccak256` and `sha3-256`
+# are different algorithms. This package's own switch returns
+# `new Keccak(1088, 512, null, 256)` for one and `new Keccak(1088, 512, 0x06, 256)`
+# for the other -- same rate, same capacity, different padding byte. That
+# distinction lives entirely in the argument string.
+#
+# update RETURNS THE HASHER so the chain reaches digest; digest ends it. Both
+# arities of each are real: update takes (data) or (data, encoding), digest takes
+# () or (encoding), and the draw contains `digest('hex')` and `digest()`.
+#
+# Deliberately NOT contracted: _resetState and _clone. They manage sponge state
+# and compute no digest of their own.
+contracts:
+  - method: "keccak"
+    arity: 1
+    return: { type: "keccak.Hash", confidence: high }
+    role: factory
+  - method: "keccak"
+    arity: 2
+    return: { type: "keccak.Hash", confidence: high }
+    role: factory
+  - method: "keccak.Hash.update"
+    arity: 1
+    return: { type: "keccak.Hash", confidence: high }
+    role: operation
+  - method: "keccak.Hash.update"
+    arity: 2
+    return: { type: "keccak.Hash", confidence: high }
+    role: operation
+  - method: "keccak.Hash.digest"
+    arity: 0
+    return: { type: "keccak.Digest", confidence: high }
+    role: output
+  - method: "keccak.Hash.digest"
+    arity: 1
+    return: { type: "keccak.Digest", confidence: high }
+    role: output

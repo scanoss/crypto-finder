@@ -1,0 +1,23 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-0.7-prefixed
+  coordinates:
+    - rsa
+  version_range: ">=0.7.0-rc.0,<0.10.0-rc.1"
+  description: "RustCrypto rsa 0.7-0.9: PKCS#1 v1.5 typed keys with an explicit DigestInfo prefix"
+
+# `new_with_prefix` exists from 0.7.0-rc.0 until 0.10.0-rc.0 and is gone at
+# 0.10.0-rc.1, where `new` always writes the prefix. The era table is in
+# rsa.yaml.
+contracts:
+  - method: rsa::pkcs1v15::SigningKey.new_with_prefix
+    arity: 1
+    return: { type: rsa::pkcs1v15::SigningKey, confidence: high }
+    role: factory
+  - method: rsa::pkcs1v15::VerifyingKey.new_with_prefix
+    arity: 1
+    return: { type: rsa::pkcs1v15::VerifyingKey, confidence: high }
+    role: factory
+
+hierarchy: {}

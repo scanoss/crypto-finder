@@ -1,0 +1,450 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: crypto_box
+  coordinates:
+    - crypto_box
+  version_range: ">=0.1.0,<0.11.0"
+  description: "RustCrypto port of NaCl crypto_box: X25519 key agreement with a NaCl secretbox AEAD"
+
+# API read at 0.9.1 (src/lib.rs, src/public_key.rs, src/secret_key.rs) with the
+# older and newer spellings read at the version each arrives or leaves:
+#
+#   0.0.0  a name reservation. src/lib.rs is fourteen lines of doc comment and
+#          three attributes, with no API at all, so the range starts at 0.1.0.
+#   0.1.0  SecretKey::generate (src/lib.rs:162), SecretKey::public_key (:170),
+#          to_bytes (:175), `impl From<[u8; KEY_SIZE]> for SecretKey` (:180),
+#          SalsaBox::new (:216), and crypto_box's own free
+#          `generate_nonce` (:147). PublicKey is x25519-dalek's, re-exported
+#          (:128).
+#   0.2.0  generate_nonce becomes a re-export of xsalsa20poly1305's (:129);
+#          the consumer-visible path `crypto_box::generate_nonce` is unchanged.
+#   0.5.0  ChaChaBox arrives (src/lib.rs:338) — the second AEAD variant.
+#   0.6.0  crypto_box declares its own PublicKey (src/lib.rs:253) and
+#          SecretKey becomes [u8; KEY_SIZE] (:209). PublicKey::as_bytes (:257)
+#          and `impl From<[u8; KEY_SIZE]> for PublicKey` (:274) arrive.
+#   0.7.1  SecretKey::as_bytes arrives (src/lib.rs:251). It is REMOVED again in
+#          0.9.0-0.9.1 -- neither ships one -- and returns at 0.10.0-pre.0
+#          (src/secret_key.rs:84), so that entry is true for part of the range
+#          only and simply never matches on 0.9.x.
+#   0.8.0  `pub type Box = SalsaBox` is removed, and the free `generate_nonce`
+#          with it: consumers call the AeadCore associated function on the box
+#          type instead (`SalsaBox::generate_nonce`).
+#   0.8.2  the sealed-box free functions arrive — seal (src/lib.rs:443) and
+#          seal_open (:475).
+#   0.9.0  the crate splits into modules. SalsaBox and ChaChaBox become
+#          aliases of the generic CryptoBox<C> over crypto_secretbox
+#          (0.9.1 src/lib.rs:213,217); from_bytes / from_slice / TryFrom arrive
+#          on both key types (src/public_key.rs:23,31,88;
+#          src/secret_key.rs:29,37,95); and the sealed-box free functions
+#          become methods — PublicKey::seal (src/public_key.rs:51) and
+#          SecretKey::unseal (src/secret_key.rs:70).
+#   0.9.1  SecretKey::to_scalar arrives (src/secret_key.rs:93); 0.9.0 has none.
+#   0.10.0-pre.0  new_from_clamped (src/lib.rs:279) arrives, aead 0.6 replaces
+#          AeadInPlace with AeadInOut, and nonce generation gains
+#          generate_nonce_with_rng and try_generate_nonce_with_rng while
+#          generate_nonce loses its argument. The range stops below 0.11.0 so
+#          the 0.10 pre-release the Tier 0 matrix lists is covered.
+#
+# Methods a given version does not have simply never match, so one range holds
+# for the whole matrix.
+#
+# TWO VARIANTS, AND THE CONTRACT KEEPS THEM APART. SalsaBox is X25519 ->
+# HSalsa20 -> XSalsa20Poly1305 and ChaChaBox is X25519 -> HChaCha20 ->
+# XChaCha20Poly1305 (0.8.2 src/lib.rs:375-397 and :404-425). They are separate
+# types with separate keys here for the same reason the rules are separate:
+# collapsing them would make the served variant a guess.
+#
+# NONCE AND TAG WIDTHS ARE THE SAME FOR BOTH AND FOR EVERY RELEASE — 24-byte
+# nonce, 16-byte Poly1305 tag, 32-byte key. Read at 0.9.1 src/lib.rs:196
+# (KEY_SIZE) and :259-262 (NonceSize = U24, TagSize = U16); 0.8.2 states the
+# same widths through `impl_aead_in_place!(SalsaBox, U24, U16, U0)` at
+# src/lib.rs:392.
+#
+# FEATURE GATES THAT ARE PART OF THE SYMBOL. Every sealed-box entry below sits
+# behind `#[cfg(feature = "seal")]` (0.8.2 src/lib.rs:441,473; 0.9.1
+# src/public_key.rs:50, src/secret_key.rs:102). `seal` is a declared but
+# NON-DEFAULT feature in the published manifests from 0.8.2 onward, so those
+# methods are compilable and contracted; a consumer that does not enable the
+# feature simply never calls them. From 0.9.0 the same is true of the variants
+# themselves: `salsa20` is a default feature and `chacha20` is not
+# (0.9.1 Cargo.toml [features]), so ChaChaBox is opt-in on that line.
+#
+# skipped-non-crypto: Debug, Drop, Zeroize, PartialEq/Eq/Ord and the Serde
+#   impls are not contracted. The byte accessors ARE, as `output`, because a
+#   consumer's key variable is routed through them.
+contracts:
+  # --- secret key (the X25519 private half) ---
+  - method: crypto_box::SecretKey.generate
+    arity: 1
+    return: { type: crypto_box::SecretKey, confidence: high }
+    role: factory
+  # `From` is Rust's overloading, and both key types carry several impls
+  # across the declared range, so method plus arity does NOT identify one
+  # signature here: `From<&SecretKey> for PublicKey` exists in every release
+  # (0.1.0 src/lib.rs:192), and `From<Scalar> for SecretKey` /
+  # `From<MontgomeryPoint> for PublicKey` arrive at 0.9.0
+  # (0.9.1 src/secret_key.rs:130, src/public_key.rs:108). The crate's own
+  # 0.10 test calls both (tests/lib.rs:279-280). Declaring `[u8; 32]` and a
+  # keySize contribution would invite a consumer to derive a key length from
+  # a Scalar or a MontgomeryPoint, so neither is declared. `from_bytes` has
+  # exactly one signature and keeps both.
+  - method: crypto_box::SecretKey.from
+    arity: 1
+    return: { type: crypto_box::SecretKey, confidence: high }
+    role: factory
+  - method: crypto_box::SecretKey.from_bytes
+    arity: 1
+    return: { type: crypto_box::SecretKey, confidence: high }
+    parameter_types: ["[u8; 32]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: bytes
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  # from_slice and TryFrom are fallible, so the return is a Result and the
+  # concrete key type is one unwrap away. The tuple-free generic still has a
+  # comma in it, so it is quoted: an unquoted YAML flow scalar containing a
+  # comma truncates silently.
+  - method: crypto_box::SecretKey.from_slice
+    arity: 1
+    return: { type: "Result<crypto_box::SecretKey, core::array::TryFromSliceError>", confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: crypto_box::SecretKey.try_from
+    arity: 1
+    return: { type: "Result<crypto_box::SecretKey, core::array::TryFromSliceError>", confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: crypto_box::SecretKey.public_key
+    arity: 0
+    return: { type: crypto_box::PublicKey, confidence: high }
+    role: factory
+  - method: crypto_box::SecretKey.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    role: output
+  - method: crypto_box::SecretKey.as_bytes
+    arity: 0
+    return: { type: "&[u8; 32]", confidence: high }
+    role: output
+  - method: crypto_box::SecretKey.to_scalar
+    arity: 0
+    return: { type: curve25519_dalek::Scalar, confidence: high }
+    role: output
+
+  # --- public key (the X25519 public half) ---
+  # `From` is Rust's overloading, and both key types carry several impls
+  # across the declared range, so method plus arity does NOT identify one
+  # signature here: `From<&SecretKey> for PublicKey` exists in every release
+  # (0.1.0 src/lib.rs:192), and `From<Scalar> for SecretKey` /
+  # `From<MontgomeryPoint> for PublicKey` arrive at 0.9.0
+  # (0.9.1 src/secret_key.rs:130, src/public_key.rs:108). The crate's own
+  # 0.10 test calls both (tests/lib.rs:279-280). Declaring `[u8; 32]` and a
+  # keySize contribution would invite a consumer to derive a key length from
+  # a Scalar or a MontgomeryPoint, so neither is declared. `from_bytes` has
+  # exactly one signature and keeps both.
+  - method: crypto_box::PublicKey.from
+    arity: 1
+    return: { type: crypto_box::PublicKey, confidence: high }
+    role: factory
+  - method: crypto_box::PublicKey.from_bytes
+    arity: 1
+    return: { type: crypto_box::PublicKey, confidence: high }
+    parameter_types: ["[u8; 32]"]
+    role: factory
+    parameters:
+      - index: 0
+        name: bytes
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: crypto_box::PublicKey.from_slice
+    arity: 1
+    return: { type: "Result<crypto_box::PublicKey, core::array::TryFromSliceError>", confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: crypto_box::PublicKey.try_from
+    arity: 1
+    return: { type: "Result<crypto_box::PublicKey, core::array::TryFromSliceError>", confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: crypto_box::PublicKey.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    role: output
+  - method: crypto_box::PublicKey.as_bytes
+    arity: 0
+    return: { type: "&[u8; 32]", confidence: high }
+    role: output
+
+  # --- SalsaBox: X25519 + XSalsa20Poly1305 ---
+  - method: crypto_box::SalsaBox.new
+    arity: 2
+    return: { type: crypto_box::SalsaBox, confidence: high }
+    parameter_types: ["&crypto_box::PublicKey", "&crypto_box::SecretKey"]
+    role: factory
+  - method: crypto_box::SalsaBox.new_from_clamped
+    arity: 2
+    return: { type: crypto_box::SalsaBox, confidence: high }
+    parameter_types: ["&crypto_box::PublicKey", "&crypto_box::SecretKey"]
+    role: factory
+  # `AeadCore::generate_nonce` changes arity with the aead crate under it:
+  # aead 0.5 takes the rng and returns the nonce (0.5.2 src/lib.rs:151), which
+  # is what crypto_box 0.8.x-0.9.x pins; aead 0.6 takes NO argument and returns
+  # a Result (0.6.0-rc.2 src/lib.rs:131), which is what 0.10.0-pre.0 pins. Both
+  # arities are declared, because both are callable inside the range.
+  - method: crypto_box::SalsaBox.generate_nonce
+    arity: 1
+    return: { type: crypto_box::Nonce, confidence: high }
+    role: factory
+  - method: crypto_box::SalsaBox.generate_nonce
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: crypto_box::SalsaBox.generate_nonce_with_rng
+    arity: 1
+    return: { type: crypto_box::Nonce, confidence: high }
+    role: factory
+  # The fallible spelling aead 0.6 adds alongside it; the crate's own 0.10
+  # integration test uses this one (tests/lib.rs:275). Its error type is the
+  # rng's associated `R::Error` (aead 0.6.0-rc.2 src/lib.rs:153-155) and the
+  # arity-0 form's is `crypto_common::rand_core::OsError` (:46,131), so neither
+  # error is this crate's to name: both are declared as a bare
+  # `core::result::Result`, the same way every other fallible entry whose error
+  # component is not knowable is declared across this ecosystem's KBs.
+  - method: crypto_box::SalsaBox.try_generate_nonce_with_rng
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: crypto_box::SalsaBox.encrypt
+    arity: 2
+    return: { type: "Result<Vec<u8>, aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::SalsaBox.decrypt
+    arity: 2
+    return: { type: "Result<Vec<u8>, aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::SalsaBox.encrypt_in_place
+    arity: 3
+    return: { type: "Result<(), aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "&mut dyn aead::Buffer"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::SalsaBox.encrypt_in_place_detached
+    arity: 3
+    return: { type: "Result<crypto_box::Tag, aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "&mut [u8]"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::SalsaBox.decrypt_in_place
+    arity: 3
+    return: { type: "Result<(), aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "&mut dyn aead::Buffer"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::SalsaBox.decrypt_in_place_detached
+    arity: 4
+    return: { type: "Result<(), aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "&mut [u8]", "&crypto_box::Tag"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  # AeadInOut replaces AeadInPlace at 0.10.0-pre.0 (src/lib.rs:300-320).
+  - method: crypto_box::SalsaBox.encrypt_inout_detached
+    arity: 3
+    return: { type: "Result<crypto_box::Tag, aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "aead::inout::InOutBuf<u8>"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::SalsaBox.decrypt_inout_detached
+    arity: 4
+    return: { type: "Result<(), aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "aead::inout::InOutBuf<u8>", "&crypto_box::Tag"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+
+  # --- ChaChaBox: X25519 + XChaCha20Poly1305 ---
+  - method: crypto_box::ChaChaBox.new
+    arity: 2
+    return: { type: crypto_box::ChaChaBox, confidence: high }
+    parameter_types: ["&crypto_box::PublicKey", "&crypto_box::SecretKey"]
+    role: factory
+  - method: crypto_box::ChaChaBox.new_from_clamped
+    arity: 2
+    return: { type: crypto_box::ChaChaBox, confidence: high }
+    parameter_types: ["&crypto_box::PublicKey", "&crypto_box::SecretKey"]
+    role: factory
+  # `AeadCore::generate_nonce` changes arity with the aead crate under it:
+  # aead 0.5 takes the rng and returns the nonce (0.5.2 src/lib.rs:151), which
+  # is what crypto_box 0.8.x-0.9.x pins; aead 0.6 takes NO argument and returns
+  # a Result (0.6.0-rc.2 src/lib.rs:131), which is what 0.10.0-pre.0 pins. Both
+  # arities are declared, because both are callable inside the range.
+  - method: crypto_box::ChaChaBox.generate_nonce
+    arity: 1
+    return: { type: crypto_box::Nonce, confidence: high }
+    role: factory
+  - method: crypto_box::ChaChaBox.generate_nonce
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: crypto_box::ChaChaBox.generate_nonce_with_rng
+    arity: 1
+    return: { type: crypto_box::Nonce, confidence: high }
+    role: factory
+  # The fallible spelling aead 0.6 adds alongside it; the crate's own 0.10
+  # integration test uses this one (tests/lib.rs:275). Its error type is the
+  # rng's associated `R::Error` (aead 0.6.0-rc.2 src/lib.rs:153-155) and the
+  # arity-0 form's is `crypto_common::rand_core::OsError` (:46,131), so neither
+  # error is this crate's to name: both are declared as a bare
+  # `core::result::Result`, the same way every other fallible entry whose error
+  # component is not knowable is declared across this ecosystem's KBs.
+  - method: crypto_box::ChaChaBox.try_generate_nonce_with_rng
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: crypto_box::ChaChaBox.encrypt
+    arity: 2
+    return: { type: "Result<Vec<u8>, aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::ChaChaBox.decrypt
+    arity: 2
+    return: { type: "Result<Vec<u8>, aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::ChaChaBox.encrypt_in_place
+    arity: 3
+    return: { type: "Result<(), aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "&mut dyn aead::Buffer"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::ChaChaBox.encrypt_in_place_detached
+    arity: 3
+    return: { type: "Result<crypto_box::Tag, aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "&mut [u8]"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::ChaChaBox.decrypt_in_place
+    arity: 3
+    return: { type: "Result<(), aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "&mut dyn aead::Buffer"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::ChaChaBox.decrypt_in_place_detached
+    arity: 4
+    return: { type: "Result<(), aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "&mut [u8]", "&crypto_box::Tag"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::ChaChaBox.encrypt_inout_detached
+    arity: 3
+    return: { type: "Result<crypto_box::Tag, aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "aead::inout::InOutBuf<u8>"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: crypto_box::ChaChaBox.decrypt_inout_detached
+    arity: 4
+    return: { type: "Result<(), aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::Nonce", "&[u8]", "aead::inout::InOutBuf<u8>", "&crypto_box::Tag"]
+    role: operation
+    parameters:
+      - index: 0
+        name: nonce
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+
+  # --- sealed boxes (feature = "seal") ---
+  # The methods replace the free functions at 0.9.0. Both spellings are
+  # contracted because the matrix covers both eras.
+  - method: crypto_box::PublicKey.seal
+    arity: 2
+    return: { type: "Result<Vec<u8>, aead::Error>", confidence: high }
+    role: operation
+  - method: crypto_box::SecretKey.unseal
+    arity: 1
+    return: { type: "Result<Vec<u8>, aead::Error>", confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: crypto_box.seal
+    arity: 3
+    return: { type: "Result<Vec<u8>, aead::Error>", confidence: high }
+    role: operation
+  - method: crypto_box.seal_open
+    arity: 2
+    return: { type: "Result<Vec<u8>, aead::Error>", confidence: high }
+    parameter_types: ["&crypto_box::SecretKey", "&[u8]"]
+    role: operation
+
+  # --- free nonce generation (0.1.0 - 0.7.2) ---
+  - method: crypto_box.generate_nonce
+    arity: 1
+    return: { type: crypto_box::Nonce, confidence: high }
+    role: factory
+
+hierarchy: {}

@@ -1,0 +1,114 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: cotp
+  coordinates:
+    - tilkinsc/COTP
+  version_range: ">=1.0.0,<2.0.0"
+  description: "COTP one-time password library: HOTP and TOTP generation and verification"
+
+# Inventory sources: cotp.h from the upstream tag archives v1.0.0 and v1.1.1.
+# Every contracted function keeps its arity across them except
+# otp_random_base32, which takes a character set in v1.0.0 (3 arguments) and not
+# in v1.1.1 (2 arguments); both arities are contracted.
+#
+# totp_new, hotp_new and otp_new build the OTPData the other calls take as their
+# first argument, so the C receiver binding groups a scheme's lifecycle around
+# it. The HMAC is a caller-supplied COTP_ALGO callback, so the callback argument
+# is operation-determining: it names the hash the consumer wired in. The digit
+# count is metadata-contributing.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: otp_free, otp_num_to_bytestring, totp_timecode and
+#   totp_valid_until (time arithmetic), otp_byte_secret (base32 decoding) and the
+#   otpuri.h URI builders.
+contracts:
+
+  # Scheme construction.
+  - method: totp_new
+    arity: 6
+    return: {type: "OTPData*", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 4
+        name: digits
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 5
+        name: interval
+        role: metadata-contributing
+        contributes: {property: period, derivation: argument_value}
+  - method: hotp_new
+    arity: 5
+    return: {type: "OTPData*", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: digits
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: otp_new
+    arity: 4
+    return: {type: "OTPData*", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: digits
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  # Code generation and verification.
+  - method: totp_now
+    arity: 2
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: totp_at
+    arity: 4
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: hotp_at
+    arity: 3
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: hotp_next
+    arity: 2
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: otp_generate
+    arity: 3
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: totp_verify
+    arity: 4
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: totp_compare
+    arity: 4
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: hotp_compare
+    arity: 3
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+
+  # Shared-secret generation (v1.1.1 and v1.0.0 arities).
+  - method: otp_random_base32
+    arity: 2
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation
+  - method: otp_random_base32
+    arity: 3
+    return: {type: "COTPRESULT", confidence: high}
+    role: operation

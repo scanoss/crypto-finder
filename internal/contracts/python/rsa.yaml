@@ -1,0 +1,264 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: rsa
+  coordinates:
+    - rsa
+  version_range: ">=4.0,<5.0"
+  description: >-
+    python-rsa PKCS#1 v1.5 lifecycle contracts — key-pair generation, key
+    loading and serialization, encryption and decryption, signing and
+    verification. Verified against rsa 4.9.1 (rsa/key.py, rsa/pkcs1.py).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#208)
+#
+# Scope: the caller-visible `rsa` top-level surface (rsa/__init__.py
+# re-exports) plus the PublicKey/PrivateKey classmethods. Every public
+# (non "_"-prefixed) name was inventoried against the rsa 4.9.1 wheel source.
+# Disposition legend: contracted | covered-existing | skipped-non-crypto |
+# skipped-informative-return | skipped-unsupported | needs-follow-up.
+#
+# Module-level functions (rsa/pkcs1.py, rsa/key.py)
+#   newkeys                   contracted (factory)      — returns (PublicKey, PrivateKey)
+#                                                          tuple; modeled as builtins.tuple
+#   encrypt / decrypt          contracted (operation)    — rules api anchors
+#   sign / sign_hash           contracted (operation)    — rules api anchors; hash_method
+#                                                          param carries the hash algorithm
+#   verify                     contracted (operation)    — returns the hash-name str
+#   find_signature_hash        contracted (output)
+#   compute_hash               contracted (operation)
+#   yield_fixedblocks          skipped-non-crypto        — file-chunking iterator helper
+#
+# rsa.PublicKey / rsa.PrivateKey (rsa/key.py)
+#   PublicKey(n, e)            contracted (factory)      — attr-call and <init> spellings
+#   PrivateKey(n, e, d, p, q)  contracted (factory)      — attr-call and <init> spellings
+#   load_pkcs1                 contracted (factory)      — per-subclass (AbstractKey
+#                                                          dispatch; calling it on
+#                                                          AbstractKey directly is not a
+#                                                          caller-visible pattern)
+#   load_pkcs1_openssl_pem     contracted (factory)      — PublicKey only in 4.9.1
+#   load_pkcs1_openssl_der     contracted (factory)      — PublicKey only in 4.9.1
+#   save_pkcs1                 contracted (output)
+#   blinded_encrypt/decrypt    contracted (operation)    — PrivateKey int-domain primitives
+#   blind / unblind            skipped-non-crypto        — low-level blinding helpers on
+#                                                          AbstractKey, not a caller pattern
+#
+# rsa.key internals (find_p_q, calculate_keys, calculate_keys_custom_exponent,
+# gen_keys)                    skipped-non-crypto        — key-math internals reached via
+#                                                          newkeys; `rsa.key.*` spellings
+#                                                          are not caller-typical
+# rsa.pkcs1_v2.mgf1            needs-follow-up           — MGF1 mask generation is real
+#                                                          crypto but 4.9.1 ships no OAEP
+#                                                          around it; revisit if rules land
+# rsa.randnum                  skipped-non-crypto        — RNG helpers, out of rules scope
+# DecryptionError/VerificationError re-exports
+#                              skipped-non-crypto        — exception types, not calls
+#
+# Note on `when:` conditionals: none are declared. Every contracted method's
+# return type is stable regardless of argument values (`sign`'s hash_method
+# selects the digest, never the return type).
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── key-pair generation ────────────────────────────────────────────────────
+
+  - method: rsa.newkeys
+    arity: 1
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: nbits
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  # ── key construction and loading ───────────────────────────────────────────
+
+  # `import rsa; rsa.PublicKey(n, e)` — module-attribute call spelling.
+  - method: rsa.PublicKey
+    arity: 2
+    return:
+      type: rsa.PublicKey
+      confidence: high
+    role: factory
+
+  # `from rsa import PublicKey; PublicKey(n, e)` — constructor spelling.
+  - method: rsa.PublicKey.<init>
+    arity: 2
+    return:
+      type: rsa.PublicKey
+      confidence: high
+    role: factory
+
+  - method: rsa.PrivateKey
+    arity: 5
+    return:
+      type: rsa.PrivateKey
+      confidence: high
+    role: factory
+
+  - method: rsa.PrivateKey.<init>
+    arity: 5
+    return:
+      type: rsa.PrivateKey
+      confidence: high
+    role: factory
+
+  - method: rsa.PublicKey.load_pkcs1
+    arity: 1
+    return:
+      type: rsa.PublicKey
+      confidence: high
+    role: factory
+
+  - method: rsa.PrivateKey.load_pkcs1
+    arity: 1
+    return:
+      type: rsa.PrivateKey
+      confidence: high
+    role: factory
+
+  - method: rsa.PublicKey.load_pkcs1_openssl_pem
+    arity: 1
+    return:
+      type: rsa.PublicKey
+      confidence: high
+    role: factory
+
+  - method: rsa.PublicKey.load_pkcs1_openssl_der
+    arity: 1
+    return:
+      type: rsa.PublicKey
+      confidence: high
+    role: factory
+
+  # ── key serialization ──────────────────────────────────────────────────────
+
+  - method: rsa.PublicKey.save_pkcs1
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: rsa.PrivateKey.save_pkcs1
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # ── encryption / decryption ────────────────────────────────────────────────
+
+  - method: rsa.encrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: rsa.decrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  # ── signing / verification ─────────────────────────────────────────────────
+
+  - method: rsa.sign
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: hash_method
+        role: metadata-contributing
+        contributes:
+          property: hashAlgorithm
+          derivation: argument_value
+
+  - method: rsa.sign_hash
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - index: 2
+        name: hash_method
+        role: metadata-contributing
+        contributes:
+          property: hashAlgorithm
+          derivation: argument_value
+
+  # verify returns the name of the hash used (e.g. "SHA-256"); it raises
+  # VerificationError on mismatch instead of returning False.
+  - method: rsa.verify
+    arity: 3
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+
+  - method: rsa.find_signature_hash
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  # ── hashing ────────────────────────────────────────────────────────────────
+
+  - method: rsa.compute_hash
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: method_name
+        role: metadata-contributing
+        contributes:
+          property: hashAlgorithm
+          derivation: argument_value
+
+  # ── blinded int-domain primitives (PrivateKey) ─────────────────────────────
+
+  - method: rsa.PrivateKey.blinded_encrypt
+    arity: 1
+    return:
+      type: builtins.int
+      confidence: high
+    role: operation
+
+  - method: rsa.PrivateKey.blinded_decrypt
+    arity: 1
+    return:
+      type: builtins.int
+      confidence: high
+    role: operation
+
+hierarchy:
+  rsa.PublicKey:
+    - builtins.object
+  rsa.PrivateKey:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.int:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object
+  builtins.object: []

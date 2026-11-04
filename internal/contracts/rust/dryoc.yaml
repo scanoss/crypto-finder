@@ -1,0 +1,2414 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: dryoc
+  coordinates:
+    - dryoc
+  version_range: ">=0.2.2,<0.9.0"
+  description: "dryoc: a pure-Rust libsodium/NaCl implementation, in a classic C-shaped API and a rustaceous one"
+
+# THE KEY SHAPE, AND IT IS NOT THE ONE THE CALL GRAPH PRINTS.
+# `rustContractsFor` normalises the call-site FQN with `rustAuthoredKey`
+# (contracts.go:267) BEFORE the lookup, and that rewrite moves the
+# second-to-last dot to `::`. So the graph emits
+# `dryoc::dryocbox.DryocBox.encrypt_to_vecbox` and this file must carry
+# `dryoc::dryocbox::DryocBox.encrypt_to_vecbox`. A free-function key has ONE
+# dot, `rustAuthoredKey` leaves it alone, and the emitted form is what belongs
+# here verbatim: `dryoc::classic::crypto_box.crypto_box_easy`. Both shapes were
+# read off a real `--export-callgraph` run before this file was written, not
+# derived from the API.
+#
+# WHY THE SAME CALLABLE APPEARS UNDER SEVERAL MODULE PATHS. The key follows the
+# CONSUMER'S import, not the crate's canonical path, and dryoc re-exports
+# `KeyPair` from three modules -- `dryoc::keypair::KeyPair` (src/keypair.rs:37),
+# `dryoc::dryocbox::KeyPair` (src/dryocbox.rs:120) and `dryoc::kx::KeyPair`
+# (src/kx.rs:66). A consumer writing `use dryoc::dryocbox::KeyPair;` emits a key
+# under `dryoc::dryocbox`, so an entry that exists only under `dryoc::keypair`
+# joins nothing for it.
+#
+# TWO ERAS, AND THE OLD ONE IS NOT A SUBSET.
+#   0.1.0 - 0.2.3  a FLAT layout: `dryoc::crypto_box::crypto_box_easy`, with no
+#                  `classic::` segment and no rustaceous types beyond DryocBox
+#                  and DryocSecretBox (0.2.x). Those keys are contracted
+#                  separately, at their own arities and returns, because the
+#                  0.2 signatures differ -- `crypto_secretbox_easy` takes 3
+#                  arguments and RETURNS the ciphertext
+#                  (0.2.3 src/crypto_secretbox.rs:85) where 0.8.0 takes 4 and
+#                  writes into an out-parameter (src/classic/crypto_secretbox.rs:92).
+#   0.3.0 onward   `dryoc::classic::<module>` plus the rustaceous modules.
+# Both eras are in the matrix, so both are contracted. A key an era does not
+# have simply never matches there.
+#
+# GENERIC RETURNS ARE DECLARED AT `confidence: low`, NOT OMITTED AND NOT
+# OVERCLAIMED. `Auth::finalize<Output: NewByteArray<CRYPTO_AUTH_BYTES>>(self)
+# -> Output` (0.8.0 src/auth.rs:171) returns whatever 32-byte array the CALLER
+# names. The crate's own default alias is `dryoc::auth::Mac`
+# (src/auth.rs:73) and that is what is declared, at low confidence, because a
+# `high` claim would assert a concrete type the signature does not fix. The
+# `_to_vec` siblings return `Vec<u8>` outright and are `high`.
+#
+# `parameter_types` IS DECLARED ONLY WHERE EVERY PARAMETER IS CONCRETE, which
+# in practice means the classic API. Every rustaceous method is generic over
+# the caller's byte-array type, so declaring its parameter types would name a
+# type PARAMETER rather than a type. Rust has no overloading, so where the
+# types are concrete, method plus arity identifies exactly one signature and
+# the declaration is exact.
+#
+# `parameters:` WITH `argument_bit_length` IS A DERIVATION INSTRUCTION, NOT A
+# CLAIM. It reads the width off the argument AT THE CALL SITE and yields
+# nothing when the argument is a variable, so it cannot assert a size the
+# consumer did not write.
+#
+# skipped-non-crypto: the `protected` module (mlock/mprotect page management,
+#   0.8.0 src/protected.rs -- hardening, no cryptography), `rng`
+#   (`copy_randombytes` forwards to `rand::rngs::SysRng`, src/rng.rs:1-24, so an
+#   asset there would attribute the platform CSPRNG to dryoc), `types`,
+#   `utils`, `constants`, `bytes_serde`, `error`, and the 0.2-era `ciphertext`,
+#   `message`, `nonce`, `secretboxkey`, `traits` and `prelude` plumbing modules.
+# needs-follow-up: the `#[cfg(feature = "nightly")]` protected-memory
+#   constructors. Verified by grep against all 34 published versions, they are
+#   `KeyPair::{new_locked_keypair, gen_locked_keypair, gen_readonly_locked_keypair,
+#   precalculate_locked, precalculate_readonly_locked}` (0.8.0 src/keypair.rs:
+#   306, 314, 347, 331, 368) and the same five on `SigningKeyPair`
+#   (src/sign.rs:220-300). `gen_locked_keypair` and its readonly twin DO perform
+#   X25519 keygen, so they are crypto rather than plumbing, but they are
+#   reachable only through the protected-memory API this family's scope excludes
+#   and only on a nightly toolchain. Named here rather than silently dropped.
+
+contracts:
+  - method: dryoc::auth::Auth.compute
+    arity: 2
+    return:
+      type: dryoc::auth::Mac
+      confidence: low
+    role: operation
+  - method: dryoc::auth::Auth.compute_and_verify
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::auth::Auth.compute_to_vec
+    arity: 2
+    return:
+      type: Vec<u8>
+      confidence: high
+    role: operation
+  - method: dryoc::auth::Auth.finalize
+    arity: 0
+    return:
+      type: dryoc::auth::Mac
+      confidence: low
+    role: operation
+  - method: dryoc::auth::Auth.finalize_to_vec
+    arity: 0
+    return:
+      type: Vec<u8>
+      confidence: high
+    role: operation
+  - method: dryoc::auth::Auth.new
+    arity: 1
+    return:
+      type: dryoc::auth::Auth
+      confidence: high
+    role: factory
+  - method: dryoc::auth::Auth.update
+    arity: 1
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::auth::Auth.verify
+    arity: 1
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::auth::Key.gen
+    arity: 0
+    return:
+      type: dryoc::auth::Key
+      confidence: high
+    role: factory
+  - method: dryoc::auth::Key.generate
+    arity: 0
+    return:
+      type: dryoc::auth::Key
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_auth.crypto_auth
+    arity: 3
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut Mac'
+      - '&[u8]'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 2
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_auth.crypto_auth_final
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - AuthState
+      - '&mut [u8; CRYPTO_AUTH_BYTES]'
+    role: operation
+  - method: dryoc::classic::crypto_auth.crypto_auth_init
+    arity: 1
+    return:
+      type: dryoc::classic::crypto_auth::AuthState
+      confidence: high
+    parameter_types:
+      - '&Key'
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_auth.crypto_auth_keygen
+    arity: 0
+    return:
+      type: dryoc::classic::crypto_auth::Key
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_auth.crypto_auth_update
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut AuthState'
+      - '&[u8]'
+    role: operation
+  - method: dryoc::classic::crypto_auth.crypto_auth_verify
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&Mac'
+      - '&[u8]'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 2
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_beforenm
+    arity: 2
+    return:
+      type: dryoc::classic::crypto_box::Key
+      confidence: high
+    parameter_types:
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 0
+        name: public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 1
+        name: secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_detached
+    arity: 6
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&mut Mac'
+      - '&[u8]'
+      - '&Nonce'
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 3
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 4
+        name: recipient_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 5
+        name: sender_secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_detached_afternm
+    arity: 5
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&mut Mac'
+      - '&[u8]'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 3
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 4
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_detached_afternm_inplace
+    arity: 4
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&mut Mac'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 3
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_detached_inplace
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&mut Mac'
+      - '&Nonce'
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 3
+        name: recipient_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 4
+        name: sender_secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_easy
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&[u8]'
+      - '&Nonce'
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 3
+        name: recipient_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 4
+        name: sender_secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_easy_inplace
+    arity: 4
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&Nonce'
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 2
+        name: recipient_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 3
+        name: sender_secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_keypair
+    arity: 0
+    return:
+      type: (dryoc::classic::crypto_box::PublicKey, dryoc::classic::crypto_box::SecretKey)
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_box.crypto_box_keypair_inplace
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut PublicKey'
+      - '&mut SecretKey'
+    role: factory
+    parameters:
+      - index: 0
+        name: public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 1
+        name: secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_open_detached
+    arity: 6
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&Mac'
+      - '&[u8]'
+      - '&Nonce'
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 3
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 4
+        name: recipient_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 5
+        name: sender_secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_open_detached_afternm
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&Mac'
+      - '&[u8]'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 3
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 4
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_open_detached_afternm_inplace
+    arity: 4
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&Mac'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 3
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_open_detached_inplace
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&Mac'
+      - '&Nonce'
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 3
+        name: recipient_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 4
+        name: sender_secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_open_easy
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&[u8]'
+      - '&Nonce'
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 3
+        name: sender_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 4
+        name: recipient_secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_open_easy_inplace
+    arity: 4
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&Nonce'
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 2
+        name: sender_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 3
+        name: recipient_secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_seal
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&[u8]'
+      - '&PublicKey'
+    role: operation
+    parameters:
+      - index: 2
+        name: recipient_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_seal_open
+    arity: 4
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&[u8]'
+      - '&PublicKey'
+      - '&SecretKey'
+    role: operation
+    parameters:
+      - index: 2
+        name: recipient_public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 3
+        name: recipient_secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_box.crypto_box_seed_keypair
+    arity: 1
+    return:
+      type: (dryoc::classic::crypto_box::PublicKey, dryoc::classic::crypto_box::SecretKey)
+      confidence: high
+    parameter_types:
+      - '&[u8]'
+    role: factory
+  - method: dryoc::classic::crypto_box.crypto_box_seed_keypair_inplace
+    arity: 3
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut PublicKey'
+      - '&mut SecretKey'
+      - '&[u8]'
+    role: factory
+    parameters:
+      - index: 0
+        name: public_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 1
+        name: secret_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_core.crypto_core_ed25519_is_valid_point
+    arity: 1
+    return:
+      type: bool
+      confidence: high
+    parameter_types:
+      - '&Ed25519Point'
+    role: operation
+  - method: dryoc::classic::crypto_core.crypto_core_ed25519_is_valid_point_relaxed
+    arity: 1
+    return:
+      type: bool
+      confidence: high
+    parameter_types:
+      - '&Ed25519Point'
+    role: operation
+  - method: dryoc::classic::crypto_core.crypto_core_hchacha20
+    arity: 4
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_core.crypto_core_hsalsa20
+    arity: 4
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_core.crypto_scalarmult
+    arity: 3
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut [u8; CRYPTO_SCALARMULT_BYTES]'
+      - '&[u8; CRYPTO_SCALARMULT_SCALARBYTES]'
+      - '&[u8; CRYPTO_SCALARMULT_BYTES]'
+    role: operation
+  - method: dryoc::classic::crypto_core.crypto_scalarmult_base
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut [u8; CRYPTO_SCALARMULT_BYTES]'
+      - '&[u8; CRYPTO_SCALARMULT_SCALARBYTES]'
+    role: operation
+  - method: dryoc::classic::crypto_generichash.crypto_generichash
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_generichash.crypto_generichash_final
+    arity: 2
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - GenericHashState
+      - '&mut [u8]'
+    role: operation
+  - method: dryoc::classic::crypto_generichash.crypto_generichash_init
+    arity: 2
+    return:
+      type: Result<dryoc::classic::crypto_generichash::GenericHashState, dryoc::Error>
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_generichash.crypto_generichash_keygen
+    arity: 0
+    return:
+      type: '[u8; CRYPTO_GENERICHASH_KEYBYTES]'
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_generichash.crypto_generichash_update
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut GenericHashState'
+      - '&[u8]'
+    role: operation
+  - method: dryoc::classic::crypto_hash.crypto_hash_sha512
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut Digest'
+      - '&[u8]'
+    role: operation
+  - method: dryoc::classic::crypto_hash.crypto_hash_sha512_final
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - Sha512State
+      - '&mut Digest'
+    role: operation
+  - method: dryoc::classic::crypto_hash.crypto_hash_sha512_init
+    arity: 0
+    return:
+      type: dryoc::classic::crypto_hash::Sha512State
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_hash.crypto_hash_sha512_update
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut Sha512State'
+      - '&[u8]'
+    role: operation
+  - method: dryoc::classic::crypto_kdf.crypto_kdf_derive_from_key
+    arity: 4
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - u64
+      - '&Context'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 3
+        name: main_key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_kdf.crypto_kdf_keygen
+    arity: 0
+    return:
+      type: dryoc::classic::crypto_kdf::Key
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_kx.crypto_kx_client_session_keys
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut SessionKey'
+      - '&mut SessionKey'
+      - '&PublicKey'
+      - '&SecretKey'
+      - '&PublicKey'
+    role: operation
+    parameters:
+      - index: 0
+        name: rx
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 1
+        name: tx
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 2
+        name: client_pk
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 3
+        name: client_sk
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 4
+        name: server_pk
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_kx.crypto_kx_keypair
+    arity: 0
+    return:
+      type: (dryoc::classic::crypto_kx::PublicKey, dryoc::classic::crypto_kx::SecretKey)
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_kx.crypto_kx_seed_keypair
+    arity: 1
+    return:
+      type: Result<(dryoc::classic::crypto_kx::PublicKey, dryoc::classic::crypto_kx::SecretKey), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&[u8; CRYPTO_KX_SEEDBYTES]'
+    role: factory
+  - method: dryoc::classic::crypto_kx.crypto_kx_server_session_keys
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut SessionKey'
+      - '&mut SessionKey'
+      - '&PublicKey'
+      - '&SecretKey'
+      - '&PublicKey'
+    role: operation
+    parameters:
+      - index: 0
+        name: rx
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 1
+        name: tx
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 2
+        name: server_pk
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 3
+        name: server_sk
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+      - index: 4
+        name: client_pk
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_onetimeauth.crypto_onetimeauth
+    arity: 3
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut Mac'
+      - '&[u8]'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 2
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_onetimeauth.crypto_onetimeauth_final
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - OnetimeauthState
+      - '&mut [u8; CRYPTO_ONETIMEAUTH_BYTES]'
+    role: operation
+  - method: dryoc::classic::crypto_onetimeauth.crypto_onetimeauth_init
+    arity: 1
+    return:
+      type: dryoc::classic::crypto_onetimeauth::OnetimeauthState
+      confidence: high
+    parameter_types:
+      - '&[u8; CRYPTO_ONETIMEAUTH_KEYBYTES]'
+    role: factory
+  - method: dryoc::classic::crypto_onetimeauth.crypto_onetimeauth_keygen
+    arity: 0
+    return:
+      type: dryoc::classic::crypto_onetimeauth::Key
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_onetimeauth.crypto_onetimeauth_update
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut OnetimeauthState'
+      - '&[u8]'
+    role: operation
+  - method: dryoc::classic::crypto_onetimeauth.crypto_onetimeauth_verify
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&Mac'
+      - '&[u8]'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 2
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_pwhash.crypto_pwhash
+    arity: 6
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&[u8]'
+      - '&[u8]'
+      - u64
+      - usize
+      - PasswordHashAlgorithm
+    role: operation
+  - method: dryoc::classic::crypto_pwhash.crypto_pwhash_str
+    arity: 3
+    return:
+      type: Result<String, dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&[u8]'
+      - u64
+      - usize
+    role: operation
+  - method: dryoc::classic::crypto_pwhash.crypto_pwhash_str_needs_rehash
+    arity: 3
+    return:
+      type: Result<bool, dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&str'
+      - u64
+      - usize
+    role: operation
+  - method: dryoc::classic::crypto_pwhash.crypto_pwhash_str_verify
+    arity: 2
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&str'
+      - '&[u8]'
+    role: operation
+  - method: dryoc::classic::crypto_secretbox.crypto_secretbox_detached
+    arity: 5
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&mut Mac'
+      - '&[u8]'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 3
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 4
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_secretbox.crypto_secretbox_easy
+    arity: 4
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&[u8]'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 3
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_secretbox.crypto_secretbox_easy_inplace
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 2
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_secretbox.crypto_secretbox_keygen
+    arity: 0
+    return:
+      type: dryoc::classic::crypto_secretbox::Key
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_secretbox.crypto_secretbox_keygen_inplace
+    arity: 1
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut Key'
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_secretbox.crypto_secretbox_open_detached
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&Mac'
+      - '&[u8]'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 3
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 4
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_secretbox.crypto_secretbox_open_easy
+    arity: 4
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&[u8]'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 2
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 3
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_secretbox.crypto_secretbox_open_easy_inplace
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&Nonce'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 1
+        name: nonce
+        role: metadata-contributing
+        contributes:
+          property: nonceSize
+          derivation: argument_bit_length
+      - index: 2
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_secretstream_xchacha20poly1305.crypto_secretstream_xchacha20poly1305_init_pull
+    arity: 3
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_secretstream_xchacha20poly1305.crypto_secretstream_xchacha20poly1305_init_push
+    arity: 3
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_secretstream_xchacha20poly1305.crypto_secretstream_xchacha20poly1305_keygen
+    arity: 1
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut Key'
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_secretstream_xchacha20poly1305.crypto_secretstream_xchacha20poly1305_pull
+    arity: 5
+    return:
+      type: Result<usize, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_secretstream_xchacha20poly1305.crypto_secretstream_xchacha20poly1305_push
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_secretstream_xchacha20poly1305.crypto_secretstream_xchacha20poly1305_rekey
+    arity: 1
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut State'
+    role: operation
+  - method: dryoc::classic::crypto_shorthash.crypto_shorthash
+    arity: 3
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut Hash'
+      - '&[u8]'
+      - '&Key'
+    role: operation
+    parameters:
+      - index: 2
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_shorthash.crypto_shorthash_keygen
+    arity: 0
+    return:
+      type: dryoc::classic::crypto_shorthash::Key
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_sign.crypto_sign
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&[u8]'
+      - '&SecretKey'
+    role: operation
+  - method: dryoc::classic::crypto_sign.crypto_sign_detached
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_sign.crypto_sign_final_create
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_sign.crypto_sign_final_verify
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_sign.crypto_sign_init
+    arity: 0
+    return:
+      type: dryoc::classic::crypto_sign::SignerState
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_sign.crypto_sign_keypair
+    arity: 0
+    return:
+      type: (dryoc::classic::crypto_sign::PublicKey, dryoc::classic::crypto_sign::SecretKey)
+      confidence: high
+    role: factory
+  - method: dryoc::classic::crypto_sign.crypto_sign_keypair_inplace
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut PublicKey'
+      - '&mut SecretKey'
+    role: factory
+  - method: dryoc::classic::crypto_sign.crypto_sign_open
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8]'
+      - '&[u8]'
+      - '&PublicKey'
+    role: operation
+  - method: dryoc::classic::crypto_sign.crypto_sign_seed_keypair
+    arity: 1
+    return:
+      type: (dryoc::classic::crypto_sign::PublicKey, dryoc::classic::crypto_sign::SecretKey)
+      confidence: high
+    parameter_types:
+      - '&[u8; 32]'
+    role: factory
+    parameters:
+      - index: 0
+        name: seed
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_sign.crypto_sign_seed_keypair_inplace
+    arity: 3
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut PublicKey'
+      - '&mut SecretKey'
+      - '&[u8; 32]'
+    role: factory
+    parameters:
+      - index: 2
+        name: seed
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: dryoc::classic::crypto_sign.crypto_sign_update
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut SignerState'
+      - '&[u8]'
+    role: operation
+  - method: dryoc::classic::crypto_sign.crypto_sign_verify_detached
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::classic::crypto_sign_ed25519.crypto_sign_ed25519_pk_to_curve25519
+    arity: 2
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    parameter_types:
+      - '&mut [u8; CRYPTO_SCALARMULT_CURVE25519_BYTES]'
+      - '&PublicKey'
+    role: operation
+  - method: dryoc::classic::crypto_sign_ed25519.crypto_sign_ed25519_sk_to_curve25519
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    parameter_types:
+      - '&mut [u8; CRYPTO_SCALARMULT_CURVE25519_BYTES]'
+      - '&SecretKey'
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_beforenm
+    arity: 2
+    return:
+      type: SecretBoxKeyBase
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_detached
+    arity: 4
+    return:
+      type: Result<DryocBox, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_detached_afternm
+    arity: 3
+    return:
+      type: Result<DryocBox, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_detached_afternm_inplace
+    arity: 3
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_detached_inplace
+    arity: 4
+    return:
+      type: Result<DryocBox, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_easy
+    arity: 4
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_easy_inplace
+    arity: 4
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_keypair
+    arity: 0
+    return:
+      type: KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::crypto_box.crypto_box_open_detached
+    arity: 5
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_open_detached_afternm
+    arity: 4
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_open_detached_afternm_inplace
+    arity: 4
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_open_detached_inplace
+    arity: 5
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_open_easy
+    arity: 4
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_open_easy_inplace
+    arity: 4
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_box.crypto_box_seed_keypair
+    arity: 1
+    return:
+      type: KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::crypto_core.crypto_scalarmult_base
+    arity: 1
+    return:
+      type: '[u8; CRYPTO_SCALARMULT_BYTES]'
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_hash.crypto_hash_sha512
+    arity: 1
+    return:
+      type: Vec<u8>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_hash.crypto_hash_sha512_final
+    arity: 1
+    return:
+      type: Vec<u8>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_hash.crypto_hash_sha512_init
+    arity: 0
+    return:
+      type: Sha512
+      confidence: high
+    role: factory
+  - method: dryoc::crypto_hash.crypto_hash_sha512_update
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_secretbox.crypto_secretbox_detached
+    arity: 3
+    return:
+      type: DryocSecretBox
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_secretbox.crypto_secretbox_easy
+    arity: 3
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_secretbox.crypto_secretbox_easy_inplace
+    arity: 3
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_secretbox.crypto_secretbox_keygen
+    arity: 0
+    return:
+      type: SecretBoxKeyBase
+      confidence: high
+    role: factory
+  - method: dryoc::crypto_secretbox.crypto_secretbox_open_detached
+    arity: 4
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_secretbox.crypto_secretbox_open_easy
+    arity: 3
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::crypto_secretbox.crypto_secretbox_open_easy_inplace
+    arity: 3
+    return:
+      type: Result<OutputBase, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.decrypt
+    arity: 3
+    return:
+      type: Result<std::vec::Vec<u8>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.decrypt_to_vec
+    arity: 3
+    return:
+      type: Result<Vec<u8>, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.encrypt
+    arity: 4
+    return:
+      type: Result<dryoc::dryocbox::DryocBox, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.encrypt_to_vecbox
+    arity: 4
+    return:
+      type: Result<dryoc::dryocbox::DryocBox, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.precalc_decrypt
+    arity: 2
+    return:
+      type: Result<std::vec::Vec<u8>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.precalc_decrypt_to_vec
+    arity: 2
+    return:
+      type: Result<Vec<u8>, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.precalc_encrypt
+    arity: 3
+    return:
+      type: Result<dryoc::dryocbox::DryocBox, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.precalc_encrypt_to_vecbox
+    arity: 3
+    return:
+      type: Result<dryoc::dryocbox::DryocBox, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.seal
+    arity: 2
+    return:
+      type: Result<dryoc::dryocbox::DryocBox, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.seal_to_vecbox
+    arity: 2
+    return:
+      type: Result<dryoc::dryocbox::DryocBox, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.unseal
+    arity: 1
+    return:
+      type: Result<std::vec::Vec<u8>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::dryocbox::DryocBox.unseal_to_vec
+    arity: 1
+    return:
+      type: Result<Vec<u8>, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::KeyPair.from_secret_key
+    arity: 1
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::dryocbox::KeyPair.from_seed
+    arity: 1
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::dryocbox::KeyPair.from_slices
+    arity: 2
+    return:
+      type: Result<dryoc::keypair::KeyPair, dryoc::Error>
+      confidence: high
+    role: factory
+  - method: dryoc::dryocbox::KeyPair.gen
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::dryocbox::KeyPair.gen_with_defaults
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::dryocbox::KeyPair.generate
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::dryocbox::KeyPair.generate_with_defaults
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::dryocbox::KeyPair.is_valid_ed25519_key
+    arity: 1
+    return:
+      type: bool
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::KeyPair.is_valid_public_key
+    arity: 1
+    return:
+      type: bool
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::KeyPair.kx_new_client_session
+    arity: 1
+    return:
+      type: Result<kx::Session<dryoc::kx::SessionKey>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::dryocbox::KeyPair.kx_new_server_session
+    arity: 1
+    return:
+      type: Result<kx::Session<dryoc::kx::SessionKey>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::dryocbox::KeyPair.new
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::dryocbox::KeyPair.precalculate
+    arity: 1
+    return:
+      type: PrecalcSecretKey<StackByteArray<CRYPTO_BOX_BEFORENMBYTES>>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocbox::Nonce.gen
+    arity: 0
+    return:
+      type: dryoc::dryocbox::Nonce
+      confidence: high
+    role: factory
+  - method: dryoc::dryocbox::Nonce.generate
+    arity: 0
+    return:
+      type: dryoc::dryocbox::Nonce
+      confidence: high
+    role: factory
+  - method: dryoc::dryocsecretbox::DryocSecretBox.decrypt
+    arity: 2
+    return:
+      type: Result<std::vec::Vec<u8>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::dryocsecretbox::DryocSecretBox.decrypt_to_vec
+    arity: 2
+    return:
+      type: Result<Vec<u8>, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocsecretbox::DryocSecretBox.encrypt
+    arity: 3
+    return:
+      type: dryoc::dryocsecretbox::DryocSecretBox
+      confidence: high
+    role: operation
+  - method: dryoc::dryocsecretbox::DryocSecretBox.encrypt_to_vecbox
+    arity: 3
+    return:
+      type: dryoc::dryocsecretbox::DryocSecretBox
+      confidence: high
+    role: operation
+  - method: dryoc::dryocsecretbox::Key.gen
+    arity: 0
+    return:
+      type: dryoc::dryocsecretbox::Key
+      confidence: high
+    role: factory
+  - method: dryoc::dryocsecretbox::Key.generate
+    arity: 0
+    return:
+      type: dryoc::dryocsecretbox::Key
+      confidence: high
+    role: factory
+  - method: dryoc::dryocsecretbox::Nonce.gen
+    arity: 0
+    return:
+      type: dryoc::dryocsecretbox::Nonce
+      confidence: high
+    role: factory
+  - method: dryoc::dryocsecretbox::Nonce.generate
+    arity: 0
+    return:
+      type: dryoc::dryocsecretbox::Nonce
+      confidence: high
+    role: factory
+  - method: dryoc::dryocstream::DryocStream.init_pull
+    arity: 2
+    return:
+      type: dryoc::dryocstream::DryocStream
+      confidence: high
+    role: factory
+  - method: dryoc::dryocstream::DryocStream.init_push
+    arity: 1
+    return:
+      type: (dryoc::dryocstream::DryocStream, Header)
+      confidence: high
+    role: factory
+  - method: dryoc::dryocstream::DryocStream.pull
+    arity: 2
+    return:
+      type: Result<(std::vec::Vec<u8>, Tag), dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::dryocstream::DryocStream.pull_to_vec
+    arity: 2
+    return:
+      type: Result<(Vec<u8>, Tag), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocstream::DryocStream.push
+    arity: 3
+    return:
+      type: Result<std::vec::Vec<u8>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::dryocstream::DryocStream.push_to_vec
+    arity: 3
+    return:
+      type: Result<Vec<u8>, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::dryocstream::DryocStream.rekey
+    arity: 0
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::dryocstream::Header.gen
+    arity: 0
+    return:
+      type: dryoc::dryocstream::Header
+      confidence: high
+    role: factory
+  - method: dryoc::dryocstream::Header.generate
+    arity: 0
+    return:
+      type: dryoc::dryocstream::Header
+      confidence: high
+    role: factory
+  - method: dryoc::dryocstream::Key.gen
+    arity: 0
+    return:
+      type: dryoc::dryocstream::Key
+      confidence: high
+    role: factory
+  - method: dryoc::dryocstream::Key.generate
+    arity: 0
+    return:
+      type: dryoc::dryocstream::Key
+      confidence: high
+    role: factory
+  - method: dryoc::dryocstream::Nonce.gen
+    arity: 0
+    return:
+      type: dryoc::dryocstream::Nonce
+      confidence: high
+    role: factory
+  - method: dryoc::dryocstream::Nonce.generate
+    arity: 0
+    return:
+      type: dryoc::dryocstream::Nonce
+      confidence: high
+    role: factory
+  - method: dryoc::generichash::GenericHash.finalize
+    arity: 0
+    return:
+      type: Result<dryoc::generichash::Hash, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::generichash::GenericHash.finalize_to_vec
+    arity: 0
+    return:
+      type: Result<Vec<u8>, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::generichash::GenericHash.hash
+    arity: 2
+    return:
+      type: Result<dryoc::generichash::Hash, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::generichash::GenericHash.hash_to_vec
+    arity: 2
+    return:
+      type: Result<Vec<u8>, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::generichash::GenericHash.hash_with_defaults
+    arity: 2
+    return:
+      type: Result<dryoc::generichash::Hash, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::generichash::GenericHash.hash_with_defaults_to_vec
+    arity: 2
+    return:
+      type: Result<Vec<u8>, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::generichash::GenericHash.new
+    arity: 1
+    return:
+      type: Result<dryoc::generichash::GenericHash, dryoc::Error>
+      confidence: high
+    role: factory
+  - method: dryoc::generichash::GenericHash.new_with_defaults
+    arity: 1
+    return:
+      type: Result<dryoc::generichash::GenericHash, dryoc::Error>
+      confidence: high
+    role: factory
+  - method: dryoc::generichash::GenericHash.update
+    arity: 1
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::generichash::Key.gen
+    arity: 0
+    return:
+      type: dryoc::generichash::Key
+      confidence: high
+    role: factory
+  - method: dryoc::generichash::Key.generate
+    arity: 0
+    return:
+      type: dryoc::generichash::Key
+      confidence: high
+    role: factory
+  - method: dryoc::kdf::Kdf.derive_subkey
+    arity: 1
+    return:
+      type: Result<dryoc::kdf::Key, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::kdf::Kdf.derive_subkey_to_vec
+    arity: 1
+    return:
+      type: Result<Vec<u8>, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::kdf::Kdf.gen
+    arity: 0
+    return:
+      type: dryoc::kdf::Kdf
+      confidence: high
+    role: factory
+  - method: dryoc::kdf::Kdf.gen_with_defaults
+    arity: 0
+    return:
+      type: dryoc::kdf::Kdf
+      confidence: high
+    role: factory
+  - method: dryoc::kdf::Kdf.generate
+    arity: 0
+    return:
+      type: dryoc::kdf::Kdf
+      confidence: high
+    role: factory
+  - method: dryoc::kdf::Kdf.generate_with_defaults
+    arity: 0
+    return:
+      type: dryoc::kdf::Kdf
+      confidence: high
+    role: factory
+  - method: dryoc::kdf::Key.gen
+    arity: 0
+    return:
+      type: dryoc::kdf::Key
+      confidence: high
+    role: factory
+  - method: dryoc::kdf::Key.generate
+    arity: 0
+    return:
+      type: dryoc::kdf::Key
+      confidence: high
+    role: factory
+  - method: dryoc::keypair::KeyPair.from_secret_key
+    arity: 1
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::keypair::KeyPair.from_seed
+    arity: 1
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::keypair::KeyPair.from_slices
+    arity: 2
+    return:
+      type: Result<dryoc::keypair::KeyPair, dryoc::Error>
+      confidence: high
+    role: factory
+  - method: dryoc::keypair::KeyPair.gen
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::keypair::KeyPair.gen_with_defaults
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::keypair::KeyPair.generate
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::keypair::KeyPair.generate_with_defaults
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::keypair::KeyPair.is_valid_ed25519_key
+    arity: 1
+    return:
+      type: bool
+      confidence: high
+    role: operation
+  - method: dryoc::keypair::KeyPair.is_valid_public_key
+    arity: 1
+    return:
+      type: bool
+      confidence: high
+    role: operation
+  - method: dryoc::keypair::KeyPair.kx_new_client_session
+    arity: 1
+    return:
+      type: Result<kx::Session<dryoc::kx::SessionKey>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::keypair::KeyPair.kx_new_server_session
+    arity: 1
+    return:
+      type: Result<kx::Session<dryoc::kx::SessionKey>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::keypair::KeyPair.new
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::keypair::KeyPair.precalculate
+    arity: 1
+    return:
+      type: PrecalcSecretKey<StackByteArray<CRYPTO_BOX_BEFORENMBYTES>>
+      confidence: high
+    role: operation
+  - method: dryoc::kx::KeyPair.from_secret_key
+    arity: 1
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::kx::KeyPair.from_seed
+    arity: 1
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::kx::KeyPair.from_slices
+    arity: 2
+    return:
+      type: Result<dryoc::keypair::KeyPair, dryoc::Error>
+      confidence: high
+    role: factory
+  - method: dryoc::kx::KeyPair.gen
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::kx::KeyPair.gen_with_defaults
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::kx::KeyPair.generate
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::kx::KeyPair.generate_with_defaults
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::kx::KeyPair.is_valid_ed25519_key
+    arity: 1
+    return:
+      type: bool
+      confidence: high
+    role: operation
+  - method: dryoc::kx::KeyPair.is_valid_public_key
+    arity: 1
+    return:
+      type: bool
+      confidence: high
+    role: operation
+  - method: dryoc::kx::KeyPair.kx_new_client_session
+    arity: 1
+    return:
+      type: Result<kx::Session<dryoc::kx::SessionKey>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::kx::KeyPair.kx_new_server_session
+    arity: 1
+    return:
+      type: Result<kx::Session<dryoc::kx::SessionKey>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::kx::KeyPair.new
+    arity: 0
+    return:
+      type: dryoc::keypair::KeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::kx::KeyPair.precalculate
+    arity: 1
+    return:
+      type: PrecalcSecretKey<StackByteArray<CRYPTO_BOX_BEFORENMBYTES>>
+      confidence: high
+    role: operation
+  - method: dryoc::kx::Session.new_client
+    arity: 2
+    return:
+      type: Result<dryoc::kx::Session, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::kx::Session.new_client_with_defaults
+    arity: 2
+    return:
+      type: Result<dryoc::kx::Session, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::kx::Session.new_server
+    arity: 2
+    return:
+      type: Result<dryoc::kx::Session, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::kx::Session.new_server_with_defaults
+    arity: 2
+    return:
+      type: Result<dryoc::kx::Session, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::onetimeauth::Key.gen
+    arity: 0
+    return:
+      type: dryoc::onetimeauth::Key
+      confidence: high
+    role: factory
+  - method: dryoc::onetimeauth::Key.generate
+    arity: 0
+    return:
+      type: dryoc::onetimeauth::Key
+      confidence: high
+    role: factory
+  - method: dryoc::onetimeauth::OnetimeAuth.compute
+    arity: 2
+    return:
+      type: dryoc::onetimeauth::Mac
+      confidence: low
+    role: operation
+  - method: dryoc::onetimeauth::OnetimeAuth.compute_and_verify
+    arity: 3
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::onetimeauth::OnetimeAuth.compute_to_vec
+    arity: 2
+    return:
+      type: Vec<u8>
+      confidence: high
+    role: operation
+  - method: dryoc::onetimeauth::OnetimeAuth.finalize
+    arity: 0
+    return:
+      type: dryoc::onetimeauth::Mac
+      confidence: low
+    role: operation
+  - method: dryoc::onetimeauth::OnetimeAuth.finalize_to_vec
+    arity: 0
+    return:
+      type: Vec<u8>
+      confidence: high
+    role: operation
+  - method: dryoc::onetimeauth::OnetimeAuth.new
+    arity: 1
+    return:
+      type: dryoc::onetimeauth::OnetimeAuth
+      confidence: high
+    role: factory
+  - method: dryoc::onetimeauth::OnetimeAuth.update
+    arity: 1
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::onetimeauth::OnetimeAuth.verify
+    arity: 1
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::precalc::PrecalcSecretKey.precalculate
+    arity: 2
+    return:
+      type: dryoc::precalc::PrecalcSecretKey
+      confidence: high
+    role: operation
+  - method: dryoc::pwhash::Config.interactive
+    arity: 0
+    return:
+      type: dryoc::pwhash::Config
+      confidence: high
+    role: config
+  - method: dryoc::pwhash::Config.moderate
+    arity: 0
+    return:
+      type: dryoc::pwhash::Config
+      confidence: high
+    role: config
+  - method: dryoc::pwhash::Config.sensitive
+    arity: 0
+    return:
+      type: dryoc::pwhash::Config
+      confidence: high
+    role: config
+  - method: dryoc::pwhash::PwHash.derive_keypair
+    arity: 3
+    return:
+      type: Result<keypair::KeyPair<dryoc::keypair::PublicKey, dryoc::keypair::SecretKey>, dryoc::Error>
+      confidence: low
+    role: factory
+  - method: dryoc::pwhash::PwHash.from_string
+    arity: 1
+    return:
+      type: Result<dryoc::pwhash::PwHash, dryoc::Error>
+      confidence: high
+    role: factory
+  - method: dryoc::pwhash::PwHash.from_string_with_defaults
+    arity: 1
+    return:
+      type: Result<dryoc::pwhash::PwHash, dryoc::Error>
+      confidence: high
+    role: factory
+  - method: dryoc::pwhash::PwHash.hash
+    arity: 2
+    return:
+      type: Result<dryoc::pwhash::PwHash, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::pwhash::PwHash.hash_interactive
+    arity: 1
+    return:
+      type: Result<dryoc::pwhash::PwHash, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::pwhash::PwHash.hash_moderate
+    arity: 1
+    return:
+      type: Result<dryoc::pwhash::PwHash, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::pwhash::PwHash.hash_sensitive
+    arity: 1
+    return:
+      type: Result<dryoc::pwhash::PwHash, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::pwhash::PwHash.hash_with_defaults
+    arity: 1
+    return:
+      type: Result<dryoc::pwhash::PwHash, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::pwhash::PwHash.hash_with_salt
+    arity: 3
+    return:
+      type: Result<dryoc::pwhash::PwHash, dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::pwhash::PwHash.verify
+    arity: 1
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::sha512::Sha512.compute
+    arity: 1
+    return:
+      type: dryoc::sha512::Digest
+      confidence: low
+    role: operation
+  - method: dryoc::sha512::Sha512.compute_into_bytes
+    arity: 2
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::sha512::Sha512.compute_to_vec
+    arity: 1
+    return:
+      type: Vec<u8>
+      confidence: high
+    role: operation
+  - method: dryoc::sha512::Sha512.finalize
+    arity: 0
+    return:
+      type: dryoc::sha512::Digest
+      confidence: low
+    role: operation
+  - method: dryoc::sha512::Sha512.finalize_into_bytes
+    arity: 1
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::sha512::Sha512.finalize_to_vec
+    arity: 0
+    return:
+      type: Vec<u8>
+      confidence: high
+    role: operation
+  - method: dryoc::sha512::Sha512.new
+    arity: 0
+    return:
+      type: dryoc::sha512::Sha512
+      confidence: high
+    role: factory
+  - method: dryoc::sha512::Sha512.update
+    arity: 1
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::sign::IncrementalSigner.finalize
+    arity: 1
+    return:
+      type: Result<dryoc::sign::Signature, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::sign::IncrementalSigner.new
+    arity: 0
+    return:
+      type: dryoc::sign::IncrementalSigner
+      confidence: high
+    role: factory
+  - method: dryoc::sign::IncrementalSigner.update
+    arity: 1
+    return:
+      type: ()
+      confidence: high
+    role: operation
+  - method: dryoc::sign::IncrementalSigner.verify
+    arity: 2
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::sign::SignedMessage.verify
+    arity: 1
+    return:
+      type: Result<(), dryoc::Error>
+      confidence: high
+    role: operation
+  - method: dryoc::sign::SigningKeyPair.from_secret_key
+    arity: 1
+    return:
+      type: dryoc::sign::SigningKeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::sign::SigningKeyPair.from_seed
+    arity: 1
+    return:
+      type: dryoc::sign::SigningKeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::sign::SigningKeyPair.from_slices
+    arity: 2
+    return:
+      type: Result<dryoc::sign::SigningKeyPair, dryoc::Error>
+      confidence: high
+    role: factory
+  - method: dryoc::sign::SigningKeyPair.gen
+    arity: 0
+    return:
+      type: dryoc::sign::SigningKeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::sign::SigningKeyPair.gen_with_defaults
+    arity: 0
+    return:
+      type: dryoc::sign::SigningKeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::sign::SigningKeyPair.generate
+    arity: 0
+    return:
+      type: dryoc::sign::SigningKeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::sign::SigningKeyPair.generate_with_defaults
+    arity: 0
+    return:
+      type: dryoc::sign::SigningKeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::sign::SigningKeyPair.new
+    arity: 0
+    return:
+      type: dryoc::sign::SigningKeyPair
+      confidence: high
+    role: factory
+  - method: dryoc::sign::SigningKeyPair.sign
+    arity: 1
+    return:
+      type: Result<SignedMessage<dryoc::sign::Signature, dryoc::sign::Message>, dryoc::Error>
+      confidence: low
+    role: operation
+  - method: dryoc::sign::SigningKeyPair.sign_with_defaults
+    arity: 1
+    return:
+      type: Result<SignedMessage<StackByteArray<CRYPTO_SIGN_BYTES>, Vec<u8>>, dryoc::Error>
+      confidence: high
+    role: operation
+
+hierarchy: {}

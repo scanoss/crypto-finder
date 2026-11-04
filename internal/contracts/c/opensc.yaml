@@ -1,0 +1,163 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: opensc
+  coordinates:
+    - opensc
+    - OpenSC/opensc
+  version_range: ">=0.12.0,<0.27.0"
+  description: "OpenSC libopensc card and PKCS#15 sign, decipher and derive operations, key and certificate objects"
+
+# Inventory source: libopensc/opensc.h, libopensc/pkcs15.h and
+# pkcs15init/pkcs15-init.h at tags 0.12.2, 0.15.0 and 0.26.1, plus every
+# function the OpenSC detection rules select. Where a function's arity changed
+# across those releases (sc_pkcs15_compute_signature and sc_pkcs15_decipher gain
+# a mechanism argument, sc_pkcs15_read_certificate a private-object flag,
+# sc_pkcs15init_bind a profile-option argument), each arity is its own contract;
+# the flags argument stays at index 2 in every release.
+#
+# The alg_flags/flags argument of sc_pkcs15_compute_signature, sc_pkcs15_decipher
+# and sc_pkcs15_derive (SC_ALGORITHM_RSA_PAD_*, SC_ALGORITHM_ECDSA_*,
+# SC_ALGORITHM_GOSTR3410_*) and the security environment passed to
+# sc_set_security_env select the scheme, so they are operation-determining. No
+# contract names a card, reader or driver.
+#
+# Dispositions:
+#   contracted: every function below; it includes every rule-selected function.
+#   skipped-non-crypto: context, reader and card handling (sc_establish_context,
+#     sc_connect_card, sc_lock), APDU transport (sc_transmit_apdu), file-system
+#     access (sc_select_file, sc_read_binary), PIN verification (sc_verify,
+#     sc_pkcs15_verify_pin, sc_pin_cmd), and teardown (sc_pkcs15_unbind,
+#     sc_pkcs15_free_*), which the detection rules keep negative.
+#   needs-follow-up: card-driver entry points and sc_card_ctl, the pkcs15init
+#     profile and PIN-store APIs, and secure-messaging helpers. No detection
+#     rule selects them.
+contracts:
+  - method: sc_compute_signature
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sc_decipher
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sc_pkcs15_bind
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15_compute_signature
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: alg_flags
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sc_pkcs15_compute_signature
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: alg_flags
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sc_pkcs15_decipher
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: flags
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sc_pkcs15_decipher
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: flags
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sc_pkcs15_derive
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: flags
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sc_pkcs15_find_cert_by_id
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15_find_prkey_by_id
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15_find_prkey_by_id_usage
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15_find_pubkey_by_id
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15_read_certificate
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15_read_certificate
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15_read_pubkey
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15init_bind
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15init_bind
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: sc_pkcs15init_generate_key
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 3
+        name: keybits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: sc_pkcs15init_store_certificate
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sc_pkcs15init_store_private_key
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sc_pkcs15init_store_public_key
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sc_restore_security_env
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: sc_set_security_env
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: env
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+hierarchy: {}

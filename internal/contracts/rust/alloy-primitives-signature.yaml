@@ -1,0 +1,140 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  # `library.name` is a per-FILE label and must be unique across the KB
+  # directory -- a repeated name is a hard load error
+  # ("duplicate library name ... in files"). `coordinates` is what ties every
+  # file back to the one crate, and it carries both spellings because the
+  # crates.io package is `alloy-primitives` and the Rust library is
+  # `alloy_primitives`.
+  name: alloy-primitives-signature
+  coordinates:
+    - alloy-primitives
+    - alloy_primitives
+  version_range: ">=0.6.0,<1.7.0"
+  description: "alloy-primitives ECDSA-secp256k1 address and public-key recovery on the Signature type"
+
+# THE RECOVERY SURFACE ARRIVES AT 0.6.0, together with the `k256` Cargo feature
+# that gates it -- 0.6.0 is the first release whose Cargo.toml declares
+# `k256 = ["dep:k256"]`, and the four methods appear in the same release at
+# src/signature/sig.rs:201,212,224,235. Compiling any of them against 0.5.4
+# fails. `k256` is NOT a default feature in any release (1.6.0 Cargo.toml:68-72
+# is `default = ["std", "map", "map-foldhash"]`), so a consumer must opt in;
+# that is a fact about the range recorded here, not a reason to withhold the
+# entries -- the same treatment merged `bls12_381` gives its `experimental`-gated
+# `hash_to_curve`.
+#
+# THE TYPE IS REACHED ONLY THROUGH THE CRATE ROOT. `mod signature;` is PRIVATE in
+# every release (1.6.0 src/lib.rs:71, 1.0.0:59, 0.6.0:55), so there is no
+# `alloy_primitives::signature::Signature` key to declare -- a probe naming that
+# path fails with E0603. Three rule patterns spelling it that way were written
+# from the source layout and removed after compiling refuted them. The inner type
+# is `pub(crate)` at 0.6.0-0.8.0 and reached through the crate-root generic
+# ALIAS `pub type Signature = signature::Signature<k256::ecdsa::Signature>;`
+# (0.6.0 src/lib.rs:60); from 0.8.1 it is a direct `pub use` (0.8.1
+# src/lib.rs:52). Consumers write the same thing either way -- verified by
+# compiling the whole surface against 0.6.0, 0.6.4, 0.7.0, 0.7.7, 0.8.0, 0.8.1,
+# 0.8.5 and 0.8.14 -- and the emitted key is `alloy_primitives.Signature.<m>` in
+# both eras.
+#
+# TWO DOTS, so `rustAuthoredKey` moves the second-to-last and the keys below are
+# authored `alloy_primitives::Signature.<method>`.
+#
+# ARITY EXCLUDES THE RECEIVER: every method here takes `&self` plus one
+# argument, so all four are arity 1.
+#
+# `parameter_types` IS OMITTED FOR THE TWO `_prehash` METHODS, and the reason is
+# a version fact found by COMPILING rather than by reading `pub fn`. At 0.6.0
+# they take `prehash: crate::B256` BY VALUE (0.6.0 src/signature/sig.rs:214,237);
+# from 0.6.1 they take `&B256`. A by-reference call against 0.6.0 fails with
+# E0308 `expected FixedBytes<32>, found &FixedBytes<32>`, and the by-value call
+# is accepted there and nowhere later. Arity is unchanged, and a KB entry holds
+# ONE value per method and arity, so declaring either spelling would be false for
+# part of the range. The two `_msg` methods are generic over `T: AsRef<[u8]>`
+# throughout and are declared with that spelling.
+#
+# THE ALGORITHM IS THE SAME IN BOTH BACKEND ERAS. With the `secp256k1` feature
+# enabled (1.6.0 only) `recover_address_from_prehash` routes through
+# `secp256k1::Secp256k1::recover_ecdsa`; otherwise through
+# `k256::ecdsa::VerifyingKey::recover_from_prehash` (1.6.0
+# src/signature/sig.rs:334-343, 374-388). Both are ECDSA over secg/secp256k1.
+# The `_msg` half additionally prefixes and hashes with EIP-191 Keccak-256.
+#
+# WHY THIS IS NOT A DOUBLE COUNT WITH pkg:cargo/k256 OR pkg:cargo/secp256k1.
+# Those crates' merged KBs declare THEIR OWN entry points; the k256 and secp256k1
+# calls in the bodies above are inside alloy-primitives' own source, which no
+# consumer-anchored rule reaches. `recover_from_msg` and `recover_from_prehash`
+# are spelled identically in k256, p256 and p384, but there they are ASSOCIATED
+# functions on `VerifyingKey` and the key is `k256::ecdsa::VerifyingKey.<m>` --
+# a different key, so no declaration here can collide with theirs and none is
+# merged silently.
+#
+# `recover_from_msg` AND `recover_from_prehash` RETURN A K256 TYPE and are still
+# declared with `confidence: high`: the return is the concrete
+# `k256::ecdsa::VerifyingKey` in every release from 0.6.0, read at 0.6.0
+# src/signature/sig.rs:227,238 and at 1.6.0 :355,367.
+#
+# `alloy_primitives.Address.ok` APPEARS IN THE GRAPH ONCE THESE ENTRIES LOAD AND
+# IS DELIBERATELY UNCONTRACTED. It is `core::result::Result::ok` on the value
+# `recover_address_from_msg` returns; the graph attributes it to the alloy type
+# that produced the value, exactly as the merged native-tls KB describes for
+# `unwrap`, `expect` and `Vec::len`. It belongs to `core`, not to this crate.
+# Noted because it is the one key that MOVED between the pre-contract and
+# post-contract exports -- the keys were read as a fixed point (export, author,
+# re-export until nothing moves) and this was the only change on the second pass.
+#
+# DELIBERATELY UNCONTRACTED:
+#   skipped-non-crypto: `recid`, `secp256k1_recid`, `normalize_s`,
+#     `normalized_s`, `from_signature_and_parity`, `from_scalars_and_parity`,
+#     `from_raw`, `from_raw_array`, `from_bytes_and_parity`, `from_erc2098`,
+#     `as_bytes`, `as_rsy`, `as_erc2098`, `with_parity`, `r`, `s`, `v`,
+#     `test_signature` and the RLP helpers -- accessors, serialisation and a
+#     fixed test vector.
+contracts:
+  - method: alloy_primitives::Signature.recover_address_from_msg
+    arity: 1
+    parameter_types: ["T"]
+    canonical_return_type: "core::result::Result<alloy_primitives::Address, alloy_primitives::SignatureError>"
+    return: {type: "alloy_primitives::Address", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: msg
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: alloy_primitives::Signature.recover_address_from_prehash
+    arity: 1
+    canonical_return_type: "core::result::Result<alloy_primitives::Address, alloy_primitives::SignatureError>"
+    return: {type: "alloy_primitives::Address", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: prehash
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: alloy_primitives::Signature.recover_from_msg
+    arity: 1
+    parameter_types: ["T"]
+    canonical_return_type: "core::result::Result<k256::ecdsa::VerifyingKey, alloy_primitives::SignatureError>"
+    return: {type: "k256::ecdsa::VerifyingKey", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: msg
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: alloy_primitives::Signature.recover_from_prehash
+    arity: 1
+    canonical_return_type: "core::result::Result<k256::ecdsa::VerifyingKey, alloy_primitives::SignatureError>"
+    return: {type: "k256::ecdsa::VerifyingKey", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: prehash
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+hierarchy: {}

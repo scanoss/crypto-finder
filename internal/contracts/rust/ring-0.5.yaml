@@ -1,0 +1,42 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ring-0.5
+  coordinates:
+    - ring
+  version_range: ">=0.5.0,<0.18.0"
+  description: "ring OpenSSH chacha20-poly1305 packet keys, added in 0.5.0"
+
+contracts:
+  - method: ring::aead::chacha20_poly1305_openssh::SealingKey.new
+    arity: 1
+    return: { type: ring::aead::chacha20_poly1305_openssh::SealingKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key_material
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: ring::aead::chacha20_poly1305_openssh::SealingKey.seal_in_place
+    arity: 3
+    return: { type: (), confidence: high }
+    role: operation
+  - method: ring::aead::chacha20_poly1305_openssh::OpeningKey.new
+    arity: 1
+    return: { type: ring::aead::chacha20_poly1305_openssh::OpeningKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key_material
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: ring::aead::chacha20_poly1305_openssh::OpeningKey.decrypt_packet_length
+    arity: 2
+    return: { type: "[u8; 4]", confidence: high }
+    role: operation
+  - method: ring::aead::chacha20_poly1305_openssh::OpeningKey.open_in_place
+    arity: 3
+    return: { type: "&[u8]", confidence: high }
+    role: operation
+
+hierarchy: {}

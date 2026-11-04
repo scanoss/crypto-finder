@@ -1,0 +1,23 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: azure-keyvault-keys-java-4.9
+  coordinates:
+    - "com.azure:azure-security-keyvault-keys"
+  version_range: ">=4.9.0,<5.0.0"
+  description: "Azure Key Vault Keys cryptography client builder option added in 4.9.0: turning off local key caching"
+
+contracts:
+  - method: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder.disableKeyCaching
+    arity: 0
+    canonical_return_type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+    return:
+      type: com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder
+      confidence: high
+    role: config
+
+hierarchy:
+  com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder:
+    - java.lang.Object
+  java.lang.Object: []

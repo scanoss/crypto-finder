@@ -1,0 +1,65 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-0.7
+  coordinates:
+    - rsa
+  version_range: ">=0.7.0-rc.0,<0.11.0"
+  description: "RustCrypto rsa 0.7+: PKCS#1 v1.5 and PSS typed signing and verifying keys, and randomized signing"
+
+# 0.7.0-rc.0 adds the typed keys `pkcs1v15::{SigningKey, VerifyingKey}` and
+# `pss::{SigningKey, BlindedSigningKey, VerifyingKey}` (0.7.2 src/pkcs1v15.rs,
+# src/pss.rs; 0.9 splits them into src/pkcs1v15/*.rs and src/pss/*.rs). Each
+# wraps an RSA key and fixes the digest by type parameter. The era table is in
+# rsa.yaml. `RsaPrivateKey::sign_with_rng` also arrives at 0.7.0-rc.0
+# (0.7.2 src/key.rs).
+contracts:
+  - method: rsa::pkcs1v15::SigningKey.new
+    arity: 1
+    return: { type: rsa::pkcs1v15::SigningKey, confidence: high }
+    role: factory
+  - method: rsa::pkcs1v15::VerifyingKey.new
+    arity: 1
+    return: { type: rsa::pkcs1v15::VerifyingKey, confidence: high }
+    role: factory
+  - method: rsa::pss::SigningKey.new
+    arity: 1
+    return: { type: rsa::pss::SigningKey, confidence: high }
+    role: factory
+  - method: rsa::pss::SigningKey.new_with_salt_len
+    arity: 2
+    return: { type: rsa::pss::SigningKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: salt_len
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+  - method: rsa::pss::BlindedSigningKey.new
+    arity: 1
+    return: { type: rsa::pss::BlindedSigningKey, confidence: high }
+    role: factory
+  - method: rsa::pss::BlindedSigningKey.new_with_salt_len
+    arity: 2
+    return: { type: rsa::pss::BlindedSigningKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: salt_len
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+  - method: rsa::pss::VerifyingKey.new
+    arity: 1
+    return: { type: rsa::pss::VerifyingKey, confidence: high }
+    role: factory
+  - method: rsa::RsaPrivateKey.sign_with_rng
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: padding
+        role: operation-determining
+        contributes: { property: padding, derivation: argument_value }
+
+hierarchy: {}

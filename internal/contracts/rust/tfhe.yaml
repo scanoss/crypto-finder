@@ -1,0 +1,488 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: tfhe
+  coordinates:
+    - tfhe
+  version_range: ">=0.1.0,<2.0.0"
+  description: "TFHE-rs: Zama's fully homomorphic encryption over the torus"
+
+# API read at tfhe 1.6.2 and cross-checked at 0.1.0, 0.2.0, 0.3.0, 0.5.0 and
+# 1.0.0 from the committed sample.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y and an exported
+# call graph agreed: a probe calling the high-level API came back as
+# `tfhe.generate_keys(?)` and `tfhe.FheUint32.encrypt(?, ?)` with empty
+# parameter_types, which is what an absent contract looks like.
+#
+# KEYS ARE READ OFF THE EXPORTED GRAPH, NOT ASSUMED. The emitted call-site FQNs
+# are `tfhe.<Type>.<method>` for the ciphertext and key types and `tfhe.<fn>`
+# for the two free functions, so the authored keys are `tfhe::<Type>.<method>`
+# and `tfhe.<fn>`. The Fhe* types and ClientKey/ServerKey are `pub use`-exported
+# from the crate root (lib.rs `pub use high_level_api::*`), so consumers write
+# them unqualified and the key carries no module segment -- `tfhe::high_level_api
+# ...` would never resolve.
+#
+# VERSION RANGE STARTS AT 0.1.0, NOT 0.0.0. tfhe 0.0.0 is a name placeholder:
+# its archive holds one file whose entire content is `pub fn placeholder() {}`.
+# It has no API to type.
+#
+# THE CIPHERTEXT TYPE SET IS THE ONE CONSUMERS USE, NOT THE FULL LIST. 1.6.2
+# exports FheUint2..FheUint2048 and FheInt2..FheInt2048 -- some ninety types.
+# Enumerating all of them would be noise: the widths below are the ones that
+# appear in the crate's own examples/ and benches/ and in the two published
+# consumers in the replica. A width that is missing degrades to an untyped
+# receiver, which is the state every width is in today, so the list is additive
+# and safe to extend when a consumer needs one.
+#
+# MODULE SEGMENTS ARE NOT UNIFORM ACROSS THE CRATE, AND THE KEYS FOLLOW THE
+# CONSUMER'S IMPORT. The high-level names are `pub use`-exported from the crate
+# root, so `use tfhe::FheUint32` emits `tfhe.FheUint32.encrypt` with no module.
+# The integer layer is not re-exported: `use tfhe::integer::RadixClientKey`
+# emits `tfhe::integer.RadixClientKey.encrypt_radix`, and a key without the
+# module would never resolve. A consumer that reaches the same type through
+# `tfhe::shortint::prelude::*` emits the root-shaped key instead, which is why
+# the bare `tfhe::ClientKey.*` entries are ALSO present — both spellings occur
+# in the two published consumers in the replica.
+#
+# `set_server_key` IS `role: config`, NOT AN OPERATION. It installs the
+# evaluation key into thread-local state; the homomorphic work happens in the
+# operations below. Typing it still matters, because it is where a reader sees
+# the program become able to compute on ciphertext.
+
+contracts:
+  - method: tfhe.generate_keys
+    arity: 1
+    return: { type: (tfhe::ClientKey, tfhe::ServerKey), confidence: high }
+    parameter_types: ["tfhe::Config"]
+    role: factory
+  - method: tfhe::ConfigBuilder.build
+    arity: 0
+    return: { type: tfhe::Config, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: tfhe::ConfigBuilder.default
+    arity: 0
+    return: { type: tfhe::ConfigBuilder, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: tfhe::ConfigBuilder.with_custom_parameters
+    arity: 1
+    return: { type: tfhe::ConfigBuilder, confidence: high }
+    parameter_types: ["P"]
+    role: config
+  - method: tfhe::ClientKey.generate
+    arity: 1
+    return: { type: tfhe::ClientKey, confidence: high }
+    parameter_types: ["tfhe::Config"]
+    role: factory
+  - method: tfhe::ServerKey.new
+    arity: 1
+    return: { type: tfhe::ServerKey, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: factory
+  - method: tfhe::CompressedServerKey.new
+    arity: 1
+    return: { type: tfhe::CompressedServerKey, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: factory
+  - method: tfhe::CompactPublicKey.new
+    arity: 1
+    return: { type: tfhe::CompactPublicKey, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: factory
+  - method: tfhe::PublicKey.new
+    arity: 1
+    return: { type: tfhe::PublicKey, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: factory
+  - method: tfhe::CompressedPublicKey.new
+    arity: 1
+    return: { type: tfhe::CompressedPublicKey, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: factory
+  - method: tfhe.set_server_key
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["tfhe::ServerKey"]
+    role: config
+  - method: tfhe.gen_keys
+    arity: 0
+    return: { type: (tfhe::boolean::ClientKey, tfhe::boolean::ServerKey), confidence: high }
+    parameter_types: []
+    role: factory
+  - method: tfhe.gen_keys
+    arity: 1
+    return: { type: (tfhe::shortint::ClientKey, tfhe::shortint::ServerKey), confidence: high }
+    parameter_types: ["tfhe::shortint::Parameters"]
+    role: factory
+  - method: tfhe.gen_keys_radix
+    arity: 2
+    return: { type: (tfhe::integer::RadixClientKey, tfhe::integer::ServerKey), confidence: high }
+    parameter_types: ["tfhe::shortint::Parameters", "usize"]
+    role: factory
+  - method: tfhe.gen_keys_crt
+    arity: 2
+    return: { type: (tfhe::integer::CrtClientKey, tfhe::integer::ServerKey), confidence: high }
+    parameter_types: ["tfhe::shortint::Parameters", "alloc::vec::Vec<u64>"]
+    role: factory
+  - method: tfhe::FheUint2.encrypt
+    arity: 2
+    return: { type: tfhe::FheUint2, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint2.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint2.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheUint2, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheUint2.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheUint4.encrypt
+    arity: 2
+    return: { type: tfhe::FheUint4, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint4.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint4.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheUint4, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheUint4.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheUint8.encrypt
+    arity: 2
+    return: { type: tfhe::FheUint8, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint8.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint8.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheUint8, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheUint8.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheUint16.encrypt
+    arity: 2
+    return: { type: tfhe::FheUint16, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint16.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint16.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheUint16, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheUint16.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheUint32.encrypt
+    arity: 2
+    return: { type: tfhe::FheUint32, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint32.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint32.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheUint32, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheUint32.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheUint64.encrypt
+    arity: 2
+    return: { type: tfhe::FheUint64, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint64.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint64.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheUint64, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheUint64.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheUint128.encrypt
+    arity: 2
+    return: { type: tfhe::FheUint128, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint128.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint128.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheUint128, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheUint128.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheUint256.encrypt
+    arity: 2
+    return: { type: tfhe::FheUint256, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint256.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheUint256.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheUint256, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheUint256.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheInt8.encrypt
+    arity: 2
+    return: { type: tfhe::FheInt8, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt8.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt8.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheInt8, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheInt8.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheInt16.encrypt
+    arity: 2
+    return: { type: tfhe::FheInt16, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt16.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt16.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheInt16, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheInt16.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheInt32.encrypt
+    arity: 2
+    return: { type: tfhe::FheInt32, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt32.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt32.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheInt32, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheInt32.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheInt64.encrypt
+    arity: 2
+    return: { type: tfhe::FheInt64, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt64.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt64.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheInt64, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheInt64.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheInt128.encrypt
+    arity: 2
+    return: { type: tfhe::FheInt128, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt128.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheInt128.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheInt128, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheInt128.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::FheBool.encrypt
+    arity: 2
+    return: { type: tfhe::FheBool, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheBool.try_encrypt
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["T", "tfhe::ClientKey"]
+    role: operation
+  - method: tfhe::FheBool.encrypt_trivial
+    arity: 1
+    return: { type: tfhe::FheBool, confidence: high }
+    parameter_types: ["T"]
+    role: operation
+  - method: tfhe::FheBool.decrypt
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::ClientKey"]
+    role: output
+  - method: tfhe::ClientKey.encrypt
+    arity: 1
+    return: { type: tfhe::shortint::Ciphertext, confidence: high }
+    parameter_types: ["u64"]
+    role: operation
+  - method: tfhe::integer::RadixClientKey.encrypt
+    arity: 1
+    return: { type: tfhe::shortint::Ciphertext, confidence: high }
+    parameter_types: ["u64"]
+    role: operation
+  - method: tfhe::ClientKey.encrypt_radix
+    arity: 2
+    return: { type: tfhe::integer::RadixCiphertext, confidence: high }
+    parameter_types: ["T", "usize"]
+    role: operation
+  - method: tfhe::integer::RadixClientKey.encrypt_radix
+    arity: 2
+    return: { type: tfhe::integer::RadixCiphertext, confidence: high }
+    parameter_types: ["T", "usize"]
+    role: operation
+  - method: tfhe::ClientKey.encrypt_crt
+    arity: 2
+    return: { type: tfhe::integer::CrtCiphertext, confidence: high }
+    parameter_types: ["u64", "alloc::vec::Vec<u64>"]
+    role: operation
+  - method: tfhe::integer::RadixClientKey.encrypt_crt
+    arity: 2
+    return: { type: tfhe::integer::CrtCiphertext, confidence: high }
+    parameter_types: ["u64", "alloc::vec::Vec<u64>"]
+    role: operation
+  - method: tfhe::ClientKey.encrypt_without_padding
+    arity: 1
+    return: { type: tfhe::shortint::Ciphertext, confidence: high }
+    parameter_types: ["u64"]
+    role: operation
+  - method: tfhe::integer::RadixClientKey.encrypt_without_padding
+    arity: 1
+    return: { type: tfhe::shortint::Ciphertext, confidence: high }
+    parameter_types: ["u64"]
+    role: operation
+  - method: tfhe::ClientKey.decrypt
+    arity: 1
+    return: { type: u64, confidence: high }
+    parameter_types: ["tfhe::shortint::Ciphertext"]
+    role: output
+  - method: tfhe::integer::RadixClientKey.decrypt
+    arity: 1
+    return: { type: u64, confidence: high }
+    parameter_types: ["tfhe::shortint::Ciphertext"]
+    role: output
+  - method: tfhe::ClientKey.decrypt_radix
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::integer::RadixCiphertext"]
+    role: output
+  - method: tfhe::integer::RadixClientKey.decrypt_radix
+    arity: 1
+    return: { type: T, confidence: high }
+    parameter_types: ["tfhe::integer::RadixCiphertext"]
+    role: output
+  - method: tfhe::ClientKey.decrypt_crt
+    arity: 1
+    return: { type: u64, confidence: high }
+    parameter_types: ["tfhe::integer::CrtCiphertext"]
+    role: output
+  - method: tfhe::integer::RadixClientKey.decrypt_crt
+    arity: 1
+    return: { type: u64, confidence: high }
+    parameter_types: ["tfhe::integer::CrtCiphertext"]
+    role: output
+  - method: tfhe::ClientKey.decrypt_without_padding
+    arity: 1
+    return: { type: u64, confidence: high }
+    parameter_types: ["tfhe::shortint::Ciphertext"]
+    role: output
+  - method: tfhe::integer::RadixClientKey.decrypt_without_padding
+    arity: 1
+    return: { type: u64, confidence: high }
+    parameter_types: ["tfhe::shortint::Ciphertext"]
+    role: output

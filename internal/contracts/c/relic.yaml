@@ -1,0 +1,881 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: relic
+  coordinates:
+    - relic-toolkit/relic
+  version_range: ">=0.2.0,<0.8.0"
+  description: "RELIC toolkit: core context, curve selection, hashes, AES-CBC, pairings and the relic_cp.h protocols"
+
+# Inventory sources: include/relic_core.h, relic_rand.h, relic_md.h, relic_bc.h,
+# relic_ep.h, relic_epx.h, relic_pc.h, relic_pp.h and relic_cp.h from all twelve
+# upstream tag archives in the Tier 0 range, relic-toolkit-0.2.0 through 0.7.0.
+# Scope is the surface the RELIC detection rules (semgrep-rules/c/relic) anchor
+# on, plus the context, curve-selection and random-number calls those findings
+# depend on. Each name is contracted at every arity a tag declares, so a name
+# whose arity changed (cp_ecdsa_sig/ver in 0.3.4, cp_pss/psb_sig/ver and
+# cp_ibe_enc/gen_prv in 0.6.0, cp_sokaka_key, cp_phpe_enc/dec, pp_map_k48) has
+# one entry per arity. The return type is the newest tag's; the protocol calls
+# returned void before 0.3.x and int after.
+#
+# Many RELIC names are function-like macros that pick a backend at build time
+# (ep_map -> ep_map_sswum, pc_map -> pp_map_k12 -> pp_map_oatep_k12, md_map ->
+# md_map_sh256, cp_rsa_gen -> cp_rsa_gen_quick before 0.6.0). The C parser sees
+# the macro name at the call site, so the macro is contracted by name at its
+# arity, as libgcrypt does for its header macros. A caller that names a backend
+# directly is matched only where the rules anchor that backend (pp_map_*,
+# cp_rsa_*_basic/_quick).
+#
+# Generic multiprecision and field arithmetic stays out: bn_*, fp_*, fpX_*,
+# fb_* and dv_* are big-integer and field helpers, not cryptographic
+# operations, and the rules raise no finding on them.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: bn_*, fp_*, fp2..fp54_*, fb_*, dv_* arithmetic; point and
+#   group arithmetic ep_/ep2_/eb_/ed_/g1_/g2_/gt_ add/dbl/mul/neg/norm/rand/
+#   read/write and the *_mul_* backends; core_get/core_set and
+#   core_set_thread_initializer; rand_init/rand_clean, pp_map_init/clean and
+#   pc_core_init/clean/calc, which core_init and core_clean call; rand_check;
+#   pc_map_is_type*, pc_param_level, pc_param_print; the md_*/bc_* tests and
+#   benchmarks; cp_phpe_add, cp_bgn_add and cp_bgn_mul (homomorphic evaluation,
+#   which the rules exclude).
+# skipped-unsupported: md_map, the build's MD_MAP choice; its hash is not
+#   visible in source, and the rules do not report it.
+# needs-follow-up (no rule anchors them yet): the pre-0.3.3 names
+#   cp_ecdsa_sign, cp_ecss_sign, cp_bls_sign, cp_bbs_sign, cp_rsa_sign,
+#   cp_rsa_sign_basic/_quick and cp_sokaka_gen_pub; md_map_shone (SHA-1,
+#   0.2.0-0.4.0), md_kdf1/md_kdf2 and md_mgf1 (0.3.0-0.4.0), md_mgf and
+#   md_xmd*; the pre-0.3.5 pairings pp_map_rate/r_ate/o_ate/x_ate and
+#   pp_map_tatep/weilp/oatep; the 0.7.0 hash-to-curve backends
+#   ep_map_basic/sswum/swift/rnd and ep2_map_basic/sswum/swift and
+#   ep_map_from_field/ep2_map_from_field; pc_map_lcl, pc_map_mpc, pc_map_tri,
+#   pc_map_bct; and the relic_cp.h protocols cp_ers/etrs/smlers ring
+#   signatures, cp_cmlhs/mklhs homomorphic signatures, cp_sokdl/sokor
+#   signatures of knowledge, cp_pokdl/pokor proofs, cp_lvprv/lvpub/pdprv/pdpub
+#   delegated pairings, cp_pbpsi/rsapsi/shipsi private set intersection,
+#   cp_mpss_bct/cp_mpsb_bct and cp_ers_gen_key.
+# The rules' ep2_param_set alternative names no function in any tag in range;
+# curve selection for G2 goes through ep_param_set.
+#
+# C++ sources that call RELIC's C API are parsed against the cpp knowledge
+# base, which does not load these C contracts.
+contracts:
+  # Library context. core_init sets up the per-thread context and runs the
+  # field, curve and pairing precomputation; core_clean tears it down.
+  - method: core_init
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+  - method: core_clean
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+
+  # Curve selection. ep_param_set names the curve, which every ECDH, ECMQV,
+  # ECDSA, EC-Schnorr, ECIES and pairing call after it runs on; the
+  # ep_param_set_any* and pc_param_set_any variants pick the build's default
+  # and carry no curve.
+  - method: ep_param_set
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: param
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: ep_param_set_any
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ep_param_set_any_endom
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ep_param_set_any_kbltz
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ep_param_set_any_ordin
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ep_param_set_any_pairf
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ep_param_set_any_plain
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ep_param_set_any_super
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+  - method: pc_param_set_any
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+
+  # Random bytes. rand_seed reseeds the generator; rand_bytes draws from it.
+  - method: rand_seed
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: rand_bytes
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # Hashes, HMAC and KDF2 (relic_md.h). md_map, the build's MD_MAP choice, is
+  # not contracted: its hash is not source-visible.
+  - method: md_map_sh224
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md_map_sh256
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md_map_sh384
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md_map_sh512
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md_map_b2s160
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md_map_b2s256
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md_hmac
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: md_kdf
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  # AES-CBC (relic_bc.h). key_len is in bytes.
+  - method: bc_aes_cbc_enc
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: bc_aes_cbc_dec
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: key_len
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+
+  # Hash to curve. The result point is the first argument.
+  - method: ep_map
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ep2_map
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: g1_map
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: g2_map
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ep_map_dst
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ep2_map_dst
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # Pairing: the GT result is the first argument. pc_map and pc_map_sim are the
+  # generic macros; pp_map_* are the embedding-degree and algorithm-specific
+  # pairings they expand to; pc_exp is the final exponentiation.
+  - method: pc_map
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pc_map_sim
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pc_exp
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k1
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k2
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k8
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k12
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k16
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k18
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k24
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k48
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k48
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_k54
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_oatep_k8
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_oatep_k12
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_oatep_k16
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_oatep_k18
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_k1
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_k2
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_k8
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_k12
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_k16
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_k18
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_k24
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_k48
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_oatep_k8
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_oatep_k12
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_oatep_k16
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_oatep_k18
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_tatep_k1
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_tatep_k2
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_tatep_k12
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_tatep_k16
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_tatep_k18
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_weilp_k1
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_weilp_k2
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_weilp_k12
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_weilp_k16
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_sim_weilp_k18
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_tatep_k1
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_tatep_k2
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_tatep_k12
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_tatep_k16
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_tatep_k18
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_weilp_k1
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_weilp_k2
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_weilp_k12
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_weilp_k16
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pp_map_weilp_k18
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # RSA and Rabin. The _basic/_quick names are 0.5 and earlier; cp_rsa_gen and
+  # cp_rsa_dec/cp_rsa_sig are macros over them there and functions from 0.6.
+  # bits is the modulus size.
+  - method: cp_rsa_gen
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: cp_rsa_gen_basic
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: cp_rsa_gen_quick
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: cp_rsa_enc
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rsa_dec
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rsa_dec_basic
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rsa_dec_quick
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rsa_sig
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rsa_sig_basic
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rsa_sig_quick
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rsa_ver
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rsa_ver
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rabin_gen
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: cp_rabin_enc
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_rabin_dec
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Key agreement: ECDH, ECMQV and Sakai-Ohgishi-Kasahara.
+  - method: cp_ecdh_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecdh_key
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecmqv_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecmqv_key
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_sokaka_gen
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_sokaka_gen_prv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_sokaka_gen_prv
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_sokaka_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cp_sokaka_key
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_sokaka_key
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # ECIES.
+  - method: cp_ecies_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecies_enc
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecies_dec
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # ECDSA and EC-Schnorr. cp_ecdsa_sig/ver gain an is-hashed flag in 0.3.4.
+  - method: cp_ecdsa_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecdsa_sig
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cp_ecdsa_sig
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecdsa_ver
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecdsa_ver
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecss_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecss_sig
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ecss_ver
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Pairing-based signatures: BLS, Boneh-Boyen, Camenisch-Lysyanskaya,
+  # Pointcheval-Sanders (single and multi-signer), ZSS and vBNN-IBS.
+  - method: cp_bls_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bls_sig
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bls_ver
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bbs_gen
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bbs_sig
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bbs_ver
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_cls_gen
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_cls_sig
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_cls_ver
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_cli_gen
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_cli_sig
+    arity: 11
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_cli_ver
+    arity: 11
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_clb_gen
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_clb_sig
+    arity: 11
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_clb_ver
+    arity: 11
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_pss_gen
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_pss_sig
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_pss_sig
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_pss_ver
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_pss_ver
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_psb_gen
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_psb_sig
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_psb_sig
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_psb_ver
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_psb_ver
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_mpss_gen
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_mpss_sig
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_mpss_ver
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_mpsb_gen
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_mpsb_sig
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_mpsb_ver
+    arity: 11
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_zss_gen
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_zss_sig
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_zss_ver
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_vbnn_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_vbnn_sig
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_vbnn_ver
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_vbnn_gen_prv
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Additively homomorphic encryption: Paillier, Damgard-Jurik, subgroup
+  # Paillier, Benaloh and Boneh-Goh-Nissim. bits / nbits is the modulus size.
+  - method: cp_phpe_gen
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: cp_phpe_enc
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_phpe_enc
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_phpe_dec
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_phpe_dec
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ghpe_gen
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: cp_ghpe_enc
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ghpe_dec
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_shpe_gen
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: nbits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: cp_shpe_enc
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_shpe_enc_prv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_shpe_dec
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bdpe_gen
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: bits
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: cp_bdpe_enc
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bdpe_dec
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bgn_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bgn_enc1
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bgn_enc2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bgn_dec
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bgn_dec1
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_bgn_dec2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Boneh-Franklin identity-based encryption.
+  - method: cp_ibe_gen
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ibe_gen_prv
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ibe_gen_prv
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ibe_enc
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ibe_enc
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: cp_ibe_dec
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation

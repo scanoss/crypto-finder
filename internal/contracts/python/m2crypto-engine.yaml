@@ -1,0 +1,39 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-engine
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.19,<0.45.0 || >=0.47.0"
+  description: "M2Crypto OpenSSL ENGINE APIs: added in 0.19, absent from the 0.45.0 to 0.46.2 releases, restored in 0.47.0"
+
+contracts:
+  - method: M2Crypto.Engine.Engine
+    arity: 0
+    return: { type: M2Crypto.Engine.Engine, confidence: high }
+    role: factory
+  - method: M2Crypto.Engine.Engine.<init>
+    arity: 0
+    return: { type: M2Crypto.Engine.Engine, confidence: high }
+    role: factory
+  - method: M2Crypto.Engine.Engine.load_private_key
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.Engine.Engine.load_public_key
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.Engine.Engine.load_certificate
+    arity: 1
+    return: { type: M2Crypto.X509.X509, confidence: high }
+    role: factory
+
+hierarchy:
+  M2Crypto.EVP.PKey:
+    - builtins.object
+  M2Crypto.Engine.Engine:
+    - builtins.object
+  M2Crypto.X509.X509:
+    - builtins.object
+  builtins.object: []

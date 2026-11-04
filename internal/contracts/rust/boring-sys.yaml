@@ -1,0 +1,119 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: boring-sys
+  coordinates:
+    - boring-sys
+    - boring_sys
+  version_range: ">=1.0.0,<6.0.0"
+  description: "BoringSSL raw FFI bindings"
+
+# Raw BoringSSL FFI. Keyed as free functions — `boring_sys.<SYMBOL>` — which is
+# what a call-site FQN produces and what the already-merged openssl-sys.yaml
+# uses.
+#
+# WHY THIS IS A SELECTED SET AND NOT AN INVENTORY. 1.0.0 ships hand-written FFI
+# modules (aes.rs, evp.rs, rsa.rs, sha.rs, ssl.rs, x509.rs and friends), but
+# from 2.0.0 the crate ships a single lib.rs whose bindings bindgen generates at
+# build time. There is nothing to enumerate past 1.0.0, and cloning every
+# declaration was never the goal: what is contracted is the symbols a consumer
+# reaches for its cryptography, which is the family plan's instruction.
+#
+# All arities are the BoringSSL C signatures. A wrong arity here resolves
+# nothing rather than resolving wrongly, but it also silently costs coverage,
+# so each is taken from the C prototype rather than guessed.
+contracts:
+  - method: boring_sys.EVP_sha256
+    arity: 0
+    return: { type: "*const boring_sys::EVP_MD", confidence: high }
+    role: config
+  - method: boring_sys.EVP_sha384
+    arity: 0
+    return: { type: "*const boring_sys::EVP_MD", confidence: high }
+    role: config
+  - method: boring_sys.EVP_sha512
+    arity: 0
+    return: { type: "*const boring_sys::EVP_MD", confidence: high }
+    role: config
+  - method: boring_sys.EVP_sha1
+    arity: 0
+    return: { type: "*const boring_sys::EVP_MD", confidence: high }
+    role: config
+  - method: boring_sys.SHA256
+    arity: 3
+    return: { type: "*mut u8", confidence: high }
+    role: operation
+  - method: boring_sys.SHA1
+    arity: 3
+    return: { type: "*mut u8", confidence: high }
+    role: operation
+  - method: boring_sys.EVP_aead_aes_256_gcm
+    arity: 0
+    return: { type: "*const boring_sys::EVP_AEAD", confidence: high }
+    role: config
+  - method: boring_sys.EVP_aead_aes_128_gcm
+    arity: 0
+    return: { type: "*const boring_sys::EVP_AEAD", confidence: high }
+    role: config
+  - method: boring_sys.EVP_aead_chacha20_poly1305
+    arity: 0
+    return: { type: "*const boring_sys::EVP_AEAD", confidence: high }
+    role: config
+  - method: boring_sys.EVP_aes_256_gcm
+    arity: 0
+    return: { type: "*const boring_sys::EVP_CIPHER", confidence: high }
+    role: config
+  - method: boring_sys.EVP_aes_128_gcm
+    arity: 0
+    return: { type: "*const boring_sys::EVP_CIPHER", confidence: high }
+    role: config
+  - method: boring_sys.HMAC_Init_ex
+    arity: 5
+    return: { type: "core::ffi::c_int", confidence: high }
+    role: operation
+  - method: boring_sys.RSA_generate_key_ex
+    arity: 4
+    return: { type: "core::ffi::c_int", confidence: high }
+    role: factory
+  - method: boring_sys.RSA_new
+    arity: 0
+    return: { type: "*mut boring_sys::RSA", confidence: high }
+    role: factory
+  - method: boring_sys.RSA_public_encrypt
+    arity: 5
+    return: { type: "core::ffi::c_int", confidence: high }
+    role: operation
+  - method: boring_sys.RSA_private_decrypt
+    arity: 5
+    return: { type: "core::ffi::c_int", confidence: high }
+    role: operation
+  - method: boring_sys.ECDSA_do_sign
+    arity: 3
+    return: { type: "*mut boring_sys::ECDSA_SIG", confidence: high }
+    role: operation
+  - method: boring_sys.ECDSA_do_verify
+    arity: 4
+    return: { type: "core::ffi::c_int", confidence: high }
+    role: operation
+  - method: boring_sys.SSL_CTX_new
+    arity: 1
+    return: { type: "*mut boring_sys::SSL_CTX", confidence: high }
+    role: factory
+  - method: boring_sys.SSL_new
+    arity: 1
+    return: { type: "*mut boring_sys::SSL", confidence: high }
+    role: factory
+  - method: boring_sys.TLS_method
+    arity: 0
+    return: { type: "*const boring_sys::SSL_METHOD", confidence: high }
+    role: config
+  - method: boring_sys.TLS_client_method
+    arity: 0
+    return: { type: "*const boring_sys::SSL_METHOD", confidence: high }
+    role: config
+  - method: boring_sys.TLS_server_method
+    arity: 0
+    return: { type: "*const boring_sys::SSL_METHOD", confidence: high }
+    role: config
+
+hierarchy: {}

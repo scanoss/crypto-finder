@@ -1,0 +1,25 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: werkzeug
+  coordinates:
+    - Werkzeug
+  version_range: ">=2.3,<4.0"
+  description: "Werkzeug password hashing helper contracts"
+
+contracts:
+  - method: werkzeug.security.generate_password_hash
+    arity: 1
+    return: { type: builtins.str, confidence: high }
+    role: output
+  - method: werkzeug.security.check_password_hash
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: output
+
+hierarchy:
+  builtins.str:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.object: []

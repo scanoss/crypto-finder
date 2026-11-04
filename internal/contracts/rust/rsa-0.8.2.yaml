@@ -1,0 +1,32 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-0.8.2
+  coordinates:
+    - rsa
+  version_range: ">=0.8.2,<0.11.0"
+  description: "RustCrypto rsa 0.8.2+: OAEP and PKCS#1 v1.5 typed encrypting and decrypting keys"
+
+# `oaep::{EncryptingKey, DecryptingKey}` and `pkcs1v15::{EncryptingKey,
+# DecryptingKey}` first ship in 0.8.2 (src/oaep.rs:473,528,
+# src/pkcs1v15.rs:722,747); 0.8.0 and 0.8.1 have neither. The era table is in
+# rsa.yaml.
+contracts:
+  - method: rsa::oaep::EncryptingKey.new
+    arity: 1
+    return: { type: rsa::oaep::EncryptingKey, confidence: high }
+    role: factory
+  - method: rsa::oaep::DecryptingKey.new
+    arity: 1
+    return: { type: rsa::oaep::DecryptingKey, confidence: high }
+    role: factory
+  - method: rsa::pkcs1v15::EncryptingKey.new
+    arity: 1
+    return: { type: rsa::pkcs1v15::EncryptingKey, confidence: high }
+    role: factory
+  - method: rsa::pkcs1v15::DecryptingKey.new
+    arity: 1
+    return: { type: rsa::pkcs1v15::DecryptingKey, confidence: high }
+    role: factory
+
+hierarchy: {}

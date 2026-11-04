@@ -1,0 +1,69 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: der
+  coordinates:
+    - der
+  version_range: ">=0.6.0,<0.9.0"
+  description: "RustCrypto ASN.1 DER codec; SecretDocument key-material container"
+
+# API read at der 0.8.0 (src/document.rs) and cross-checked at 0.6.0 and 0.1.0.
+#
+# ALMOST NOTHING IN THIS CRATE IS CONTRACTED, AND THAT IS THE POINT. `der` is a
+# generic ASN.1 codec: Decode/Encode, the ASN.1 type system, the PEM plumbing and
+# the non-secret `Document` all encode arbitrary structures. Typing them here
+# would route every DER parse in every consumer through a crypto contract. The
+# family plan is explicit that generic DER document encoding is not a crypto
+# operation.
+#
+# WHAT IS CONTRACTED IS `SecretDocument`, the zeroizing container the sibling
+# crates return from their private-key decode paths. Read at src/document.rs:319
+# onward, which is a SEPARATE impl block from `Document`'s at :138 -- the two
+# types have identically named methods, so the contract keys carry the type and
+# the non-secret twin is deliberately absent.
+#
+# VERSION RANGE STARTS AT 0.6.0, NOT AT THE MATRIX'S OLDEST ROW. SecretDocument
+# does not exist before it: 0.5.0 has only `Document`, and 0.1.0 has neither.
+# Nothing here can resolve against those versions, and the family's own version
+# sample mines der 0.1.0 to pin that zero.
+#
+# ARITIES EXCLUDE THE RECEIVER, matching ring::digest::Context.update. Read from
+# the declarations: read_pem_file(path) is 1; write_pem_file(&self, path, label,
+# line_ending) is 3; to_pem(&self, label, line_ending) is 2.
+#
+# skipped-non-crypto: Decode, Encode, DecodeValue, EncodeValue, DecodePem,
+#   EncodePem, Document, Reader/Writer, the asn1 module's types, and the
+#   Length/Tag/Header plumbing.
+contracts:
+  - method: der::SecretDocument.read_pem_file
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["impl AsRef<Path>"]
+    role: factory
+  - method: der::SecretDocument.from_pem
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str"]
+    role: factory
+  - method: der::SecretDocument.read_der_file
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["impl AsRef<Path>"]
+    role: factory
+  - method: der::SecretDocument.encode_msg
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: der::SecretDocument.write_pem_file
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: der::SecretDocument.write_der_file
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["impl AsRef<Path>"]
+    role: operation
+  - method: der::SecretDocument.to_pem
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation

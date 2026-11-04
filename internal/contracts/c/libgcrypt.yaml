@@ -1,0 +1,406 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: libgcrypt
+  coordinates:
+    - libgcrypt
+  version_range: ">=1.8.0,<2.0.0"
+  description: "libgcrypt symmetric, hash, MAC, KDF, public-key and random APIs"
+
+# Inventory sources: libgcrypt public header (src/gcrypt.h.in) from the upstream
+# tag archives libgcrypt-1.8.10, libgcrypt-1.10.3 and libgcrypt-1.11.0. No
+# contracted function changes arity across them. gcry_kdf_open/compute/final
+# and gcry_pk_hash_sign/verify are 1.10.0 and later.
+#
+# gcry_md_final and gcry_cipher_final are header macros of one argument; the C
+# parser sees them by name, so they are contracted at that arity.
+# gcry_sexp_build is variadic (sexp, erroff, format, ...): C contract lookup is
+# exact-arity, so it is contracted at the arities a literal format with zero to
+# three substitutions produces (3 to 6).
+#
+# Handles are created by address (gcry_cipher_open(&hd, ...),
+# gcry_md_open(&hd, ...), gcry_mac_open(&hd, ...), gcry_kdf_open(&hd, ...)) and
+# passed first afterwards, so a consumer's calls group around the handle. The
+# algorithm and mode arguments of the open calls, gcry_md_enable,
+# gcry_md_hash_buffer(s) and gcry_kdf_derive are operation-determining. Key
+# lengths passed in bytes to gcry_cipher_setkey and gcry_mac_setkey, and the
+# derived key size of gcry_kdf_derive, contribute keySize.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: gcry_check_version, gcry_control, *_close/*_release
+#   teardown, gcry_md_reset/copy, S-expression navigation (gcry_sexp_find_token
+#   and friends), MPI arithmetic (gcry_mpi_*), algorithm-name/info queries.
+# needs-follow-up: gcry_cipher_ctl/gcry_md_ctl/gcry_mac_ctl option calls, the
+#   ECC point API (gcry_mpi_ec_*), and gcry_pk_random_override_new.
+contracts:
+
+  # Symmetric ciphers.
+  - method: gcry_cipher_open
+    arity: 4
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: mode
+        role: operation-determining
+        contributes: {property: mode, derivation: argument_value}
+  - method: gcry_cipher_setkey
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: gcry_cipher_setiv
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: ivlen
+        role: metadata-contributing
+        contributes: {property: ivSize, derivation: argument_value}
+  - method: gcry_cipher_setctr
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: config
+  - method: gcry_cipher_authenticate
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: config
+  - method: gcry_cipher_final
+    arity: 1
+    return: {type: "gcry_error_t", confidence: high}
+    role: config
+  - method: gcry_cipher_encrypt
+    arity: 5
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_cipher_decrypt
+    arity: 5
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_cipher_gettag
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: output
+    parameters:
+      - index: 2
+        name: taglen
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: gcry_cipher_checktag
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+
+  # Message digests and HMAC through gcry_md.
+  - method: gcry_md_open
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: flags
+        role: metadata-contributing
+        contributes: {property: flags, derivation: argument_value}
+  - method: gcry_md_enable
+    arity: 2
+    return: {type: "gcry_error_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gcry_md_setkey
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: gcry_md_write
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcry_md_final
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcry_md_read
+    arity: 2
+    return: {type: "unsigned char*", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gcry_md_extract
+    arity: 4
+    return: {type: "gcry_error_t", confidence: high}
+    role: output
+  - method: gcry_md_hash_buffer
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gcry_md_hash_buffers
+    arity: 5
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 1
+        name: flags
+        role: metadata-contributing
+        contributes: {property: flags, derivation: argument_value}
+
+  # MACs through gcry_mac.
+  - method: gcry_mac_open
+    arity: 4
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gcry_mac_setkey
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: keylen
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: gcry_mac_setiv
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: config
+  - method: gcry_mac_write
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_mac_read
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: output
+  - method: gcry_mac_verify
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+
+  # Key derivation.
+  - method: gcry_kdf_derive
+    arity: 9
+    return: {type: "gpg_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 3
+        name: subalgo
+        role: operation-determining
+        contributes: {property: hashFunction, derivation: argument_value}
+      - index: 6
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 7
+        name: keysize
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: gcry_kdf_open
+    arity: 13
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 2
+        name: subalgo
+        role: operation-determining
+        contributes: {property: variant, derivation: argument_value}
+  - method: gcry_kdf_compute
+    arity: 2
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_kdf_final
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: output
+
+  # Public key. The algorithm, key size, curve and padding live in the
+  # S-expressions built with gcry_sexp_build/new/sscan.
+  - method: gcry_sexp_build
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: format
+        role: metadata-contributing
+        contributes: {property: sexp, derivation: argument_value}
+  - method: gcry_sexp_build
+    arity: 4
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: format
+        role: metadata-contributing
+        contributes: {property: sexp, derivation: argument_value}
+  - method: gcry_sexp_build
+    arity: 5
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: format
+        role: metadata-contributing
+        contributes: {property: sexp, derivation: argument_value}
+  - method: gcry_sexp_build
+    arity: 6
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: format
+        role: metadata-contributing
+        contributes: {property: sexp, derivation: argument_value}
+  - method: gcry_sexp_new
+    arity: 4
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 1
+        name: buffer
+        role: metadata-contributing
+        contributes: {property: sexp, derivation: argument_value}
+  - method: gcry_sexp_sscan
+    arity: 4
+    return: {type: "gcry_error_t", confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: buffer
+        role: metadata-contributing
+        contributes: {property: sexp, derivation: argument_value}
+  - method: gcry_pk_genkey
+    arity: 2
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_pk_testkey
+    arity: 1
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_pk_sign
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_pk_verify
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_pk_encrypt
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_pk_decrypt
+    arity: 3
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_pk_hash_sign
+    arity: 5
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_pk_hash_verify
+    arity: 5
+    return: {type: "gcry_error_t", confidence: high}
+    role: operation
+  - method: gcry_pk_get_nbits
+    arity: 1
+    return: {type: "unsigned int", confidence: high}
+    role: output
+  - method: gcry_pk_get_keygrip
+    arity: 2
+    return: {type: "unsigned char*", confidence: high}
+    role: output
+
+  # Random numbers.
+  - method: gcry_randomize
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 2
+        name: level
+        role: metadata-contributing
+        contributes: {property: securityLevel, derivation: argument_value}
+  - method: gcry_random_bytes
+    arity: 2
+    return: {type: "void*", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: nbytes
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 1
+        name: level
+        role: metadata-contributing
+        contributes: {property: securityLevel, derivation: argument_value}
+  - method: gcry_random_bytes_secure
+    arity: 2
+    return: {type: "void*", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: nbytes
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 1
+        name: level
+        role: metadata-contributing
+        contributes: {property: securityLevel, derivation: argument_value}
+  - method: gcry_create_nonce
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+hierarchy: {}

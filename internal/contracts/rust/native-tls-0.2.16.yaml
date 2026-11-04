@@ -1,0 +1,28 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: native-tls-0.2.16
+  coordinates:
+    - native-tls
+    - native_tls
+  version_range: ">=0.2.16,<0.3.0"
+  description: "native-tls PEM certificate chain parsing, from the release that introduced it"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT. `Certificate::stack_from_pem`
+# arrives at 0.2.16 and is ABSENT at 0.2.15 and every earlier release, established
+# by enumerating `pub fn` in `src/lib.rs` for all 25 published archives in the
+# matrix range. It is present at 0.2.18 (lib.rs:204).
+#
+# IT RETURNS A VECTOR, WHICH IS WHAT DISTINGUISHES IT FROM `from_pem`. Both take
+# one PEM byte slice; `from_pem` yields ONE `Certificate` and this yields every
+# certificate in the buffer, which is how a consumer supplies a chain of trust
+# anchors in a single file.
+contracts:
+  - method: native_tls::Certificate.stack_from_pem
+    arity: 1
+    return: {type: "alloc::vec::Vec<native_tls::Certificate>", confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<native_tls::Certificate>, native_tls::Error>"
+    role: factory
+
+hierarchy: {}

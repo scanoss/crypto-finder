@@ -1,0 +1,223 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: sequoia-openpgp
+  coordinates:
+    - sequoia-openpgp
+    - sequoia_openpgp
+  version_range: ">=0.20.0,<3.0.0"
+  description: "Sequoia OpenPGP: certificates, streaming signing/encryption and policy-aware verification"
+
+# API read at sequoia-openpgp 2.3.0, with every pre-2.0 divergence checked against
+# 0.15.0, 0.20.0, 1.0.0 and 1.22.0. Line references name the version they belong to.
+#
+# WHY THE FLOOR IS 0.20.0 AND NOT 0.15.0. The `policy` module arrives at 0.15.0,
+# but the policy-aware ENTRY POINTS contracted here do not: 0.15.0
+# src/parse/stream.rs has no `VerifierBuilder` and no `with_policy` at all — it
+# spells verification `Verifier::from_bytes(policy, bytes, helper, t)`, a
+# four-argument associated function on a different type. The three *Builder types
+# and their `with_policy` first appear at 0.20.0 (src/parse/stream.rs:993, 1402,
+# 1756). 0.15.0 also lacks `Encryptor::for_recipients` (only `for_recipient`,
+# singular, at src/serialize/stream.rs:106) and its `Message::new` returns
+# `writer::Stack`, not `Message`. So 0.15.0 would leave eight of these entries
+# dead, and the range says 0.20.0.
+#
+# WHERE THE KEYS COME FROM. Not from the documentation: each was read off an
+# exported call graph for a probe consumer, and appeared as `name(?)` with empty
+# parameter_types before this file existed.
+#
+# TWO SPELLINGS OF `Cert`, and both are needed. The key follows the CONSUMER's
+# import, and this crate re-exports `Cert` at its root (2.3.0 src/lib.rs:167
+# `pub use cert::Cert;`) as well as under `cert`:
+#
+#   use sequoia_openpgp::cert::Cert;  ->  sequoia_openpgp::cert::Cert.from_bytes
+#   use sequoia_openpgp::Cert;       ->  sequoia_openpgp::Cert.from_bytes
+#
+# Both are authored in the `::` form the rest of this KB uses; the parser emits
+# the receiver separator as a dot and contracts.rustAuthoredKey rewrites it back,
+# so the authored spelling stays conventional.
+#
+# THE CRATE ALIAS IS NOT A PROBLEM AT THIS LAYER. The crate's documentation tells
+# consumers to write `use sequoia_openpgp as openpgp;`. The parser resolves that:
+# a probe written entirely in the aliased form emitted `sequoia_openpgp::…` keys.
+#
+# WHAT THIS FILE CANNOT REACH, measured rather than assumed. The Rust resolver
+# loses a receiver at chain depth 2, so in the fluent form the crate documents —
+# `CertBuilder::new().set_cipher_suite(..).add_signing_subkey().generate()` — only
+# the first call carries a sequoia identity; `add_signing_subkey`,
+# `add_transport_encryption_subkey` and `generate` are attributed to the consumer
+# crate instead. Those three entries are therefore contracted from the source
+# signature, NOT observed in an export, and they will start joining if that
+# resolver limit is lifted. Said here so the next author does not read them as
+# verified.
+contracts:
+  # --- certificates and key material ---
+  - method: sequoia_openpgp::cert::CertBuilder.new
+    arity: 0
+    return: {type: "sequoia_openpgp::cert::CertBuilder", confidence: high}
+    role: factory
+  # `general_purpose` CHANGED ARITY at 2.0.0 and both forms are inside the range,
+  # so both are contracted. 0.15.0 src/cert/builder.rs:151 through 1.22.0 :377 is
+  # `general_purpose<C, U>(ciphersuite: C, userids: Option<U>)`; 2.0.0 :462 and
+  # 2.3.0 :499 drop the cipher-suite parameter. A single arity-1 entry does not
+  # join for any 0.x or 1.x consumer.
+  - method: sequoia_openpgp::cert::CertBuilder.general_purpose
+    arity: 2
+    return: {type: "sequoia_openpgp::cert::CertBuilder", confidence: high}
+    parameter_types: ["impl core::convert::Into", "core::option::Option"]
+    role: factory
+  - method: sequoia_openpgp::cert::CertBuilder.general_purpose
+    arity: 1
+    return: {type: "sequoia_openpgp::cert::CertBuilder", confidence: high}
+    parameter_types: ["impl core::iter::IntoIterator"]
+    role: factory
+  - method: sequoia_openpgp::cert::CertBuilder.set_cipher_suite
+    arity: 1
+    return: {type: "sequoia_openpgp::cert::CertBuilder", confidence: high}
+    parameter_types: ["sequoia_openpgp::cert::CipherSuite"]
+    role: config
+  - method: sequoia_openpgp::cert::CertBuilder.add_signing_subkey
+    arity: 0
+    return: {type: "sequoia_openpgp::cert::CertBuilder", confidence: high}
+    role: config
+  - method: sequoia_openpgp::cert::CertBuilder.add_transport_encryption_subkey
+    arity: 0
+    return: {type: "sequoia_openpgp::cert::CertBuilder", confidence: high}
+    role: config
+  - method: sequoia_openpgp::cert::CertBuilder.generate
+    arity: 0
+    return: {type: "core::result::Result", confidence: high}
+    role: operation
+  - method: sequoia_openpgp::cert::Cert.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: sequoia_openpgp::Cert.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: sequoia_openpgp::cert::Cert.from_reader
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl std::io::Read"]
+    role: factory
+  - method: sequoia_openpgp::Cert.from_reader
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl std::io::Read"]
+    role: factory
+
+  # --- streaming signing and encryption ---
+  - method: sequoia_openpgp::serialize::stream::Message.new
+    arity: 1
+    return: {type: "sequoia_openpgp::serialize::stream::Message", confidence: high}
+    parameter_types: ["impl std::io::Write"]
+    role: factory
+  # RETURN TYPE CHANGED AT 2.0.0, and only one can be declared per key+arity.
+  # 0.20.0 src/serialize/stream.rs:280 through 1.22.0 :731 return `Self`; 2.0.0
+  # :759 returns `Result<Self>`. The 2.x form is declared because it is the shape
+  # the current stable line and the mined sample use; a 0.x/1.x consumer resolves
+  # the key and carries a return type one wrapper too deep. `add_signer` moved the
+  # same way (1.22.0 :1050 `-> Self`, 2.0.0 :1087 `-> Result<Self>`).
+  - method: sequoia_openpgp::serialize::stream::Signer.new
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["sequoia_openpgp::serialize::stream::Message", "impl sequoia_openpgp::crypto::Signer"]
+    role: factory
+  - method: sequoia_openpgp::serialize::stream::Signer.add_signer
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["impl sequoia_openpgp::crypto::Signer"]
+    role: config
+  - method: sequoia_openpgp::serialize::stream::Signer.hash_algo
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["sequoia_openpgp::types::HashAlgorithm"]
+    role: config
+  - method: sequoia_openpgp::serialize::stream::Encryptor.for_recipients
+    arity: 2
+    return: {type: "sequoia_openpgp::serialize::stream::Encryptor", confidence: high}
+    parameter_types: ["sequoia_openpgp::serialize::stream::Message", "impl core::iter::IntoIterator"]
+    role: factory
+  - method: sequoia_openpgp::serialize::stream::Encryptor.with_passwords
+    arity: 2
+    return: {type: "sequoia_openpgp::serialize::stream::Encryptor", confidence: high}
+    parameter_types: ["sequoia_openpgp::serialize::stream::Message", "impl core::iter::IntoIterator"]
+    role: factory
+  # A third public encryption constructor, 2.3.0 src/serialize/stream.rs:2761.
+  - method: sequoia_openpgp::serialize::stream::Encryptor.with_session_key
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+  - method: sequoia_openpgp::serialize::stream::Encryptor.add_recipients
+    arity: 1
+    return: {type: "sequoia_openpgp::serialize::stream::Encryptor", confidence: high}
+    parameter_types: ["impl core::iter::IntoIterator"]
+    role: config
+  - method: sequoia_openpgp::serialize::stream::Encryptor.symmetric_algo
+    arity: 1
+    return: {type: "sequoia_openpgp::serialize::stream::Encryptor", confidence: high}
+    parameter_types: ["sequoia_openpgp::types::SymmetricAlgorithm"]
+    role: config
+  - method: sequoia_openpgp::serialize::stream::Encryptor.aead_algo
+    arity: 1
+    return: {type: "sequoia_openpgp::serialize::stream::Encryptor", confidence: high}
+    parameter_types: ["sequoia_openpgp::types::AEADAlgorithm"]
+    role: config
+  # Encryptor2 exists only from 1.17.0 (src/serialize/stream.rs:2335) to 1.22.x
+  # and is gone at 2.0.0. It carries the SAME three entries as Encryptor: a
+  # consumer pinned in that window writes the documented fluent form, and
+  # contracting only the factory would drop both config calls.
+  - method: sequoia_openpgp::serialize::stream::Encryptor2.for_recipients
+    arity: 2
+    return: {type: "sequoia_openpgp::serialize::stream::Encryptor2", confidence: high}
+    parameter_types: ["sequoia_openpgp::serialize::stream::Message", "impl core::iter::IntoIterator"]
+    role: factory
+  - method: sequoia_openpgp::serialize::stream::Encryptor2.add_recipients
+    arity: 1
+    return: {type: "sequoia_openpgp::serialize::stream::Encryptor2", confidence: high}
+    parameter_types: ["impl core::iter::IntoIterator"]
+    role: config
+  - method: sequoia_openpgp::serialize::stream::Encryptor2.symmetric_algo
+    arity: 1
+    return: {type: "sequoia_openpgp::serialize::stream::Encryptor2", confidence: high}
+    parameter_types: ["sequoia_openpgp::types::SymmetricAlgorithm"]
+    role: config
+
+  # --- policy-aware verification and decryption ---
+  # `with_policy` is a FACTORY, not an operation: it consumes the builder and
+  # returns the Verifier or Decryptor (2.3.0 src/parse/stream.rs:1275, 1609,
+  # 2042) and performs no cryptography at the call site — verification happens as
+  # the reader is consumed. That matches how `Signer.new` and
+  # `Encryptor.for_recipients` are classified.
+  - method: sequoia_openpgp::parse::stream::VerifierBuilder.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: sequoia_openpgp::parse::stream::VerifierBuilder.with_policy
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+  - method: sequoia_openpgp::parse::stream::DetachedVerifierBuilder.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: sequoia_openpgp::parse::stream::DetachedVerifierBuilder.with_policy
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+  - method: sequoia_openpgp::parse::stream::DecryptorBuilder.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: sequoia_openpgp::parse::stream::DecryptorBuilder.with_policy
+    arity: 3
+    return: {type: "core::result::Result", confidence: high}
+    role: factory
+
+hierarchy: {}

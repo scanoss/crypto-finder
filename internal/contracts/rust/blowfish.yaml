@@ -1,0 +1,177 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: blowfish
+  coordinates:
+    - blowfish
+  version_range: ">=0.1.0,<0.11.0"
+  description: "RustCrypto Blowfish raw block cipher"
+
+# Inventory sources: the blowfish crate source read at 0.10.0 (src/lib.rs),
+# cross-checked against 0.9.1, 0.8.0, 0.7.0, 0.5.0, 0.4.0 and 0.1.0.
+#
+# `Blowfish` became generic over byte order in 0.4.0
+# (`Blowfish<T: ByteOrder = BE>` plus the `BlowfishLE = Blowfish<LE>` alias);
+# 0.1.0 has a plain non-generic `Blowfish`. The `blowfish::Blowfish.*` keys hold
+# for both, because the parser strips type arguments from the callee identity,
+# so the turbofish spelling `Blowfish::<LE>::new(..)` also resolves here rather
+# than under the alias. The `blowfish::BlowfishLE.*` keys apply from 0.4.0; on
+# earlier releases they simply never match.
+#
+# The second KeyInit constructor was renamed across the range this file spans,
+# # and both spellings are live in the committed Tier 0 version list:
+# #
+# #   new_varkey      block-cipher-trait 0.6, block-cipher 0.8, cipher 0.2
+# #   new_from_slice  cipher 0.3 and later, crypto-common 0.1 and later
+# #
+# # Both are inventoried, so the older half of the range is not a silent gap.
+# blowfish 0.1.0 has only `new`; `new_varkey` covers 0.4.0-0.7.0 and
+# `new_from_slice` covers 0.8.0-0.10.0.
+#
+# Key size is genuinely variable here and is derived from the call site, not
+# declared: `KeySizeUser::KeySize` is U56, but the slice constructors accept
+# 4 to 56 bytes (src/lib.rs: `if key.len() < 4 || key.len() > 56`). A fixed
+# keySize on these contracts would be a fabricated default, so the key argument
+# is marked metadata-contributing with argument_bit_length instead.
+#
+# blowfish 0.0.0 is an empty placeholder release with no code, so the range
+# starts at 0.1.0.
+#
+# skipped-non-crypto: the `bcrypt` feature's hazmat entry points
+# (bc_init_state, bc_expand_key, bc_encrypt, salted_expand_key). Those are
+# bcrypt key-derivation internals rather than Blowfish block operations and
+# belong with the password-hashing family, not here.
+contracts:
+  - method: blowfish::Blowfish.new
+    arity: 1
+    return: {type: blowfish::Blowfish, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: blowfish::Blowfish.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: blowfish::Blowfish.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: blowfish::Blowfish.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: blowfish::Blowfish.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: blowfish::Blowfish.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: blowfish::Blowfish.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: blowfish::BlowfishLE.new
+    arity: 1
+    return: {type: blowfish::BlowfishLE, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: blowfish::BlowfishLE.new_from_slice
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: blowfish::BlowfishLE.new_varkey
+    arity: 1
+    return: {type: core::result::Result, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: blowfish::BlowfishLE.encrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: blowfish::BlowfishLE.encrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: plaintext, derivation: argument_value}
+  - method: blowfish::BlowfishLE.decrypt_block
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: block
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+  - method: blowfish::BlowfishLE.decrypt_blocks
+    arity: 1
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: blocks
+        role: metadata-contributing
+        contributes: {property: ciphertext, derivation: argument_value}
+
+hierarchy:
+  blowfish::Blowfish:
+    - core::any::Any
+  blowfish::BlowfishLE:
+    - core::any::Any
+  core::any::Any: []

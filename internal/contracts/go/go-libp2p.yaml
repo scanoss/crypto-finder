@@ -1,0 +1,100 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: go-libp2p
+  coordinates:
+    - "github.com/libp2p/go-libp2p"
+  version_range: ">=0.0.1,<1.0.0"
+  description: "go-libp2p core/crypto key and signature boundary"
+
+# Inventory source: github.com/libp2p/go-libp2p v0.48.0 module source from the
+# Go module proxy. Contracted boundary per the family audit: the core/crypto
+# key interfaces (interface-authored Sign/Verify with concrete resolution),
+# per-family and generic key generation, and marshal/unmarshal/std-key
+# conversion. The pre-modules gx-era tags (v6.x +incompatible) expose the
+# crypto package at a different path and never match these identities.
+# Transports, muxers, peer/host plumbing, and the rest of the host stack are
+# out of the crypto boundary (skipped-non-crypto); secure-transport session
+# setup (noise, tls) delegates to its own modules (bounded follow-ups).
+contracts:
+  - method: github.com/libp2p/go-libp2p/core/crypto.GenerateKeyPair
+    arity: 2
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PrivKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: typ, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: bits, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: github.com/libp2p/go-libp2p/core/crypto.GenerateKeyPairWithReader
+    arity: 3
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PrivKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: typ, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: bits, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: github.com/libp2p/go-libp2p/core/crypto.GenerateEd25519Key
+    arity: 1
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PrivKey", confidence: high }
+    role: factory
+  - method: github.com/libp2p/go-libp2p/core/crypto.GenerateECDSAKeyPair
+    arity: 1
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PrivKey", confidence: high }
+    role: factory
+  - method: github.com/libp2p/go-libp2p/core/crypto.GenerateECDSAKeyPairWithCurve
+    arity: 2
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PrivKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: curve, role: metadata-contributing, contributes: { property: curve, derivation: argument_value } }
+  - method: github.com/libp2p/go-libp2p/core/crypto.GenerateSecp256k1Key
+    arity: 1
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PrivKey", confidence: high }
+    role: factory
+  - method: github.com/libp2p/go-libp2p/core/crypto.GenerateRSAKeyPair
+    arity: 2
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PrivKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: bits, role: metadata-contributing, contributes: { property: keySize, derivation: argument_value } }
+  - method: github.com/libp2p/go-libp2p/core/crypto.UnmarshalPrivateKey
+    arity: 1
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PrivKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: data, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/libp2p/go-libp2p/core/crypto.UnmarshalPublicKey
+    arity: 1
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PubKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: data, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/libp2p/go-libp2p/core/crypto.MarshalPrivateKey
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/libp2p/go-libp2p/core/crypto.MarshalPublicKey
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/libp2p/go-libp2p/core/crypto.KeyPairFromStdKey
+    arity: 1
+    return: { type: "github.com/libp2p/go-libp2p/core/crypto.PrivKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: priv, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/libp2p/go-libp2p/core/crypto.PrivKeyToStdKey
+    arity: 1
+    return: { type: "crypto.PrivateKey", confidence: high }
+    role: output
+  - method: github.com/libp2p/go-libp2p/core/crypto.PubKeyToStdKey
+    arity: 1
+    return: { type: "crypto.PublicKey", confidence: high }
+    role: output
+  - method: github.com/libp2p/go-libp2p/core/crypto.(PrivKey).Sign
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/libp2p/go-libp2p/core/crypto.(PubKey).Verify
+    arity: 2
+    return: { type: "bool", confidence: high }
+    role: operation
+hierarchy: {}

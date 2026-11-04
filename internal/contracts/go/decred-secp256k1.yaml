@@ -1,0 +1,180 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: decred-secp256k1
+  coordinates:
+    - "github.com/decred/dcrd/dcrec/secp256k1/v4"
+  version_range: ">=4.0.0,<5.0.0"
+  description: "decred secp256k1 curve, ECDSA, and EC-Schnorr-DCRv0 implementation"
+
+# Inventory source: github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.0 through
+# v4.4.1 module sources from the Go module proxy (root package plus the ecdsa
+# and schnorr subpackages). GeneratePrivateKeyFromRand first appears at
+# v4.1.0; declaring it across the range is safe (a call that does not exist in
+# an older release cannot appear at a call site compiled against it).
+#
+# Dispositions for the remaining public surface:
+# - The low-level arithmetic types (FieldVal, ModNScalar, JacobianPoint) and
+#   the KoblitzCurve elliptic.Curve adaptor are deliberately uncontracted: the
+#   committed family audit scopes key factories, shared-secret generation,
+#   ECDSA/Schnorr operations, parsing, and serialization; the arithmetic
+#   surface carries no role the operands do not already have.
+# - NonceRFC6979 is contracted (deterministic-nonce derivation feeds signing).
+# - PublicKey.IsEqual/IsOnCurve/AsJacobian and PrivateKey/PublicKey.ToECDSA
+#   interop conversions are informative-return accessors; ToECDSA is
+#   contracted as output because it hands the key material to stdlib types.
+contracts:
+  # Root package: key material.
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.GeneratePrivateKey
+    arity: 0
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.GeneratePrivateKeyFromRand
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.NewPrivateKey
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.PrivKeyFromBytes
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: privKeyBytes, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.NewPublicKey
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: factory
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.ParsePubKey
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: serialized, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.GenerateSharedSecret
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: privkey, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: pubkey, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.NonceRFC6979
+    arity: 5
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.ModNScalar", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: privKey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.(*PrivateKey).PubKey
+    arity: 0
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: output
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.(*PrivateKey).Zero
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.(PrivateKey).Serialize
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.(PublicKey).SerializeCompressed
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.(PublicKey).SerializeUncompressed
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.(*PrivateKey).ToECDSA
+    arity: 0
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: output
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4.(*PublicKey).ToECDSA
+    arity: 0
+    return: { type: "*crypto/ecdsa.PublicKey", confidence: high }
+    role: output
+
+  # ECDSA subpackage.
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Sign
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.SignCompact
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.RecoverCompact
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: signature, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.NewSignature
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: factory
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.ParseDERSignature
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.Signature", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: sig, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.(*Signature).Verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 1, name: pubKey, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa.(*Signature).Serialize
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+
+  # Schnorr subpackage (EC-Schnorr-DCRv0).
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/schnorr.Sign
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/schnorr.Signature", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: privKey, role: metadata-contributing, contributes: { property: privateKey, derivation: argument_value } }
+      - { index: 1, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/schnorr.NewSignature
+    arity: 2
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/schnorr.Signature", confidence: high }
+    role: factory
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/schnorr.ParseSignature
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4/schnorr.Signature", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: sig, role: metadata-contributing, contributes: { property: signature, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/schnorr.ParsePubKey
+    arity: 1
+    return: { type: "*github.com/decred/dcrd/dcrec/secp256k1/v4.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: pubKeyStr, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/schnorr.(*Signature).Verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: hash, role: metadata-contributing, contributes: { property: digest, derivation: argument_value } }
+      - { index: 1, name: pubKey, role: metadata-contributing, contributes: { property: publicKey, derivation: argument_value } }
+  - method: github.com/decred/dcrd/dcrec/secp256k1/v4/schnorr.(Signature).Serialize
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+
+hierarchy: {}

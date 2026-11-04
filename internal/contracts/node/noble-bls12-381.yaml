@@ -1,0 +1,161 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "noble-bls12-381"
+  coordinates:
+    - "@noble/bls12-381"
+  version_range: ">=1.0.0 <2.0.0"
+  description: "@noble/bls12-381: the frozen 1.x BLS12-381 signature and pairing package"
+
+# ONE ENTRY POINT, UNCHANGED FROM 1.0.0 TO 1.4.0. Everything is a module
+# function or a static on PointG1/PointG2:
+#
+#     const bls = require('@noble/bls12-381');
+#     const pk  = bls.getPublicKey(sk);                 // Uint8Array, G1
+#     const sig = await bls.sign(msg, sk);              // Uint8Array, G2
+#     const ok  = await bls.verify(sig, msg, pk);       // boolean
+#     const agg = bls.aggregateSignatures([sig, sig2]); // Uint8Array
+#
+# The parser keys these calls by the import, so `@noble/bls12-381.sign` is the
+# FQN and a namespace call resolves here rather than to the consumer's module.
+#
+# THE POINT TYPES ARE WHAT CARRY STATE ACROSS STATEMENTS. hashToCurve, fromHex,
+# fromSignature and fromPrivateKey return PointG1/PointG2, and their methods
+# (toSignature, toRawBytes, toHex, millerLoop) are only reachable once the
+# receiver is typed. pairing returns an Fp12 field element.
+#
+# sign and the aggregations are overloaded in the library: Hex in, Uint8Array
+# out; PointG2 in, PointG2 out. The Hex form is what consumers write and what
+# the README documents, so the return is Uint8Array; the point form is left
+# to the engine's declared-type fallback rather than guessed.
+#
+# Roles: the signature, aggregation, pairing and hash-to-curve calls are
+# `operation`; the parsers are `factory`; the encoders are `output`.
+#
+# Deliberately NOT contracted: the Fp/Fr/Fp2/Fp12 field classes and CURVE
+# constants, utils.bytesToHex/hexToBytes/stringToBytes/mod, and
+# utils.getDSTLabel/setDSTLabel. They are arithmetic, encoding and
+# configuration of the domain tag; none computes a signature, key or hash.
+contracts:
+  - method: "@noble/bls12-381.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.verifyBatch"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.aggregatePublicKeys"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.aggregateSignatures"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.pairing"
+    arity: 2
+    return: { type: "@noble/bls12-381.Fp12", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.pairing"
+    arity: 3
+    return: { type: "@noble/bls12-381.Fp12", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.utils.randomPrivateKey"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.utils.hashToPrivateKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # hashToCurve takes the message and optional hash-to-field options (1.1.0+).
+  - method: "@noble/bls12-381.PointG1.hashToCurve"
+    arity: 1
+    return: { type: "@noble/bls12-381.PointG1", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.PointG1.hashToCurve"
+    arity: 2
+    return: { type: "@noble/bls12-381.PointG1", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.PointG2.hashToCurve"
+    arity: 1
+    return: { type: "@noble/bls12-381.PointG2", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.PointG2.hashToCurve"
+    arity: 2
+    return: { type: "@noble/bls12-381.PointG2", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.PointG1.fromPrivateKey"
+    arity: 1
+    return: { type: "@noble/bls12-381.PointG1", confidence: high }
+    role: operation
+  - method: "@noble/bls12-381.PointG2.fromPrivateKey"
+    arity: 1
+    return: { type: "@noble/bls12-381.PointG2", confidence: high }
+    role: operation
+
+  # Parsers: they decode a point, which is what types the variable.
+  - method: "@noble/bls12-381.PointG1.fromHex"
+    arity: 1
+    return: { type: "@noble/bls12-381.PointG1", confidence: high }
+    role: factory
+  - method: "@noble/bls12-381.PointG2.fromHex"
+    arity: 1
+    return: { type: "@noble/bls12-381.PointG2", confidence: high }
+    role: factory
+  - method: "@noble/bls12-381.PointG2.fromSignature"
+    arity: 1
+    return: { type: "@noble/bls12-381.PointG2", confidence: high }
+    role: factory
+
+  # Methods on typed points.
+  - method: "@noble/bls12-381.PointG2.toSignature"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/bls12-381.PointG1.toRawBytes"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/bls12-381.PointG1.toRawBytes"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/bls12-381.PointG2.toRawBytes"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/bls12-381.PointG2.toRawBytes"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/bls12-381.PointG1.toHex"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "@noble/bls12-381.PointG1.toHex"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "@noble/bls12-381.PointG2.toHex"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "@noble/bls12-381.PointG2.toHex"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "@noble/bls12-381.PointG1.millerLoop"
+    arity: 1
+    return: { type: "@noble/bls12-381.Fp12", confidence: high }
+    role: operation

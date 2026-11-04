@@ -1,0 +1,1553 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "noble-hashes"
+  coordinates:
+    - "@noble/hashes"
+  version_range: ">=0.4.0"
+  description: "@noble/hashes: SHA-2, SHA-3, Keccak, SHAKE, cSHAKE, BLAKE1/2/3, legacy hashes, HMAC, KMAC, HKDF, PBKDF2, scrypt, Argon2, ESKDF"
+
+# ONE SUBPATH PER FAMILY, AND THE PARSER KEYS BY THE SPECIFIER. The root module
+# exports nothing; consumers import `@noble/hashes/sha2`, `sha3`, `hmac` and so
+# on. 0.4.x shipped them under `lib/`, 2.x requires the `.js` suffix, and 1.x
+# moved sha256/sha512 into sha2, blake2b/blake2s into blake2, and sha1/ripemd160
+# into legacy. Every export is declared under each spelling it shipped with.
+#
+# THE HASH IS BOTH A FUNCTION AND A FACTORY:
+#
+#     sha256(data)                        // operation, the digest
+#     const h = sha256.create();          // factory, typed @noble/hashes.Hash
+#     h.update(a).update(b).digest();     // operation, then output
+#
+# HMAC and KMAC follow the same shape. The declared returns are the resolved
+# values, so an awaited pbkdf2Async or eskdf call types its variable.
+#
+# Deliberately NOT contracted: the `utils` helpers, `_`-prefixed internals,
+# Hash.clone/destroy/digestInto, and the sha3-addons constructions no rule
+# detects yet (TupleHash, ParallelHash, TurboSHAKE, KangarooTwelve, the
+# KMAC/cSHAKE XOF variants, keccakprg, HopMAC), plus utils.randomBytes.
+contracts:
+
+  # Hash functions: hash(msg) digests in one call; hash.create() returns the incremental hasher.
+  # BLAKE, SHAKE and cSHAKE take an optional options object on both.
+  - method: "@noble/hashes/sha256.sha256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha256.sha256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha256.sha224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha256.sha224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha256.js.sha256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha256.js.sha256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha256.js.sha224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha256.js.sha224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha256.sha256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha256.sha256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha256.sha224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha256.sha224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha512.sha512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha512.sha512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha512.sha384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha512.sha384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha512.sha512_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha512.sha512_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha512.sha512_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha512.sha512_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha512.js.sha512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha512.js.sha512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha512.js.sha384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha512.js.sha384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha512.js.sha512_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha512.js.sha512_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha512.js.sha512_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha512.js.sha512_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha512.sha512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha512.sha512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha512.sha384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha512.sha384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha512.sha512_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha512.sha512_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha512.sha512_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha512.sha512_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.sha256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.sha256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.sha224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.sha224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.sha512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.sha512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.sha384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.sha384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.sha512_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.sha512_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.sha512_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.sha512_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.js.sha256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.js.sha256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.js.sha224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.js.sha224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.js.sha512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.js.sha512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.js.sha384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.js.sha384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.js.sha512_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.js.sha512_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha2.js.sha512_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha2.js.sha512_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.sha3_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.sha3_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.sha3_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.sha3_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.sha3_384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.sha3_384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.sha3_512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.sha3_512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.keccak_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.keccak_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.keccak_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.keccak_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.keccak_384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.keccak_384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.keccak_512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.keccak_512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.shake128"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.shake128"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.shake128.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.shake128.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.shake256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.shake256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.shake256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.shake256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.sha3_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.sha3_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.sha3_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.sha3_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.sha3_384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.sha3_384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.sha3_512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.sha3_512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.keccak_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.keccak_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.keccak_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.keccak_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.keccak_384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.keccak_384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.keccak_512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.keccak_512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.shake128"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.shake128"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.shake128.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.shake128.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.shake256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.shake256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3.js.shake256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3.js.shake256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.sha3_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.sha3_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.sha3_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.sha3_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.sha3_384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.sha3_384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.sha3_512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.sha3_512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.keccak_224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.keccak_224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.keccak_256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.keccak_256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.keccak_384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.keccak_384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.keccak_512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.keccak_512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.shake128"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.shake128"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.shake128.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.shake128.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.shake256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.shake256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3.shake256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3.shake256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.cshake128"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.cshake128"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.cshake128.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.cshake128.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.cshake256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.cshake256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.cshake256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.cshake256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.js.cshake128"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.js.cshake128"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.js.cshake128.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.js.cshake128.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.js.cshake256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.js.cshake256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.js.cshake256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.js.cshake256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3-addons.cshake128"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3-addons.cshake128"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3-addons.cshake128.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3-addons.cshake128.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3-addons.cshake256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3-addons.cshake256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3-addons.cshake256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3-addons.cshake256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.blake224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.blake224"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.blake224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.blake224.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.blake256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.blake256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.blake256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.blake256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.blake384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.blake384"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.blake384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.blake384.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.blake512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.blake512"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.blake512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.blake512.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.js.blake224"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.js.blake224"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.js.blake224.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.js.blake224.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.js.blake256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.js.blake256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.js.blake256.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.js.blake256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.js.blake384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.js.blake384"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.js.blake384.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.js.blake384.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.js.blake512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.js.blake512"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake1.js.blake512.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake1.js.blake512.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2b.blake2b"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2b.blake2b"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2b.blake2b.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2b.blake2b.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2b.js.blake2b"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2b.js.blake2b"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2b.js.blake2b.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2b.js.blake2b.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/blake2b.blake2b"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/blake2b.blake2b"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/blake2b.blake2b.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/blake2b.blake2b.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2s.blake2s"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2s.blake2s"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2s.blake2s.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2s.blake2s.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2s.js.blake2s"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2s.js.blake2s"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2s.js.blake2s.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2s.js.blake2s.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/blake2s.blake2s"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/blake2s.blake2s"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/blake2s.blake2s.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/blake2s.blake2s.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2.blake2b"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2.blake2b"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2.blake2b.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2.blake2b.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2.blake2s"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2.blake2s"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2.blake2s.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2.blake2s.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2.js.blake2b"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2.js.blake2b"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2.js.blake2b.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2.js.blake2b.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2.js.blake2s"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2.js.blake2s"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake2.js.blake2s.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake2.js.blake2s.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake3.blake3"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake3.blake3"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake3.blake3.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake3.blake3.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake3.js.blake3"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake3.js.blake3"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/blake3.js.blake3.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/blake3.js.blake3.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/blake3.blake3"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/blake3.blake3"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/blake3.blake3.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/blake3.blake3.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha1.sha1"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha1.sha1.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha1.js.sha1"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha1.js.sha1.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/ripemd160.ripemd160"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/ripemd160.ripemd160.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/ripemd160.js.ripemd160"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/ripemd160.js.ripemd160.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/ripemd160.ripemd160"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/ripemd160.ripemd160.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/legacy.sha1"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/legacy.sha1.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/legacy.md5"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/legacy.md5.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/legacy.ripemd160"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/legacy.ripemd160.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/legacy.js.sha1"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/legacy.js.sha1.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/legacy.js.md5"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/legacy.js.md5.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/legacy.js.ripemd160"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/legacy.js.ripemd160.create"
+    arity: 0
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+
+  # KMAC: kmac(key, msg, opts?) tags in one call; kmac.create(key, opts?) is incremental.
+  - method: "@noble/hashes/sha3-addons.kmac128"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.kmac128"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.kmac128.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.kmac128.create"
+    arity: 2
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.kmac256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.kmac256"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.kmac256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.kmac256.create"
+    arity: 2
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.js.kmac128"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.js.kmac128"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.js.kmac128.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.js.kmac128.create"
+    arity: 2
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.js.kmac256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.js.kmac256"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/sha3-addons.js.kmac256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/sha3-addons.js.kmac256.create"
+    arity: 2
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3-addons.kmac128"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3-addons.kmac128"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3-addons.kmac128.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3-addons.kmac128.create"
+    arity: 2
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3-addons.kmac256"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3-addons.kmac256"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/sha3-addons.kmac256.create"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/sha3-addons.kmac256.create"
+    arity: 2
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+
+  # HMAC: hmac(hash, key, msg) tags in one call; hmac.create(hash, key) is incremental.
+  - method: "@noble/hashes/hmac.hmac"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hmac.hmac.create"
+    arity: 2
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/hmac.js.hmac"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hmac.js.hmac.create"
+    arity: 2
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+  - method: "@noble/hashes/lib/hmac.hmac"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hmac.hmac.create"
+    arity: 2
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: factory
+
+  # HKDF: hkdf(hash, ikm, salt, info, length), extract(hash, ikm, salt?),
+  # expand(hash, prk, info?, length?). 0.x named the two steps hkdf_extract and hkdf_expand.
+  - method: "@noble/hashes/hkdf.hkdf"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.extract"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.extract"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.expand"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.expand"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.expand"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.js.hkdf"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.js.extract"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.js.extract"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.js.expand"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.js.expand"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.js.expand"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.hkdf"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.extract"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.extract"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.expand"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.expand"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.expand"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.hkdf_extract"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.hkdf_extract"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.hkdf_expand"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.hkdf_expand"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/hkdf.hkdf_expand"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.hkdf_extract"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.hkdf_extract"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.hkdf_expand"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.hkdf_expand"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/hkdf.hkdf_expand"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # Password KDFs: pbkdf2(hash, password, salt, opts), scrypt(password, salt, opts),
+  # argon2*(password, salt, opts) with opts optional in 2.x. The async forms resolve to the key.
+  - method: "@noble/hashes/pbkdf2.pbkdf2"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/pbkdf2.pbkdf2Async"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/pbkdf2.js.pbkdf2"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/pbkdf2.js.pbkdf2Async"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/pbkdf2.pbkdf2"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/pbkdf2.pbkdf2Async"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/scrypt.scrypt"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/scrypt.scryptAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/scrypt.js.scrypt"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/scrypt.js.scryptAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/scrypt.scrypt"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/lib/scrypt.scryptAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2d"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2d"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2dAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2dAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2i"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2i"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2iAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2iAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2id"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2id"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2idAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.argon2idAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2d"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2d"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2dAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2dAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2i"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2i"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2iAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2iAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2id"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2id"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2idAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/argon2.js.argon2idAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # ESKDF: eskdf(username, password) resolves to the derivation object.
+  - method: "@noble/hashes/eskdf.eskdf"
+    arity: 2
+    return: { type: "@noble/hashes.ESKDF", confidence: high }
+    role: factory
+  - method: "@noble/hashes/eskdf.js.eskdf"
+    arity: 2
+    return: { type: "@noble/hashes.ESKDF", confidence: high }
+    role: factory
+
+  # WebCrypto-backed helpers (2.x): each call resolves to the digest, tag or key.
+  - method: "@noble/hashes/webcrypto.sha256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.sha384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.sha512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.hmac"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.hkdf"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.pbkdf2"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.js.sha256"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.js.sha384"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.js.sha512"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.js.hmac"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.js.hkdf"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes/webcrypto.js.pbkdf2"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # The incremental object. update returns the hasher so calls chain; digest and the
+  # XOF readers hand back the output.
+  - method: "@noble/hashes.Hash.update"
+    arity: 1
+    return: { type: "@noble/hashes.Hash", confidence: high }
+    role: operation
+  - method: "@noble/hashes.Hash.digest"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/hashes.Hash.xof"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/hashes.Hash.xofInto"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/hashes.ESKDF.deriveChildKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/hashes.ESKDF.deriveChildKey"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation

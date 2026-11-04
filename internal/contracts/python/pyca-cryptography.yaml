@@ -1,0 +1,1996 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: pyca-cryptography
+  coordinates:
+    - cryptography
+  version_range: ">=3.0"
+  description: "pyca/cryptography — hazmat symmetric ciphers, hashes, HMAC, asymmetric (RSA/EC/Ed), KDF"
+
+# Extended at cryptography 50.0.1 (src/cryptography and its _rust stubs).
+# ML-KEM and ML-DSA (asymmetric/mlkem.py, mldsa.py, 47.0.0+) added from
+# cryptography main (51.0.0-dev); see the post-quantum section.
+#
+# ROLES. Calls that run a primitive (cipher update/finalize, AEAD
+# encrypt/decrypt, hash and HMAC update, sign, verify, decrypt, key exchange,
+# every KDF derive and verify, padding, certificate signing and fingerprint)
+# are `operation`. Constructors, key generation and loading, public_key and
+# encryptor/decryptor are `factory`. finalize on a hash or HMAC and every
+# *_bytes serializer read a result (`output`). Certificate-builder setters and
+# authenticate_additional_data configure an object (`config`).
+#
+# SPELLINGS. A module-attribute call keys differently from an imported class:
+# `hashes.Hash(..)` keys `...hashes.Hash` while `Hash(..)` keys
+# `...hashes.Hash.<init>`, so both are contracted for Hash, HMAC, PKCS7 and
+# x509.CertificateBuilder.
+
+contracts:
+  # ── Symmetric ciphers (hazmat.primitives.ciphers) ────────────────────────────
+
+  # Cipher(algorithm, mode) constructor — builder root
+  - method: cryptography.hazmat.primitives.ciphers.Cipher.<init>
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.ciphers.Cipher
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.ciphers.Cipher.encryptor
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.ciphers.CipherContext
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.ciphers.Cipher.decryptor
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.ciphers.CipherContext
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.ciphers.CipherContext.update
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.ciphers.CipherContext.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  # AEAD ciphers: AEADEncryptionContext (GCM, ChaCha20Poly1305)
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESGCM.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.ciphers.aead.AESGCM
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESGCM.encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESGCM.decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  # ── Cryptographic hashes (hazmat.primitives.hashes) ──────────────────────────
+
+  # Hash(algorithm, backend=None) constructor — generic constructor
+  - method: cryptography.hazmat.primitives.hashes.Hash.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.hashes.Hash
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.hashes.Hash.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.hashes.Hash.copy
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.hashes.Hash
+      confidence: high
+    role: factory
+
+  # ── HMAC (hazmat.primitives.hmac) ────────────────────────────────────────────
+
+  - method: cryptography.hazmat.primitives.hmac.HMAC.<init>
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.hmac.HMAC
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.hmac.HMAC.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: cryptography.hazmat.primitives.hmac.HMAC.copy
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.hmac.HMAC
+      confidence: high
+    role: factory
+
+  # ── RSA key generation / serialization ───────────────────────────────────────
+
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 1
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.generate_private_key
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+      - typing.Any
+    parameters:
+      - index: 1
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey.sign
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey.encrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  # ── Elliptic-curve key generation ────────────────────────────────────────────
+
+  - method: cryptography.hazmat.primitives.asymmetric.ec.generate_private_key
+    arity: 1
+    parameter_types: [cryptography.hazmat.primitives.asymmetric.ec.EllipticCurve]
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: curve
+        role: metadata-contributing
+        # ec.SECP384R1() names the curve; its field size is the key size.
+        contributes: { property: keySize, derivation: argument_curve_bits }
+
+  # generate_private_key(curve, backend=None): before cryptography 3.1 callers
+  # pass the backend positionally, ec.generate_private_key(curve, default_backend()).
+  - method: cryptography.hazmat.primitives.asymmetric.ec.generate_private_key
+    arity: 2
+    parameter_types:
+      - cryptography.hazmat.primitives.asymmetric.ec.EllipticCurve
+      - typing.Any
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: curve
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey.sign
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  # ── Ed25519 / Ed448 ──────────────────────────────────────────────────────────
+
+  - method: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey
+      confidence: high
+    role: factory
+
+  - method: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PublicKey
+      confidence: high
+    role: factory
+
+  # ── Key derivation functions ──────────────────────────────────────────────────
+  # Every constructor arity/index below was verified against the installed
+  # cryptography 50.0.1 package's own primary source — the .pyi stub at
+  # cryptography/hazmat/bindings/_rust/openssl/kdf.pyi (row C,
+  # python-parser-parity-2) — not asserted on faith. PBKDF2HMAC(algorithm,
+  # length, salt, iterations, backend=None); Scrypt(salt, length, n, r, p,
+  # backend=None) — arity 5, NOT 4: the PRE-EXISTING arity: 4 below was a
+  # latent bug (this class has 5 non-backend positional-or-keyword
+  # parameters, confirmed against the stub, fixed as part of this row rather
+  # than propagated into a new keySize role that would then be positioned
+  # against the wrong parameter_types length); HKDF(algorithm, length, salt,
+  # info, backend=None); HKDFExpand(algorithm, length, info, backend=None);
+  # ConcatKDFHash(algorithm, length, otherinfo, backend=None);
+  # X963KDF(algorithm, length, sharedinfo, backend=None).
+
+  - method: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC.<init>
+    arity: 4
+    return:
+      type: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC
+      confidence: high
+    role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+      - builtins.int
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDF.<init>
+    arity: 4
+    return:
+      type: cryptography.hazmat.primitives.kdf.hkdf.HKDF
+      confidence: high
+    role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+      - builtins.bytes
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDF.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDFExpand.<init>
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.kdf.hkdf.HKDFExpand
+      confidence: high
+    role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDFExpand.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.kdf.scrypt.Scrypt.<init>
+    arity: 5
+    return:
+      type: cryptography.hazmat.primitives.kdf.scrypt.Scrypt
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.bytes
+      - builtins.int
+      - builtins.int
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: cryptography.hazmat.primitives.kdf.scrypt.Scrypt.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.kdf.concatkdf.ConcatKDFHash.<init>
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.kdf.concatkdf.ConcatKDFHash
+      confidence: high
+    role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: cryptography.hazmat.primitives.kdf.concatkdf.ConcatKDFHash.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: cryptography.hazmat.primitives.kdf.x963kdf.X963KDF.<init>
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.kdf.x963kdf.X963KDF
+      confidence: high
+    role: factory
+    parameter_types:
+      - cryptography.hazmat.primitives.hashes.HashAlgorithm
+      - builtins.int
+      - builtins.bytes
+    parameters:
+      - index: 1
+        name: length
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+
+  - method: cryptography.hazmat.primitives.kdf.x963kdf.X963KDF.derive
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+
+  # Module-attribute constructors. `from cryptography.hazmat.primitives import
+  # hashes; hashes.Hash(..)` keys as `...hashes.Hash`, not `.<init>`.
+  - method: cryptography.hazmat.primitives.hashes.Hash
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.hashes.Hash
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.hmac.HMAC
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.hmac.HMAC
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.padding.PKCS7
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.padding.PKCS7
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.padding.PKCS7.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.padding.PKCS7
+      confidence: high
+    role: factory
+  - method: cryptography.x509.CertificateBuilder
+    arity: 0
+    return:
+      type: cryptography.x509.CertificateBuilder
+      confidence: high
+    role: factory
+  - method: cryptography.x509.CertificateBuilder.<init>
+    arity: 0
+    return:
+      type: cryptography.x509.CertificateBuilder
+      confidence: high
+    role: factory
+
+  # Hash, HMAC and cipher-context methods (hashes.pyi, hmac.pyi, ciphers/base.py).
+  - method: cryptography.hazmat.primitives.hashes.Hash.update
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.hmac.HMAC.update
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.hmac.HMAC.verify
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.ciphers.CipherContext.authenticate_additional_data
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+  - method: cryptography.hazmat.primitives.ciphers.CipherContext.finalize_with_tag
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESGCM.generate_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.generate_key
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: factory
+
+  # PKCS7 padding (padding.py). The padding context runs the scheme the rule
+  # detects.
+  - method: cryptography.hazmat.primitives.padding.PKCS7.padder
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.padding.PaddingContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.padding.PKCS7.unpadder
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.padding.PaddingContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.padding.PaddingContext.update
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.padding.PaddingContext.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  # Asymmetric verification, decryption, key agreement and serialization
+  # (asymmetric/rsa.py, ec.py, ed25519.py, ed448.py, dsa.py). verify raises
+  # InvalidSignature and returns None.
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey.decrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey.verify
+    arity: 4
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey.public_bytes
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey.exchange
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey.verify
+    arity: 3
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PublicKey.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.ed448.Ed448PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ed448.Ed448PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.ed448.Ed448PrivateKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.ed448.Ed448PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ed448.Ed448PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.ed448.Ed448PublicKey.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.generate_private_key
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+    parameters:
+      - index: 0
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.generate_private_key
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - typing.Any
+    parameters:
+      - index: 0
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  # dsa.generate_parameters(key_size, backend=None) and
+  # dh.generate_parameters(generator, key_size, backend=None): key_size is a bit
+  # count (dsa.py rejects all but 1024/2048/3072/4096; dh.rs checks it against
+  # MIN_DH_MODULUS_SIZE bits). Positional and keyword calls both resolve.
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.generate_parameters
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dsa.DSAParameters
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+    parameters:
+      - index: 0
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.generate_parameters
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dsa.DSAParameters
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - typing.Any
+    parameters:
+      - index: 0
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.dh.generate_parameters
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dh.DHParameters
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+    parameters:
+      - index: 1
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.dh.generate_parameters
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dh.DHParameters
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+      - typing.Any
+    parameters:
+      - index: 1
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey.sign
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKey.verify
+    arity: 3
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # KDF verification (kdf/__init__.py KeyDerivationFunction.verify).
+  - method: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDF.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.kdf.hkdf.HKDFExpand.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.kdf.scrypt.Scrypt.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.kdf.concatkdf.ConcatKDFHash.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.kdf.x963kdf.X963KDF.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # Loaded keys (serialization/base.py). A loaded key's algorithm is unknown
+  # until run time, so it takes the asymmetric/types.py union type and the
+  # methods every member shares.
+  - method: cryptography.hazmat.primitives.serialization.load_pem_private_key
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.serialization.load_der_private_key
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.serialization.load_pem_public_key
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.serialization.load_der_public_key
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes.public_bytes
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # X.509 (x509/base.py, bindings/_rust/x509.pyi). Every builder setter returns
+  # a new builder; sign issues the certificate.
+  - method: cryptography.x509.CertificateBuilder.subject_name
+    arity: 1
+    return:
+      type: cryptography.x509.CertificateBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateBuilder.issuer_name
+    arity: 1
+    return:
+      type: cryptography.x509.CertificateBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateBuilder.public_key
+    arity: 1
+    return:
+      type: cryptography.x509.CertificateBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateBuilder.serial_number
+    arity: 1
+    return:
+      type: cryptography.x509.CertificateBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateBuilder.not_valid_before
+    arity: 1
+    return:
+      type: cryptography.x509.CertificateBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateBuilder.not_valid_after
+    arity: 1
+    return:
+      type: cryptography.x509.CertificateBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateBuilder.add_extension
+    arity: 2
+    return:
+      type: cryptography.x509.CertificateBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateBuilder.sign
+    arity: 2
+    return:
+      type: cryptography.x509.Certificate
+      confidence: high
+    role: operation
+  - method: cryptography.x509.load_pem_x509_certificate
+    arity: 1
+    return:
+      type: cryptography.x509.Certificate
+      confidence: high
+    role: factory
+  - method: cryptography.x509.load_der_x509_certificate
+    arity: 1
+    return:
+      type: cryptography.x509.Certificate
+      confidence: high
+    role: factory
+  - method: cryptography.x509.Certificate.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes
+      confidence: high
+    role: factory
+  - method: cryptography.x509.Certificate.fingerprint
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.x509.Certificate.public_bytes
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  # AES-CCM (ciphers/aead.py, bindings/_rust/openssl/aead.pyi from 43.0.0):
+  # AESCCM(key, tag_length=16) and the same encrypt/decrypt shape as AESGCM.
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESCCM.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.ciphers.aead.AESCCM
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESCCM.encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESCCM.decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.ciphers.aead.AESCCM.generate_key
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: factory
+  # X25519 key agreement (asymmetric/x25519.py): generate, public_key, exchange.
+  - method: cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey.exchange
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.x25519.X25519PublicKey
+      confidence: high
+    role: factory
+  # Fernet and MultiFernet (fernet.py). Fernet(key) builds the AES-CBC plus
+  # HMAC-SHA256 token scheme; encrypt, decrypt, their *_at_time forms and
+  # MultiFernet.rotate run it.
+  - method: cryptography.fernet.Fernet.<init>
+    arity: 1
+    return:
+      type: cryptography.fernet.Fernet
+      confidence: high
+    role: factory
+  - method: cryptography.fernet.Fernet.generate_key
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: factory
+  - method: cryptography.fernet.Fernet.encrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.Fernet.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.Fernet.encrypt_at_time
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.Fernet.decrypt_at_time
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.MultiFernet.<init>
+    arity: 1
+    return:
+      type: cryptography.fernet.MultiFernet
+      confidence: high
+    role: factory
+  - method: cryptography.fernet.MultiFernet.encrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.MultiFernet.decrypt
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.fernet.MultiFernet.rotate
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  # CSR builder (x509/base.py). Both spellings, as for CertificateBuilder. The
+  # 3.x sign also required backend; it is optional from 35.0.0.
+  - method: cryptography.x509.CertificateSigningRequestBuilder
+    arity: 0
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: factory
+  - method: cryptography.x509.CertificateSigningRequestBuilder.<init>
+    arity: 0
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: factory
+  - method: cryptography.x509.CertificateSigningRequestBuilder.subject_name
+    arity: 1
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateSigningRequestBuilder.add_extension
+    arity: 2
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateSigningRequestBuilder.add_attribute
+    arity: 2
+    return:
+      type: cryptography.x509.CertificateSigningRequestBuilder
+      confidence: high
+    role: config
+  - method: cryptography.x509.CertificateSigningRequestBuilder.sign
+    arity: 2
+    return:
+      type: cryptography.x509.CertificateSigningRequest
+      confidence: high
+    role: operation
+
+  # ── Names older releases use ──
+  # Pre-1.0 interface names (hazmat.primitives.interfaces), reached through a
+  # parameter or variable annotation. Methods are those the old interface declares.
+  - method: cryptography.hazmat.primitives.interfaces.CipherContext.update
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.CipherContext.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.AEADCipherContext.authenticate_additional_data
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+  - method: cryptography.hazmat.primitives.interfaces.PaddingContext.update
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.PaddingContext.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.RSAPrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.interfaces.RSAPrivateKey.signer
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.interfaces.RSAPrivateKey.decrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.RSAPublicKey.verifier
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.interfaces.RSAPublicKey.encrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.DSAPrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.interfaces.DSAPrivateKey.signer
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.interfaces.DSAPublicKey.verifier
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.interfaces.EllipticCurvePrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.interfaces.EllipticCurvePrivateKey.signer
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.interfaces.EllipticCurvePublicKey.verifier
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.interfaces.AsymmetricSignatureContext.update
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.AsymmetricSignatureContext.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.AsymmetricVerificationContext.update
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.AsymmetricVerificationContext.verify
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.X509Certificate.fingerprint
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.interfaces.X509Certificate.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes
+      confidence: high
+    role: factory
+
+  # *WithSerialization key names (asymmetric/rsa.py, ec.py, dsa.py): subclasses
+  # of the plain key interfaces, later plain aliases; same methods as the plain names.
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKeyWithSerialization.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKeyWithSerialization.sign
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKeyWithSerialization.decrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKeyWithSerialization.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKeyWithSerialization.signer
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKeyWithSerialization.encrypt
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKeyWithSerialization.verify
+    arity: 4
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKeyWithSerialization.public_bytes
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKeyWithSerialization.verifier
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKeyWithSerialization.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKeyWithSerialization.sign
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKeyWithSerialization.exchange
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKeyWithSerialization.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKeyWithSerialization.signer
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKeyWithSerialization.verify
+    arity: 3
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKeyWithSerialization.verifier
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKeyWithSerialization.sign
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKeyWithSerialization.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKeyWithSerialization.signer
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKeyWithSerialization.verify
+    arity: 3
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKeyWithSerialization.verifier
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+
+  # signer/verifier and their streaming contexts (asymmetric/__init__.py), removed
+  # in 37.0.0. finalize signs and verify checks; verify raises InvalidSignature.
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey.signer
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey.verifier
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey.signer
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey.verifier
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey.signer
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKey.verifier
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes.signer
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes.signer
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes.verifier
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes.verifier
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext.update
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext.update
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext.verify
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # Pre-0.7 key generation and pre-0.8 PEM loading (asymmetric/rsa.py, serialization.py).
+  # generate(public_exponent, key_size, backend): key_size is a bit count.
+  - method: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey.generate
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey
+      confidence: high
+    role: factory
+    parameter_types:
+      - builtins.int
+      - builtins.int
+      - typing.Any
+    parameters:
+      - index: 1
+        name: key_size
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_value
+  - method: cryptography.hazmat.primitives.serialization.load_pem_traditional_openssl_private_key
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.serialization.load_pem_pkcs8_private_key
+    arity: 3
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes
+      confidence: high
+    role: factory
+
+  # ── Post-quantum: ML-KEM (FIPS 203) and ML-DSA (FIPS 204) ──────────────────
+  # asymmetric/mlkem.py and mldsa.py (cryptography main, 51.0.0-dev): the
+  # modules appeared in 47.0.0 (AWS-LC/BoringSSL), OpenSSL 3.5 backends in
+  # 48.0.0, sign_mu/verify_mu in 49.0.0 and MLDSAMuHasher in 51.0.0. pyca
+  # offers ML-KEM-768/1024 and ML-DSA-44/65/87 only (no ML-KEM-512).
+  # encapsulate returns the (shared_secret, ciphertext) tuple, modelled as
+  # builtins.tuple like the other Python KBs; decapsulate returns the shared
+  # secret. sign(data, context=None) and verify(signature, data, context=None)
+  # take an optional context, so both arities are contracted. sign_mu and
+  # verify_mu run over a precomputed 64-byte mu, which MLDSAMuHasher
+  # (bindings/_rust/openssl/mldsa.pyi: MLDSAMuHasher(public_key,
+  # context=None), update, copy, finalize) builds; it is contracted under both
+  # call spellings like hashes.Hash.
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.from_seed_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.decapsulate
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey.private_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.from_public_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.encapsulate
+    arity: 0
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.public_bytes
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey.public_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.from_seed_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.decapsulate
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey.private_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.from_public_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.encapsulate
+    arity: 0
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.public_bytes
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey.public_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  # ML-DSA (FIPS 204)
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.from_seed_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.private_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.sign
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey.sign_mu
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.from_public_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.public_bytes
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.public_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.verify
+    arity: 3
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey.verify_mu
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.from_seed_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.private_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.sign
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey.sign_mu
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.from_public_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.public_bytes
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.public_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.verify
+    arity: 3
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey.verify_mu
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.generate
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.from_seed_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.public_key
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.private_bytes
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.private_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.sign
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.sign
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey.sign_mu
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.from_public_bytes
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.public_bytes
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.public_bytes_raw
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.verify
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.verify
+    arity: 3
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey.verify_mu
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  # MLDSAMuHasher (mldsa.pyi)
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.<init>
+    arity: 1
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.<init>
+    arity: 2
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.update
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.copy
+    arity: 0
+    return:
+      type: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher
+      confidence: high
+    role: factory
+  - method: cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+hierarchy:
+  cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext:
+    - builtins.object
+  cryptography.hazmat.primitives.ciphers.aead.AESCCM:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.x25519.X25519PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.x25519.X25519PublicKey:
+    - builtins.object
+  cryptography.fernet.Fernet:
+    - builtins.object
+  cryptography.fernet.MultiFernet:
+    - builtins.object
+  cryptography.x509.CertificateSigningRequestBuilder:
+    - builtins.object
+  cryptography.x509.CertificateSigningRequest:
+    - builtins.object
+  cryptography.hazmat.primitives.padding.PKCS7:
+    - builtins.object
+  cryptography.hazmat.primitives.padding.PaddingContext:
+    - builtins.object
+  cryptography.x509.CertificateBuilder:
+    - builtins.object
+  cryptography.x509.Certificate:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ed448.Ed448PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ed448.Ed448PublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.types.PrivateKeyTypes:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.types.PublicKeyTypes:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  cryptography.hazmat.primitives.ciphers.Cipher:
+    - builtins.object
+  cryptography.hazmat.primitives.ciphers.CipherContext:
+    - builtins.object
+  cryptography.hazmat.primitives.ciphers.aead.AESGCM:
+    - builtins.object
+  cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305:
+    - builtins.object
+  cryptography.hazmat.primitives.hashes.Hash:
+    - builtins.object
+  cryptography.hazmat.primitives.hmac.HMAC:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.hkdf.HKDF:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.scrypt.Scrypt:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.hkdf.HKDFExpand:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.concatkdf.ConcatKDFHash:
+    - builtins.object
+  cryptography.hazmat.primitives.kdf.x963kdf.X963KDF:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM768PublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mlkem.MLKEM1024PublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA44PublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA65PublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PrivateKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mldsa.MLDSA87PublicKey:
+    - builtins.object
+  cryptography.hazmat.primitives.asymmetric.mldsa.MLDSAMuHasher:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object

@@ -1,0 +1,65 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: wireguard
+  coordinates:
+    - "golang.zx2c4.com/wireguard"
+  version_range: ">=0.0.20190409,<0.1.0"
+  description: "wireguard-go WireGuard secure-channel implementation"
+
+# Inventory source: golang.zx2c4.com/wireguard v0.0.20200320 and v0.0.20201118
+# module sources from the Go module proxy. The declared range starts at
+# v0.0.20190409 deliberately: the 2018 tags ship a flat package-main
+# application with no importable device package, so no consumer can write the
+# identities below against them (age beta precedent), and v0.0.20201121 is a
+# retraction-only stub module. The suite is fixed by the protocol (Noise
+# IKpsk2 over Curve25519, ChaCha20-Poly1305 transport, BLAKE2s); no parameter
+# selects an algorithm.
+#
+# Dispositions for the remaining public surface: tun/, conn/, ipc/,
+# ratelimiter/, and rwcancel/ are transport and platform plumbing
+# (skipped-non-crypto); pool/buffer accessors, Up/Down/Close/Wait lifecycle,
+# peer lookup/removal, and the Bind* socket helpers carry no crypto semantics
+# (skipped-non-crypto); IpcGetOperation/IpcHandle expose UAPI configuration
+# streams whose key material is already anchored on SetPrivateKey/NewPeer
+# (skipped-non-crypto); the internal Routine* workers and SendHandshake*
+# helpers are goroutine plumbing behind the message operations
+# (skipped-non-crypto).
+contracts:
+  - method: golang.zx2c4.com/wireguard/device.NewDevice
+    arity: 2
+    return: { type: "*golang.zx2c4.com/wireguard/device.Device", confidence: high }
+    role: factory
+  - method: golang.zx2c4.com/wireguard/device.(*Device).SetPrivateKey
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: sk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: golang.zx2c4.com/wireguard/device.(*Device).NewPeer
+    arity: 1
+    return: { type: "*golang.zx2c4.com/wireguard/device.Peer", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: pk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: golang.zx2c4.com/wireguard/device.(*Device).IpcSetOperation
+    arity: 1
+    return: { type: "*golang.zx2c4.com/wireguard/device.IPCError", confidence: high }
+    role: config
+  - method: golang.zx2c4.com/wireguard/device.(*Device).CreateMessageInitiation
+    arity: 1
+    return: { type: "*golang.zx2c4.com/wireguard/device.MessageInitiation", confidence: high }
+    role: operation
+  - method: golang.zx2c4.com/wireguard/device.(*Device).ConsumeMessageInitiation
+    arity: 1
+    return: { type: "*golang.zx2c4.com/wireguard/device.Peer", confidence: high }
+    role: operation
+  - method: golang.zx2c4.com/wireguard/device.(*Device).CreateMessageResponse
+    arity: 1
+    return: { type: "*golang.zx2c4.com/wireguard/device.MessageResponse", confidence: high }
+    role: operation
+  - method: golang.zx2c4.com/wireguard/device.(*Device).ConsumeMessageResponse
+    arity: 1
+    return: { type: "*golang.zx2c4.com/wireguard/device.Peer", confidence: high }
+    role: operation
+hierarchy: {}

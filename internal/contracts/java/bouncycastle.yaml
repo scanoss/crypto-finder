@@ -1,0 +1,433 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: bouncycastle
+  coordinates:
+    - "org.bouncycastle:bcprov-jdk18on"
+    - "org.bouncycastle:bcprov-jdk15on"
+  version_range: ">=1.50,<2.0"
+  description: "Bouncy Castle lightweight cryptography API contracts"
+
+contracts:
+  - method: org.bouncycastle.crypto.generators.ECKeyPairGenerator.<init>
+    arity: 0
+    return:
+      type: org.bouncycastle.crypto.generators.ECKeyPairGenerator
+      confidence: high
+
+  - method: org.bouncycastle.crypto.generators.ECKeyPairGenerator.generateKeyPair
+    arity: 0
+    return:
+      type: org.bouncycastle.crypto.AsymmetricCipherKeyPair
+      confidence: high
+
+  - method: org.bouncycastle.crypto.AsymmetricCipherKeyPair.getPublic
+    arity: 0
+    return:
+      type: org.bouncycastle.crypto.CipherParameters
+      confidence: high
+    role: output
+
+  - method: org.bouncycastle.crypto.AsymmetricCipherKeyPair.getPrivate
+    arity: 0
+    return:
+      type: org.bouncycastle.crypto.CipherParameters
+      confidence: high
+    role: output
+
+  - method: org.bouncycastle.crypto.params.ECPrivateKeyParameters.<init>
+    arity: 2
+    return:
+      type: org.bouncycastle.crypto.params.ECPrivateKeyParameters
+      confidence: high
+
+  - method: org.bouncycastle.crypto.params.ECPublicKeyParameters.<init>
+    arity: 2
+    return:
+      type: org.bouncycastle.crypto.params.ECPublicKeyParameters
+      confidence: high
+
+  # role: config — lifecycle methods invoked ON a primitive/engine/generator
+  # instance. They attach as supporting calls to the synthesized constructor
+  # terminal of the same type (receiver == terminal class). return.type is the
+  # method's real signature (used for type inference); it does not affect the
+  # supporting-call lineage, which keys on the receiver type.
+  - method: org.bouncycastle.crypto.modes.GCMBlockCipher.init
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.modes.GCMBlockCipher.getOutputSize
+    arity: 1
+    return: { type: int, confidence: high }
+    role: config
+  # Key-generation parameter objects. The size lives on the parameter object a
+  # generator's init(params) receives, so it reaches the generator through the
+  # argument sources, as the JCA spec constructors do. Every strength below is a
+  # count of bits (RSA modulus, DSA/DH/ElGamal prime), never bytes.
+  - method: org.bouncycastle.crypto.params.RSAKeyGenerationParameters.<init>
+    arity: 4
+    parameter_types: [java.math.BigInteger, java.security.SecureRandom, int, int]
+    canonical_return_type: org.bouncycastle.crypto.params.RSAKeyGenerationParameters
+    return:
+      type: org.bouncycastle.crypto.params.RSAKeyGenerationParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 2
+        name: strength
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  # Named-curve lookups. The curve name is the evidence: the field size comes
+  # from the name, and reaches ECDomainParameters / ECKeyGenerationParameters /
+  # ECKeyPairGenerator.init through the argument sources (p.getCurve(), p.getG(),
+  # the X9ECParameters variable). A name the curve table does not know, or one
+  # that is not a literal, resolves to nothing.
+  - method: org.bouncycastle.asn1.sec.SECNamedCurves.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.asn1.x9.X9ECParameters
+    return:
+      type: org.bouncycastle.asn1.x9.X9ECParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.asn1.nist.NISTNamedCurves.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.asn1.x9.X9ECParameters
+    return:
+      type: org.bouncycastle.asn1.x9.X9ECParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.asn1.teletrust.TeleTrusTNamedCurves.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.asn1.x9.X9ECParameters
+    return:
+      type: org.bouncycastle.asn1.x9.X9ECParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.crypto.ec.CustomNamedCurves.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.asn1.x9.X9ECParameters
+    return:
+      type: org.bouncycastle.asn1.x9.X9ECParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.jce.ECNamedCurveTable.getParameterSpec
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.jce.spec.ECNamedCurveParameterSpec
+    return:
+      type: org.bouncycastle.jce.spec.ECNamedCurveParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec
+    return:
+      type: org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+  - method: org.bouncycastle.crypto.params.DSAParameterGenerationParameters.<init>
+    arity: 4
+    parameter_types: [int, int, int, java.security.SecureRandom]
+    canonical_return_type: org.bouncycastle.crypto.params.DSAParameterGenerationParameters
+    return:
+      type: org.bouncycastle.crypto.params.DSAParameterGenerationParameters
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: L
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.crypto.generators.DSAParametersGenerator.init
+    arity: 3
+    parameter_types: [int, int, java.security.SecureRandom]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.crypto.generators.DHParametersGenerator.init
+    arity: 3
+    parameter_types: [int, int, java.security.SecureRandom]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.crypto.generators.ElGamalParametersGenerator.init
+    arity: 3
+    parameter_types: [int, int, java.security.SecureRandom]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: org.bouncycastle.crypto.generators.RSAKeyPairGenerator.init
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.generators.ECKeyPairGenerator.init
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.encodings.OAEPEncoding.init
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.signers.ECDSASigner.init
+    arity: 2
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.digests.SHA256Digest.getDigestSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.digests.KeccakDigest.getDigestSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: config
+  # issue-103: role: operation — see GeneralDigest.update note below.
+  - method: org.bouncycastle.crypto.digests.KeccakDigest.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+  # GeneralDigest is the abstract base of the SHA-1/SHA-2 family; update() is
+  # inherited (not overridden) by SHA256Digest et al. The inheritance-aware
+  # role attachment surfaces it on those subtype constructor terminals.
+  # issue-103: update() performs the digest operation (feeds input into the
+  # running hash) rather than merely configuring the object, so its role is
+  # operation, not config — corrected from the earlier taxonomy pass.
+  - method: org.bouncycastle.crypto.digests.GeneralDigest.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+
+  # The EC named-curve lookup terminal: declaring its return type lets the
+  # X9ECParameters getters below attach as role: output (receiver == return type).
+  - method: org.bouncycastle.asn1.x9.ECNamedCurveTable.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    return: { type: org.bouncycastle.asn1.x9.X9ECParameters, confidence: high }
+    parameters:
+      - index: 0
+        name: name
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_curve_bits }
+
+  # role: output — reads of the terminal's product (the X9ECParameters returned
+  # by getByName). They attach as supporting calls to that terminal.
+  - method: org.bouncycastle.asn1.x9.X9ECParameters.getCurve
+    arity: 0
+    return: { type: org.bouncycastle.math.ec.ECCurve, confidence: high }
+    role: output
+  - method: org.bouncycastle.asn1.x9.X9ECParameters.getG
+    arity: 0
+    return: { type: org.bouncycastle.math.ec.ECPoint, confidence: high }
+    role: output
+  - method: org.bouncycastle.asn1.x9.X9ECParameters.getN
+    arity: 0
+    return: { type: java.math.BigInteger, confidence: high }
+    role: output
+  - method: org.bouncycastle.asn1.x9.X9ECParameters.getH
+    arity: 0
+    return: { type: java.math.BigInteger, confidence: high }
+    role: output
+
+  # issue-103 (WU1/WU3): parameter-object builders. role: factory — they
+  # produce the CipherParameters wrapper consumed by init()/processBlock(),
+  # analogous to a getInstance-style factory even though they're plain
+  # constructors. KeyParameter's byte[] key material argument also carries a
+  # parameter_roles annotation: it metadata-contributes the effective key
+  # size, derived from the argument's bit length.
+  - method: org.bouncycastle.crypto.params.KeyParameter.<init>
+    arity: 1
+    return: { type: org.bouncycastle.crypto.params.KeyParameter, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_bit_length
+  - method: org.bouncycastle.crypto.params.ParametersWithIV.<init>
+    arity: 2
+    return: { type: org.bouncycastle.crypto.params.ParametersWithIV, confidence: high }
+    role: factory
+  - method: org.bouncycastle.crypto.params.ParametersWithRandom.<init>
+    arity: 2
+    return: { type: org.bouncycastle.crypto.params.ParametersWithRandom, confidence: high }
+    role: factory
+
+  # issue-103: role: output — parameter-object getters that read back what
+  # was configured (AEAD/GCM nonce, associated text, MAC, key material).
+  - method: org.bouncycastle.crypto.params.AEADParameters.getNonce
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.AEADParameters.getAssociatedText
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.AEADParameters.getMacSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.KeyParameter.getKey
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  # issue-103 (WU1): role: operation on the primitive-family interfaces
+  # rather than per-engine, so one entry covers every concrete engine that
+  # implements it (avoids the per-engine explosion the design rejected).
+  # These are the methods that perform the actual crypto operation, as
+  # opposed to the config (init/setters) and output (getters) roles above.
+  - method: org.bouncycastle.crypto.BlockCipher.processBlock
+    arity: 4
+    return: { type: int, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Digest.update
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Digest.update
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Digest.doFinal
+    arity: 2
+    return: { type: int, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Signer.generateSignature
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Signer.verifySignature
+    arity: 1
+    return: { type: boolean, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Mac.doFinal
+    arity: 2
+    return: { type: int, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.DerivationFunction.generateBytes
+    arity: 3
+    return: { type: int, confidence: high }
+    role: operation
+
+hierarchy:
+  org.bouncycastle.crypto.generators.ECKeyPairGenerator:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.RSAKeyGenerationParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.DSAParameterGenerationParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.AsymmetricCipherKeyPair:
+    - java.lang.Object
+  org.bouncycastle.crypto.CipherParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.AsymmetricKeyParameter:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.params.ECKeyParameters:
+    - org.bouncycastle.crypto.params.AsymmetricKeyParameter
+  org.bouncycastle.crypto.params.ECPrivateKeyParameters:
+    - org.bouncycastle.crypto.params.ECKeyParameters
+  org.bouncycastle.crypto.params.ECPublicKeyParameters:
+    - org.bouncycastle.crypto.params.ECKeyParameters
+  org.bouncycastle.jce.spec.ECNamedCurveParameterSpec:
+    - java.lang.Object
+  org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  org.bouncycastle.asn1.x9.X9ECParameters:
+    - java.lang.Object
+  org.bouncycastle.math.ec.ECCurve:
+    - java.lang.Object
+  org.bouncycastle.math.ec.ECPoint:
+    - java.lang.Object
+  java.math.BigInteger:
+    - java.lang.Object
+  # Digest inheritance so base-class lifecycle methods (GeneralDigest.update,
+  # KeccakDigest.update/getDigestSize) attach to subtype constructor terminals.
+  org.bouncycastle.crypto.digests.SHA256Digest:
+    - org.bouncycastle.crypto.digests.GeneralDigest
+  org.bouncycastle.crypto.digests.GeneralDigest:
+    - java.lang.Object
+  org.bouncycastle.crypto.digests.SHA3Digest:
+    - org.bouncycastle.crypto.digests.KeccakDigest
+  org.bouncycastle.crypto.digests.KeccakDigest:
+    - java.lang.Object
+  # issue-103 (WU1/WU2): primitive-family interfaces carrying role: operation
+  # contracts, plus their known concrete engine implementations, so the
+  # hierarchy-aware attachment path (typeOrAncestor) resolves an engine's
+  # operation method through its interface without a per-engine contract.
+  org.bouncycastle.crypto.BlockCipher:
+    - java.lang.Object
+  org.bouncycastle.crypto.engines.AESEngine:
+    - org.bouncycastle.crypto.BlockCipher
+  org.bouncycastle.crypto.Digest:
+    - java.lang.Object
+  org.bouncycastle.crypto.Signer:
+    - java.lang.Object
+  org.bouncycastle.crypto.signers.ECDSASigner:
+    - org.bouncycastle.crypto.Signer
+  org.bouncycastle.crypto.Mac:
+    - java.lang.Object
+  org.bouncycastle.crypto.macs.HMac:
+    - org.bouncycastle.crypto.Mac
+  org.bouncycastle.crypto.DerivationFunction:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.KeyParameter:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.params.ParametersWithIV:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.params.ParametersWithRandom:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.params.AEADParameters:
+    - java.lang.Object
+  java.lang.Object: []

@@ -1,0 +1,89 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ark-ff
+  coordinates:
+    - ark-ff
+    - ark_ff
+  version_range: ">=0.2.0,<0.7.0"
+  description: "Finite-field arithmetic for the arkworks stack, with hash-to-field"
+
+# API read at ark-ff 0.6.0 (src/fields/mod.rs, src/fields/prime.rs,
+# src/fields/field_hashers/mod.rs), with the earlier layout read at 0.3.0 and
+# 0.2.0 because the matrix range starts there:
+#
+#   0.2.0  fields/mod.rs:350 `pub trait PrimeField`; `pub mod bytes` exists;
+#          there is NO field_hashers module.
+#   0.3.0  fields/mod.rs:351 `pub trait PrimeField`; still no field_hashers.
+#   0.4.0  fields/prime.rs:27 `pub trait PrimeField` — the trait MOVES out of
+#          fields/mod.rs into its own module, `pub mod bytes` is replaced by
+#          `bits`, and src/fields/field_hashers/ appears.
+#   0.6.0  fields/prime.rs:27 unchanged; field_hashers/mod.rs:13
+#          `pub trait HashToField`, :42 `pub struct DefaultFieldHasher`,
+#          :88 `pub fn hash_to_field`.
+#
+# ark-ff is a maths crate. Addition, multiplication, inversion, squaring,
+# `sqrt`, `legendre` and the BigInteger surface are ordinary arithmetic and are
+# deliberately absent: contracting them would type every consumer that does
+# field maths into the crypto call graph, which is exactly what this family's
+# plan asks the ruleset NOT to do, and the scanoss/crypto_rules
+# raw-arithmetic-negative fixture pins that they carry no finding either.
+#
+# What IS contracted: hash-to-field, which is the message-to-field-element step
+# of RFC 9380 and a genuine primitive; and uniform sampling of a field element,
+# which is how a secret scalar is produced. `from_be_bytes_mod_order` and
+# `from_le_bytes_mod_order` are excluded on purpose — they are byte-order
+# conversions of an existing buffer, not sampling, and the entropy came from
+# somewhere else.
+#
+# ARITIES READ FROM THE DECLARATIONS: field_hashers/mod.rs:19 `fn new(domain)`
+# and the impl at :47 `fn hash_to_field(&self, message)` take one non-receiver
+# argument each; fields/mod.rs:247 `fn from_random_bytes(bytes)` and :257
+# `fn from_random_bytes_with_flags(bytes)` take one.
+#
+# skipped-non-crypto: Add/Sub/Mul/Div/Neg operator impls, inverse, square,
+#   sqrt, legendre, the BigInteger surface, Zero/One, and
+#   CanonicalSerialize/CanonicalDeserialize.
+# parameter_types record the declared signature read from the source lines
+# cited above. The domain-separation tag and the message are both byte slices.
+contracts:
+  # hash-to-field, 0.4.0 and later only.
+  - method: ark_ff::field_hashers::DefaultFieldHasher.new
+    arity: 1
+    return: { type: ark_ff::field_hashers::DefaultFieldHasher, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: ark_ff::field_hashers::HashToField.new
+    arity: 1
+    return: { type: ark_ff::field_hashers::HashToField, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: ark_ff::field_hashers::HashToField.hash_to_field
+    arity: 1
+    return: { type: ark_ff::Field, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  # Uniform sampling. Present across the whole matrix range, which is what gives
+  # 0.2.0 and 0.3.0 coverage at all.
+  - method: ark_ff::Field.from_random_bytes
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: ark_ff::Field.from_random_bytes_with_flags
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: ark_ff::PrimeField.from_random_bytes
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: ark_ff::UniformRand.rand
+    arity: 1
+    return: { type: ark_ff::Field, confidence: medium }
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+
+hierarchy: {}

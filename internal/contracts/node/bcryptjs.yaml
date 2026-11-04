@@ -1,0 +1,107 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "bcryptjs"
+  coordinates:
+    - "bcryptjs"
+  version_range: ">=2.0.0"
+  description: "bcryptjs: pure-JavaScript bcrypt -- salt generation, hashing, verification, cost and salt extraction, and the entropy fallback"
+
+# bcryptjs computes the same ALGORITHM as the native bcrypt package and is a
+# different PACKAGE, so it gets its own KB keyed on its own coordinate. The two
+# must never share entries: a consumer's `bcrypt.hash(pw, 10)` is attributable
+# only through the import, and a KB that merged them would make that
+# unrecoverable downstream.
+#
+# Like the native package and unlike a client-object library, every export is a
+# MODULE-LEVEL function, so the parser emits `bcryptjs.hash` for a consumer's
+# call and these keys are the ones it produces.
+#
+# ARITIES ARE FROM THE LIBRARY'S OWN index.js AND THEY ARE NOT THE NATIVE
+# PACKAGE'S. bcryptjs takes an optional progressCallback AFTER the callback, so
+# `hash` and `compare` are callable at four arguments where the native package
+# stops at three. Declaring the native arities here would silently miss the
+# consumers that report progress.
+#
+# NOT DECLARED: encodeBase64 and decodeBase64 implement bcrypt's base64 alphabet
+# -- an encoding -- and `truncates` reports whether a password would be cut at
+# 72 bytes without performing any cryptography.
+contracts:
+  - method: "bcryptjs.genSalt"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcryptjs.genSalt"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcryptjs.genSalt"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcryptjs.genSaltSync"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcryptjs.genSaltSync"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcryptjs.genSaltSync"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+
+  - method: "bcryptjs.hash"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcryptjs.hash"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcryptjs.hash"
+    arity: 4
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcryptjs.hashSync"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcryptjs.hashSync"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+
+  - method: "bcryptjs.compare"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bcryptjs.compare"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bcryptjs.compare"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bcryptjs.compareSync"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  - method: "bcryptjs.getRounds"
+    arity: 1
+    return: { type: "number", confidence: high }
+    role: operation
+  - method: "bcryptjs.getSalt"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+
+  # The entropy fallback: it returns nothing and is contracted because it is the
+  # one call that changes where this deployment's salts come from.
+  - method: "bcryptjs.setRandomFallback"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: config

@@ -1,0 +1,264 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: hyper-rustls
+  coordinates:
+    - hyper-rustls
+    - hyper_rustls
+  version_range: ">=0.2.0,<0.28.0"
+  description: "rustls-backed HTTPS connector and TLS acceptor for hyper"
+
+# API read at hyper-rustls 0.27.9 for the modern surface and at 0.6.2 for the
+# legacy one. Cross-checked at 0.7.0, 0.9.0, 0.13.0, 0.19.0, 0.22.0, 0.23.0,
+# 0.24.1, 0.24.2, 0.25.0, 0.26.0 and 0.27.0.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y and an exported
+# call graph agreed: a probe consumer calling the builder produced
+# `hyper_rustls.HttpsConnectorBuilder.with_tls_config(?)` and
+# `hyper_rustls.HttpsConnector.new(?, ?)` with empty parameter_types, which is
+# what an absent contract looks like.
+#
+# THIS CRATE CONTAINS NO CRYPTOGRAPHY. Measured over the 104 `src/*.rs` files of
+# the 28 releases downloaded for this family: zero occurrences of cipher_suites,
+# kx_groups, SignatureScheme, SupportedCipherSuite or ProtocolVersion. The one
+# `dangerous()` call (0.27.0 src/config.rs:42) installs rustls-platform-verifier's
+# verifier and is a verification-policy decision, not an algorithm. The
+# provider is forwarded, not chosen -- 0.27.9 Cargo.toml declares
+# `ring = ["rustls/ring"]`, `aws-lc-rs = ["rustls/aws_lc_rs"]`,
+# `tls12 = ["tokio-rustls/tls12", "rustls/tls12"]` and
+# `fips = ["aws-lc-rs", "rustls/fips"]`. What is typed here is session
+# establishment and trust-anchor selection: the boundary a consumer crosses to
+# reach rustls.
+#
+# KEY SHAPES, READ OFF AN EXPORTED GRAPH RATHER THAN ASSUMED. Every key this
+# crate emits is a type method carrying two dots, which the Rust key
+# normalisation rewrites at the second-to-last dot (contracts.go:267). So the
+# graph emits `hyper_rustls.HttpsConnectorBuilder.new` and the file must
+# contain `hyper_rustls::HttpsConnectorBuilder.new`. There is no crate-root free
+# function in this crate, so the one-dot case does not arise.
+#
+# THE MODULE-QUALIFIED KEY EXISTS FOR THE ACCEPTOR AND FOR NOTHING ELSE.
+# `connector`, `config` and `stream` are PRIVATE modules in every release
+# (0.7.0 lib.rs:10, 0.27.9 lib.rs:38-40), so their types are reachable only
+# through the crate-root re-export and emit a bare `hyper_rustls.<Type>.<m>`
+# key. `acceptor` is `pub mod` at 0.24.1-0.25.x (0.24.2 lib.rs:84), so a
+# consumer importing `hyper_rustls::acceptor::AcceptorBuilder` emits
+# `hyper_rustls::acceptor.AcceptorBuilder.with_single_cert` -- measured, both
+# spellings, and both are declared. `acceptor::builder` is itself private
+# (0.24.2 acceptor.rs:15), so that third spelling is not reachable and is not
+# declared.
+#
+# `with_single_cert` IS NOT DECLARED UNDER `TlsAcceptor`, AND THE REASON IS A
+# MEASUREMENT THAT REVERSED ITSELF. The idiomatic spelling is
+# `let a = TlsAcceptor::builder(); a.with_single_cert(certs, key)`. With NO
+# contract loaded the parser typed that receiver from the constructor's own name
+# and emitted `hyper_rustls.TlsAcceptor.with_single_cert`, which looked like a
+# key to declare. Declaring `TlsAcceptor.builder`'s return type is what fixed the
+# receiver: with this file loaded the same probe emits
+# `hyper_rustls.AcceptorBuilder.with_single_cert`, the type the method really
+# lives on (0.24.2 src/acceptor/builder.rs:28). A `TlsAcceptor.with_single_cert`
+# entry would now be unreachable, so it is absent and a test pins that.
+#
+# THE ConfigBuilderExt PATH IS DELIBERATELY ABSENT, AND THAT IS A MEASURED
+# LIMIT RATHER THAN AN OMISSION. 0.23.0+ exposes `ConfigBuilderExt` as an
+# extension trait implemented on `rustls::ConfigBuilder<ClientConfig,
+# WantsVerifier>` (0.27.9 src/config.rs:59). The receiver is therefore a RUSTLS
+# type, and an exported graph confirms the consequence: a consumer calling
+# `rustls::ClientConfig::builder().with_native_roots()` emits
+# `rustls.ClientConfig.with_native_roots()`, attributed to rustls, never to
+# hyper_rustls. A contract keyed `hyper_rustls::ConfigBuilderExt.with_native_roots`
+# would never join, so writing one would create the appearance of coverage
+# without any. The rules still DETECT those call sites through the import
+# guard; it is the call-graph attribution that cannot be recovered without
+# receiver typing. This is the same shape the merged tokio-rustls contract
+# records for its pre-0.8 `ClientConfigExt`/`ServerConfigExt` methods.
+#
+# ARITIES READ FROM THE DECLARATIONS (self excluded):
+#   TlsClient::new()                                0.6.2  lib.rs:196            -> 0
+#   TlsServer::new(certs, key)                      0.6.2  lib.rs:232            -> 2
+#   HttpsConnector::new(threads, handle)            0.7.0  connector.rs:22       -> 2
+#   HttpsConnector::new(threads)                    0.13.0 connector.rs:25       -> 1
+#   HttpsConnector::new()                           0.19.0 connector.rs:31       -> 0
+#   HttpsConnector::from((h, c))                    0.9.0  connector.rs:39       -> 1
+#   HttpsConnector::with_native_roots()             0.22.0 connector.rs:34       -> 0
+#   HttpsConnector::with_webpki_roots()             0.22.0 connector.rs:53       -> 0
+#   ConnectorBuilder::new()                         0.23.0 connector/builder.rs:34  -> 0
+#   ConnectorBuilder.with_tls_config(config)        0.23.0 connector/builder.rs:46  -> 1
+#   ConnectorBuilder.with_native_roots()            0.23.0 connector/builder.rs:62  -> 0
+#   ConnectorBuilder.with_webpki_roots()            0.23.0 connector/builder.rs:79  -> 0
+#   ConnectorBuilder.with_provider_and_native_roots(p)  0.25.0 connector/builder.rs:72  -> 1
+#   ConnectorBuilder.with_provider_and_webpki_roots(p)  0.25.0 connector/builder.rs:103 -> 1
+#   ConnectorBuilder.with_platform_verifier()       0.27.0 connector/builder.rs:64  -> 0
+#   ConnectorBuilder.try_with_platform_verifier()   0.27.9 connector/builder.rs:89  -> 0
+#   ConnectorBuilder.with_provider_and_platform_verifier(p) 0.27.9 connector/builder.rs:103 -> 1
+#   TlsAcceptor::builder()                          0.24.2 acceptor.rs:28        -> 0
+#   AcceptorBuilder.with_tls_config(config)         0.24.2 acceptor/builder.rs:20 -> 1
+#   AcceptorBuilder.with_single_cert(chain, key)    0.24.2 acceptor/builder.rs:28 -> 2
+#
+# TWO RETURN TYPES ARE GENUINELY UNSTABLE ACROSS THE RANGE AND CARRY
+# `confidence: low` RATHER THAN ONE ERA'S ANSWER DRESSED AS ALL OF THEM.
+# `ConnectorBuilder.with_native_roots` returns `ConnectorBuilder<WantsSchemes>`
+# at 0.23.0-0.24.2 and `std::io::Result<ConnectorBuilder<WantsSchemes>>` from
+# 0.25.0 (0.25.0 connector/builder.rs:60). `HttpsConnector::from` returns a
+# non-generic `HttpsConnector` at 0.9.0-0.12.0 and `HttpsConnector<H>` from
+# 0.13.0, where the struct itself becomes generic (0.12.0 connector.rs:17 vs
+# 0.13.0 connector.rs:16 and :46). Divergent returns on ONE (method, arity) key
+# are a hard load error, so only one value can be declared; the current era is
+# named and the confidence says so.
+#
+# ALPN IS NOT CONTRACTED. `enable_http1`, `enable_http2`, `enable_all_versions`,
+# `with_http2_alpn`, `with_alpn_protocols` and `with_all_versions_alpn` select
+# an APPLICATION protocol and carry no cryptographic operation, which is the
+# same reason the rules do not match them. `https_only`, `https_or_http`,
+# `build`, `wrap_connector` and `with_server_name` are likewise absent: they
+# materialise or scope a decision made by a call that IS contracted.
+contracts:
+  # --- 0.2.0-0.6.2: the pre-connector era -------------------------------------
+  - method: hyper_rustls::TlsClient.new
+    arity: 0
+    return: { type: "hyper_rustls::TlsClient", confidence: high }
+    canonical_return_type: "hyper_rustls::TlsClient"
+    role: factory
+  # 0.2.0 took `Vec<Vec<u8>>` and `Vec<u8>`; the rustls newtypes arrive with the
+  # rustls 0.11 bump. The declared types are 0.6.2's, the last release of the era.
+  - method: hyper_rustls::TlsServer.new
+    arity: 2
+    parameter_types: ["Vec<rustls::Certificate>", "rustls::PrivateKey"]
+    return: { type: "hyper_rustls::TlsServer", confidence: medium }
+    canonical_return_type: "hyper_rustls::TlsServer"
+    role: factory
+
+  # --- 0.7.0-0.22.1: the connector era ----------------------------------------
+  - method: hyper_rustls::HttpsConnector.new
+    arity: 2
+    parameter_types: ["usize", "&tokio_core::reactor::Handle"]
+    return: { type: "hyper_rustls::HttpsConnector", confidence: high }
+    canonical_return_type: "hyper_rustls::HttpsConnector"
+    role: factory
+  - method: hyper_rustls::HttpsConnector.new
+    arity: 1
+    parameter_types: ["usize"]
+    return: { type: "hyper_rustls::HttpsConnector<hyper::client::HttpConnector>", confidence: high }
+    canonical_return_type: "hyper_rustls::HttpsConnector<hyper::client::HttpConnector>"
+    role: factory
+  - method: hyper_rustls::HttpsConnector.new
+    arity: 0
+    return: { type: "hyper_rustls::HttpsConnector<hyper::client::HttpConnector>", confidence: high }
+    canonical_return_type: "hyper_rustls::HttpsConnector<hyper::client::HttpConnector>"
+    role: factory
+  # The argument is a single tuple, so the arity is 1 and not 2.
+  - method: hyper_rustls::HttpsConnector.from
+    arity: 1
+    parameter_types: ["(H, C)"]
+    return: { type: "hyper_rustls::HttpsConnector<H>", confidence: low }
+    role: factory
+  - method: hyper_rustls::HttpsConnector.with_native_roots
+    arity: 0
+    return: { type: "hyper_rustls::HttpsConnector<hyper::client::HttpConnector>", confidence: high }
+    canonical_return_type: "hyper_rustls::HttpsConnector<hyper::client::HttpConnector>"
+    role: factory
+  - method: hyper_rustls::HttpsConnector.with_webpki_roots
+    arity: 0
+    return: { type: "hyper_rustls::HttpsConnector<hyper::client::HttpConnector>", confidence: high }
+    canonical_return_type: "hyper_rustls::HttpsConnector<hyper::client::HttpConnector>"
+    role: factory
+
+  # --- 0.23.0+: the builder era -----------------------------------------------
+  - method: hyper_rustls::HttpsConnectorBuilder.new
+    arity: 0
+    return: { type: "hyper_rustls::HttpsConnectorBuilder<WantsTlsConfig>", confidence: high }
+    canonical_return_type: "hyper_rustls::HttpsConnectorBuilder<WantsTlsConfig>"
+    role: factory
+  - method: hyper_rustls::HttpsConnectorBuilder.with_tls_config
+    arity: 1
+    parameter_types: ["rustls::ClientConfig"]
+    return: { type: "hyper_rustls::HttpsConnectorBuilder<WantsSchemes>", confidence: high }
+    canonical_return_type: "hyper_rustls::HttpsConnectorBuilder<WantsSchemes>"
+    role: config
+  # Return unstable across the range -- see the header. No canonical type is
+  # published, because either answer is false for half the supported versions.
+  - method: hyper_rustls::HttpsConnectorBuilder.with_native_roots
+    arity: 0
+    return: { type: "std::io::Result<hyper_rustls::HttpsConnectorBuilder<WantsSchemes>>", confidence: low }
+    role: config
+  - method: hyper_rustls::HttpsConnectorBuilder.with_webpki_roots
+    arity: 0
+    return: { type: "hyper_rustls::HttpsConnectorBuilder<WantsSchemes>", confidence: high }
+    canonical_return_type: "hyper_rustls::HttpsConnectorBuilder<WantsSchemes>"
+    role: config
+  - method: hyper_rustls::HttpsConnectorBuilder.with_provider_and_native_roots
+    arity: 1
+    parameter_types: ["impl Into<std::sync::Arc<rustls::crypto::CryptoProvider>>"]
+    return: { type: "std::io::Result<hyper_rustls::HttpsConnectorBuilder<WantsSchemes>>", confidence: high }
+    canonical_return_type: "std::io::Result<hyper_rustls::HttpsConnectorBuilder<WantsSchemes>>"
+    role: config
+  - method: hyper_rustls::HttpsConnectorBuilder.with_provider_and_webpki_roots
+    arity: 1
+    parameter_types: ["impl Into<std::sync::Arc<rustls::crypto::CryptoProvider>>"]
+    return: { type: "Result<hyper_rustls::HttpsConnectorBuilder<WantsSchemes>, rustls::Error>", confidence: high }
+    canonical_return_type: "Result<hyper_rustls::HttpsConnectorBuilder<WantsSchemes>, rustls::Error>"
+    role: config
+  - method: hyper_rustls::HttpsConnectorBuilder.with_platform_verifier
+    arity: 0
+    return: { type: "hyper_rustls::HttpsConnectorBuilder<WantsSchemes>", confidence: high }
+    canonical_return_type: "hyper_rustls::HttpsConnectorBuilder<WantsSchemes>"
+    role: config
+  - method: hyper_rustls::HttpsConnectorBuilder.try_with_platform_verifier
+    arity: 0
+    return: { type: "Result<hyper_rustls::HttpsConnectorBuilder<WantsSchemes>, rustls::Error>", confidence: high }
+    canonical_return_type: "Result<hyper_rustls::HttpsConnectorBuilder<WantsSchemes>, rustls::Error>"
+    role: config
+  - method: hyper_rustls::HttpsConnectorBuilder.with_provider_and_platform_verifier
+    arity: 1
+    parameter_types: ["impl Into<std::sync::Arc<rustls::crypto::CryptoProvider>>"]
+    return: { type: "std::io::Result<hyper_rustls::HttpsConnectorBuilder<WantsSchemes>>", confidence: high }
+    canonical_return_type: "std::io::Result<hyper_rustls::HttpsConnectorBuilder<WantsSchemes>>"
+    role: config
+
+  # --- 0.24.1-0.25.x: the acceptor era ----------------------------------------
+  - method: hyper_rustls::TlsAcceptor.builder
+    arity: 0
+    return: { type: "hyper_rustls::AcceptorBuilder<WantsTlsConfig>", confidence: high }
+    canonical_return_type: "hyper_rustls::AcceptorBuilder<WantsTlsConfig>"
+    role: factory
+  - method: hyper_rustls::acceptor::TlsAcceptor.builder
+    arity: 0
+    return: { type: "hyper_rustls::AcceptorBuilder<WantsTlsConfig>", confidence: high }
+    canonical_return_type: "hyper_rustls::AcceptorBuilder<WantsTlsConfig>"
+    role: factory
+  # The parameter types change WITHIN the two-release acceptor era: 0.24.1-0.24.2
+  # take `Vec<rustls::Certificate>` and `rustls::PrivateKey`, and 0.25.0 moves to
+  # the pki-types newtypes (0.25.0 src/acceptor/builder.rs:30-32). The RETURN is
+  # stable, so it stays `high`; the declared parameter types are 0.25.0's, the
+  # last release of the era, matching how `TlsServer.new` declares 0.6.2's.
+  - method: hyper_rustls::AcceptorBuilder.with_single_cert
+    arity: 2
+    parameter_types: ["Vec<rustls::pki_types::CertificateDer<'static>>", "rustls::pki_types::PrivateKeyDer<'static>"]
+    return: { type: "Result<hyper_rustls::AcceptorBuilder<WantsAlpn>, rustls::Error>", confidence: high }
+    canonical_return_type: "Result<hyper_rustls::AcceptorBuilder<WantsAlpn>, rustls::Error>"
+    role: config
+  - method: hyper_rustls::acceptor::AcceptorBuilder.with_single_cert
+    arity: 2
+    parameter_types: ["Vec<rustls::pki_types::CertificateDer<'static>>", "rustls::pki_types::PrivateKeyDer<'static>"]
+    return: { type: "Result<hyper_rustls::AcceptorBuilder<WantsAlpn>, rustls::Error>", confidence: high }
+    canonical_return_type: "Result<hyper_rustls::AcceptorBuilder<WantsAlpn>, rustls::Error>"
+    role: config
+  # The server-side mirror of HttpsConnectorBuilder.with_tls_config, and the one
+  # path by which a consumer hands the acceptor an assembled rustls ServerConfig
+  # (0.24.2 src/acceptor/builder.rs:20, 0.25.0 :22). An earlier revision left it
+  # out on the reasoning that it must not share the client method's api -- true,
+  # and the answer is a second key, not silence.
+  - method: hyper_rustls::AcceptorBuilder.with_tls_config
+    arity: 1
+    parameter_types: ["rustls::ServerConfig"]
+    return: { type: "hyper_rustls::AcceptorBuilder<WantsAlpn>", confidence: high }
+    canonical_return_type: "hyper_rustls::AcceptorBuilder<WantsAlpn>"
+    role: config
+  - method: hyper_rustls::acceptor::AcceptorBuilder.with_tls_config
+    arity: 1
+    parameter_types: ["rustls::ServerConfig"]
+    return: { type: "hyper_rustls::AcceptorBuilder<WantsAlpn>", confidence: high }
+    canonical_return_type: "hyper_rustls::AcceptorBuilder<WantsAlpn>"
+    role: config
+
+hierarchy: {}

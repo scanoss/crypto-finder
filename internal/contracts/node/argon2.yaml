@@ -1,0 +1,45 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: argon2
+  coordinates:
+    - argon2
+  version_range: ">=0.27.0"
+  description: "argon2: Argon2 password hashing over the reference C implementation"
+
+# Keys read off an exported call graph: scanning argon2-cli 0.25.1 and
+# @directus/api 39.1.0 shows the parser emits `argon2.hash` and `argon2.verify`
+# for both the namespace and named-import spellings.
+#
+# hash() is declared at three arities because the package's own d.cts overloads
+# it -- (password) and (password, options), with the options object also
+# carrying `raw: true` to change the return type from string to Buffer. Both
+# return shapes are declared as their arity distinguishes nothing, so the
+# confidence on the Buffer form is not asserted separately.
+contracts:
+  - method: argon2.hash
+    arity: 1
+    return: { type: builtins.string, confidence: high }
+    role: output
+  - method: argon2.hash
+    arity: 2
+    return: { type: builtins.string, confidence: low }
+    role: output
+  - method: argon2.verify
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: argon2.verify
+    arity: 3
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: argon2.needsRehash
+    arity: 1
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: argon2.needsRehash
+    arity: 2
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+hierarchy: {}

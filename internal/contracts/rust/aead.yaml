@@ -1,0 +1,20 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: aead
+  coordinates:
+    - aead
+  version_range: ">=0.5.0,<0.6.0"
+  description: "RustCrypto AeadCore trait underlying AEAD cipher crates"
+
+# Same rationale as crypto-common.yaml: this crate declares the shared
+# AeadCore trait, not a terminal operation. See trait_associated_types.
+contracts: []
+
+trait_associated_types:
+  - trait: AeadCore
+    name: NonceSize
+    type: generic_array::GenericArray
+  - trait: AeadCore
+    name: TagSize
+    type: generic_array::GenericArray

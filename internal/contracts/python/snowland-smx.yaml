@@ -1,0 +1,1506 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: "snowland-smx"
+  coordinates:
+    - "snowland-smx"
+  version_range: ">=0.3.0,<2.0"
+  description: "snowland-smx (pysmx): pure-Python SM2, SM3, SM4, SM9 and ZUC"
+
+# Verified against snowland-smx 1.1.0 (pysmx/SM2/_SM2.py, SM3/_SM3.py, SM4/_SM4.py,
+# SM4/_SM4_stream.py, SM9/_SM9.py, ZUC/_ZUC.py, ZUC/_cryptography.py).
+# TWO SPELLINGS PER RE-EXPORTED NAME: consumers write pysmx.SM2.Sign, the definition
+# lives at pysmx.SM2._SM2.Sign, and the Python key follows the consumer's spelling.
+contracts:
+  - method: pysmx.SM2.generate_keypair
+    arity: 0
+    return:
+      type: pysmx.SM2._SM2.KeyPair
+      confidence: high
+    role: factory
+  - method: pysmx.SM2.generate_keypair
+    arity: 1
+    return:
+      type: pysmx.SM2._SM2.KeyPair
+      confidence: high
+    role: factory
+  - method: pysmx.SM2._SM2.generate_keypair
+    arity: 0
+    return:
+      type: pysmx.SM2._SM2.KeyPair
+      confidence: high
+    role: factory
+  - method: pysmx.SM2._SM2.generate_keypair
+    arity: 1
+    return:
+      type: pysmx.SM2._SM2.KeyPair
+      confidence: high
+    role: factory
+  - method: pysmx.SM2.Sign
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Sign
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Sign
+    arity: 6
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Sign
+    arity: 7
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Sign
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Sign
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Sign
+    arity: 6
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Sign
+    arity: 7
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Verify
+    arity: 4
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Verify
+    arity: 5
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Verify
+    arity: 6
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Verify
+    arity: 7
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Verify
+    arity: 3
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Verify
+    arity: 4
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Verify
+    arity: 5
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Verify
+    arity: 6
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Verify
+    arity: 7
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 2, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Encrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Encrypt
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Encrypt
+    arity: 6
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Encrypt
+    arity: 7
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Encrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Encrypt
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Encrypt
+    arity: 6
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Encrypt
+    arity: 7
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: PA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Decrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Decrypt
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Decrypt
+    arity: 6
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.Decrypt
+    arity: 7
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Decrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Decrypt
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Decrypt
+    arity: 6
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2._SM2.Decrypt
+    arity: 7
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 1, name: DA, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM2.get_za
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM2.get_za
+    arity: 3
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM2.get_za
+    arity: 4
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM2.get_za
+    arity: 5
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM2._SM2.get_za
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM2._SM2.get_za
+    arity: 3
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM2._SM2.get_za
+    arity: 4
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM2._SM2.get_za
+    arity: 5
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3.SM3Type.<init>
+    arity: 0
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3Type.<init>
+    arity: 1
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3Type.<init>
+    arity: 2
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3Type.<init>
+    arity: 0
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3Type.<init>
+    arity: 1
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3Type.<init>
+    arity: 2
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3.<init>
+    arity: 0
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3.<init>
+    arity: 1
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3.<init>
+    arity: 2
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3.<init>
+    arity: 0
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3.<init>
+    arity: 1
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3.<init>
+    arity: 2
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3Type
+    arity: 0
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3Type
+    arity: 1
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3Type
+    arity: 2
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3Type
+    arity: 0
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3Type
+    arity: 1
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3Type
+    arity: 2
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3
+    arity: 0
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3
+    arity: 1
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3.SM3
+    arity: 2
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3
+    arity: 0
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3
+    arity: 1
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3
+    arity: 2
+    return:
+      type: pysmx.SM3._SM3.SM3Type
+      confidence: high
+    role: factory
+  - method: pysmx.SM3._SM3.SM3Type.update
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+  - method: pysmx.SM3._SM3.SM3Type.digest
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: pysmx.SM3._SM3.SM3Type.hexdigest
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+  - method: pysmx.SM3.digest
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM3.digest
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM3._SM3.digest
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM3._SM3.digest
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM3.hash_msg
+    arity: 1
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3._SM3.hash_msg
+    arity: 1
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3.Hash_sm3
+    arity: 1
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3.Hash_sm3
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3._SM3.Hash_sm3
+    arity: 1
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3._SM3.Hash_sm3
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3.hexdigest
+    arity: 1
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3.hexdigest
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3._SM3.hexdigest
+    arity: 1
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3._SM3.hexdigest
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3.KDF
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM3._SM3.KDF
+    arity: 2
+    return:
+      type: builtins.str
+      confidence: high
+    role: operation
+  - method: pysmx.SM4.Sm4.<init>
+    arity: 0
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+  - method: pysmx.SM4.Sm4.<init>
+    arity: 1
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4.Sm4.<init>
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.Sm4.<init>
+    arity: 0
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+  - method: pysmx.SM4._SM4.Sm4.<init>
+    arity: 1
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.Sm4.<init>
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4.SM4.<init>
+    arity: 0
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+  - method: pysmx.SM4.SM4.<init>
+    arity: 1
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4.SM4.<init>
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.SM4.<init>
+    arity: 0
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+  - method: pysmx.SM4._SM4.SM4.<init>
+    arity: 1
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.SM4.<init>
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4.Sm4
+    arity: 0
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+  - method: pysmx.SM4.Sm4
+    arity: 1
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4.Sm4
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.Sm4
+    arity: 0
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+  - method: pysmx.SM4._SM4.Sm4
+    arity: 1
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.Sm4
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4.SM4
+    arity: 0
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+  - method: pysmx.SM4.SM4
+    arity: 1
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4.SM4
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.SM4
+    arity: 0
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+  - method: pysmx.SM4._SM4.SM4
+    arity: 1
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.SM4
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4.Sm4
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: padding_method, role: metadata-contributing, contributes: { property: padding, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.Sm4.set_key
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.Sm4.sm4_set_key
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.Sm4.sm4_setkey
+    arity: 2
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.Sm4.sm4_crypt_ecb
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM4._SM4.Sm4.sm4_crypt_cbc
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM4._SM4.Sm4.sm4_crypt_pcbc
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM4._SM4.Sm4.sm4_crypt_ofb
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM4._SM4.Sm4.sm4_crypt_cfb
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.block_cyphers._block_cyphers.BlockCyphers.crypt_ecb
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.block_cyphers._block_cyphers.BlockCyphers.crypt_cbc
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.block_cyphers._block_cyphers.BlockCyphers.crypt_pcbc
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.block_cyphers._block_cyphers.BlockCyphers.crypt_ofb
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.block_cyphers._block_cyphers.BlockCyphers.crypt_cfb
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM4.sm4_crypt_ecb
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.sm4_crypt_ecb
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4.sm4_crypt_cbc
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.sm4_crypt_cbc
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4.sm4_crypt_pcbc
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.sm4_crypt_pcbc
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4.sm4_crypt_cfb
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.sm4_crypt_cfb
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4.sm4_crypt_ofb
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4._SM4.sm4_crypt_ofb
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 1, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.SM4.SM4Stream.<init>
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4.SM4Stream.<init>
+    arity: 3
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4.SM4Stream.<init>
+    arity: 4
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 3, name: method, role: metadata-contributing, contributes: { property: mode, derivation: argument_value } }
+  - method: pysmx.SM4.SM4Stream.<init>
+    arity: 5
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 3, name: method, role: metadata-contributing, contributes: { property: mode, derivation: argument_value } }
+  - method: pysmx.SM4._SM4_stream.SM4Stream.<init>
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4._SM4_stream.SM4Stream.<init>
+    arity: 3
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4._SM4_stream.SM4Stream.<init>
+    arity: 4
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 3, name: method, role: metadata-contributing, contributes: { property: mode, derivation: argument_value } }
+  - method: pysmx.SM4._SM4_stream.SM4Stream.<init>
+    arity: 5
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 3, name: method, role: metadata-contributing, contributes: { property: mode, derivation: argument_value } }
+  - method: pysmx.SM4.SM4Stream
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4.SM4Stream
+    arity: 3
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4.SM4Stream
+    arity: 4
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 3, name: method, role: metadata-contributing, contributes: { property: mode, derivation: argument_value } }
+  - method: pysmx.SM4.SM4Stream
+    arity: 5
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 3, name: method, role: metadata-contributing, contributes: { property: mode, derivation: argument_value } }
+  - method: pysmx.SM4._SM4_stream.SM4Stream
+    arity: 2
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4._SM4_stream.SM4Stream
+    arity: 3
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+  - method: pysmx.SM4._SM4_stream.SM4Stream
+    arity: 4
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 3, name: method, role: metadata-contributing, contributes: { property: mode, derivation: argument_value } }
+  - method: pysmx.SM4._SM4_stream.SM4Stream
+    arity: 5
+    return:
+      type: pysmx.SM4._SM4_stream.SM4Stream
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 1, name: mode, role: operation-determining, contributes: { property: operation, derivation: argument_value } }
+      - { index: 3, name: method, role: metadata-contributing, contributes: { property: mode, derivation: argument_value } }
+  - method: pysmx.SM4._SM4_stream.SM4Stream.update
+    arity: 1
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM4._SM4_stream.SM4Stream.finalize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+  - method: pysmx.SM9.generate_master_key
+    arity: 0
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9._SM9.generate_master_key
+    arity: 0
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9.generate_user_sign_key
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9.generate_user_sign_key
+    arity: 3
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9._SM9.generate_user_sign_key
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9._SM9.generate_user_sign_key
+    arity: 3
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9.generate_user_enc_key
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9.generate_user_enc_key
+    arity: 3
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9._SM9.generate_user_enc_key
+    arity: 2
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9._SM9.generate_user_enc_key
+    arity: 3
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: factory
+  - method: pysmx.SM9.Sign
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.Sign
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.Sign
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.Sign
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.Verify
+    arity: 4
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.Verify
+    arity: 5
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.Verify
+    arity: 4
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.Verify
+    arity: 5
+    return:
+      type: builtins.bool
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.Encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.Encrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.Encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.Encrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.Decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.Decrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.Decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.Decrypt
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.KEM_Encapsulate
+    arity: 3
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.KEM_Encapsulate
+    arity: 4
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.KEM_Encapsulate
+    arity: 3
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.KEM_Encapsulate
+    arity: 4
+    return:
+      type: builtins.tuple
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.KEM_Decapsulate
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9.KEM_Decapsulate
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.KEM_Decapsulate
+    arity: 4
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.SM9._SM9.KEM_Decapsulate
+    arity: 5
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+  - method: pysmx.ZUC.ZUC.<init>
+    arity: 2
+    return:
+      type: pysmx.ZUC._ZUC.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC.ZUC.<init>
+    arity: 3
+    return:
+      type: pysmx.ZUC._ZUC.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC._ZUC.ZUC.<init>
+    arity: 2
+    return:
+      type: pysmx.ZUC._ZUC.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC._ZUC.ZUC.<init>
+    arity: 3
+    return:
+      type: pysmx.ZUC._ZUC.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC.ZUC
+    arity: 2
+    return:
+      type: pysmx.ZUC._ZUC.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC.ZUC
+    arity: 3
+    return:
+      type: pysmx.ZUC._ZUC.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC._ZUC.ZUC
+    arity: 2
+    return:
+      type: pysmx.ZUC._ZUC.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC._ZUC.ZUC
+    arity: 3
+    return:
+      type: pysmx.ZUC._ZUC.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC._ZUC.ZUC.zuc_generate_keystream
+    arity: 0
+    return:
+      type: builtins.list
+      confidence: high
+    role: operation
+  - method: pysmx.ZUC._ZUC.ZUC.zuc_encrypt
+    arity: 1
+    return:
+      type: builtins.generator
+      confidence: high
+    role: operation
+  - method: pysmx.ZUC.zuc_encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC._cryptography.zuc_encrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC.zuc_decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: pysmx.ZUC._cryptography.zuc_decrypt
+    arity: 3
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+
+hierarchy:
+  builtins.NoneType:
+    - builtins.object
+  builtins.bool:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.generator:
+    - builtins.object
+  builtins.list:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.tuple:
+    - builtins.object
+  pysmx.SM2._SM2.KeyPair:
+    - builtins.object
+  pysmx.SM3._SM3.SM3Type:
+    - builtins.object
+  pysmx.SM4._SM4.Sm4:
+    - pysmx.block_cyphers._block_cyphers.BlockCyphers
+  pysmx.SM4._SM4_stream.SM4Stream:
+    - builtins.object
+  pysmx.ZUC._ZUC.ZUC:
+    - builtins.object
+  pysmx.block_cyphers._block_cyphers.BlockCyphers:
+    - builtins.object
+  builtins.object: []

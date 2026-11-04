@@ -1,0 +1,30 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-smime-1.80
+  coordinates:
+    - "org.bouncycastle:bcmail-jdk18on"
+    - "org.bouncycastle:bcjmail-jdk18on"
+  version_range: ">=1.80,<2.0"
+  description: "Bouncy Castle bcmail and bcjmail 1.80+: authenticated-enveloped (AES-GCM) S/MIME generator"
+
+# SMIMEAuthEnvelopedGenerator first ships at 1.80. It extends
+# SMIMEEnvelopedGenerator and inherits generate(part, encryptor), which
+# bouncycastle-smime.yaml contracts on the base class, so only the
+# constructor and its own addRecipientInfoGenerator declaration are here.
+contracts:
+  - method: org.bouncycastle.mail.smime.SMIMEAuthEnvelopedGenerator.<init>
+    arity: 0
+    return: { type: org.bouncycastle.mail.smime.SMIMEAuthEnvelopedGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.mail.smime.SMIMEAuthEnvelopedGenerator.addRecipientInfoGenerator
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+
+hierarchy:
+  org.bouncycastle.mail.smime.SMIMEAuthEnvelopedGenerator:
+    - org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator
+  org.bouncycastle.mail.smime.SMIMEEnvelopedGenerator:
+    - java.lang.Object
+  java.lang.Object: []

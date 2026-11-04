@@ -1,0 +1,104 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: cryptopp
+  coordinates:
+    - cryptopp
+  version_range: ">=8.9.0,<9.0.0"
+  description: "Crypto++ public C++ cryptographic class library"
+
+# Inventory sources: Crypto++ 8.9.0 public headers sha.h and cryptlib.h at tag
+# commit 041cf66ed64f28d89cc50b762cde0353cf85657c, and the SHA-256 APIs selected
+# by scanoss/crypto_rules cpp.cryptopp.algorithm.hash.sha-2.sha256. Scope is the
+# SHA-256 hash lifecycle; the PR body carries the full disposition table.
+#
+# skipped-non-crypto: AlgorithmName, StaticAlgorithmName, AlgorithmProvider,
+#   GetAlgorithm, BlockSize, OptimalBlockSize, OptimalDataAlignment, TagSize,
+#   Ref, Clone, CreateUpdateSpace, ThrowIfInvalidTruncatedSize.
+# skipped-unsupported: the SHA256 statics InitState and Transform drive the
+#   compression function directly, with no receiver the resolver can bind.
+# needs-follow-up: SHA-224/384/512, which land with their sibling rules.
+#
+# Resolution gaps (contracts key on what the parser emits, so these miss
+# silently): an unqualified receiver reached through `using namespace CryptoPP`
+# resolves as SHA256, a base-typed receiver as CryptoPP::HashTransformation, and
+# a member-field receiver as empty -- none of which is a key here. A plain
+# `CryptoPP::SHA256 hash;` declaration is not a call, so the factory contract
+# fires only on the functional-cast form. The paired detection rule is
+# fully-qualified-only, so no detection regresses today.
+contracts:
+
+  # Construction selects the algorithm: the type is the evidence, not an argument.
+  - method: CryptoPP.SHA256
+    arity: 0
+    return: {type: CryptoPP::SHA256, confidence: high}
+    role: factory
+
+  # Streaming digest lifecycle.
+  - method: CryptoPP::SHA256.Update
+    arity: 2
+    return: {type: void, confidence: high}
+    role: operation
+  - method: CryptoPP::SHA256.Final
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: CryptoPP::SHA256.TruncatedFinal
+    arity: 2
+    return: {type: void, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: digestSize
+        role: metadata-contributing
+        # Crypto++ takes the truncated length in bytes, not bits.
+        contributes: {property: digestSize, derivation: argument_value}
+
+  # One-shot digest lifecycle.
+  - method: CryptoPP::SHA256.CalculateDigest
+    arity: 3
+    return: {type: void, confidence: high}
+    role: operation
+  - method: CryptoPP::SHA256.CalculateTruncatedDigest
+    arity: 4
+    return: {type: void, confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: digestSize
+        role: metadata-contributing
+        contributes: {property: digestSize, derivation: argument_value}
+
+  # Verification lifecycle.
+  - method: CryptoPP::SHA256.Verify
+    arity: 1
+    return: {type: bool, confidence: high}
+    role: operation
+  - method: CryptoPP::SHA256.VerifyDigest
+    arity: 3
+    return: {type: bool, confidence: high}
+    role: operation
+  - method: CryptoPP::SHA256.TruncatedVerify
+    arity: 2
+    return: {type: bool, confidence: high}
+    role: operation
+  - method: CryptoPP::SHA256.VerifyTruncatedDigest
+    arity: 4
+    return: {type: bool, confidence: high}
+    role: operation
+
+  # Re-initialises engine state between messages.
+  - method: CryptoPP::SHA256.Restart
+    arity: 0
+    return: {type: void, confidence: high}
+    role: config
+
+  # Output length of the selected algorithm.
+  - method: CryptoPP::SHA256.DigestSize
+    arity: 0
+    return: {type: unsigned int, confidence: high}
+    role: output
+
+hierarchy:
+  CryptoPP::SHA256:
+    - CryptoPP::HashTransformation

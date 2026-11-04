@@ -1,0 +1,145 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: k256
+  coordinates:
+    - k256
+  version_range: ">=0.4.0,<0.15.0"
+  description: "secp256k1 (Bitcoin/Ethereum) elliptic curve: ECDSA, BIP-340 Schnorr and ECDH"
+
+# API read at k256 0.13.4.
+#
+# 0.0.0 through 0.3.0 are outside the range deliberately: 0.0.0 is a
+# name-reservation placeholder whose src/lib.rs holds only a `2 + 2` test, and
+# 0.2.0/0.3.0 ship `arithmetic` alone with no ecdsa and no ecdh module.
+#
+# WHERE THE SIGNATURES COME FROM. For k256, `ecdsa::SigningKey` and
+# `ecdsa::VerifyingKey` are `pub type` aliases onto the generic `ecdsa` crate
+# (k256 0.13.4 src/ecdsa.rs), so the arities and returns below were read from
+# ecdsa 0.16.9 src/signing.rs:87,92,99,123 and src/verifying.rs:92,102,109.
+# The ecdh and key types alias `elliptic-curve`, read at 0.13.8 src/ecdh.rs:60,
+# :105,:120, src/secret_key.rs:94,136,144 and src/public_key.rs:102,126.
+#
+# The schnorr entries are a SEPARATE ALGORITHM (BIP-340), not a spelling variant
+# of the ecdsa ones, and k256 exports both under the same SigningKey and
+# VerifyingKey names (0.13.4 src/schnorr.rs:68). They are keyed on the
+# `k256::schnorr` module path so the two can never collapse into one identity.
+# Signatures read at 0.13.4 src/schnorr/signing.rs:39,44,56,97. The module does
+# not exist below 0.12.0.
+#
+# WHY THIS CONTRACT EXISTS AT ALL. An exported callgraph for a consumer of this
+# crate emitted `canonical_signature: "k256::ecdsa.SigningKey.random(?)"` with
+# empty `parameter_types` — the shape an ABSENT contract takes. The generic
+# ecdsa.yaml does not cover it: its keys are `ecdsa::SigningKey.*`, and the
+# callgraph identifies the call by the re-exporting crate's own module path.
+# elliptic-curve.yaml does not cover it either — that file is the Curve trait
+# and carries `contracts: []`.
+#
+# skipped-non-crypto: byte and DER conversions (to_bytes, as_nonzero_scalar,
+#   to_sec1_bytes), Display/FromStr, serde, and the arithmetic backends.
+contracts:
+  - method: k256::ecdsa::SigningKey.random
+    arity: 1
+    return: {type: "k256::ecdsa::SigningKey", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+# The era-3 constructor. 0.14 replaces `SigningKey::random(rng)` with a
+# ZERO-ARITY `SigningKey::generate()`, which is a TRAIT method: the crate's own
+# doc example imports `elliptic_curve::Generate` to call it (k256 0.14.0-rc.15
+# src/ecdsa.rs:26,30). It is contracted because this file's version_range covers
+# 0.14.x, and an uncontracted constructor is exactly the `(?)` shape these
+# contracts exist to remove.
+  - method: k256::ecdsa::SigningKey.generate
+    arity: 0
+    return: {type: "k256::ecdsa::SigningKey", confidence: high}
+    role: factory
+  - method: k256::ecdsa::SigningKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&elliptic_curve::FieldBytes"]
+    role: factory
+  - method: k256::ecdsa::SigningKey.from_slice
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: k256::ecdsa::SigningKey.verifying_key
+    arity: 0
+    return: {type: "&k256::ecdsa::VerifyingKey", confidence: high}
+    role: output
+  - method: k256::ecdsa::VerifyingKey.from_sec1_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: k256::ecdsa::VerifyingKey.from_encoded_point
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&k256::EncodedPoint"]
+    role: factory
+  - method: k256::ecdsa::VerifyingKey.from_affine
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["k256::AffinePoint"]
+    role: factory
+  - method: k256::ecdh::EphemeralSecret.random
+    arity: 1
+    return: {type: "k256::ecdh::EphemeralSecret", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+  - method: k256::ecdh::EphemeralSecret.diffie_hellman
+    arity: 1
+    return: {type: "k256::ecdh::SharedSecret", confidence: high}
+    parameter_types: ["&k256::PublicKey"]
+    role: operation
+  - method: k256::SecretKey.random
+    arity: 1
+    return: {type: "k256::SecretKey", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+  - method: k256::SecretKey.public_key
+    arity: 0
+    return: {type: "k256::PublicKey", confidence: high}
+    role: output
+  - method: k256::PublicKey.from_sec1_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: k256::PublicKey.from_affine
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["k256::AffinePoint"]
+    role: factory
+  - method: k256::schnorr::SigningKey.random
+    arity: 1
+    return: {type: "k256::schnorr::SigningKey", confidence: high}
+    parameter_types: ["&impl elliptic_curve::rand_core::CryptoRngCore"]
+    role: factory
+  # Same trait constructor on the schnorr side (0.14.0-rc.15
+  # src/schnorr.rs:39,49), kept a separate identity from the ecdsa one.
+  - method: k256::schnorr::SigningKey.generate
+    arity: 0
+    return: {type: "k256::schnorr::SigningKey", confidence: high}
+    role: factory
+  - method: k256::schnorr::SigningKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: k256::schnorr::SigningKey.verifying_key
+    arity: 0
+    return: {type: "&k256::schnorr::VerifyingKey", confidence: high}
+    role: output
+  - method: k256::schnorr::SigningKey.sign_raw
+    arity: 2
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]", "&[u8; 32]"]
+    role: operation
+  - method: k256::schnorr::VerifyingKey.from_bytes
+    arity: 1
+    return: {type: "core::result::Result", confidence: high}
+    parameter_types: ["&[u8]"]
+    role: factory
+
+hierarchy: {}

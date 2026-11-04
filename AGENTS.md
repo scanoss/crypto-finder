@@ -83,12 +83,13 @@ those packages harder to repurpose.
 
 ## Knowledge base layout (callgraph inferred-types)
 
-The callgraph inference engine consumes language-agnostic YAML knowledge bases under
-`internal/callgraph/contracts/`. The structure is:
+The callgraph inference engine (static-engine) consumes language-agnostic YAML knowledge
+bases. The engine ships none: crypto-finder keeps them under `internal/contracts/`, embeds
+them and registers them with the engine at startup (`contracts.RegisterAll`). The structure is:
 
 ```
-internal/callgraph/contracts/
-├── contracts.go           # loader, types, validation
+internal/contracts/
+├── contracts.go           # go:embed of the YAML, RegisterAll
 ├── c/                     # openssl-evp, libsodium, mbedtls, wolfssl-wolfcrypt
 ├── cpp/                   # cryptopp, tink
 ├── go/                    # stdlib-crypto, golang-x-crypto, golang-fips-openssl-v2
@@ -112,8 +113,8 @@ internal/callgraph/contracts/
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code
 change. A new ecosystem may temporarily use one empty `<ecosystem>-bootstrap` YAML because
-`go:embed` requires a matching file; remove it when the first library KB lands. The loader (`contracts.LoadEmbedded(ecosystem)`) discovers all `*.yaml` files in
-the ecosystem directory, validates each, and merges them via `contracts.Merge()` with
+`go:embed` requires a matching file; remove it when the first library KB lands. The engine loader (static-engine `contracts.Load(ecosystem)`) reads all `*.yaml` files
+registered for the ecosystem, validates each, and merges them via `contracts.Merge()` with
 conflict-detection rules:
 
 - Same method+arity+condition with identical return → idempotent (no error).
@@ -151,7 +152,7 @@ INTERNAL to the loader; the partner-facing export schema is independent (current
 `graph-fragment-1.15` for the fragment export — `pkg/graphfrag.SchemaVersion`).
 
 To add a library:
-1. Drop a new YAML at `internal/callgraph/contracts/<ecosystem>/<library>.yaml`.
+1. Drop a new YAML at `internal/contracts/<ecosystem>/<library>.yaml`.
 2. Set `schema_version: "2"`, `ecosystem: <name>`, and a unique `library.name`.
 3. Author contracts and hierarchy edges following the same shape as `jdk-crypto.yaml`.
 4. Tests run automatically — no Go code changes required.

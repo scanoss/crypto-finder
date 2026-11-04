@@ -1,0 +1,66 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-0.9
+  coordinates:
+    - rsa
+  version_range: ">=0.9.0-rc.0,<0.11.0"
+  description: "RustCrypto rsa 0.9+: public-key encryption and verification, unprefixed PKCS#1 v1.5, blinded PSS key generation and PSS salt lengths"
+
+# `RsaPublicKey::{encrypt, verify}` become inherent methods at 0.9.0-rc.0
+# (0.9.10 src/key.rs); before that they belong to the `PublicKey` trait. The
+# other five first appear at 0.9.0-pre.2 (0.9.10 src/pkcs1v15.rs:87,
+# src/pkcs1v15/signing_key.rs:79, src/pkcs1v15/verifying_key.rs:57,
+# src/pss/blinded_signing_key.rs:55, src/pss/verifying_key.rs:36), so the
+# range starts at the later of the two. The era table is in rsa.yaml.
+contracts:
+  - method: rsa::Pkcs1v15Sign.new_unprefixed
+    arity: 0
+    return: { type: rsa::Pkcs1v15Sign, confidence: high }
+    role: factory
+  - method: rsa::pkcs1v15::SigningKey.new_unprefixed
+    arity: 1
+    return: { type: rsa::pkcs1v15::SigningKey, confidence: high }
+    role: factory
+  - method: rsa::pkcs1v15::VerifyingKey.new_unprefixed
+    arity: 1
+    return: { type: rsa::pkcs1v15::VerifyingKey, confidence: high }
+    role: factory
+  - method: rsa::pss::BlindedSigningKey.random
+    arity: 2
+    return: { type: rsa::pss::BlindedSigningKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: bit_size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: rsa::pss::VerifyingKey.new_with_salt_len
+    arity: 2
+    return: { type: rsa::pss::VerifyingKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: salt_len
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+  - method: rsa::RsaPublicKey.encrypt
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: padding
+        role: operation-determining
+        contributes: { property: padding, derivation: argument_value }
+  - method: rsa::RsaPublicKey.verify
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+    parameters:
+      - index: 0
+        name: scheme
+        role: operation-determining
+        contributes: { property: padding, derivation: argument_value }
+
+hierarchy: {}

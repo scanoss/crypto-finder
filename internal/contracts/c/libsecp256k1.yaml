@@ -1,0 +1,290 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: libsecp256k1
+  coordinates:
+    - secp256k1
+  version_range: ">=0.2.0,<1.0.0"
+  description: "libsecp256k1 ECDSA, Schnorr, MuSig2 and ECDH APIs over secp256k1"
+
+# Inventory sources: libsecp256k1 public headers (include/secp256k1*.h) from the
+# upstream tag archives v0.2.0, v0.6.0 and v0.7.1. No contracted function changes
+# arity across those releases. The ellswift module is v0.4.0 and later, musig
+# v0.6.0 and later; the deprecated secp256k1_ec_privkey_* aliases are gone in
+# v0.7.0 and are not contracted (secp256k1_ec_seckey_* are).
+#
+# Every call takes the context as its first argument, so a consumer's calls
+# group around the secp256k1_context they share: secp256k1_context_create is the
+# factory and secp256k1_context_randomize its configuration. Signing,
+# verification, key generation, ECDH, tagged hashing and tweaks are operations;
+# parsing builds a key or signature object and serializing reads one out.
+# The ECDH and ElligatorSwift hash-function arguments select the derivation and
+# are operation-determining.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: secp256k1_selftest, context clone/destroy and callback
+#   setters, the scratch-space and preallocated-context APIs, key and pubkey
+#   comparison/sorting (secp256k1_ec_pubkey_cmp/_sort, xonly_pubkey_cmp).
+# needs-follow-up: MuSig2 nonce generation, aggregation and session processing
+#   (secp256k1_musig_nonce_*, _partial_sig_agg, _pubkey_*_tweak_add), and the
+#   MuSig2 nonce/partial-signature encodings.
+contracts:
+
+  # Context.
+  - method: secp256k1_context_create
+    arity: 1
+    return: {type: "secp256k1_context*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: flags
+        role: metadata-contributing
+        contributes: {property: flags, derivation: argument_value}
+  - method: secp256k1_context_randomize
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+
+  # ECDSA and key generation (secp256k1.h, secp256k1_recovery.h).
+  - method: secp256k1_ec_seckey_verify
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ec_pubkey_create
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ecdsa_sign
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: noncefp
+        role: metadata-contributing
+        contributes: {property: nonceFunction, derivation: argument_value}
+  - method: secp256k1_ecdsa_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ecdsa_signature_normalize
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ecdsa_sign_recoverable
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: noncefp
+        role: metadata-contributing
+        contributes: {property: nonceFunction, derivation: argument_value}
+  - method: secp256k1_ecdsa_recover
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # BIP-340 Schnorr and key pairs (secp256k1_schnorrsig.h, secp256k1_extrakeys.h).
+  - method: secp256k1_keypair_create
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: secp256k1_keypair_pub
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: secp256k1_keypair_sec
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: secp256k1_keypair_xonly_pub
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: output
+  - method: secp256k1_schnorrsig_sign32
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_schnorrsig_sign
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_schnorrsig_sign_custom
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: msglen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+  - method: secp256k1_schnorrsig_verify
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: msglen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+
+  # BIP-327 MuSig2 signing and verification (secp256k1_musig.h, v0.6.0+).
+  - method: secp256k1_musig_pubkey_agg
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_musig_partial_sign
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_musig_partial_sig_verify
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # ECDH (secp256k1_ecdh.h) and ElligatorSwift (secp256k1_ellswift.h, v0.4.0+).
+  - method: secp256k1_ecdh
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: hashfp
+        role: operation-determining
+        contributes: {property: hashFunction, derivation: argument_value}
+  - method: secp256k1_ellswift_xdh
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: party
+        role: metadata-contributing
+        contributes: {property: party, derivation: argument_value}
+      - index: 6
+        name: hashfp
+        role: operation-determining
+        contributes: {property: hashFunction, derivation: argument_value}
+  - method: secp256k1_ellswift_create
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ellswift_encode
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: output
+  - method: secp256k1_ellswift_decode
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+
+  # Tagged SHA-256 (BIP-340).
+  - method: secp256k1_tagged_sha256
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: msglen
+        role: metadata-contributing
+        contributes: {property: dataLength, derivation: argument_value}
+
+  # Key and signature encodings.
+  - method: secp256k1_ec_pubkey_parse
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: secp256k1_ec_pubkey_serialize
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: output
+    parameters:
+      - index: 4
+        name: flags
+        role: metadata-contributing
+        contributes: {property: format, derivation: argument_value}
+  - method: secp256k1_xonly_pubkey_parse
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: secp256k1_xonly_pubkey_serialize
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: secp256k1_xonly_pubkey_from_pubkey
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: secp256k1_ecdsa_signature_parse_der
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: secp256k1_ecdsa_signature_parse_compact
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: secp256k1_ecdsa_signature_serialize_der
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: output
+  - method: secp256k1_ecdsa_signature_serialize_compact
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: secp256k1_ecdsa_recoverable_signature_parse_compact
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: secp256k1_ecdsa_recoverable_signature_serialize_compact
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: output
+  - method: secp256k1_ecdsa_recoverable_signature_convert
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: factory
+
+  # Key tweaks (BIP-32 and BIP-341 derivation steps).
+  - method: secp256k1_ec_seckey_negate
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ec_seckey_tweak_add
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ec_seckey_tweak_mul
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ec_pubkey_negate
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ec_pubkey_tweak_add
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ec_pubkey_tweak_mul
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_ec_pubkey_combine
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_xonly_pubkey_tweak_add
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_xonly_pubkey_tweak_add_check
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: secp256k1_keypair_xonly_tweak_add
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+hierarchy: {}

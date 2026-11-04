@@ -1,0 +1,16 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ring-0.9
+  coordinates:
+    - ring
+  version_range: ">=0.9.0,<0.18.0"
+  description: "ring Ed25519 PKCS#8 key loading, added in 0.9.0"
+
+contracts:
+  - method: ring::signature::Ed25519KeyPair.from_pkcs8
+    arity: 1
+    return: { type: ring::signature::Ed25519KeyPair, confidence: high }
+    role: factory
+
+hierarchy: {}

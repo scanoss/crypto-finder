@@ -1,0 +1,60 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: azure_security_keyvault_keys
+  coordinates:
+    - azure_security_keyvault_keys
+  version_range: ">=0.1.0,<2.0.0"
+  description: "Azure Key Vault keys client (generated SDK): remote key operations"
+
+# API read at azure_security_keyvault_keys 1.0.0
+# (src/generated/clients/key_client.rs:175, :287, :1120, :1181, :1349, :1411).
+# All six operations take three arguments — key name, a RequestContent of the
+# operation parameters, and an Option of per-call options — which is where this
+# generation differs from the legacy crate: there, `sign` took the algorithm
+# directly and `encrypt` took two arguments. Contracting one arity for both
+# would leave half the committed range unresolved.
+#
+# The operation set is unchanged from 0.1.0 to 1.0.0.
+#
+# Azure Key Vault is a REMOTE service and this crate implements no
+# cryptography: it serialises a request naming an algorithm the CONSUMER chose
+# and sends it. These contracts type the client surface. They say nothing about
+# which algorithm ran, because the call site does not know — that lives in the
+# EncryptionAlgorithm or SignatureAlgorithm variant the consumer wrote, which the
+# scanoss/crypto_rules rules match directly.
+contracts:
+  - method: azure_security_keyvault_keys::KeyClient.encrypt
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: azure_security_keyvault_keys::KeyClient.decrypt
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: azure_security_keyvault_keys::KeyClient.sign
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: azure_security_keyvault_keys::KeyClient.verify
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: azure_security_keyvault_keys::KeyClient.wrap_key
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: azure_security_keyvault_keys::KeyClient.unwrap_key
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: azure_security_keyvault_keys::KeyClient.get_key
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: azure_security_keyvault_keys::KeyClient.create_key
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+
+hierarchy: {}

@@ -1,0 +1,91 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.15
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.15"
+  description: "M2Crypto APIs added or reshaped in 0.15: PEM string loaders and export, X.509 verification, EVP PKey RSA assignment and sign streams, and the Twisted TLS wrapper"
+
+contracts:
+  - method: M2Crypto.RSA.load_key_string
+    arity: 1
+    return: { type: M2Crypto.RSA.RSA, confidence: high }
+    role: factory
+  - method: M2Crypto.RSA.RSA.as_pem
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: M2Crypto.EVP.load_key_string
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.EVP.PKey.as_pem
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: M2Crypto.X509.load_cert_string
+    arity: 1
+    return: { type: M2Crypto.X509.X509, confidence: high }
+    role: factory
+  - method: M2Crypto.X509.Request.get_pubkey
+    arity: 0
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.X509.X509_Store_Context.get_current_cert
+    arity: 0
+    return: { type: M2Crypto.X509.X509, confidence: high }
+    role: factory
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper
+    arity: 5
+    return: { type: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper, confidence: high }
+    role: factory
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper.<init>
+    arity: 5
+    return: { type: M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper, confidence: high }
+    role: factory
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.connectSSL
+    arity: 4
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.connectTCP
+    arity: 3
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.listenSSL
+    arity: 3
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: M2Crypto.SSL.TwistedProtocolWrapper.listenTCP
+    arity: 2
+    return: { type: builtins.object, confidence: high }
+    role: output
+  - method: M2Crypto.EVP.PKey.sign_update
+    arity: 1
+    return: { type: builtins.NoneType, confidence: high }
+    role: operation
+  - method: M2Crypto.X509.X509.verify
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.X509.Request.verify
+    arity: 1
+    return: { type: builtins.int, confidence: high }
+    role: operation
+  - method: M2Crypto.EVP.PKey.assign_rsa
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: config
+
+hierarchy:
+  M2Crypto.EVP.PKey:
+    - builtins.object
+  M2Crypto.SSL.TwistedProtocolWrapper.TLSProtocolWrapper:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  M2Crypto.RSA.RSA:
+    - builtins.object
+  M2Crypto.X509.X509:
+    - builtins.object
+  builtins.object: []

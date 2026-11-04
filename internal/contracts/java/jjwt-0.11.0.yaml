@@ -1,0 +1,24 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jjwt-0.11.0
+  coordinates:
+    - "io.jsonwebtoken:jjwt-api"
+  version_range: ">=0.11.0,<0.12.0"
+  description: "JJWT 0.11 Jwts.parserBuilder factory"
+
+# Jwts.parserBuilder() exists only in 0.11.x; 0.12.0 folds it into
+# Jwts.parser(). The era table is in jjwt.yaml.
+contracts:
+  - method: io.jsonwebtoken.Jwts.parserBuilder
+    arity: 0
+    return:
+      type: io.jsonwebtoken.JwtParserBuilder
+      confidence: high
+    role: factory
+
+hierarchy:
+  io.jsonwebtoken.JwtParserBuilder:
+    - java.lang.Object
+  java.lang.Object: []

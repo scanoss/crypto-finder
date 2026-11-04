@@ -1,0 +1,143 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: boring
+  coordinates:
+    - boring
+  version_range: ">=1.0.0,<6.0.0"
+  description: "BoringSSL safe bindings (Cloudflare fork of rust-openssl)"
+
+# API read at boring 5.1.0, cross-checked at 1.0.0. boring is a fork of
+# rust-openssl and its safe surface mirrors it module for module, so the key
+# shape here follows the already-merged openssl.yaml: a type inside a module is
+# keyed `boring::<module>::<Type>.<method>`, matching what a dot-joined call-site
+# FQN normalizes to.
+#
+# The module set is stable from 1.0.0 through 4.x. 4.x adds hpke (present by
+# 4.15.0); 5.0.0 adds hmac and mlkem — a post-quantum KEM in a BoringSSL binding
+# — and 5.1.0 adds aead and prf. Contracting a module a given version does not
+# ship is harmless: nothing resolves to it. Omitting one leaves a real call site
+# untyped.
+#
+# skipped-non-crypto: bn, asn1, bio, stack, string, error, ex_data, memcmp,
+#   nid, util and version are plumbing and encoding, not an API a consumer
+#   selects for its cryptography.
+contracts:
+  - method: boring::sha.sha256
+    arity: 1
+    return: { type: "[u8; 32]", confidence: high }
+    role: operation
+  - method: boring::sha.sha384
+    arity: 1
+    return: { type: "[u8; 48]", confidence: high }
+    role: operation
+  - method: boring::sha.sha512
+    arity: 1
+    return: { type: "[u8; 64]", confidence: high }
+    role: operation
+  - method: boring::sha.sha1
+    arity: 1
+    return: { type: "[u8; 20]", confidence: high }
+    role: operation
+  - method: boring::hash::MessageDigest.sha256
+    arity: 0
+    return: { type: boring::hash::MessageDigest, confidence: high }
+    role: config
+  - method: boring::hash::MessageDigest.sha1
+    arity: 0
+    return: { type: boring::hash::MessageDigest, confidence: high }
+    role: config
+  - method: boring::hash::Hasher.new
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::rsa::Rsa.generate
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::rsa::Rsa.private_key_from_pem
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::rsa::Rsa.public_key_from_pem
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::ec::EcKey.generate
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::ec::EcKey.from_curve_name
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::ec::EcGroup.from_curve_name
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::pkey::PKey.private_key_from_pem
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::pkey::PKey.public_key_from_pem
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::pkey::PKey.from_rsa
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::pkey::PKey.from_ec_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::sign::Signer.new
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::sign::Verifier.new
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::symm::Cipher.aes_256_gcm
+    arity: 0
+    return: { type: boring::symm::Cipher, confidence: high }
+    role: config
+  - method: boring::symm::Cipher.aes_128_gcm
+    arity: 0
+    return: { type: boring::symm::Cipher, confidence: high }
+    role: config
+  - method: boring::symm::Crypter.new
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::symm.encrypt
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: boring::symm.decrypt
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: boring::ssl::SslConnector.builder
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::ssl::SslContext.builder
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::ssl::SslMethod.tls
+    arity: 0
+    return: { type: boring::ssl::SslMethod, confidence: high }
+    role: config
+  - method: boring::x509::X509.from_pem
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: boring::x509::X509.from_der
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+
+hierarchy: {}

@@ -1,0 +1,241 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: bls-signatures
+  coordinates:
+    - bls-signatures
+  version_range: ">=0.7.0,<0.16.0"
+  description: "bls-signatures: BLS signatures over BLS12-381, as used by Filecoin"
+
+# API read at bls-signatures 0.15.0 and cross-checked against every other
+# version the crate has. The sparse index cargo reads lists TWENTY versions,
+# 0.2.0 through 0.15.0; the eleven the family mined are a sample of those, not
+# the whole set, and an earlier draft of this header said otherwise.
+#
+# THE RANGE IS THE SPAN WHERE ALL DECLARED ENTRIES HOLD, extracted version by
+# version rather than assumed from the mined sample:
+#
+#   0.2.0 - 0.6.0   `aggregate` returns `Signature`, not `Result`, and
+#                   `verify_messages` does not exist. Out of range.
+#   0.6.1           `aggregate` becomes fallible; `verify_messages` still
+#                   absent (arrives at 0.7.0 src/signature.rs:164). Out.
+#   0.7.0 - 0.15.0  every entry below holds at its declared arity.
+#
+# So the lower bound is 0.7.0 and not the oldest mined row. A first draft said
+# >=0.9.0, which excluded 0.7.0, 0.7.1 and 0.8.0 for the type-spelling reason
+# below while waving the same difference through for 0.9.0 and 0.10.0 -- a
+# review caught the inconsistency.
+#
+# THE UPPER BOUND IS THE LAST PUBLISHED VERSION, not a guess. The index ends at
+# 0.15.0; the campaign's input row set also carries 0.14.1, 0.14.2, 0.15.1 and
+# 0.16.0 through 0.24.0-pre.0, and none of them exists -- the tarball endpoint
+# answers 403 where 0.15.0 answers 200, and none is yanked (a yanked version
+# still downloads). Reported on the family issue.
+#
+# WHY A CONTRACT EXISTS HERE, and it is not only about absent types. An
+# exported call graph of a probe consumer shows two defects:
+#
+#   `aggregate(&[sig]).unwrap()`  ->  <consumer>.unwrap
+#       `aggregate` returns `Result<Signature, Error>`, so with no declared
+#       return the chain's next link lands in the consumer's own package.
+#       NOT fixed by this file -- see the measurement below, where it moves
+#       rather than resolves.
+#
+#   `sk.public_key().verify(sig, msg)`  ->  std.Vec.verify
+#       CROSS-ATTRIBUTION TO A SAME-NAMED CONSUMER METHOD, and the condition
+#       matters: it reproduces when the scanned consumer itself declares a
+#       `public_key()` of its own returning `Vec<u8>`, which is what the probe
+#       does and what a wrapper layer around any signature scheme tends to
+#       look like. Without such a declaration the same call resolves to
+#       `<consumer>.verify` instead -- still wrong, but wrong in the ordinary
+#       unresolved way -- measured on the same probe with `OwnScheme` deleted
+#       and nothing else changed: `nodecoy.verify(?, ?)`. An earlier draft
+#       stated the `std::Vec` result unconditionally, as a fact of the crate;
+#       it is a fact of that shape.
+#
+# MEASURED, one binary built with this file and one with it removed, scanning
+# the same probe: mis-attributed symbols 7 -> 3.
+#
+#   Closed by the contract, all four previously typed on `std::Vec`:
+#       sig.clone(), pk.verify(sig, msg), pk.as_affine(), pk.as_bytes().
+#
+#   Still open, and they are resolver limits rather than missing entries:
+#       `aggregate(&[sig]).unwrap()` types the `.unwrap()` receiver from the
+#       slice ARGUMENT (`std.Vec.unwrap`) instead of from the declared
+#       `canonical_return_type`, and `agg.as_bytes()` on the next line
+#       inherits that. A path-called associated function keeps its type prefix
+#       instead -- `PrivateKey::from_bytes(..).unwrap()` comes out as
+#       `bls_signatures.PrivateKey.unwrap`, the right crate and a method the
+#       crate does not have, which is pre-existing and unchanged by this file.
+#       The third is `write_bytes(..).unwrap()`, where the declared return is
+#       `()` and there is nothing to propagate.
+#
+# `Result`-WRAPPED RETURNS: `return.type` IS THE UNWRAPPED TYPE and
+# `canonical_return_type` carries the full declared type. That is the split
+# `balloon.yaml`, `blake3.yaml` and `security-framework.yaml` use, and it is
+# what fills the exported signature -- without it an external call renders as
+# `name(?)` however many entries exist, which `blake3.yaml` records at length.
+# snow, pkcs8, der and spki declare `core::result::Result` as the return type
+# and no canonical field, and a first draft of this file copied them and cited
+# them as precedent; they predate the field rather than argue against it. What
+# the split does NOT buy here is receiver typing past `.unwrap()` on the two
+# crate-root free functions: see the measurement above.
+#
+# KEYS READ OFF THE EXPORTED GRAPH, NOT ASSUMED (campaign rule 5.5). The three
+# types are re-exported from the crate root (`pub use self::key::{PrivateKey,
+# PublicKey, Serialize}` and `pub use self::signature::...` in src/lib.rs), so
+# their keys carry no module segment: `bls_signatures.PrivateKey.sign`. The
+# crate-root free functions key as `bls_signatures.<fn>` with no type, which is
+# the shape the graph emits for `hash` and `verify`.
+#
+# THREE CURVE-POINT TYPES ARE DELIBERATELY LEFT CRATE-UNQUALIFIED, and this is
+# a FEATURE axis rather than a version axis -- an earlier draft had it as the
+# latter and named `blstrs` for all of them, which was right for no default
+# build at any version in range. `pairing` and `blst` are mutually exclusive
+# (src/lib.rs:1 `compile_error!`), `default = ["pairing", ...]` at every
+# version, and the point types come from whichever is on:
+#
+#            default (`pairing`)                 opt-in (`blst`)
+#   0.7-0.10 paired::bls12_381::{G1Affine,G2}    blstrs::{G1Affine,G2}
+#   0.11+    bls12_381::{G1Affine,G2Projective}  blstrs::{...Projective}
+#
+# The call site cannot say which is compiled, so `as_affine`, `hash` and
+# `verify`'s hash argument name the bare type -- which is also the spelling a
+# consumer's own annotation carries -- at confidence medium, and declare no
+# `canonical_return_type`. Naming a crate here would publish a dependency the
+# scanned build may not have: measured, the `blstrs::G1Affine` draft put
+# `blstrs.G1Affine.to_compressed` into the served graph of a default-feature
+# consumer whose tree contains no blstrs at all.
+
+contracts:
+  - method: bls_signatures::PrivateKey.generate
+    arity: 1
+    return: { type: bls_signatures::PrivateKey, confidence: high }
+    parameter_types: ["&mut rand_core::RngCore"]
+    canonical_return_type: "bls_signatures::PrivateKey"
+    role: factory
+  # Deterministic derivation from arbitrary bytes, not generation. The rules
+  # report the two separately for the same reason.
+  - method: bls_signatures::PrivateKey.new
+    arity: 1
+    return: { type: bls_signatures::PrivateKey, confidence: high }
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "bls_signatures::PrivateKey"
+    role: factory
+  - method: bls_signatures::PrivateKey.from_string
+    arity: 1
+    return: { type: bls_signatures::PrivateKey, confidence: high }
+    parameter_types: ["&str"]
+    canonical_return_type: "core::result::Result<bls_signatures::PrivateKey, bls_signatures::Error>"
+    role: factory
+  - method: bls_signatures::PrivateKey.sign
+    arity: 1
+    return: { type: bls_signatures::Signature, confidence: high }
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "bls_signatures::Signature"
+    role: operation
+  - method: bls_signatures::PrivateKey.public_key
+    arity: 0
+    return: { type: bls_signatures::PublicKey, confidence: high }
+    parameter_types: []
+    canonical_return_type: "bls_signatures::PublicKey"
+    role: factory
+  - method: bls_signatures::PublicKey.verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    parameter_types: ["bls_signatures::Signature", "&[u8]"]
+    canonical_return_type: "bool"
+    role: operation
+  # A representation change, not an operation: `output` is the closest of the
+  # four contract roles, as the snow contract records for its query methods.
+  # Crate-unqualified and hedged for the feature reason in the header.
+  - method: bls_signatures::PublicKey.as_affine
+    arity: 0
+    return: { type: G1Affine, confidence: medium }
+    parameter_types: []
+    role: output
+  - method: bls_signatures.verify
+    arity: 3
+    return: { type: bool, confidence: high }
+    parameter_types: ["&bls_signatures::Signature", "&[G2Projective]", "&[bls_signatures::PublicKey]"]
+    canonical_return_type: "bool"
+    role: operation
+  - method: bls_signatures.verify_messages
+    arity: 3
+    return: { type: bool, confidence: high }
+    parameter_types: ["&bls_signatures::Signature", "&[&[u8]]", "&[bls_signatures::PublicKey]"]
+    canonical_return_type: "bool"
+    role: operation
+  - method: bls_signatures.aggregate
+    arity: 1
+    return: { type: bls_signatures::Signature, confidence: high }
+    parameter_types: ["&[bls_signatures::Signature]"]
+    canonical_return_type: "core::result::Result<bls_signatures::Signature, bls_signatures::Error>"
+    role: operation
+  - method: bls_signatures.hash
+    arity: 1
+    return: { type: G2Projective, confidence: medium }
+    parameter_types: ["&[u8]"]
+    role: operation
+  # The Serialize trait (src/key.rs:67 at 0.15.0), implemented for all THREE
+  # types: PrivateKey (key.rs:162), PublicKey (key.rs:198) and Signature
+  # (signature.rs:54). All three of its methods are declared -- `write_bytes`
+  # was missing from a first draft, and so was the assertion that would have
+  # caught it, which made a green test vouch for a two-thirds-covered trait.
+  # `write_bytes` is the private-key serialization path and `as_bytes` is
+  # exactly `write_bytes` into a fresh Vec (key.rs:74), so covering one and not
+  # the other split a pair that a CBOM reads together.
+  - method: bls_signatures::PrivateKey.from_bytes
+    arity: 1
+    return: { type: bls_signatures::PrivateKey, confidence: high }
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "core::result::Result<bls_signatures::PrivateKey, bls_signatures::Error>"
+    role: factory
+  - method: bls_signatures::PublicKey.from_bytes
+    arity: 1
+    return: { type: bls_signatures::PublicKey, confidence: high }
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "core::result::Result<bls_signatures::PublicKey, bls_signatures::Error>"
+    role: factory
+  - method: bls_signatures::Signature.from_bytes
+    arity: 1
+    return: { type: bls_signatures::Signature, confidence: high }
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "core::result::Result<bls_signatures::Signature, bls_signatures::Error>"
+    role: factory
+  - method: bls_signatures::PrivateKey.as_bytes
+    arity: 0
+    return: { type: "alloc::vec::Vec<u8>", confidence: high }
+    parameter_types: []
+    canonical_return_type: "alloc::vec::Vec<u8>"
+    role: output
+  - method: bls_signatures::PublicKey.as_bytes
+    arity: 0
+    return: { type: "alloc::vec::Vec<u8>", confidence: high }
+    parameter_types: []
+    canonical_return_type: "alloc::vec::Vec<u8>"
+    role: output
+  - method: bls_signatures::Signature.as_bytes
+    arity: 0
+    return: { type: "alloc::vec::Vec<u8>", confidence: high }
+    parameter_types: []
+    canonical_return_type: "alloc::vec::Vec<u8>"
+    role: output
+  - method: bls_signatures::PrivateKey.write_bytes
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&mut impl std::io::Write"]
+    canonical_return_type: "std::io::Result<()>"
+    role: output
+  - method: bls_signatures::PublicKey.write_bytes
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&mut impl std::io::Write"]
+    canonical_return_type: "std::io::Result<()>"
+    role: output
+  - method: bls_signatures::Signature.write_bytes
+    arity: 1
+    return: { type: (), confidence: high }
+    parameter_types: ["&mut impl std::io::Write"]
+    canonical_return_type: "std::io::Result<()>"
+    role: output

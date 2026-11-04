@@ -1,0 +1,83 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: go-ethereum
+  coordinates:
+    - "github.com/ethereum/go-ethereum"
+  version_range: ">=1.9.0,<2.0.0"
+  description: "go-ethereum core crypto package (secp256k1 ECDSA, Keccak-256)"
+
+# Inventory source: github.com/ethereum/go-ethereum v1.17.4 module source from
+# the Go module proxy. Contracted boundary per the family audit: the public
+# crypto package (key factories, ECDSA sign/verify/recover, Keccak hashing,
+# key serialization). Address derivation (PubkeyToAddress) is not a crypto
+# operation and stays uncontracted; the bn256/bls12381/kzg4844/secp256k1
+# subpackages and the ecies/signify helpers are bounded follow-up children;
+# oversized-module MAX_GO_FILES/timeout skips are recorded as such, never as
+# semantic validation.
+contracts:
+  - method: github.com/ethereum/go-ethereum/crypto.GenerateKey
+    arity: 0
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/ethereum/go-ethereum/crypto.ToECDSA
+    arity: 1
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: d, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/ethereum/go-ethereum/crypto.HexToECDSA
+    arity: 1
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: hexkey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/ethereum/go-ethereum/crypto.LoadECDSA
+    arity: 1
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/ethereum/go-ethereum/crypto.UnmarshalPubkey
+    arity: 1
+    return: { type: "*crypto/ecdsa.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: pub, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/ethereum/go-ethereum/crypto.FromECDSA
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/ethereum/go-ethereum/crypto.FromECDSAPub
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/ethereum/go-ethereum/crypto.Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: prv, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/ethereum/go-ethereum/crypto.VerifySignature
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: pubkey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/ethereum/go-ethereum/crypto.Ecrecover
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/ethereum/go-ethereum/crypto.SigToPub
+    arity: 2
+    return: { type: "*crypto/ecdsa.PublicKey", confidence: high }
+    role: operation
+  - method: github.com/ethereum/go-ethereum/crypto.Keccak256
+    arity: 1
+    varargs: true
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/ethereum/go-ethereum/crypto.Keccak256Hash
+    arity: 1
+    varargs: true
+    return: { type: "github.com/ethereum/go-ethereum/common.Hash", confidence: high }
+    role: operation
+hierarchy: {}

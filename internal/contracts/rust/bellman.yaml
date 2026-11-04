@@ -1,0 +1,89 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: bellman
+  coordinates:
+    - bellman
+  version_range: ">=0.0.3,<0.15.0"
+  description: "Groth16 zkSNARK proving system and circuit machinery"
+
+# API read at bellman 0.14.0 (src/groth16/generator.rs, prover.rs, verifier.rs),
+# with the change point read at 0.6.0 and 0.7.0 and the oldest API-bearing
+# release read at 0.0.3.
+#
+# VERSION RANGE STARTS AT 0.0.3, NOT AT THE MATRIX'S OLDEST ROW. 0.0.1 is in the
+# matrix but carries no library at all: its archive has no lib.rs, only main.rs,
+# and no groth16 module. Nothing here can resolve against it, and saying so is
+# more useful than a range that implies coverage it cannot have. The early
+# history is not monotonic either -- 0.0.7 has a lib.rs but no groth16 module,
+# while 0.0.3 and 0.0.9 both have one.
+#
+# THE ONE API CHANGE IS 0.6.0 -> 0.7.0, and it is in the TYPES, not the call
+# shape (src/groth16/verifier.rs at each version):
+#
+#   <= 0.6.0   `E: Engine`,          verify_proof -> Result<bool, SynthesisError>
+#   >= 0.7.0   `E: MultiMillerLoop`, verify_proof -> Result<(), VerificationError>
+#
+# Arities and parameter counts are identical across the whole range, so one set
+# of contracts covers it. `verify_proof` below declares the >= 0.7.0 return type,
+# which holds for 17 of the 23 matrix rows and every recent release. The schema's
+# `when` condition matches on argument VALUES, not on versions, so a
+# version-conditional return type cannot be expressed here; the pre-0.7.0 type is
+# recorded in this comment instead of being silently wrong for one of the two.
+#
+# ARITIES READ FROM THE DECLARATIONS, NOT FROM PROSE. A first pass counted them
+# with a regex over the parameter lines and got `create_random_proof` wrong,
+# because from 0.9.0 the third parameter is spelled `mut rng: &mut R` and a
+# `^\s+[a-z_]+:` pattern skips it. Read from the signatures:
+#   generate_random_parameters(circuit, rng)                                -> 2
+#   generate_parameters(circuit, g1, g2, alpha, beta, gamma, delta, tau)    -> 8
+#   create_random_proof(circuit, params, rng)                               -> 3
+#   create_proof(circuit, params, r, s)                                     -> 4
+#   prepare_verifying_key(vk)                                               -> 1
+#   verify_proof(pvk, proof, public_inputs)                                 -> 3
+#
+# skipped-non-crypto: ConstraintSystem::alloc, alloc_input, enforce, namespace,
+#   LinearCombination and Namespace. That is how any circuit is expressed,
+#   cryptographic or not, and contracting it would pull every consumer that
+#   builds a circuit into the crypto call graph. The scanoss/crypto_rules
+#   constraint-bookkeeping-negative fixture pins that it carries no finding.
+#
+# KEY SHAPE: THESE ARE FREE FUNCTIONS, NOT METHODS. The call-site FQN the parser
+# emits is `bellman::groth16.generate_random_parameters` -- module path joined
+# with `::`, then a DOT before the function name. The Rust key normalisation
+# only rewrites the separator in front of a receiver TYPE and returns keys with
+# fewer than two dots unchanged, so an authored `bellman::groth16::<fn>` never
+# resolves against the emitted key. Authored in the call-site shape instead,
+# which is the same convention as the existing `x25519_dalek.x25519` contract.
+# Verified by exporting a call graph and reading the signatures, not assumed.
+contracts:
+  - method: bellman::groth16.generate_random_parameters
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["bellman::Circuit", "&mut rand_core::RngCore"]
+    role: factory
+  - method: bellman::groth16.generate_parameters
+    arity: 8
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: bellman::groth16.create_random_proof
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["bellman::Circuit", "bellman::groth16::ParameterSource", "&mut rand_core::RngCore"]
+    role: operation
+  - method: bellman::groth16.create_proof
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: bellman::groth16.prepare_verifying_key
+    arity: 1
+    return: { type: bellman::groth16::PreparedVerifyingKey, confidence: high }
+    parameter_types: ["&bellman::groth16::VerifyingKey"]
+    role: factory
+  - method: bellman::groth16.verify_proof
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&bellman::groth16::PreparedVerifyingKey", "&bellman::groth16::Proof", "&[E::Fr]"]
+    role: operation
+
+hierarchy: {}

@@ -1,0 +1,273 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: blstrs
+  coordinates:
+    - blstrs
+  version_range: ">=0.4.0,<0.8.0"
+  description: "BLS12-381 pairing-friendly curve implemented over the blst assembly backend"
+
+# THE RANGE IS 0.4.0+ AND NOT THE WHOLE MATRIX RANGE, AND THAT IS THE HONEST
+# BOUND RATHER THAN A CONVENIENT ONE. `version_range` is declared per library and
+# may only claim versions for which EVERY entry is true, and blstrs changes the
+# RETURN TYPE of two whole groups of methods at 0.4.0 without changing their name
+# or arity:
+#
+#   * `Bls12::pairing(p, q)` and the free `pairing(p, q)` return `Fp12` in
+#     0.1.0-0.3.1 (0.1.0 traits.rs:59, the provided method on the crate's OWN
+#     `Engine` trait; 0.1.0 pairing.rs:6) and `Gt` from 0.4.0 (lib.rs:59,
+#     pairing.rs:9).
+#   * every `from_compressed`/`from_uncompressed`/`_unchecked` decoder returns
+#     `Option<Self>` in 0.1.0-0.3.1 and `subtle::CtOption<Self>` from 0.4.0
+#     (0.4.0 g1.rs:319).
+#
+# A KB entry is keyed by method plus arity, so the two eras cannot both be
+# declared: a second file repeating these keys with the other return is a hard
+# load-time conflict, and declaring one era's return over the whole range would
+# publish something false for half of it. Omitting the returns instead would cost
+# the resolution these entries exist for -- the `CtOption` return is what lets
+# agave-bls12-381 4.0.3's sixteen `.into_option()` hops resolve. So the file
+# covers 0.4.0-0.7.1, which is 9 of the matrix's 18 rows and every version a
+# measured consumer pins, and 0.1.0-0.3.1 IS DELIBERATELY UNCONTRACTED. The rules
+# still detect that era -- mining 0.1.0 and 0.3.0 yields findings -- they simply
+# resolve to an empty signature there. `Bls12::miller_loop` and
+# `Bls12::final_exponentiation`, which exist ONLY in 0.1.0-0.3.1 (0.1.0 lib.rs:55
+# and :90), are absent for the same reason.
+#
+# API read from the published .crate archives at 0.4.0 (the era boundary) and
+# 0.7.1 (the newest row), with 0.1.0, 0.1.2, 0.2.0 and 0.3.0 read to establish
+# where the boundary actually is:
+#
+#   0.4.0 lib.rs:53,66   the crate's own `Engine` is replaced by
+#                        `pairing_lib::Engine` (`fn pairing`, :61) plus
+#                        `MultiMillerLoop` (`fn multi_miller_loop`, :72).
+#   0.4.0 pairing.rs:9   `pub fn pairing(p: &G1Affine, q: &G2Affine) -> Gt`.
+#   0.4.0 pairing.rs:153,170  `MillerLoopResult` and its `final_exponentiation`.
+#   0.4.0 gt.rs:30,337   the `Gt` type and `impl Compress for Gt`. At 0.4.0
+#                        `MillerLoopResult` and `Fp12` implement it too; from
+#                        0.4.1 `Gt` is the only implementor, so `Gt` is the one
+#                        spelling true across the whole declared range.
+#   0.4.0 g1.rs:297-357, g2.rs:317-367  the codec, returning `CtOption`.
+#   0.7.1 lib.rs:51,64   the same two impls, unchanged in content since 0.4.0.
+#   0.7.1 g1.rs:28-29, g2.rs:27-28  `COMPRESSED_SIZE`/`UNCOMPRESSED_SIZE` are
+#                        48/96 for G1 and 96/192 for G2, which is where the
+#                        declared byte-array returns come from.
+#
+# `PairingG1G2`/`PairingG2G1` and `hash_to_curve` FIRST appear at 0.1.2, vanish
+# again in 0.2.0 and 0.2.1, and are present from 0.2.2 onward -- measured across
+# all eighteen archives rather than assumed monotonic, which a first draft did.
+# They hold throughout the declared range either way.
+#
+# ARITIES WERE READ OFF AN EXPORTED CALL GRAPH, NOT FROM THE SIGNATURES.
+# `crypto-finder scan --export-callgraph` on a probe consumer emitted
+# `blstrs.G1Affine.to_compressed()`, `blstrs.G1Affine.from_compressed(?)`,
+# `blstrs.Bls12.pairing(?, ?)`, `blstrs.Bls12.multi_miller_loop(?)`,
+# `blstrs.G1Projective.hash_to_curve(?, ?, ?)`, `blstrs.PairingG1G2.new(?, ?)`
+# and `blstrs.pairing(?, ?)` -- the `?` placeholders being exactly what an absent
+# contract looks like. The authored keys below are those keys with the
+# module/type separator moved to `::`, which is what the loader compares against
+# (rustAuthoredKey). The free function `pairing` has no type segment and so keeps
+# its single dot.
+#
+# `MillerLoopResult.final_exponentiation` IS KEYED ON `MillerLoopResult`, NOT ON
+# `Bls12`, AND THE DIFFERENCE WAS MEASURED. Without a contract the parser typed
+# the receiver of `Bls12::multi_miller_loop(..).final_exponentiation()` as
+# `Bls12` and emitted `blstrs.Bls12.final_exponentiation()`. That key is an
+# artefact of the missing return type, not a fact about the library: with
+# `multi_miller_loop`'s return declared here the receiver resolves to
+# `MillerLoopResult`, which is what pairing.rs:167-170 actually implements.
+#
+# `parameter_types` RECORD THE CONSUMER-FACING TYPE, WHICH IS WHY THEY ARE NOT
+# ALL SPELLED THE SAME WAY. `pairing` is declared `blstrs::G1Affine` although the
+# signature takes `&G1Affine`, because the type a consumer's VALUE has is the
+# point and that is what has to resolve for the flow to join; the decoders are
+# declared `&[u8; 48]` because a consumer really does hold a borrowed array; and
+# `multi_miller_loop` is declared as the slice-of-pairs it takes, because no
+# single consumer value corresponds to it. rust/ark-bls12-381 states the same
+# convention in its own header.
+#
+# WHAT IS DELIBERATELY ABSENT, and why: `Scalar` and the `Fp`/`Fp2`/`Fp6`/`Fp12`
+# tower, the `Add`/`Sub`/`Mul`/`Neg` operator impls, `double`, `multi_exp`,
+# `to_affine`/`from`, `x()`/`y()`/`z()`, `is_on_curve`, `is_torsion_free`,
+# `identity`, `generator`, `write_raw`/`read_raw` and the serde impls. They are
+# curve arithmetic or representation moves and carry no crypto asset, which is
+# what progress.json's family note means by "exclude generic scalar arithmetic
+# from findings". The scanoss/crypto_rules raw-arithmetic-negative fixture pins
+# that they produce no finding either.
+#
+# ALSO ABSENT, AND THIS ONE IS A GAP RATHER THAN A JUDGEMENT: the aggregate
+# pairing context's `aggregate`, `commit`, `merge` and `finalverify`. Only its
+# constructors are declared, because the rules only match the constructors --
+# those four are methods on a metavariable receiver with names too common to
+# anchor on a file-level import, and contracting a key no rule produces would
+# join nothing.
+contracts:
+  # ---- pairing ----
+  - method: blstrs::Bls12.pairing
+    arity: 2
+    return: { type: blstrs::Gt, confidence: high }
+    parameter_types: ["blstrs::G1Affine", "blstrs::G2Affine"]
+    role: operation
+  - method: blstrs.pairing
+    arity: 2
+    return: { type: blstrs::Gt, confidence: high }
+    parameter_types: ["blstrs::G1Affine", "blstrs::G2Affine"]
+    role: operation
+  - method: blstrs::Bls12.multi_miller_loop
+    arity: 1
+    return: { type: blstrs::MillerLoopResult, confidence: high }
+    parameter_types: ["&[(&blstrs::G1Affine, &blstrs::G2Prepared)]"]
+    role: operation
+  - method: blstrs::MillerLoopResult.final_exponentiation
+    arity: 0
+    return: { type: blstrs::Gt, confidence: high }
+    role: operation
+  # ---- aggregate pairing ----
+  - method: blstrs::PairingG1G2.new
+    arity: 2
+    return: { type: blstrs::PairingG1G2, confidence: high }
+    parameter_types: ["bool", "&[u8]"]
+    role: factory
+  - method: blstrs::PairingG2G1.new
+    arity: 2
+    return: { type: blstrs::PairingG2G1, confidence: high }
+    parameter_types: ["bool", "&[u8]"]
+    role: factory
+  # ---- hash to curve ----
+  - method: blstrs::G1Projective.hash_to_curve
+    arity: 3
+    return: { type: blstrs::G1Projective, confidence: high }
+    parameter_types: ["&[u8]", "&[u8]", "&[u8]"]
+    role: operation
+  - method: blstrs::G2Projective.hash_to_curve
+    arity: 3
+    return: { type: blstrs::G2Projective, confidence: high }
+    parameter_types: ["&[u8]", "&[u8]", "&[u8]"]
+    role: operation
+  # ---- point encoding ----
+  - method: blstrs::G1Affine.to_compressed
+    arity: 0
+    return: { type: "[u8; 48]", confidence: high }
+    role: output
+  - method: blstrs::G1Affine.to_uncompressed
+    arity: 0
+    return: { type: "[u8; 96]", confidence: high }
+    role: output
+  - method: blstrs::G1Projective.to_compressed
+    arity: 0
+    return: { type: "[u8; 48]", confidence: high }
+    role: output
+  - method: blstrs::G1Projective.to_uncompressed
+    arity: 0
+    return: { type: "[u8; 96]", confidence: high }
+    role: output
+  - method: blstrs::G2Affine.to_compressed
+    arity: 0
+    return: { type: "[u8; 96]", confidence: high }
+    role: output
+  - method: blstrs::G2Affine.to_uncompressed
+    arity: 0
+    return: { type: "[u8; 192]", confidence: high }
+    role: output
+  - method: blstrs::G2Projective.to_compressed
+    arity: 0
+    return: { type: "[u8; 96]", confidence: high }
+    role: output
+  - method: blstrs::G2Projective.to_uncompressed
+    arity: 0
+    return: { type: "[u8; 192]", confidence: high }
+    role: output
+  - method: blstrs::Gt.write_compressed
+    arity: 1
+    return: { type: std::io::Result, confidence: high }
+    parameter_types: ["std::io::Write"]
+    role: output
+  # ---- point decoding, subgroup-checked ----
+  - method: blstrs::G1Affine.from_compressed
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 48]"]
+    role: factory
+  - method: blstrs::G1Affine.from_uncompressed
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 96]"]
+    role: factory
+  - method: blstrs::G1Projective.from_compressed
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 48]"]
+    role: factory
+  - method: blstrs::G1Projective.from_uncompressed
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 96]"]
+    role: factory
+  - method: blstrs::G2Affine.from_compressed
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 96]"]
+    role: factory
+  - method: blstrs::G2Affine.from_uncompressed
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 192]"]
+    role: factory
+  - method: blstrs::G2Projective.from_compressed
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 96]"]
+    role: factory
+  - method: blstrs::G2Projective.from_uncompressed
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 192]"]
+    role: factory
+  - method: blstrs::Gt.read_compressed
+    arity: 1
+    return: { type: std::io::Result, confidence: high }
+    parameter_types: ["std::io::Read"]
+    role: factory
+  # ---- point decoding WITHOUT the subgroup check ----
+  - method: blstrs::G1Affine.from_compressed_unchecked
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 48]"]
+    role: factory
+  - method: blstrs::G1Affine.from_uncompressed_unchecked
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 96]"]
+    role: factory
+  - method: blstrs::G1Projective.from_compressed_unchecked
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 48]"]
+    role: factory
+  - method: blstrs::G1Projective.from_uncompressed_unchecked
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 96]"]
+    role: factory
+  - method: blstrs::G2Affine.from_compressed_unchecked
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 96]"]
+    role: factory
+  - method: blstrs::G2Affine.from_uncompressed_unchecked
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 192]"]
+    role: factory
+  - method: blstrs::G2Projective.from_compressed_unchecked
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 96]"]
+    role: factory
+  - method: blstrs::G2Projective.from_uncompressed_unchecked
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["&[u8; 192]"]
+    role: factory
+
+hierarchy: {}

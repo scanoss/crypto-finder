@@ -1,0 +1,151 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: micro-ecc
+  coordinates:
+    - micro-ecc
+    - uECC
+  version_range: ">=1.0,<1.2"
+  description: "micro-ecc ECDH and ECDSA over the NIST and SECG prime curves"
+
+# Inventory source: the library's own public header uECC.h at tags v1.0 and v1.1,
+# plus the low-level header uECC_vli.h. The public surface is identical between
+# the two tags: 18 declarations in uECC.h, so one contract covers both.
+#
+# The curve is a handle produced by a selector rather than a size or a string, so
+# every operation takes it as its last argument and carries it as
+# operation-determining. That is what makes the curve identity source-selected:
+# a consumer writing uECC_make_key(pub, priv, uECC_secp256r1()) names the curve
+# at the call site, and the selector contracts give the handle a type so the same
+# identity survives being bound to a variable first.
+#
+# Dispositions for the full inventory:
+#   contracted: the five curve selectors, uECC_set_rng, uECC_make_key,
+#     uECC_compute_public_key, uECC_shared_secret, uECC_sign,
+#     uECC_sign_deterministic and uECC_verify — 12 entries.
+#   skipped-informative-return: uECC_get_rng, whose declared return is already
+#     uECC_RNG_Function and carries no further information.
+#   skipped-non-crypto: uECC_curve_private_key_size and
+#     uECC_curve_public_key_size, which are size helpers, together with the 37
+#     arithmetic symbols in uECC_vli.h. The vli surface is modular arithmetic on
+#     very-long integers — add, sub, mult, mod, inverse, point add and double,
+#     byte and native ordering — and is deliberately kept negative: it is the
+#     implementation of the primitives above, not a distinct crypto API a
+#     consumer selects.
+#   needs-follow-up: uECC_compress, uECC_decompress and uECC_valid_public_key.
+#     All three are genuine public-key handling APIs, but they are point
+#     representation and validation rather than the key-generation, agreement and
+#     signature surface this family's scope names, and no rule selects them
+#     today. They belong in their own slice alongside a rule that does.
+contracts:
+
+  # Curve selectors. Each returns an opaque handle, so the contract exists to
+  # give that handle a type the receiving argument can resolve back to a curve.
+  - method: uECC_secp160r1
+    arity: 0
+    return: {type: uECC_Curve, confidence: high}
+    role: factory
+  - method: uECC_secp192r1
+    arity: 0
+    return: {type: uECC_Curve, confidence: high}
+    role: factory
+  - method: uECC_secp224r1
+    arity: 0
+    return: {type: uECC_Curve, confidence: high}
+    role: factory
+  - method: uECC_secp256r1
+    arity: 0
+    return: {type: uECC_Curve, confidence: high}
+    role: factory
+  - method: uECC_secp256k1
+    arity: 0
+    return: {type: uECC_Curve, confidence: high}
+    role: factory
+
+  # Entropy source. Key generation draws from whatever is installed here, so the
+  # call configures the security of every later uECC_make_key.
+  - method: uECC_set_rng
+    arity: 1
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: rng_function
+        role: metadata-contributing
+        contributes: {property: functionName, derivation: argument_value}
+
+  # Key generation and public-key derivation.
+  - method: uECC_make_key
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: curve
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: uECC_compute_public_key
+    arity: 3
+    return: {type: int, confidence: high}
+    role: factory
+    parameters:
+      - index: 2
+        name: curve
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+
+  # ECDH.
+  - method: uECC_shared_secret
+    arity: 4
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: curve
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+
+  # ECDSA. hash_size is the caller's digest length in bytes and is the only
+  # place the digest width appears, since the library takes a hash rather than
+  # computing one.
+  - method: uECC_sign
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 4
+        name: curve
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: uECC_sign_deterministic
+    arity: 6
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 5
+        name: curve
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+  - method: uECC_verify
+    arity: 5
+    return: {type: int, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: hash_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_value}
+      - index: 4
+        name: curve
+        role: operation-determining
+        contributes: {property: curve, derivation: argument_value}
+
+hierarchy: {}

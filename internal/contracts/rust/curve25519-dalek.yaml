@@ -1,0 +1,130 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: curve25519-dalek
+  coordinates:
+    - curve25519-dalek
+    - curve25519_dalek
+  version_range: ">=0.9.3,<6.0.0"
+  description: "Curve25519 group arithmetic: Edwards, Montgomery and Ristretto points"
+
+# API read at curve25519-dalek 4.2.0 (src/edwards.rs, src/montgomery.rs,
+# src/ristretto.rs, src/scalar.rs, src/constants.rs), with the older spellings
+# read at the version each was introduced or renamed:
+#
+#   0.9.3  constants.rs:420 `pub const ED25519_BASEPOINT_TABLE`; the group type
+#          is still named decaf, pre-Ristretto.
+#   1.0.3  decaf.rs renamed ristretto.rs; edwards.rs and montgomery.rs split
+#          out; RistrettoPoint::random appears.
+#   4.0.0  traits.rs:63 `fn mul_base` and traits.rs:67 `fn mul_base_clamped`
+#          introduced, and constants.rs:105 turns ED25519_BASEPOINT_TABLE into
+#          a `&'static` reference, so `&s * &TABLE` becomes `s * TABLE`.
+#
+# 0.1.0 through 0.9.2 are outside the range deliberately: 0.1.0's src/ holds
+# only curve.rs, field.rs, scalar.rs and util.rs, with no constants module and
+# none of the point types contracted here.
+#
+# This crate is group arithmetic, not a protocol, so most of its surface carries
+# no crypto asset. What is contracted is the part a consumer's typed variables
+# flow through: base-point multiplication (public-key derivation), scalar
+# sampling (private-key generation), and the compression/decompression that
+# types a consumer's point variables. Bare point addition, subtraction, doubling
+# and negation are deliberately absent — they are operator impls, and the
+# scanoss/crypto_rules raw-arithmetic-negative fixture pins that they carry no
+# finding either.
+#
+# skipped-non-crypto: Add/Sub/Mul/Neg operator impls, ConstantTimeEq, Zeroize,
+#   serde and the backend modules.
+contracts:
+  - method: curve25519_dalek::EdwardsPoint.mul_base
+    arity: 1
+    return: { type: curve25519_dalek::EdwardsPoint, confidence: high }
+    parameter_types: ["&curve25519_dalek::Scalar"]
+    role: factory
+  - method: curve25519_dalek::EdwardsPoint.mul_base_clamped
+    arity: 1
+    return: { type: curve25519_dalek::EdwardsPoint, confidence: high }
+    parameter_types: ["[u8; 32]"]
+    role: factory
+  - method: curve25519_dalek::EdwardsPoint.compress
+    arity: 0
+    return: { type: curve25519_dalek::CompressedEdwardsY, confidence: high }
+    role: output
+  - method: curve25519_dalek::EdwardsPoint.to_montgomery
+    arity: 0
+    return: { type: curve25519_dalek::MontgomeryPoint, confidence: high }
+    role: output
+  - method: curve25519_dalek::CompressedEdwardsY.decompress
+    arity: 0
+    return: { type: core::option::Option, confidence: high }
+    role: factory
+  - method: curve25519_dalek::MontgomeryPoint.mul_base
+    arity: 1
+    return: { type: curve25519_dalek::MontgomeryPoint, confidence: high }
+    parameter_types: ["&curve25519_dalek::Scalar"]
+    role: factory
+  - method: curve25519_dalek::MontgomeryPoint.mul_base_clamped
+    arity: 1
+    return: { type: curve25519_dalek::MontgomeryPoint, confidence: high }
+    parameter_types: ["[u8; 32]"]
+    role: factory
+  - method: curve25519_dalek::MontgomeryPoint.to_edwards
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: ["u8"]
+    role: output
+  - method: curve25519_dalek::RistrettoPoint.mul_base
+    arity: 1
+    return: { type: curve25519_dalek::RistrettoPoint, confidence: high }
+    parameter_types: ["&curve25519_dalek::Scalar"]
+    role: factory
+  - method: curve25519_dalek::RistrettoPoint.random
+    arity: 1
+    return: { type: curve25519_dalek::RistrettoPoint, confidence: high }
+    role: factory
+  - method: curve25519_dalek::RistrettoPoint.from_uniform_bytes
+    arity: 1
+    return: { type: curve25519_dalek::RistrettoPoint, confidence: high }
+    parameter_types: ["&[u8; 64]"]
+    role: factory
+  - method: curve25519_dalek::RistrettoPoint.compress
+    arity: 0
+    return: { type: curve25519_dalek::CompressedRistretto, confidence: high }
+    role: output
+  - method: curve25519_dalek::CompressedRistretto.decompress
+    arity: 0
+    return: { type: core::option::Option, confidence: high }
+    role: factory
+  - method: curve25519_dalek::Scalar.random
+    arity: 1
+    return: { type: curve25519_dalek::Scalar, confidence: high }
+    role: factory
+  - method: curve25519_dalek::Scalar.from_bytes_mod_order
+    arity: 1
+    return: { type: curve25519_dalek::Scalar, confidence: high }
+    parameter_types: ["[u8; 32]"]
+    role: factory
+  - method: curve25519_dalek::Scalar.from_bytes_mod_order_wide
+    arity: 1
+    return: { type: curve25519_dalek::Scalar, confidence: high }
+    parameter_types: ["&[u8; 64]"]
+    role: factory
+  - method: curve25519_dalek::Scalar.from_canonical_bytes
+    arity: 1
+    return: { type: subtle::CtOption, confidence: high }
+    parameter_types: ["[u8; 32]"]
+    role: factory
+  - method: curve25519_dalek::Scalar.invert
+    arity: 0
+    return: { type: curve25519_dalek::Scalar, confidence: high }
+    role: operation
+  - method: curve25519_dalek::Scalar.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    role: output
+  - method: curve25519_dalek::Scalar.as_bytes
+    arity: 0
+    return: { type: "&[u8; 32]", confidence: high }
+    role: output
+
+hierarchy: {}

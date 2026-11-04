@@ -1,0 +1,217 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: bcrypt
+  coordinates:
+    - bcrypt
+  version_range: ">=0.1.0,<0.20.0"
+  description: "bcrypt password hashing for Rust"
+
+# bcrypt's CALLABLE surface is free functions in a single-segment crate, so
+# every call site emits the "<crate>.<fn>" dot form and there is no module
+# segment to carry. The crate also exposes the HashParts accessors and the
+# Version enum; neither is contracted, for the reasons in the dispositions
+# below.
+#
+# Keys read off an exported callgraph, not off the documentation: a probe
+# consumer scanned with --export-callgraph emitted bcrypt.hash, bcrypt.verify,
+# bcrypt.hash_with_salt, bcrypt.non_truncating_hash,
+# bcrypt.non_truncating_verify and bcrypt.bcrypt. An external call renders as
+# name(?, ?) in that export whether or not a contract exists -- a resolved
+# scrypt call renders identically -- BUT that comparison was misleading, because
+# scrypt's contract does not declare parameter_types either. A contract that
+# DOES declare them is what fills the exported canonical signature; without them
+# the export carries bcrypt.hash(?, ?) and empty parameter types. So they are
+# declared here for the eleven entries whose signature is unambiguous across the
+# range they are reachable in.
+#
+# THREE ENTRIES DELIBERATELY OMIT THEM, because method plus arity does not
+# identify one signature there: hash and verify took `password: &str` before
+# 0.2.2 and `P: AsRef<[u8]>` from 0.2.2, and hash_with_salt took `salt: &[u8]`
+# before 0.13.0 and `[u8; 16]` from 0.13.0. Declaring either era's types would
+# be right for one half of the range and wrong for the other.
+#
+# The wiring tests, not the rendering, are what pin the keys, and they cover
+# every entry in this file rather than only the six a probe happened to
+# exercise.
+#
+# The range spans the whole published line, but only `hash` and `verify` exist
+# across all of it: the other twelve entries begin at the releases named below,
+# and a contract for a spelling that does not yet exist simply matches nothing.
+# One change affects MATCHING and is expressed as two entries: the raw
+# primitive changed arity at 0.13.0. Two others are type-only with unchanged
+# arity, so they need no second entry and `parameter_types` is deliberately
+# omitted rather than declared as one era's and wrong for the other --
+# hash_with_salt's salt went `&[u8]` -> `[u8; 16]` at 0.13.0, and hash/verify's
+# password went `&str` -> `P: AsRef<[u8]>` at 0.2.2. Signatures read at 0.19.2 (src/lib.rs,
+# src/bcrypt.rs); the earlier spellings read at the release that made them
+# REACHABLE BY A CONSUMER, which is not the release the code first appeared in
+# -- hash/verify 0.1.0, the raw primitive 0.5.0 (src/bcrypt.rs exists from
+# 0.2.0, but lib.rs keeps `mod bcrypt;` private until
+# `pub use crate::bcrypt::bcrypt;` arrives in 0.5.0), hash_with_result 0.6.0,
+# hash_with_salt 0.6.3 (NOT 0.7.0: it is absent from 0.6.2 and present from
+# 0.6.3, which crates.io published nine days before 0.7.0), the
+# non_truncating_* family 0.16.0, the *_bytes variants 0.19.0.
+#
+# COST IS DERIVED FROM THE CALL, never encoded. Every hashing function takes it
+# as an argument, so the contract names the argument and the finder reads its
+# value. The one source-proven constant, DEFAULT_COST = 12, is carried by the
+# detection rules rather than here, because a constant is not a call site.
+#
+# skipped-non-callable: DEFAULT_COST (a `pub static` before 0.4.0 and a
+# `pub const` from 0.4.0, value 12 throughout) and BASE_64 are constants, and
+# Version is an enum, so none of them is a call site.
+# skipped-non-crypto: the HashParts accessors -- get_cost, get_salt,
+# get_salt_raw, format_for_version, write_for_version -- read or format an
+# already-computed hash.
+# skipped-not-public: encode/decode lived in `mod b64`, which lib.rs declared
+# private at 0.1.0-0.7.0; from 0.8.0 the module is gone from the crate
+# entirely. No consumer could reach them at any version.
+contracts:
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.hash.html
+  - method: bcrypt.hash
+    arity: 2
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.hash_with_result.html
+  - method: bcrypt.hash_with_result
+    arity: 2
+    parameter_types: ["impl AsRef<[u8]>", "u32"]
+    canonical_return_type: "bcrypt::BcryptResult<bcrypt::HashParts>"
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.hash_bytes.html
+  - method: bcrypt.hash_bytes
+    arity: 2
+    parameter_types: ["impl AsRef<[u8]>", "u32"]
+    canonical_return_type: "bcrypt::BcryptResult<[u8; 60]>"
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.non_truncating_hash.html
+  - method: bcrypt.non_truncating_hash
+    arity: 2
+    parameter_types: ["impl AsRef<[u8]>", "u32"]
+    canonical_return_type: "bcrypt::BcryptResult<String>"
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.non_truncating_hash_with_result.html
+  - method: bcrypt.non_truncating_hash_with_result
+    arity: 2
+    parameter_types: ["impl AsRef<[u8]>", "u32"]
+    canonical_return_type: "bcrypt::BcryptResult<bcrypt::HashParts>"
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.non_truncating_hash_bytes.html
+  - method: bcrypt.non_truncating_hash_bytes
+    arity: 2
+    parameter_types: ["impl AsRef<[u8]>", "u32"]
+    canonical_return_type: "bcrypt::BcryptResult<[u8; 60]>"
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.hash_with_salt.html
+  - method: bcrypt.hash_with_salt
+    arity: 3
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+      - {index: 2, name: salt, role: metadata-contributing, contributes: {property: salt, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.hash_with_salt_bytes.html
+  - method: bcrypt.hash_with_salt_bytes
+    arity: 3
+    parameter_types: ["impl AsRef<[u8]>", "u32", "[u8; 16]"]
+    canonical_return_type: "bcrypt::BcryptResult<[u8; 60]>"
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+      - {index: 2, name: salt, role: metadata-contributing, contributes: {property: salt, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.non_truncating_hash_with_salt.html
+  - method: bcrypt.non_truncating_hash_with_salt
+    arity: 3
+    parameter_types: ["impl AsRef<[u8]>", "u32", "[u8; 16]"]
+    canonical_return_type: "bcrypt::BcryptResult<bcrypt::HashParts>"
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+      - {index: 2, name: salt, role: metadata-contributing, contributes: {property: salt, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.non_truncating_hash_with_salt_bytes.html
+  - method: bcrypt.non_truncating_hash_with_salt_bytes
+    arity: 3
+    parameter_types: ["impl AsRef<[u8]>", "u32", "[u8; 16]"]
+    canonical_return_type: "bcrypt::BcryptResult<[u8; 60]>"
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+      - {index: 2, name: salt, role: metadata-contributing, contributes: {property: salt, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.verify.html
+  - method: bcrypt.verify
+    arity: 2
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: hash, role: metadata-contributing, contributes: {property: passwordHash, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.non_truncating_verify.html
+  - method: bcrypt.non_truncating_verify
+    arity: 2
+    parameter_types: ["impl AsRef<[u8]>", "&str"]
+    canonical_return_type: "bcrypt::BcryptResult<bool>"
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 1, name: hash, role: metadata-contributing, contributes: {property: passwordHash, derivation: argument_value}}
+  # The raw Eksblowfish primitive. 0.13.0 gave it a fixed-size salt and a return
+  # value; 0.5.0 through 0.12.1 -- the reachable range for that spelling, since
+  # the module is private before 0.5.0 -- wrote the digest into a caller-supplied
+  # buffer, so the same name carries two arities and both are contracted.
+  # https://docs.rs/bcrypt/0.19.2/bcrypt/fn.bcrypt.html
+  - method: bcrypt.bcrypt
+    arity: 3
+    parameter_types: ["u32", "[u8; 16]", "&[u8]"]
+    canonical_return_type: "[u8; 24]"
+    return: {type: "[u8; 24]", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+      - {index: 1, name: salt, role: metadata-contributing, contributes: {property: salt, derivation: argument_value}}
+      - {index: 2, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+  # https://docs.rs/bcrypt/0.12.1/bcrypt/fn.bcrypt.html
+  - method: bcrypt.bcrypt
+    arity: 4
+    parameter_types: ["u32", "&[u8]", "&[u8]", "&mut [u8]"]
+    canonical_return_type: "()"
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: cost, role: metadata-contributing, contributes: {property: cost, derivation: argument_value}}
+      - {index: 1, name: salt, role: metadata-contributing, contributes: {property: salt, derivation: argument_value}}
+      - {index: 2, name: password, role: metadata-contributing, contributes: {property: password, derivation: argument_value}}
+      - {index: 3, name: output, role: metadata-contributing, contributes: {property: output, derivation: argument_value}}
+
+hierarchy: {}

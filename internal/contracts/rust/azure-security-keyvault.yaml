@@ -1,0 +1,67 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: azure_security_keyvault
+  coordinates:
+    - azure_security_keyvault
+  version_range: ">=0.1.0,<0.22.0"
+  description: "Azure Key Vault client (legacy all-in-one crate): keys, secrets, certificates"
+
+# API read at azure_security_keyvault 0.21.0 (src/clients/key_client.rs). This
+# is the LEGACY generation: a hand-written builder API where the crypto call
+# returns a *Builder that the caller then sends, and where `sign` takes the
+# algorithm as a DIRECT ARGUMENT (line 43) rather than inside a request struct.
+# The generated crates that replaced it are contracted separately in
+# azure-security-keyvault-keys.yaml, and the arities differ between the two —
+# legacy `encrypt` takes 2 arguments (line 82), the generated one takes 3.
+#
+# The crate's layout also moved: 0.1.0 through 0.3.0 are flat files, and 0.4.0
+# splits into clients/, keys/, secrets/, certificates/ and account/. The public
+# call path a consumer writes is unchanged by that split.
+#
+# Azure Key Vault is a REMOTE service. These contracts type the client surface
+# so a consumer's variables resolve; they assert nothing about an algorithm
+# running locally, because none does.
+contracts:
+  - method: azure_security_keyvault::KeyClient.new
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: azure_security_keyvault::KeyClient.sign
+    arity: 3
+    return: { type: azure_security_keyvault::SignBuilder, confidence: high }
+    role: operation
+  - method: azure_security_keyvault::KeyClient.verify
+    arity: 4
+    return: { type: azure_security_keyvault::VerifyBuilder, confidence: high }
+    role: operation
+  - method: azure_security_keyvault::KeyClient.encrypt
+    arity: 2
+    return: { type: azure_security_keyvault::EncryptBuilder, confidence: high }
+    role: operation
+  - method: azure_security_keyvault::KeyClient.decrypt
+    arity: 2
+    return: { type: azure_security_keyvault::DecryptBuilder, confidence: high }
+    role: operation
+  - method: azure_security_keyvault::KeyClient.wrap_key
+    arity: 2
+    return: { type: azure_security_keyvault::WrapKeyBuilder, confidence: high }
+    role: operation
+  - method: azure_security_keyvault::KeyClient.unwrap_key
+    arity: 2
+    return: { type: azure_security_keyvault::UnwrapKeyBuilder, confidence: high }
+    role: operation
+  - method: azure_security_keyvault::SecretClient.get
+    arity: 1
+    return: { type: azure_security_keyvault::GetSecretBuilder, confidence: high }
+    role: operation
+  - method: azure_security_keyvault::SecretClient.set
+    arity: 2
+    return: { type: azure_security_keyvault::SetSecretBuilder, confidence: high }
+    role: operation
+  - method: azure_security_keyvault::CertificateClient.get
+    arity: 1
+    return: { type: azure_security_keyvault::GetCertificateBuilder, confidence: high }
+    role: operation
+
+hierarchy: {}

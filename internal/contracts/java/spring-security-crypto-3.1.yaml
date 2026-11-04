@@ -1,0 +1,23 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: spring-security-crypto-3.1
+  coordinates:
+    - "org.springframework.security:spring-security-crypto"
+  version_range: ">=3.1.0,<6.0.0"
+  description: "Spring Security Encryptors.queryableText, removed at 6.0.0"
+
+# queryableText encrypts with a fixed IV, so equal plaintexts give equal
+# ciphertexts. It exists in every tier0 release from 3.1.0 through
+# 5.8.16 and is gone from 6.0.0.
+contracts:
+  - method: org.springframework.security.crypto.encrypt.Encryptors.queryableText
+    arity: 2
+    return: { type: org.springframework.security.crypto.encrypt.TextEncryptor, confidence: high }
+    role: factory
+
+hierarchy:
+  org.springframework.security.crypto.encrypt.TextEncryptor:
+    - java.lang.Object
+  java.lang.Object: []

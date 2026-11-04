@@ -1,0 +1,157 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: circl
+  coordinates:
+    - "github.com/cloudflare/circl"
+  version_range: ">=1.0.0,<2.0.0"
+  description: "Cloudflare CIRCL cryptographic library (KEM/signature registries, HPKE, DH, EdDSA)"
+
+# Inventory source: github.com/cloudflare/circl v1.6.4 module source from the
+# Go module proxy. CIRCL is broad; per the family audit the contracted
+# boundary is the stable consumer surface: the kem/sign scheme registries and
+# their scheme interfaces (interface-declared per the shared-declaration
+# rule), HPKE suite/sender/receiver, dh/x25519 and dh/x448, and the
+# sign/ed25519 and sign/ed448 packages.
+#
+# Dispositions for the remaining public surface: the concrete scheme packages
+# (kyber, mlkem, dilithium, mldsa, eddilithium, frodo, hybrid schemes) are
+# reached through the registry interfaces (covered-existing via the interface
+# contracts); group, ecc, math, simd, xof, and expander are low-level
+# arithmetic (skipped-non-crypto at this boundary); abe, blindsign, oprf, ot,
+# pke, pki, secretsharing, tss, vdaf, and zk are experimental or
+# protocol-research APIs (needs-follow-up per the audit's stable/experimental
+# split); cipher/ascon has its own primitive shape (needs-follow-up).
+contracts:
+  # KEM registry and scheme interface
+  - method: github.com/cloudflare/circl/kem/schemes.ByName
+    arity: 1
+    return: { type: "github.com/cloudflare/circl/kem.Scheme", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: name, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/cloudflare/circl/kem.(Scheme).GenerateKeyPair
+    arity: 0
+    return: { type: "github.com/cloudflare/circl/kem.PublicKey", confidence: high }
+    role: operation
+  - method: github.com/cloudflare/circl/kem.(Scheme).DeriveKeyPair
+    arity: 1
+    return: { type: "github.com/cloudflare/circl/kem.PublicKey", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: seed, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/cloudflare/circl/kem.(Scheme).Encapsulate
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: pk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/cloudflare/circl/kem.(Scheme).Decapsulate
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: sk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+
+  # Signature registry and scheme interface
+  - method: github.com/cloudflare/circl/sign/schemes.ByName
+    arity: 1
+    return: { type: "github.com/cloudflare/circl/sign.Scheme", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: name, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/cloudflare/circl/sign.(Scheme).GenerateKey
+    arity: 0
+    return: { type: "github.com/cloudflare/circl/sign.PublicKey", confidence: high }
+    role: operation
+  - method: github.com/cloudflare/circl/sign.(Scheme).DeriveKey
+    arity: 1
+    return: { type: "github.com/cloudflare/circl/sign.PublicKey", confidence: high }
+    role: operation
+  - method: github.com/cloudflare/circl/sign.(Scheme).Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: sk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/cloudflare/circl/sign.(Scheme).Verify
+    arity: 4
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: pk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+
+  # HPKE
+  - method: github.com/cloudflare/circl/hpke.NewSuite
+    arity: 3
+    return: { type: "github.com/cloudflare/circl/hpke.Suite", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: kemID, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: kdfID, role: metadata-contributing, contributes: { property: kdf, derivation: argument_value } }
+      - { index: 2, name: aeadID, role: metadata-contributing, contributes: { property: contentEncryption, derivation: argument_value } }
+  - method: github.com/cloudflare/circl/hpke.(Suite).NewSender
+    arity: 2
+    return: { type: "*github.com/cloudflare/circl/hpke.Sender", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: pkR, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/cloudflare/circl/hpke.(Suite).NewReceiver
+    arity: 2
+    return: { type: "*github.com/cloudflare/circl/hpke.Receiver", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: skR, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+
+  # DH
+  - method: github.com/cloudflare/circl/dh/x25519.KeyGen
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/cloudflare/circl/dh/x25519.Shared
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+  - method: github.com/cloudflare/circl/dh/x448.KeyGen
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/cloudflare/circl/dh/x448.Shared
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+
+  # EdDSA packages
+  - method: github.com/cloudflare/circl/sign/ed25519.GenerateKey
+    arity: 1
+    return: { type: "github.com/cloudflare/circl/sign/ed25519.PublicKey", confidence: high }
+    role: operation
+  - method: github.com/cloudflare/circl/sign/ed25519.Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: privateKey, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/cloudflare/circl/sign/ed25519.Verify
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: public, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/cloudflare/circl/sign/ed448.GenerateKey
+    arity: 1
+    return: { type: "github.com/cloudflare/circl/sign/ed448.PublicKey", confidence: high }
+    role: operation
+  - method: github.com/cloudflare/circl/sign/ed448.Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: priv, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/cloudflare/circl/sign/ed448.Verify
+    arity: 4
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: public, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+hierarchy: {}

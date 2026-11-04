@@ -1,0 +1,173 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: seal
+  coordinates:
+    - microsoft/SEAL
+  version_range: ">=3.5.0,<5.0.0"
+  description: "Microsoft SEAL: key generation, encryption, decryption and parameter lifecycles"
+
+# Inventory sources: native/src/seal/keygenerator.h, encryptor.h, decryptor.h and
+# encryptionparams.h (namespace seal) from the upstream tag archives v3.5.9,
+# v3.6.6, v4.1.2 and v4.3.3. v3.5 names the key calls public_key(),
+# relin_keys() and galois_keys(); v3.6 replaced them with the create_* calls.
+# A method with defaulted parameters (the memory pool) is contracted at every
+# arity a call site can use; the in-place and Serializable overloads share
+# those arities.
+#
+# Constructing a seal::KeyGenerator, Encryptor, Decryptor or
+# EncryptionParameters is a declaration, not a call, so there is nothing to
+# contract for it; the object's methods are keyed on the receiver type the C++
+# parser emits.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: the EncryptionParameters getters, SEALContext queries,
+#   Plaintext/Ciphertext accessors, the save/load serialization helpers and the
+#   memory-pool plumbing.
+# needs-follow-up: the Evaluator's homomorphic operations (add, multiply,
+#   relinearize, rescale, rotate and their in-place forms), BatchEncoder and
+#   CKKSEncoder encode/decode.
+# Resolution gap: receivers declared through `using namespace seal`, which
+#   every upstream example uses, resolve to the unqualified type and are not
+#   contracted keys, as for the other C++ entries.
+contracts:
+
+  # KeyGenerator: key material. secret_key() and the 3.5 public_key() return keys generated at construction.
+  - method: seal::KeyGenerator.secret_key
+    arity: 0
+    return: {type: "const seal::SecretKey&", confidence: high}
+    role: output
+  - method: seal::KeyGenerator.public_key
+    arity: 0
+    return: {type: "seal::PublicKey", confidence: high}
+    role: output
+  - method: seal::KeyGenerator.create_public_key
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::KeyGenerator.create_public_key
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::KeyGenerator.create_relin_keys
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::KeyGenerator.create_relin_keys
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::KeyGenerator.create_galois_keys
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::KeyGenerator.create_galois_keys
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::KeyGenerator.create_galois_keys
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::KeyGenerator.relin_keys
+    arity: 0
+    return: {type: "seal::Serializable<seal::RelinKeys>", confidence: high}
+    role: operation
+  - method: seal::KeyGenerator.galois_keys
+    arity: 0
+    return: {type: "seal::Serializable<seal::GaloisKeys>", confidence: high}
+    role: operation
+  - method: seal::KeyGenerator.galois_keys
+    arity: 1
+    return: {type: "seal::Serializable<seal::GaloisKeys>", confidence: high}
+    role: operation
+
+  # Encryptor: key installation and encryption.
+  - method: seal::Encryptor.set_public_key
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: seal::Encryptor.set_secret_key
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: seal::Encryptor.encrypt
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_symmetric
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_symmetric
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_symmetric
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_zero
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_zero
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_zero
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_zero
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_zero_symmetric
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_zero_symmetric
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_zero_symmetric
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Encryptor.encrypt_zero_symmetric
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # Decryptor: decryption and the noise budget, which decrypts to measure it.
+  - method: seal::Decryptor.decrypt
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: seal::Decryptor.invariant_noise_budget
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # EncryptionParameters: the scheme's parameters.
+  - method: seal::EncryptionParameters.set_poly_modulus_degree
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: seal::EncryptionParameters.set_coeff_modulus
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: seal::EncryptionParameters.set_plain_modulus
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config

@@ -1,0 +1,90 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: google-cloud-kms
+  coordinates:
+    - "cloud.google.com/go/kms"
+  version_range: ">=0.1.0,<2.0.0"
+  description: "Google Cloud KMS client (apiv1 KeyManagementClient)"
+
+# Inventory source: cloud.google.com/go/kms v1.9.0 module source from the Go
+# module proxy. Every operation runs remotely inside Cloud KMS; algorithm, key
+# purpose, and protection level live in the protobuf request/key resources and
+# are exposed as capture-side state, never as inferred provider capabilities
+# (azkeys precedent). Pagers, IAM helpers, key-ring/version listing and
+# lifecycle plumbing, the EKM and Autokey admin clients, and the kmspb/
+# aliasshim generated types are structural and stay uncontracted
+# (skipped-non-crypto).
+contracts:
+  - method: cloud.google.com/go/kms/apiv1.NewKeyManagementClient
+    arity: 2
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1.KeyManagementClient", confidence: high }
+    role: factory
+  - method: cloud.google.com/go/kms/apiv1.NewKeyManagementRESTClient
+    arity: 2
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1.KeyManagementClient", confidence: high }
+    role: factory
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).CreateCryptoKey
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.CryptoKey", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: req, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).CreateCryptoKeyVersion
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.CryptoKeyVersion", confidence: high }
+    role: operation
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).ImportCryptoKeyVersion
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.CryptoKeyVersion", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: req, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).Encrypt
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.EncryptResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: req, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).Decrypt
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.DecryptResponse", confidence: high }
+    role: operation
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).AsymmetricSign
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.AsymmetricSignResponse", confidence: high }
+    role: operation
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).AsymmetricDecrypt
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.AsymmetricDecryptResponse", confidence: high }
+    role: operation
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).MacSign
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.MacSignResponse", confidence: high }
+    role: operation
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).MacVerify
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.MacVerifyResponse", confidence: high }
+    role: operation
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).GenerateRandomBytes
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.GenerateRandomBytesResponse", confidence: high }
+    role: operation
+  - method: cloud.google.com/go/kms/apiv1.(*KeyManagementClient).GetPublicKey
+    arity: 3
+    varargs: true
+    return: { type: "*cloud.google.com/go/kms/apiv1/kmspb.PublicKey", confidence: high }
+    role: output
+hierarchy: {}

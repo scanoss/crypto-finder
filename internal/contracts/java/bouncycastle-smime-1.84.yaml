@@ -1,0 +1,31 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-smime-1.84
+  coordinates:
+    - "org.bouncycastle:bcmail-jdk18on"
+    - "org.bouncycastle:bcjmail-jdk18on"
+  version_range: ">=1.84,<2.0"
+  description: "Bouncy Castle bcmail and bcjmail 1.84: SMIMESigned.getSafeInstance"
+
+# getSafeInstance first ships in bcmail-jdk18on and bcjmail-jdk18on 1.84 (javap
+# over every release jar). It parses a signed message the way the SMIMESigned
+# constructors do. The one-argument key covers the MimeMultipart and Part
+# overloads, the two-argument key the MimeMultipart plus default transfer
+# encoding overload; both return SMIMESigned.
+contracts:
+  - method: org.bouncycastle.mail.smime.SMIMESigned.getSafeInstance
+    arity: 1
+    return: { type: org.bouncycastle.mail.smime.SMIMESigned, confidence: high }
+    role: factory
+  - method: org.bouncycastle.mail.smime.SMIMESigned.getSafeInstance
+    arity: 2
+    return: { type: org.bouncycastle.mail.smime.SMIMESigned, confidence: high }
+    role: factory
+
+hierarchy:
+  org.bouncycastle.mail.smime.SMIMESigned:
+    - org.bouncycastle.cms.CMSSignedData
+  org.bouncycastle.cms.CMSSignedData:
+    - java.lang.Object
+  java.lang.Object: []

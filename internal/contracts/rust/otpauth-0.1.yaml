@@ -1,0 +1,57 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: otpauth-0.1
+  coordinates:
+    - otpauth
+  version_range: ">=0.1.0,<0.2.0"
+  description: "otpauth 0.1.0's pre-rename OtpAuth type, split out so otpauth.yaml's range stays true"
+
+# THE 0.1.0 API, WHICH SHARES NO IDENTIFIER WITH ANY LATER RELEASE.
+# 0.1.0 ships a single `src/lib.rs` with one type, `OtpAuth`, that generates and
+# validates BOTH HOTP and TOTP codes (lib.rs:43-119). 0.2.0 replaces it with
+# `HOTP` and `TOTP` and the name `OtpAuth` never returns, so these five entries
+# are true for exactly one published version.
+#
+# `version_range` is declared per library and a file may only claim versions for
+# which every entry is true, which is why this is its own file rather than five
+# more entries in `otpauth.yaml` (same reason as `md5-0.8.yaml`).
+#
+# The integer parameters are `usize` here; they become `u64` at 0.3.0, by which
+# point this type no longer exists.
+#
+# Read at 0.1.0 src/lib.rs:50 (new), :62 (totp), :70 (hotp), :94 (valid_totp),
+# :119 (valid_hotp).
+contracts:
+  - method: otpauth::OtpAuth.new
+    arity: 1
+    return: { type: otpauth::OtpAuth, confidence: high }
+    canonical_return_type: otpauth::OtpAuth
+    parameter_types: ["&str"]
+    role: factory
+  - method: otpauth::OtpAuth.hotp
+    arity: 1
+    return: { type: u32, confidence: high }
+    canonical_return_type: u32
+    parameter_types: ["usize"]
+    role: operation
+  - method: otpauth::OtpAuth.totp
+    arity: 2
+    return: { type: u32, confidence: high }
+    canonical_return_type: u32
+    parameter_types: ["usize", "usize"]
+    role: operation
+  - method: otpauth::OtpAuth.valid_hotp
+    arity: 3
+    return: { type: bool, confidence: high }
+    canonical_return_type: bool
+    parameter_types: ["u32", "usize", "usize"]
+    role: operation
+  - method: otpauth::OtpAuth.valid_totp
+    arity: 3
+    return: { type: bool, confidence: high }
+    canonical_return_type: bool
+    parameter_types: ["u32", "usize", "usize"]
+    role: operation
+
+hierarchy: {}

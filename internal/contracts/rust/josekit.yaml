@@ -1,0 +1,4329 @@
+# josekit -- JOSE (JWT, JWS, JWE, JWA, JWK) for Rust, implemented over OpenSSL.
+#
+# API READ FROM THE CRATE SOURCES OF TWELVE SAMPLED VERSIONS -- 0.2.0, 0.3.0,
+# 0.4.0, 0.4.1, 0.5.0, 0.6.0, 0.7.0, 0.7.4, 0.8.0, 0.8.7, 0.10.0 and 0.10.3.
+# Every per-symbol boundary this file records falls between two ADJACENT sampled
+# versions. Twelve of the twenty-three published versions were read; the eleven
+# that were not (0.4.2 does not exist; 0.7.1-0.7.3, 0.8.1-0.8.6, 0.10.1-0.10.2)
+# sit INSIDE a window whose ends were both read, and no boundary was found after
+# 0.6.0. That is a strong inference, not a proof for those eleven, and it is
+# stated that way rather than as "exact".
+#
+# KEYS READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API. Each shape
+# below was produced by
+#     crypto-finder scan --no-remote-rules --rules-dir <rules> \
+#       --export-callgraph /tmp/cg.json <probe consumer>
+# and then had its second-to-last dot rewritten to `::` -- but ONLY when the
+# emitted key carried two or more dots (rustAuthoredKey, contracts.go:267,
+# returns shorter keys unchanged). FOUR shapes come out of this crate; THREE are
+# declared and the fourth is a recorded gap:
+#
+#   1. DECLARED -- THE SELECTOR'S ENUM TYPE.
+#      `RsassaJwsAlgorithm::Rs256.signer_from_jwk(j)`, the fully qualified form
+#      and a `let`-bound receiver all emit the SAME key:
+#        josekit::jws::alg::rsassa.RsassaJwsAlgorithm.signer_from_jwk
+#        -> josekit::jws::alg::rsassa::RsassaJwsAlgorithm.signer_from_jwk
+#      This is also the key the rules' `api` metadata names, because it is the
+#      only one of the four that corresponds to a real method DEFINITION in the
+#      crate and can therefore join entry-point synthesis.
+#
+#   2. DECLARED -- THE CRATE-ROOT ALIAS CONSTANT, for the fourteen JWS aliases.
+#        RS256.signer_from_pem(p) -> josekit::jws.RS256.signer_from_pem
+#                                 -> josekit::jws::RS256.signer_from_pem
+#      The Type position holds a re-exported enum VARIANT rather than a type --
+#      a property of how the parser resolves a path receiver, not of the crate.
+#      Declared for JWS because three of the five sampled published consumers
+#      write it (line_bot_sdk 0.1.2 jwt.rs:28, rusty-box 0.4.1-alpha
+#      auth_jwt.rs:163, sd_jwt 0.0.2 lib.rs:230); the other two use the
+#      enum-type receiver (openid-client 0.0.24-dev jwks.rs:103-181) and the
+#      bare variant (logto-rs 0.1.0 verify_id_token.rs:97). NOT declared for the
+#      nineteen JWE aliases: no sampled consumer uses JWE at all, and it would
+#      add 133 entries keyed on a parser artefact for no measured resolution.
+#      Recorded as a known gap; the rules still detect and correctly attribute
+#      those call sites, only the contract-derived signature is absent.
+#
+#   3. NOT DECLARED -- THE VARIANT IMPORTED BARE.
+#      `use josekit::jws::{alg::rsassa::RsassaJwsAlgorithm::Rs256, JwsHeader};`
+#      then `Rs256.signer_from_jwk(j)` pushes the ENUM into the package position
+#      and emits
+#        josekit::jws::alg::rsassa::RsassaJwsAlgorithm.Rs256.signer_from_jwk
+#      keyed on a VARIANT name. Real: logto-rs 0.1.0 verify_id_token.rs:76
+#      writes that import (a nested group import, inside `#[cfg(test)] mod
+#      tests`). Declaring it would need one entry per (variant, method, era).
+#      TestJosekitUndeclaredVariantKeyShape pins the gap, so a change that makes
+#      it resolve fails and prompts this note to be updated.
+#
+#   4. DECLARED -- A SUBMODULE FREE FUNCTION IS THE SINGLE-DOT CASE.
+#        josekit::jwt.decode_with_verifier          (ONE dot, qualified call)
+#        josekit.jwt.encode_with_signer             (TWO dots, module-`self` call)
+#      Both reduce to the SAME authored key `josekit::jwt.decode_with_verifier`,
+#      because rustAuthoredKey moves the second-to-last dot and returns
+#      shorter keys unchanged. Writing `josekit::jwt::decode_with_verifier`
+#      instead would load without error and join nothing. Same shape as
+#      `ring::hmac.sign` (ring.yaml:104).
+#
+# ARITIES ARE READ FROM THE SOURCE, THE RECEIVER IS NOT COUNTED, AND SEVERAL
+# CHANGED INSIDE THE RANGE. Every arity in range is declared as its own entry,
+# which is also how the eras are recorded:
+#
+#   EcdsaJwsAlgorithm::generate_key_pair    0        (ecdsa.rs:32, `&self` only)
+#   EcKeyPair::from_der / from_pem          2        (ec.rs:122, :258)
+#   EcKeyPair::from_jwk                     2 @ 0.4.0-0.5.0, 1 @ 0.6.0+
+#   Ed/EcxKeyPair::from_der|pem|jwk         2 @ 0.4.0-0.5.0, 1 @ 0.6.0+
+#   every RsaPssKeyPair constructor         4        (rsapss.rs:71,:100,:192,:273)
+#   jws.serialize_flattened_json            3 @ 0.5.0+, 4 @ 0.2.0-0.4.1
+#   jwe.serialize_general_json              4 @ 0.5.0+ (absent before)
+#   jwe.serialize_flattened_json            5 @ 0.5.0+, 4 @ 0.2.0-0.3.0, 6 @ 0.4.0-0.4.1
+#
+# THE TWO JWE SERIALIZERS ABOVE ARE WHY THIS PARAGRAPH EXISTS. An earlier
+# revision of this file declared them at the JWS twins' arities -- 2 and 3 --
+# which is compilable in NO published release, so the rules matched only an
+# impossible spelling while their fixtures passed. The arities and parameter
+# types are now read per version with a column-0 `pub fn` match, which also
+# caught `jwe.deserialize_compact` / `deserialize_json` taking `&str` where the
+# JWS twins take `impl AsRef<[u8]>`.
+#
+# TWO PARAMETER TYPES CHANGED UNDER ONE ARITY AND THE CURRENT ERA IS DECLARED:
+# `jws.deserialize_compact` / `deserialize_json` / `jwt.decode_with_*` take
+# `&str` at 0.2.0-0.3.0 and `impl AsRef<[u8]>` from 0.4.0 (10 of 12 sampled),
+# and `jws.serialize_general_json`'s second parameter is `&JwsMultiSigner`
+# before 0.5.0. A KB entry holds one value per method+arity, so the dominant
+# era is declared and the older one is recorded here rather than published as
+# if it held for the whole range.
+#
+# `generate_oct_key` CONTRIBUTES A BYTE LENGTH, NOT A BIT LENGTH. jwk.rs:66
+# documents `key_len` as "A key byte length" and the body calls
+# `util::random_bytes(key_len as usize)`, so the derivation is
+# `argument_byte_length`. Declaring `argument_value` would report 32 where 256
+# bits is meant. Every other key-size contribution here is genuinely bits
+# (rsassa.rs:32, rsassa_pss.rs:31, rsaes.rs:36, rsa.rs:65, rsapss.rs:71,
+# jwk.rs:82).
+#
+# `set_content_encryption` RETURNS `()`, spelled `()` and never `void`: `void`
+# in this directory is reserved for the RustCrypto digest and MAC types whose
+# `update()` genuinely returns unit under a different convention. It is declared
+# twice, because `JweHeader`'s takes one argument (jwe_header.rs:78) and
+# `JweHeaderSet`'s takes two (jwe_header_set.rs:58).
+#
+# skipped-non-crypto: `Jwk::new`, every `Jwk` / `JwkSet` getter and setter, the
+#   `JwtPayload` and `JwsHeader` / `JweHeader` claim plumbing,
+#   `jwt::decode_header`, the serde_json `Map` / `Value` / `Number` re-exports
+#   (lib.rs:17) and `jwe::zip` DEFLATE compression. They select no algorithm,
+#   mint no key material and perform no cryptography.
+# skipped-non-crypto: `jwt::encode_unsecured` / `decode_unsecured` and
+#   `UnsecuredJwsAlgorithm::None` (unsecured.rs:9-11). The "none" algorithm is
+#   the guaranteed ABSENCE of a signature; declaring it would invent a
+#   cryptographic asset where the crate promises there is none.
+# skipped-non-crypto: the `JwsContext` / `JweContext` / `JwtContext` methods and
+#   the `*_with_selector` / `*_in_jwk_set` closure forms. NOT a scope boundary
+#   argument -- the Context form is the general API and the module-level free
+#   functions declared here are thin delegates to a `DEFAULT_CONTEXT` static
+#   (jws.rs:57). The reason is narrower: no sampled published consumer writes
+#   either, so declaring them would be unmeasured surface. 49 `pub fn` across
+#   the three context types would close it with the same shapes.
+schema_version: '2'
+ecosystem: rust
+library:
+  name: josekit
+  coordinates:
+  - josekit
+  version_range: '>=0.2.0,<0.11.0'
+  description: JOSE (JWT, JWS, JWE, JWA, JWK) for Rust, over OpenSSL
+contracts:
+- method: josekit::jws::alg::hmac::HmacJwsAlgorithm.to_jwk
+  arity: 1
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - '&[u8]'
+  parameters:
+  - index: 0
+    name: secret
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::hmac::HmacJwsAlgorithm.signer_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::hmac::HmacJwsAlgorithm.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::hmac::HmacJwsAlgorithm.verifier_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::hmac::HmacJwsAlgorithm.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa::RsassaJwsAlgorithm.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa::RsassaJwsAlgorithm.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa::RsassaJwsAlgorithm.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa::RsassaJwsAlgorithm.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa::RsassaJwsAlgorithm.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa::RsassaJwsAlgorithm.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa::RsassaJwsAlgorithm.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa::RsassaJwsAlgorithm.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa::RsassaJwsAlgorithm.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa_pss::RsassaPssJwsAlgorithm.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa_pss::RsassaPssJwsAlgorithm.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa_pss::RsassaPssJwsAlgorithm.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa_pss::RsassaPssJwsAlgorithm.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa_pss::RsassaPssJwsAlgorithm.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa_pss::RsassaPssJwsAlgorithm.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa_pss::RsassaPssJwsAlgorithm.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa_pss::RsassaPssJwsAlgorithm.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::rsassa_pss::RsassaPssJwsAlgorithm.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::ecdsa::EcdsaJwsAlgorithm.generate_key_pair
+  arity: 0
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+- method: josekit::jws::alg::ecdsa::EcdsaJwsAlgorithm.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::ecdsa::EcdsaJwsAlgorithm.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::ecdsa::EcdsaJwsAlgorithm.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::ecdsa::EcdsaJwsAlgorithm.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::ecdsa::EcdsaJwsAlgorithm.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::ecdsa::EcdsaJwsAlgorithm.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::ecdsa::EcdsaJwsAlgorithm.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::ecdsa::EcdsaJwsAlgorithm.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::eddsa::EddsaJwsAlgorithm.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ed::EdKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - josekit::jwk::alg::ed::EdCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jws::alg::eddsa::EddsaJwsAlgorithm.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ed::EdKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::eddsa::EddsaJwsAlgorithm.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ed::EdKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::eddsa::EddsaJwsAlgorithm.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::eddsa::EddsaJwsAlgorithm.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::eddsa::EddsaJwsAlgorithm.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::eddsa::EddsaJwsAlgorithm.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::eddsa::EddsaJwsAlgorithm.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::alg::eddsa::EddsaJwsAlgorithm.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::direct::DirectJweAlgorithm.encrypter_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::direct::DirectJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::direct::DirectJweEncrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::direct::DirectJweAlgorithm.encrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::direct::DirectJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::direct::DirectJweEncrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::direct::DirectJweAlgorithm.decrypter_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::direct::DirectJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::direct::DirectJweDecrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::direct::DirectJweAlgorithm.decrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::direct::DirectJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::direct::DirectJweDecrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.generate_ec_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - josekit::jwk::alg::ec::EcCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.generate_ecx_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ecx::EcxKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - josekit::jwk::alg::ecx::EcxCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.key_pair_from_ec_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.key_pair_from_ecx_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ecx::EcxKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.key_pair_from_ec_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.key_pair_from_ecx_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ecx::EcxKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.encrypter_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::ecdh_es::EcdhEsJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::ecdh_es::EcdhEsJweEncrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.encrypter_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::ecdh_es::EcdhEsJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::ecdh_es::EcdhEsJweEncrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.encrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::ecdh_es::EcdhEsJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::ecdh_es::EcdhEsJweEncrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.decrypter_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::ecdh_es::EcdhEsJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::ecdh_es::EcdhEsJweDecrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.decrypter_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::ecdh_es::EcdhEsJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::ecdh_es::EcdhEsJweDecrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::ecdh_es::EcdhEsJweAlgorithm.decrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::ecdh_es::EcdhEsJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::ecdh_es::EcdhEsJweDecrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::aeskw::AeskwJweAlgorithm.encrypter_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::aeskw::AeskwJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::aeskw::AeskwJweEncrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::aeskw::AeskwJweAlgorithm.encrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::aeskw::AeskwJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::aeskw::AeskwJweEncrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::aeskw::AeskwJweAlgorithm.decrypter_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::aeskw::AeskwJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::aeskw::AeskwJweDecrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::aeskw::AeskwJweAlgorithm.decrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::aeskw::AeskwJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::aeskw::AeskwJweDecrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::aesgcmkw::AesgcmkwJweAlgorithm.encrypter_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::aesgcmkw::AesgcmkwJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::aesgcmkw::AesgcmkwJweEncrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::aesgcmkw::AesgcmkwJweAlgorithm.encrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::aesgcmkw::AesgcmkwJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::aesgcmkw::AesgcmkwJweEncrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::aesgcmkw::AesgcmkwJweAlgorithm.decrypter_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::aesgcmkw::AesgcmkwJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::aesgcmkw::AesgcmkwJweDecrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::aesgcmkw::AesgcmkwJweAlgorithm.decrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::aesgcmkw::AesgcmkwJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::aesgcmkw::AesgcmkwJweDecrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweAlgorithm.encrypter_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweEncrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweAlgorithm.encrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweEncrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweAlgorithm.decrypter_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweDecrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweAlgorithm.decrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::pbes2_hmac_aeskw::Pbes2HmacAeskwJweDecrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::rsaes::RsaesJweAlgorithm.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jwe::alg::rsaes::RsaesJweAlgorithm.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::rsaes::RsaesJweAlgorithm.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::rsaes::RsaesJweAlgorithm.encrypter_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::rsaes::RsaesJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::rsaes::RsaesJweEncrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::rsaes::RsaesJweAlgorithm.encrypter_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::rsaes::RsaesJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::rsaes::RsaesJweEncrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::rsaes::RsaesJweAlgorithm.encrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::rsaes::RsaesJweEncrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::rsaes::RsaesJweEncrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::rsaes::RsaesJweAlgorithm.decrypter_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::rsaes::RsaesJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::rsaes::RsaesJweDecrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::rsaes::RsaesJweAlgorithm.decrypter_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::rsaes::RsaesJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::rsaes::RsaesJweDecrypter
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwe::alg::rsaes::RsaesJweAlgorithm.decrypter_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jwe::alg::rsaes::RsaesJweDecrypter, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwe::alg::rsaes::RsaesJweDecrypter
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS256.to_jwk
+  arity: 1
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - '&[u8]'
+  parameters:
+  - index: 0
+    name: secret
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS256.signer_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS256.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS256.verifier_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS256.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS384.to_jwk
+  arity: 1
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - '&[u8]'
+  parameters:
+  - index: 0
+    name: secret
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS384.signer_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS384.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS384.verifier_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS384.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS512.to_jwk
+  arity: 1
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - '&[u8]'
+  parameters:
+  - index: 0
+    name: secret
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS512.signer_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS512.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS512.verifier_from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::HS512.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::hmac::HmacJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::hmac::HmacJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS256.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jws::RS256.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS256.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS256.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS256.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS256.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS256.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS256.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS256.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS384.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jws::RS384.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS384.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS384.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS384.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS384.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS384.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS384.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS384.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS512.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jws::RS512.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS512.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS512.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS512.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS512.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS512.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS512.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::RS512.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa::RsassaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa::RsassaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS256.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jws::PS256.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS256.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS256.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS256.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS256.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS256.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS256.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS256.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS384.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jws::PS384.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS384.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS384.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS384.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS384.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS384.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS384.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS384.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS512.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jws::PS512.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS512.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS512.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS512.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS512.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS512.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS512.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::PS512.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::rsassa_pss::RsassaPssJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256.generate_key_pair
+  arity: 0
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+- method: josekit::jws::ES256.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256K.generate_key_pair
+  arity: 0
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+- method: josekit::jws::ES256K.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256K.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256K.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256K.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256K.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256K.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256K.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES256K.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES384.generate_key_pair
+  arity: 0
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+- method: josekit::jws::ES384.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES384.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES384.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES384.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES384.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES384.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES384.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES384.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES512.generate_key_pair
+  arity: 0
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+- method: josekit::jws::ES512.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES512.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES512.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES512.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES512.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES512.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES512.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::ES512.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::ecdsa::EcdsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::ecdsa::EcdsaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::EdDSA.generate_key_pair
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ed::EdKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - josekit::jwk::alg::ed::EdCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jws::EdDSA.key_pair_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ed::EdKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::EdDSA.key_pair_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ed::EdKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::EdDSA.signer_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::EdDSA.signer_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsSigner
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::EdDSA.signer_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsSigner, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsSigner
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::EdDSA.verifier_from_der
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::EdDSA.verifier_from_pem
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsVerifier
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws::EdDSA.verifier_from_jwk
+  arity: 1
+  return:
+    type: Result<josekit::jws::alg::eddsa::EddsaJwsVerifier, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jws::alg::eddsa::EddsaJwsVerifier
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ec::EcKeyPair.generate
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ec::EcKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - josekit::jwk::alg::ec::EcCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jwk::alg::ec::EcKeyPair.from_der
+  arity: 2
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  - Option<josekit::jwk::alg::ec::EcCurve>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ec::EcKeyPair.from_pem
+  arity: 2
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  - Option<josekit::jwk::alg::ec::EcCurve>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ec::EcKeyPair.from_jwk
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ec::EcKeyPair.from_jwk
+  arity: 2
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ec::EcKeyPair
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  - Option<josekit::jwk::alg::ec::EcCurve>
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ec::EcKeyPair.to_jwk_private_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::ec::EcKeyPair.to_jwk_public_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::ec::EcKeyPair.to_jwk_key_pair
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::rsa::RsaKeyPair.generate
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::rsa::RsaKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jwk::alg::rsa::RsaKeyPair.from_der
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::rsa::RsaKeyPair.from_pem
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::rsa::RsaKeyPair.from_jwk
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsa::RsaKeyPair
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::rsa::RsaKeyPair.to_jwk_private_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::rsa::RsaKeyPair.to_jwk_public_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::rsa::RsaKeyPair.to_jwk_key_pair
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::rsapss::RsaPssKeyPair.generate
+  arity: 4
+  return:
+    type: Result<josekit::jwk::alg::rsapss::RsaPssKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - u32
+  - josekit::util::HashAlgorithm
+  - josekit::util::HashAlgorithm
+  - u8
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+  - index: 3
+    name: salt_len
+    role: metadata-contributing
+    contributes:
+      property: saltLength
+      derivation: argument_value
+- method: josekit::jwk::alg::rsapss::RsaPssKeyPair.from_der
+  arity: 4
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  - Option<josekit::util::HashAlgorithm>
+  - Option<josekit::util::HashAlgorithm>
+  - Option<u8>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::rsapss::RsaPssKeyPair.from_pem
+  arity: 4
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  - Option<josekit::util::HashAlgorithm>
+  - Option<josekit::util::HashAlgorithm>
+  - Option<u8>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::rsapss::RsaPssKeyPair.from_jwk
+  arity: 4
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::rsapss::RsaPssKeyPair
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  - josekit::util::HashAlgorithm
+  - josekit::util::HashAlgorithm
+  - u8
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::rsapss::RsaPssKeyPair.to_jwk_private_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::rsapss::RsaPssKeyPair.to_jwk_public_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::rsapss::RsaPssKeyPair.to_jwk_key_pair
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::ed::EdKeyPair.generate
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ed::EdKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - josekit::jwk::alg::ed::EdCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jwk::alg::ed::EdKeyPair.from_der
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ed::EdKeyPair.from_der
+  arity: 2
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  - Option<josekit::jwk::alg::ed::EdCurve>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ed::EdKeyPair.from_pem
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ed::EdKeyPair.from_pem
+  arity: 2
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  - Option<josekit::jwk::alg::ed::EdCurve>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ed::EdKeyPair.from_jwk
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ed::EdKeyPair.from_jwk
+  arity: 2
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ed::EdKeyPair
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  - Option<josekit::jwk::alg::ed::EdCurve>
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ed::EdKeyPair.to_jwk_private_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::ed::EdKeyPair.to_jwk_public_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::ed::EdKeyPair.to_jwk_key_pair
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::ecx::EcxKeyPair.generate
+  arity: 1
+  return:
+    type: Result<josekit::jwk::alg::ecx::EcxKeyPair, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - josekit::jwk::alg::ecx::EcxCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jwk::alg::ecx::EcxKeyPair.from_der
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ecx::EcxKeyPair.from_der
+  arity: 2
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  - Option<josekit::jwk::alg::ecx::EcxCurve>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ecx::EcxKeyPair.from_pem
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ecx::EcxKeyPair.from_pem
+  arity: 2
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - impl AsRef<[u8]>
+  - Option<josekit::jwk::alg::ecx::EcxCurve>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ecx::EcxKeyPair.from_jwk
+  arity: 1
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ecx::EcxKeyPair.from_jwk
+  arity: 2
+  return:
+    type: Result<Self, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::alg::ecx::EcxKeyPair
+  parameter_types:
+  - '&josekit::jwk::Jwk'
+  - Option<josekit::jwk::alg::ecx::EcxCurve>
+  parameters:
+  - index: 0
+    name: jwk
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::alg::ecx::EcxKeyPair.to_jwk_private_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::ecx::EcxKeyPair.to_jwk_public_key
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::alg::ecx::EcxKeyPair.to_jwk_key_pair
+  arity: 0
+  return:
+    type: josekit::jwk::Jwk
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::Jwk.generate_rsa_key
+  arity: 1
+  return:
+    type: Result<josekit::jwk::Jwk, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - u32
+  parameters:
+  - index: 0
+    name: bits
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_value
+- method: josekit::jwk::Jwk.generate_ec_key
+  arity: 1
+  return:
+    type: Result<josekit::jwk::Jwk, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - josekit::jwk::alg::ec::EcCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jwk::Jwk.generate_ed_key
+  arity: 1
+  return:
+    type: Result<josekit::jwk::Jwk, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - josekit::jwk::alg::ed::EdCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jwk::Jwk.generate_ecx_key
+  arity: 1
+  return:
+    type: Result<josekit::jwk::Jwk, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - josekit::jwk::alg::ecx::EcxCurve
+  parameters:
+  - index: 0
+    name: curve
+    role: metadata-contributing
+    contributes:
+      property: curve
+      derivation: argument_value
+- method: josekit::jwk::Jwk.generate_oct_key
+  arity: 1
+  return:
+    type: Result<josekit::jwk::Jwk, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - u8
+  parameters:
+  - index: 0
+    name: key_len
+    role: metadata-contributing
+    contributes:
+      property: keySize
+      derivation: argument_byte_length
+- method: josekit::jwk::Jwk.from_map
+  arity: 1
+  return:
+    type: Result<josekit::jwk::Jwk, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - impl Into<serde_json::Map<String, serde_json::Value>>
+  parameters:
+  - index: 0
+    name: map
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::Jwk.from_reader
+  arity: 1
+  return:
+    type: Result<josekit::jwk::Jwk, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - '&mut dyn std::io::Read'
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::Jwk.from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwk::Jwk, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::Jwk
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::Jwk.to_public_key
+  arity: 0
+  return:
+    type: Result<josekit::jwk::Jwk, josekit::JoseError>
+    confidence: high
+  role: output
+  canonical_return_type: josekit::jwk::Jwk
+- method: josekit::jwk::JwkSet.from_map
+  arity: 1
+  return:
+    type: Result<josekit::jwk::JwkSet, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::JwkSet
+  parameter_types:
+  - serde_json::Map<String, serde_json::Value>
+  parameters:
+  - index: 0
+    name: map
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::JwkSet.from_reader
+  arity: 1
+  return:
+    type: Result<josekit::jwk::JwkSet, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::JwkSet
+  parameter_types:
+  - '&mut dyn std::io::Read'
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jwk::JwkSet.from_bytes
+  arity: 1
+  return:
+    type: Result<josekit::jwk::JwkSet, josekit::JoseError>
+    confidence: high
+  role: factory
+  canonical_return_type: josekit::jwk::JwkSet
+  parameter_types:
+  - impl AsRef<[u8]>
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: keyMaterial
+      derivation: argument_value
+- method: josekit::jws.serialize_compact
+  arity: 3
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameter_types:
+  - '&[u8]'
+  - '&josekit::jws::JwsHeader'
+  - '&dyn josekit::jws::JwsSigner'
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 2
+    name: signer
+    role: metadata-contributing
+    contributes:
+      property: signer
+      derivation: argument_type
+- method: josekit::jws.serialize_general_json
+  arity: 2
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameter_types:
+  - '&[u8]'
+  - '&[(&josekit::jws::JwsHeaderSet, &dyn josekit::jws::JwsSigner)]'
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 1
+    name: signer
+    role: metadata-contributing
+    contributes:
+      property: signer
+      derivation: argument_type
+- method: josekit::jws.serialize_flattened_json
+  arity: 3
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameter_types:
+  - '&[u8]'
+  - '&josekit::jws::JwsHeaderSet'
+  - '&dyn josekit::jws::JwsSigner'
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 2
+    name: signer
+    role: metadata-contributing
+    contributes:
+      property: signer
+      derivation: argument_type
+- method: josekit::jws.serialize_flattened_json
+  arity: 4
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 3
+    name: signer
+    role: metadata-contributing
+    contributes:
+      property: signer
+      derivation: argument_type
+- method: josekit::jws.deserialize_compact
+  arity: 2
+  return:
+    type: Result<(Vec<u8>, josekit::jws::JwsHeader), josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: (Vec<u8>, josekit::jws::JwsHeader)
+  parameter_types:
+  - impl AsRef<[u8]>
+  - '&dyn josekit::jws::JwsVerifier'
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: input
+      derivation: argument_value
+  - index: 1
+    name: verifier
+    role: metadata-contributing
+    contributes:
+      property: signer
+      derivation: argument_type
+- method: josekit::jws.deserialize_json
+  arity: 2
+  return:
+    type: Result<(Vec<u8>, josekit::jws::JwsHeader), josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: (Vec<u8>, josekit::jws::JwsHeader)
+  parameter_types:
+  - impl AsRef<[u8]>
+  - '&dyn josekit::jws::JwsVerifier'
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: input
+      derivation: argument_value
+  - index: 1
+    name: verifier
+    role: metadata-contributing
+    contributes:
+      property: signer
+      derivation: argument_type
+- method: josekit::jwe.serialize_compact
+  arity: 3
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameter_types:
+  - '&[u8]'
+  - '&josekit::jwe::JweHeader'
+  - '&dyn josekit::jwe::JweEncrypter'
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 2
+    name: encrypter
+    role: metadata-contributing
+    contributes:
+      property: cipher
+      derivation: argument_type
+- method: josekit::jwe.serialize_general_json
+  arity: 4
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameter_types:
+  - '&[u8]'
+  - Option<&josekit::jwe::JweHeaderSet>
+  - '&[(Option<&josekit::jwe::JweHeader>, &dyn josekit::jwe::JweEncrypter)]'
+  - Option<&[u8]>
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 2
+    name: encrypter
+    role: metadata-contributing
+    contributes:
+      property: cipher
+      derivation: argument_type
+- method: josekit::jwe.serialize_flattened_json
+  arity: 5
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameter_types:
+  - '&[u8]'
+  - Option<&josekit::jwe::JweHeaderSet>
+  - Option<&josekit::jwe::JweHeader>
+  - Option<&[u8]>
+  - '&dyn josekit::jwe::JweEncrypter'
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 4
+    name: encrypter
+    role: metadata-contributing
+    contributes:
+      property: cipher
+      derivation: argument_type
+- method: josekit::jwe.serialize_flattened_json
+  arity: 4
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 3
+    name: encrypter
+    role: metadata-contributing
+    contributes:
+      property: cipher
+      derivation: argument_type
+- method: josekit::jwe.serialize_flattened_json
+  arity: 6
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 5
+    name: encrypter
+    role: metadata-contributing
+    contributes:
+      property: cipher
+      derivation: argument_type
+- method: josekit::jwe.deserialize_compact
+  arity: 2
+  return:
+    type: Result<(Vec<u8>, josekit::jwe::JweHeader), josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: (Vec<u8>, josekit::jwe::JweHeader)
+  parameter_types:
+  - '&str'
+  - '&dyn josekit::jwe::JweDecrypter'
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: ciphertext
+      derivation: argument_value
+  - index: 1
+    name: decrypter
+    role: metadata-contributing
+    contributes:
+      property: cipher
+      derivation: argument_type
+- method: josekit::jwe.deserialize_json
+  arity: 2
+  return:
+    type: Result<(Vec<u8>, josekit::jwe::JweHeader), josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: (Vec<u8>, josekit::jwe::JweHeader)
+  parameter_types:
+  - '&str'
+  - '&dyn josekit::jwe::JweDecrypter'
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: ciphertext
+      derivation: argument_value
+  - index: 1
+    name: decrypter
+    role: metadata-contributing
+    contributes:
+      property: cipher
+      derivation: argument_type
+- method: josekit::jwt.encode_with_signer
+  arity: 3
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameter_types:
+  - '&josekit::jwt::JwtPayload'
+  - '&josekit::jws::JwsHeader'
+  - '&dyn josekit::jws::JwsSigner'
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 2
+    name: signer
+    role: metadata-contributing
+    contributes:
+      property: signer
+      derivation: argument_type
+- method: josekit::jwt.encode_with_encrypter
+  arity: 3
+  return:
+    type: Result<String, josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: String
+  parameter_types:
+  - '&josekit::jwt::JwtPayload'
+  - '&josekit::jwe::JweHeader'
+  - '&dyn josekit::jwe::JweEncrypter'
+  parameters:
+  - index: 0
+    name: payload
+    role: metadata-contributing
+    contributes:
+      property: plaintext
+      derivation: argument_value
+  - index: 2
+    name: encrypter
+    role: metadata-contributing
+    contributes:
+      property: cipher
+      derivation: argument_type
+- method: josekit::jwt.decode_with_verifier
+  arity: 2
+  return:
+    type: Result<(josekit::jwt::JwtPayload, josekit::jws::JwsHeader), josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: (josekit::jwt::JwtPayload, josekit::jws::JwsHeader)
+  parameter_types:
+  - impl AsRef<[u8]>
+  - '&dyn josekit::jws::JwsVerifier'
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: input
+      derivation: argument_value
+  - index: 1
+    name: verifier
+    role: metadata-contributing
+    contributes:
+      property: signer
+      derivation: argument_type
+- method: josekit::jwt.decode_with_decrypter
+  arity: 2
+  return:
+    type: Result<(josekit::jwt::JwtPayload, josekit::jwe::JweHeader), josekit::JoseError>
+    confidence: high
+  role: operation
+  canonical_return_type: (josekit::jwt::JwtPayload, josekit::jwe::JweHeader)
+  parameter_types:
+  - impl AsRef<[u8]>
+  - '&dyn josekit::jwe::JweDecrypter'
+  parameters:
+  - index: 0
+    name: input
+    role: metadata-contributing
+    contributes:
+      property: ciphertext
+      derivation: argument_value
+  - index: 1
+    name: decrypter
+    role: metadata-contributing
+    contributes:
+      property: cipher
+      derivation: argument_type
+- method: josekit::jwe::JweHeader.set_content_encryption
+  arity: 1
+  return:
+    type: ()
+    confidence: high
+  role: config
+  parameter_types:
+  - impl Into<String>
+  parameters:
+  - index: 0
+    name: value
+    role: operation-determining
+    contributes:
+      property: contentEncryption
+      derivation: argument_value
+- method: josekit::jwe::JweHeaderSet.set_content_encryption
+  arity: 2
+  return:
+    type: ()
+    confidence: high
+  role: config
+  parameter_types:
+  - impl Into<String>
+  - bool
+  parameters:
+  - index: 0
+    name: value
+    role: operation-determining
+    contributes:
+      property: contentEncryption
+      derivation: argument_value

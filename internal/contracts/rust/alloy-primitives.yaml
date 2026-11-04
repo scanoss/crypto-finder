@@ -1,0 +1,91 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  # `library.name` is a per-FILE label and must be unique across the KB
+  # directory -- a repeated name is a hard load error
+  # ("duplicate library name ... in files"). `coordinates` is what ties every
+  # file back to the one crate, and it carries both spellings because the
+  # crates.io package is `alloy-primitives` and the Rust library is
+  # `alloy_primitives`.
+  name: alloy-primitives
+  coordinates:
+    - alloy-primitives
+    - alloy_primitives
+  version_range: ">=0.1.0-0,<1.7.0"
+  description: "alloy-primitives Keccak-256 hashing at the crate root, present in every published release"
+
+# WHY THIS FILE EXISTS AT ALL. progress.json carried `finder: "n/a"` with
+# disposition `not_applicable` for cargo-alloy-primitives while the family matrix
+# reported `contract_gap=Y` for the family's single PURL. Settled against the
+# tree rather than by precedence: no file under
+# internal/callgraph/contracts/rust mentioned the crate, `grep -ril alloy` over
+# the whole contracts directory and over semgrep-rules returned nothing, and a
+# probe consumer calling every API this family claims was scanned with
+# `--export-callgraph`. Every alloy key came back with EMPTY `parameter_types`
+# and no return type -- `alloy_primitives.keccak256(?)`,
+# `alloy_primitives.Signature.recover_address_from_msg(?)`,
+# `alloy_primitives::utils.keccak256_cached(?)` and thirteen more -- while the
+# probe's OWN functions in the same graph resolved fully
+# (`alloyprobe.rec_addr_msg(&Signature, &[u8]): Option<Address>`). That is the
+# documented signature of an absent contract, with its own positive control. The
+# matrix was right and progress.json was stale.
+#
+# THE ALGORITHM IS KECCAK-256, NOT SHA3-256. `keccak256_impl` (1.6.0
+# src/utils/mod.rs:180-258) dispatches to `keccak_asm::Keccak256`,
+# `tiny_keccak::Keccak::v256()`, the EVM `native_keccak256` hook or
+# `sha3::Keccak256` -- every one of which is the ORIGINAL Keccak padding (0x01),
+# never FIPS 202's (0x06). The same dispatch exists at 0.1.0 (src/utils.rs). The
+# description above therefore says Keccak-256 and must never say SHA-3.
+#
+# NINE FILES RATHER THAN ONE, because `version_range` is declared per library and
+# may claim only versions for which EVERY entry in the file holds. This crate's
+# crypto surface arrives in eight disjoint waves across the 75 committed rows,
+# each boundary read from the published archive and then CONFIRMED BY COMPILING a
+# probe against the exact version:
+#   this file                          >=0.1.0-0  crate-root `keccak256`
+#   alloy-primitives-eip191.yaml       >=0.4.0    crate-root `eip191_hash_message`
+#   alloy-primitives-utils.yaml        >=0.5.0    the `utils` module goes PUBLIC
+#   alloy-primitives-keccak-hasher.yaml >=0.6.0   the incremental `Keccak256`
+#   alloy-primitives-signature.yaml    >=0.6.0    `Signature` recovery, `k256` feature
+#   alloy-primitives-signature-k256.yaml >=0.8.1  `Signature::to_k256`
+#   alloy-primitives-primitive-signature.yaml >=0.8.10,<1.5.0  `PrimitiveSignature`
+#   alloy-primitives-keccak-cache.yaml >=1.5.0    `keccak256_cached`/`_uncached`
+#   alloy-primitives-secp256k1.yaml    >=1.6.0    the `secp256k1` feature surface
+#
+# KEY SHAPE. Read off an exported call graph and then converted per
+# `rustAuthoredKey` (contracts.go:267), which moves the SECOND-TO-LAST dot to
+# "::" when the file loads -- and ONLY when the key carries at least two dots. A
+# crate-root FREE FUNCTION emits exactly ONE dot, `alloy_primitives.keccak256`,
+# so it is authored VERBATIM; mechanically applying the substitution would
+# produce `alloy::primitives.keccak256`, which loads without error and joins
+# nothing.
+#
+# THE MODULE SEGMENT FOLLOWS THE CONSUMER'S IMPORT and this crate re-exports
+# selectively, so the SAME function emits two different keys. Measured on one
+# probe: `use alloy_primitives::keccak256;` emits `alloy_primitives.keccak256`
+# while `alloy_primitives::utils::keccak256(..)` emits
+# `alloy_primitives::utils.keccak256`. Both spellings occur in real consumers, so
+# both are declared -- the `utils` one in alloy-primitives-utils.yaml, because
+# `utils` is a PRIVATE module (`mod utils;`) until 0.5.0 and that key is
+# therefore not reachable in the six oldest rows.
+#
+# `parameter_types` IS OMITTED for `keccak256`, deliberately. A KB entry holds
+# one value per method and arity, and this signature is generic over
+# `T: AsRef<[u8]>` throughout while its RETURN is spelled `FixedBytes<32>` in
+# 0.1.0-0.5.x and `B256` from 0.6.0. Those are the same type -- `pub type B256 =
+# FixedBytes<32>` (0.1.0 src/bits/mod.rs:27) -- so `canonical_return_type` names
+# the alias, which is true of every release, and the parameter block carries the
+# argument's contribution without asserting a spelling.
+contracts:
+  - method: alloy_primitives.keccak256
+    arity: 1
+    canonical_return_type: "alloy_primitives::B256"
+    return: {type: "alloy_primitives::B256", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: bytes
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+hierarchy: {}

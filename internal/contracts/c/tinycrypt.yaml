@@ -1,0 +1,204 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: tinycrypt
+  coordinates:
+    - tinycrypt
+  version_range: ">=0.1.0,<0.3.0"
+  description: "TinyCrypt AES-128, CCM, CMAC, HMAC-SHA-256, SHA-256, DRBG and P-256 APIs"
+
+# Inventory sources: TinyCrypt headers from the upstream tag archives v0.1.0
+# (lib/*.h), v0.2.5 and v0.2.8 (lib/include/tinycrypt/*.h), plus ccm_mode.h at
+# v0.2.6 and v0.2.7. TinyCrypt is archived upstream; v0.2.8 is the last release.
+#
+# Two API changes inside that range are contracted per arity:
+# - tc_ccm_generation_encryption and tc_ccm_decryption_verification take 6
+#   arguments up to v0.2.6 and 7 from v0.2.7, which adds the output length.
+# - The ECC API is ecc_make_key / ecdh_shared_secret / ecdsa_sign / ecdsa_verify
+#   from v0.2.0 to v0.2.6 and uECC_* from v0.2.7.
+#
+# TinyCrypt's v0.2.7+ ECC API is derived from micro-ecc and keeps its names and
+# signatures. uECC_secp256r1, uECC_set_rng, uECC_make_key,
+# uECC_compute_public_key, uECC_shared_secret, uECC_sign and uECC_verify are
+# already contracted by the micro-ecc entry with the same arity and role, and a
+# C symbol has no namespace to tell the two apart, so they are covered-existing
+# here. Only the TinyCrypt-only uECC_make_key_with_d and uECC_sign_with_k are
+# added.
+#
+# Every tc_* call takes its state or key-schedule structure first, so a
+# consumer's calls group around that structure: the *_set_key / *_setup / *_init
+# calls configure it and the *_final / encrypt / decrypt / generate calls
+# perform the operation.
+#
+# Dispositions for the rest of the reviewed surface:
+# covered-existing: the seven shared uECC_* functions listed above.
+# skipped-non-crypto: uECC_vli_* arithmetic, key/curve size helpers,
+#   ecc_bytes2native / ecc_native2bytes, point and public-key validation,
+#   tc_cmac_erase and tc_ctr_prng_uninstantiate (teardown).
+# needs-follow-up: none.
+contracts:
+
+  # AES-128 block cipher and modes (key schedule first, then the operation).
+  - method: tc_aes128_set_encrypt_key
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_aes128_set_decrypt_key
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_aes_encrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_aes_decrypt
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_cbc_mode_encrypt
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_cbc_mode_decrypt
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_ctr_mode
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # AES-128-CCM. The tag length is the mlen argument of tc_ccm_config.
+  - method: tc_ccm_config
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 4
+        name: mlen
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: tc_ccm_generation_encryption
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_ccm_generation_encryption
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_ccm_decryption_verification
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_ccm_decryption_verification
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # AES-128-CMAC.
+  - method: tc_cmac_setup
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_cmac_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_cmac_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_cmac_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # HMAC-SHA-256 and SHA-256.
+  - method: tc_hmac_set_key
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 2
+        name: key_size
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_byte_length}
+  - method: tc_hmac_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_hmac_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_hmac_final
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_sha256_init
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_sha256_update
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_sha256_final
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # HMAC_DRBG (SHA-256) and CTR_DRBG (AES-128).
+  - method: tc_hmac_prng_init
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_hmac_prng_reseed
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_hmac_prng_generate
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: tc_ctr_prng_init
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_ctr_prng_reseed
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: config
+  - method: tc_ctr_prng_generate
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # P-256, v0.2.0 to v0.2.6 names.
+  - method: ecc_make_key
+    arity: 3
+    return: {type: "int32_t", confidence: high}
+    role: operation
+  - method: ecdh_shared_secret
+    arity: 3
+    return: {type: "int32_t", confidence: high}
+    role: operation
+  - method: ecdsa_sign
+    arity: 5
+    return: {type: "int32_t", confidence: high}
+    role: operation
+  # ecdsa_verify (4 arguments, operation) is contracted by the Nettle entry
+  # with the same arity and role, and a C symbol has no namespace to tell the
+  # two apart, so it is covered-existing here.
+
+  # P-256, v0.2.7+ names not shared with micro-ecc.
+  - method: uECC_make_key_with_d
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: uECC_sign_with_k
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+
+hierarchy: {}

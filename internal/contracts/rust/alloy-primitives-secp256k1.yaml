@@ -1,0 +1,90 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  # `library.name` is a per-FILE label and must be unique across the KB
+  # directory -- a repeated name is a hard load error
+  # ("duplicate library name ... in files"). `coordinates` is what ties every
+  # file back to the one crate, and it carries both spellings because the
+  # crates.io package is `alloy-primitives` and the Rust library is
+  # `alloy_primitives`.
+  name: alloy-primitives-secp256k1
+  coordinates:
+    - alloy-primitives
+    - alloy_primitives
+  version_range: ">=1.6.0,<1.7.0"
+  description: "alloy-primitives ECDSA-secp256k1 recovery and signature conversion through the secp256k1 backend, added at 1.6.0"
+
+# EVERY ENTRY HERE NEEDS THE `secp256k1` CARGO FEATURE, AND NO RELEASE BEFORE
+# 1.6.0 DECLARES IT. Checked in the published Cargo.toml of 0.6.0, 0.6.4, 0.7.0,
+# 0.7.7, 0.8.0, 0.8.1, 0.8.26, 1.0.0-rc.1, 1.0.0, 1.4.1, 1.5.0, 1.5.7 and 1.6.0:
+# `secp256k1 = ["dep:secp256k1"]` appears only in the last of those. The three
+# methods appear in the same release at src/signature/sig.rs:253,393,403. So this
+# file's range is a single release of the 75 committed rows, and that is the
+# honest range rather than an inconvenience.
+#
+# `PrimitiveSignature` IS DELIBERATELY ABSENT. That type was removed at 1.5.0, so
+# its window and this one are DISJOINT and a `PrimitiveSignature` x `_secp256k1`
+# entry would name a combination compilable in no published release. Per-symbol
+# windows are intersected here rather than cross-producted, and
+# `impossible-combination-negative.rs` pins that the rules are silent on all
+# three pairings.
+#
+# THE ALGORITHM IS THE SAME AS THE k256 PATH: `recover_from_prehash_secp256k1`
+# builds a `secp256k1::Message` from the digest and calls
+# `Secp256k1::verification_only().recover_ecdsa(..)` (1.6.0
+# src/signature/sig.rs:403-412) -- ECDSA over secg/secp256k1, the same curve the
+# k256 backend uses. The `_msg` variant prefixes and hashes with EIP-191
+# Keccak-256 first.
+#
+# `to_secp256k1` IS A RE-ENCODING AND NOT AN OPERATION, in the same sense as
+# `to_k256`: it copies `r` and `s` into a 64-byte buffer and calls
+# `RecoverableSignature::from_compact(&bytes, self.secp256k1_recid())` (1.6.0
+# src/signature/sig.rs:253-258). The crypto classification lives in the rule
+# metadata (`assetType: related-crypto-material`, `materialType: signature`);
+# `role: operation` here is what makes a receiver-bearing call emittable in the
+# graph.
+#
+# WHY THIS IS NOT A DOUBLE COUNT WITH pkg:cargo/secp256k1. That crate's merged KB
+# declares its own entry points under `secp256k1::…` keys; the calls contracted
+# here are alloy-primitives' public methods under `alloy_primitives::Signature.…`
+# keys. Different keys, so nothing merges and nothing collides.
+#
+# `parameter_types` IS OMITTED FOR `recover_from_prehash_secp256k1` for symmetry
+# with the sibling `_prehash` entries, whose omission is a version fact (see
+# alloy-primitives-signature.yaml). `recover_from_msg_secp256k1` is generic over
+# `T: AsRef<[u8]>` and declares it.
+#
+# DELIBERATELY UNCONTRACTED: `secp256k1_recid`, which maps the stored `y_parity`
+# bool onto `RecoveryId::Zero`/`One` and computes nothing.
+contracts:
+  - method: alloy_primitives::Signature.to_secp256k1
+    arity: 0
+    parameter_types: []
+    canonical_return_type: "core::result::Result<secp256k1::ecdsa::RecoverableSignature, secp256k1::Error>"
+    return: {type: "secp256k1::ecdsa::RecoverableSignature", confidence: high}
+    role: operation
+
+  - method: alloy_primitives::Signature.recover_from_msg_secp256k1
+    arity: 1
+    parameter_types: ["T"]
+    canonical_return_type: "core::result::Result<secp256k1::PublicKey, alloy_primitives::SignatureError>"
+    return: {type: "secp256k1::PublicKey", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: msg
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+  - method: alloy_primitives::Signature.recover_from_prehash_secp256k1
+    arity: 1
+    canonical_return_type: "core::result::Result<secp256k1::PublicKey, alloy_primitives::SignatureError>"
+    return: {type: "secp256k1::PublicKey", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: prehash
+        role: operation-determining
+        contributes: {property: signatureAlgorithm, derivation: argument_type}
+
+hierarchy: {}

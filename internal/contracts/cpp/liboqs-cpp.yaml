@@ -1,0 +1,59 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: liboqs-cpp
+  coordinates:
+    - open-quantum-safe/liboqs-cpp
+  version_range: ">=0.7.1"
+  description: "liboqs-cpp: KeyEncapsulation and Signature object lifecycles"
+
+# Inventory sources: include/oqs_cpp.h (0.7.1) and include/oqs_cpp.hpp (0.12.0),
+# namespace oqs, from the upstream tag archives. The contracted methods keep their
+# arity across both; sign_with_ctx_str and verify_with_ctx_str arrived in 0.12.0.
+#
+# Constructing an oqs::KeyEncapsulation or oqs::Signature with its mechanism name
+# is a declaration, not a call, so there is nothing to contract for it; the
+# object's methods are keyed on the receiver type the C++ parser emits.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: export_secret_key, get_details, the KEMs and Sigs
+#   mechanism-listing helpers, the destructors and the move operations.
+# Resolution gap: receivers declared `auto` or through `using namespace oqs`
+#   do not resolve to a contracted key, as for the other C++ entries.
+contracts:
+
+  # KeyEncapsulation: key generation, encapsulation and decapsulation.
+  - method: oqs::KeyEncapsulation.generate_keypair
+    arity: 0
+    return: {type: "oqs::bytes", confidence: high}
+    role: operation
+  - method: oqs::KeyEncapsulation.encap_secret
+    arity: 1
+    return: {type: "std::pair<oqs::bytes, oqs::bytes>", confidence: high}
+    role: operation
+  - method: oqs::KeyEncapsulation.decap_secret
+    arity: 1
+    return: {type: "oqs::bytes", confidence: high}
+    role: operation
+
+  # Signature: key generation, signing and verification.
+  - method: oqs::Signature.generate_keypair
+    arity: 0
+    return: {type: "oqs::bytes", confidence: high}
+    role: operation
+  - method: oqs::Signature.sign
+    arity: 1
+    return: {type: "oqs::bytes", confidence: high}
+    role: operation
+  - method: oqs::Signature.sign_with_ctx_str
+    arity: 2
+    return: {type: "oqs::bytes", confidence: high}
+    role: operation
+  - method: oqs::Signature.verify
+    arity: 3
+    return: {type: "bool", confidence: high}
+    role: operation
+  - method: oqs::Signature.verify_with_ctx_str
+    arity: 4
+    return: {type: "bool", confidence: high}
+    role: operation

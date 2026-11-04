@@ -1,0 +1,254 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "noble-secp256k1"
+  coordinates:
+    - "@noble/secp256k1"
+  version_range: ">=1.3.0"
+  description: "@noble/secp256k1: ECDSA and BIP-340 Schnorr over secp256k1"
+
+# ONE MODULE, ONE CURVE, TWO SCHEMES. ECDSA is the module functions; BIP-340
+# Schnorr is the `schnorr` object, so `schnorr.sign` and `sign` are separate
+# keys. The calling convention changed twice and each export is its own entry:
+# 1.x `sign` is async with `signSync` beside it (and `schnorr.signSync`,
+# `schnorr.verifySync`); 2.x made `sign` synchronous and added `signAsync`;
+# 3.x added `verifyAsync`, `recoverPublicKey(Async)`, `keygen`, `hash`,
+# `schnorr.signAsync`, `schnorr.verifyAsync` and `schnorr.keygen`.
+#
+# `sign` IS DECLARED AS RETURNING BYTES. 1.x and 3.x return the signature bytes;
+# 2.x returns a RecoveredSignature object. One key cannot carry both, and the
+# bytes form is what two of the three majors return. A 2.x consumer's
+# `sig.toCompactRawBytes()` is therefore not typed through `sign`. The
+# Signature class itself is declared, so `Signature.fromCompact(..)`,
+# `fromDER(..)` and `fromHex(..)` type their result and its encoders resolve.
+#
+# `Point.fromSignature` recovers the signer's public key from a signature and a
+# recovery bit (1.x), which is why it is an operation and not a parser.
+#
+# Deliberately NOT contracted: `utils.isValidPrivateKey`, `utils.mod`,
+# `utils.concatBytes`, the other byte helpers, point arithmetic (`add`,
+# `multiply`) and the hash-hook assignments (1.x `utils.sha256Sync` and
+# `hmacSha256Sync`, 2.x `etc.hmacSha256Sync`, 3.x `hashes.*`). They validate,
+# convert, do group arithmetic or configure a hash.
+contracts:
+
+  # ECDSA. sign and verify take an optional options object.
+  - method: "@noble/secp256k1.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.signAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.signAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.signSync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.signSync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.verifyAsync"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.verifyAsync"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  # getPublicKey and getSharedSecret take an optional isCompressed flag.
+  - method: "@noble/secp256k1.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.getPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.getSharedSecret"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # recoverPublicKey: 1.x takes (msgHash, signature, recovery, isCompressed?);
+  # 3.x takes (signature, message, opts?). Both return the key bytes.
+  - method: "@noble/secp256k1.recoverPublicKey"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.recoverPublicKey"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.recoverPublicKey"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.recoverPublicKeyAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.recoverPublicKeyAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.utils.randomPrivateKey"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.utils.randomSecretKey"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.utils.randomSecretKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.keygen"
+    arity: 0
+    return: { type: "@noble/secp256k1.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.keygen"
+    arity: 1
+    return: { type: "@noble/secp256k1.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.hash"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # BIP-340 Schnorr on the schnorr object.
+  - method: "@noble/secp256k1.schnorr.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.sign"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.signSync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.signSync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.signAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.signAsync"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.verifySync"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.verifyAsync"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.keygen"
+    arity: 0
+    return: { type: "@noble/secp256k1.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.schnorr.keygen"
+    arity: 1
+    return: { type: "@noble/secp256k1.KeyPair", confidence: high }
+    role: operation
+
+  # Points.
+  - method: "@noble/secp256k1.Point.fromHex"
+    arity: 1
+    return: { type: "@noble/secp256k1.Point", confidence: high }
+    role: factory
+  - method: "@noble/secp256k1.Point.fromPrivateKey"
+    arity: 1
+    return: { type: "@noble/secp256k1.Point", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.Point.fromSignature"
+    arity: 3
+    return: { type: "@noble/secp256k1.Point", confidence: high }
+    role: operation
+  - method: "@noble/secp256k1.Point.toRawBytes"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/secp256k1.Point.toRawBytes"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/secp256k1.Point.toHex"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "@noble/secp256k1.Point.toHex"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: output
+
+  # Signatures parsed from bytes, and their encoders.
+  - method: "@noble/secp256k1.Signature.fromCompact"
+    arity: 1
+    return: { type: "@noble/secp256k1.Signature", confidence: high }
+    role: factory
+  - method: "@noble/secp256k1.Signature.fromDER"
+    arity: 1
+    return: { type: "@noble/secp256k1.Signature", confidence: high }
+    role: factory
+  - method: "@noble/secp256k1.Signature.fromHex"
+    arity: 1
+    return: { type: "@noble/secp256k1.Signature", confidence: high }
+    role: factory
+  - method: "@noble/secp256k1.Signature.toCompactRawBytes"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/secp256k1.Signature.toCompactHex"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "@noble/secp256k1.Signature.toDERRawBytes"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/secp256k1.Signature.toDERHex"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: output
+  - method: "@noble/secp256k1.Signature.recoverPublicKey"
+    arity: 1
+    return: { type: "@noble/secp256k1.Point", confidence: high }
+    role: operation

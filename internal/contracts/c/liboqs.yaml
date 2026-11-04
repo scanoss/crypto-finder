@@ -1,0 +1,216 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: liboqs
+  coordinates:
+    - open-quantum-safe/liboqs
+  version_range: ">=0.2.0,<1.0.0"
+  description: "liboqs post-quantum KEM and signature API"
+
+# Inventory sources: src/kem/kem.h, src/sig/sig.h, src/kem/ml_kem/kem_ml_kem.h and
+# src/sig/ml_dsa/sig_ml_dsa.h from the upstream tag archives 0.4.0, 0.8.0,
+# 0.10.0, 0.12.0 and 0.15.0. No contracted function changes arity across the
+# releases that declare it. The *_with_ctx_str calls and the ML-KEM/ML-DSA
+# specific functions arrived in 0.12.0, the *_derand calls in 0.15.0.
+#
+# OQS_KEM_new and OQS_SIG_new take the mechanism name (an OQS_*_alg_* macro or
+# its string) and return the object every generic call takes as its first
+# argument, so the C receiver binding groups keypair, encaps/decaps and
+# sign/verify around it. The mechanism name is operation-determining. The
+# ML-KEM and ML-DSA specific functions name their parameter set in the symbol and
+# are operations on their own.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: OQS_KEM_free, OQS_SIG_free, OQS_*_alg_count,
+#   OQS_*_alg_identifier, OQS_*_alg_is_enabled, OQS_SIG_supports_ctx_str,
+#   OQS_init/OQS_destroy and the OQS_MEM_* helpers.
+# needs-follow-up: the stateful signature API (sig_stfl.h), the parameter-set
+#   specific functions of mechanisms other than ML-KEM and ML-DSA, and
+#   OQS_randombytes_switch_algorithm.
+contracts:
+
+  # KEM object lifecycle.
+  - method: OQS_KEM_new
+    arity: 1
+    return: {type: "OQS_KEM*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: method_name
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: OQS_KEM_keypair
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_keypair_derand
+    arity: 4
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_encaps
+    arity: 4
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_encaps_derand
+    arity: 5
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_decaps
+    arity: 4
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+
+  # Signature object lifecycle.
+  - method: OQS_SIG_new
+    arity: 1
+    return: {type: "OQS_SIG*", confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: method_name
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: OQS_SIG_keypair
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_sign
+    arity: 6
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_sign_with_ctx_str
+    arity: 8
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_verify
+    arity: 6
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_verify_with_ctx_str
+    arity: 8
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+
+  # ML-KEM parameter-set functions.
+  - method: OQS_KEM_ml_kem_512_keypair
+    arity: 2
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_512_keypair_derand
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_512_encaps
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_512_encaps_derand
+    arity: 4
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_512_decaps
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_768_keypair
+    arity: 2
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_768_keypair_derand
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_768_encaps
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_768_encaps_derand
+    arity: 4
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_768_decaps
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_1024_keypair
+    arity: 2
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_1024_keypair_derand
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_1024_encaps
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_1024_encaps_derand
+    arity: 4
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_KEM_ml_kem_1024_decaps
+    arity: 3
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+
+  # ML-DSA parameter-set functions.
+  - method: OQS_SIG_ml_dsa_44_keypair
+    arity: 2
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_44_sign
+    arity: 5
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_44_sign_with_ctx_str
+    arity: 7
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_44_verify
+    arity: 5
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_44_verify_with_ctx_str
+    arity: 7
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_65_keypair
+    arity: 2
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_65_sign
+    arity: 5
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_65_sign_with_ctx_str
+    arity: 7
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_65_verify
+    arity: 5
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_65_verify_with_ctx_str
+    arity: 7
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_87_keypair
+    arity: 2
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_87_sign
+    arity: 5
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_87_sign_with_ctx_str
+    arity: 7
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_87_verify
+    arity: 5
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation
+  - method: OQS_SIG_ml_dsa_87_verify_with_ctx_str
+    arity: 7
+    return: {type: "OQS_STATUS", confidence: high}
+    role: operation

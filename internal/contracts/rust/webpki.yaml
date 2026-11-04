@@ -1,0 +1,76 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: webpki
+  coordinates:
+    - webpki
+  version_range: ">=0.1.1,<0.23.0"
+  description: "TLS certificate path validation (WebPKI)"
+
+# API read at webpki 0.22.4 (src/end_entity.rs) and cross-checked at 0.1.1,
+# 0.18.1 and 0.21.4.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y and an exported
+# call graph agreed: a consumer calling verify_is_valid_tls_server_cert produced
+# `webpki.EndEntityCert.verify_is_valid_tls_server_cert(?, ?, ?, ?)` with empty
+# parameter_types, which is what an absent contract looks like.
+#
+# KEY SHAPE: methods on EndEntityCert, so the emitted call-site FQN is
+# `webpki.EndEntityCert.<method>` -- two dots, which the Rust key normalisation
+# rewrites to the authored `webpki::EndEntityCert.<method>`. Read off the
+# exported graph rather than assumed.
+#
+# ARITIES READ FROM THE DECLARATIONS (self excluded), end_entity.rs at 0.22.4:
+#   verify_is_valid_tls_server_cert(supported_sig_algs, trust_anchors,
+#                                   intermediate_certs, time)   -> 4
+#   verify_is_valid_tls_client_cert(same shape)                 -> 4
+#   the _ext variants of both                                   -> 4
+#   verify_signature(signature_alg, msg, signature)             -> 3
+#   TryFrom::try_from(cert_der)                                 -> 1
+#
+# THE 0.22 RENAME AFFECTS TYPES, NOT METHODS. 0.22.0 renames the public types --
+# `DNSName` to `DnsName`, `TLSServerTrustAnchors` to `TlsServerTrustAnchors` --
+# and adds the `_ext` variants. The method names are stable across the whole
+# committed 0.1.1-0.22.4 range, so one set of keys covers it; the parameter
+# types below use the post-0.22 spelling, which is the range's newest.
+#
+# THE NAME-MATCHING API IS DELIBERATELY ABSENT, for the same reason it is
+# unmatched by the rules: verify_is_valid_for_dns_name,
+# verify_is_valid_for_at_least_one_dns_name, verify_cert_dns_name,
+# check_name_constraints and DnsNameRef::try_from_ascii compare strings against
+# the certificate's SANs. `verify_is_valid_for_dns_name` reads as a verification
+# and delegates straight to `name::verify_cert_dns_name` (end_entity.rs:179).
+# Typing them here would route hostname matching through the crypto call graph.
+contracts:
+  - method: webpki::EndEntityCert.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: webpki::EndEntityCert.verify_is_valid_tls_server_cert
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[&webpki::SignatureAlgorithm]", "&webpki::TlsServerTrustAnchors", "&[&[u8]]", "webpki::Time"]
+    role: operation
+  - method: webpki::EndEntityCert.verify_is_valid_tls_server_cert_ext
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[&webpki::SignatureAlgorithm]", "&webpki::TlsServerTrustAnchors", "&[&[u8]]", "webpki::Time"]
+    role: operation
+  - method: webpki::EndEntityCert.verify_is_valid_tls_client_cert
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[&webpki::SignatureAlgorithm]", "&webpki::TlsClientTrustAnchors", "&[&[u8]]", "webpki::Time"]
+    role: operation
+  - method: webpki::EndEntityCert.verify_is_valid_tls_client_cert_ext
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[&webpki::SignatureAlgorithm]", "&webpki::TlsClientTrustAnchors", "&[&[u8]]", "webpki::Time"]
+    role: operation
+  - method: webpki::EndEntityCert.verify_signature
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&webpki::SignatureAlgorithm", "&[u8]", "&[u8]"]
+    role: operation
+
+hierarchy: {}

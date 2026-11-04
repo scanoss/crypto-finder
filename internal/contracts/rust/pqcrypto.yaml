@@ -1,0 +1,157 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: pqcrypto
+  coordinates:
+    - pqcrypto
+  version_range: ">=0.1.0,<0.19.0"
+  description: "PQClean post-quantum umbrella crate: KEM and signature re-exports"
+
+# The umbrella re-exports the PQClean algorithm crates under `pqcrypto::kem`. A
+# consumer reaching a KEM through it writes pqcrypto::kem::<variant>::keypair(),
+# which the parser resolves to pqcrypto::kem::<variant>.keypair - a key the
+# algorithm crate's own contract does not cover, because the module path
+# differs. Both are contracted so either import root resolves, and attribution
+# follows the root the consumer actually wrote.
+#
+# WHICH ALGORITHM CRATE IT POINTS AT CHANGES, which is why both eras appear:
+#   0.1.0            kem is a glob re-export of pqcrypto_kyber
+#   0.10.1           named re-export carrying the six 90s variants (src/lib.rs:29)
+#   0.17.0           90s variants dropped; LAST version re-exporting
+#                    pqcrypto-kyber (src/lib.rs:26)
+#   0.18.0 / 0.18.1  kyber replaced by pqcrypto_mlkem mlkem512/768/1024
+#
+# Shapes read at 0.8.1 of the underlying algorithm crate, which the umbrella
+# re-exports unchanged: it neither wraps nor renames.
+#
+# 0.19.0 and later sit outside the range deliberately - unpublished when this
+# was read, so the re-export set is unverified.
+contracts:
+  - method: pqcrypto::kem::kyber512.keypair
+    arity: 0
+    return: { type: "(pqcrypto::kem::kyber512::PublicKey, pqcrypto::kem::kyber512::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto::kem::kyber512.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto::kem::kyber512::SharedSecret, pqcrypto::kem::kyber512::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber512::PublicKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber512.decapsulate
+    arity: 2
+    return: { type: pqcrypto::kem::kyber512::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber512::Ciphertext", "&pqcrypto::kem::kyber512::SecretKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber768.keypair
+    arity: 0
+    return: { type: "(pqcrypto::kem::kyber768::PublicKey, pqcrypto::kem::kyber768::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto::kem::kyber768.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto::kem::kyber768::SharedSecret, pqcrypto::kem::kyber768::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber768::PublicKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber768.decapsulate
+    arity: 2
+    return: { type: pqcrypto::kem::kyber768::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber768::Ciphertext", "&pqcrypto::kem::kyber768::SecretKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber1024.keypair
+    arity: 0
+    return: { type: "(pqcrypto::kem::kyber1024::PublicKey, pqcrypto::kem::kyber1024::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto::kem::kyber1024.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto::kem::kyber1024::SharedSecret, pqcrypto::kem::kyber1024::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber1024::PublicKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber1024.decapsulate
+    arity: 2
+    return: { type: pqcrypto::kem::kyber1024::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber1024::Ciphertext", "&pqcrypto::kem::kyber1024::SecretKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber51290s.keypair
+    arity: 0
+    return: { type: "(pqcrypto::kem::kyber51290s::PublicKey, pqcrypto::kem::kyber51290s::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto::kem::kyber51290s.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto::kem::kyber51290s::SharedSecret, pqcrypto::kem::kyber51290s::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber51290s::PublicKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber51290s.decapsulate
+    arity: 2
+    return: { type: pqcrypto::kem::kyber51290s::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber51290s::Ciphertext", "&pqcrypto::kem::kyber51290s::SecretKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber76890s.keypair
+    arity: 0
+    return: { type: "(pqcrypto::kem::kyber76890s::PublicKey, pqcrypto::kem::kyber76890s::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto::kem::kyber76890s.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto::kem::kyber76890s::SharedSecret, pqcrypto::kem::kyber76890s::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber76890s::PublicKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber76890s.decapsulate
+    arity: 2
+    return: { type: pqcrypto::kem::kyber76890s::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber76890s::Ciphertext", "&pqcrypto::kem::kyber76890s::SecretKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber102490s.keypair
+    arity: 0
+    return: { type: "(pqcrypto::kem::kyber102490s::PublicKey, pqcrypto::kem::kyber102490s::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto::kem::kyber102490s.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto::kem::kyber102490s::SharedSecret, pqcrypto::kem::kyber102490s::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber102490s::PublicKey"]
+    role: operation
+  - method: pqcrypto::kem::kyber102490s.decapsulate
+    arity: 2
+    return: { type: pqcrypto::kem::kyber102490s::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto::kem::kyber102490s::Ciphertext", "&pqcrypto::kem::kyber102490s::SecretKey"]
+    role: operation
+  - method: pqcrypto::kem::mlkem512.keypair
+    arity: 0
+    return: { type: "(pqcrypto::kem::mlkem512::PublicKey, pqcrypto::kem::mlkem512::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto::kem::mlkem512.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto::kem::mlkem512::SharedSecret, pqcrypto::kem::mlkem512::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto::kem::mlkem512::PublicKey"]
+    role: operation
+  - method: pqcrypto::kem::mlkem512.decapsulate
+    arity: 2
+    return: { type: pqcrypto::kem::mlkem512::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto::kem::mlkem512::Ciphertext", "&pqcrypto::kem::mlkem512::SecretKey"]
+    role: operation
+  - method: pqcrypto::kem::mlkem768.keypair
+    arity: 0
+    return: { type: "(pqcrypto::kem::mlkem768::PublicKey, pqcrypto::kem::mlkem768::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto::kem::mlkem768.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto::kem::mlkem768::SharedSecret, pqcrypto::kem::mlkem768::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto::kem::mlkem768::PublicKey"]
+    role: operation
+  - method: pqcrypto::kem::mlkem768.decapsulate
+    arity: 2
+    return: { type: pqcrypto::kem::mlkem768::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto::kem::mlkem768::Ciphertext", "&pqcrypto::kem::mlkem768::SecretKey"]
+    role: operation
+  - method: pqcrypto::kem::mlkem1024.keypair
+    arity: 0
+    return: { type: "(pqcrypto::kem::mlkem1024::PublicKey, pqcrypto::kem::mlkem1024::SecretKey)", confidence: high }
+    role: factory
+  - method: pqcrypto::kem::mlkem1024.encapsulate
+    arity: 1
+    return: { type: "(pqcrypto::kem::mlkem1024::SharedSecret, pqcrypto::kem::mlkem1024::Ciphertext)", confidence: high }
+    parameter_types: ["&pqcrypto::kem::mlkem1024::PublicKey"]
+    role: operation
+  - method: pqcrypto::kem::mlkem1024.decapsulate
+    arity: 2
+    return: { type: pqcrypto::kem::mlkem1024::SharedSecret, confidence: high }
+    parameter_types: ["&pqcrypto::kem::mlkem1024::Ciphertext", "&pqcrypto::kem::mlkem1024::SecretKey"]
+    role: operation
+
+hierarchy: {}

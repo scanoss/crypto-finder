@@ -1,0 +1,345 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: gpgme
+  coordinates:
+    - gpgme
+  version_range: ">=1.7.0,<3.0.0"
+  description: "GPGME OpenPGP and CMS encryption, signing and key management APIs"
+
+# Inventory sources: GPGME public header (src/gpgme.h.in) from the upstream tag
+# archives gpgme-1.8.0, gpgme-1.23.2 and gpgme-2.0.1. No contracted function
+# changes arity across them. gpgme_op_createkey/createsubkey are 1.7.0 and
+# later; the *_ext encrypt, decrypt and verify variants are later 1.x additions
+# and apply only where the consumer's version declares them.
+#
+# Every call takes the gpgme_ctx_t first, so a consumer's calls group around the
+# context they share: gpgme_new is the factory, and protocol, armor, signer and
+# pinentry settings are its configuration. The protocol argument of
+# gpgme_set_protocol selects OpenPGP or CMS and the algorithm string of
+# gpgme_op_createkey/createsubkey selects the key algorithm; both are
+# operation-determining. The encrypt, sign, verify, import and export results
+# are output-role accessors.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: gpgme_release, gpgme_key_release and other *_release
+#   calls, gpgme_data_* buffer handling, engine discovery and
+#   gpgme_set_engine_info, keylist iteration end, error and version helpers.
+# needs-follow-up: card editing and interactive key editing, trust lists, the
+#   assuan/spawn/gpgconf protocols, key revocation and expiry changes, TOFU
+#   policy, and the audit log.
+contracts:
+
+  # Context and configuration.
+  - method: gpgme_new
+    arity: 1
+    return: {type: "gpgme_error_t", confidence: high}
+    role: factory
+  - method: gpgme_set_protocol
+    arity: 2
+    return: {type: "gpgme_error_t", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: proto
+        role: operation-determining
+        contributes: {property: protocol, derivation: argument_value}
+  - method: gpgme_get_protocol
+    arity: 1
+    return: {type: "gpgme_protocol_t", confidence: high}
+    role: output
+  - method: gpgme_set_armor
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gpgme_set_textmode
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gpgme_signers_add
+    arity: 2
+    return: {type: "gpgme_error_t", confidence: high}
+    role: config
+  - method: gpgme_signers_clear
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gpgme_set_pinentry_mode
+    arity: 2
+    return: {type: "gpgme_error_t", confidence: high}
+    role: config
+  - method: gpgme_set_passphrase_cb
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+
+  # Encryption (gpgme_op_encrypt_sign* also signs).
+  - method: gpgme_op_encrypt
+    arity: 5
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_encrypt_start
+    arity: 5
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_encrypt_ext
+    arity: 6
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_encrypt_ext_start
+    arity: 6
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_encrypt_sign
+    arity: 5
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_encrypt_sign_start
+    arity: 5
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_encrypt_sign_ext
+    arity: 6
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_encrypt_sign_ext_start
+    arity: 6
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_encrypt_result
+    arity: 1
+    return: {type: "gpgme_encrypt_result_t", confidence: high}
+    role: output
+
+  # Decryption.
+  - method: gpgme_op_decrypt
+    arity: 3
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_decrypt_start
+    arity: 3
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_decrypt_ext
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_decrypt_ext_start
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_decrypt_verify
+    arity: 3
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_decrypt_verify_start
+    arity: 3
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_decrypt_result
+    arity: 1
+    return: {type: "gpgme_decrypt_result_t", confidence: high}
+    role: output
+
+  # Signing and verification. The sign mode (normal, detached, clear) is a
+  # parameter role.
+  - method: gpgme_op_sign
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: mode
+        role: metadata-contributing
+        contributes: {property: signatureMode, derivation: argument_value}
+  - method: gpgme_op_sign_start
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: mode
+        role: metadata-contributing
+        contributes: {property: signatureMode, derivation: argument_value}
+  - method: gpgme_op_sign_result
+    arity: 1
+    return: {type: "gpgme_sign_result_t", confidence: high}
+    role: output
+  - method: gpgme_op_verify
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_verify_start
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_verify_ext
+    arity: 5
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_verify_ext_start
+    arity: 5
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_verify_result
+    arity: 1
+    return: {type: "gpgme_verify_result_t", confidence: high}
+    role: output
+  - method: gpgme_op_keysign
+    arity: 5
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_keysign_start
+    arity: 5
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+
+  # Key generation. The algorithm string of createkey/createsubkey selects the
+  # key algorithm; gpgme_op_genkey takes a parameter block instead.
+  - method: gpgme_op_createkey
+    arity: 7
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gpgme_op_createkey_start
+    arity: 7
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gpgme_op_createsubkey
+    arity: 6
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gpgme_op_createsubkey_start
+    arity: 6
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: algo
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gpgme_op_genkey
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_genkey_start
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_genkey_result
+    arity: 1
+    return: {type: "gpgme_genkey_result_t", confidence: high}
+    role: output
+
+  # Key import, export and lookup. The export mode (for example
+  # GPGME_EXPORT_MODE_SECRET) is a parameter role.
+  - method: gpgme_op_import
+    arity: 2
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_import_start
+    arity: 2
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_import_ext
+    arity: 3
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_import_keys
+    arity: 2
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_import_keys_start
+    arity: 2
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+  - method: gpgme_op_import_result
+    arity: 1
+    return: {type: "gpgme_import_result_t", confidence: high}
+    role: output
+  - method: gpgme_op_export
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: mode
+        role: metadata-contributing
+        contributes: {property: exportMode, derivation: argument_value}
+  - method: gpgme_op_export_start
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: mode
+        role: metadata-contributing
+        contributes: {property: exportMode, derivation: argument_value}
+  - method: gpgme_op_export_ext
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: mode
+        role: metadata-contributing
+        contributes: {property: exportMode, derivation: argument_value}
+  - method: gpgme_op_export_ext_start
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: mode
+        role: metadata-contributing
+        contributes: {property: exportMode, derivation: argument_value}
+  - method: gpgme_op_export_keys
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: mode
+        role: metadata-contributing
+        contributes: {property: exportMode, derivation: argument_value}
+  - method: gpgme_op_export_keys_start
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: mode
+        role: metadata-contributing
+        contributes: {property: exportMode, derivation: argument_value}
+  - method: gpgme_get_key
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: factory
+  - method: gpgme_op_keylist_start
+    arity: 3
+    return: {type: "gpgme_error_t", confidence: high}
+    role: factory
+  - method: gpgme_op_keylist_ext_start
+    arity: 4
+    return: {type: "gpgme_error_t", confidence: high}
+    role: factory
+  - method: gpgme_op_keylist_next
+    arity: 2
+    return: {type: "gpgme_error_t", confidence: high}
+    role: output
+
+hierarchy: {}

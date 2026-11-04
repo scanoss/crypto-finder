@@ -1,0 +1,100 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: picosha2
+  coordinates:
+    - picosha2
+    - PicoSHA2
+  version_range: ">=1.0.0,<1.1.0"
+  description: "PicoSHA2 header-only SHA-256, one-shot and incremental"
+
+# Inventory source: the library's own single header at tags v1.0.0 and v1.0.1.
+# The public surface is the same at both tags except for one added arity-3
+# hash256 overload taking a std::ifstream, which the existing arity-3 contract
+# already covers, so one entry serves both.
+#
+# Arities are call-site arities, confirmed against the C++ parser rather than
+# read off the declarations: hash256's iterator overload declares a fifth
+# buffer_size parameter with a default, so a consumer reaches the same
+# declaration at arity 4 or 5, and three separate overloads share arity 3.
+#
+# Dispositions for the full inventory:
+#   contracted: hash256, hash256_hex_string, get_hash_hex_string, the
+#     hash256_one_by_one constructor, and that type's init, process, finish and
+#     get_hash_bytes.
+#   skipped-non-crypto: bytes_to_hex_string in all four arities and output_hex,
+#     which are hex formatting rather than hashing, and the type's
+#     add_to_data_length and write_data_bit_length, which are length bookkeeping
+#     and padding internals.
+#   needs-follow-up: hash256_impl, the arity-6 implementation the public hash256
+#     delegates to. It is the real operation but not a documented entry point,
+#     nothing selects it, and inside the header it is called unqualified.
+contracts:
+
+  # One-shot hashing. Three overloads share arity 3 and the iterator overload
+  # reaches arity 4 or 5, so canonical parameter types are deliberately omitted.
+  - method: picosha2.hash256
+    arity: 2
+    return: {type: void, confidence: high}
+    role: operation
+  - method: picosha2.hash256
+    arity: 3
+    return: {type: void, confidence: high}
+    role: operation
+  - method: picosha2.hash256
+    arity: 4
+    return: {type: void, confidence: high}
+    role: operation
+  - method: picosha2.hash256
+    arity: 5
+    return: {type: void, confidence: high}
+    role: operation
+
+  # One-shot hashing with hex output. The arity-1 and arity-2 forms that return
+  # a string are the documented convenience entry points.
+  - method: picosha2.hash256_hex_string
+    arity: 1
+    return: {type: std::string, confidence: high}
+    role: operation
+  - method: picosha2.hash256_hex_string
+    arity: 2
+    return: {type: void, confidence: high}
+    role: operation
+  - method: picosha2.hash256_hex_string
+    arity: 3
+    return: {type: void, confidence: high}
+    role: operation
+
+  # Incremental hashing.
+  - method: picosha2.hash256_one_by_one
+    arity: 0
+    return: {type: picosha2::hash256_one_by_one, confidence: high}
+    role: factory
+  - method: picosha2::hash256_one_by_one.init
+    arity: 0
+    return: {type: void, confidence: high}
+    role: config
+  - method: picosha2::hash256_one_by_one.process
+    arity: 2
+    return: {type: void, confidence: high}
+    role: operation
+  - method: picosha2::hash256_one_by_one.finish
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: picosha2::hash256_one_by_one.get_hash_bytes
+    arity: 2
+    return: {type: void, confidence: high}
+    role: output
+
+  # Hex output taken from a finished incremental hasher.
+  - method: picosha2.get_hash_hex_string
+    arity: 1
+    return: {type: std::string, confidence: high}
+    role: output
+  - method: picosha2.get_hash_hex_string
+    arity: 2
+    return: {type: void, confidence: high}
+    role: output
+
+hierarchy: {}

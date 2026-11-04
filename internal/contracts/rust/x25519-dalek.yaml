@@ -1,0 +1,142 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: x25519-dalek
+  coordinates:
+    - x25519-dalek
+    - x25519_dalek
+  version_range: ">=0.1.0,<4.0.0"
+  description: "X25519 elliptic-curve Diffie-Hellman over Curve25519"
+
+# API read at x25519-dalek 2.0.1 (src/x25519.rs), with the older spellings read
+# at the version each was introduced or removed:
+#
+#   0.1.0  free functions only — generate_secret (:43), generate_public (:50),
+#          x25519 (:55), diffie_hellman (:64). No key types.
+#   0.4.5  key types arrive — EphemeralPublic (:27), EphemeralSecret (:45),
+#          diffie_hellman becomes a method (:58).
+#   0.5.2  EphemeralPublic renamed PublicKey (:29); StaticSecret added (:90).
+#   1.2.0  ReusableSecret added (:120); PublicKey::to_bytes added (:52).
+#   2.0.0  random (:103) and random_from_rng (:94) added; `new` deprecated but
+#          retained, so it stays contracted.
+#
+# 0.0.0 is a name-reservation release — src/lib.rs holds an empty `mod tests`
+# and no API at all — so it is outside the range deliberately.
+#
+# One divergence the key shape cannot express: at 0.1.0 the free `x25519`
+# returns CompressedMontgomeryU (src/x25519.rs:55), while from 0.4.5 onward it
+# returns [u8; 32] (0.4.5 src/x25519.rs:124). Method plus arity is one key, so
+# the modern return is declared — it holds for 30 of the 34 committed versions.
+#
+# skipped-non-crypto: Debug/Zeroize/Drop trait impls and the byte accessors on
+#   PublicKey and StaticSecret are contracted as `output` rather than skipped,
+#   because a consumer's shared-secret variable is typed through them.
+contracts:
+  - method: x25519_dalek::EphemeralSecret.random
+    arity: 0
+    return: { type: x25519_dalek::EphemeralSecret, confidence: high }
+    role: factory
+  - method: x25519_dalek::EphemeralSecret.random_from_rng
+    arity: 1
+    return: { type: x25519_dalek::EphemeralSecret, confidence: high }
+    role: factory
+  - method: x25519_dalek::EphemeralSecret.new
+    arity: 1
+    return: { type: x25519_dalek::EphemeralSecret, confidence: high }
+    role: factory
+  - method: x25519_dalek::EphemeralSecret.diffie_hellman
+    arity: 1
+    return: { type: x25519_dalek::SharedSecret, confidence: high }
+    parameter_types: ["&x25519_dalek::PublicKey"]
+    role: operation
+  - method: x25519_dalek::StaticSecret.random
+    arity: 0
+    return: { type: x25519_dalek::StaticSecret, confidence: high }
+    role: factory
+  - method: x25519_dalek::StaticSecret.random_from_rng
+    arity: 1
+    return: { type: x25519_dalek::StaticSecret, confidence: high }
+    role: factory
+  - method: x25519_dalek::StaticSecret.new
+    arity: 1
+    return: { type: x25519_dalek::StaticSecret, confidence: high }
+    role: factory
+  - method: x25519_dalek::StaticSecret.diffie_hellman
+    arity: 1
+    return: { type: x25519_dalek::SharedSecret, confidence: high }
+    parameter_types: ["&x25519_dalek::PublicKey"]
+    role: operation
+  - method: x25519_dalek::StaticSecret.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    role: output
+  - method: x25519_dalek::StaticSecret.as_bytes
+    arity: 0
+    return: { type: "&[u8; 32]", confidence: high }
+    role: output
+  - method: x25519_dalek::ReusableSecret.random
+    arity: 0
+    return: { type: x25519_dalek::ReusableSecret, confidence: high }
+    role: factory
+  - method: x25519_dalek::ReusableSecret.random_from_rng
+    arity: 1
+    return: { type: x25519_dalek::ReusableSecret, confidence: high }
+    role: factory
+  - method: x25519_dalek::ReusableSecret.new
+    arity: 1
+    return: { type: x25519_dalek::ReusableSecret, confidence: high }
+    role: factory
+  - method: x25519_dalek::ReusableSecret.diffie_hellman
+    arity: 1
+    return: { type: x25519_dalek::SharedSecret, confidence: high }
+    parameter_types: ["&x25519_dalek::PublicKey"]
+    role: operation
+  - method: x25519_dalek::PublicKey.from
+    arity: 1
+    return: { type: x25519_dalek::PublicKey, confidence: high }
+    role: factory
+  - method: x25519_dalek::PublicKey.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    role: output
+  - method: x25519_dalek::PublicKey.as_bytes
+    arity: 0
+    return: { type: "&[u8; 32]", confidence: high }
+    role: output
+  - method: x25519_dalek::EphemeralPublic.as_bytes
+    arity: 0
+    return: { type: "&[u8; 32]", confidence: high }
+    role: output
+  - method: x25519_dalek::SharedSecret.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    role: output
+  - method: x25519_dalek::SharedSecret.as_bytes
+    arity: 0
+    return: { type: "&[u8; 32]", confidence: high }
+    role: output
+  - method: x25519_dalek::SharedSecret.was_contributory
+    arity: 0
+    return: { type: bool, confidence: high }
+    role: output
+  - method: x25519_dalek.x25519
+    arity: 2
+    return: { type: "[u8; 32]", confidence: high }
+    parameter_types: ["[u8; 32]", "[u8; 32]"]
+    role: operation
+  - method: x25519_dalek.diffie_hellman
+    arity: 2
+    return: { type: "[u8; 32]", confidence: high }
+    parameter_types: ["&[u8; 32]", "&[u8; 32]"]
+    role: operation
+  - method: x25519_dalek.generate_secret
+    arity: 1
+    return: { type: "[u8; 32]", confidence: high }
+    role: factory
+  - method: x25519_dalek.generate_public
+    arity: 1
+    return: { type: x25519_dalek::CompressedMontgomeryU, confidence: high }
+    parameter_types: ["&[u8; 32]"]
+    role: factory
+
+hierarchy: {}

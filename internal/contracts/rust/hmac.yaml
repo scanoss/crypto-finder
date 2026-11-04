@@ -1,0 +1,115 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: hmac
+  coordinates:
+    - hmac
+  version_range: ">=0.11.0,<0.14.0"
+  description: "RustCrypto HMAC over a generic hash function"
+
+# Inventory sources: the hmac crate's own source at 0.11.0, 0.12.1 and 0.13.0,
+# and the APIs selected by the scanoss/crypto_rules hmac rules.
+#
+# The crate's own surface is the `Hmac`, `SimpleHmac` (0.12+) and `HmacReset`
+# (0.13+) types; every callable below comes from the shared `KeyInit` and `Mac`
+# traits it re-exports, so the same shape holds for all of them. The concrete
+# type is what carries identity, which is why each is contracted separately
+# rather than contracting the trait.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `digest`/`Mac`/`KeyInit`/`EagerHash` re-exports and
+#     the `Key`/`Output`/`CtOutput` type aliases and their conversions.
+#   skipped-informative-return: `generate_key` — the declared return is already
+#     the key type and adds no semantic information.
+#   needs-follow-up: versions below 0.11.0 spell the constructor `new_varkey`
+#     on the older `crypto_mac::Mac` trait. The matrix lists those releases, so
+#     they are mined, but they are a different API on a different trait and
+#     belong in their own YAML rather than being folded into this range. The
+#     boundary was read from the crates themselves: 0.11.0 depends on
+#     crypto-mac 0.11 and already exposes `new_from_slice`; 0.10.x does not.
+#   skipped-unsupported: `HmacCore`/`SimpleHmacReset` block-level types, which
+#     consumers do not construct directly.
+contracts:
+  - method: hmac::Hmac.new_from_slice
+    arity: 1
+    return: {type: hmac::Hmac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: hmac::Hmac.new
+    arity: 1
+    return: {type: hmac::Hmac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: hmac::Hmac.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: hmac::Hmac.chain_update
+    arity: 1
+    return: {type: hmac::Hmac, confidence: high}
+    role: operation
+  - method: hmac::Hmac.finalize
+    arity: 0
+    return: {type: digest::CtOutput, confidence: high}
+    role: output
+  - method: hmac::Hmac.finalize_reset
+    arity: 0
+    return: {type: digest::CtOutput, confidence: high}
+    role: output
+  - method: hmac::Hmac.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: hmac::Hmac.verify
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: hmac::Hmac.verify_slice
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: hmac::Hmac.verify_truncated_left
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+
+  - method: hmac::SimpleHmac.new_from_slice
+    arity: 1
+    return: {type: hmac::SimpleHmac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: hmac::SimpleHmac.new
+    arity: 1
+    return: {type: hmac::SimpleHmac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: hmac::SimpleHmac.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: hmac::SimpleHmac.finalize
+    arity: 0
+    return: {type: digest::CtOutput, confidence: high}
+    role: output
+  - method: hmac::SimpleHmac.verify_slice
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+
+hierarchy: {}

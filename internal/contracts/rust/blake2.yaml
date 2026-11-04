@@ -1,0 +1,504 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: blake2
+  coordinates:
+    - blake2
+  version_range: ">=0.1.0,<0.12.0"
+  description: "RustCrypto BLAKE2b and BLAKE2s hashes, across the 0.10 rename"
+
+# Inventory sources: the blake2 crate's own source at 0.9.2 (src/lib.rs:5-47),
+# 0.10.6 (src/lib.rs:8-12,41-57,131) and 0.11.0-rc.6 (src/lib.rs:64,83-94,
+# 112,131-138), and the APIs selected by the scanoss/crypto_rules blake2 rules.
+#
+# THE CONCRETE AND GENERIC MEANINGS OF `Blake2b`/`Blake2s` SWAP AT 0.10.0, and
+# both are declared because both are in the matrix range:
+#
+#   0.1.0 - 0.9.x     `Blake2b`/`Blake2s` ARE the concrete full-width hashers;
+#                     variable output is `VarBlake2b`/`VarBlake2s`
+#   0.10.0 - 0.11.0   `Blake2b512`/`Blake2s256` are the concrete aliases,
+#                     `Blake2b<OutSize>` is generic, and the Var types are
+#                     renamed `Blake2bVar`/`Blake2sVar` (removed again at
+#                     0.11.0-rc.3)
+#
+# The generic `Blake2b<OutSize>` resolves to the same `blake2::Blake2b` key as
+# the pre-0.10 concrete type: the parser strips the type argument from the
+# callee identity, exactly as it does for the block-modes families' inner
+# cipher. The KB therefore gives that key the hasher's method surface and lets
+# the RULE decide what output size, if any, to report — which is why the
+# crypto_rules generic rules report no size while the concrete ones do.
+#
+# THE VARIABLE-OUTPUT CONSTRUCTORS TAKE THEIR LENGTH IN BYTES.
+# `Blake2bVar::new(10)` is an 80-bit digest (0.10.6 src/lib.rs:41-48), so the
+# parameter is declared with argument_byte_length rather than
+# argument_bit_length; the latter counts the length of key material a value
+# carries and would report 10 as if it were already bits.
+#
+# The range starts at 0.1.0 rather than the matrix's 0.0.0: that release is a
+# name reservation with an empty src/lib.rs.
+#
+# NOT DECLARED, deliberately: the keyed types `Blake2bMac512`, `Blake2sMac256`,
+# `Blake2bMac`, `Blake2sMac` and the 0.9-era `new_varkey` constructor. Those are
+# a MAC primitive rather than a digest and are out of this family's scope; the
+# gap is recorded on the family's issue rather than filled silently here.
+
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `digest` re-export and the `Digest`/`Output`/
+#     `OutputSizeUser` trait re-exports, which carry no identity of their own.
+#   skipped-unsupported: the `*Core` block-level types and the `block_api`
+#     module of the 0.11 line, which consumers do not construct directly.
+contracts:
+  - method: blake2::Blake2b512.new
+    arity: 0
+    return: {type: blake2::Blake2b512, confidence: high}
+    role: factory
+  - method: blake2::Blake2b512.default
+    arity: 0
+    return: {type: blake2::Blake2b512, confidence: high}
+    role: factory
+  - method: blake2::Blake2b512.new_with_prefix
+    arity: 1
+    return: {type: blake2::Blake2b512, confidence: high}
+    role: factory
+  - method: blake2::Blake2b512.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b512.chain_update
+    arity: 1
+    return: {type: blake2::Blake2b512, confidence: high}
+    role: operation
+  - method: blake2::Blake2b512.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b512.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2b512.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b512.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b512.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b512.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b512.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b256.new
+    arity: 0
+    return: {type: blake2::Blake2b256, confidence: high}
+    role: factory
+  - method: blake2::Blake2b256.default
+    arity: 0
+    return: {type: blake2::Blake2b256, confidence: high}
+    role: factory
+  - method: blake2::Blake2b256.new_with_prefix
+    arity: 1
+    return: {type: blake2::Blake2b256, confidence: high}
+    role: factory
+  - method: blake2::Blake2b256.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b256.chain_update
+    arity: 1
+    return: {type: blake2::Blake2b256, confidence: high}
+    role: operation
+  - method: blake2::Blake2b256.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b256.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2b256.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b256.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b256.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b256.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b128.new
+    arity: 0
+    return: {type: blake2::Blake2b128, confidence: high}
+    role: factory
+  - method: blake2::Blake2b128.default
+    arity: 0
+    return: {type: blake2::Blake2b128, confidence: high}
+    role: factory
+  - method: blake2::Blake2b128.new_with_prefix
+    arity: 1
+    return: {type: blake2::Blake2b128, confidence: high}
+    role: factory
+  - method: blake2::Blake2b128.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b128.chain_update
+    arity: 1
+    return: {type: blake2::Blake2b128, confidence: high}
+    role: operation
+  - method: blake2::Blake2b128.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b128.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2b128.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b128.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b128.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b128.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b128.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s256.new
+    arity: 0
+    return: {type: blake2::Blake2s256, confidence: high}
+    role: factory
+  - method: blake2::Blake2s256.default
+    arity: 0
+    return: {type: blake2::Blake2s256, confidence: high}
+    role: factory
+  - method: blake2::Blake2s256.new_with_prefix
+    arity: 1
+    return: {type: blake2::Blake2s256, confidence: high}
+    role: factory
+  - method: blake2::Blake2s256.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2s256.chain_update
+    arity: 1
+    return: {type: blake2::Blake2s256, confidence: high}
+    role: operation
+  - method: blake2::Blake2s256.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s256.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2s256.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s256.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2s256.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s256.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2s256.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s128.new
+    arity: 0
+    return: {type: blake2::Blake2s128, confidence: high}
+    role: factory
+  - method: blake2::Blake2s128.default
+    arity: 0
+    return: {type: blake2::Blake2s128, confidence: high}
+    role: factory
+  - method: blake2::Blake2s128.new_with_prefix
+    arity: 1
+    return: {type: blake2::Blake2s128, confidence: high}
+    role: factory
+  - method: blake2::Blake2s128.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2s128.chain_update
+    arity: 1
+    return: {type: blake2::Blake2s128, confidence: high}
+    role: operation
+  - method: blake2::Blake2s128.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s128.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2s128.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s128.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2s128.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s128.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2s128.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b.new
+    arity: 0
+    return: {type: blake2::Blake2b, confidence: high}
+    role: factory
+  - method: blake2::Blake2b.default
+    arity: 0
+    return: {type: blake2::Blake2b, confidence: high}
+    role: factory
+  - method: blake2::Blake2b.new_with_prefix
+    arity: 1
+    return: {type: blake2::Blake2b, confidence: high}
+    role: factory
+  - method: blake2::Blake2b.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b.chain_update
+    arity: 1
+    return: {type: blake2::Blake2b, confidence: high}
+    role: operation
+  - method: blake2::Blake2b.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2b.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2b.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2b.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s.new
+    arity: 0
+    return: {type: blake2::Blake2s, confidence: high}
+    role: factory
+  - method: blake2::Blake2s.default
+    arity: 0
+    return: {type: blake2::Blake2s, confidence: high}
+    role: factory
+  - method: blake2::Blake2s.new_with_prefix
+    arity: 1
+    return: {type: blake2::Blake2s, confidence: high}
+    role: factory
+  - method: blake2::Blake2s.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2s.chain_update
+    arity: 1
+    return: {type: blake2::Blake2s, confidence: high}
+    role: operation
+  - method: blake2::Blake2s.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2s.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2s.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2s.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2s.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: blake2::Blake2bVar.new
+    arity: 1
+    return: {type: blake2::Blake2bVar, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: output_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_byte_length}
+  - method: blake2::Blake2bVar.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2bVar.finalize_variable
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2bVar.finalize_variable_reset
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2bVar.finalize_boxed
+    arity: 0
+    return: {type: alloc::boxed::Box, confidence: high}
+    role: output
+  - method: blake2::Blake2bVar.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2sVar.new
+    arity: 1
+    return: {type: blake2::Blake2sVar, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: output_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_byte_length}
+  - method: blake2::Blake2sVar.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::Blake2sVar.finalize_variable
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2sVar.finalize_variable_reset
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::Blake2sVar.finalize_boxed
+    arity: 0
+    return: {type: alloc::boxed::Box, confidence: high}
+    role: output
+  - method: blake2::Blake2sVar.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::VarBlake2b.new
+    arity: 1
+    return: {type: blake2::VarBlake2b, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: output_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_byte_length}
+  - method: blake2::VarBlake2b.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::VarBlake2b.finalize_variable
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::VarBlake2b.finalize_variable_reset
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::VarBlake2b.finalize_boxed
+    arity: 0
+    return: {type: alloc::boxed::Box, confidence: high}
+    role: output
+  - method: blake2::VarBlake2b.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::VarBlake2s.new
+    arity: 1
+    return: {type: blake2::VarBlake2s, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: output_size
+        role: metadata-contributing
+        contributes: {property: digestLength, derivation: argument_byte_length}
+  - method: blake2::VarBlake2s.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: blake2::VarBlake2s.finalize_variable
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::VarBlake2s.finalize_variable_reset
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: blake2::VarBlake2s.finalize_boxed
+    arity: 0
+    return: {type: alloc::boxed::Box, confidence: high}
+    role: output
+  - method: blake2::VarBlake2s.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+
+hierarchy: {}

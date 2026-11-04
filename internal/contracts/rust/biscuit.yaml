@@ -1,0 +1,254 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: biscuit
+  coordinates:
+    - biscuit
+  version_range: ">=0.0.8,<0.9.0"
+  description: "JOSE — JWT, JWS and JWE — for Rust"
+
+# API read at biscuit 0.8.0: src/jws/compact.rs:46/:51 (`new_decoded`,
+# `new_encoded`), :58/:67 (`into_encoded`, `encode`), :91/:104 (`into_decoded`,
+# `decode`), :368/:379/:387 (`unverified_header`, `unverified_payload`,
+# `signature`); src/jwe.rs:323/:328 (`new_decrypted`, `new_encrypted`),
+# :342/:363 (`into_encrypted`, `encrypt`), :443/:457 (`into_decrypted`,
+# `decrypt`); src/jwa.rs:241/:253 (`sign`, `verify`), :477/:524/:546 (`cek`,
+# `wrap_key`, `unwrap_key`), :619/:634/:650 (`generate_key`, `encrypt`,
+# `decrypt`). Every method here was cross-checked at 0.0.8, 0.4.0, 0.5.0, 0.6.0
+# and 0.8.0 from the committed sample and is present, at the same arity, in all
+# of them -- which is where this file's `version_range` comes from.
+#
+# THE JWKS AND FLATTENED-JWS SURFACES ARE IN SEPARATE FILES BECAUSE THEIR ERAS
+# DIFFER, and there are three of them rather than two. `decode_with_jwks`
+# arrives at 0.5.0, the whole `Signable` / `SignedData` surface at 0.6.0, and
+# `decode_with_jwks_ignore_kid` -- which reads like a sibling of the first and
+# is not -- only at 0.7.0. `version_range` is declared per LIBRARY, not per
+# entry, so a single file carrying all of them would have to claim `>=0.7.0`
+# and silently under-document the core API back to 0.0.8. See
+# biscuit-jwks.yaml, biscuit-jwks-ignore-kid.yaml and biscuit-flattened.yaml.
+#
+# EVERY TYPE IS CONTRACTED UNDER TWO SPELLINGS, AND BOTH WERE READ OFF AN
+# EXPORTED GRAPH RATHER THAN WRITTEN FROM THE API. `JWT` and `JWE` are type
+# ALIASES (lib.rs:206 and :323) for `jws::Compact<ClaimsSet<T>, H>` and
+# `jwe::Compact<JWT<T, H>, I>`, and the Rust parser keys a call by the path the
+# CONSUMER wrote, not by what it resolves to. A probe consumer calling
+# `JWT::new_decoded(..)` emits `biscuit.JWT.new_decoded`, while one calling
+# `jws::Compact::new_decoded(..)` emits `biscuit::jws.Compact.new_decoded`.
+# Contracting only one of the two leaves the other resolving against nothing,
+# which is indistinguishable from having no contract at all. Both spellings are
+# in real use: the crate's own README and doc examples use the aliases, its
+# internal tests use the full paths.
+#
+# `unverified_payload` IS DELIBERATELY ABSENT. It returns `Result<T, Error>`
+# where `T` is the caller's own claims type (compact.rs:379), so there is no
+# type to declare -- any value put here would be an invention. `signature` and
+# `unverified_header` do have knowable types and are contracted as `output`.
+contracts:
+  # --- JWS compact, alias spelling -------------------------------------------
+  - method: biscuit::JWT.new_decoded
+    arity: 2
+    return: { type: biscuit::jws::Compact, confidence: high }
+    role: factory
+  - method: biscuit::JWT.new_encoded
+    arity: 1
+    return: { type: biscuit::jws::Compact, confidence: high }
+    parameter_types: ["&str"]
+    role: factory
+  - method: biscuit::JWT.encode
+    arity: 1
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jws::Secret"]
+    role: operation
+  - method: biscuit::JWT.into_encoded
+    arity: 1
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jws::Secret"]
+    role: operation
+  - method: biscuit::JWT.decode
+    arity: 2
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jws::Secret", "biscuit::jwa::SignatureAlgorithm"]
+    role: operation
+  - method: biscuit::JWT.into_decoded
+    arity: 2
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jws::Secret", "biscuit::jwa::SignatureAlgorithm"]
+    role: operation
+  - method: biscuit::JWT.signature
+    arity: 0
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, biscuit::errors::Error>"
+    role: output
+  - method: biscuit::JWT.unverified_header
+    arity: 0
+    return: { type: biscuit::jws::Header, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Header, biscuit::errors::Error>"
+    role: output
+
+  # --- JWS compact, full-path spelling ---------------------------------------
+  - method: biscuit::jws::Compact.new_decoded
+    arity: 2
+    return: { type: biscuit::jws::Compact, confidence: high }
+    role: factory
+  - method: biscuit::jws::Compact.new_encoded
+    arity: 1
+    return: { type: biscuit::jws::Compact, confidence: high }
+    parameter_types: ["&str"]
+    role: factory
+  - method: biscuit::jws::Compact.encode
+    arity: 1
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jws::Secret"]
+    role: operation
+  - method: biscuit::jws::Compact.into_encoded
+    arity: 1
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jws::Secret"]
+    role: operation
+  - method: biscuit::jws::Compact.decode
+    arity: 2
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jws::Secret", "biscuit::jwa::SignatureAlgorithm"]
+    role: operation
+  - method: biscuit::jws::Compact.into_decoded
+    arity: 2
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jws::Secret", "biscuit::jwa::SignatureAlgorithm"]
+    role: operation
+  - method: biscuit::jws::Compact.signature
+    arity: 0
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, biscuit::errors::Error>"
+    role: output
+  - method: biscuit::jws::Compact.unverified_header
+    arity: 0
+    return: { type: biscuit::jws::Header, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Header, biscuit::errors::Error>"
+    role: output
+
+  # --- JWE compact, alias spelling -------------------------------------------
+  - method: biscuit::JWE.new_decrypted
+    arity: 2
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    role: factory
+  - method: biscuit::JWE.new_encrypted
+    arity: 1
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    parameter_types: ["&str"]
+    role: factory
+  - method: biscuit::JWE.encrypt
+    arity: 2
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwe::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWK", "&biscuit::jwa::EncryptionOptions"]
+    role: operation
+  - method: biscuit::JWE.into_encrypted
+    arity: 2
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwe::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWK", "&biscuit::jwa::EncryptionOptions"]
+    role: operation
+  - method: biscuit::JWE.decrypt
+    arity: 3
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwe::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWK", "biscuit::jwa::KeyManagementAlgorithm", "biscuit::jwa::ContentEncryptionAlgorithm"]
+    role: operation
+  - method: biscuit::JWE.into_decrypted
+    arity: 3
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwe::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWK", "biscuit::jwa::KeyManagementAlgorithm", "biscuit::jwa::ContentEncryptionAlgorithm"]
+    role: operation
+
+  # --- JWE compact, full-path spelling ---------------------------------------
+  - method: biscuit::jwe::Compact.new_decrypted
+    arity: 2
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    role: factory
+  - method: biscuit::jwe::Compact.new_encrypted
+    arity: 1
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    parameter_types: ["&str"]
+    role: factory
+  - method: biscuit::jwe::Compact.encrypt
+    arity: 2
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwe::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWK", "&biscuit::jwa::EncryptionOptions"]
+    role: operation
+  - method: biscuit::jwe::Compact.into_encrypted
+    arity: 2
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwe::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWK", "&biscuit::jwa::EncryptionOptions"]
+    role: operation
+  - method: biscuit::jwe::Compact.decrypt
+    arity: 3
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwe::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWK", "biscuit::jwa::KeyManagementAlgorithm", "biscuit::jwa::ContentEncryptionAlgorithm"]
+    role: operation
+  - method: biscuit::jwe::Compact.into_decrypted
+    arity: 3
+    return: { type: biscuit::jwe::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwe::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWK", "biscuit::jwa::KeyManagementAlgorithm", "biscuit::jwa::ContentEncryptionAlgorithm"]
+    role: operation
+
+  # --- the jwa layer ----------------------------------------------------------
+  - method: biscuit::jwa::SignatureAlgorithm.sign
+    arity: 2
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, biscuit::errors::Error>"
+    parameter_types: ["&[u8]", "&biscuit::jws::Secret"]
+    role: operation
+  - method: biscuit::jwa::SignatureAlgorithm.verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    canonical_return_type: "core::result::Result<(), biscuit::errors::Error>"
+    parameter_types: ["&[u8]", "&[u8]", "&biscuit::jws::Secret"]
+    role: operation
+  - method: biscuit::jwa::ContentEncryptionAlgorithm.encrypt
+    arity: 4
+    return: { type: biscuit::jwa::EncryptionResult, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwa::EncryptionResult, biscuit::errors::Error>"
+    parameter_types: ["&[u8]", "&[u8]", "&biscuit::jwk::JWK", "&biscuit::jwa::EncryptionOptions"]
+    role: operation
+  - method: biscuit::jwa::ContentEncryptionAlgorithm.decrypt
+    arity: 2
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwa::EncryptionResult", "&biscuit::jwk::JWK"]
+    role: operation
+  - method: biscuit::jwa::ContentEncryptionAlgorithm.generate_key
+    arity: 0
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, biscuit::errors::Error>"
+    role: operation
+  - method: biscuit::jwa::KeyManagementAlgorithm.wrap_key
+    arity: 3
+    return: { type: biscuit::jwa::EncryptionResult, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwa::EncryptionResult, biscuit::errors::Error>"
+    parameter_types: ["&[u8]", "&biscuit::jwk::JWK", "&biscuit::jwa::EncryptionOptions"]
+    role: operation
+  - method: biscuit::jwa::KeyManagementAlgorithm.unwrap_key
+    arity: 3
+    return: { type: biscuit::jwk::JWK, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwk::JWK, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwa::EncryptionResult", "biscuit::jwa::ContentEncryptionAlgorithm", "&biscuit::jwk::JWK"]
+    role: operation
+  - method: biscuit::jwa::KeyManagementAlgorithm.cek
+    arity: 2
+    return: { type: biscuit::jwk::JWK, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jwk::JWK, biscuit::errors::Error>"
+    parameter_types: ["biscuit::jwa::ContentEncryptionAlgorithm", "&biscuit::jwk::JWK"]
+    role: operation

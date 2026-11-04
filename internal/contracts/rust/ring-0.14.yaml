@@ -1,0 +1,46 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ring-0.14
+  coordinates:
+    - ring
+  version_range: ">=0.14.0,<0.18.0"
+  description: "ring APIs added or reshaped in 0.14.0: AEAD nonces, agreement public keys, Ed25519 PKCS#8 documents and QUIC header protection"
+
+contracts:
+  - method: ring::aead::Nonce.assume_unique_for_key
+    arity: 1
+    return: { type: ring::aead::Nonce, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: value
+        role: metadata-contributing
+        contributes: { property: nonceSize, derivation: argument_bit_length }
+  - method: ring::agreement::EphemeralPrivateKey.compute_public_key
+    arity: 0
+    return: { type: ring::agreement::PublicKey, confidence: high }
+    role: output
+  - method: ring::signature::Ed25519KeyPair.generate_pkcs8
+    arity: 1
+    return: { type: ring::pkcs8::Document, confidence: high }
+    role: factory
+  - method: ring::aead::quic::HeaderProtectionKey.new
+    arity: 2
+    return: { type: ring::aead::quic::HeaderProtectionKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+      - index: 1
+        name: key_bytes
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: ring::aead::quic::HeaderProtectionKey.new_mask
+    arity: 1
+    return: { type: "[u8; 5]", confidence: high }
+    role: operation
+
+hierarchy: {}

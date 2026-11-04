@@ -1,0 +1,142 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "noble-ed25519"
+  coordinates:
+    - "@noble/ed25519"
+  version_range: ">=1.3.0"
+  description: "@noble/ed25519: Ed25519 signatures, and X25519 in 1.x"
+
+# ONE MODULE, THREE CALLING CONVENTIONS. 1.x `sign`/`verify`/`getPublicKey`
+# are async with a `sync` object beside them; 2.x made those names synchronous
+# and added `signAsync`, `verifyAsync`, `getPublicKeyAsync`; 3.x added `keygen`,
+# `keygenAsync` and `hash`. Each export is its own entry, keyed as the parser
+# emits it for the import (`@noble/ed25519.sign`, `@noble/ed25519.sync.sign`).
+#
+# The declared returns are the resolved values. 1.x `sign` returns a Promise of
+# the signature bytes, and the variable a consumer awaits into holds the bytes.
+#
+# utils.randomPrivateKey (renamed randomSecretKey in 3.x) and keygen generate;
+# getPublicKey and getExtendedPublicKey derive; getSharedSecret and the 1.x
+# curve25519 object are X25519. Point.fromHex parses a point and is a factory:
+# consumers call it to check that bytes are on the curve.
+#
+# Deliberately NOT contracted: the `etc` and `utils` byte helpers
+# (concatBytes, bytesToHex, hexToBytes, mod, invert), and the SHA-512 hook
+# assignments (`etc.sha512Sync`, `hashes.sha512`, 1.x `utils.sha512Sync`).
+# They convert representations or configure a hash, and compute nothing.
+contracts:
+  - method: "@noble/ed25519.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.signAsync"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.sync.sign"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # verify takes an optional options object from 2.x (zip215).
+  - method: "@noble/ed25519.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.verify"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.verifyAsync"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.verifyAsync"
+    arity: 4
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.sync.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.getPublicKeyAsync"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.sync.getPublicKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.utils.getExtendedPublicKey"
+    arity: 1
+    return: { type: "@noble/ed25519.ExtendedKey", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.sync.getExtendedPublicKey"
+    arity: 1
+    return: { type: "@noble/ed25519.ExtendedKey", confidence: high }
+    role: operation
+
+  # Key generation. randomSecretKey and keygen take an optional seed in 3.x.
+  - method: "@noble/ed25519.utils.randomPrivateKey"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.utils.randomSecretKey"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.utils.randomSecretKey"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.keygen"
+    arity: 0
+    return: { type: "@noble/ed25519.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.keygen"
+    arity: 1
+    return: { type: "@noble/ed25519.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.keygenAsync"
+    arity: 0
+    return: { type: "@noble/ed25519.KeyPair", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.keygenAsync"
+    arity: 1
+    return: { type: "@noble/ed25519.KeyPair", confidence: high }
+    role: operation
+
+  # 1.x X25519: the Ed25519 keys converted to Curve25519.
+  - method: "@noble/ed25519.getSharedSecret"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.curve25519.scalarMult"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ed25519.curve25519.scalarMultBase"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # 3.x: the SHA-512 the scheme is built on.
+  - method: "@noble/ed25519.hash"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # Point.fromHex(hex, zip215?) in 1.x and 2.x; 3.x dropped the flag.
+  - method: "@noble/ed25519.Point.fromHex"
+    arity: 1
+    return: { type: "@noble/ed25519.Point", confidence: high }
+    role: factory
+  - method: "@noble/ed25519.Point.fromHex"
+    arity: 2
+    return: { type: "@noble/ed25519.Point", confidence: high }
+    role: factory

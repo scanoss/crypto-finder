@@ -1,0 +1,85 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-0.8
+  coordinates:
+    - rsa
+  version_range: ">=0.8.0-rc.0,<0.11.0"
+  description: "RustCrypto rsa 0.8+: typed Oaep, Pkcs1v15Sign and Pss padding selectors and random signing keys"
+
+# 0.8.0-rc.0 replaces `PaddingScheme` with the typed selectors `Oaep`,
+# `Pkcs1v15Sign` and `Pss`, re-exported at the crate root (0.8.2 src/lib.rs
+# `pub use crate::{..}`). Until 0.10 the digest is a type argument of each
+# function (`Oaep::new::<Sha256>()`); 0.10 moves it to the type
+# (`Oaep::<Sha256>::new()`, 0.10.0-rc.18 src/oaep.rs:82). The call keeps its
+# name and arity either way. `random(rng, bit_size)` generates a fresh key
+# bound to the scheme; `pss::SigningKey::random` and
+# `pkcs1v15::SigningKey::random` exist from 0.8.0-pre.0, a superset of this
+# file's range. The era table is in rsa.yaml.
+contracts:
+  - method: rsa::Oaep.new
+    arity: 0
+    return: { type: rsa::Oaep, confidence: high }
+    role: factory
+  - method: rsa::Oaep.new_with_label
+    arity: 1
+    return: { type: rsa::Oaep, confidence: high }
+    role: factory
+  - method: rsa::Oaep.new_with_mgf_hash
+    arity: 0
+    return: { type: rsa::Oaep, confidence: high }
+    role: factory
+  - method: rsa::Oaep.new_with_mgf_hash_and_label
+    arity: 1
+    return: { type: rsa::Oaep, confidence: high }
+    role: factory
+  - method: rsa::Pkcs1v15Sign.new
+    arity: 0
+    return: { type: rsa::Pkcs1v15Sign, confidence: high }
+    role: factory
+  - method: rsa::Pss.new
+    arity: 0
+    return: { type: rsa::Pss, confidence: high }
+    role: factory
+  - method: rsa::Pss.new_with_salt
+    arity: 1
+    return: { type: rsa::Pss, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: len
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+  - method: rsa::Pss.new_blinded
+    arity: 0
+    return: { type: rsa::Pss, confidence: high }
+    role: factory
+  - method: rsa::Pss.new_blinded_with_salt
+    arity: 1
+    return: { type: rsa::Pss, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: len
+        role: metadata-contributing
+        contributes: { property: saltLength, derivation: argument_value }
+  - method: rsa::pkcs1v15::SigningKey.random
+    arity: 2
+    return: { type: rsa::pkcs1v15::SigningKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: bit_size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+  - method: rsa::pss::SigningKey.random
+    arity: 2
+    return: { type: rsa::pss::SigningKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: bit_size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+hierarchy: {}

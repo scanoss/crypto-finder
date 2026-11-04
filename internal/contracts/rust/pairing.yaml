@@ -1,0 +1,199 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: pairing
+  coordinates:
+    - pairing
+  version_range: ">=0.9.0,<0.25.0"
+  description: "Trait vocabulary for pairing-friendly elliptic curves"
+
+# EVERY KEY BELOW WAS READ OFF AN EXPORTED CALLGRAPH, not written from the API.
+# The probe is a crate directory importing `pairing` and calling each entry
+# point in the spellings real consumers use; the emitted signatures were then
+# converted with the one mandatory Rust substitution (the second-to-last dot
+# becomes `::`, contracts.go rustAuthoredKey). So the graph emits
+# `pairing::bls12_381.Bls12.pairing` and this file carries
+# `pairing::bls12_381::Bls12.pairing`.
+#
+# THE MODULE SEGMENT IS NOT UNIFORM, and that is a fact of the crate rather
+# than of the probe: the four traits live at the crate root and carry no module
+# segment, while the 0.9.0-0.16.0 bundled curve is reached through
+# `pairing::bls12_381` and keeps it. Both spellings were measured.
+#
+# API read at 0.23.0 (src/lib.rs) for the modern era and at 0.16.0 and 0.9.0
+# for the older one, because the matrix range starts at 0.9.0. The family has
+# ONE hard API break, at 0.16.0 -> 0.17.0:
+#
+#   0.9.0  lib.rs:19  `pub trait Engine` with `pairing<G1,G2>(p, q) -> Self::Fqk`
+#          (:55), `miller_loop<I>(i) -> Self::Fqk` (:45) and
+#          `final_exponentiation(&Self::Fqk) -> Option<Self::Fqk>` (:52).
+#          `pub mod bls12_381` (:12) ships a concrete BLS12-381 engine:
+#          `pub struct Bls12` (bls12_381/mod.rs:20), `impl Engine for Bls12` (:22).
+#   0.10.1 lib.rs:198 `pairing_with` first appears, on `CurveAffine`.
+#   0.15.0 lib.rs:103 `PairingCurveAffine` splits out of `CurveAffine`, carrying
+#          `pairing_with(&self, &Self::Pair) -> Self::PairingResult` (:112).
+#          NOT 0.16.0 -- an earlier draft of this header said 0.16.0 and was
+#          wrong for 0.15.0 and 0.15.1, which is why both trait keys are
+#          declared below.
+#   0.16.0 lib.rs:21  unchanged; last version with the bundled curve.
+#   0.17.0 THE BREAK. `pub mod bls12_381`, `Engine::miller_loop` and
+#          `CurveAffine::prepare` are all REMOVED. `MultiMillerLoop` (:90) with
+#          `multi_miller_loop(terms) -> Self::Result` (:99) and
+#          `MillerLoopResult` (:107) with `final_exponentiation(&self) -> Self::Gt`
+#          (:114) appear, and `Engine::pairing` loses its generic parameters,
+#          becoming `pairing(&Self::G1Affine, &Self::G2Affine) -> Self::Gt` (:76).
+#   0.23.0 lib.rs:77,87,100,126 unchanged since 0.20.0.
+#
+# ONE KEY SURVIVES THE BREAK WITH A DIFFERENT DECLARED SIGNATURE ON EACH SIDE:
+# `pairing::Engine.pairing` at arity 2. The trait never moves modules, so unlike
+# arkworks' `PairingEngine` -> `pairing::Pairing` rename there is no second key
+# to separate the eras with. It therefore carries NEITHER `parameter_types` NOR
+# `canonical_return_type` and its `return.confidence` is medium: 0.23.0 lib.rs:77
+# declares `-> Self::Gt` over two references while 0.16.0 lib.rs:89 declares
+# `-> Self::Fqk` over two generic by-value parameters, and publishing either as
+# the canonical signature would be false for half the range. That is exactly the
+# "overload set sharing method and arity" case the schema reserves omission for.
+# Every other entry is era-unique and declares both.
+#
+# NO CURVE IS CLAIMED BY THE TRAIT ENTRIES. `Engine` is generic over the curve
+# and a consumer writing `E::pairing(&a, &b)` under `E: Engine` has none
+# statically -- bellman 0.0.7 oldsrc/groth16/verifier.rs:161-180 is that shape.
+# The `pairing::bls12_381::*` entries are the exception and the curve there is a
+# fact of the crate: 0.9.0-0.16.0 implement BLS12-381 in-tree.
+#
+# skipped-non-crypto: the `group`/`ff` re-exports and everything they carry
+#   (Group, GroupOps, ScalarMul, UncompressedEncoding, PrimeField), the field
+#   and group arithmetic on the associated types, `CurveAffine::prepare`
+#   (0.9.0-0.16.0 lib.rs:165 -- Miller-loop precomputation, but `prepare` is not
+#   a pairing and the receiver is not knowable), and the crate's own
+#   `pub mod tests` harness.
+contracts:
+  # ---- both eras; the one key the 0.17.0 break does not split ----
+  - method: pairing::Engine.pairing
+    arity: 2
+    return: { type: pairing::Engine::Gt, confidence: medium }
+    role: operation
+
+  # ---- 0.17.0 and later ----
+  - method: pairing::MultiMillerLoop.multi_miller_loop
+    arity: 1
+    return: { type: pairing::MultiMillerLoop::Result, confidence: high }
+    canonical_return_type: pairing::MultiMillerLoop::Result
+    parameter_types: ["&[(&pairing::Engine::G1Affine, &pairing::MultiMillerLoop::G2Prepared)]"]
+    role: operation
+  # The receiver spelling `ml.final_exponentiation()` resolves to the CONCRETE
+  # curve crate's inherent method wherever one exists (bls12_381 0.6.1
+  # src/pairings.rs:43-48), which is why the rules do not match it; this entry
+  # covers the call that does resolve to the trait.
+  - method: pairing::MillerLoopResult.final_exponentiation
+    arity: 0
+    return: { type: pairing::MillerLoopResult::Gt, confidence: high }
+    canonical_return_type: pairing::MillerLoopResult::Gt
+    parameter_types: []
+    role: output
+  # The UFCS spelling counts the receiver, so the same declaration is arity 1.
+  - method: pairing::MillerLoopResult.final_exponentiation
+    arity: 1
+    return: { type: pairing::MillerLoopResult::Gt, confidence: high }
+    canonical_return_type: pairing::MillerLoopResult::Gt
+    parameter_types: ["&pairing::MillerLoopResult"]
+    role: output
+
+  # ---- `pairing_with`: 0.10.1 onwards, under TWO trait names ----
+  # It is declared on `CurveAffine` from 0.10.1 (lib.rs:198, still there at
+  # 0.14.2 lib.rs:218) and moves to `PairingCurveAffine` at 0.15.0 (lib.rs:112)
+  # with an unchanged signature. The trait name is part of the key, so both are
+  # declared: a 0.10.1-0.14.2 consumer writing the qualified spelling emits the
+  # first and would resolve to nothing without it.
+  #
+  # BOTH ARITIES ARE DECLARED FOR EACH, and that is not symmetry for its own
+  # sake: `rustContractsFor` (contracts.go:240) is exact-arity for every
+  # ecosystem but Python, so a key declared at one arity resolves for one
+  # spelling only. The UFCS form counts the receiver and the method form does
+  # not -- the same reason `MillerLoopResult.final_exponentiation` is declared
+  # twice below.
+  - method: pairing::PairingCurveAffine.pairing_with
+    arity: 2
+    return: { type: pairing::PairingCurveAffine::PairingResult, confidence: high }
+    canonical_return_type: pairing::PairingCurveAffine::PairingResult
+    parameter_types: ["&pairing::PairingCurveAffine", "&pairing::PairingCurveAffine::Pair"]
+    role: operation
+  - method: pairing::PairingCurveAffine.pairing_with
+    arity: 1
+    return: { type: pairing::PairingCurveAffine::PairingResult, confidence: high }
+    canonical_return_type: pairing::PairingCurveAffine::PairingResult
+    parameter_types: ["&pairing::PairingCurveAffine::Pair"]
+    role: operation
+  - method: pairing::CurveAffine.pairing_with
+    arity: 2
+    return: { type: pairing::CurveAffine::PairingResult, confidence: high }
+    canonical_return_type: pairing::CurveAffine::PairingResult
+    parameter_types: ["&pairing::CurveAffine", "&pairing::CurveAffine::Pair"]
+    role: operation
+  - method: pairing::CurveAffine.pairing_with
+    arity: 1
+    return: { type: pairing::CurveAffine::PairingResult, confidence: high }
+    canonical_return_type: pairing::CurveAffine::PairingResult
+    parameter_types: ["&pairing::CurveAffine::Pair"]
+    role: operation
+
+  # ---- 0.9.0 to 0.16.0: the staged pairing on the generic Engine ----
+  - method: pairing::Engine.miller_loop
+    arity: 1
+    return: { type: pairing::Engine::Fqk, confidence: high }
+    canonical_return_type: pairing::Engine::Fqk
+    parameter_types: ["I"]
+    role: operation
+  - method: pairing::Engine.final_exponentiation
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    canonical_return_type: core::option::Option
+    parameter_types: ["&pairing::Engine::Fqk"]
+    role: operation
+
+  # ---- 0.9.0 to 0.16.0: the bundled BLS12-381 engine ----
+  - method: pairing::bls12_381::Bls12.pairing
+    arity: 2
+    return: { type: pairing::bls12_381::Fq12, confidence: high }
+    canonical_return_type: pairing::bls12_381::Fq12
+    parameter_types: ["G1", "G2"]
+    role: operation
+  - method: pairing::bls12_381::Bls12.miller_loop
+    arity: 1
+    return: { type: pairing::bls12_381::Fq12, confidence: high }
+    canonical_return_type: pairing::bls12_381::Fq12
+    parameter_types: ["I"]
+    role: operation
+  - method: pairing::bls12_381::Bls12.final_exponentiation
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    canonical_return_type: core::option::Option
+    parameter_types: ["&pairing::bls12_381::Fq12"]
+    role: operation
+  # `impl PairingCurveAffine for $affine` is generated for both affines by the
+  # `curve_impl!` macro, with `type PairingResult = Fq12`
+  # (0.16.0 src/bls12_381/ec.rs:183-192).
+  - method: pairing::bls12_381::G1Affine.pairing_with
+    arity: 1
+    return: { type: pairing::bls12_381::Fq12, confidence: high }
+    canonical_return_type: pairing::bls12_381::Fq12
+    parameter_types: ["&pairing::bls12_381::G2Affine"]
+    role: operation
+  - method: pairing::bls12_381::G1Affine.pairing_with
+    arity: 2
+    return: { type: pairing::bls12_381::Fq12, confidence: high }
+    canonical_return_type: pairing::bls12_381::Fq12
+    parameter_types: ["&pairing::bls12_381::G1Affine", "&pairing::bls12_381::G2Affine"]
+    role: operation
+  - method: pairing::bls12_381::G2Affine.pairing_with
+    arity: 1
+    return: { type: pairing::bls12_381::Fq12, confidence: high }
+    canonical_return_type: pairing::bls12_381::Fq12
+    parameter_types: ["&pairing::bls12_381::G1Affine"]
+    role: operation
+  - method: pairing::bls12_381::G2Affine.pairing_with
+    arity: 2
+    return: { type: pairing::bls12_381::Fq12, confidence: high }
+    canonical_return_type: pairing::bls12_381::Fq12
+    parameter_types: ["&pairing::bls12_381::G2Affine", "&pairing::bls12_381::G1Affine"]
+    role: operation

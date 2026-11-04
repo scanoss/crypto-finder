@@ -1,0 +1,204 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "@azure/keyvault-keys"
+  coordinates:
+    - "@azure/keyvault-keys"
+  version_range: ">=4.0.0"
+  description: "Azure Key Vault keys: server-side encrypt, decrypt, sign, verify, key wrap and key creation"
+
+# Azure Key Vault performs its cryptography SERVER-SIDE, so no entry here names
+# an algorithm: the consumer passes the algorithm at the call site and which
+# implementation runs is a property of the vault. What this KB types is the
+# consumer's REQUEST.
+#
+# EVERY ENTRY EXISTS TO TYPE A RECEIVER. Unlike node-forge, where a consumer
+# writes `forge.pki.createCertificate()` and the namespace access resolves to
+# the coordinate on its own, this library is used by constructing a client and
+# calling methods on the instance:
+#
+#     const c = new CryptographyClient(keyUrl, credential);
+#     await c.sign("RS256", digest);
+#
+# Without the `<init>` entries the parser emits `<module>.sign` -- the
+# consumer's own module -- and a rule's `api` has nothing to join. The two
+# constructors are therefore the load-bearing entries, and the method entries
+# are what those constructors' return types make reachable.
+#
+# ARITY IS PART OF THE KEY, and the surface is read off the package's own .d.ts
+# rather than the Azure documentation. Both constructors and every method carry
+# an optional trailing options argument, so each is declared at every arity a
+# consumer can actually write.
+#
+# encrypt and decrypt take EITHER a parameters object or the algorithm
+# positionally -- both overloads are declared in cryptographyClient.d.ts and
+# both appear in published consumers -- while sign, verify, wrapKey and
+# unwrapKey take the algorithm positionally only.
+#
+# getCryptographyClient is contracted although it performs no cryptography: it
+# RETURNS a CryptographyClient, so it is the third way a consumer obtains one
+# and typing it is what makes the subsequent call resolve.
+#
+# Deliberately NOT contracted: key listing, deletion, recovery, backup/restore,
+# rotation policies and property updates. They administer the vault and perform
+# no cryptographic operation.
+contracts:
+  - method: "@azure/keyvault-keys.CryptographyClient.<init>"
+    arity: 1
+    return: { type: "@azure/keyvault-keys.CryptographyClient", confidence: high }
+    role: factory
+  - method: "@azure/keyvault-keys.CryptographyClient.<init>"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.CryptographyClient", confidence: high }
+    role: factory
+  - method: "@azure/keyvault-keys.CryptographyClient.<init>"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.CryptographyClient", confidence: high }
+    role: factory
+  - method: "@azure/keyvault-keys.KeyClient.<init>"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.KeyClient", confidence: high }
+    role: factory
+  - method: "@azure/keyvault-keys.KeyClient.<init>"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.KeyClient", confidence: high }
+    role: factory
+
+  - method: "@azure/keyvault-keys.KeyClient.getCryptographyClient"
+    arity: 1
+    return: { type: "@azure/keyvault-keys.CryptographyClient", confidence: high }
+    role: factory
+  - method: "@azure/keyvault-keys.KeyClient.getCryptographyClient"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.CryptographyClient", confidence: high }
+    role: factory
+
+  - method: "@azure/keyvault-keys.CryptographyClient.encrypt"
+    arity: 1
+    return: { type: "@azure/keyvault-keys.EncryptResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.encrypt"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.EncryptResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.encrypt"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.EncryptResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.decrypt"
+    arity: 1
+    return: { type: "@azure/keyvault-keys.DecryptResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.decrypt"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.DecryptResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.decrypt"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.DecryptResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.sign"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.SignResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.sign"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.SignResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.signData"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.SignResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.signData"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.SignResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.verify"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.VerifyResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.verify"
+    arity: 4
+    return: { type: "@azure/keyvault-keys.VerifyResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.verifyData"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.VerifyResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.verifyData"
+    arity: 4
+    return: { type: "@azure/keyvault-keys.VerifyResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.wrapKey"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.WrapResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.wrapKey"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.WrapResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.unwrapKey"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.UnwrapResult", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.CryptographyClient.unwrapKey"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.UnwrapResult", confidence: high }
+    role: operation
+
+  - method: "@azure/keyvault-keys.KeyClient.createKey"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.createKey"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.createRsaKey"
+    arity: 1
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.createRsaKey"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.createEcKey"
+    arity: 1
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.createEcKey"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.createOctKey"
+    arity: 1
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.createOctKey"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.importKey"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.importKey"
+    arity: 3
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.getKey"
+    arity: 1
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.getKey"
+    arity: 2
+    return: { type: "@azure/keyvault-keys.KeyVaultKey", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.getRandomBytes"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@azure/keyvault-keys.KeyClient.getRandomBytes"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation

@@ -1,0 +1,761 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "noble-ciphers"
+  coordinates:
+    - "@noble/ciphers"
+  version_range: ">=0.1.0"
+  description: "@noble/ciphers: AES modes, ChaCha and Salsa AEADs and stream ciphers, AES key wrap, CMAC, FF1"
+
+# ONE SUBPATH PER FAMILY, AND THE PARSER KEYS BY THE SPECIFIER. The root module
+# throws; consumers import `@noble/ciphers/aes`, `chacha`, `salsa`, `ff1` or
+# `webcrypto`, and 2.x requires the `.js` suffix. The parser keys a call by the
+# module string it was imported from, so `import { gcm } from
+# '@noble/ciphers/aes.js'` is `@noble/ciphers/aes.js.gcm` and
+# `require('@noble/ciphers/aes').gcm` is `@noble/ciphers/aes.gcm`. Every
+# constructor is declared under both spellings.
+#
+# THE CONSTRUCTOR NAMES THE ALGORITHM, THE RETURNED OBJECT DOES THE WORK:
+#
+#     const cipher = gcm(key, nonce);    // factory, typed @noble/ciphers.Cipher
+#     const ct = cipher.encrypt(data);   // operation on the typed receiver
+#
+# encrypt and decrypt take an optional output buffer (2.x), so both arities are
+# declared. The WebCrypto wrappers return the same shape with async methods and
+# share the type. The raw stream ciphers (`chacha20(key, nonce, data, output?,
+# counter?)`) return the keystream XOR directly and are operations.
+#
+# Deliberately NOT contracted: the underscore modules (_poly1305, _polyval,
+# _micro), the `unsafe` export, hchacha/hsalsa, `utils` byte helpers, and
+# `managedNonce`, whose result is a wrapper function the parser cannot type.
+contracts:
+
+  # AES modes: cbc(key, iv, opts?), ctr(key, nonce), ecb(key, opts?), cfb(key, iv).
+  - method: "@noble/ciphers/aes.cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.cbc"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.cbc"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.cfb"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.cfb"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.ecb"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.ecb"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.ecb"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.ecb"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+
+  # AEADs take an optional associated-data argument.
+  - method: "@noble/ciphers/aes.gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.gcm"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.gcm"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.gcmsiv"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.gcmsiv"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.gcmsiv"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.gcmsiv"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.siv"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.siv"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.siv"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.siv"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.aessiv"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.aessiv"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.aessiv"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.aessiv"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.chacha20poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.chacha20poly1305"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.chacha20poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.chacha20poly1305"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.xchacha20poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.xchacha20poly1305"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.xchacha20poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.xchacha20poly1305"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.chacha20_poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.chacha20_poly1305"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.chacha20_poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.chacha20_poly1305"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.xchacha20_poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.xchacha20_poly1305"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.xchacha20_poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.xchacha20_poly1305"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/salsa.xsalsa20poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/salsa.js.xsalsa20poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/salsa.secretbox"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/salsa.js.secretbox"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/salsa.xsalsa20_poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/salsa.js.xsalsa20_poly1305"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+
+  # AES key wrap: the constructor takes the key-encryption key.
+  - method: "@noble/ciphers/aes.aeskw"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.aeskw"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.aeskwp"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.aeskwp"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+
+  # FF1(radix, key, tweak?) and BinaryFF1(key, tweak?); 0.1-0.3 shipped them under webcrypto/ff1.
+  - method: "@noble/ciphers/ff1.FF1"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/ff1.FF1"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/ff1.js.FF1"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/ff1.js.FF1"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/ff1.FF1"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/ff1.FF1"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/ff1.js.FF1"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/ff1.js.FF1"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/ff1.BinaryFF1"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/ff1.BinaryFF1"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/ff1.js.BinaryFF1"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/ff1.js.BinaryFF1"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/ff1.BinaryFF1"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/ff1.BinaryFF1"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/ff1.js.BinaryFF1"
+    arity: 1
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/ff1.js.BinaryFF1"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+
+  # WebCrypto-backed AES (async methods, same shape), including the 0.1-0.3 names that carry the key size.
+  - method: "@noble/ciphers/webcrypto.gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.gcm"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.js.gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.js.gcm"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.ctr"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.js.ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.js.ctr"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.cbc"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.js.cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto.js.cbc"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.gcm"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.gcm"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.ctr"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.ctr"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.cbc"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.cbc"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.aes_128_gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.aes_128_gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.aes_256_gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.aes_256_gcm"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.aes_128_ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.aes_128_ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.aes_256_ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.aes_256_ctr"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.aes_128_cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.aes_128_cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.aes_256_cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/aes.js.aes_256_cbc"
+    arity: 2
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/siv.aes_256_gcm_siv"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/webcrypto/siv.js.aes_256_gcm_siv"
+    arity: 3
+    return: { type: "@noble/ciphers.Cipher", confidence: high }
+    role: factory
+
+  # Raw stream ciphers return the keystream XOR: (key, nonce, data, output?, counter?).
+  - method: "@noble/ciphers/chacha.chacha20"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha20"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha20"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha20"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha20"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha20"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.xchacha20"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.xchacha20"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.xchacha20"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.xchacha20"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.xchacha20"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.xchacha20"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha8"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha8"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha8"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha8"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha8"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha8"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha12"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha12"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha12"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha12"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha12"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha12"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha20orig"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha20orig"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.chacha20orig"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha20orig"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha20orig"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/chacha.js.chacha20orig"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.salsa20"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.salsa20"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.salsa20"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.js.salsa20"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.js.salsa20"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.js.salsa20"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.xsalsa20"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.xsalsa20"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.xsalsa20"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.js.xsalsa20"
+    arity: 3
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.js.xsalsa20"
+    arity: 4
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/salsa.js.xsalsa20"
+    arity: 5
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+
+  # AES-CMAC (2.x): cmac(msg, key) tags in one call; cmac.create(key) builds the incremental MAC.
+  - method: "@noble/ciphers/aes.cmac"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/aes.js.cmac"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers/aes.cmac.create"
+    arity: 1
+    return: { type: "@noble/ciphers.Mac", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.cmac.create"
+    arity: 1
+    return: { type: "@noble/ciphers.Mac", confidence: high }
+    role: factory
+
+  # Seeded generators (2.x): rng*(seed, personalization?) returns a generator.
+  - method: "@noble/ciphers/aes.rngAesCtrDrbg128"
+    arity: 1
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.rngAesCtrDrbg128"
+    arity: 2
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.rngAesCtrDrbg128"
+    arity: 1
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.rngAesCtrDrbg128"
+    arity: 2
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.rngAesCtrDrbg256"
+    arity: 1
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.rngAesCtrDrbg256"
+    arity: 2
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.rngAesCtrDrbg256"
+    arity: 1
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/aes.js.rngAesCtrDrbg256"
+    arity: 2
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.rngChacha20"
+    arity: 1
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.rngChacha20"
+    arity: 2
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.rngChacha20"
+    arity: 1
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.rngChacha20"
+    arity: 2
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.rngChacha8"
+    arity: 1
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.rngChacha8"
+    arity: 2
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.rngChacha8"
+    arity: 1
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+  - method: "@noble/ciphers/chacha.js.rngChacha8"
+    arity: 2
+    return: { type: "@noble/ciphers.PRG", confidence: high }
+    role: factory
+
+  # The objects the constructors return.
+  - method: "@noble/ciphers.Cipher.encrypt"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers.Cipher.encrypt"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers.Cipher.decrypt"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers.Cipher.decrypt"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers.Mac.update"
+    arity: 1
+    return: { type: "@noble/ciphers.Mac", confidence: high }
+    role: operation
+  - method: "@noble/ciphers.Mac.digest"
+    arity: 0
+    return: { type: "Uint8Array", confidence: high }
+    role: output
+  - method: "@noble/ciphers.PRG.randomBytes"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "@noble/ciphers.PRG.randomBytes"
+    arity: 2
+    return: { type: "Uint8Array", confidence: high }
+    role: operation

@@ -1,0 +1,47 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rustls-native-certs-0.8
+  coordinates:
+    - rustls-native-certs
+    - rustls_native_certs
+  version_range: ">=0.8.2,<0.9.0"
+  description: "rustls-native-certs 0.8.2's explicit certificate path loader"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT (biscuit-jwks.yaml:11-17).
+#
+# `load_certs_from_paths` ARRIVES AT 0.8.2 (lib.rs:233) and is ABSENT AT 0.8.0
+# AND 0.8.1, whose lib.rs declares `load_native_certs` (:120 and :119), then
+# `CertificateResult` (:130) with its two accessors, and then `pub struct Error`
+# (:325 and :338) -- no path loader anywhere between them. It is present at 0.8.3 (lib.rs:233) and 0.8.4
+# (lib.rs:235). Declaring it under the crate's whole range would serve a 0.8.0
+# consumer a signature for a method that does not exist there -- silently, since
+# the range is never consulted at lookup. That is the exact mistake
+# biscuit-jwks-ignore-kid.yaml was split out to correct.
+#
+# THIS IS THE ONE ENTRY POINT THAT DOES NOT READ THE PLATFORM STORE. It takes an
+# explicit certificate file and/or directory -- what `SSL_CERT_FILE` and
+# `SSL_CERT_DIR` name. It is NOT the function `load_native_certs` delegates to:
+# both call the PRIVATE `load_certs_from_paths_internal` (0.8.4 lib.rs:243), and
+# `load_native_certs` never calls this public one. The rules record that difference as
+# `certificateStoreType: filesystem` against `platform` on the other two, which is
+# the only metadata that differs between the three.
+#
+# ARITY AND PARAMETER TYPES READ FROM THE DECLARATION, 0.8.4 lib.rs:235:
+#   load_certs_from_paths(file: Option<&Path>, dir: Option<&Path>) -> CertificateResult
+# Both parameters are optional and either may be `None`; passing both as `None`
+# is legal and yields an empty result rather than an error.
+#
+# `confidence: high` here and `low` in rustls-native-certs.yaml is not an
+# inconsistency: `CertificateResult` is this function's return in EVERY version
+# that has the function at all, whereas `load_native_certs` returns five different
+# types across its range.
+contracts:
+  - method: rustls_native_certs.load_certs_from_paths
+    arity: 2
+    return: {type: rustls_native_certs::CertificateResult, confidence: high}
+    parameter_types: ["core::option::Option<&std::path::Path>", "core::option::Option<&std::path::Path>"]
+    canonical_return_type: "rustls_native_certs::CertificateResult"
+    role: factory
+
+hierarchy: {}

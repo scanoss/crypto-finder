@@ -36,6 +36,8 @@ import (
 	"github.com/scanoss/static-engine/failure"
 	"github.com/scanoss/static-engine/scanner/semgrep"
 	"github.com/scanoss/static-engine/utils"
+
+	"github.com/scanoss/crypto-finder/internal/contracts"
 )
 
 var (
@@ -68,6 +70,7 @@ var rootCmd = &cobra.Command{
 			errorOutputFormat = formatJSON
 		}
 		setupLogging()
+		contracts.RegisterAll()
 		return nil
 	},
 }

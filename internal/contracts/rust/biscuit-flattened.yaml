@@ -1,0 +1,56 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: biscuit-flattened
+  coordinates:
+    - biscuit
+  version_range: ">=0.6.0,<0.9.0"
+  description: "biscuit's flattened JWS serialization surface (0.6.0 and later)"
+
+# SEPARATE FILE FOR THE SAME REASON AS biscuit-jwks.yaml: the whole `Signable` /
+# `SignedData` surface arrives at 0.6.0 -- verified absent at 0.0.8 through
+# 0.5.0 and present from 0.6.0 in the committed sample -- while the core API
+# goes back to 0.0.8.
+#
+# API read at 0.8.0 src/jws/flattened.rs:78 (`Signable::new`), :93
+# (`Signable::sign`), :181 (`SignedData::sign`), :196
+# (`SignedData::serialize_flattened`) and :234
+# (`SignedData::verify_flattened`).
+#
+# TWO SHAPES HERE ARE EASY TO GET WRONG AND WERE READ FROM THE DECLARATION, NOT
+# GUESSED. `SignedData::sign` and `SignedData::verify_flattened` are ASSOCIATED
+# FUNCTIONS, not methods: `verify_flattened(data, secret, algorithm)` takes
+# three arguments and no receiver, which the crate's own tests confirm at
+# flattened.rs:378 and :422. And `Signable::new` returns
+# `Result<Self, serde_json::Error>`, NOT the `biscuit::errors::Error` every
+# other fallible call in this crate returns -- it fails while serializing the
+# protected header, before any crypto happens.
+contracts:
+  - method: biscuit::jws::Signable.new
+    arity: 2
+    return: { type: biscuit::jws::Signable, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Signable, serde_json::Error>"
+    parameter_types: ["biscuit::jws::Header", "alloc::vec::Vec<u8>"]
+    role: factory
+  - method: biscuit::jws::Signable.sign
+    arity: 1
+    return: { type: biscuit::jws::SignedData, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::SignedData, biscuit::errors::Error>"
+    parameter_types: ["biscuit::jws::Secret"]
+    role: operation
+  - method: biscuit::jws::SignedData.sign
+    arity: 2
+    return: { type: biscuit::jws::SignedData, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::SignedData, biscuit::errors::Error>"
+    parameter_types: ["biscuit::jws::Signable", "biscuit::jws::Secret"]
+    role: operation
+  - method: biscuit::jws::SignedData.verify_flattened
+    arity: 3
+    return: { type: biscuit::jws::SignedData, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::SignedData, biscuit::errors::Error>"
+    parameter_types: ["&[u8]", "biscuit::jws::Secret", "biscuit::jwa::SignatureAlgorithm"]
+    role: operation
+  - method: biscuit::jws::SignedData.serialize_flattened
+    arity: 0
+    return: { type: alloc::string::String, confidence: high }
+    role: output

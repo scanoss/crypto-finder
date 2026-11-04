@@ -1,0 +1,213 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: commons-codec-hmacutils
+  coordinates:
+    - "commons-codec:commons-codec"
+  version_range: ">=1.10,<2.0"
+  description: "Apache Commons Codec HmacUtils: one-shot, JCE Mac and instance HMAC"
+
+# Inventory source: the released sources jars 1.10 through 1.22.0. HmacUtils
+# first appears in 1.10 as static methods only: the hmac<Alg> and hmac<Alg>Hex
+# one-shots, the getHmac<Alg> Mac factories, getInitializedMac and updateHmac.
+# 1.11 deprecates the one-shots and getHmac<Alg> in favour of the instance API,
+# the four two-argument constructors with hmac and hmacHex, and adds
+# isAvailable. Later releases add byte[] and Path overloads at arities already
+# listed. Every overload of a given name and arity shares one return type
+# across the range.
+#
+# The one-shots and getHmac<Alg> name the algorithm in the method, so only
+# their key is exposed. The constructors and getInitializedMac take the
+# algorithm as an argument, as an HmacAlgorithms constant or a JCE name string,
+# so that argument is operation-determining.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the deprecated no-argument constructor, which builds an
+#     instance with no Mac; isAvailable, an availability probe; and
+#     HmacAlgorithms.getName and toString, enum accessors.
+
+contracts:
+
+  - method: org.apache.commons.codec.digest.HmacUtils.<init>
+    arity: 2
+    return: {type: org.apache.commons.codec.digest.HmacUtils, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 1
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.getInitializedMac
+    arity: 2
+    return: {type: javax.crypto.Mac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 1
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+
+  - method: org.apache.commons.codec.digest.HmacUtils.hmac
+    arity: 1
+    return: {type: "byte[]", confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacHex
+    arity: 1
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+  - method: org.apache.commons.codec.digest.HmacUtils.updateHmac
+    arity: 2
+    return: {type: javax.crypto.Mac, confidence: high}
+    role: operation
+
+  - method: org.apache.commons.codec.digest.HmacUtils.getHmacMd5
+    arity: 1
+    return: {type: javax.crypto.Mac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacMd5
+    arity: 2
+    return: {type: "byte[]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacMd5Hex
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.getHmacSha1
+    arity: 1
+    return: {type: javax.crypto.Mac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacSha1
+    arity: 2
+    return: {type: "byte[]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacSha1Hex
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.getHmacSha256
+    arity: 1
+    return: {type: javax.crypto.Mac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacSha256
+    arity: 2
+    return: {type: "byte[]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacSha256Hex
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.getHmacSha384
+    arity: 1
+    return: {type: javax.crypto.Mac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacSha384
+    arity: 2
+    return: {type: "byte[]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacSha384Hex
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.getHmacSha512
+    arity: 1
+    return: {type: javax.crypto.Mac, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacSha512
+    arity: 2
+    return: {type: "byte[]", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+  - method: org.apache.commons.codec.digest.HmacUtils.hmacSha512Hex
+    arity: 2
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_bit_length}
+
+hierarchy:
+  org.apache.commons.codec.digest.HmacUtils:
+    - java.lang.Object
+  javax.crypto.Mac:
+    - java.lang.Object
+  java.lang.Object: []

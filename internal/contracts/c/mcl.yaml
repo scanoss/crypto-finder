@@ -1,0 +1,311 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: mcl
+  coordinates:
+    - herumi/mcl
+  version_range: ">=3.04,<4.0.0"
+  description: "mcl pairing, ECDSA and SHE C API"
+
+# Inventory sources: include/mcl/bn.h, include/mcl/she.h and include/mcl/ecdsa.h
+# from the upstream tag archives v3.04 and v3.06. No contracted function changes
+# arity between them.
+#
+# mcl's C API writes most results through its first argument (the signature, the
+# GT element, the ciphertext, the key), so the C receiver binding groups a
+# lifecycle around that object: a signature is signed and then verified; a GT
+# element is produced by a Miller loop and raised by the final exponentiation; a
+# ciphertext is encrypted and then combined homomorphically. Decryption writes
+# the plaintext first and the signature serializer writes the buffer first, so
+# those calls join the plaintext's or the buffer's lifecycle instead. mclBn_init and sheInit select the curve, which is
+# operation-determining; they take no object, so they are contracted for
+# attribution and do not join a lifecycle.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: the mclBnFr/Fp/G1/G2/GT arithmetic, comparison,
+#   set/get-string and (de)serialization helpers other than the ECDSA signature
+#   serializer, mclBn_getVersion and the curve-order getters, the she*Serialize /
+#   Deserialize and she*IsZero helpers, the ZKP verify helpers and the
+#   precomputed-public-key constructors and destructors.
+# needs-follow-up: the BLS signature API (bls.h lives in herumi/bls, not mcl),
+#   mclBnFr_setByCSPRNG as a key generator, and the she re-randomization and
+#   convert helpers.
+contracts:
+
+  # Curve selection.
+  - method: mclBn_init
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: curve
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sheInit
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: curve
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: sheSetRangeForDLP
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: ecdsaInit
+    arity: 0
+    return: {type: "int", confidence: high}
+    role: config
+
+  # Hashing to the pairing groups.
+  - method: mclBnG1_hashAndMapTo
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: mclBnG1_hashAndMapToWithDst
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: mclBnG2_hashAndMapTo
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: mclBnG2_hashAndMapToWithDst
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Pairing: the result GT element is the first argument.
+  - method: mclBn_pairing
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: mclBn_millerLoop
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: mclBn_millerLoopVec
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: mclBn_millerLoopVecMT
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: mclBn_precomputedMillerLoop
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: mclBn_precomputedMillerLoop2
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: mclBn_precomputedMillerLoop2mixed
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: mclBn_finalExp
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # ECDSA over secp256k1.
+  - method: ecdsaSecretKeySetByCSPRNG
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecdsaGetPublicKey
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ecdsaSign
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ecdsaVerify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecdsaVerifyPrecomputed
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecdsaSignatureSerialize
+    arity: 3
+    return: {type: "mclSize", confidence: high}
+    role: output
+
+  # SHE key generation.
+  - method: sheSecretKeySetByCSPRNG
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheGetPublicKey
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # SHE encryption.
+  - method: sheEncG1
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncG2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncGT
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncIntVecG1
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncIntVecG2
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncIntVecGT
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncWithZkpBinG1
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncWithZkpBinG2
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncWithZkpBinEq
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncWithZkpEq
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheEncWithZkpSetG1
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncG1
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncG2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncGT
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncIntVecG1
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncIntVecG2
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncIntVecGT
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncWithZkpBinG1
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncWithZkpBinG2
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncWithZkpBinEq
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncWithZkpEq
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: shePrecomputedPublicKeyEncWithZkpSetG1
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # SHE decryption.
+  - method: sheDecG1
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheDecG2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheDecGT
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheDecG1ViaGT
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheDecG2ViaGT
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheDecWithZkpDecG1
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheDecWithZkpDecGT
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # SHE homomorphic operations: the result ciphertext is the first argument.
+  - method: sheAddG1
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheAddG2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheAddGT
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheSubG1
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheSubG2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheSubGT
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheMulG1
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheMulG2
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheMulGT
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: sheMul
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation

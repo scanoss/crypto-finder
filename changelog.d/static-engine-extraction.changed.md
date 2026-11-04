@@ -27,3 +27,8 @@
   public owner as a consumer entry point. The graph algorithm version is now
   `graph-algo-16` (from `graph-algo-15`), so cached structural graphs are
   rebuilt; re-mine Go, Rust and Node components to get the new fields.
+- The contracts knowledge base (the per-ecosystem YAML that tells the call
+  graph what crypto library calls return) moves out of static-engine, which
+  now ships none, into crypto-finder (`internal/contracts`). crypto-finder
+  embeds it and registers it with the engine at startup. Scan output is
+  unchanged.

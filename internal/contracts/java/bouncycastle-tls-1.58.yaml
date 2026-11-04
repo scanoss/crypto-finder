@@ -1,0 +1,30 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-tls-1.58
+  coordinates:
+    - "org.bouncycastle:bctls-jdk15on"
+    - "org.bouncycastle:bctls-jdk18on"
+  version_range: ">=1.58,<2.0"
+  description: "Bouncy Castle bctls 1.58: DTLS client and server protocol engines"
+
+# From 1.58 the DTLS engines take no argument; 1.57 took a SecureRandom
+# (bouncycastle-tls-1.57.yaml). Present unchanged through bctls-jdk18on 1.84.
+contracts:
+  - method: org.bouncycastle.tls.DTLSClientProtocol.<init>
+    arity: 0
+    return: { type: org.bouncycastle.tls.DTLSClientProtocol, confidence: high }
+    role: factory
+  - method: org.bouncycastle.tls.DTLSServerProtocol.<init>
+    arity: 0
+    return: { type: org.bouncycastle.tls.DTLSServerProtocol, confidence: high }
+    role: factory
+
+hierarchy:
+  org.bouncycastle.tls.DTLSClientProtocol:
+    - org.bouncycastle.tls.DTLSProtocol
+  org.bouncycastle.tls.DTLSServerProtocol:
+    - org.bouncycastle.tls.DTLSProtocol
+  org.bouncycastle.tls.DTLSProtocol:
+    - java.lang.Object
+  java.lang.Object: []

@@ -1,0 +1,124 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ark-bls12-381
+  coordinates:
+    - ark-bls12-381
+    - ark_bls12_381
+  version_range: ">=0.2.0,<0.7.0"
+  description: "BLS12-381 pairing-friendly curve instantiated for the arkworks stack"
+
+# API read at ark-bls12-381 0.6.0 (src/curves/mod.rs, src/curves/g1.rs,
+# src/curves/g2.rs, src/fields/), with the pre-rename spellings read at 0.3.0
+# and 0.2.0 because the matrix range starts there:
+#
+#   0.2.0  curves/mod.rs:16 `pub type Bls12_381 = Bls12<Parameters>`; the
+#          pairing methods come from ark-ec's `PairingEngine`, so the era's
+#          spelling is `product_of_pairings`, not `multi_pairing`.
+#   0.3.0  unchanged from 0.2.0.
+#   0.4.0  curves/mod.rs:20 `pub type Bls12_381 = Bls12<Config>` — the config
+#          type is renamed, and ark-ec renames `PairingEngine` to
+#          `pairing::Pairing` in the same release, which is where
+#          `multi_pairing` and `multi_miller_loop` replace
+#          `product_of_pairings`.
+#   0.6.0  curves/mod.rs:20 unchanged since 0.4.0.
+#
+# Both eras are contracted because a consumer pinned anywhere in the matrix
+# range reaches one or the other, and a contract covering only the newer
+# spelling leaves a third of the range resolving to "(?, ?)".
+#
+# ARITIES WERE READ FROM THE TRAIT DECLARATIONS, NOT FROM PROSE. `pairing` and
+# `multi_pairing` take two arguments (ark-ec 0.6.0 pairing.rs:117 and :87),
+# `final_exponentiation` takes one (pairing.rs:84), and the 0.2/0.3-era
+# `product_of_pairings` takes one (ark-ec 0.3.0 lib.rs:56). `generator()` is
+# nullary (ark-ec 0.6.0 lib.rs:48 for AffineRepr, lib.rs:185 for CurveGroup).
+#
+# This crate instantiates a curve; it is not a protocol. Point addition,
+# doubling, negation and the operator impls are deliberately absent — they carry
+# no crypto asset, and the scanoss/crypto_rules raw-arithmetic-negative fixture
+# pins that they produce no finding either.
+#
+# skipped-non-crypto: Add/Sub/Mul/Neg operator impls, CanonicalSerialize and
+#   CanonicalDeserialize, Zero/One, and the field tower internals (Fq2, Fq6,
+#   Fq12) that a consumer does not construct directly.
+# parameter_types record the CONSUMER-FACING types. The trait declares
+# `impl Into<Self::G1Prepared>`; for this curve the type a consumer actually
+# passes is the affine (or projective) point, and that is what has to resolve
+# for a consumer's variable to flow into the pairing.
+contracts:
+  - method: ark_bls12_381::Bls12_381.pairing
+    arity: 2
+    return: { type: ark_ec::pairing::PairingOutput, confidence: high }
+    parameter_types: ["ark_bls12_381::G1Affine", "ark_bls12_381::G2Affine"]
+    role: operation
+  - method: ark_bls12_381::Bls12_381.multi_pairing
+    arity: 2
+    return: { type: ark_ec::pairing::PairingOutput, confidence: high }
+    parameter_types: ["ark_bls12_381::G1Affine", "ark_bls12_381::G2Affine"]
+    role: operation
+  - method: ark_bls12_381::Bls12_381.product_of_pairings
+    arity: 1
+    return: { type: ark_bls12_381::Fq12, confidence: high }
+    parameter_types: ["ark_bls12_381::Fq12"]
+    role: operation
+  - method: ark_bls12_381::Bls12_381.miller_loop
+    arity: 2
+    return: { type: ark_ec::pairing::MillerLoopOutput, confidence: high }
+    parameter_types: ["ark_bls12_381::G1Affine", "ark_bls12_381::G2Affine"]
+    role: operation
+  - method: ark_bls12_381::Bls12_381.multi_miller_loop
+    arity: 2
+    return: { type: ark_ec::pairing::MillerLoopOutput, confidence: high }
+    parameter_types: ["ark_bls12_381::G1Affine", "ark_bls12_381::G2Affine"]
+    role: operation
+  - method: ark_bls12_381::Bls12_381.final_exponentiation
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    parameter_types: ["ark_ec::pairing::MillerLoopOutput"]
+    role: operation
+  - method: ark_bls12_381::Fr.rand
+    arity: 1
+    return: { type: ark_bls12_381::Fr, confidence: high }
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  - method: ark_bls12_381::Fq.rand
+    arity: 1
+    return: { type: ark_bls12_381::Fq, confidence: high }
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  - method: ark_bls12_381::G1Affine.generator
+    arity: 0
+    return: { type: ark_bls12_381::G1Affine, confidence: high }
+    role: factory
+  - method: ark_bls12_381::G2Affine.generator
+    arity: 0
+    return: { type: ark_bls12_381::G2Affine, confidence: high }
+    role: factory
+  - method: ark_bls12_381::G1Projective.generator
+    arity: 0
+    return: { type: ark_bls12_381::G1Projective, confidence: high }
+    role: factory
+  - method: ark_bls12_381::G2Projective.generator
+    arity: 0
+    return: { type: ark_bls12_381::G2Projective, confidence: high }
+    role: factory
+  - method: ark_bls12_381::G1Projective.rand
+    arity: 1
+    return: { type: ark_bls12_381::G1Projective, confidence: high }
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  - method: ark_bls12_381::G2Projective.rand
+    arity: 1
+    return: { type: ark_bls12_381::G2Projective, confidence: high }
+    parameter_types: ["&mut rand::Rng"]
+    role: factory
+  - method: ark_bls12_381::G1Projective.into_affine
+    arity: 0
+    return: { type: ark_bls12_381::G1Affine, confidence: high }
+    role: output
+  - method: ark_bls12_381::G2Projective.into_affine
+    arity: 0
+    return: { type: ark_bls12_381::G2Affine, confidence: high }
+    role: output
+
+hierarchy: {}

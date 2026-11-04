@@ -1,0 +1,104 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: spki
+  coordinates:
+    - spki
+  version_range: ">=0.5.0,<0.9.0"
+  description: "RustCrypto X.509 SubjectPublicKeyInfo public key documents"
+
+# API read at spki 0.8.0 (src/spki.rs, src/lib.rs) and cross-checked at 0.1.0,
+# 0.5.0, 0.6.0 and 0.7.0.
+#
+# THE PUBLIC-KEY TRAITS ARE NOT CONTRACTED, for the same call-graph reason given
+# in pkcs8.yaml: DecodePublicKey/EncodePublicKey are implemented on other crates'
+# key types, so `VerifyingKey::from_public_key_der(..)` resolves to the consumer's
+# package. Verified against an exported call graph, which emitted
+# `keyprobe.VerifyingKey.from_public_key_der(?)`.
+#
+# WHAT IS CONTRACTED IS THE FINGERPRINT PAIR, which is this family's ONLY
+# algorithm operation. Read at src/spki.rs:92-96, `fingerprint_bytes` builds a
+# `Sha256`, encodes the SPKI into it and finalizes -- so the digest is SHA-256
+# and is fixed by the crate rather than chosen by the caller.
+# `fingerprint_base64` is the same digest with base64 output. Both take no
+# arguments beyond the receiver, hence arity 0.
+#
+# `from_key` IS CONTRACTED AS A FACTORY but carries no algorithm: it re-encodes
+# an existing public key into an SPKI structure and performs no cryptography.
+#
+# VERSION RANGE STARTS AT 0.5.0. Before it the crate exposes only the
+# SubjectPublicKeyInfo TYPE -- no Decode/EncodePublicKey traits and no
+# fingerprint -- so nothing here resolves against 0.1.0-0.4.0. The family's
+# sample mines spki 0.1.0 to pin that zero.
+#
+# 0.7.0 MADE THE TYPE GENERIC, AND EACH SPELLING NEEDS ITS OWN KEY. The 0.7.0
+# release added `SubjectPublicKeyInfoOwned` and `SubjectPublicKeyInfoRef`
+# alongside the base name. The parser does NOT normalize them to the base type:
+# an exported call graph over a probe using all three emits
+# `spki.SubjectPublicKeyInfo.fingerprint_bytes`,
+# `spki.SubjectPublicKeyInfoRef.fingerprint_bytes` and
+# `spki.SubjectPublicKeyInfoOwned.fingerprint_base64` as three distinct keys.
+# An earlier draft of this file keyed only the base name and asserted in a
+# comment that the parser emitted it for all three; that was checked against a
+# real export and was false, leaving the two spellings a 0.7.0+ consumer
+# actually writes uncontracted. All three are keyed below.
+#
+# skipped-non-crypto: AlgorithmIdentifier, the Error/Result types, the DER
+#   Decode/Encode impls, and the ObjectIdentifier re-exports.
+contracts:
+  # The DER decode entry for an SPKI structure, keyed for all three type
+  # spellings. This is also what makes the contract verifiable: an arity-0
+  # method renders as `()` whether or not a contract binds it, so the
+  # fingerprint entries alone cannot be checked against an export. try_from
+  # takes an argument, so `(?)` becoming `(&[u8])` is visible proof.
+  - method: spki::SubjectPublicKeyInfo.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: spki::SubjectPublicKeyInfoRef.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: spki::SubjectPublicKeyInfoOwned.try_from
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: spki::SubjectPublicKeyInfo.fingerprint_bytes
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: spki::SubjectPublicKeyInfo.fingerprint_base64
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: spki::SubjectPublicKeyInfoRef.fingerprint_bytes
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: spki::SubjectPublicKeyInfoRef.fingerprint_base64
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: spki::SubjectPublicKeyInfoOwned.fingerprint_bytes
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: spki::SubjectPublicKeyInfoOwned.fingerprint_base64
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: spki::SubjectPublicKeyInfo.from_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: spki::SubjectPublicKeyInfoRef.from_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: spki::SubjectPublicKeyInfoOwned.from_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory

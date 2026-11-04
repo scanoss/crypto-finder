@@ -1,0 +1,33 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jjwt-0.11
+  coordinates:
+    - "io.jsonwebtoken:jjwt-api"
+  version_range: ">=0.11.0,<1.0"
+  description: "JJWT 0.11+ JwtParserBuilder signing key and parser construction"
+
+# JwtParserBuilder arrives at 0.11.0. setSigningKey is deprecated at 0.12.0
+# in favour of verifyWith but still present at 0.13.0. The era table is in
+# jjwt.yaml.
+contracts:
+  - method: io.jsonwebtoken.JwtParserBuilder.setSigningKey
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtParserBuilder
+      confidence: high
+    role: config
+  - method: io.jsonwebtoken.JwtParserBuilder.build
+    arity: 0
+    return:
+      type: io.jsonwebtoken.JwtParser
+      confidence: high
+    role: factory
+
+hierarchy:
+  io.jsonwebtoken.JwtParserBuilder:
+    - java.lang.Object
+  io.jsonwebtoken.JwtParser:
+    - java.lang.Object
+  java.lang.Object: []

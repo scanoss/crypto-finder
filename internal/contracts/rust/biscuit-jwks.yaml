@@ -1,0 +1,41 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: biscuit-jwks
+  coordinates:
+    - biscuit
+  version_range: ">=0.5.0,<0.9.0"
+  description: "biscuit's JWK Set verification decoder (0.5.0 and later)"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT, NOT BECAUSE THE CRATE IS.
+# `version_range` is declared per LIBRARY, so a file may only claim versions for
+# which EVERY entry in it is true. `decode_with_jwks` does not exist before
+# 0.5.0 -- verified absent at 0.0.1, 0.0.8 and 0.4.0 and present from 0.5.0
+# (jws.rs:149) with the signature it still has at 0.8.0 -- while the rest of the
+# crate's API goes back to 0.0.8. Folding this entry into biscuit.yaml would
+# force that whole file's range up to 0.5.0 and silently under-document
+# everything else.
+#
+# `decode_with_jwks_ignore_kid` IS NOT HERE, AND A COLD REVIEW IS WHY. It reads
+# like a sibling of `decode_with_jwks` and an earlier revision of this file
+# carried both under `>=0.5.0`. It is absent at 0.5.0 AND at 0.6.0 and first
+# appears at 0.7.0, so that range was wrong for half its entries -- and because
+# `version_range` is parsed and never consulted at lookup, a 0.5.0 consumer
+# would have been served a signature for a method that does not exist there,
+# silently. It has its own file, biscuit-jwks-ignore-kid.yaml.
+#
+# Both spellings are contracted for the same reason as in biscuit.yaml: `JWT` is
+# a type alias and the parser keys a call by the path the consumer wrote.
+contracts:
+  - method: biscuit::JWT.decode_with_jwks
+    arity: 2
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWKSet", "core::option::Option<biscuit::jwa::SignatureAlgorithm>"]
+    role: operation
+  - method: biscuit::jws::Compact.decode_with_jwks
+    arity: 2
+    return: { type: biscuit::jws::Compact, confidence: high }
+    canonical_return_type: "core::result::Result<biscuit::jws::Compact, biscuit::errors::Error>"
+    parameter_types: ["&biscuit::jwk::JWKSet", "core::option::Option<biscuit::jwa::SignatureAlgorithm>"]
+    role: operation

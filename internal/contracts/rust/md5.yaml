@@ -1,0 +1,167 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: md5
+  coordinates:
+    - md5
+  version_range: ">=0.1.0,<0.9.0"
+  description: "The standalone md5 crate: one-shot and incremental MD5 hashing"
+
+# EVERY KEY BELOW WAS READ OFF A PARSED CALL, not written from the API. The
+# probe consumer calls each entry point the way real consumers do; the keys are
+# what the Rust parser emits for those calls. Produced with
+# `NewRustParser().ParseDirectory`, printing `splitMethodArity(&call.Callee)`
+# for the KEY and `len(call.Arguments)` for the ARITY -- the parser emits no
+# `#N` suffix, so the argument count is the only real source of arity:
+#
+#   md5::compute(data)                       -> md5.compute            /1
+#   use md5::compute;  compute(data)         -> md5.compute            /1
+#   use md5::Context;  Context::new()        -> md5.Context.new        /0
+#   md5::Context::new()                      -> md5.Context.new        /0
+#   md5::Context::default()                  -> md5.Context.default    /0
+#   ctx.consume(data)                        -> md5.Context.consume    /1
+#   ctx.compute()                            -> md5.Context.compute    /0
+#   ctx.finalize()                           -> md5.Context.finalize   /0
+#   ctx.write(data) / write_all / flush      -> md5.Context.write ...  /1,/1,/0
+#   md5::Digest::from(ctx)                   -> md5.Digest.from        /1
+#
+# The `::` in front of the receiver type is the separator the KB is authored
+# with; `rustAuthoredKey` moves the dot-joined FQN's last-but-one separator, so
+# `md5.Context.new` and `md5::Context.new` reach the same contract. A key with
+# fewer than two dots -- `md5.compute` -- has no separator to move and is
+# authored exactly as the parser emits it.
+#
+# `ctx.into()` is NOT contracted: it produces no callee key at all in the
+# probe, so there is nothing to key on. `Digest::from(ctx)` is the spelling that
+# does.
+#
+# THIS CRATE IS NOT RustCrypto's `md-5`, AND BOTH COMPILE TO THE LIB NAME
+# `md5`. `md-5.yaml` keys everything on `md5::Md5`, which this crate does not
+# have; this file keys everything on `md5::Context`, `md5::Digest` and the
+# crate-root `compute`, none of which md-5 has. The two key sets are disjoint,
+# so neither KB can give identity to the other crate's calls -- which is the
+# only thing separating them, since the crate name never appears in a
+# consumer's source.
+#
+# `md5::Digest.from` is the one key that names a type the two crates SHARE by
+# name: a newtype here (0.3.0 src/lib.rs:21) and a re-exported `digest` trait
+# in md-5 (0.10.6 src/lib.rs:33). It is contracted because `impl From<Context>
+# for Digest` (0.1.0 src/lib.rs:123, 0.8.0 src/lib.rs:165) is a real
+# finalization spelling that calls `compute`/`finalize` internally. md-5's
+# `Digest` is a trait and declares no `from`, so no md-5 call can reach it.
+#
+# PARAMETER TYPES ARE THE 0.3.0-AND-LATER GENERIC FORM, and it covers 16 of the
+# 20 PUBLISHED versions inside this range. Both halves of that sentence were
+# wrong in an earlier draft, which said "17 of 19":
+#
+#   - FOUR versions take `&[u8]`, not two -- 0.1.0 (src/lib.rs:132, :45),
+#     0.1.1 (:138, :51), 0.2.0 (:140, :46) and 0.2.1 (:148, :54), each read from
+#     its own archive. The draft named only the two `.0` releases and assumed
+#     the patch releases followed the next minor. They do not.
+#   - 19 is the COMMITTED CSV's row count, not the number of versions this range
+#     holds. crates.io publishes 0.8.1, which satisfies `<0.9.0`, so the range
+#     covers 20. The CSV's staleness is reported on the family's issue and must
+#     not be read back as a fact about the crate.
+#
+# The generic form arrives at 0.3.0 (src/lib.rs:197, :102). One entry cannot
+# spell both; the generic form is the wider and the dominant one, and a `&[u8]`
+# argument satisfies it.
+#
+# `impl AsRef<[u8]>` IS A CANONICALIZATION, NOT THE CRATE'S SPELLING. The source
+# writes `pub fn compute<T: AsRef<[u8]>>(data: T)` (0.3.0 uses `<A: ...>`). Every
+# other citation in this header is verbatim; this one is the argument-position
+# rendering of that bound, which is what the export reads.
+#
+# EVERY ENTRY IN THIS FILE IS REACHABLE ACROSS THE WHOLE DECLARED RANGE, and
+# that is why the file is split. `version_range` is declared per LIBRARY, so a
+# file may only claim versions for which EVERY entry in it is true -- the rule
+# `biscuit-jwks.yaml:11-17` states, and the reason it gives is that the field is
+# parsed and NEVER consulted at lookup, so a range that over-claims is a silent
+# false statement rather than a caught error. `Context::finalize` (0.8.0
+# src/lib.rs:120) and `Context::default` (0.8.0 src/lib.rs:158) arrive only at
+# 0.8.0, so they live in `md5-0.8.yaml` with their own range instead of widening
+# this one. Two entries and one split is biscuit's case, not blake3's six version
+# windows, so biscuit's stricter convention is the one followed.
+#
+# `Context::compute` STAYS HERE: it exists from 0.1.0 (src/lib.rs:76) and still
+# exists at 0.8.0 as a `#[deprecated(since = "0.8.0")]` inline call to `finalize`
+# (src/lib.rs:153), so it is true across the whole range rather than an era that
+# `finalize` replaced.
+#
+# THE UPPER BOUND WAS CHECKED AGAINST THE NEWEST PUBLISHED RELEASE, not just the
+# newest row the matrix lists: md5 0.8.1's public surface is identical to 0.8.0's
+# -- only `finalize`'s internal body changed (0.8.0 src/lib.rs:121-137 against
+# 0.8.1 :120-128) -- so `<0.9.0` is true for every version that exists.
+#
+# THE io::Write TRIO DECLARES `return: void` AT confidence: medium, not high, and
+# its two return fields deliberately disagree: `write` really returns
+# `io::Result<usize>` and `flush`/`write_all` an `io::Result<()>`, which is what
+# `canonical_return_type` carries, while `return.type` is semantic inference data
+# that drops the wrapper. Approximating there is what `medium` records, and
+# `blake3.yaml` declares its own `write_all`/`flush` the same way for the same
+# reason. Every other entry agrees between the two fields and stays at high.
+#
+# The io::Write methods are declared because `impl Write for Context` is public
+# API from 0.1.0 (src/lib.rs:110) through 0.8.0 (src/lib.rs:173, behind the
+# default-on `std` feature added at 0.7.0). `write` and `flush` are md5's own
+# impl; `write_all` is the trait's provided method reached on an md5 receiver,
+# which is the same construction `blake3.yaml` declares for its Hasher.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: `Deref`/`DerefMut`/`Index` on `Digest`, the `fmt`
+#     impls, and `From<Digest> for [u8; 16]` -- all of them move an
+#     already-computed digest between representations.
+contracts:
+  # --- one-shot --------------------------------------------------------------
+  - method: md5.compute
+    arity: 1
+    return: {type: md5::Digest, confidence: high}
+    parameter_types: ["impl AsRef<[u8]>"]
+    canonical_return_type: "md5::Digest"
+    role: output
+  # --- the incremental context ----------------------------------------------
+  - method: md5::Context.new
+    arity: 0
+    return: {type: md5::Context, confidence: high}
+    parameter_types: []
+    canonical_return_type: "md5::Context"
+    role: factory
+  - method: md5::Context.consume
+    arity: 1
+    return: {type: void, confidence: high}
+    parameter_types: ["impl AsRef<[u8]>"]
+    canonical_return_type: "()"
+    role: operation
+  - method: md5::Context.compute
+    arity: 0
+    return: {type: md5::Digest, confidence: high}
+    parameter_types: []
+    canonical_return_type: "md5::Digest"
+    role: output
+  - method: md5::Digest.from
+    arity: 1
+    return: {type: md5::Digest, confidence: high}
+    parameter_types: ["md5::Context"]
+    canonical_return_type: "md5::Digest"
+    role: output
+  # --- the io::Write input path ---------------------------------------------
+  - method: md5::Context.write
+    arity: 1
+    return: {type: void, confidence: medium}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "std::io::Result<usize>"
+    role: operation
+  - method: md5::Context.write_all
+    arity: 1
+    return: {type: void, confidence: medium}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "std::io::Result<()>"
+    role: operation
+  - method: md5::Context.flush
+    arity: 0
+    return: {type: void, confidence: medium}
+    parameter_types: []
+    canonical_return_type: "std::io::Result<()>"
+    role: operation
+
+hierarchy: {}

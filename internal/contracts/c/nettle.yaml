@@ -1,0 +1,1678 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: nettle
+  coordinates:
+    - nettle
+    - gnutls/nettle
+    - sailfishos-mirror/nettle
+  version_range: ">=3.0,<5.0"
+  description: "Nettle ciphers, modes, AEAD, hashes, MACs, KDFs, DRBGs and public-key APIs"
+
+# Inventory source: the public headers at nettle_3.9.1_release_20230601 (the
+# SailfishOS mirror and the upstream tree expose the same symbols) and at
+# nettle_4.0_release_20260205, plus every function the Nettle detection rules
+# select. The headers declare the unprefixed names consumers write
+# (sha256_digest) and #define them to nettle_-prefixed link symbols; the
+# contracts use the unprefixed names. Where 4.0 changed an arity (the
+# digest functions dropped their length argument), each arity is its own contract.
+#
+# Nettle fixes the algorithm in the function name. The cipher function pointer
+# passed to the generic modes (cbc_encrypt, ctr_crypt, cfb*, gcm_encrypt/decrypt,
+# xts_*) selects the block cipher and is operation-determining. The RSA modulus
+# size, PBKDF2 iteration count and length, bcrypt cost and Balloon costs are
+# metadata-contributing.
+#
+# Dispositions:
+#   contracted: every function below; it includes every rule-selected function
+#     except the collisions listed next.
+#   skipped-unsupported: chacha_crypt, hkdf_extract, md4_init, md5_init,
+#     sha1_init, sha224_init, sha256_init, sha384_init, sha512_init,
+#     sha512_224_init, sha512_256_init and sha3_{224,256,384,512}_init, which the
+#     LibTomCrypt contracts declare at the same arity with a different return. The C knowledge base keys contracts by bare name and arity, so they
+#     cannot coexist; those calls resolve to the existing contract.
+#   needs-follow-up: the detection rules name shake*_init/update/output,
+#     blake2{b,s}_init/update/digest and poly1305_set_key/update/digest, which
+#     neither 3.9.1 nor 4.0 declares with those names in its public headers.
+#   skipped-non-crypto: base16/base64, knuth-lfib, memops, bignum conversion,
+#     *_itch scratch-size queries and the nettle_*-prefixed spellings consumers
+#     do not write.
+contracts:
+  - method: aes128_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: aes128_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: aes128_invert_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: aes128_set_decrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: aes128_set_encrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: aes192_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: aes192_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: aes192_invert_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: aes192_set_decrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: aes192_set_encrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: aes256_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: aes256_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: aes256_invert_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: aes256_set_decrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: aes256_set_encrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: arcfour128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: arcfour_crypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: arcfour_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: arctwo128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: arctwo128_set_key_gutmann
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: arctwo40_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: arctwo64_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: arctwo_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: arctwo_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: arctwo_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: arctwo_set_key_ekb
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+  - method: arctwo_set_key_gutmann
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: balloon
+    arity: 12
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: s_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 5
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: balloon_sha1
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: s_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 1
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: balloon_sha256
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: s_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 1
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: balloon_sha384
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: s_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 1
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: balloon_sha512
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: s_cost
+        role: metadata-contributing
+        contributes: {property: memoryLimit, derivation: argument_value}
+      - index: 1
+        name: t_cost
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: blowfish128_set_key
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: blowfish_bcrypt_hash
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+    parameters:
+      - index: 5
+        name: log2rounds
+        role: metadata-contributing
+        contributes: {property: cost, derivation: argument_value}
+  - method: blowfish_bcrypt_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: blowfish_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blowfish_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: blowfish_set_key
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: camellia128_crypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: camellia128_invert_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: camellia128_set_decrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: camellia128_set_encrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: camellia192_set_decrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: camellia192_set_encrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: camellia256_crypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: camellia256_invert_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: camellia256_set_decrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: camellia256_set_encrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: cast128_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cast128_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cast128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: cbc_aes128_encrypt
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cbc_aes192_encrypt
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cbc_aes256_encrypt
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cbc_decrypt
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: f
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: cbc_encrypt
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: f
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: ccm_aes128_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes128_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes128_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes128_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: ccm_aes128_set_nonce
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: config
+  - method: ccm_aes128_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes192_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes192_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes192_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes192_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes192_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: ccm_aes192_set_nonce
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: config
+  - method: ccm_aes192_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes256_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes256_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes256_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes256_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ccm_aes256_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: ccm_aes256_set_nonce
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: config
+  - method: ccm_aes256_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cfb8_decrypt
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: f
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: cfb8_encrypt
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: f
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: cfb_decrypt
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: f
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: cfb_encrypt
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: f
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: chacha_crypt32
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: chacha_poly1305_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: chacha_poly1305_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: chacha_poly1305_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: chacha_poly1305_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: chacha_poly1305_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: chacha_poly1305_set_nonce
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: chacha_poly1305_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: chacha_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: chacha_set_nonce
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: cmac_aes128_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cmac_aes128_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cmac_aes128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: cmac_aes128_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cmac_aes256_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cmac_aes256_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cmac_aes256_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: cmac_aes256_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cmac_des3_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cmac_des3_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: cmac_des3_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: cmac_des3_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ctr_crypt
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 1
+        name: f
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: curve25519_mul
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: curve25519_mul_g
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: curve448_mul
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: curve448_mul_g
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: des3_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: des3_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: des3_set_key
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: des_check_parity
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: des_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: des_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: des_fix_parity
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: des_set_key
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+  - method: drbg_ctr_aes256_init
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: drbg_ctr_aes256_random
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: drbg_ctr_aes256_update
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: dsa_generate_keypair
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: factory
+  - method: dsa_generate_keypair
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: dsa_params_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: dsa_sign
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: dsa_verify
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: eax_aes128_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: eax_aes128_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: eax_aes128_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: eax_aes128_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: eax_aes128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: eax_aes128_set_nonce
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: eax_aes128_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ecc_gostdsa_sign
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ecc_gostdsa_verify
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ecdsa_generate_keypair
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: factory
+  - method: ecdsa_sign
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ecdsa_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ed25519_sha512_sign
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ed25519_sha512_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: ed448_shake256_sign
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ed448_shake256_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: gcm_aes128_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes128_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes128_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes128_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes128_set_iv
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gcm_aes128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gcm_aes128_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes192_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes192_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes192_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes192_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes192_set_iv
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gcm_aes192_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gcm_aes192_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes256_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes256_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes256_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes256_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_aes256_set_iv
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gcm_aes256_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gcm_aes256_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_camellia128_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_camellia128_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_camellia256_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_camellia256_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_decrypt
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: f
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gcm_encrypt
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 3
+        name: f
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: gcm_sm4_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gcm_sm4_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gostdsa_sign
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gostdsa_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: gostdsa_vko
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gosthash94_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gosthash94_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: gosthash94_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: gosthash94_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hkdf_expand
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_gosthash94_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_gosthash94_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_gosthash94_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_gosthash94_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_md5_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_md5_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_md5_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_md5_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_ripemd160_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_ripemd160_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_ripemd160_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_ripemd160_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha1_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha1_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha1_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_sha1_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha224_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha224_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha224_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_sha256_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha256_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha256_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_sha256_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha384_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha384_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha384_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_sha512_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha512_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sha512_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_sha512_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sm3_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sm3_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_sm3_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_sm3_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_streebog256_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_streebog256_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_streebog256_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_streebog512_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_streebog512_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: hmac_streebog512_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: hmac_streebog512_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md4_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md4_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md4_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md5_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md5_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: md5_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ocb_aes128_decrypt
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ocb_aes128_digest
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ocb_aes128_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ocb_aes128_encrypt
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ocb_aes128_set_nonce
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: config
+  - method: ocb_aes128_update
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: pbkdf2
+    arity: 9
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 4
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 7
+        name: length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: pbkdf2_hmac_sha1
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 5
+        name: length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: pbkdf2_hmac_sha256
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 5
+        name: length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: pbkdf2_hmac_sha384
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 5
+        name: length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: pbkdf2_hmac_sha512
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: iterations
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+      - index: 5
+        name: length
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: ripemd160_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ripemd160_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: ripemd160_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: ripemd160_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: rsa_decrypt
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_encrypt
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_generate_keypair
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: factory
+    parameters:
+      - index: 6
+        name: n_size
+        role: metadata-contributing
+        contributes: {property: keySize, derivation: argument_value}
+  - method: rsa_md5_sign
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_md5_sign_digest
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_md5_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_md5_verify_digest
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_oaep_sha256_decrypt
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_oaep_sha256_encrypt
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_oaep_sha384_decrypt
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_oaep_sha384_encrypt
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_oaep_sha512_decrypt
+    arity: 9
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_oaep_sha512_encrypt
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_pkcs1_sign
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_pkcs1_sign_tr
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_pkcs1_verify
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_pss_sha256_sign_digest_tr
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_pss_sha512_sign_digest_tr
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sec_decrypt
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha1_sign
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha1_sign_digest
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha1_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha1_verify_digest
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha256_sign
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha256_sign_digest
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha256_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha256_verify_digest
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha512_sign
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha512_sign_digest
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha512_verify
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: rsa_sha512_verify_digest
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: salsa20_128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: salsa20_256_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: serpent128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: serpent192_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: serpent256_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: serpent_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: serpent_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: serpent_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: sha1_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha1_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha1_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha224_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha224_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha256_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha256_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha256_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha384_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha384_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_224_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_224_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_224_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_256_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_256_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_256_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_384_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_384_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_384_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_512_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_512_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha3_512_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha512_224_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha512_224_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha512_256_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha512_256_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha512_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha512_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sha512_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: siv_cmac_aes128_decrypt_message
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: siv_cmac_aes128_encrypt_message
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: siv_cmac_aes256_decrypt_message
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: siv_cmac_aes256_encrypt_message
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: siv_cmac_decrypt_message
+    arity: 11
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: siv_cmac_encrypt_message
+    arity: 11
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: siv_gcm_aes128_decrypt_message
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: siv_gcm_aes128_encrypt_message
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: siv_gcm_aes256_decrypt_message
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: siv_gcm_aes256_encrypt_message
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: siv_gcm_decrypt_message
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: siv_gcm_encrypt_message
+    arity: 10
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sm3_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sm3_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sm3_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: sm3_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sm4_crypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: sm4_set_decrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: sm4_set_encrypt_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: streebog256_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: streebog256_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: streebog256_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: streebog512_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: streebog512_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: streebog512_init
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: streebog512_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: twofish128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: twofish192_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: twofish256_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: twofish_decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: twofish_encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: twofish_set_key
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: umac128_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac128_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac128_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: umac128_set_nonce
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: umac128_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac32_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac32_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac32_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: umac32_set_nonce
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: umac32_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac64_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac64_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac64_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: umac64_set_nonce
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: umac64_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac96_digest
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac96_digest
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: umac96_set_key
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: umac96_set_nonce
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: umac96_update
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: xts_aes128_decrypt_message
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: xts_aes128_encrypt_message
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: xts_aes256_decrypt_message
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: xts_aes256_encrypt_message
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: xts_decrypt_message
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: xts_encrypt_message
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: yarrow256_fast_reseed
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: yarrow256_init
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: yarrow256_is_seeded
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: yarrow256_needed_sources
+    arity: 1
+    return: {type: "unsigned", confidence: high}
+    role: operation
+  - method: yarrow256_random
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: yarrow256_seed
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: yarrow256_slow_reseed
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: yarrow256_update
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+hierarchy: {}

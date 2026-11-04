@@ -1,0 +1,360 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: snow
+  coordinates:
+    - snow
+  version_range: ">=0.1.9,<0.11.0"
+  description: "snow: the Noise Protocol Framework in Rust"
+
+# API read at snow 0.9.6 and cross-checked at 0.1.9, 0.2.0, 0.3.0, 0.6.0, 0.7.0
+# and 0.10.0 from the committed sample.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y and an exported
+# call graph agreed: a probe consumer came back with
+# `snow.Builder.local_private_key(?)` -- one argument, no type -- which is what
+# an absent contract looks like.
+#
+# KEYS READ OFF THE EXPORTED GRAPH, NOT ASSUMED. lib.rs re-exports Builder,
+# Keypair, Error, HandshakeState, TransportState and StatelessTransportState
+# from the CRATE ROOT, so their keys carry no module segment: the graph emits
+# `snow.Builder.generate_keypair`. NoiseParams is NOT re-exported -- it stays
+# behind `pub mod params` -- so its key does carry the module,
+# `snow::params::NoiseParams.from_str`. A key written the other way round for
+# either group would never resolve.
+#
+# THE BUILDER RENAME IS RECORDED AS A SECOND SET OF KEYS, not as a version
+# range. `NoiseBuilder` is the 0.1.x/0.2.x name and `Builder` is the 0.3.0+ one;
+# both ship in the committed range, and a consumer pinned to 0.2.x emits the old
+# key. Contracts are indexed by method, so both spellings are distinct keys and
+# both are present. Recording only the modern one would leave every consumer on
+# the older API untyped.
+#
+# THE RENAME WAS A CLEAN BREAK, AND THE TWO NAME SETS ARE NOT ALIASES. Grepping
+# all eight sampled archives: `NoiseBuilder` appears only in 0.0.1-preview.0,
+# 0.1.9 and 0.2.0, `Builder` only from 0.3.0 on, and no version ships both. The
+# method sets differ too, so the older keys are transcribed from the older
+# sources rather than copied from the newer block:
+#
+#   - key generation is `generate_private_key` returning `Result<Vec<u8>>`
+#     (0.1.9 src/noise.rs:138, 0.2.0 src/noise.rs:109). `generate_keypair` and
+#     the `Keypair` type arrive with the rename at 0.3.0 (src/builder.rs:119),
+#     so `NoiseBuilder.generate_keypair` NAMES NOTHING and is not declared.
+#   - the configuration methods return `Self`, i.e. `snow::NoiseBuilder` — NOT
+#     `snow::Builder`, which does not exist in that era.
+#   - `with_resolver` takes `Box<CryptoResolver>` (0.1.9 src/noise.rs:92);
+#     `snow::resolvers::BoxedCryptoResolver` is a 0.7.0 alias
+#     (src/resolvers/mod.rs:30).
+#
+# `snow::Session` IS THE LEGACY HANDSHAKE AND TRANSPORT TYPE, and it is typed
+# here for the same reason the old builder keys are. `build_initiator` returns
+# `Result<Session, _>` from 0.0.1-preview.0 through 0.3.0 (0.3.0
+# src/builder.rs:133) and Session carries the crypto operations for that whole
+# era; HandshakeState and TransportState only arrive at 0.6.0. Session is
+# re-exported from the crate root (0.2.0 src/lib.rs:60), so its keys carry no
+# module segment.
+#
+# THE BUILDER IS A CONSUMING CHAIN, which is why every configuration method
+# returns `snow::Builder` rather than unit: `Builder::new(p).psk(0, k)
+# .local_private_key(sk).build_initiator()` is the documented shape, and the
+# return type is what lets the chain's later links resolve.
+#
+# 0.10.0 MADE FOUR OF THOSE CONFIGURATION METHODS FALLIBLE, and the KB has one
+# return type per method+arity, so this is recorded rather than papered over.
+# `psk`, `local_private_key`, `prologue` and `remote_public_key` return
+# `Result<Self, Error>` at 0.10.0 (src/builder.rs:109, 127, 149, 162) against
+# `Self` at 0.9.6 (src/builder.rs:105, 118, 135, 146). The declared return is
+# `snow::Builder`, which is right for 0.3.0-0.9.6 — the bulk of the published
+# range — and on 0.10.0 the effect is the SAME limitation already recorded
+# below: the link does not propagate, so the receiver stays unresolved. It never
+# resolves to a wrong type. Declaring `Result` instead would move the loss onto
+# every version before 0.10.0 rather than remove it.
+# `fixed_ephemeral_key_for_testing_only` stayed infallible
+# (0.10.0 src/builder.rs:138).
+#
+# `into_transport_mode` AND `into_stateless_transport_mode` RETURN DIFFERENT
+# TYPES, and both are typed here. The stateless variant exists for consumers
+# that manage nonces themselves; its read/write take an explicit nonce, so its
+# methods are distinct keys on a distinct type rather than aliases.
+#
+# TWO LIMITATIONS OF THIS KB SHAPE, MEASURED AND RECORDED RATHER THAN PAPERED
+# OVER. Both are shared with pkcs8, der and spki, which declare Result returns
+# the same way.
+#
+#   1. A `Result`-WRAPPED RETURN LOSES THE INNER TYPE. `build_initiator` really
+#      returns `Result<HandshakeState, Error>`, and `core::result::Result` is
+#      what is declared because that is the honest signature. The consequence is
+#      that a receiver bound from `build_initiator().unwrap()` cannot be typed,
+#      so `handshake.write_message(..)` stays unresolved. Declaring the inner
+#      type instead would type the receiver by asserting a return the function
+#      does not have; every existing Rust contract chose honesty here and this
+#      one follows.
+#   2. A CHAIN DEEPER THAN ONE CONFIGURATION LINK DOES NOT PROPAGATE. Measured:
+#      `Builder::new(p).build_initiator()` resolves, and
+#      `Builder::new(p).local_private_key(k).build_initiator()` does not — the
+#      second link comes back untyped even though `local_private_key` is
+#      declared as returning `snow::Builder`. The contracts are correct; the
+#      propagation stops one link short. Recorded here so the next reader does
+#      not "fix" the contract for it.
+#
+# The rules do not depend on either: they anchor the receiver forms on the
+# import guard, and crypto-finder's receiver filter is what keeps a consumer's
+# own type from being claimed.
+#
+# ARITIES ARE THE DECLARED ONES, self excluded, read from the sources:
+# read_message and write_message take 2 on both HandshakeState and
+# TransportState; rekey_manually takes 2, the initiator/responder variants take
+# 1, and the plain rekey_outgoing / rekey_incoming take 0. The two parameters
+# are ordered `write_message(payload, message)` but
+# `read_message(message, payload)` (0.9.6 src/handshakestate.rs:206 and 333), so
+# the pair is `["&[u8]", "&mut [u8]"]` either way and the arity is unaffected.
+
+contracts:
+  - method: snow::Builder.new
+    arity: 1
+    return: { type: snow::Builder, confidence: high }
+    parameter_types: ["snow::params::NoiseParams"]
+    role: factory
+  - method: snow::Builder.with_resolver
+    arity: 2
+    return: { type: snow::Builder, confidence: high }
+    parameter_types: ["snow::params::NoiseParams", "snow::resolvers::BoxedCryptoResolver"]
+    role: factory
+  # Key generation is `factory` across the Rust contracts (sodiumoxide
+  # gen_keypair, aes_gcm generate_key): it mints material rather than consuming
+  # it.
+  - method: snow::Builder.generate_keypair
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: snow::Builder.build_initiator
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: snow::Builder.build_responder
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: snow::Builder.psk
+    arity: 2
+    return: { type: snow::Builder, confidence: high }
+    parameter_types: ["u8", "&[u8]"]
+    role: config
+  - method: snow::Builder.local_private_key
+    arity: 1
+    return: { type: snow::Builder, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: config
+  - method: snow::Builder.remote_public_key
+    arity: 1
+    return: { type: snow::Builder, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: config
+  - method: snow::Builder.prologue
+    arity: 1
+    return: { type: snow::Builder, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: config
+  - method: snow::Builder.fixed_ephemeral_key_for_testing_only
+    arity: 1
+    return: { type: snow::Builder, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: config
+  - method: snow::NoiseBuilder.new
+    arity: 1
+    return: { type: snow::NoiseBuilder, confidence: high }
+    parameter_types: ["snow::params::NoiseParams"]
+    role: factory
+  - method: snow::NoiseBuilder.with_resolver
+    arity: 2
+    return: { type: snow::NoiseBuilder, confidence: high }
+    parameter_types: ["snow::params::NoiseParams", "Box<CryptoResolver>"]
+    role: factory
+  - method: snow::NoiseBuilder.generate_private_key
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: snow::NoiseBuilder.build_initiator
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: snow::NoiseBuilder.build_responder
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: snow::NoiseBuilder.psk
+    arity: 2
+    return: { type: snow::NoiseBuilder, confidence: high }
+    parameter_types: ["u8", "&[u8]"]
+    role: config
+  - method: snow::NoiseBuilder.local_private_key
+    arity: 1
+    return: { type: snow::NoiseBuilder, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: config
+  - method: snow::NoiseBuilder.remote_public_key
+    arity: 1
+    return: { type: snow::NoiseBuilder, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: config
+  - method: snow::NoiseBuilder.prologue
+    arity: 1
+    return: { type: snow::NoiseBuilder, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: config
+  - method: snow::NoiseBuilder.fixed_ephemeral_key_for_testing_only
+    arity: 1
+    return: { type: snow::NoiseBuilder, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: config
+  # snow::Session is what the builder returns from 0.0.1-preview.0 to 0.3.0, and
+  # it carries that era's crypto operations. Read at 0.2.0 src/session.rs and
+  # 0.3.0 src/session.rs, which agree on these signatures.
+  - method: snow::Session.write_message
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: snow::Session.read_message
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: snow::Session.rekey
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["core::option::Option<&[u8]>", "core::option::Option<&[u8]>"]
+    role: operation
+  - method: snow::Session.set_psk
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["usize", "&[u8]"]
+    role: config
+  - method: snow::Session.into_transport_mode
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: snow::Session.get_handshake_hash
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: output
+  - method: snow::Session.is_handshake_finished
+    arity: 0
+    return: { type: bool, confidence: high }
+    parameter_types: []
+    role: output
+  - method: snow::HandshakeState.write_message
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: snow::HandshakeState.read_message
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: snow::HandshakeState.into_transport_mode
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: snow::HandshakeState.into_stateless_transport_mode
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: factory
+  - method: snow::HandshakeState.get_handshake_hash
+    arity: 0
+    return: { type: "&[u8]", confidence: high }
+    parameter_types: []
+    role: output
+  # A query, not an operation. `output` is the closest of the four contract
+  # roles the KB allows -- `none` is a PARAMETER role, not a contract one.
+  - method: snow::HandshakeState.is_handshake_finished
+    arity: 0
+    return: { type: bool, confidence: high }
+    parameter_types: []
+    role: output
+  - method: snow::TransportState.write_message
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: snow::TransportState.read_message
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: snow::TransportState.rekey_outgoing
+    arity: 0
+    return: { type: "()", confidence: high }
+    parameter_types: []
+    role: operation
+  - method: snow::TransportState.rekey_incoming
+    arity: 0
+    return: { type: "()", confidence: high }
+    parameter_types: []
+    role: operation
+  - method: snow::TransportState.rekey_manually
+    arity: 2
+    return: { type: "()", confidence: high }
+    parameter_types: ["core::option::Option<&[u8]>", "core::option::Option<&[u8]>"]
+    role: operation
+  - method: snow::TransportState.rekey_initiator_manually
+    arity: 1
+    return: { type: "()", confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: snow::TransportState.rekey_responder_manually
+    arity: 1
+    return: { type: "()", confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: snow::StatelessTransportState.write_message
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u64", "&[u8]", "&mut [u8]"]
+    role: operation
+  - method: snow::StatelessTransportState.read_message
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["u64", "&[u8]", "&mut [u8]"]
+    role: operation
+  - method: snow::StatelessTransportState.rekey_outgoing
+    arity: 0
+    return: { type: "()", confidence: high }
+    parameter_types: []
+    role: operation
+  - method: snow::StatelessTransportState.rekey_incoming
+    arity: 0
+    return: { type: "()", confidence: high }
+    parameter_types: []
+    role: operation
+  - method: snow::StatelessTransportState.rekey_manually
+    arity: 2
+    return: { type: "()", confidence: high }
+    parameter_types: ["core::option::Option<&[u8]>", "core::option::Option<&[u8]>"]
+    role: operation
+  - method: snow::StatelessTransportState.rekey_initiator_manually
+    arity: 1
+    return: { type: "()", confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: snow::StatelessTransportState.rekey_responder_manually
+    arity: 1
+    return: { type: "()", confidence: high }
+    parameter_types: ["&[u8]"]
+    role: operation
+  - method: snow::params::NoiseParams.from_str
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str"]
+    role: factory

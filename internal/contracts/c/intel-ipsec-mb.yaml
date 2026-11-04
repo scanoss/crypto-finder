@@ -1,0 +1,314 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: intel-ipsec-mb
+  coordinates:
+    - intel-ipsec-mb
+  version_range: ">=0.52.0,<3.0.0"
+  description: "intel-ipsec-mb multi-buffer manager, job and direct cipher/hash APIs"
+
+# Inventory sources: intel-ipsec-mb public header (lib/intel-ipsec-mb.h) from the
+# upstream tag archives v1.0, v1.5 and v2.0 (intel-ipsec-mb.h at the root before
+# v0.55). The IMB_* entry points are manager macros that expand to the manager's
+# function pointers; consumers call the macro names, which is what the C parser
+# sees, so the macros are contracted at their macro arity. No contracted macro or
+# function changes arity across those releases; the burst API is v1.1 and later.
+#
+# Every macro takes the IMB_MGR* first, so a consumer's calls group around the
+# manager: alloc_mb_mgr and the init_mb_mgr_* calls create and set it up,
+# IMB_GET_NEXT_JOB hands out a job, and IMB_SUBMIT_JOB / IMB_FLUSH_JOB perform
+# the queued operations. A job's cipher and hash are IMB_JOB field assignments,
+# not calls, so they are covered by the detection rules and carry no contract.
+# The direct GCM and SHA macros name their algorithm and size outright.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: free_mb_mgr, imb_get_errno/imb_get_strerror, queue-size
+#   and architecture queries, CRC and other non-crypto hash helpers.
+# needs-follow-up: the direct ZUC, SNOW 3G, KASUMI, ChaCha20-Poly1305, AES-CCM,
+#   DES and SM4 entry points, the scatter-gather GCM variants, and the burst
+#   cipher/hash APIs beyond the job burst.
+contracts:
+
+  # Manager.
+  - method: alloc_mb_mgr
+    arity: 1
+    return: {type: "IMB_MGR*", confidence: high}
+    role: factory
+  - method: init_mb_mgr_auto
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: init_mb_mgr_sse
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: init_mb_mgr_avx2
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: init_mb_mgr_avx512
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+
+  # Job API. The job's algorithms are field assignments the detection rules
+  # report; these calls queue and complete it.
+  - method: IMB_GET_NEXT_JOB
+    arity: 1
+    return: {type: "IMB_JOB*", confidence: high}
+    role: factory
+  - method: IMB_SUBMIT_JOB
+    arity: 1
+    return: {type: "IMB_JOB*", confidence: high}
+    role: operation
+  - method: IMB_SUBMIT_JOB_NOCHECK
+    arity: 1
+    return: {type: "IMB_JOB*", confidence: high}
+    role: operation
+  - method: IMB_FLUSH_JOB
+    arity: 1
+    return: {type: "IMB_JOB*", confidence: high}
+    role: operation
+  - method: IMB_GET_COMPLETED_JOB
+    arity: 1
+    return: {type: "IMB_JOB*", confidence: high}
+    role: output
+  - method: IMB_GET_NEXT_BURST
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: factory
+  - method: IMB_SUBMIT_BURST
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+  - method: IMB_FLUSH_BURST
+    arity: 3
+    return: {type: "uint32_t", confidence: high}
+    role: operation
+
+  # Key expansion and subkey generation.
+  - method: IMB_AES_KEYEXP_128
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+  - method: IMB_AES_KEYEXP_192
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+  - method: IMB_AES_KEYEXP_256
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+  - method: IMB_AES_XCBC_KEYEXP
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: config
+  - method: IMB_AES_CMAC_SUBKEY_GEN_128
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+
+  # Direct AES-GCM (key precompute, streaming and one-shot).
+  - method: IMB_AES128_GCM_PRE
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: IMB_AES128_GCM_INIT
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 5
+        name: aad_len
+        role: metadata-contributing
+        contributes: {property: associatedDataLength, derivation: argument_value}
+  - method: IMB_AES128_GCM_ENC_UPDATE
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_AES128_GCM_DEC_UPDATE
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_AES128_GCM_ENC_FINALIZE
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: output
+    parameters:
+      - index: 4
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES128_GCM_DEC_FINALIZE
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: output
+    parameters:
+      - index: 4
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES128_GCM_ENC
+    arity: 11
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 10
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES128_GCM_DEC
+    arity: 11
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 10
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES192_GCM_PRE
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: IMB_AES192_GCM_INIT
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 5
+        name: aad_len
+        role: metadata-contributing
+        contributes: {property: associatedDataLength, derivation: argument_value}
+  - method: IMB_AES192_GCM_ENC_UPDATE
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_AES192_GCM_DEC_UPDATE
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_AES192_GCM_ENC_FINALIZE
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: output
+    parameters:
+      - index: 4
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES192_GCM_DEC_FINALIZE
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: output
+    parameters:
+      - index: 4
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES192_GCM_ENC
+    arity: 11
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 10
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES192_GCM_DEC
+    arity: 11
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 10
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES256_GCM_PRE
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: IMB_AES256_GCM_INIT
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 5
+        name: aad_len
+        role: metadata-contributing
+        contributes: {property: associatedDataLength, derivation: argument_value}
+  - method: IMB_AES256_GCM_ENC_UPDATE
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_AES256_GCM_DEC_UPDATE
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_AES256_GCM_ENC_FINALIZE
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: output
+    parameters:
+      - index: 4
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES256_GCM_DEC_FINALIZE
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: output
+    parameters:
+      - index: 4
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES256_GCM_ENC
+    arity: 11
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 10
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+  - method: IMB_AES256_GCM_DEC
+    arity: 11
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - index: 10
+        name: tag_len
+        role: metadata-contributing
+        contributes: {property: authenticationTagSize, derivation: argument_value}
+
+  # Direct hashes.
+  - method: IMB_SHA1
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_SHA224
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_SHA256
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_SHA384
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_SHA512
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_SHA1_ONE_BLOCK
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: IMB_MD5_ONE_BLOCK
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+
+hierarchy: {}

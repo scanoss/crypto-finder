@@ -1,0 +1,2209 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: hutool-crypto
+  coordinates:
+    - "cn.hutool:hutool-crypto"
+    - "cn.hutool:hutool-all"
+  # Verified against upstream source at release 5.8.47 (branch v5-master).
+  # hutool 6.x renamed the packages to org.dromara.hutool.crypto and is a
+  # different KB if ever needed; detection rules target the cn.hutool 5.x tree.
+  version_range: ">=5.8,<6.0"
+  description: "Hutool-crypto contracts for SecureUtil/DigestUtil/SmUtil/KeyUtil factories and the symmetric, digest, MAC, asymmetric, and SM2 lifecycles"
+
+contracts:
+  # =========================================================================
+  # SecureUtil static factories (cn.hutool.crypto.SecureUtil)
+  # Most methods are overloaded at the same arity (String/byte[]/KeySpec...)
+  # with a single declared return — canonical signature fields are omitted on
+  # those entries.
+  # =========================================================================
+  - method: cn.hutool.crypto.SecureUtil.generateKey
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generateKey
+    arity: 2
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generateDESKey
+    arity: 2
+    parameter_types: [java.lang.String, "byte[]"]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generatePBEKey
+    arity: 2
+    parameter_types: [java.lang.String, "char[]"]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generatePrivateKey
+    arity: 2
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generatePrivateKey
+    arity: 3
+    parameter_types: [java.security.KeyStore, java.lang.String, "char[]"]
+    canonical_return_type: java.security.PrivateKey
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generatePublicKey
+    arity: 2
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generateKeyPair
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.KeyPair
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generateKeyPair
+    arity: 2
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generateKeyPair
+    arity: 3
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.generateSignature
+    arity: 2
+    canonical_return_type: java.security.Signature
+    return:
+      type: java.security.Signature
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.readJKSKeyStore
+    arity: 2
+    parameter_types: [java.io.InputStream, "char[]"]
+    canonical_return_type: java.security.KeyStore
+    return:
+      type: java.security.KeyStore
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.readKeyStore
+    arity: 3
+    parameter_types: [java.lang.String, java.io.InputStream, "char[]"]
+    canonical_return_type: java.security.KeyStore
+    return:
+      type: java.security.KeyStore
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.readX509Certificate
+    arity: 1
+    parameter_types: [java.io.InputStream]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.readX509Certificate
+    arity: 3
+    parameter_types: [java.io.InputStream, "char[]", java.lang.String]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.readCertificate
+    arity: 2
+    parameter_types: [java.lang.String, java.io.InputStream]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.readCertificate
+    arity: 4
+    parameter_types:
+      [java.lang.String, java.io.InputStream, "char[]", java.lang.String]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.getCertificate
+    arity: 2
+    parameter_types: [java.security.KeyStore, java.lang.String]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.aes
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.symmetric.AES
+    return:
+      type: cn.hutool.crypto.symmetric.AES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.aes
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.AES
+    return:
+      type: cn.hutool.crypto.symmetric.AES
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.SecureUtil.des
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.symmetric.DES
+    return:
+      type: cn.hutool.crypto.symmetric.DES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.des
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.DES
+    return:
+      type: cn.hutool.crypto.symmetric.DES
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.SecureUtil.desede
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.symmetric.DESede
+    return:
+      type: cn.hutool.crypto.symmetric.DESede
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.desede
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.DESede
+    return:
+      type: cn.hutool.crypto.symmetric.DESede
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  # md5/sha1/sha256 split by arity: arity 0 returns the digester object,
+  # arity 1 performs the digest and returns the hex string.
+  - method: cn.hutool.crypto.SecureUtil.md5
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.MD5
+    return:
+      type: cn.hutool.crypto.digest.MD5
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.md5
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SecureUtil.sha1
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.Digester
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.sha1
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SecureUtil.sha256
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.Digester
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.sha256
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SecureUtil.hmac
+    arity: 2
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.SecureUtil.hmacMd5
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.HMac
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.hmacMd5
+    arity: 1
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.SecureUtil.hmacSha1
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.HMac
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.hmacSha1
+    arity: 1
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.SecureUtil.hmacSha256
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.HMac
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.hmacSha256
+    arity: 1
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.SecureUtil.rsa
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.asymmetric.RSA
+    return:
+      type: cn.hutool.crypto.asymmetric.RSA
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.rsa
+    arity: 2
+    return:
+      type: cn.hutool.crypto.asymmetric.RSA
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.sign
+    arity: 1
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.sign
+    arity: 3
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.signParams
+    arity: 3
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SecureUtil.signParams
+    arity: 6
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SecureUtil.signParamsMd5
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SecureUtil.signParamsSha1
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SecureUtil.signParamsSha256
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SecureUtil.createCipher
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: javax.crypto.Cipher
+    return:
+      type: javax.crypto.Cipher
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.createMessageDigest
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.MessageDigest
+    return:
+      type: java.security.MessageDigest
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.createJdkMessageDigest
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.MessageDigest
+    return:
+      type: java.security.MessageDigest
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.createMac
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: javax.crypto.Mac
+    return:
+      type: javax.crypto.Mac
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.createSignature
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.Signature
+    return:
+      type: java.security.Signature
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.rc4
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: cn.hutool.crypto.symmetric.RC4
+    return:
+      type: cn.hutool.crypto.symmetric.RC4
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.pbkdf2
+    arity: 2
+    parameter_types: ["char[]", "byte[]"]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SecureUtil.fpe
+    arity: 4
+    canonical_return_type: cn.hutool.crypto.symmetric.fpe.FPE
+    return:
+      type: cn.hutool.crypto.symmetric.fpe.FPE
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SecureUtil.zuc128
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.ZUC
+    return:
+      type: cn.hutool.crypto.symmetric.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.SecureUtil.zuc256
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.ZUC
+    return:
+      type: cn.hutool.crypto.symmetric.ZUC
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+
+  # SignUtil hosts the sign/signParams family; SecureUtil delegates to it and
+  # both spellings appear in consumer code.
+  - method: cn.hutool.crypto.SignUtil.sign
+    arity: 1
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SignUtil.sign
+    arity: 3
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SignUtil.signParams
+    arity: 3
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SignUtil.signParams
+    arity: 6
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SignUtil.signParamsMd5
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SignUtil.signParamsSha1
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SignUtil.signParamsSha256
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # DigestUtil static digests (cn.hutool.crypto.digest.DigestUtil)
+  # =========================================================================
+  - method: cn.hutool.crypto.digest.DigestUtil.md5
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.md5
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.md5Hex
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.md5Hex
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.md5Hex16
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.md5Hex16
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha1
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha1
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha1Hex
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha1Hex
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha256
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha256
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha256Hex
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha256Hex
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha512
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha512
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha512Hex
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.sha512Hex
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.hmac
+    arity: 2
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.digest.DigestUtil.digester
+    arity: 1
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.DigestUtil.bcrypt
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.DigestUtil.bcryptCheck
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # SmUtil static factories (cn.hutool.crypto.SmUtil)
+  # =========================================================================
+  - method: cn.hutool.crypto.SmUtil.sm2
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.asymmetric.SM2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SmUtil.sm2
+    arity: 2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: factory
+  # sm3 splits by arity: arity 0 returns the SM3 digester, arity 1 digests and
+  # returns the hex string.
+  - method: cn.hutool.crypto.SmUtil.sm3
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.SM3
+    return:
+      type: cn.hutool.crypto.digest.SM3
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SmUtil.sm3
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.SmUtil.sm3WithSalt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.digest.SM3
+    return:
+      type: cn.hutool.crypto.digest.SM3
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SmUtil.sm4
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.symmetric.SM4
+    return:
+      type: cn.hutool.crypto.symmetric.SM4
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.SmUtil.sm4
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.SM4
+    return:
+      type: cn.hutool.crypto.symmetric.SM4
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.SmUtil.hmacSm3
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.digest.HMac
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+
+  # =========================================================================
+  # KeyUtil static key/keystore/certificate factories (cn.hutool.crypto.KeyUtil)
+  # =========================================================================
+  - method: cn.hutool.crypto.KeyUtil.generateKey
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generateKey
+    arity: 2
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generateKey
+    arity: 3
+    parameter_types: [java.lang.String, int, java.security.SecureRandom]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generateDESKey
+    arity: 2
+    parameter_types: [java.lang.String, "byte[]"]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generatePBEKey
+    arity: 2
+    parameter_types: [java.lang.String, "char[]"]
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generateRSAPrivateKey
+    arity: 1
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generatePrivateKey
+    arity: 2
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generatePrivateKey
+    arity: 3
+    parameter_types: [java.security.KeyStore, java.lang.String, "char[]"]
+    canonical_return_type: java.security.PrivateKey
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generateRSAPublicKey
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: java.security.PublicKey
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generatePublicKey
+    arity: 2
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generateKeyPair
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.KeyPair
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generateKeyPair
+    arity: 2
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generateKeyPair
+    arity: 3
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.generateKeyPair
+    arity: 4
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getKeyPairGenerator
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.KeyPairGenerator
+    return:
+      type: java.security.KeyPairGenerator
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getKeyFactory
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.KeyFactory
+    return:
+      type: java.security.KeyFactory
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getSecretKeyFactory
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: javax.crypto.SecretKeyFactory
+    return:
+      type: javax.crypto.SecretKeyFactory
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getKeyGenerator
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: javax.crypto.KeyGenerator
+    return:
+      type: javax.crypto.KeyGenerator
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.readJKSKeyStore
+    arity: 2
+    return:
+      type: java.security.KeyStore
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.readPKCS12KeyStore
+    arity: 2
+    return:
+      type: java.security.KeyStore
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.readKeyStore
+    arity: 3
+    return:
+      type: java.security.KeyStore
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getKeyStore
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.KeyStore
+    return:
+      type: java.security.KeyStore
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getKeyPair
+    arity: 3
+    parameter_types: [java.security.KeyStore, "char[]", java.lang.String]
+    canonical_return_type: java.security.KeyPair
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getKeyPair
+    arity: 4
+    parameter_types:
+      [java.lang.String, java.io.InputStream, "char[]", java.lang.String]
+    canonical_return_type: java.security.KeyPair
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.readX509Certificate
+    arity: 1
+    parameter_types: [java.io.InputStream]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.readX509Certificate
+    arity: 3
+    parameter_types: [java.io.InputStream, "char[]", java.lang.String]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.readPublicKeyFromCert
+    arity: 1
+    parameter_types: [java.io.InputStream]
+    canonical_return_type: java.security.PublicKey
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.readCertificate
+    arity: 2
+    parameter_types: [java.lang.String, java.io.InputStream]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.readCertificate
+    arity: 4
+    parameter_types:
+      [java.lang.String, java.io.InputStream, "char[]", java.lang.String]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getCertificate
+    arity: 2
+    parameter_types: [java.security.KeyStore, java.lang.String]
+    canonical_return_type: java.security.cert.Certificate
+    return:
+      type: java.security.cert.Certificate
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getCertificateFactory
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.security.cert.CertificateFactory
+    return:
+      type: java.security.cert.CertificateFactory
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.decodeECPoint
+    arity: 2
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getRSAPublicKey
+    arity: 1
+    parameter_types: [java.security.PrivateKey]
+    canonical_return_type: java.security.PublicKey
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.getRSAPublicKey
+    arity: 2
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.KeyUtil.encodeECPublicKey
+    arity: 1
+    parameter_types: [java.security.PublicKey]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: cn.hutool.crypto.KeyUtil.toBase64
+    arity: 1
+    parameter_types: [java.security.Key]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: output
+
+  # =========================================================================
+  # Symmetric lifecycle (cn.hutool.crypto.symmetric.SymmetricCrypto)
+  # AES/DES/DESede/SM4/ChaCha20/ZUC inherit this surface and resolve through
+  # the hierarchy edges below.
+  # =========================================================================
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.<init>
+    arity: 1
+    return:
+      type: cn.hutool.crypto.symmetric.SymmetricCrypto
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.symmetric.SymmetricCrypto
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.<init>
+    arity: 3
+    parameter_types:
+      [
+        java.lang.String,
+        javax.crypto.SecretKey,
+        java.security.spec.AlgorithmParameterSpec,
+      ]
+    canonical_return_type: cn.hutool.crypto.symmetric.SymmetricCrypto
+    return:
+      type: cn.hutool.crypto.symmetric.SymmetricCrypto
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.init
+    arity: 2
+    parameter_types: [java.lang.String, javax.crypto.SecretKey]
+    canonical_return_type: cn.hutool.crypto.symmetric.SymmetricCrypto
+    return:
+      type: cn.hutool.crypto.symmetric.SymmetricCrypto
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.setIv
+    arity: 1
+    return:
+      type: cn.hutool.crypto.symmetric.SymmetricCrypto
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.setParams
+    arity: 1
+    parameter_types: [java.security.spec.AlgorithmParameterSpec]
+    canonical_return_type: cn.hutool.crypto.symmetric.SymmetricCrypto
+    return:
+      type: cn.hutool.crypto.symmetric.SymmetricCrypto
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.setRandom
+    arity: 1
+    parameter_types: [java.security.SecureRandom]
+    canonical_return_type: cn.hutool.crypto.symmetric.SymmetricCrypto
+    return:
+      type: cn.hutool.crypto.symmetric.SymmetricCrypto
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.setMode
+    arity: 1
+    canonical_return_type: cn.hutool.crypto.symmetric.SymmetricCrypto
+    return:
+      type: cn.hutool.crypto.symmetric.SymmetricCrypto
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.update
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.updateHex
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.encrypt
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.encrypt
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.encrypt
+    arity: 3
+    parameter_types: [java.io.InputStream, java.io.OutputStream, boolean]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.encryptHex
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.encryptHex
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.encryptBase64
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.encryptBase64
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.decrypt
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.decrypt
+    arity: 3
+    parameter_types: [java.io.InputStream, java.io.OutputStream, boolean]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.decryptStr
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.decryptStr
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.getSecretKey
+    arity: 0
+    canonical_return_type: javax.crypto.SecretKey
+    return:
+      type: javax.crypto.SecretKey
+      confidence: high
+    role: output
+  - method: cn.hutool.crypto.symmetric.SymmetricCrypto.getCipher
+    arity: 0
+    canonical_return_type: javax.crypto.Cipher
+    return:
+      type: javax.crypto.Cipher
+      confidence: high
+    role: output
+
+  # --- Symmetric subclass constructors ---
+  - method: cn.hutool.crypto.symmetric.AES.<init>
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.symmetric.AES
+    return:
+      type: cn.hutool.crypto.symmetric.AES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.AES.<init>
+    arity: 1
+    return:
+      type: cn.hutool.crypto.symmetric.AES
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.symmetric.AES.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.symmetric.AES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.AES.<init>
+    arity: 3
+    return:
+      type: cn.hutool.crypto.symmetric.AES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.AES.<init>
+    arity: 4
+    return:
+      type: cn.hutool.crypto.symmetric.AES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.DES.<init>
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.symmetric.DES
+    return:
+      type: cn.hutool.crypto.symmetric.DES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.DES.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.DES
+    return:
+      type: cn.hutool.crypto.symmetric.DES
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.symmetric.DES.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.symmetric.DES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.DES.<init>
+    arity: 3
+    return:
+      type: cn.hutool.crypto.symmetric.DES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.DES.<init>
+    arity: 4
+    return:
+      type: cn.hutool.crypto.symmetric.DES
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.DESede.<init>
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.symmetric.DESede
+    return:
+      type: cn.hutool.crypto.symmetric.DESede
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.DESede.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.DESede
+    return:
+      type: cn.hutool.crypto.symmetric.DESede
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.symmetric.DESede.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.symmetric.DESede
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.DESede.<init>
+    arity: 3
+    return:
+      type: cn.hutool.crypto.symmetric.DESede
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.DESede.<init>
+    arity: 4
+    return:
+      type: cn.hutool.crypto.symmetric.DESede
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.SM4.<init>
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.symmetric.SM4
+    return:
+      type: cn.hutool.crypto.symmetric.SM4
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.SM4.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.SM4
+    return:
+      type: cn.hutool.crypto.symmetric.SM4
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.symmetric.SM4.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.symmetric.SM4
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.SM4.<init>
+    arity: 3
+    return:
+      type: cn.hutool.crypto.symmetric.SM4
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.SM4.<init>
+    arity: 4
+    return:
+      type: cn.hutool.crypto.symmetric.SM4
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.ChaCha20.<init>
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: cn.hutool.crypto.symmetric.ChaCha20
+    return:
+      type: cn.hutool.crypto.symmetric.ChaCha20
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+
+  # --- RC4 (standalone, does NOT extend SymmetricCrypto; decrypt returns
+  # String here, unlike SymmetricCrypto.decrypt) ---
+  - method: cn.hutool.crypto.symmetric.RC4.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: cn.hutool.crypto.symmetric.RC4
+    return:
+      type: cn.hutool.crypto.symmetric.RC4
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.symmetric.RC4.encrypt
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.RC4.encrypt
+    arity: 2
+    parameter_types: [java.lang.String, java.nio.charset.Charset]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.RC4.encryptHex
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.RC4.encryptHex
+    arity: 2
+    parameter_types: [java.lang.String, java.nio.charset.Charset]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.RC4.encryptBase64
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.RC4.encryptBase64
+    arity: 2
+    parameter_types: [java.lang.String, java.nio.charset.Charset]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.RC4.decrypt
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.RC4.decrypt
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.RC4.crypt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.symmetric.RC4.setKey
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+
+  # =========================================================================
+  # Digest lifecycle (cn.hutool.crypto.digest.Digester; MD5/SM3 inherit)
+  # =========================================================================
+  - method: cn.hutool.crypto.digest.Digester.<init>
+    arity: 1
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.Digester.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.Digester.init
+    arity: 2
+    parameter_types: [java.lang.String, java.security.Provider]
+    canonical_return_type: cn.hutool.crypto.digest.Digester
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.digest.Digester.setSalt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.digest.Digester
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.digest.Digester.setSaltPosition
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: cn.hutool.crypto.digest.Digester
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.digest.Digester.setDigestCount
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: cn.hutool.crypto.digest.Digester
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.digest.Digester.reset
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.Digester
+    return:
+      type: cn.hutool.crypto.digest.Digester
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.digest.Digester.digest
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.Digester.digest
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.Digester.digestHex
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.Digester.digestHex
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.Digester.getDigest
+    arity: 0
+    canonical_return_type: java.security.MessageDigest
+    return:
+      type: java.security.MessageDigest
+      confidence: high
+    role: output
+  - method: cn.hutool.crypto.digest.MD5.create
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.MD5
+    return:
+      type: cn.hutool.crypto.digest.MD5
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.MD5.<init>
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.MD5
+    return:
+      type: cn.hutool.crypto.digest.MD5
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.MD5.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.digest.MD5
+    return:
+      type: cn.hutool.crypto.digest.MD5
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.MD5.<init>
+    arity: 2
+    parameter_types: ["byte[]", int]
+    canonical_return_type: cn.hutool.crypto.digest.MD5
+    return:
+      type: cn.hutool.crypto.digest.MD5
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.MD5.<init>
+    arity: 3
+    parameter_types: ["byte[]", int, int]
+    canonical_return_type: cn.hutool.crypto.digest.MD5
+    return:
+      type: cn.hutool.crypto.digest.MD5
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.MD5.digestHex16
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.MD5.digestHex16
+    arity: 2
+    parameter_types: [java.lang.String, java.nio.charset.Charset]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.SM3.create
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.SM3
+    return:
+      type: cn.hutool.crypto.digest.SM3
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.SM3.<init>
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.digest.SM3
+    return:
+      type: cn.hutool.crypto.digest.SM3
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.SM3.<init>
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: cn.hutool.crypto.digest.SM3
+    return:
+      type: cn.hutool.crypto.digest.SM3
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.SM3.<init>
+    arity: 2
+    parameter_types: ["byte[]", int]
+    canonical_return_type: cn.hutool.crypto.digest.SM3
+    return:
+      type: cn.hutool.crypto.digest.SM3
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.SM3.<init>
+    arity: 3
+    parameter_types: ["byte[]", int, int]
+    canonical_return_type: cn.hutool.crypto.digest.SM3
+    return:
+      type: cn.hutool.crypto.digest.SM3
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # MAC lifecycle (cn.hutool.crypto.digest.mac.Mac base; HMac inherits)
+  # =========================================================================
+  - method: cn.hutool.crypto.digest.HMac.<init>
+    arity: 1
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.HMac.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+    parameters:
+      - index: 1
+        name: key
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+  - method: cn.hutool.crypto.digest.HMac.<init>
+    arity: 3
+    parameter_types:
+      [
+        java.lang.String,
+        java.security.Key,
+        java.security.spec.AlgorithmParameterSpec,
+      ]
+    canonical_return_type: cn.hutool.crypto.digest.HMac
+    return:
+      type: cn.hutool.crypto.digest.HMac
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.digest.mac.Mac.digest
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.mac.Mac.digest
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.mac.Mac.digestHex
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.mac.Mac.digestHex
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.mac.Mac.digestBase64
+    arity: 2
+    parameter_types: [java.lang.String, boolean]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.mac.Mac.digestBase64
+    arity: 3
+    parameter_types: [java.lang.String, java.nio.charset.Charset, boolean]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.digest.mac.Mac.verify
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Asymmetric lifecycle (cn.hutool.crypto.asymmetric.AsymmetricCrypto;
+  # RSA inherits and resolves through hierarchy)
+  # =========================================================================
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.<init>
+    arity: 1
+    return:
+      type: cn.hutool.crypto.asymmetric.AsymmetricCrypto
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.<init>
+    arity: 3
+    return:
+      type: cn.hutool.crypto.asymmetric.AsymmetricCrypto
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.init
+    arity: 3
+    parameter_types:
+      [java.lang.String, java.security.PrivateKey, java.security.PublicKey]
+    canonical_return_type: cn.hutool.crypto.asymmetric.AsymmetricCrypto
+    return:
+      type: cn.hutool.crypto.asymmetric.AsymmetricCrypto
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.setRandom
+    arity: 1
+    parameter_types: [java.security.SecureRandom]
+    canonical_return_type: cn.hutool.crypto.asymmetric.AsymmetricCrypto
+    return:
+      type: cn.hutool.crypto.asymmetric.AsymmetricCrypto
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.setAlgorithmParameterSpec
+    arity: 1
+    parameter_types: [java.security.spec.AlgorithmParameterSpec]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.setEncryptBlockSize
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.setDecryptBlockSize
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.encrypt
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.encrypt
+    arity: 3
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.encryptHex
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.encryptHex
+    arity: 3
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.encryptBase64
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.encryptBase64
+    arity: 3
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.encryptBcd
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.encryptBcd
+    arity: 3
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.decrypt
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.decryptStr
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.decryptStr
+    arity: 3
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.decryptFromBcd
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.decryptFromBcd
+    arity: 3
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.decryptStrFromBcd
+    arity: 2
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.decryptStrFromBcd
+    arity: 3
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.AsymmetricCrypto.getCipher
+    arity: 0
+    canonical_return_type: javax.crypto.Cipher
+    return:
+      type: javax.crypto.Cipher
+      confidence: high
+    role: output
+
+  # --- RSA (extends AsymmetricCrypto) ---
+  - method: cn.hutool.crypto.asymmetric.RSA.<init>
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.asymmetric.RSA
+    return:
+      type: cn.hutool.crypto.asymmetric.RSA
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.RSA.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: cn.hutool.crypto.asymmetric.RSA
+    return:
+      type: cn.hutool.crypto.asymmetric.RSA
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.RSA.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.asymmetric.RSA
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.RSA.<init>
+    arity: 3
+    return:
+      type: cn.hutool.crypto.asymmetric.RSA
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.RSA.generatePrivateKey
+    arity: 2
+    parameter_types: [java.math.BigInteger, java.math.BigInteger]
+    canonical_return_type: java.security.PrivateKey
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.RSA.generatePublicKey
+    arity: 2
+    parameter_types: [java.math.BigInteger, java.math.BigInteger]
+    canonical_return_type: java.security.PublicKey
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: factory
+
+  # --- Sign (extends BaseAsymmetric<Sign>) ---
+  - method: cn.hutool.crypto.asymmetric.Sign.<init>
+    arity: 1
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.Sign.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.Sign.<init>
+    arity: 3
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.Sign.init
+    arity: 3
+    parameter_types:
+      [java.lang.String, java.security.PrivateKey, java.security.PublicKey]
+    canonical_return_type: cn.hutool.crypto.asymmetric.Sign
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.Sign.setParameter
+    arity: 1
+    parameter_types: [java.security.spec.AlgorithmParameterSpec]
+    canonical_return_type: cn.hutool.crypto.asymmetric.Sign
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.Sign.setSignature
+    arity: 1
+    parameter_types: [java.security.Signature]
+    canonical_return_type: cn.hutool.crypto.asymmetric.Sign
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.Sign.setCertificate
+    arity: 1
+    parameter_types: [java.security.cert.Certificate]
+    canonical_return_type: cn.hutool.crypto.asymmetric.Sign
+    return:
+      type: cn.hutool.crypto.asymmetric.Sign
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.Sign.sign
+    arity: 1
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.Sign.sign
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.Sign.signHex
+    arity: 1
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.Sign.signHex
+    arity: 2
+    parameter_types: [java.lang.String, java.nio.charset.Charset]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.Sign.verify
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.Sign.getSignature
+    arity: 0
+    canonical_return_type: java.security.Signature
+    return:
+      type: java.security.Signature
+      confidence: high
+    role: output
+
+  # --- SM2 (extends AbstractAsymmetricCrypto<SM2>) ---
+  - method: cn.hutool.crypto.asymmetric.SM2.<init>
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.asymmetric.SM2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.SM2.<init>
+    arity: 2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.SM2.<init>
+    arity: 3
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: factory
+  - method: cn.hutool.crypto.asymmetric.SM2.init
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.asymmetric.SM2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.SM2.initKeys
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.asymmetric.SM2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.SM2.encrypt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.encrypt
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.decrypt
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.decrypt
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.sign
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.sign
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.signHex
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.signHex
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.verify
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.verify
+    arity: 3
+    parameter_types: ["byte[]", "byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.verifyHex
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.verifyHex
+    arity: 3
+    parameter_types: [java.lang.String, java.lang.String, java.lang.String]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: cn.hutool.crypto.asymmetric.SM2.setPrivateKey
+    arity: 1
+    parameter_types: [java.security.PrivateKey]
+    canonical_return_type: cn.hutool.crypto.asymmetric.SM2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.SM2.setPublicKey
+    arity: 1
+    parameter_types: [java.security.PublicKey]
+    canonical_return_type: cn.hutool.crypto.asymmetric.SM2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.SM2.usePlainEncoding
+    arity: 0
+    canonical_return_type: cn.hutool.crypto.asymmetric.SM2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: config
+  - method: cn.hutool.crypto.asymmetric.SM2.setMode
+    arity: 1
+    canonical_return_type: cn.hutool.crypto.asymmetric.SM2
+    return:
+      type: cn.hutool.crypto.asymmetric.SM2
+      confidence: high
+    role: config
+
+hierarchy:
+  # Symmetric family
+  cn.hutool.crypto.symmetric.SymmetricCrypto:
+    - java.lang.Object
+  cn.hutool.crypto.symmetric.AES:
+    - cn.hutool.crypto.symmetric.SymmetricCrypto
+  cn.hutool.crypto.symmetric.DES:
+    - cn.hutool.crypto.symmetric.SymmetricCrypto
+  cn.hutool.crypto.symmetric.DESede:
+    - cn.hutool.crypto.symmetric.SymmetricCrypto
+  cn.hutool.crypto.symmetric.SM4:
+    - cn.hutool.crypto.symmetric.SymmetricCrypto
+  cn.hutool.crypto.symmetric.ChaCha20:
+    - cn.hutool.crypto.symmetric.SymmetricCrypto
+  cn.hutool.crypto.symmetric.ZUC:
+    - cn.hutool.crypto.symmetric.SymmetricCrypto
+  cn.hutool.crypto.symmetric.RC4:
+    - java.lang.Object
+  cn.hutool.crypto.symmetric.fpe.FPE:
+    - java.lang.Object
+
+  # Digest family
+  cn.hutool.crypto.digest.Digester:
+    - java.lang.Object
+  cn.hutool.crypto.digest.MD5:
+    - cn.hutool.crypto.digest.Digester
+  cn.hutool.crypto.digest.SM3:
+    - cn.hutool.crypto.digest.Digester
+  cn.hutool.crypto.digest.mac.Mac:
+    - java.lang.Object
+  cn.hutool.crypto.digest.HMac:
+    - cn.hutool.crypto.digest.mac.Mac
+
+  # Asymmetric family
+  cn.hutool.crypto.asymmetric.BaseAsymmetric:
+    - java.lang.Object
+  cn.hutool.crypto.asymmetric.AbstractAsymmetricCrypto:
+    - cn.hutool.crypto.asymmetric.BaseAsymmetric
+  cn.hutool.crypto.asymmetric.AsymmetricCrypto:
+    - cn.hutool.crypto.asymmetric.AbstractAsymmetricCrypto
+  cn.hutool.crypto.asymmetric.RSA:
+    - cn.hutool.crypto.asymmetric.AsymmetricCrypto
+  cn.hutool.crypto.asymmetric.SM2:
+    - cn.hutool.crypto.asymmetric.AbstractAsymmetricCrypto
+  cn.hutool.crypto.asymmetric.Sign:
+    - cn.hutool.crypto.asymmetric.BaseAsymmetric
+
+  # JCA types referenced as returns (edges identical to jdk-crypto where they
+  # overlap, so the merge stays idempotent)
+  javax.crypto.SecretKey:
+    - java.security.Key
+  java.security.PrivateKey:
+    - java.security.Key
+  java.security.PublicKey:
+    - java.security.Key
+  java.security.Key:
+    - java.lang.Object
+  java.security.KeyPair:
+    - java.lang.Object
+  java.security.KeyStore:
+    - java.lang.Object
+  java.security.cert.Certificate:
+    - java.lang.Object
+  java.security.cert.CertificateFactory:
+    - java.lang.Object
+  javax.crypto.Cipher:
+    - java.lang.Object
+  javax.crypto.Mac:
+    - java.lang.Object
+  javax.crypto.KeyGenerator:
+    - java.lang.Object
+  javax.crypto.SecretKeyFactory:
+    - java.lang.Object
+  java.security.MessageDigest:
+    - java.security.MessageDigestSpi
+    - java.lang.Object
+  java.security.Signature:
+    - java.security.SignatureSpi
+    - java.lang.Object
+  java.security.KeyPairGenerator:
+    - java.security.KeyPairGeneratorSpi
+    - java.lang.Object
+  java.security.KeyFactory:
+    - java.lang.Object
+  java.lang.Object: []

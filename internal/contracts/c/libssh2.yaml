@@ -1,0 +1,257 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: libssh2
+  coordinates:
+    - libssh2
+  version_range: ">=1.2.0,<2.0.0"
+  description: "libssh2 SSH-2 session, authentication, agent, known-hosts and channel APIs"
+
+# Inventory sources: libssh2 public headers (include/libssh2.h,
+# libssh2_publickey.h) from the upstream tag archives libssh2-1.2, libssh2-1.9.0
+# and libssh2-1.11.0. No contracted function changes arity across the releases
+# that declare it: libssh2_session_handshake is 1.2.8 and later,
+# libssh2_userauth_publickey_frommemory 1.6.0 and later, the agent API 1.2.2 and
+# later, libssh2_knownhost_checkp 1.2.6 and later.
+#
+# libssh2 consumers mostly call the convenience macros the header defines on top
+# of the _ex functions (libssh2_session_init, libssh2_userauth_password,
+# libssh2_userauth_publickey_fromfile, libssh2_channel_open_session,
+# libssh2_channel_read, libssh2_channel_write, ...). The C parser sees the macro
+# name and its arity at the call site, so both spellings are contracted with the
+# same role.
+#
+# A session groups around its LIBSSH2_SESSION*: libssh2_session_init is the
+# factory, libssh2_session_method_pref its configuration, the handshake and user
+# authentication are operations, and libssh2_session_methods,
+# libssh2_session_hostkey and libssh2_hostkey_hash report what was negotiated.
+# The method type of libssh2_session_method_pref/_methods and the hash type of
+# libssh2_hostkey_hash are operation-determining.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: libssh2_init/libssh2_exit, *_free, *_disconnect teardown,
+#   blocking/timeout/banner/trace settings, SFTP and SCP file transfer, port
+#   forwarding, error helpers.
+# needs-follow-up: keyboard-interactive callbacks beyond the entry call, the
+#   publickey subsystem attribute handling, and known-hosts writing.
+contracts:
+
+  # Session and handshake.
+  - method: libssh2_session_init_ex
+    arity: 4
+    return: {type: "LIBSSH2_SESSION*", confidence: high}
+    role: factory
+  - method: libssh2_session_init
+    arity: 0
+    return: {type: "LIBSSH2_SESSION*", confidence: high}
+    role: factory
+  - method: libssh2_session_method_pref
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: method_type
+        role: operation-determining
+        contributes: {property: methodType, derivation: argument_value}
+      - index: 2
+        name: prefs
+        role: metadata-contributing
+        contributes: {property: preferences, derivation: argument_value}
+  - method: libssh2_session_handshake
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_session_startup
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_session_disconnect_ex
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_session_disconnect
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Negotiated values and the server host key, read after the handshake.
+  - method: libssh2_session_methods
+    arity: 2
+    return: {type: "const char*", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: method_type
+        role: operation-determining
+        contributes: {property: methodType, derivation: argument_value}
+  - method: libssh2_session_hostkey
+    arity: 3
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: libssh2_hostkey_hash
+    arity: 2
+    return: {type: "const char*", confidence: high}
+    role: output
+    parameters:
+      - index: 1
+        name: hash_type
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+
+  # Known hosts.
+  - method: libssh2_knownhost_init
+    arity: 1
+    return: {type: "LIBSSH2_KNOWNHOSTS*", confidence: high}
+    role: factory
+  - method: libssh2_knownhost_readfile
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+  - method: libssh2_knownhost_check
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_knownhost_checkp
+    arity: 7
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # User authentication. Public-key and host-based authentication sign the
+  # session identifier (RFC 4252 sections 7 and 9).
+  - method: libssh2_userauth_list
+    arity: 3
+    return: {type: "char*", confidence: high}
+    role: output
+  - method: libssh2_userauth_authenticated
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: libssh2_userauth_password_ex
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_userauth_password
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_userauth_publickey_fromfile_ex
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_userauth_publickey_fromfile
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_userauth_publickey_frommemory
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_userauth_publickey
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_userauth_hostbased_fromfile_ex
+    arity: 10
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_userauth_hostbased_fromfile
+    arity: 6
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_userauth_keyboard_interactive_ex
+    arity: 4
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_userauth_keyboard_interactive
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # SSH agent (1.2.2 and later).
+  - method: libssh2_agent_init
+    arity: 1
+    return: {type: "LIBSSH2_AGENT*", confidence: high}
+    role: factory
+  - method: libssh2_agent_connect
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: libssh2_agent_list_identities
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: config
+  - method: libssh2_agent_get_identity
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+  - method: libssh2_agent_userauth
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Channels.
+  - method: libssh2_channel_open_ex
+    arity: 7
+    return: {type: "LIBSSH2_CHANNEL*", confidence: high}
+    role: factory
+  - method: libssh2_channel_open_session
+    arity: 1
+    return: {type: "LIBSSH2_CHANNEL*", confidence: high}
+    role: factory
+  - method: libssh2_channel_process_startup
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_channel_exec
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_channel_shell
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_channel_read_ex
+    arity: 4
+    return: {type: "ssize_t", confidence: high}
+    role: operation
+  - method: libssh2_channel_read
+    arity: 3
+    return: {type: "ssize_t", confidence: high}
+    role: operation
+  - method: libssh2_channel_write_ex
+    arity: 4
+    return: {type: "ssize_t", confidence: high}
+    role: operation
+  - method: libssh2_channel_write
+    arity: 3
+    return: {type: "ssize_t", confidence: high}
+    role: operation
+  - method: libssh2_channel_send_eof
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_channel_close
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Publickey subsystem (RFC 4819).
+  - method: libssh2_publickey_init
+    arity: 1
+    return: {type: "LIBSSH2_PUBLICKEY*", confidence: high}
+    role: factory
+  - method: libssh2_publickey_add_ex
+    arity: 8
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_publickey_remove_ex
+    arity: 5
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: libssh2_publickey_list_fetch
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: output
+
+hierarchy: {}

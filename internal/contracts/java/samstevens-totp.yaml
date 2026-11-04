@@ -1,0 +1,287 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: samstevens-totp
+  coordinates:
+    - "dev.samstevens.totp:totp"
+  version_range: ">=1.2,<1.8"
+  description: "dev.samstevens.totp: TOTP secret generation, HMAC code generation and verification, time configuration and provisioning data"
+
+# Inventory source: the published sources jars of every release from 1.2 to
+# 1.7.1, compared by public signature. The contracted surface is stable across
+# the range except where noted: DefaultCodeGenerator gained its algorithm and
+# digits constructors, DefaultCodeVerifier its two setters and NtpTimeProvider
+# its timeout constructor in 1.4; NtpTimeProvider itself appears in 1.3,
+# RecoveryCodeGenerator in 1.5, QrDataFactory and the QrData getters in 1.7.
+# QrData.Builder.algorithm takes a String before 1.4 and a HashingAlgorithm
+# from 1.4, so that contract names no parameter type.
+#
+# Generation and verification are declared once on the CodeGenerator and
+# CodeVerifier interfaces, which is how the library's own documentation types
+# its receivers. Scanning the library, the Default* overrides resolve to them
+# through the hierarchy edges below.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: TimeProvider.getTime and its two implementations, a
+#     clock read; QrData.Builder.label and issuer and QrData.getLabel, getIssuer
+#     and getType, display text; QrGenerator, ZxingPngQrGenerator and
+#     Utils.getDataUriForImage, PNG rendering and Base64 image embedding;
+#     TotpInfo.VERSION; and the three exception constructors.
+#   skipped-informative-return: HashingAlgorithm.getHmacAlgorithm and
+#     getFriendlyName, and QrData.getAlgorithm, getDigits and getPeriod. The
+#     algorithm is already carried by the operation-determining parameters below.
+contracts:
+
+  # Shared-secret generation. The width argument is a character count of the
+  # Base32 output, five bits each.
+  - method: dev.samstevens.totp.secret.SecretGenerator.generate
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: factory
+  - method: dev.samstevens.totp.secret.DefaultSecretGenerator.<init>
+    arity: 0
+    canonical_return_type: dev.samstevens.totp.secret.DefaultSecretGenerator
+    return: {type: dev.samstevens.totp.secret.DefaultSecretGenerator, confidence: high}
+    role: factory
+  - method: dev.samstevens.totp.secret.DefaultSecretGenerator.<init>
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: dev.samstevens.totp.secret.DefaultSecretGenerator
+    return: {type: dev.samstevens.totp.secret.DefaultSecretGenerator, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: numCharacters
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+
+  # Code generation. The no-argument constructor fixes HMAC-SHA1; the others
+  # take the HashingAlgorithm that selects the MAC.
+  - method: dev.samstevens.totp.code.DefaultCodeGenerator.<init>
+    arity: 0
+    canonical_return_type: dev.samstevens.totp.code.DefaultCodeGenerator
+    return: {type: dev.samstevens.totp.code.DefaultCodeGenerator, confidence: high}
+    role: factory
+  - method: dev.samstevens.totp.code.DefaultCodeGenerator.<init>
+    arity: 1
+    parameter_types: [dev.samstevens.totp.code.HashingAlgorithm]
+    canonical_return_type: dev.samstevens.totp.code.DefaultCodeGenerator
+    return: {type: dev.samstevens.totp.code.DefaultCodeGenerator, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: dev.samstevens.totp.code.DefaultCodeGenerator.<init>
+    arity: 2
+    parameter_types: [dev.samstevens.totp.code.HashingAlgorithm, int]
+    canonical_return_type: dev.samstevens.totp.code.DefaultCodeGenerator
+    return: {type: dev.samstevens.totp.code.DefaultCodeGenerator, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 1
+        name: digits
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: dev.samstevens.totp.code.CodeGenerator.generate
+    arity: 2
+    parameter_types: [java.lang.String, long]
+    return: {type: java.lang.String, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+
+  # Verification, and the window it accepts.
+  - method: dev.samstevens.totp.code.DefaultCodeVerifier.<init>
+    arity: 2
+    parameter_types: [dev.samstevens.totp.code.CodeGenerator, dev.samstevens.totp.time.TimeProvider]
+    canonical_return_type: dev.samstevens.totp.code.DefaultCodeVerifier
+    return: {type: dev.samstevens.totp.code.DefaultCodeVerifier, confidence: high}
+    role: factory
+  - method: dev.samstevens.totp.code.CodeVerifier.isValidCode
+    arity: 2
+    parameter_types: [java.lang.String, java.lang.String]
+    return: {type: boolean, confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: dev.samstevens.totp.code.DefaultCodeVerifier.setTimePeriod
+    arity: 1
+    parameter_types: [int]
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: timePeriod
+        role: metadata-contributing
+        contributes: {property: parameters, derivation: argument_value}
+  - method: dev.samstevens.totp.code.DefaultCodeVerifier.setAllowedTimePeriodDiscrepancy
+    arity: 1
+    parameter_types: [int]
+    return: {type: void, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: allowedTimePeriodDiscrepancy
+        role: metadata-contributing
+        contributes: {property: parameters, derivation: argument_value}
+
+  # The time source every counter is derived from.
+  - method: dev.samstevens.totp.time.SystemTimeProvider.<init>
+    arity: 0
+    canonical_return_type: dev.samstevens.totp.time.SystemTimeProvider
+    return: {type: dev.samstevens.totp.time.SystemTimeProvider, confidence: high}
+    role: config
+  - method: dev.samstevens.totp.time.NtpTimeProvider.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: dev.samstevens.totp.time.NtpTimeProvider
+    return: {type: dev.samstevens.totp.time.NtpTimeProvider, confidence: high}
+    role: config
+  - method: dev.samstevens.totp.time.NtpTimeProvider.<init>
+    arity: 2
+    parameter_types: [java.lang.String, int]
+    canonical_return_type: dev.samstevens.totp.time.NtpTimeProvider
+    return: {type: dev.samstevens.totp.time.NtpTimeProvider, confidence: high}
+    role: config
+
+  # Provisioning data. The otpauth URI and the secret getter carry the shared
+  # secret out of the library, so they are outputs of key material.
+  - method: dev.samstevens.totp.qr.QrData.Builder.<init>
+    arity: 0
+    canonical_return_type: dev.samstevens.totp.qr.QrData.Builder
+    return: {type: dev.samstevens.totp.qr.QrData.Builder, confidence: high}
+    role: factory
+  - method: dev.samstevens.totp.qr.QrDataFactory.<init>
+    arity: 3
+    parameter_types: [dev.samstevens.totp.code.HashingAlgorithm, int, int]
+    canonical_return_type: dev.samstevens.totp.qr.QrDataFactory
+    return: {type: dev.samstevens.totp.qr.QrDataFactory, confidence: high}
+    role: factory
+    parameters:
+      - index: 0
+        name: defaultAlgorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+      - index: 1
+        name: defaultDigits
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+      - index: 2
+        name: defaultTimePeriod
+        role: metadata-contributing
+        contributes: {property: parameters, derivation: argument_value}
+  - method: dev.samstevens.totp.qr.QrDataFactory.newBuilder
+    arity: 0
+    canonical_return_type: dev.samstevens.totp.qr.QrData.Builder
+    return: {type: dev.samstevens.totp.qr.QrData.Builder, confidence: high}
+    role: factory
+  - method: dev.samstevens.totp.qr.QrData.Builder.secret
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: dev.samstevens.totp.qr.QrData.Builder
+    return: {type: dev.samstevens.totp.qr.QrData.Builder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: secret
+        role: metadata-contributing
+        contributes: {property: secret, derivation: argument_value}
+  - method: dev.samstevens.totp.qr.QrData.Builder.algorithm
+    arity: 1
+    return: {type: dev.samstevens.totp.qr.QrData.Builder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithm, derivation: argument_value}
+  - method: dev.samstevens.totp.qr.QrData.Builder.digits
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: dev.samstevens.totp.qr.QrData.Builder
+    return: {type: dev.samstevens.totp.qr.QrData.Builder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: digits
+        role: metadata-contributing
+        contributes: {property: outputLength, derivation: argument_value}
+  - method: dev.samstevens.totp.qr.QrData.Builder.period
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: dev.samstevens.totp.qr.QrData.Builder
+    return: {type: dev.samstevens.totp.qr.QrData.Builder, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: period
+        role: metadata-contributing
+        contributes: {property: parameters, derivation: argument_value}
+  - method: dev.samstevens.totp.qr.QrData.Builder.build
+    arity: 0
+    canonical_return_type: dev.samstevens.totp.qr.QrData
+    return: {type: dev.samstevens.totp.qr.QrData, confidence: high}
+    role: factory
+  - method: dev.samstevens.totp.qr.QrData.getUri
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: output
+  - method: dev.samstevens.totp.qr.QrData.getSecret
+    arity: 0
+    return: {type: java.lang.String, confidence: high}
+    role: output
+
+  # Recovery codes are SecureRandom-drawn credentials that stand in for a TOTP
+  # code, so their generation is a factory of authentication material.
+  - method: dev.samstevens.totp.recovery.RecoveryCodeGenerator.<init>
+    arity: 0
+    canonical_return_type: dev.samstevens.totp.recovery.RecoveryCodeGenerator
+    return: {type: dev.samstevens.totp.recovery.RecoveryCodeGenerator, confidence: high}
+    role: factory
+  - method: dev.samstevens.totp.recovery.RecoveryCodeGenerator.generateCodes
+    arity: 1
+    parameter_types: [int]
+    return: {type: "java.lang.String[]", confidence: high}
+    role: factory
+
+hierarchy:
+  dev.samstevens.totp.secret.DefaultSecretGenerator:
+    - dev.samstevens.totp.secret.SecretGenerator
+  dev.samstevens.totp.secret.SecretGenerator:
+    - java.lang.Object
+  dev.samstevens.totp.code.DefaultCodeGenerator:
+    - dev.samstevens.totp.code.CodeGenerator
+  dev.samstevens.totp.code.CodeGenerator:
+    - java.lang.Object
+  dev.samstevens.totp.code.DefaultCodeVerifier:
+    - dev.samstevens.totp.code.CodeVerifier
+  dev.samstevens.totp.code.CodeVerifier:
+    - java.lang.Object
+  dev.samstevens.totp.time.SystemTimeProvider:
+    - dev.samstevens.totp.time.TimeProvider
+  dev.samstevens.totp.time.NtpTimeProvider:
+    - dev.samstevens.totp.time.TimeProvider
+  dev.samstevens.totp.time.TimeProvider:
+    - java.lang.Object
+  dev.samstevens.totp.qr.QrData:
+    - java.lang.Object
+  dev.samstevens.totp.qr.QrData.Builder:
+    - java.lang.Object
+  dev.samstevens.totp.qr.QrDataFactory:
+    - java.lang.Object
+  dev.samstevens.totp.recovery.RecoveryCodeGenerator:
+    - java.lang.Object
+  "java.lang.String[]":
+    - java.lang.Object

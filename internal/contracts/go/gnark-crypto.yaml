@@ -1,0 +1,130 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: gnark-crypto
+  coordinates:
+    - "github.com/consensys/gnark-crypto"
+  version_range: ">=0.4.0,<2.0.0"
+  description: "ConsenSys gnark-crypto generated curve primitives"
+
+# Inventory source: github.com/consensys/gnark-crypto v0.9.2 module source
+# from the Go module proxy. Contracted boundary per the family audit: the
+# flagship generated curve packages (ECDSA on bn254/bls12-381/secp256k1,
+# EdDSA/MiMC/KZG on bn254/bls12-381) and the top-level hash registry, each
+# with its exact generated-package identity. The remaining generated curves
+# repeat these shapes (bounded follow-up children); field/group arithmetic,
+# pairings, FFT, and marshalling are utilities (skipped-non-crypto).
+contracts:
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/ecdsa.GenerateKey
+    arity: 1
+    return: { type: "*github.com/consensys/gnark-crypto/ecc/bn254/ecdsa.PrivateKey", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/ecdsa.(*PrivateKey).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: hFunc, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_type } }
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/ecdsa.(*PublicKey).Verify
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: hFunc, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_type } }
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/ecdsa.GenerateKey
+    arity: 1
+    return: { type: "*github.com/consensys/gnark-crypto/ecc/bls12-381/ecdsa.PrivateKey", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/ecdsa.(*PrivateKey).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: hFunc, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_type } }
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/ecdsa.(*PublicKey).Verify
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: hFunc, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_type } }
+  - method: github.com/consensys/gnark-crypto/ecc/secp256k1/ecdsa.GenerateKey
+    arity: 1
+    return: { type: "*github.com/consensys/gnark-crypto/ecc/secp256k1/ecdsa.PrivateKey", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/secp256k1/ecdsa.(*PrivateKey).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: hFunc, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_type } }
+  - method: github.com/consensys/gnark-crypto/ecc/secp256k1/ecdsa.(*PublicKey).Verify
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: hFunc, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_type } }
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa.GenerateKey
+    arity: 1
+    return: { type: "*github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa.PrivateKey", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa.(*PrivateKey).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa.(*PublicKey).Verify
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc.NewMiMC
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/fr/kzg.Commit
+    arity: 3
+    return: { type: "github.com/consensys/gnark-crypto/ecc/bn254/fr/kzg.Digest", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: srs, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/fr/kzg.Open
+    arity: 3
+    return: { type: "github.com/consensys/gnark-crypto/ecc/bn254/fr/kzg.OpeningProof", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bn254/fr/kzg.Verify
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/twistededwards/eddsa.GenerateKey
+    arity: 1
+    return: { type: "*github.com/consensys/gnark-crypto/ecc/bls12-381/twistededwards/eddsa.PrivateKey", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/twistededwards/eddsa.(*PrivateKey).Sign
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/twistededwards/eddsa.(*PublicKey).Verify
+    arity: 3
+    return: { type: "bool", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/fr/mimc.NewMiMC
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/fr/kzg.Commit
+    arity: 3
+    return: { type: "github.com/consensys/gnark-crypto/ecc/bls12-381/fr/kzg.Digest", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: srs, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/fr/kzg.Open
+    arity: 3
+    return: { type: "github.com/consensys/gnark-crypto/ecc/bls12-381/fr/kzg.OpeningProof", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/ecc/bls12-381/fr/kzg.Verify
+    arity: 4
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/consensys/gnark-crypto/hash.(Hash).New
+    arity: 0
+    return: { type: "hash.Hash", confidence: high }
+    role: factory
+hierarchy: {}

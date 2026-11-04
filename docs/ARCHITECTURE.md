@@ -26,7 +26,7 @@ target source tree
    ▼
 3. Call graph             tree-sitter parsers per ecosystem build function nodes and
    construction            call edges; type inference resolves receivers/returns using
-   (internal/callgraph)    the contracts KB (internal/callgraph/contracts) and, for
+   (internal/callgraph)    the contracts KB (internal/contracts) and, for
                            Java, bytecode/JDK platform signatures (internal/javaruntime);
                            a target with first-party findings in several supported
                            ecosystems gets one graph per ecosystem, while dependencies
@@ -123,7 +123,7 @@ Why: deep code stays composable and testable; the boundary is the single place e
 
 ### 2. Contracts knowledge base (KB)
 
-The type-inference engine consumes YAML knowledge bases under `internal/callgraph/contracts/<ecosystem>/`. **One YAML file = one library version** — adding a library is a new YAML, never a code change. The loader (`contracts.LoadEmbedded`) discovers, validates, and merges all files per ecosystem with these conflict rules:
+The type-inference engine consumes YAML knowledge bases under `internal/contracts/<ecosystem>/`: the engine ships none, so crypto-finder embeds them and registers them with static-engine at startup (`contracts.RegisterAll`). **One YAML file = one library version** — adding a library is a new YAML, never a code change. The engine loader (`contracts.Load`) discovers, validates, and merges all registered files per ecosystem with these conflict rules:
 
 | Situation | Outcome |
 |-----------|---------|

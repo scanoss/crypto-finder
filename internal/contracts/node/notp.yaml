@@ -1,0 +1,45 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "notp"
+  coordinates:
+    - "notp"
+  version_range: ">=2.0.0"
+  description: "notp: HOTP and TOTP one-time passwords"
+
+# The trailing options object is optional; verify returns { delta } or null.
+contracts:
+
+  # HOTP and TOTP.
+  - method: "notp.hotp.gen"
+    arity: 1
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "notp.hotp.gen"
+    arity: 2
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "notp.hotp.verify"
+    arity: 2
+    return: { type: "notp.Delta", confidence: high }
+    role: operation
+  - method: "notp.hotp.verify"
+    arity: 3
+    return: { type: "notp.Delta", confidence: high }
+    role: operation
+  - method: "notp.totp.gen"
+    arity: 1
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "notp.totp.gen"
+    arity: 2
+    return: { type: "builtins.string", confidence: high }
+    role: operation
+  - method: "notp.totp.verify"
+    arity: 2
+    return: { type: "notp.Delta", confidence: high }
+    role: operation
+  - method: "notp.totp.verify"
+    arity: 3
+    return: { type: "notp.Delta", confidence: high }
+    role: operation

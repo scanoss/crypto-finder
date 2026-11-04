@@ -1,0 +1,322 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: openfhe
+  coordinates:
+    - openfheorg/openfhe-development
+  version_range: ">=1.4.0,<2.0.0"
+  description: "OpenFHE: CKKS/BFV/BGV CryptoContext and BinFHE context lifecycles"
+
+# Inventory sources: src/pke/include/cryptocontext.h, src/pke/include/gen-cryptocontext.h
+# and src/binfhe/include/binfhecontext.h from the upstream tag archives v1.4.2 and
+# v1.5.1. EvalRotateKeyGen, EvalAtIndexKeyGen and EvalSumKeyGen drop their
+# optional public-key argument in v1.5, and EvalBootstrapSetup gains a sixth
+# optional argument; the union of arities is contracted. A method with
+# defaulted parameters is contracted at every arity a call site can use.
+#
+# CryptoContext<DCRTPoly> is a shared pointer to CryptoContextImpl, and the C++
+# parser keys a call on the declared type's literal text, so the keys carry the
+# template argument. DCRTPoly is the element type every scheme builder
+# produces. lbcrypto::GenCryptoContext and lbcrypto::BinFHEContext() are keyed
+# on the namespace the parser emits for them; each returns the context the
+# lifecycle then groups around. The BinFHE parameter set passed to
+# GenerateBinFHEContext is operation-determining for the overloads that take
+# it first (arities 1-6); the 8-11 argument overload takes raw lattice
+# parameters instead.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: MakePackedPlaintext, MakeCKKSPackedPlaintext and the other
+#   encoders, the Get*/Set* accessors, serialization, key-map inspection and
+#   clearing, and the BinFHE getters.
+# needs-follow-up: the CCParams<CryptoContext*RNS> setters (the parameters
+#   object is a declaration, so no finding carries a lifecycle through it), the
+#   multiparty, scheme-switching and Chebyshev series APIs, and the in-place
+#   and relinearize/rescale evaluation variants.
+# Resolution gap: receivers declared `auto` (the usual BinFHE form), typed with
+#   unqualified names through `using namespace lbcrypto` (every upstream
+#   example), or with another element type do not resolve to a contracted key.
+contracts:
+
+  # CryptoContext<DCRTPoly>: feature selection, key generation, encryption, decryption and evaluation.
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.Enable
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrapSetup
+    arity: 0
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrapSetup
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrapSetup
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrapSetup
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrapSetup
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrapSetup
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrapSetup
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.KeyGen
+    arity: 0
+    return: {type: "lbcrypto::KeyPair<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalMultKeyGen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalRotateKeyGen
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalRotateKeyGen
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalAtIndexKeyGen
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalAtIndexKeyGen
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalSumKeyGen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalSumKeyGen
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrapKeyGen
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.ReKeyGen
+    arity: 2
+    return: {type: "lbcrypto::EvalKey<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.Encrypt
+    arity: 2
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.Decrypt
+    arity: 3
+    return: {type: "lbcrypto::DecryptResult", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.ReEncrypt
+    arity: 2
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.ReEncrypt
+    arity: 3
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrap
+    arity: 1
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrap
+    arity: 2
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalBootstrap
+    arity: 3
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalAdd
+    arity: 2
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalSub
+    arity: 2
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalMult
+    arity: 2
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+  - method: lbcrypto::CryptoContext<lbcrypto::DCRTPoly>.EvalRotate
+    arity: 2
+    return: {type: "lbcrypto::Ciphertext<lbcrypto::DCRTPoly>", confidence: high}
+    role: operation
+
+  # Namespace-level constructors: the result is the context the lifecycle groups around.
+  - method: lbcrypto.GenCryptoContext
+    arity: 1
+    return: {type: "lbcrypto::CryptoContext<lbcrypto::DCRTPoly>", confidence: high}
+    role: factory
+  - method: lbcrypto.BinFHEContext
+    arity: 0
+    return: {type: "lbcrypto::BinFHEContext", confidence: high}
+    role: factory
+
+  # BinFHEContext: parameter selection, key generation, encryption, decryption and gate evaluation.
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: set
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: set
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: set
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: set
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: set
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: set
+        role: operation-determining
+        contributes: {property: parameterSet, derivation: argument_value}
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 8
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 9
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 10
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::BinFHEContext.GenerateBinFHEContext
+    arity: 11
+    return: {type: "void", confidence: high}
+    role: config
+  - method: lbcrypto::BinFHEContext.KeyGen
+    arity: 0
+    return: {type: "lbcrypto::LWEPrivateKey", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.KeyGenN
+    arity: 0
+    return: {type: "lbcrypto::LWEPrivateKey", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.KeyGenPair
+    arity: 0
+    return: {type: "lbcrypto::LWEKeyPair", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.PubKeyGen
+    arity: 1
+    return: {type: "lbcrypto::LWEPublicKey", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.BTKeyGen
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.BTKeyGen
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.Encrypt
+    arity: 2
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.Encrypt
+    arity: 3
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.Encrypt
+    arity: 4
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.Encrypt
+    arity: 5
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.Decrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.Decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.EvalBinGate
+    arity: 2
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.EvalBinGate
+    arity: 3
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.EvalBinGate
+    arity: 4
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.Bootstrap
+    arity: 1
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.Bootstrap
+    arity: 2
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.EvalNOT
+    arity: 1
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.EvalSign
+    arity: 1
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.EvalSign
+    arity: 2
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation
+  - method: lbcrypto::BinFHEContext.EvalFunc
+    arity: 2
+    return: {type: "lbcrypto::LWECiphertext", confidence: high}
+    role: operation

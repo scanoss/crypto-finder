@@ -1,0 +1,29 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: pkcs1
+  coordinates:
+    - pkcs1
+  version_range: ">=0.2.0,<0.8.0"
+  description: "RustCrypto PKCS#1 RSA key documents"
+
+# API read at pkcs1 0.7.5 (src/traits.rs, src/private_key.rs) and cross-checked
+# at 0.1.0, 0.2.0 and 0.3.0.
+#
+# THE DECODE/ENCODE TRAITS ARE NOT CONTRACTABLE HERE, for the reason given in
+# pkcs8.yaml and sec1.yaml: DecodeRsaPrivateKey/DecodeRsaPublicKey are
+# implemented on other crates' types, so `RsaPrivateKey::from_pkcs1_der(..)`
+# resolves to the implementing crate. In this crate's case that is almost always
+# `rsa`, which carries its own contract.
+#
+# ITS OWN `RsaPrivateKey` IS AN ASN.1 VIEW, NOT rsa's KEY TYPE. The name collision
+# is real and worth stating: pkcs1::RsaPrivateKey is a borrowed structure over DER
+# bytes whose only inherent methods are the accessors `public_key` and `version`
+# (read at 0.7.5 src/private_key.rs). Neither performs cryptography, so neither is
+# contracted. Contracting them would also risk colliding with rsa.yaml's
+# `rsa::RsaPrivateKey.new` for a reader skimming keys.
+#
+# VERSION RANGE STARTS AT 0.2.0 because 0.1.0 has no from_/to_ methods at all --
+# only the RsaPrivateKeyDocument/RsaPublicKeyDocument types. The family's sample
+# mines pkcs1 0.1.0 to pin that zero.
+contracts: []

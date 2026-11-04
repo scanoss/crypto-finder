@@ -1,0 +1,280 @@
+schema_version: "2"
+ecosystem: c
+library:
+  name: openssl-ssl
+  coordinates:
+    - openssl:libssl
+  version_range: ">=1.1.1"
+  description: "OpenSSL libssl TLS key-exchange group and signature-algorithm configuration and the negotiated values"
+
+# Inventory source: OpenSSL master include/openssl/ssl.h.in (4.2-dev) checked
+# against the SSL_CTX_set1_curves(3), SSL_CTX_set1_sigalgs(3) and
+# SSL_get_peer_signature_nid(3) histories, and the hybrid-ml-kem rule in
+# crypto_rules (c/openssl/algorithm/kem/hybrid-ml-kem), whose sinks are
+# SSL_CTX_set1_groups_list and SSL_set1_groups_list.
+#
+# Scope: the TLS key-exchange group list a consumer configures, the signature
+# algorithm lists, the handshake that negotiates them, and the getters that
+# report the negotiated group and signature scheme. OpenSSL 3.5 accepts the
+# hybrid groups X25519MLKEM768, SecP256r1MLKEM768 and SecP384r1MLKEM1024 and
+# the pure MLKEM512/768/1024 groups in the same list syntax as the classical
+# curves, so the list argument is metadata (keyExchangeGroups) and the rules
+# capture the group names from its value. The group list is configuration;
+# the negotiated group is only known after the handshake and comes from the
+# output-role getters.
+#
+# Most of these names are macros over SSL_CTX_ctrl / SSL_ctrl in ssl.h. A call
+# site spells the macro, so the contract carries the macro name and arity, and
+# the documented int return. The *_curves* names are the 1.0.2 aliases of the
+# *_groups* macros and are listed separately so either spelling resolves.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: SSL_CTX_get0_implemented_groups (capability listing),
+#   SSL_CTX_free / SSL_free, I/O and callback setters.
+# needs-follow-up: cipher list and TLS 1.3 ciphersuite configuration,
+#   protocol version bounds, SSL_get_current_cipher and the SSL_CIPHER_*
+#   getters, certificate and private-key loading, PSK, session and QUIC APIs.
+contracts:
+
+  # Context and connection lifecycle around the group configuration.
+  - method: SSL_CTX_new
+    arity: 1
+    return: {type: "SSL_CTX*", confidence: high}
+    role: factory
+  - method: SSL_CTX_new_ex
+    arity: 3
+    return: {type: "SSL_CTX*", confidence: high}
+    role: factory
+  - method: SSL_new
+    arity: 1
+    return: {type: "SSL*", confidence: high}
+    role: factory
+  - method: SSL_connect
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SSL_accept
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+  - method: SSL_do_handshake
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: operation
+
+  # Key-exchange group configuration. The colon-separated list (OpenSSL 3.5
+  # also accepts "/" tuples and the "*" and "?" prefixes) names the groups a
+  # consumer offers, hybrid and post-quantum ones included.
+  - method: SSL_CTX_set1_groups_list
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: list
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+  - method: SSL_set1_groups_list
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: list
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+  - method: SSL_CTX_set1_groups
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: glist
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+  - method: SSL_set1_groups
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: glist
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+  - method: SSL_CTX_set1_curves_list
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: list
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+  - method: SSL_set1_curves_list
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: list
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+  - method: SSL_CTX_set1_curves
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: clist
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+  - method: SSL_set1_curves
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: clist
+        role: metadata-contributing
+        contributes: {property: keyExchangeGroups, derivation: argument_value}
+
+  # Signature-algorithm configuration. OpenSSL 3.5 accepts "mldsa44",
+  # "mldsa65" and "mldsa87" in these lists and offers them by default.
+  - method: SSL_CTX_set1_sigalgs_list
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: list
+        role: metadata-contributing
+        contributes: {property: signatureAlgorithms, derivation: argument_value}
+  - method: SSL_set1_sigalgs_list
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: list
+        role: metadata-contributing
+        contributes: {property: signatureAlgorithms, derivation: argument_value}
+  - method: SSL_CTX_set1_client_sigalgs_list
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: list
+        role: metadata-contributing
+        contributes: {property: signatureAlgorithms, derivation: argument_value}
+  - method: SSL_set1_client_sigalgs_list
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: list
+        role: metadata-contributing
+        contributes: {property: signatureAlgorithms, derivation: argument_value}
+  - method: SSL_CTX_set1_sigalgs
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: slist
+        role: metadata-contributing
+        contributes: {property: signatureAlgorithms, derivation: argument_value}
+  - method: SSL_set1_sigalgs
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: slist
+        role: metadata-contributing
+        contributes: {property: signatureAlgorithms, derivation: argument_value}
+  - method: SSL_CTX_set1_client_sigalgs
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: slist
+        role: metadata-contributing
+        contributes: {property: signatureAlgorithms, derivation: argument_value}
+  - method: SSL_set1_client_sigalgs
+    arity: 3
+    return: {type: "int", confidence: high}
+    role: config
+    parameters:
+      - index: 1
+        name: slist
+        role: metadata-contributing
+        contributes: {property: signatureAlgorithms, derivation: argument_value}
+
+  # Negotiated values, read after the handshake: the group (NID or name), the
+  # shared and offered group lists, the signature scheme on both sides, and
+  # the ephemeral key-exchange key.
+  - method: SSL_get_negotiated_group
+    arity: 1
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get0_group_name
+    arity: 1
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: SSL_group_to_name
+    arity: 2
+    return: {type: "const char*", confidence: high}
+    role: output
+  - method: SSL_get_shared_group
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get_shared_curve
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get1_groups
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get1_curves
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get0_iana_groups
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get0_signature_name
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get0_peer_signature_name
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get_signature_nid
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get_peer_signature_nid
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get_peer_tmp_key
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get_server_tmp_key
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+  - method: SSL_get_tmp_key
+    arity: 2
+    return: {type: "int", confidence: high}
+    role: output
+
+hierarchy: {}

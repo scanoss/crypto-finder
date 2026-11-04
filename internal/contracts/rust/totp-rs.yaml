@@ -1,0 +1,115 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: totp-rs
+  coordinates:
+    - totp-rs
+    - totp_rs
+  version_range: ">=0.2.0,<6.0.0"
+  description: "RFC 6238 TOTP (time-based one-time passwords)"
+
+# API read at totp-rs 5.7.2 (src/lib.rs, src/secret.rs) and cross-checked at
+# 0.2.0, 0.7.4, 1.4.0 and 3.1.0 from the committed sample.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y. An exported
+# call graph over the crate's own examples agreed: the matched operations came
+# back as `totp_rs.TOTP.generate` and `totp_rs.Secret.generate_secret` with no
+# typing behind them, which is what an absent contract looks like.
+#
+# KEY SHAPE, READ OFF THE EXPORTED GRAPH RATHER THAN ASSUMED. The call-site FQNs
+# are `totp_rs.TOTP.<method>` and `totp_rs.Secret.<method>` -- two dots, which
+# the Rust key normalisation rewrites to the authored `totp_rs::<Type>.<method>`.
+#
+# NOTE THAT `Secret` IS NOT MODULE-QUALIFIED. It is DEFINED in src/secret.rs but
+# `pub use`-exported from the crate root (lib.rs:62), and consumers write
+# `totp_rs::Secret::generate_secret()`. The emitted key follows the consumer's
+# spelling, not the defining module, so `totp_rs::secret.Secret.generate_secret`
+# would never resolve. TOTP and Algorithm are declared in lib.rs and so have no
+# such distinction.
+#
+# TWO ARITIES FOR `new`, AND THIS IS NOT AN OVERSIGHT. Cargo.toml declares
+# `default = []`, so the DEFAULT build takes the `cfg(not(feature = "otpauth"))`
+# branch at lib.rs:379, which is arity 5. The seven-argument form at lib.rs:284
+# -- the one that carries `issuer` and `account_name` -- exists only under the
+# `otpauth` feature. Contracts are indexed as `<method>#<arity>`, so both are
+# distinct keys and both are recorded. Recording only one would leave every
+# consumer on the other feature setting unresolved.
+#
+# THE URI AND SECRET-ENCODING METHODS ARE LISTED AS FACTORIES, NOT OPERATIONS,
+# and this is deliberate in both directions. The rules do NOT match `from_url`,
+# `from_url_unchecked` or `from_rfc6238`, because parsing an otpauth:// URI is
+# not cryptography. But a consumer that writes
+# `TOTP::from_url(uri)?.generate_current()` needs the receiver typed or the
+# `generate_current` call has nothing to resolve against. A contract entry
+# carries no crypto assertion -- only a return type, an arity and a role -- so
+# typing them here aids reachability without claiming they are crypto. The rules
+# remain the thing that decides what is reported, and
+# uri-and-secret-parsing-negative.rs pins that they stay silent.
+#
+# `generate_secret` IS the one member of that neighbourhood the rules do match:
+# it fills 20 bytes from the RNG (secret.rs:171) and returns Secret::Raw. Twenty
+# bytes is 160 bits, which is the length RFC 6238 recommends and is what the
+# rule records as materialSize. It sits behind the `gen_secret` feature.
+contracts:
+  - method: totp_rs::TOTP.new
+    arity: 5
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["totp_rs::Algorithm", "usize", "u8", "u64", "alloc::vec::Vec<u8>"]
+    role: factory
+  - method: totp_rs::TOTP.new
+    arity: 7
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["totp_rs::Algorithm", "usize", "u8", "u64", "alloc::vec::Vec<u8>", "core::option::Option<alloc::string::String>", "alloc::string::String"]
+    role: factory
+  - method: totp_rs::TOTP.new_unchecked
+    arity: 7
+    return: { type: totp_rs::TOTP, confidence: high }
+    parameter_types: ["totp_rs::Algorithm", "usize", "u8", "u64", "alloc::vec::Vec<u8>", "core::option::Option<alloc::string::String>", "alloc::string::String"]
+    role: factory
+  - method: totp_rs::TOTP.from_url
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["S"]
+    role: factory
+  - method: totp_rs::TOTP.from_url_unchecked
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["S"]
+    role: factory
+  - method: totp_rs::TOTP.from_rfc6238
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["totp_rs::Rfc6238"]
+    role: factory
+  - method: totp_rs::TOTP.generate
+    arity: 1
+    return: { type: alloc::string::String, confidence: high }
+    parameter_types: ["u64"]
+    role: operation
+  - method: totp_rs::TOTP.generate_current
+    arity: 0
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: []
+    role: operation
+  - method: totp_rs::TOTP.sign
+    arity: 1
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    parameter_types: ["u64"]
+    role: operation
+  - method: totp_rs::TOTP.check
+    arity: 2
+    return: { type: bool, confidence: high }
+    parameter_types: ["&str", "u64"]
+    role: operation
+  - method: totp_rs::TOTP.check_current
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&str"]
+    role: operation
+  - method: totp_rs::Secret.generate_secret
+    arity: 0
+    return: { type: totp_rs::Secret, confidence: high }
+    parameter_types: []
+    role: factory
+
+hierarchy: {}

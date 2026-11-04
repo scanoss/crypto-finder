@@ -1,0 +1,265 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: favre-bcrypt
+  coordinates:
+    - "at.favre.lib:bcrypt"
+  # Verified against upstream source at release 0.10.2 (patrickfav/bcrypt).
+  version_range: ">=0.9,<1.0"
+  description: "at.favre.lib bcrypt fluent hasher/verifyer contracts for bcrypt hashing and verification"
+
+contracts:
+  # --- Entry points (at.favre.lib.crypto.bcrypt.BCrypt statics) ---
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.withDefaults
+    arity: 0
+    canonical_return_type: at.favre.lib.crypto.bcrypt.BCrypt.Hasher
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Hasher
+      confidence: high
+    role: factory
+  # with#1 is overloaded (Version / SecureRandom / LongPasswordStrategy), all
+  # returning Hasher — canonical signature omitted.
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.with
+    arity: 1
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Hasher
+      confidence: high
+    role: factory
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.with
+    arity: 2
+    parameter_types:
+      [
+        at.favre.lib.crypto.bcrypt.BCrypt.Version,
+        at.favre.lib.crypto.bcrypt.LongPasswordStrategy,
+      ]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.BCrypt.Hasher
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Hasher
+      confidence: high
+    role: factory
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.with
+    arity: 3
+    parameter_types:
+      [
+        at.favre.lib.crypto.bcrypt.BCrypt.Version,
+        java.security.SecureRandom,
+        at.favre.lib.crypto.bcrypt.LongPasswordStrategy,
+      ]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.BCrypt.Hasher
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Hasher
+      confidence: high
+    role: factory
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.verifyer
+    arity: 0
+    canonical_return_type: at.favre.lib.crypto.bcrypt.BCrypt.Verifyer
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Verifyer
+      confidence: high
+    role: factory
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.verifyer
+    arity: 1
+    parameter_types: [at.favre.lib.crypto.bcrypt.BCrypt.Version]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.BCrypt.Verifyer
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Verifyer
+      confidence: high
+    role: factory
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.verifyer
+    arity: 2
+    parameter_types:
+      [
+        at.favre.lib.crypto.bcrypt.BCrypt.Version,
+        at.favre.lib.crypto.bcrypt.LongPasswordStrategy,
+      ]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.BCrypt.Verifyer
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Verifyer
+      confidence: high
+    role: factory
+
+  # --- Hashing (BCrypt.Hasher) ---
+  # Every hasher method takes the bcrypt cost factor at index 0.
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.Hasher.hashToString
+    arity: 2
+    parameter_types: [int, "char[]"]
+    canonical_return_type: java.lang.String
+    return:
+      type: java.lang.String
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: cost
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.Hasher.hashToChar
+    arity: 2
+    parameter_types: [int, "char[]"]
+    canonical_return_type: char[]
+    return:
+      type: char[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: cost
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+  # hash#2 is overloaded ((int,char[]) / (int,byte[])), both returning byte[] —
+  # canonical signature omitted.
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.Hasher.hash
+    arity: 2
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: cost
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.Hasher.hash
+    arity: 3
+    parameter_types: [int, "byte[]", "byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: cost
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.Hasher.hashRaw
+    arity: 3
+    parameter_types: [int, "byte[]", "byte[]"]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.BCrypt.HashData
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.HashData
+      confidence: high
+    role: operation
+    parameters:
+      - index: 0
+        name: cost
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+
+  # --- Verification (BCrypt.Verifyer) ---
+  # Every verify overload returns BCrypt.Result (never a bare boolean); the
+  # boolean lives in Result.verified, so consumers follow the returned object.
+  # verify#2 has five same-arity overloads — canonical signature omitted.
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.Verifyer.verify
+    arity: 2
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Result
+      confidence: high
+    role: operation
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.Verifyer.verify
+    arity: 4
+    parameter_types: ["byte[]", int, "byte[]", "byte[]"]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.BCrypt.Result
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Result
+      confidence: high
+    role: operation
+    parameters:
+      - index: 1
+        name: cost
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.Verifyer.verifyStrict
+    arity: 2
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.Result
+      confidence: high
+    role: operation
+
+  # --- Hash material (BCrypt.HashData) ---
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.HashData.<init>
+    arity: 4
+    parameter_types:
+      [int, at.favre.lib.crypto.bcrypt.BCrypt.Version, "byte[]", "byte[]"]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.BCrypt.HashData
+    return:
+      type: at.favre.lib.crypto.bcrypt.BCrypt.HashData
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: cost
+        role: metadata-contributing
+        contributes: { property: cost, derivation: argument_value }
+  - method: at.favre.lib.crypto.bcrypt.BCrypt.HashData.wipe
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+
+  # --- Long-password strategies (config objects consumed by with/verifyer) ---
+  - method: at.favre.lib.crypto.bcrypt.LongPasswordStrategies.truncate
+    arity: 1
+    parameter_types: [at.favre.lib.crypto.bcrypt.BCrypt.Version]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.LongPasswordStrategy
+    return:
+      type: at.favre.lib.crypto.bcrypt.LongPasswordStrategy
+      confidence: high
+    role: factory
+  - method: at.favre.lib.crypto.bcrypt.LongPasswordStrategies.hashSha512
+    arity: 1
+    parameter_types: [at.favre.lib.crypto.bcrypt.BCrypt.Version]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.LongPasswordStrategy
+    return:
+      type: at.favre.lib.crypto.bcrypt.LongPasswordStrategy
+      confidence: high
+    role: factory
+  - method: at.favre.lib.crypto.bcrypt.LongPasswordStrategies.strict
+    arity: 1
+    parameter_types: [at.favre.lib.crypto.bcrypt.BCrypt.Version]
+    canonical_return_type: at.favre.lib.crypto.bcrypt.LongPasswordStrategy
+    return:
+      type: at.favre.lib.crypto.bcrypt.LongPasswordStrategy
+      confidence: high
+    role: factory
+  - method: at.favre.lib.crypto.bcrypt.LongPasswordStrategies.none
+    arity: 0
+    canonical_return_type: at.favre.lib.crypto.bcrypt.LongPasswordStrategy
+    return:
+      type: at.favre.lib.crypto.bcrypt.LongPasswordStrategy
+      confidence: high
+    role: factory
+  - method: at.favre.lib.crypto.bcrypt.LongPasswordStrategy.derive
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+
+hierarchy:
+  at.favre.lib.crypto.bcrypt.BCrypt:
+    - java.lang.Object
+  at.favre.lib.crypto.bcrypt.BCrypt.Hasher:
+    - java.lang.Object
+  at.favre.lib.crypto.bcrypt.BCrypt.Verifyer:
+    - java.lang.Object
+  at.favre.lib.crypto.bcrypt.BCrypt.Result:
+    - java.lang.Object
+  at.favre.lib.crypto.bcrypt.BCrypt.HashData:
+    - java.lang.Object
+  at.favre.lib.crypto.bcrypt.BCrypt.Version:
+    - java.lang.Object
+  at.favre.lib.crypto.bcrypt.LongPasswordStrategies:
+    - java.lang.Object
+  at.favre.lib.crypto.bcrypt.LongPasswordStrategy:
+    - java.lang.Object
+  java.security.SecureRandom:
+    - java.util.Random
+  java.util.Random:
+    - java.lang.Object
+  java.lang.Object: []

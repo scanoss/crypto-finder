@@ -1,0 +1,170 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: thrussh
+  coordinates:
+    - thrussh
+  version_range: ">=0.1.0,<0.42.0"
+  description: "SSH client and server protocol implementation, the crate russh was forked from"
+
+# API read at thrussh 0.41.0 (the newest stable in the committed range) and at
+# each version where a spelling appeared, changed arity, or was removed. Those
+# points were established by diffing the presence of every marker over ALL 148
+# published archives rather than read from a changelog:
+#
+#   0.1.0   crate-root `load_public_key` / `load_secret_key`, both arity 1
+#           (src/lib.rs:770, :797); `sodium::generate_keypair` (src/sodium.rs:242)
+#   0.3.0   `key::PublicKey::parse` and the `key::Verify` trait appear
+#   0.7.0   `server::run` appears; ring becomes the crypto backend
+#   0.8.0   client `authenticate_key` / `authenticate_password` appear
+#   0.1.0   client `Connection::new` is the entry point (src/client/mod.rs:71),
+#           and stays so until 0.22.0 replaces it with the async `connect` —
+#           84 of the 148 committed rows
+#   0.10.2  client `connect` appears; `load_secret_key` GAINS a second parameter
+#           (src/lib.rs:649) and `generate_keypair` takes an rng (src/key.rs:313)
+#   0.17.0  backend switches ring -> openssl + thrussh-libsodium;
+#           `generate_keypair` LOSES the rng parameter (src/key.rs:352);
+#           `authenticate_key_future` appears
+#   0.18.0  `thrussh-keys` is split into its own crate: `generate_keypair`,
+#           `clone_public_key` and `Verify` leave this crate entirely
+#   0.22.0  async/await; `authenticate_key` is RENAMED `authenticate_publickey`;
+#           `connect_stream`, `run_stream` and `authenticate_future` appear
+#
+# TWO CALLABLES ARE KEYED BY ARITY BECAUSE THEIR SIGNATURE CHANGED INSIDE THE
+# RANGE, and the arity is the only thing that separates the eras:
+# `load_secret_key` is arity 1 up to 0.10.1 and arity 2 from 0.10.2, and
+# `generate_keypair` is arity 2 at 0.10.2 and arity 1 from 0.17.0. Both are
+# declared at both arities, so a consumer pinned to either side resolves.
+#
+# THE AUTHENTICATION RECEIVER IS A DIFFERENT TYPE BEFORE AND AFTER 0.22.0.
+# Up to 0.21.x the methods hang off `client::Connection` (0.17.0
+# src/client/authenticate.rs:10); from 0.22.0 they hang off `client::Handle`
+# (0.41.0 src/client/mod.rs:212). Both receivers are declared.
+#
+# A NOTE ON WHAT THIS DOES AND DOES NOT RECOVER, in the same terms as the
+# sibling russh KB: the authenticate methods hang off a value a consumer obtains
+# as `connect(...).await.unwrap()`, and that await-then-unwrap chain is not
+# modelled, so a receiver bound that way still resolves to the consumer's own
+# package. Contracting the methods is what makes them resolve wherever the
+# receiver IS typed; it is recorded here rather than claimed to do more.
+#
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the channel and session traffic methods — `data`,
+#     `eof`, `extended_data`, `request_pty`, `exec`, `window_change`,
+#     `tcpip_forward` and the rest. They move bytes over an established
+#     connection and carry no crypto asset, which is the same split the
+#     detection rules make.
+#   skipped-unsupported: the `kex`, `cipher` and `mac` module internals
+#     (`compute_shared_secret`, `compute_keys`, `cipher::write`), which the
+#     protocol drives itself and no consumer calls directly.
+#   needs-follow-up: from 0.18.0 the key surface belongs to pkg:cargo/thrussh-keys,
+#     which is a separate package with no KB of its own. Nothing here declares
+#     that root, so a modern consumer's key loading has no contract; the gap is
+#     reported with the family rather than absorbed into this file.
+contracts:
+  - method: thrussh::client::Connection.new
+    arity: 4
+    return: { type: thrussh::client::Connection, confidence: high }
+    role: factory
+  - method: thrussh::client.connect
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: thrussh::client.connect_stream
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: thrussh::server.run
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: thrussh::server.run_stream
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+
+  - method: thrussh::client::Handle.authenticate_password
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: password
+        role: metadata-contributing
+        contributes: { property: credential, derivation: argument_value }
+  - method: thrussh::client::Handle.authenticate_publickey
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: thrussh::client::Handle.authenticate_future
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: thrussh::client::Handle.disconnect
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+
+  - method: thrussh::client::Connection.authenticate_password
+    arity: 2
+    return: { type: thrussh::client::Authenticate, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: password
+        role: metadata-contributing
+        contributes: { property: credential, derivation: argument_value }
+  - method: thrussh::client::Connection.authenticate_key
+    arity: 2
+    return: { type: thrussh::client::Authenticate, confidence: high }
+    role: operation
+  - method: thrussh::client::Connection.authenticate_key_future
+    arity: 2
+    return: { type: thrussh::client::Authenticate, confidence: high }
+    role: operation
+
+  - method: thrussh.load_secret_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: thrussh.load_secret_key
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: thrussh.load_public_key
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+
+  - method: thrussh::key::PublicKey.parse
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: thrussh::key::Algorithm.generate_keypair
+    arity: 1
+    return: { type: core::option::Option, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: thrussh::key::Algorithm.generate_keypair
+    arity: 2
+    return: { type: core::option::Option, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: algorithm
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: thrussh::key::Algorithm.clone_public_key
+    arity: 0
+    return: { type: thrussh::key::PublicKey, confidence: high }
+    role: output
+  - method: thrussh::sodium.generate_keypair
+    arity: 0
+    return: { type: core::option::Option, confidence: high }
+    role: factory
+
+hierarchy: {}

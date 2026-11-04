@@ -1,0 +1,524 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: sshj
+  coordinates:
+    - "com.hierynomus:sshj"
+  # Verified against upstream source at release 0.40.0 (hierynomus/sshj).
+  version_range: ">=0.32,<1.0"
+  description: "sshj contracts for SSH client setup, algorithm configuration, host-key verification, and key-provider loading"
+
+contracts:
+  # =========================================================================
+  # net.schmizz.sshj.SSHClient — the entry point (rule anchor: SSHClient.<init>)
+  # =========================================================================
+  - method: net.schmizz.sshj.SSHClient.<init>
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.SSHClient
+    return:
+      type: net.schmizz.sshj.SSHClient
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.SSHClient.<init>
+    arity: 1
+    parameter_types: [net.schmizz.sshj.Config]
+    canonical_return_type: net.schmizz.sshj.SSHClient
+    return:
+      type: net.schmizz.sshj.SSHClient
+      confidence: high
+    role: factory
+  # connect is inherited from SocketClient and overloaded per arity on
+  # (String hostname / InetAddress) — resolved through the hierarchy edge below.
+  - method: net.schmizz.sshj.SocketClient.connect
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: net.schmizz.sshj.SocketClient.connect
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: net.schmizz.sshj.SocketClient.connect
+    arity: 4
+    return:
+      type: void
+      confidence: high
+    role: operation
+  # Host-key policy. addHostKeyVerifier#1 is overloaded (HostKeyVerifier /
+  # String fingerprint).
+  - method: net.schmizz.sshj.SSHClient.addHostKeyVerifier
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.SSHClient.addAlgorithmsVerifier
+    arity: 1
+    parameter_types: [net.schmizz.sshj.transport.verification.AlgorithmsVerifier]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.SSHClient.loadKnownHosts
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.SSHClient.loadKnownHosts
+    arity: 1
+    parameter_types: [java.io.File]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  # Authentication. authPassword#2 and authPublickey#2 are each overloaded on
+  # the credential type — canonical signatures omitted.
+  - method: net.schmizz.sshj.SSHClient.authPassword
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: net.schmizz.sshj.SSHClient.authPassword
+    arity: 3
+    parameter_types:
+      [
+        java.lang.String,
+        net.schmizz.sshj.userauth.password.PasswordFinder,
+        net.schmizz.sshj.userauth.password.PasswordUpdateProvider,
+      ]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: net.schmizz.sshj.SSHClient.authPublickey
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: net.schmizz.sshj.SSHClient.authPublickey
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: net.schmizz.sshj.SSHClient.auth
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: net.schmizz.sshj.SSHClient.authGssApiWithMic
+    arity: 4
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  # Key loading. loadKeys#1 is overloaded (KeyPair / String location) and
+  # loadKeys#2 on the passphrase form — all return KeyProvider.
+  - method: net.schmizz.sshj.SSHClient.loadKeys
+    arity: 1
+    return:
+      type: net.schmizz.sshj.userauth.keyprovider.KeyProvider
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.SSHClient.loadKeys
+    arity: 2
+    return:
+      type: net.schmizz.sshj.userauth.keyprovider.KeyProvider
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.SSHClient.loadKeys
+    arity: 3
+    parameter_types:
+      [
+        java.lang.String,
+        java.lang.String,
+        net.schmizz.sshj.userauth.password.PasswordFinder,
+      ]
+    canonical_return_type: net.schmizz.sshj.userauth.keyprovider.KeyProvider
+    return:
+      type: net.schmizz.sshj.userauth.keyprovider.KeyProvider
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.SSHClient.getTransport
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.transport.Transport
+    return:
+      type: net.schmizz.sshj.transport.Transport
+      confidence: high
+    role: output
+  - method: net.schmizz.sshj.SSHClient.rekey
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+  - method: net.schmizz.sshj.SSHClient.isAuthenticated
+    arity: 0
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: output
+  - method: net.schmizz.sshj.SSHClient.disconnect
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: operation
+
+  # =========================================================================
+  # Algorithm configuration (net.schmizz.sshj.Config / ConfigImpl / DefaultConfig)
+  # Authored on the Config interface; ConfigImpl adds varargs siblings at the
+  # same arity 1 (array vs List), so those entries omit canonical signatures.
+  # NOTE: sshj has no setSignatureFactories — signature/host-key algorithms are
+  # selected through setKeyAlgorithms.
+  # =========================================================================
+  - method: net.schmizz.sshj.DefaultConfig.<init>
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.DefaultConfig
+    return:
+      type: net.schmizz.sshj.DefaultConfig
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.AndroidConfig.<init>
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.AndroidConfig
+    return:
+      type: net.schmizz.sshj.AndroidConfig
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.DefaultSecurityProviderConfig.<init>
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.DefaultSecurityProviderConfig
+    return:
+      type: net.schmizz.sshj.DefaultSecurityProviderConfig
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.Config.setCipherFactories
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.Config.setMACFactories
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.Config.setKeyExchangeFactories
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.Config.setKeyAlgorithms
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.Config.setCompressionFactories
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.Config.setFileKeyProviderFactories
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.Config.setRandomFactory
+    arity: 1
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.Config.setVerifyHostKeyCertificates
+    arity: 1
+    parameter_types: [boolean]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.Config.getCipherFactories
+    arity: 0
+    canonical_return_type: java.util.List
+    return:
+      type: java.util.List
+      confidence: high
+    role: output
+  - method: net.schmizz.sshj.Config.getKeyAlgorithms
+    arity: 0
+    canonical_return_type: java.util.List
+    return:
+      type: java.util.List
+      confidence: high
+    role: output
+  # ConfigImpl reorders the key algorithms to prefer ssh-rsa (SHA-1 signatures).
+  - method: net.schmizz.sshj.ConfigImpl.prioritizeSshRsaKeyAlgorithm
+    arity: 0
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+
+  # =========================================================================
+  # Key providers (net.schmizz.sshj.userauth.keyprovider)
+  # =========================================================================
+  - method: net.schmizz.sshj.userauth.keyprovider.KeyProvider.getPrivate
+    arity: 0
+    canonical_return_type: java.security.PrivateKey
+    return:
+      type: java.security.PrivateKey
+      confidence: high
+    role: output
+  - method: net.schmizz.sshj.userauth.keyprovider.KeyProvider.getPublic
+    arity: 0
+    canonical_return_type: java.security.PublicKey
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: output
+  - method: net.schmizz.sshj.userauth.keyprovider.KeyProvider.getType
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.common.KeyType
+    return:
+      type: net.schmizz.sshj.common.KeyType
+      confidence: high
+    role: output
+  # FileKeyProvider.init is heavily overloaded per arity (File/Reader/String
+  # sources, with or without a PasswordFinder) — canonical signatures omitted.
+  - method: net.schmizz.sshj.userauth.keyprovider.FileKeyProvider.init
+    arity: 1
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.userauth.keyprovider.FileKeyProvider.init
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.userauth.keyprovider.FileKeyProvider.init
+    arity: 3
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile.<init>
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+    return:
+      type: net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile.<init>
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
+    return:
+      type: net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile.<init>
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile
+    return:
+      type: net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.userauth.keyprovider.KeyPairWrapper.<init>
+    arity: 1
+    parameter_types: [java.security.KeyPair]
+    canonical_return_type: net.schmizz.sshj.userauth.keyprovider.KeyPairWrapper
+    return:
+      type: net.schmizz.sshj.userauth.keyprovider.KeyPairWrapper
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.userauth.keyprovider.KeyPairWrapper.<init>
+    arity: 2
+    parameter_types: [java.security.PublicKey, java.security.PrivateKey]
+    canonical_return_type: net.schmizz.sshj.userauth.keyprovider.KeyPairWrapper
+    return:
+      type: net.schmizz.sshj.userauth.keyprovider.KeyPairWrapper
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # Host-key verification (net.schmizz.sshj.transport.verification)
+  # =========================================================================
+  - method: net.schmizz.sshj.transport.verification.HostKeyVerifier.verify
+    arity: 3
+    parameter_types: [java.lang.String, int, java.security.PublicKey]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  # PromiscuousVerifier accepts any host key — a deliberate verification bypass.
+  - method: net.schmizz.sshj.transport.verification.PromiscuousVerifier.<init>
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.transport.verification.PromiscuousVerifier
+    return:
+      type: net.schmizz.sshj.transport.verification.PromiscuousVerifier
+      confidence: high
+    role: factory
+  # FingerprintVerifier has no public constructor; getInstance is the producer.
+  - method: net.schmizz.sshj.transport.verification.FingerprintVerifier.getInstance
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: net.schmizz.sshj.transport.verification.HostKeyVerifier
+    return:
+      type: net.schmizz.sshj.transport.verification.HostKeyVerifier
+      confidence: high
+    role: factory
+  # OpenSSHKnownHosts#1 and #2 are overloaded on (File / Reader).
+  - method: net.schmizz.sshj.transport.verification.OpenSSHKnownHosts.<init>
+    arity: 1
+    return:
+      type: net.schmizz.sshj.transport.verification.OpenSSHKnownHosts
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.transport.verification.OpenSSHKnownHosts.<init>
+    arity: 2
+    return:
+      type: net.schmizz.sshj.transport.verification.OpenSSHKnownHosts
+      confidence: high
+    role: factory
+  - method: net.schmizz.sshj.transport.verification.ConsoleKnownHostsVerifier.<init>
+    arity: 2
+    parameter_types: [java.io.File, java.io.Console]
+    canonical_return_type: net.schmizz.sshj.transport.verification.ConsoleKnownHostsVerifier
+    return:
+      type: net.schmizz.sshj.transport.verification.ConsoleKnownHostsVerifier
+      confidence: high
+    role: factory
+
+  # =========================================================================
+  # Transport — negotiated results. sshj has no Transport.getServerKey; the
+  # remote key is observable through HostKeyVerifier.verify and the negotiated
+  # host-key algorithm.
+  # =========================================================================
+  - method: net.schmizz.sshj.transport.Transport.getSessionID
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: net.schmizz.sshj.transport.Transport.getHostKeyAlgorithm
+    arity: 0
+    canonical_return_type: net.schmizz.sshj.common.KeyAlgorithm
+    return:
+      type: net.schmizz.sshj.common.KeyAlgorithm
+      confidence: high
+    role: output
+  - method: net.schmizz.sshj.transport.Transport.addHostKeyVerifier
+    arity: 1
+    parameter_types: [net.schmizz.sshj.transport.verification.HostKeyVerifier]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+
+hierarchy:
+  net.schmizz.sshj.SocketClient:
+    - java.lang.Object
+  net.schmizz.sshj.SSHClient:
+    - net.schmizz.sshj.SocketClient
+  net.schmizz.sshj.Config:
+    - java.lang.Object
+  net.schmizz.sshj.ConfigImpl:
+    - net.schmizz.sshj.Config
+  net.schmizz.sshj.DefaultConfig:
+    - net.schmizz.sshj.ConfigImpl
+  net.schmizz.sshj.AndroidConfig:
+    - net.schmizz.sshj.DefaultConfig
+  net.schmizz.sshj.DefaultSecurityProviderConfig:
+    - net.schmizz.sshj.DefaultConfig
+  # Key providers: OpenSSHKeyFile extends PKCS8KeyFile, not BaseFileKeyProvider
+  # directly.
+  net.schmizz.sshj.userauth.keyprovider.KeyProvider:
+    - java.lang.Object
+  net.schmizz.sshj.userauth.keyprovider.FileKeyProvider:
+    - net.schmizz.sshj.userauth.keyprovider.KeyProvider
+  net.schmizz.sshj.userauth.keyprovider.BaseFileKeyProvider:
+    - net.schmizz.sshj.userauth.keyprovider.FileKeyProvider
+  net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile:
+    - net.schmizz.sshj.userauth.keyprovider.BaseFileKeyProvider
+  net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile:
+    - net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
+  net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile:
+    - net.schmizz.sshj.userauth.keyprovider.BaseFileKeyProvider
+  net.schmizz.sshj.userauth.keyprovider.KeyPairWrapper:
+    - net.schmizz.sshj.userauth.keyprovider.KeyProvider
+  net.schmizz.sshj.userauth.password.PasswordFinder:
+    - java.lang.Object
+  net.schmizz.sshj.userauth.password.PasswordUpdateProvider:
+    - java.lang.Object
+  # Host-key verification
+  net.schmizz.sshj.transport.verification.HostKeyVerifier:
+    - java.lang.Object
+  net.schmizz.sshj.transport.verification.PromiscuousVerifier:
+    - net.schmizz.sshj.transport.verification.HostKeyVerifier
+  net.schmizz.sshj.transport.verification.FingerprintVerifier:
+    - net.schmizz.sshj.transport.verification.HostKeyVerifier
+  net.schmizz.sshj.transport.verification.OpenSSHKnownHosts:
+    - net.schmizz.sshj.transport.verification.HostKeyVerifier
+  net.schmizz.sshj.transport.verification.ConsoleKnownHostsVerifier:
+    - net.schmizz.sshj.transport.verification.OpenSSHKnownHosts
+  net.schmizz.sshj.transport.verification.AlgorithmsVerifier:
+    - java.lang.Object
+  net.schmizz.sshj.transport.Transport:
+    - java.lang.Object
+  net.schmizz.sshj.common.KeyType:
+    - java.lang.Enum
+  net.schmizz.sshj.common.KeyAlgorithm:
+    - java.lang.Object
+  java.security.PrivateKey:
+    - java.security.Key
+  java.security.PublicKey:
+    - java.security.Key
+  java.security.Key:
+    - java.lang.Object
+  java.security.KeyPair:
+    - java.lang.Object
+  java.io.File:
+    - java.lang.Object
+  java.io.Console:
+    - java.lang.Object
+  java.util.List:
+    - java.lang.Object
+  java.lang.Enum:
+    - java.lang.Object
+  java.lang.Object: []

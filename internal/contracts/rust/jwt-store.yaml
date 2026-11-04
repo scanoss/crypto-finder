@@ -1,0 +1,48 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jwt-store
+  coordinates:
+    - jwt
+  version_range: ">=0.7.0,<0.17.0"
+  description: "jwt's key-store signing and verification surface (0.7.0 and later)"
+
+# A SEPARATE FILE BECAUSE THE ERA IS SEPARATE, not because the surface is.
+# `version_range` is declared per LIBRARY rather than per entry, and `Store`,
+# `SignWithStore` and `VerifyWithStore` all arrive together at 0.7.0 —
+# 0.7.0 lib.rs re-exports `algorithm::store::Store` and
+# `token::signed::{SignWithKey, SignWithStore}`, and none of the three appears
+# in 0.6.0's lib.rs. Folding these two entries into jwt.yaml would force that
+# file to claim `>=0.7.0` and silently under-document the core API back to
+# 0.6.0; leaving them there under `>=0.6.0` would claim they exist at 0.6.0,
+# where they do not.
+#
+# Read at 0.16.0 token/signed.rs:114 and token/verified.rs:86, cross-checked at
+# 0.7.0, 0.8.0, 0.9.0, 0.10.0, 0.13.0 and 0.15.0: same names, same arity 1, same
+# `Result<Token<H, C, Signed|Verified>, Error>` return in every one.
+#
+# THE KEY IS `jwt::Token.*`, NOT `jwt::SignWithStore.*`. Measured on an exported
+# graph: `Token::new(h, c).sign_with_store(store)` emits
+# `jwt.Token.sign_with_store` and the `Token::parse_unverified(..)` /
+# `.verify_with_store(store)` chain emits `jwt.Token.verify_with_store`, both
+# rewritten to `jwt::Token.*`. A `&str` or tuple receiver — which the blanket
+# impls also accept — keys on that receiver's own type instead and is not this
+# crate's to declare.
+#
+# `parameter_types` IS OMITTED ON BOTH. The declared parameter is `store: &S`
+# with the constraint in a where-clause (`S: Store<Algorithm = A>, A:
+# SigningAlgorithm`), so the parameter's own declared type is the bare type
+# parameter `S`. Writing `&impl jwt::Store` would be a paraphrase rather than
+# the declared spelling, and writing `&S` carries no information.
+contracts:
+  - method: jwt::Token.sign_with_store
+    arity: 1
+    return: { type: jwt::Token, confidence: high }
+    canonical_return_type: "core::result::Result<jwt::Token, jwt::error::Error>"
+    role: operation
+
+  - method: jwt::Token.verify_with_store
+    arity: 1
+    return: { type: jwt::Token, confidence: high }
+    canonical_return_type: "core::result::Result<jwt::Token, jwt::error::Error>"
+    role: operation

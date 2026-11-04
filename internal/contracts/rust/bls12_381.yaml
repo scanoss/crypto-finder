@@ -1,0 +1,293 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: bls12_381
+  coordinates:
+    - bls12_381
+  version_range: ">=0.5.0,<0.9.0"
+  description: "bls12_381: the zkcrypto implementation of the BLS12-381 pairing-friendly curve"
+
+# API READ AT ALL TWELVE NON-EMPTY PUBLISHED VERSIONS, not at one and assumed
+# across the rest: 0.1.0, 0.1.1, 0.2.0, 0.3.0, 0.3.1, 0.4.0, 0.5.0, 0.6.0,
+# 0.6.1, 0.7.0, 0.7.1 and 0.8.0, every archive fetched and read. The crate has
+# THIRTEEN published versions, 0.0.0 through 0.8.0, none yanked -- checked
+# against the sparse index cargo reads rather than taken from a version list.
+# The entries below were read at the twelve non-empty ones.
+#
+# THE `random` PARAMETER TYPE IS THE ONE SIGNATURE THAT MOVED INSIDE THE
+# CRATE'S HISTORY, and reading it at a single version would have declared it
+# wrong. It is `fn random<R: RngCore + ?Sized>(rng: &mut R)` at 0.2.0 ONLY
+# (src/scalar.rs:654, g1.rs:918, g2.rs:1108, pairings.rs:308) and
+# `fn random(mut rng: impl RngCore)` from 0.3.0 on, unchanged through 0.8.0
+# (0.8.0: scalar.rs:646, g1.rs:948, g2.rs:1093, pairings.rs:342). The declared
+# `impl rand_core::RngCore` is therefore true for every version this file
+# claims; the `&mut R` spelling would have been true for none of them.
+#
+# THE RANGE STARTS AT 0.5.0, AND THAT IS NARROWER THAN THE ROWS THIS FAMILY
+# MINES, on purpose. `version_range` is declared per library and may only claim
+# versions for which EVERY declared entry is true, so it is bounded by the LAST
+# entry to arrive rather than by the first:
+#
+#   0.0.0        a NAME PLACEHOLDER whose src/lib.rs is EMPTY -- zero lines, no
+#                API at all. tfhe and aws-sdk-kms have the same shape.
+#   0.1.0-0.1.1  no sampling of any kind: neither `ff::Field` nor `group::Group`
+#                is implemented, so `random` does not exist. 4 entries false.
+#   0.2.0        sampling arrives, but with the `&mut R` parameter type this
+#                file does not declare, so the 4 sampling entries are false
+#                here for their signature rather than their existence.
+#   0.3.0-0.4.0  sampling holds in the declared form; `hash_to_curve` does not
+#                exist yet, so the four hash-to-curve entries are still false.
+#   0.5.0-0.8.0  every entry below holds.
+#
+# HASH-TO-CURVE IS BEHIND A NON-DEFAULT FEATURE, and that is what actually sets
+# the lower bound, so it is stated rather than left implicit. `pub mod
+# hash_to_curve` is `#[cfg(feature = "experimental")]` (src/lib.rs:89-90 at both
+# 0.5.0 and 0.8.0) and `experimental` is in neither release's `default` set
+# (0.8.0: `default = ["groups", "pairings", "alloc", "bits"]`), so the four
+# hash-to-curve entries describe a surface a consumer must opt in to compile.
+# They are declared because the symbols exist in the published source and real
+# consumers do enable the feature, but a reader weighing the 0.5.0 bound should
+# know that the four entries forcing it are feature-gated while the other
+# nineteen are not: `groups`, `pairings` and `alloc` are all default.
+#
+# WIDENING THE RANGE IS AN OPERATOR DECISION AND IS NOT TAKEN HERE. Splitting
+# this file the way `md5.yaml`/`md5-0.8.yaml` and the four `biscuit` files are
+# split would let the pairing core claim from 0.1.0 and sampling from 0.3.0,
+# which covers three mined rows this file currently says nothing about. It is a
+# coverage gain rather than a defect repair, so it is reported rather than made.
+#
+# A first draft declared >=0.1.0 and was wrong by eight entries -- the four
+# hash-to-curve ones and the four sampling ones. `balloon.yaml` records this
+# rule and NARROWS for it, excluding 0.0.13 over a single changed return type,
+# which is exactly the shape of the `random` parameter-type change at 0.2.0
+# here. The pairing entries do hold from 0.1.0 -- they simply cannot be claimed
+# separately while the file declares one range.
+#
+# WHAT MOVED INSIDE THE RANGE, version by version rather than assumed:
+#   0.1.0  `pairing`, `multi_miller_loop`, `MillerLoopResult`, the four point
+#          types and `Scalar`. NO sampling: neither `ff::Field` nor
+#          `group::Group` is implemented yet, so `Scalar::random` and the
+#          projective `random` forms DO NOT EXIST on this row.
+#   0.2.0  `Bls12` is exported and `Scalar::random` arrives (src/scalar.rs).
+#   0.5.0  `hash_to_curve` arrives as a module with the `HashToCurve` trait.
+#   0.8.0  newest. `pairing`, `multi_miller_loop` and `final_exponentiation`
+#          are identical in signature at every version from 0.1.0:
+#            pub fn pairing(p: &G1Affine, q: &G2Affine) -> Gt
+#            pub fn multi_miller_loop(terms: &[(&G1Affine, &G2Prepared)]) -> MillerLoopResult
+#            pub fn final_exponentiation(&self) -> Gt
+#
+# `version_range` is declared per library and may only claim versions for which
+# EVERY declared entry is true. The sampling and hash-to-curve entries are false
+# before 0.2.0 and 0.5.0 respectively, so the honest reading of the lower bound
+# is the oldest row where the PAIRING core holds and the rest simply do not
+# resolve. `balloon.yaml` records the same tension and resolves it the same way.
+#
+# KEYS READ OFF AN EXPORTED GRAPH, NOT WRITTEN FROM THE API (campaign rule 5.5).
+# A probe consumer was parsed and its `fn.Calls` callee keys printed. Three
+# facts came out of that and none of them is guessable:
+#
+#   1. The types are re-exported from the crate root (src/lib.rs `pub use
+#      scalar::Scalar`, `pub use g1::{G1Affine, G1Projective}`, ...), so their
+#      keys carry NO module segment: `bls12_381.Scalar.random`.
+#   2. The crate-root free functions key with no owning type at all:
+#      `bls12_381.pairing`, `bls12_381.multi_miller_loop`.
+#   3. HASH-TO-CURVE KEYS ON THE CONCRETE TYPE, NOT THE TRAIT. A consumer
+#      writes the UFCS form `<G2Projective as HashToCurve<ExpandMsgXmd<Sha256>>>::hash_to_curve(m, d)`,
+#      and the graph emits `bls12_381.G2Projective.hash_to_curve`. Declaring it
+#      under `bls12_381::hash_to_curve::HashToCurve` -- which is where the
+#      method is DEFINED -- would resolve to nothing and be indistinguishable
+#      from having no contract.
+#
+# WHAT THE CONTRACT FIXES, measured on that same probe with the file present and
+# absent: `multi_miller_loop(..).final_exponentiation()` had the chained call
+# land in the CONSUMER's own package as `<consumer>.final_exponentiation`,
+# because `multi_miller_loop`'s return was undeclared. With the entry the chain
+# resolves to `bls12_381.MillerLoopResult.final_exponentiation(): bls12_381::Gt`.
+#
+# AND THE LIMIT OF THAT FIX, measured rather than assumed, because it changes
+# what a consumer sees. A FREE FUNCTION's declared return propagates through a
+# DIRECT CHAIN but NOT into a local binding:
+#
+#   multi_miller_loop(..).final_exponentiation()   ->  bls12_381.MillerLoopResult.final_exponentiation
+#   let ml = multi_miller_loop(..);
+#   ml.final_exponentiation()                      ->  <consumer>.final_exponentiation
+#
+# Method returns DO flow into locals -- `let pk = sk.public_key(); pk.verify(..)`
+# resolves in the sibling bls-signatures family -- so the asymmetry is specific
+# to crate-root free functions, which is exactly the shape this crate's pairing
+# entry points have. Both spellings are common in consumer code, so roughly half
+# the Miller-loop call sites in the wild will not resolve until that is fixed in
+# the resolver rather than in a contract.
+#
+# THE ENCODINGS AND GENERATORS ARE DECLARED HERE BUT CARRY NO RULE, and that is
+# deliberate rather than an oversight. `to_compressed`, `from_compressed`,
+# `to_bytes`, `from_bytes` and `generator` are chain links a consumer travels to
+# reach an operation, so the graph needs their types; they are not crypto
+# assets, which is why the rules leave them unmatched and a negative fixture
+# pins that. A contract types calls; it does not decide what is reported.
+
+contracts:
+  # --- the pairing ------------------------------------------------------------
+  - method: bls12_381.pairing
+    arity: 2
+    return: { type: bls12_381::Gt, confidence: high }
+    parameter_types: ["&bls12_381::G1Affine", "&bls12_381::G2Affine"]
+    canonical_return_type: "bls12_381::Gt"
+    role: operation
+  - method: bls12_381.multi_miller_loop
+    arity: 1
+    return: { type: bls12_381::MillerLoopResult, confidence: high }
+    parameter_types: ["&[(&bls12_381::G1Affine, &bls12_381::G2Prepared)]"]
+    canonical_return_type: "bls12_381::MillerLoopResult"
+    role: operation
+  # The link the contract exists for: without this entry the chained call after
+  # `multi_miller_loop(..)` lands in the consumer's own package.
+  - method: bls12_381::MillerLoopResult.final_exponentiation
+    arity: 0
+    return: { type: bls12_381::Gt, confidence: high }
+    parameter_types: []
+    canonical_return_type: "bls12_381::Gt"
+    role: operation
+
+  # THE TRAIT ROUTE INTO THE PAIRING, which a first draft omitted entirely.
+  # `pub struct Bls12;` (src/pairings.rs:793) implements `pairing::Engine`
+  # (:795) and `MultiMillerLoop` (:817), and a generic consumer reaches the
+  # pairing through those rather than through the free functions. A probe
+  # writing `Bls12::pairing(a, b)` and `Bls12::multi_miller_loop(..)` resolved
+  # to NOTHING before these entries existed.
+  - method: bls12_381::Bls12.pairing
+    arity: 2
+    return: { type: bls12_381::Gt, confidence: high }
+    parameter_types: ["&bls12_381::G1Affine", "&bls12_381::G2Affine"]
+    canonical_return_type: "bls12_381::Gt"
+    role: operation
+  - method: bls12_381::Bls12.multi_miller_loop
+    arity: 1
+    return: { type: bls12_381::MillerLoopResult, confidence: high }
+    parameter_types: ["&[(&bls12_381::G1Affine, &bls12_381::G2Prepared)]"]
+    canonical_return_type: "bls12_381::MillerLoopResult"
+    role: operation
+
+  # --- sampling: 0.2.0 and later ---------------------------------------------
+  - method: bls12_381::Scalar.random
+    arity: 1
+    return: { type: bls12_381::Scalar, confidence: high }
+    parameter_types: ["impl rand_core::RngCore"]
+    canonical_return_type: "bls12_381::Scalar"
+    role: factory
+  - method: bls12_381::G1Projective.random
+    arity: 1
+    return: { type: bls12_381::G1Projective, confidence: high }
+    parameter_types: ["impl rand_core::RngCore"]
+    canonical_return_type: "bls12_381::G1Projective"
+    role: factory
+  - method: bls12_381::G2Projective.random
+    arity: 1
+    return: { type: bls12_381::G2Projective, confidence: high }
+    parameter_types: ["impl rand_core::RngCore"]
+    canonical_return_type: "bls12_381::G2Projective"
+    role: factory
+
+  # `Gt` implements `group::Group` too (src/pairings.rs:339), so the target
+  # group is samplable like the two source groups.
+  - method: bls12_381::Gt.random
+    arity: 1
+    return: { type: bls12_381::Gt, confidence: high }
+    parameter_types: ["impl rand_core::RngCore"]
+    canonical_return_type: "bls12_381::Gt"
+    role: factory
+
+  # --- hash-to-curve: 0.5.0 and later, keyed on the concrete type -------------
+  - method: bls12_381::G1Projective.hash_to_curve
+    arity: 2
+    return: { type: bls12_381::G1Projective, confidence: high }
+    parameter_types: ["impl AsRef<[u8]>", "&[u8]"]
+    canonical_return_type: "bls12_381::G1Projective"
+    role: operation
+  - method: bls12_381::G2Projective.hash_to_curve
+    arity: 2
+    return: { type: bls12_381::G2Projective, confidence: high }
+    parameter_types: ["impl AsRef<[u8]>", "&[u8]"]
+    canonical_return_type: "bls12_381::G2Projective"
+    role: operation
+  - method: bls12_381::G1Projective.encode_to_curve
+    arity: 2
+    return: { type: bls12_381::G1Projective, confidence: high }
+    parameter_types: ["impl AsRef<[u8]>", "&[u8]"]
+    canonical_return_type: "bls12_381::G1Projective"
+    role: operation
+  - method: bls12_381::G2Projective.encode_to_curve
+    arity: 2
+    return: { type: bls12_381::G2Projective, confidence: high }
+    parameter_types: ["impl AsRef<[u8]>", "&[u8]"]
+    canonical_return_type: "bls12_381::G2Projective"
+    role: operation
+
+  # --- base points: chain links, not assets ----------------------------------
+  - method: bls12_381::G1Affine.generator
+    arity: 0
+    return: { type: bls12_381::G1Affine, confidence: high }
+    parameter_types: []
+    canonical_return_type: "bls12_381::G1Affine"
+    role: factory
+  - method: bls12_381::G2Affine.generator
+    arity: 0
+    return: { type: bls12_381::G2Affine, confidence: high }
+    parameter_types: []
+    canonical_return_type: "bls12_381::G2Affine"
+    role: factory
+  - method: bls12_381::G1Projective.generator
+    arity: 0
+    return: { type: bls12_381::G1Projective, confidence: high }
+    parameter_types: []
+    canonical_return_type: "bls12_381::G1Projective"
+    role: factory
+  - method: bls12_381::G2Projective.generator
+    arity: 0
+    return: { type: bls12_381::G2Projective, confidence: high }
+    parameter_types: []
+    canonical_return_type: "bls12_381::G2Projective"
+    role: factory
+
+  # --- encodings: representation changes, typed so the chain can travel them --
+  # `from_compressed` and `from_bytes` return `CtOption<Self>`, a constant-time
+  # Option rather than a Result; `return.type` is the unwrapped value, which is
+  # what the consumer's `.unwrap()` yields, and `canonical_return_type` carries
+  # the declared type. That split is what `blake3.yaml` and
+  # `security-framework.yaml` use.
+  - method: bls12_381::G1Affine.to_compressed
+    arity: 0
+    return: { type: "[u8; 48]", confidence: high }
+    parameter_types: []
+    canonical_return_type: "[u8; 48]"
+    role: output
+  - method: bls12_381::G2Affine.to_compressed
+    arity: 0
+    return: { type: "[u8; 96]", confidence: high }
+    parameter_types: []
+    canonical_return_type: "[u8; 96]"
+    role: output
+  - method: bls12_381::G1Affine.from_compressed
+    arity: 1
+    return: { type: bls12_381::G1Affine, confidence: high }
+    parameter_types: ["&[u8; 48]"]
+    canonical_return_type: "subtle::CtOption<bls12_381::G1Affine>"
+    role: factory
+  - method: bls12_381::G2Affine.from_compressed
+    arity: 1
+    return: { type: bls12_381::G2Affine, confidence: high }
+    parameter_types: ["&[u8; 96]"]
+    canonical_return_type: "subtle::CtOption<bls12_381::G2Affine>"
+    role: factory
+  - method: bls12_381::Scalar.to_bytes
+    arity: 0
+    return: { type: "[u8; 32]", confidence: high }
+    parameter_types: []
+    canonical_return_type: "[u8; 32]"
+    role: output
+  - method: bls12_381::Scalar.from_bytes
+    arity: 1
+    return: { type: bls12_381::Scalar, confidence: high }
+    parameter_types: ["&[u8; 32]"]
+    canonical_return_type: "subtle::CtOption<bls12_381::Scalar>"
+    role: factory

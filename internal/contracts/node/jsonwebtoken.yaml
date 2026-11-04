@@ -1,0 +1,67 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "jsonwebtoken"
+  coordinates:
+    - "jsonwebtoken"
+  version_range: ">=8.0.0"
+  description: "jsonwebtoken: JWT sign, verify and decode"
+
+# THREE FUNCTIONS, AND THE WHOLE VALUE OF THIS KB IS THAT ONE OF THEM IS NOT
+# WHAT ITS NAME SUGGESTS.
+#
+# `decode` IS DECLARED role: output AND NOT operation. It base64-decodes the
+# claims and CHECKS NO SIGNATURE -- the library's own README warns against it in
+# bold, and the finder must not record a verification at a line where no
+# cryptography happened. This is not a hypothetical: across 16 published
+# consumers, `jwt.decode(token)` is the MOST COMMON jsonwebtoken call site, six
+# of the ones measured. A KB that typed it as an operation would make the most
+# frequent call in the ecosystem look like a security control.
+#
+# ARITY CARRIES REAL INFORMATION HERE, which is unusual. `sign` at arity 2 has no
+# options object, and sign.js line 98 reads `alg: options.algorithm || 'HS256'`,
+# so a two-argument sign is an HMAC-SHA-256 with a shared secret -- provable from
+# the source rather than assumed. Both arities are declared so the rules can tell
+# them apart.
+#
+# `verify` takes (token, key), (token, key, options) or a callback form at arity
+# 4; all are declared. Its options carry the `algorithms` ALLOWLIST, which is what
+# separates a service pinned to RS256 from one that trusts the token's own
+# header -- the algorithm-confusion class. The KB cannot read that array; it can
+# only make sure the call resolves to jsonwebtoken so the rules can.
+#
+# Deliberately NOT contracted: JsonWebTokenError, NotBeforeError and
+# TokenExpiredError. They report failures and compute nothing.
+contracts:
+  - method: "jsonwebtoken.sign"
+    arity: 2
+    return: { type: "jsonwebtoken.CompactJWS", confidence: high }
+    role: operation
+  - method: "jsonwebtoken.sign"
+    arity: 3
+    return: { type: "jsonwebtoken.CompactJWS", confidence: high }
+    role: operation
+  - method: "jsonwebtoken.sign"
+    arity: 4
+    return: { type: "jsonwebtoken.CompactJWS", confidence: high }
+    role: operation
+  - method: "jsonwebtoken.verify"
+    arity: 2
+    return: { type: "jsonwebtoken.JwtPayload", confidence: high }
+    role: operation
+  - method: "jsonwebtoken.verify"
+    arity: 3
+    return: { type: "jsonwebtoken.JwtPayload", confidence: high }
+    role: operation
+  - method: "jsonwebtoken.verify"
+    arity: 4
+    return: { type: "jsonwebtoken.JwtPayload", confidence: high }
+    role: operation
+  - method: "jsonwebtoken.decode"
+    arity: 1
+    return: { type: "jsonwebtoken.JwtPayload", confidence: high }
+    role: output
+  - method: "jsonwebtoken.decode"
+    arity: 2
+    return: { type: "jsonwebtoken.JwtPayload", confidence: high }
+    role: output

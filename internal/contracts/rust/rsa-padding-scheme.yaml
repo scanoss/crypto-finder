@@ -1,0 +1,23 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-padding-scheme
+  coordinates:
+    - rsa
+  version_range: ">=0.3.0,<0.8.0-rc.0"
+  description: "RustCrypto rsa 0.3-0.7: PaddingScheme encryption selectors"
+
+# `PaddingScheme` gains constructor functions at 0.3.0 (src/padding.rs:47-55)
+# and is replaced by the typed `Oaep` and `Pkcs1v15Encrypt` at 0.8.0-rc.0.
+# These two keep one arity across that window. The era table is in rsa.yaml.
+contracts:
+  - method: rsa::PaddingScheme.new_oaep
+    arity: 0
+    return: { type: rsa::PaddingScheme, confidence: high }
+    role: factory
+  - method: rsa::PaddingScheme.new_pkcs1v15_encrypt
+    arity: 0
+    return: { type: rsa::PaddingScheme, confidence: high }
+    role: factory
+
+hierarchy: {}

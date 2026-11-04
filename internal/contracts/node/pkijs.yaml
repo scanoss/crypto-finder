@@ -1,0 +1,184 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "pkijs"
+  coordinates:
+    - "pkijs"
+  version_range: ">=2.0.0"
+  description: "PKIjs: X.509 certificates, CRLs, PKCS#10 requests and CMS signed and enveloped data over WebCrypto"
+
+# Arities span 2.x and the optional trailing crypto engine of 3.x/4.x.
+# SignedData.verify resolves to a boolean unless extendedMode is set.
+contracts:
+  - method: "pkijs.Certificate.<init>"
+    arity: 0
+    return: { type: "pkijs.Certificate", confidence: high }
+    role: factory
+  - method: "pkijs.Certificate.<init>"
+    arity: 1
+    return: { type: "pkijs.Certificate", confidence: high }
+    role: factory
+  - method: "pkijs.CertificateChainValidationEngine.<init>"
+    arity: 0
+    return: { type: "pkijs.CertificateChainValidationEngine", confidence: high }
+    role: factory
+  - method: "pkijs.CertificateChainValidationEngine.<init>"
+    arity: 1
+    return: { type: "pkijs.CertificateChainValidationEngine", confidence: high }
+    role: factory
+  - method: "pkijs.CertificateRevocationList.<init>"
+    arity: 0
+    return: { type: "pkijs.CertificateRevocationList", confidence: high }
+    role: factory
+  - method: "pkijs.CertificateRevocationList.<init>"
+    arity: 1
+    return: { type: "pkijs.CertificateRevocationList", confidence: high }
+    role: factory
+  - method: "pkijs.CertificationRequest.<init>"
+    arity: 0
+    return: { type: "pkijs.CertificationRequest", confidence: high }
+    role: factory
+  - method: "pkijs.CertificationRequest.<init>"
+    arity: 1
+    return: { type: "pkijs.CertificationRequest", confidence: high }
+    role: factory
+  - method: "pkijs.EnvelopedData.<init>"
+    arity: 0
+    return: { type: "pkijs.EnvelopedData", confidence: high }
+    role: factory
+  - method: "pkijs.EnvelopedData.<init>"
+    arity: 1
+    return: { type: "pkijs.EnvelopedData", confidence: high }
+    role: factory
+  - method: "pkijs.SignedData.<init>"
+    arity: 0
+    return: { type: "pkijs.SignedData", confidence: high }
+    role: factory
+  - method: "pkijs.SignedData.<init>"
+    arity: 1
+    return: { type: "pkijs.SignedData", confidence: high }
+    role: factory
+  - method: "pkijs.Certificate.sign"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.Certificate.sign"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.Certificate.sign"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.Certificate.verify"
+    arity: 0
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.Certificate.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.Certificate.verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.CertificateChainValidationEngine.verify"
+    arity: 0
+    return: { type: "pkijs.CertificateChainValidationEngineVerifyResult", confidence: high }
+    role: operation
+  - method: "pkijs.CertificateChainValidationEngine.verify"
+    arity: 1
+    return: { type: "pkijs.CertificateChainValidationEngineVerifyResult", confidence: high }
+    role: operation
+  - method: "pkijs.CertificateChainValidationEngine.verify"
+    arity: 2
+    return: { type: "pkijs.CertificateChainValidationEngineVerifyResult", confidence: high }
+    role: operation
+  - method: "pkijs.CertificateRevocationList.sign"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.CertificateRevocationList.sign"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.CertificateRevocationList.sign"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.CertificateRevocationList.verify"
+    arity: 0
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.CertificateRevocationList.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.CertificateRevocationList.verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.CertificationRequest.sign"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.CertificationRequest.sign"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.CertificationRequest.sign"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.CertificationRequest.verify"
+    arity: 0
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.CertificationRequest.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.EnvelopedData.encrypt"
+    arity: 2
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "pkijs.EnvelopedData.encrypt"
+    arity: 3
+    return: { type: "Array", confidence: high }
+    role: operation
+  - method: "pkijs.EnvelopedData.decrypt"
+    arity: 2
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "pkijs.EnvelopedData.decrypt"
+    arity: 3
+    return: { type: "builtins.bytes", confidence: high }
+    role: operation
+  - method: "pkijs.SignedData.sign"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.SignedData.sign"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.SignedData.sign"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.SignedData.sign"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pkijs.SignedData.verify"
+    arity: 0
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.SignedData.verify"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "pkijs.SignedData.verify"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation

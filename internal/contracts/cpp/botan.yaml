@@ -1,0 +1,763 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: botan
+  coordinates:
+    - randombit/botan
+  version_range: ">=2.0.0,<4.0.0"
+  description: "Botan: hash, MAC, cipher mode, block and stream cipher, KDF and password-hash lifecycles"
+
+# Inventory sources: the public headers src/lib/base/{buf_comp,sym_algo}.h,
+# hash/hash.h, mac/mac.h, modes/cipher_mode.h, modes/aead/aead.h,
+# block/block_cipher.h, stream/stream_cipher.h, kdf/kdf.h, pbkdf/pbkdf.h,
+# pbkdf/pwdhash.h, pbkdf/argon2/argon2.h, passhash/argon2fmt/argon2fmt.h,
+# passhash/bcrypt/bcrypt.h and pubkey/pubkey.h from the upstream tag archives
+# 2.19.5 and 3.12.0. The scope is the APIs the scanoss/crypto_rules Botan rules
+# (semgrep-rules/cpp/botan) anchor on. A method with defaulted parameters is
+# contracted at every arity a call site can use; an overload present in only
+# one major (the 3.x std::span forms, set_associated_data_n at 2 vs 3
+# arguments) is contracted at its own arity and simply never matches on the
+# other. Templated calls such as derive_key<32>(...) are not recorded as calls
+# by the C++ parser, so the std::array overloads are out of reach.
+#
+# Contracts key on the receiver type the C++ parser emits, which is the type
+# written in the declaration. The factories return std::unique_ptr<X>, so the
+# object methods are keyed on std::unique_ptr<Botan::X>. Botan 2's free
+# factories get_cipher_mode, get_kdf and get_pbkdf return raw pointers, so
+# Cipher_Mode, KDF and PBKDF are also keyed on the bare Botan:: type.
+#
+# Return types: where 3.x makes the result a template parameter (final(),
+# process(), keystream_bytes(), derive_key()) the default secure_vector is the
+# type. KDF::derive_key(key, secret, salt, label) has a void 3.x overload taking
+# an output span; the result is only used with the other overloads, which all
+# return secure_vector. KDF::kdf returns size_t in 2.x and void in 3.x, the
+# same way.
+#
+# Which findings these contracts serve: the hash, MAC, cipher-mode, block,
+# stream, KDF and password-hash rules anchor on the create()/create_or_throw()
+# and get_* factory calls, and the methods below label the calls made on the
+# object that factory returns. The public-key (PK_Signer, PK_Verifier,
+# PK_Encryptor_EME, PK_Decryptor_EME), private-key (RSA, EC, Ed25519, X25519,
+# ML-KEM, ML-DSA), X509_Certificate and TLS::Client/Server rules anchor on the
+# object's declaration, which is not a call, so no lifecycle is derived from
+# them and contracts on those classes would never be exercised. The
+# Protocol_Version rules anchor on an enum constant.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: providers, name, clear, reset, clone, copy_state,
+#   new_object, output_length, key_spec, valid_keylength,
+#   minimum/maximum_keylength, has_keying_material, block_size, parallelism,
+#   update_granularity, ideal_granularity, minimum_final_size,
+#   default_nonce_length, valid_nonce_length, tag_size, authenticated,
+#   default_iv_length, valid_iv_length, buffer_size, set_tweak, encrypt_n_xex,
+#   decrypt_n_xex, the PasswordHash getters (to_string, iterations,
+#   memory_param, parallelism, total_memory_usage, supports_*).
+# skipped-informative-return: generate_bcrypt, check_bcrypt,
+#   argon2_generate_pwhash and argon2_check_pwhash return a std::string or a
+#   bool and are themselves the finding; no object lifecycle follows them.
+# skipped-unsupported (declaration-anchored, see above): PK_Signer,
+#   PK_Verifier, PK_Encryptor_EME, PK_Decryptor_EME, the private-key
+#   constructors, X509_Certificate, TLS::Client and TLS::Server.
+# needs-follow-up (no rule anchors them): PK_Key_Agreement, PK_KEM_Encryptor,
+#   PK_KEM_Decryptor, get_aead, get_s2k, RandomNumberGenerator and
+#   AutoSeeded_RNG, and the bare Botan:: receivers of HashFunction,
+#   MessageAuthenticationCode, AEAD_Mode, BlockCipher, StreamCipher,
+#   PasswordHashFamily and PasswordHash, which only a reference, a parameter
+#   or a released pointer produces, outside a factory finding's lifecycle.
+# Resolution gaps: a receiver declared `auto` (the 3.x examples' spelling)
+#   resolves as auto; a std::unique_ptr direct-initialised from the factory,
+#   `std::unique_ptr<Botan::HashFunction> h(Botan::HashFunction::create(...))`
+#   (the 2.x examples' spelling), binds no variable to the factory call; names
+#   reached through `using namespace Botan` are unqualified. None of these
+#   resolve to a contracted key.
+contracts:
+
+  # Factories. The algorithm spec names the primitive; a cipher mode's
+  # direction decides encryption or decryption.
+  - method: "Botan::HashFunction.create"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::HashFunction>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::HashFunction.create"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::HashFunction>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::HashFunction.create_or_throw"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::HashFunction>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::HashFunction.create_or_throw"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::HashFunction>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::MessageAuthenticationCode.create"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::MessageAuthenticationCode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::MessageAuthenticationCode.create"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::MessageAuthenticationCode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::MessageAuthenticationCode.create_or_throw"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::MessageAuthenticationCode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::MessageAuthenticationCode.create_or_throw"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::MessageAuthenticationCode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::BlockCipher.create"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::BlockCipher>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::BlockCipher.create"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::BlockCipher>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::BlockCipher.create_or_throw"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::BlockCipher>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::BlockCipher.create_or_throw"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::BlockCipher>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::StreamCipher.create"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::StreamCipher>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::StreamCipher.create"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::StreamCipher>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::StreamCipher.create_or_throw"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::StreamCipher>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::StreamCipher.create_or_throw"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::StreamCipher>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::KDF.create"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::KDF>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::KDF.create"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::KDF>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::KDF.create_or_throw"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::KDF>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::KDF.create_or_throw"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::KDF>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::PBKDF.create"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::PBKDF>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::PBKDF.create"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::PBKDF>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::PBKDF.create_or_throw"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::PBKDF>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::PBKDF.create_or_throw"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::PBKDF>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::PasswordHashFamily.create"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::PasswordHashFamily>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::PasswordHashFamily.create"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::PasswordHashFamily>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::PasswordHashFamily.create_or_throw"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::PasswordHashFamily>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::PasswordHashFamily.create_or_throw"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::PasswordHashFamily>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan::Cipher_Mode.create"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::Cipher_Mode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan::Cipher_Mode.create"
+    arity: 3
+    return: {type: "std::unique_ptr<Botan::Cipher_Mode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan::Cipher_Mode.create_or_throw"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::Cipher_Mode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan::Cipher_Mode.create_or_throw"
+    arity: 3
+    return: {type: "std::unique_ptr<Botan::Cipher_Mode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan::AEAD_Mode.create"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::AEAD_Mode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan::AEAD_Mode.create"
+    arity: 3
+    return: {type: "std::unique_ptr<Botan::AEAD_Mode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan::AEAD_Mode.create_or_throw"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::AEAD_Mode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan::AEAD_Mode.create_or_throw"
+    arity: 3
+    return: {type: "std::unique_ptr<Botan::AEAD_Mode>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan.get_cipher_mode"
+    arity: 2
+    return: {type: "Botan::Cipher_Mode*", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan.get_cipher_mode"
+    arity: 3
+    return: {type: "Botan::Cipher_Mode*", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+      - {index: 1, name: direction, role: operation-determining, contributes: {property: operation, derivation: argument_value}}
+  - method: "Botan.get_kdf"
+    arity: 1
+    return: {type: "Botan::KDF*", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan.get_pbkdf"
+    arity: 1
+    return: {type: "Botan::PBKDF*", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+  - method: "Botan.get_pbkdf"
+    arity: 2
+    return: {type: "Botan::PBKDF*", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: algo_spec, role: operation-determining, contributes: {property: algorithm, derivation: argument_value}}
+
+  # Hashing through a HashFunction held in the std::unique_ptr create() returns.
+  - {method: "std::unique_ptr<Botan::HashFunction>.update", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::HashFunction>.update", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::HashFunction>.update_be", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::HashFunction>.update_le", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::HashFunction>.final", arity: 0, return: {type: "Botan::secure_vector<uint8_t>", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::HashFunction>.final", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::HashFunction>.final_stdvec", arity: 0, return: {type: "std::vector<uint8_t>", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::HashFunction>.process", arity: 1, return: {type: "Botan::secure_vector<uint8_t>", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::HashFunction>.process", arity: 2, return: {type: "Botan::secure_vector<uint8_t>", confidence: high}, role: operation}
+
+  # MACs: key, optional nonce, streaming input, tag output and verification.
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.set_key", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "std::unique_ptr<Botan::MessageAuthenticationCode>.set_key"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.start", arity: 0, return: {type: "void", confidence: high}, role: config}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.start", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "std::unique_ptr<Botan::MessageAuthenticationCode>.start"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: nonce_len, role: metadata-contributing, contributes: {property: nonceSize, derivation: argument_value}}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.update", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.update", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.update_be", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.update_le", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.final", arity: 0, return: {type: "Botan::secure_vector<uint8_t>", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.final", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.final_stdvec", arity: 0, return: {type: "std::vector<uint8_t>", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.process", arity: 1, return: {type: "Botan::secure_vector<uint8_t>", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.process", arity: 2, return: {type: "Botan::secure_vector<uint8_t>", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.verify_mac", arity: 1, return: {type: "bool", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::MessageAuthenticationCode>.verify_mac", arity: 2, return: {type: "bool", confidence: high}, role: operation}
+
+  # Cipher modes: key and nonce configuration, then update/process and finish.
+  - {method: "std::unique_ptr<Botan::Cipher_Mode>.set_key", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "std::unique_ptr<Botan::Cipher_Mode>.set_key"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - {method: "std::unique_ptr<Botan::Cipher_Mode>.start", arity: 0, return: {type: "void", confidence: high}, role: config}
+  - {method: "std::unique_ptr<Botan::Cipher_Mode>.start", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "std::unique_ptr<Botan::Cipher_Mode>.start"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: nonce_len, role: metadata-contributing, contributes: {property: nonceSize, derivation: argument_value}}
+  - {method: "std::unique_ptr<Botan::Cipher_Mode>.update", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::Cipher_Mode>.update", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::Cipher_Mode>.process", arity: 1, return: {type: "size_t", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::Cipher_Mode>.process", arity: 2, return: {type: "size_t", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::Cipher_Mode>.finish", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::Cipher_Mode>.finish", arity: 2, return: {type: "void", confidence: high}, role: operation}
+
+  # Botan::Cipher_Mode through the raw pointer the Botan 2 free factory returns.
+  - {method: "Botan::Cipher_Mode.set_key", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "Botan::Cipher_Mode.set_key"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - {method: "Botan::Cipher_Mode.start", arity: 0, return: {type: "void", confidence: high}, role: config}
+  - {method: "Botan::Cipher_Mode.start", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "Botan::Cipher_Mode.start"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: nonce_len, role: metadata-contributing, contributes: {property: nonceSize, derivation: argument_value}}
+  - {method: "Botan::Cipher_Mode.update", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "Botan::Cipher_Mode.update", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "Botan::Cipher_Mode.process", arity: 1, return: {type: "size_t", confidence: high}, role: operation}
+  - {method: "Botan::Cipher_Mode.process", arity: 2, return: {type: "size_t", confidence: high}, role: operation}
+  - {method: "Botan::Cipher_Mode.finish", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "Botan::Cipher_Mode.finish", arity: 2, return: {type: "void", confidence: high}, role: operation}
+
+  # AEAD modes: the Cipher_Mode lifecycle plus associated data.
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.set_key", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "std::unique_ptr<Botan::AEAD_Mode>.set_key"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.start", arity: 0, return: {type: "void", confidence: high}, role: config}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.start", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "std::unique_ptr<Botan::AEAD_Mode>.start"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: nonce_len, role: metadata-contributing, contributes: {property: nonceSize, derivation: argument_value}}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.update", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.update", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.process", arity: 1, return: {type: "size_t", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.process", arity: 2, return: {type: "size_t", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.finish", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.finish", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.set_associated_data", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.set_associated_data", arity: 2, return: {type: "void", confidence: high}, role: config}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.set_associated_data_vec", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.set_ad", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.set_associated_data_n", arity: 2, return: {type: "void", confidence: high}, role: config}
+  - {method: "std::unique_ptr<Botan::AEAD_Mode>.set_associated_data_n", arity: 3, return: {type: "void", confidence: high}, role: config}
+
+  # Raw block ciphers.
+  - {method: "std::unique_ptr<Botan::BlockCipher>.set_key", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "std::unique_ptr<Botan::BlockCipher>.set_key"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - {method: "std::unique_ptr<Botan::BlockCipher>.encrypt", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::BlockCipher>.encrypt", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::BlockCipher>.decrypt", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::BlockCipher>.decrypt", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::BlockCipher>.encrypt_n", arity: 3, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::BlockCipher>.decrypt_n", arity: 3, return: {type: "void", confidence: high}, role: operation}
+
+  # Stream ciphers: key, IV and position, then keystream application.
+  - {method: "std::unique_ptr<Botan::StreamCipher>.set_key", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "std::unique_ptr<Botan::StreamCipher>.set_key"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.set_iv", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - method: "std::unique_ptr<Botan::StreamCipher>.set_iv"
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: config
+    parameters:
+      - {index: 1, name: iv_len, role: metadata-contributing, contributes: {property: ivSize, derivation: argument_value}}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.seek", arity: 1, return: {type: "void", confidence: high}, role: config}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.cipher", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.cipher", arity: 3, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.cipher1", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.cipher1", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.encipher", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.encrypt", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.decrypt", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.write_keystream", arity: 1, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.write_keystream", arity: 2, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::StreamCipher>.keystream_bytes", arity: 1, return: {type: "Botan::secure_vector<uint8_t>", confidence: high}, role: operation}
+
+  # KDFs. key_len is in bytes.
+  - method: "std::unique_ptr<Botan::KDF>.derive_key"
+    arity: 2
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::KDF>.derive_key"
+    arity: 3
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::KDF>.derive_key"
+    arity: 4
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::KDF>.derive_key"
+    arity: 5
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::KDF>.derive_key"
+    arity: 6
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::KDF>.derive_key"
+    arity: 7
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::KDF>.kdf"
+    arity: 8
+    return: {type: "size_t", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+
+  # Botan::KDF through the raw pointer the Botan 2 free factory returns.
+  - method: "Botan::KDF.derive_key"
+    arity: 2
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "Botan::KDF.derive_key"
+    arity: 3
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "Botan::KDF.derive_key"
+    arity: 4
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "Botan::KDF.derive_key"
+    arity: 5
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "Botan::KDF.derive_key"
+    arity: 6
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "Botan::KDF.derive_key"
+    arity: 7
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "Botan::KDF.kdf"
+    arity: 8
+    return: {type: "size_t", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: key_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+
+  # PBKDF (deprecated in 3.x in favour of PasswordHashFamily). out_len is in bytes.
+  - method: "std::unique_ptr<Botan::PBKDF>.pbkdf"
+    arity: 7
+    return: {type: "size_t", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+      - {index: 5, name: iterations, role: metadata-contributing, contributes: {property: iterations, derivation: argument_value}}
+  - method: "std::unique_ptr<Botan::PBKDF>.pbkdf_iterations"
+    arity: 5
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+      - {index: 4, name: iterations, role: metadata-contributing, contributes: {property: iterations, derivation: argument_value}}
+  - method: "std::unique_ptr<Botan::PBKDF>.pbkdf_iterations"
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+      - {index: 5, name: iterations, role: metadata-contributing, contributes: {property: iterations, derivation: argument_value}}
+  - method: "std::unique_ptr<Botan::PBKDF>.pbkdf_timed"
+    arity: 6
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::PBKDF>.pbkdf_timed"
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::PBKDF>.derive_key"
+    arity: 4
+    return: {type: "Botan::OctetString", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+      - {index: 3, name: iterations, role: metadata-contributing, contributes: {property: iterations, derivation: argument_value}}
+  - method: "std::unique_ptr<Botan::PBKDF>.derive_key"
+    arity: 5
+    return: {type: "Botan::OctetString", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::PBKDF>.derive_key"
+    arity: 6
+    return: {type: "Botan::OctetString", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+
+  # Botan::PBKDF through the raw pointer the Botan 2 free factory returns.
+  - method: "Botan::PBKDF.pbkdf"
+    arity: 7
+    return: {type: "size_t", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+      - {index: 5, name: iterations, role: metadata-contributing, contributes: {property: iterations, derivation: argument_value}}
+  - method: "Botan::PBKDF.pbkdf_iterations"
+    arity: 5
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+      - {index: 4, name: iterations, role: metadata-contributing, contributes: {property: iterations, derivation: argument_value}}
+  - method: "Botan::PBKDF.pbkdf_iterations"
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+      - {index: 5, name: iterations, role: metadata-contributing, contributes: {property: iterations, derivation: argument_value}}
+  - method: "Botan::PBKDF.pbkdf_timed"
+    arity: 6
+    return: {type: "Botan::secure_vector<uint8_t>", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "Botan::PBKDF.pbkdf_timed"
+    arity: 7
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "Botan::PBKDF.derive_key"
+    arity: 4
+    return: {type: "Botan::OctetString", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+      - {index: 3, name: iterations, role: metadata-contributing, contributes: {property: iterations, derivation: argument_value}}
+  - method: "Botan::PBKDF.derive_key"
+    arity: 5
+    return: {type: "Botan::OctetString", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "Botan::PBKDF.derive_key"
+    arity: 6
+    return: {type: "Botan::OctetString", confidence: high}
+    role: operation
+    parameters:
+      - {index: 0, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+
+  # PasswordHashFamily: each parameter call yields the PasswordHash that derives.
+  - method: "std::unique_ptr<Botan::PasswordHashFamily>.tune"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: output_length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::PasswordHashFamily>.tune"
+    arity: 3
+    return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: output_length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::PasswordHashFamily>.tune"
+    arity: 4
+    return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: output_length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::PasswordHashFamily>.tune_params"
+    arity: 2
+    return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: output_length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::PasswordHashFamily>.tune_params"
+    arity: 3
+    return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: output_length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::PasswordHashFamily>.tune_params"
+    arity: 4
+    return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: output_length, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - {method: "std::unique_ptr<Botan::PasswordHashFamily>.default_params", arity: 0, return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}, role: factory}
+  - method: "std::unique_ptr<Botan::PasswordHashFamily>.from_iterations"
+    arity: 1
+    return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}
+    role: factory
+    parameters:
+      - {index: 0, name: iterations, role: metadata-contributing, contributes: {property: iterations, derivation: argument_value}}
+  - {method: "std::unique_ptr<Botan::PasswordHashFamily>.from_params", arity: 1, return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}, role: factory}
+  - {method: "std::unique_ptr<Botan::PasswordHashFamily>.from_params", arity: 2, return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}, role: factory}
+  - {method: "std::unique_ptr<Botan::PasswordHashFamily>.from_params", arity: 3, return: {type: "std::unique_ptr<Botan::PasswordHash>", confidence: high}, role: factory}
+
+  # PasswordHash: the derivation itself. out_len is in bytes.
+  - method: "std::unique_ptr<Botan::PasswordHash>.derive_key"
+    arity: 6
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - method: "std::unique_ptr<Botan::PasswordHash>.derive_key"
+    arity: 10
+    return: {type: "void", confidence: high}
+    role: operation
+    parameters:
+      - {index: 1, name: out_len, role: metadata-contributing, contributes: {property: keySize, derivation: argument_byte_length}}
+  - {method: "std::unique_ptr<Botan::PasswordHash>.hash", arity: 3, return: {type: "void", confidence: high}, role: operation}
+  - {method: "std::unique_ptr<Botan::PasswordHash>.hash", arity: 5, return: {type: "void", confidence: high}, role: operation}
+
+hierarchy:
+  Botan::HashFunction:
+    - Botan::Buffered_Computation
+  Botan::MessageAuthenticationCode:
+    - Botan::Buffered_Computation
+    - Botan::SymmetricAlgorithm
+  Botan::Cipher_Mode:
+    - Botan::SymmetricAlgorithm
+  Botan::AEAD_Mode:
+    - Botan::Cipher_Mode
+  Botan::BlockCipher:
+    - Botan::SymmetricAlgorithm
+  Botan::StreamCipher:
+    - Botan::SymmetricAlgorithm

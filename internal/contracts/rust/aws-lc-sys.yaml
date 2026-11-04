@@ -1,0 +1,94 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: aws-lc-sys
+  coordinates:
+    - aws-lc-sys
+    - aws_lc_sys
+  version_range: ">=0.1.0,<0.43.0"
+  description: "Raw AWS-LC FFI bindings (BoringSSL fork)"
+
+# API read at aws-lc-sys 0.42.0 (src/universal_crypto.rs) and cross-checked at
+# 0.1.0 (src/bindings.rs), where every symbol contracted here is already
+# present. The archive layout changes across the range -- 0.1.0 ships a single
+# bindings.rs, 0.14.0 onward ships one file per target triple plus a build-time
+# `include!` of OUT_DIR/bindings.rs -- but the consumer-facing symbol names and
+# signatures do not, so one set of contracts covers 0.1.0 through 0.42.0.
+#
+# KEY SHAPE: these are FREE FUNCTIONS at the crate root, so the call-site FQN the
+# parser emits is `aws_lc_sys.EVP_sha256` -- crate, then a DOT, then the
+# function, with only ONE dot in the whole key. The Rust key normalisation
+# returns keys carrying fewer than two dots unchanged, so these are authored in
+# exactly that shape. Verified by exporting a call graph and reading the emitted
+# signatures rather than assuming; the same reading is pinned by a test.
+#
+# ARITIES READ FROM THE BINDGEN DECLARATIONS, NOT FROM PROSE:
+#   EVP_aead_*()                                              -> 0
+#   EVP_sha*()                                                -> 0
+#   HMAC(evp_md, key, key_len, data, data_len, out, out_len)  -> 7
+#   ECDSA_do_sign(digest, digest_len, key)                    -> 3
+#   RSA_generate_key_ex(rsa, bits, e, cb)                     -> 4
+#   RSA_sign(hash_nid, digest, digest_len, out, out_len, rsa) -> 6
+#
+# The return types are the raw C pointer types the bindings declare. They are
+# recorded as written rather than mapped to a friendlier Rust type, because that
+# is what a consumer's variable actually holds at these call sites.
+#
+# skipped-non-crypto: the ~679 C/H sources in the archive, the per-target
+#   `extern "C"` declaration blocks themselves (declarations, not call sites),
+#   and the BIO/stack/error-queue plumbing.
+contracts:
+  - method: aws_lc_sys.EVP_aead_aes_256_gcm
+    arity: 0
+    return: { type: "*const aws_lc_sys::EVP_AEAD", confidence: high }
+    role: factory
+  - method: aws_lc_sys.EVP_aead_aes_128_gcm
+    arity: 0
+    return: { type: "*const aws_lc_sys::EVP_AEAD", confidence: high }
+    role: factory
+  - method: aws_lc_sys.EVP_aead_chacha20_poly1305
+    arity: 0
+    return: { type: "*const aws_lc_sys::EVP_AEAD", confidence: high }
+    role: factory
+  - method: aws_lc_sys.EVP_sha256
+    arity: 0
+    return: { type: "*const aws_lc_sys::EVP_MD", confidence: high }
+    role: factory
+  - method: aws_lc_sys.EVP_sha384
+    arity: 0
+    return: { type: "*const aws_lc_sys::EVP_MD", confidence: high }
+    role: factory
+  - method: aws_lc_sys.EVP_sha512
+    arity: 0
+    return: { type: "*const aws_lc_sys::EVP_MD", confidence: high }
+    role: factory
+  - method: aws_lc_sys.EVP_sha1
+    arity: 0
+    return: { type: "*const aws_lc_sys::EVP_MD", confidence: high }
+    role: factory
+  - method: aws_lc_sys.HMAC
+    arity: 7
+    return: { type: "*mut u8", confidence: high }
+    parameter_types: ["*const aws_lc_sys::EVP_MD", "*const core::ffi::c_void", "usize", "*const u8", "usize", "*mut u8", "*mut core::ffi::c_uint"]
+    role: operation
+  - method: aws_lc_sys.ECDSA_do_sign
+    arity: 3
+    return: { type: "*mut aws_lc_sys::ECDSA_SIG", confidence: high }
+    parameter_types: ["*const u8", "usize", "*const aws_lc_sys::EC_KEY"]
+    role: operation
+  - method: aws_lc_sys.ECDSA_do_verify
+    arity: 4
+    return: { type: "core::ffi::c_int", confidence: high }
+    role: operation
+  - method: aws_lc_sys.RSA_generate_key_ex
+    arity: 4
+    return: { type: "core::ffi::c_int", confidence: high }
+    parameter_types: ["*mut aws_lc_sys::RSA", "core::ffi::c_int", "*const aws_lc_sys::BIGNUM", "*mut aws_lc_sys::BN_GENCB"]
+    role: factory
+  - method: aws_lc_sys.RSA_sign
+    arity: 6
+    return: { type: "core::ffi::c_int", confidence: high }
+    parameter_types: ["core::ffi::c_int", "*const u8", "usize", "*mut u8", "*mut core::ffi::c_uint", "*mut aws_lc_sys::RSA"]
+    role: operation
+
+hierarchy: {}

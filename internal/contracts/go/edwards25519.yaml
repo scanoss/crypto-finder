@@ -1,0 +1,163 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: edwards25519
+  coordinates:
+    - "filippo.io/edwards25519"
+  version_range: ">=1.0.0-alpha.1,<2.0.0"
+  description: "filippo.io/edwards25519 Edwards25519 group arithmetic"
+
+# Inventory source: filippo.io/edwards25519 v1.0.0-alpha.1 through v1.2.0
+# module sources from the Go module proxy (edwards25519.go, scalar.go,
+# scalarmult.go, extra.go). Version notes: the Set*Bytes scalar decoders
+# changed shape at v1.0.0-beta.1 (alpha returned *Scalar or bare error; every
+# release from beta on returns (*Scalar, error)) — the contracts declare the
+# stable first result, which holds across the whole range. Point.Double,
+# Point.Select, and Point.ScalarMultSlow first appear by v1.2.0;
+# Point.MultByCofactor, Point.BytesMontgomery, Point.ExtendedCoordinates, and
+# Point.SetExtendedCoordinates at v1.0.0. Declaring later-added methods across
+# the range is safe: a call that does not exist in an older release cannot
+# appear at a call site compiled against it.
+#
+# Dispositions for the remaining public surface:
+# - Point.Set and Scalar.Set are plain copies; Point.Equal and Scalar.Equal
+#   are constant-time comparisons returning int; Point.Select is a
+#   constant-time conditional assignment. All are skipped-non-crypto for
+#   contract purposes (no material or algorithm state crosses them that the
+#   operands do not already carry).
+# - ExtendedCoordinates/SetExtendedCoordinates expose internal field elements
+#   (filippo.io/edwards25519/field types) — skipped-informative-return.
+contracts:
+  # Factories.
+  - method: filippo.io/edwards25519.NewScalar
+    arity: 0
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: factory
+  - method: filippo.io/edwards25519.NewIdentityPoint
+    arity: 0
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: factory
+  - method: filippo.io/edwards25519.NewGeneratorPoint
+    arity: 0
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: factory
+
+  # Decoders: material entering the curve domain.
+  - method: filippo.io/edwards25519.(*Point).SetBytes
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: x, role: metadata-contributing, contributes: { property: input, derivation: argument_value } }
+  - method: filippo.io/edwards25519.(*Scalar).SetCanonicalBytes
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: x, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: filippo.io/edwards25519.(*Scalar).SetUniformBytes
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: x, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: filippo.io/edwards25519.(*Scalar).SetBytesWithClamping
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: x, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+
+  # Scalar multiplication and group operations.
+  - method: filippo.io/edwards25519.(*Point).ScalarBaseMult
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: x, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: filippo.io/edwards25519.(*Point).ScalarMult
+    arity: 2
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: x, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: filippo.io/edwards25519.(*Point).ScalarMultSlow
+    arity: 2
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: x, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: filippo.io/edwards25519.(*Point).VarTimeDoubleScalarBaseMult
+    arity: 3
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Point).MultiScalarMult
+    arity: 2
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Point).VarTimeMultiScalarMult
+    arity: 2
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Point).Add
+    arity: 2
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Point).Subtract
+    arity: 2
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Point).Negate
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Point).Double
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Point).MultByCofactor
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Point", confidence: high }
+    role: operation
+
+  # Scalar arithmetic.
+  - method: filippo.io/edwards25519.(*Scalar).Add
+    arity: 2
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Scalar).Subtract
+    arity: 2
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Scalar).Negate
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Scalar).Multiply
+    arity: 2
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Scalar).MultiplyAdd
+    arity: 3
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: operation
+  - method: filippo.io/edwards25519.(*Scalar).Invert
+    arity: 1
+    return: { type: "*filippo.io/edwards25519.Scalar", confidence: high }
+    role: operation
+
+  # Serialization outputs.
+  - method: filippo.io/edwards25519.(*Point).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: filippo.io/edwards25519.(*Point).BytesMontgomery
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: filippo.io/edwards25519.(*Scalar).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+
+hierarchy: {}

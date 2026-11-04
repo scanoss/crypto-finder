@@ -1,0 +1,519 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: eth-account
+  coordinates:
+    - eth-account
+    - eth_account
+  version_range: ">=0.4.0,<1.0"
+  description: >-
+    eth-account lifecycle contracts - Account factories, ECDSA secp256k1
+    signing and recovery, the Web3 Secret Storage keystore, the BIP-39/BIP-32
+    HD wallet helpers and the EIP-191/EIP-712 signable-message encoders.
+    Authored against eth-account 0.13.7 and cross-checked against the 0.4.0,
+    0.5.0, 0.8.0, 0.10.0, 0.11.0, 0.12.2, 0.13.0 and 0.13.5 sdists.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW THESE KEYS WERE OBTAINED, AND WHY THEY ARE NOT THE RULES' `api` VALUES.
+#
+# Every key below was read off an EXPORTED CALL GRAPH, not written from the
+# API:
+#
+#   crypto-finder scan --no-remote-rules --rules-dir <rules> \
+#     --export-callgraph /tmp/cg.json <a probe consumer>
+#   jq -r '.finding_graphs[]?.call_chains[]?[]? | select(.crypto_call)
+#          | .crypto_call.canonical_signature' /tmp/cg.json | sort -u
+#
+# For Python the emitted key is the CONSUMER'S IMPORT PATH, dots throughout,
+# with no module/type separator rewrite: `eth_account.Account.from_key`,
+# `eth_account.messages.encode_defunct`,
+# `eth_account.hdaccount.seed_from_mnemonic`. ContractsFor uses the key raw for
+# a non-Rust KB (internal/callgraph/contracts/contracts.go), so the Rust
+# `rustAuthoredKey` "::" substitution does NOT apply and must not be copied
+# here. The arities below are the ones the graph emitted, plus the additional
+# call shapes each signature admits; Python's ContractsForTolerant falls back
+# to a name-only match when an exact arity is absent, so extra arities widen
+# the join rather than narrowing it.
+#
+# The rules' `metadata.crypto.api` values are DELIBERATELY DIFFERENT: they
+# carry the DEFINING-MODULE path (`eth_account.account.Account.from_key`)
+# because entry-point synthesis joins `api` against a method DEFINITION in the
+# scanned call graph, and crypto-finder's pythonModuleCollapsedDecls collapses
+# the source-file segment when it does so. Two different joins, two different
+# spellings, both intentional.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# API AUDIT. Disposition legend: contracted | skipped-non-crypto |
+# skipped-informative-return | skipped-unsupported.
+#
+# eth_account.Account (eth_account/account.py)
+#   create                        contracted (factory)   -> LocalAccount
+#   from_key                      contracted (factory)   -> LocalAccount
+#   from_mnemonic                 contracted (factory)   -> LocalAccount
+#   create_with_mnemonic          contracted (factory)   -> builtins.tuple
+#                                   (Tuple[LocalAccount, str]; the tuple is the
+#                                   declared type, so no LocalAccount is
+#                                   claimed as the direct return)
+#   privateKeyToAccount           contracted (factory)   -> LocalAccount
+#                                   (0.1.0a1-0.7.0, REMOVED in 0.8.0)
+#   encrypt                       contracted (operation) -> builtins.dict
+#   decrypt                       contracted (operation) -> builtins.bytes
+#   sign_transaction              contracted (operation)
+#   sign_message                  contracted (operation)
+#   sign_typed_data               contracted (operation)
+#   sign_authorization            contracted (operation) (>=0.13.6)
+#   unsafe_sign_hash              contracted (operation) (>=0.12.2)
+#   signHash                      contracted (operation) (0.2.0a0-0.12.4)
+#   signTransaction               contracted (operation) (0.1.0a1-0.7.0)
+#   recover_message               contracted (output)
+#   recover_transaction           contracted (output)
+#   recoverHash                   contracted (output)    (0.2.0a0-0.7.0)
+#   recoverTransaction            contracted (output)    (0.1.0a1-0.7.0)
+#   enable_unaudited_hdwallet_features
+#                                 skipped-non-crypto     - returns None, flips a
+#                                   module flag; no lifecycle information
+#   set_key_backend               skipped-non-crypto     - selects the eth-keys
+#                                   backend; the backend is eth-keys' concern
+#   _recover_hash / _sign_hash / _parse_private_key
+#                                 skipped-non-crypto     - private
+#
+# eth_account.signers.LocalAccount (eth_account/signers/local.py)
+#   encrypt                       contracted (operation) (>=0.3.0)
+#   sign_message                  contracted (operation)
+#   sign_transaction              contracted (operation)
+#   sign_typed_data               contracted (operation) (>=0.13.5 - three
+#                                   minors AFTER Account.sign_typed_data)
+#   unsafe_sign_hash              contracted (operation) (>=0.12.2)
+#   sign_authorization            contracted (operation) (>=0.13.6)
+#   signHash                      contracted (operation) (0.3.0-0.12.4)
+#   signTransaction               contracted (operation) (0.3.0-0.10.0)
+#   address / key                 skipped-informative-return - properties, not
+#                                   calls
+#
+# eth_account.messages (eth_account/messages.py)
+#   encode_defunct                contracted (factory)   -> SignableMessage
+#   encode_intended_validator     contracted (factory)   -> SignableMessage
+#   encode_typed_data             contracted (factory)   (>=0.10.0)
+#   encode_structured_data        contracted (factory)   (0.4.0-0.12.4)
+#   defunct_hash_message          contracted (output)    -> builtins.bytes
+#   _hash_eip191_message          skipped-non-crypto     - private
+#
+# eth_account.hdaccount (eth_account/hdaccount/__init__.py)
+#   generate_mnemonic             contracted (factory)   -> builtins.str
+#   seed_from_mnemonic            contracted (factory)   -> builtins.bytes
+#   key_from_seed                 contracted (factory)   -> builtins.bytes
+#   ETHEREUM_DEFAULT_PATH         skipped-non-crypto     - a constant
+#
+# NOT CONTRACTED, DELIBERATELY: eth_account/_utils/signing.py,
+# eth_account/typed_transactions/ and eth_account/hdaccount/deterministic.py
+# are internal. The primitives they reach - eth-keys' ECDSA, eth-hash's
+# keccak-256 and eth-keyfile's AES-128-CTR - belong to those distributions, and
+# eth-keys and eth-hash are separate Tier 0 families. Nothing here contracts
+# another family's surface.
+#
+# THE MODULE SEGMENT IS THE DIRECTORY PATH, NOT THE IMPORT PATH, FOR A TYPE
+# DEFINED IN A SUBMODULE FILE - AND THE FIRST AUTHORING OF THIS FILE GOT IT
+# WRONG. `LocalAccount` lives in `eth_account/signers/local.py`, so a consumer
+# writes `from eth_account.signers.local import LocalAccount`, but the Python
+# parser keys the DEFINITION on the containing DIRECTORY and emits
+#
+#   eth_account.signers.LocalAccount.sign_message(SignableMessage): SignedMessage
+#
+# with the `local` FILE segment dropped. Measured by exporting the call graph of
+# a consumer scanned with --scan-dependencies against an installed
+# eth-account 0.13.7. Authored as `eth_account.signers.local.LocalAccount`, the
+# entries loaded without error and joined NOTHING - the failure mode 5.5 warns
+# about, which looks exactly like having no contract. The factories' declared
+# return type carries the same corrected spelling so the two agree.
+#
+# NOTE: `Account` lives in `eth_account/account.py`, a file directly under
+# `eth_account/`, so its directory path and its import path coincide and
+# `eth_account.Account.<method>` is correct for both joins. The two spellings
+# only diverge for a type nested one directory deeper.
+#
+# MEASURED GAP, NOT CLAIMED AS WORKING: a Python receiver bound from a
+# contracted factory (`acct = Account.from_key(k)` then `acct.sign_message(m)`)
+# is NOT resolved to the contracted type in either scan shape available here -
+# a source-only consumer scan or a --scan-dependencies scan with the library
+# installed. Both emit `<consumer-module>.acct.sign_message(?)`.
+# propagatePythonAssignedVarTypes (internal/callgraph/python_type_resolver.go:
+# 161-224) requires the factory to exist as a FunctionDecl under the callee key
+# the call site emits, which it does not in either shape. So the LocalAccount
+# entries below are authored to join against the DEFINITION FQN when
+# eth-account itself is mined, and the consumer-side receiver join is reported
+# as a finder-level gap rather than asserted here.
+#
+# THE RETURN TYPE OF EVERY SIGNING AND RECOVERY METHOD CHANGED AT 0.8.0, so
+# those entries carry `confidence: low` and NO `canonical_return_type`.
+# Measured by parsing eth_account/datastructures.py in each sampled sdist:
+# 0.2.0a0 through 0.7.x declare only `AttributeDict`, and
+# `SignedTransaction`/`SignedMessage` first appear at 0.8.0. Declaring one
+# era's type as if it held for the whole range would be a false declaration;
+# the current era is named with low confidence instead. `return.type` is still
+# populated so the graph renders a signature rather than reading as an absent
+# contract.
+#
+# No `when:` conditionals are declared: no return type here depends on an
+# argument value. `Account.encrypt`'s `kdf` argument selects the key derivation
+# function, not the return type, which is a dict in every case.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── Account factories ─────────────────────────────────────────────────────
+  # create(extra_entropy="") -> LocalAccount. account.py:139 at 0.13.7.
+  - method: eth_account.Account.create
+    arity: 0
+    parameter_types: []
+    canonical_return_type: eth_account.signers.LocalAccount
+    return: { type: eth_account.signers.LocalAccount, confidence: high }
+    role: factory
+
+  - method: eth_account.Account.create
+    arity: 1
+    parameter_types: ["typing.Union[str, bytes, int]"]
+    canonical_return_type: eth_account.signers.LocalAccount
+    return: { type: eth_account.signers.LocalAccount, confidence: high }
+    role: factory
+
+  # from_key(private_key) -> LocalAccount. account.py:270 at 0.13.7.
+  - method: eth_account.Account.from_key
+    arity: 1
+    parameter_types: ["eth_account.types.PrivateKeyType"]
+    canonical_return_type: eth_account.signers.LocalAccount
+    return: { type: eth_account.signers.LocalAccount, confidence: high }
+    role: factory
+
+  # privateKeyToAccount(private_key) -> LocalAccount. 0.1.0a1-0.7.0.
+  - method: eth_account.Account.privateKeyToAccount
+    arity: 1
+    canonical_return_type: eth_account.signers.LocalAccount
+    return: { type: eth_account.signers.LocalAccount, confidence: high }
+    role: factory
+
+  # from_mnemonic(mnemonic, passphrase="", account_path=ETHEREUM_DEFAULT_PATH)
+  # -> LocalAccount. Two of three parameters carry defaults, so arities 1..3
+  # are all real call shapes.
+  - method: eth_account.Account.from_mnemonic
+    arity: 1
+    canonical_return_type: eth_account.signers.LocalAccount
+    return: { type: eth_account.signers.LocalAccount, confidence: high }
+    role: factory
+
+  - method: eth_account.Account.from_mnemonic
+    arity: 2
+    canonical_return_type: eth_account.signers.LocalAccount
+    return: { type: eth_account.signers.LocalAccount, confidence: high }
+    role: factory
+
+  - method: eth_account.Account.from_mnemonic
+    arity: 3
+    parameter_types: ["builtins.str", "builtins.str", "builtins.str"]
+    canonical_return_type: eth_account.signers.LocalAccount
+    return: { type: eth_account.signers.LocalAccount, confidence: high }
+    role: factory
+
+  # create_with_mnemonic(passphrase="", num_words=12, language="english",
+  # account_path=ETHEREUM_DEFAULT_PATH) -> Tuple[LocalAccount, str]. All four
+  # parameters carry defaults. The declared return is a TUPLE, so no
+  # LocalAccount is claimed: a consumer must unpack it first.
+  - method: eth_account.Account.create_with_mnemonic
+    arity: 0
+    canonical_return_type: "typing.Tuple[eth_account.signers.LocalAccount, builtins.str]"
+    return: { type: builtins.tuple, confidence: high }
+    role: factory
+
+  - method: eth_account.Account.create_with_mnemonic
+    arity: 1
+    canonical_return_type: "typing.Tuple[eth_account.signers.LocalAccount, builtins.str]"
+    return: { type: builtins.tuple, confidence: high }
+    role: factory
+
+  # ── Account keystore ──────────────────────────────────────────────────────
+  # encrypt(private_key, password, kdf=None, iterations=None) -> Dict.
+  # account.py:217-222 at 0.13.7. Arities 2..4 are all real call shapes and the
+  # graph emitted all three. The kdf argument does NOT exist before 0.4.0.
+  - method: eth_account.Account.encrypt
+    arity: 2
+    parameter_types: ["eth_account.types.PrivateKeyType", "builtins.str"]
+    canonical_return_type: "typing.Dict[builtins.str, typing.Any]"
+    return: { type: builtins.dict, confidence: high }
+    role: operation
+
+  - method: eth_account.Account.encrypt
+    arity: 3
+    canonical_return_type: "typing.Dict[builtins.str, typing.Any]"
+    return: { type: builtins.dict, confidence: high }
+    role: operation
+    parameters:
+      - index: 2
+        name: kdf
+        role: operation-determining
+
+  - method: eth_account.Account.encrypt
+    arity: 4
+    canonical_return_type: "typing.Dict[builtins.str, typing.Any]"
+    return: { type: builtins.dict, confidence: high }
+    role: operation
+    parameters:
+      - index: 2
+        name: kdf
+        role: operation-determining
+      - index: 3
+        name: iterations
+        role: metadata-contributing
+        contributes:
+          property: iterations
+          derivation: argument_value
+
+  # decrypt(keyfile_json, password) -> HexBytes, a bytes subclass.
+  # account.py:168 at 0.13.7.
+  - method: eth_account.Account.decrypt
+    arity: 2
+    parameter_types: ["typing.Union[builtins.str, typing.Dict[builtins.str, typing.Any]]", "builtins.str"]
+    canonical_return_type: hexbytes.main.HexBytes
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+
+  # ── Account signing. Return type changed at 0.8.0: confidence low, no
+  # ── canonical_return_type. See the header.
+  - method: eth_account.Account.sign_transaction
+    arity: 2
+    return: { type: eth_account.datastructures.SignedTransaction, confidence: low }
+    role: operation
+
+  - method: eth_account.Account.sign_transaction
+    arity: 3
+    return: { type: eth_account.datastructures.SignedTransaction, confidence: low }
+    role: operation
+
+  - method: eth_account.Account.signTransaction
+    arity: 2
+    return: { type: eth_account.datastructures.AttributeDict, confidence: low }
+    role: operation
+
+  - method: eth_account.Account.sign_message
+    arity: 2
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  - method: eth_account.Account.sign_typed_data
+    arity: 2
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  - method: eth_account.Account.sign_typed_data
+    arity: 4
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  - method: eth_account.Account.sign_authorization
+    arity: 2
+    return: { type: eth_account.datastructures.SignedSetCodeAuthorization, confidence: low }
+    role: operation
+
+  - method: eth_account.Account.unsafe_sign_hash
+    arity: 2
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  - method: eth_account.Account.signHash
+    arity: 2
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  # ── Account recovery. Declared ChecksumAddress, a NewType over str, so the
+  # ── semantic return is str and the declared type is carried separately.
+  - method: eth_account.Account.recover_message
+    arity: 1
+    canonical_return_type: eth_typing.evm.ChecksumAddress
+    return: { type: builtins.str, confidence: high }
+    role: output
+
+  - method: eth_account.Account.recover_message
+    arity: 2
+    canonical_return_type: eth_typing.evm.ChecksumAddress
+    return: { type: builtins.str, confidence: high }
+    role: output
+
+  - method: eth_account.Account.recover_transaction
+    arity: 1
+    canonical_return_type: eth_typing.evm.ChecksumAddress
+    return: { type: builtins.str, confidence: high }
+    role: output
+
+  - method: eth_account.Account.recoverHash
+    arity: 2
+    canonical_return_type: eth_typing.evm.ChecksumAddress
+    return: { type: builtins.str, confidence: high }
+    role: output
+
+  - method: eth_account.Account.recoverTransaction
+    arity: 1
+    canonical_return_type: eth_typing.evm.ChecksumAddress
+    return: { type: builtins.str, confidence: high }
+    role: output
+
+  # ── LocalAccount instance methods ─────────────────────────────────────────
+  # local.py:90-105 at 0.13.7: encrypt(password, kdf=None, iterations=None).
+  - method: eth_account.signers.LocalAccount.encrypt
+    arity: 1
+    canonical_return_type: "typing.Dict[builtins.str, typing.Any]"
+    return: { type: builtins.dict, confidence: high }
+    role: operation
+
+  - method: eth_account.signers.LocalAccount.encrypt
+    arity: 2
+    canonical_return_type: "typing.Dict[builtins.str, typing.Any]"
+    return: { type: builtins.dict, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: kdf
+        role: operation-determining
+
+  - method: eth_account.signers.LocalAccount.encrypt
+    arity: 3
+    canonical_return_type: "typing.Dict[builtins.str, typing.Any]"
+    return: { type: builtins.dict, confidence: high }
+    role: operation
+    parameters:
+      - index: 1
+        name: kdf
+        role: operation-determining
+      - index: 2
+        name: iterations
+        role: metadata-contributing
+        contributes:
+          property: iterations
+          derivation: argument_value
+
+  - method: eth_account.signers.LocalAccount.sign_message
+    arity: 1
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  - method: eth_account.signers.LocalAccount.sign_transaction
+    arity: 1
+    return: { type: eth_account.datastructures.SignedTransaction, confidence: low }
+    role: operation
+
+  - method: eth_account.signers.LocalAccount.sign_transaction
+    arity: 2
+    return: { type: eth_account.datastructures.SignedTransaction, confidence: low }
+    role: operation
+
+  - method: eth_account.signers.LocalAccount.sign_typed_data
+    arity: 1
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  - method: eth_account.signers.LocalAccount.sign_typed_data
+    arity: 3
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  - method: eth_account.signers.LocalAccount.unsafe_sign_hash
+    arity: 1
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  # local.py:162 at 0.13.7 ANNOTATES AND CASTS TO SignedMessage, while the
+  # Account classmethod it delegates to returns SignedSetCodeAuthorization
+  # (account.py:1061). The instance method's own declaration is what a consumer
+  # sees, so SignedMessage is declared here - with low confidence, because the
+  # two disagree upstream.
+  - method: eth_account.signers.LocalAccount.sign_authorization
+    arity: 1
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  - method: eth_account.signers.LocalAccount.signHash
+    arity: 1
+    return: { type: eth_account.datastructures.SignedMessage, confidence: low }
+    role: operation
+
+  - method: eth_account.signers.LocalAccount.signTransaction
+    arity: 1
+    return: { type: eth_account.datastructures.AttributeDict, confidence: low }
+    role: operation
+
+  # ── eth_account.messages ──────────────────────────────────────────────────
+  # encode_defunct(primitive=None, *, hexstr=None, text=None) -> SignableMessage
+  # messages.py:117 at 0.13.7. Every parameter is optional, so arities 0 and 1
+  # are both real; the keyword-only forms present as arity 1 at the call site.
+  - method: eth_account.messages.encode_defunct
+    arity: 0
+    canonical_return_type: eth_account.messages.SignableMessage
+    return: { type: eth_account.messages.SignableMessage, confidence: high }
+    role: factory
+
+  - method: eth_account.messages.encode_defunct
+    arity: 1
+    canonical_return_type: eth_account.messages.SignableMessage
+    return: { type: eth_account.messages.SignableMessage, confidence: high }
+    role: factory
+
+  # encode_intended_validator(validator_address, primitive=None, *, hexstr,
+  # text) -> SignableMessage. messages.py:74 at 0.13.7.
+  - method: eth_account.messages.encode_intended_validator
+    arity: 1
+    canonical_return_type: eth_account.messages.SignableMessage
+    return: { type: eth_account.messages.SignableMessage, confidence: high }
+    role: factory
+
+  - method: eth_account.messages.encode_intended_validator
+    arity: 2
+    canonical_return_type: eth_account.messages.SignableMessage
+    return: { type: eth_account.messages.SignableMessage, confidence: high }
+    role: factory
+
+  # encode_typed_data(domain_data=None, message_types=None, message_data=None,
+  # full_message=None) -> SignableMessage. messages.py:216, >=0.10.0.
+  - method: eth_account.messages.encode_typed_data
+    arity: 1
+    canonical_return_type: eth_account.messages.SignableMessage
+    return: { type: eth_account.messages.SignableMessage, confidence: high }
+    role: factory
+
+  - method: eth_account.messages.encode_typed_data
+    arity: 3
+    canonical_return_type: eth_account.messages.SignableMessage
+    return: { type: eth_account.messages.SignableMessage, confidence: high }
+    role: factory
+
+  # encode_structured_data: 0.4.0-0.12.4, REMOVED in 0.13.0.
+  - method: eth_account.messages.encode_structured_data
+    arity: 1
+    canonical_return_type: eth_account.messages.SignableMessage
+    return: { type: eth_account.messages.SignableMessage, confidence: high }
+    role: factory
+
+  # defunct_hash_message -> HexBytes. messages.py:191 at 0.13.7.
+  - method: eth_account.messages.defunct_hash_message
+    arity: 1
+    canonical_return_type: hexbytes.main.HexBytes
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  # ── eth_account.hdaccount (>=0.5.0) ───────────────────────────────────────
+  - method: eth_account.hdaccount.generate_mnemonic
+    arity: 2
+    parameter_types: ["builtins.int", "builtins.str"]
+    canonical_return_type: builtins.str
+    return: { type: builtins.str, confidence: high }
+    role: factory
+
+  - method: eth_account.hdaccount.seed_from_mnemonic
+    arity: 2
+    parameter_types: ["builtins.str", "builtins.str"]
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: factory
+
+  - method: eth_account.hdaccount.key_from_seed
+    arity: 2
+    parameter_types: ["builtins.bytes", "builtins.str"]
+    canonical_return_type: builtins.bytes
+    return: { type: builtins.bytes, confidence: high }
+    role: factory

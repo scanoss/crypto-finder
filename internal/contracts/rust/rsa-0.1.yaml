@@ -1,0 +1,23 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-0.1
+  coordinates:
+    - rsa
+  version_range: ">=0.1.0,<0.5.0"
+  description: "RustCrypto rsa 0.1-0.4: RSAPrivateKey generation before the 0.5 rename"
+
+# The key type is `RSAPrivateKey` until 0.5.0 renames it `RsaPrivateKey`
+# (0.4.1 src/key.rs:343, 0.5.0 src/key.rs:273). The era table is in rsa.yaml.
+contracts:
+  - method: rsa::RSAPrivateKey.new
+    arity: 2
+    return: { type: rsa::RSAPrivateKey, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: bit_size
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_value }
+
+hierarchy: {}

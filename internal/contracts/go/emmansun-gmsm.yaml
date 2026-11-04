@@ -1,0 +1,571 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: emmansun-gmsm
+  coordinates:
+    - "github.com/emmansun/gmsm"
+  version_range: ">=0.30.0,<1.0.0"
+  description: "emmansun GM/T library: SM2, SM3, SM4 with cipher modes, and SM9"
+
+# Inventory source: github.com/emmansun/gmsm v0.45.2 module source from the Go module proxy,
+# packages sm2, sm3, sm4, sm9, cipher. Detection rules: scanoss/crypto_rules go/emmansun-gmsm.
+contracts:
+  - method: github.com/emmansun/gmsm/cipher.NewBCDecrypter
+    arity: 2
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewBCEncrypter
+    arity: 2
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewCCM
+    arity: 1
+    return: { type: crypto/cipher.AEAD, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewCCMWithNonceAndTagSize
+    arity: 3
+    return: { type: crypto/cipher.AEAD, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewCCMWithNonceSize
+    arity: 2
+    return: { type: crypto/cipher.AEAD, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewCCMWithTagSize
+    arity: 2
+    return: { type: crypto/cipher.AEAD, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewECBDecrypter
+    arity: 1
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewECBEncrypter
+    arity: 1
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewGBXTSDecrypter
+    arity: 4
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewGBXTSDecrypterWithSector
+    arity: 4
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewGBXTSEncrypter
+    arity: 4
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewGBXTSEncrypterWithSector
+    arity: 4
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewGCMSIV
+    arity: 2
+    return: { type: crypto/cipher.AEAD, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewGXM
+    arity: 2
+    return: { type: "*github.com/emmansun/gmsm/cipher.gxm", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/cipher.NewGXMWithTagSize
+    arity: 3
+    return: { type: "*github.com/emmansun/gmsm/cipher.gxm", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/cipher.NewHCTR
+    arity: 3
+    return: { type: github.com/emmansun/gmsm/cipher.LengthPreservingMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewMUR
+    arity: 2
+    return: { type: "*github.com/emmansun/gmsm/cipher.mur", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/cipher.NewMURWithTagSize
+    arity: 3
+    return: { type: "*github.com/emmansun/gmsm/cipher.mur", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/cipher.NewOFBNLFDecrypter
+    arity: 3
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewOFBNLFEncrypter
+    arity: 3
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewXTSDecrypter
+    arity: 4
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewXTSDecrypterWithSector
+    arity: 4
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewXTSEncrypter
+    arity: 4
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/cipher.NewXTSEncrypterWithSector
+    arity: 4
+    return: { type: crypto/cipher.BlockMode, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: operation-determining, contributes: { property: cipher, derivation: argument_value } }
+  - method: github.com/emmansun/gmsm/sm2.(*PrivateKey).Decrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.(*PrivateKey).FromECPrivateKey
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm2.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.(*PrivateKey).Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.(*PrivateKey).SignMessage
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.(*PrivateKey).SignWithSM2
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.CalculateSM2Hash
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.CalculateZA
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.Decrypt
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.Encrypt
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.EncryptASN1
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.GenerateKey
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm2.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.MarshalEnvelopedPrivateKey
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm2.NewHash
+    arity: 1
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.NewHashWithHashAndUserID
+    arity: 3
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.NewHashWithUserID
+    arity: 2
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.NewPlainDecrypterOpts
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm2.DecrypterOpts", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.NewPlainEncrypterOpts
+    arity: 2
+    return: { type: "*github.com/emmansun/gmsm/sm2.EncrypterOpts", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.NewPrivateKey
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm2.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.NewPrivateKeyFromInt
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm2.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.NewPublicKey
+    arity: 1
+    return: { type: "*crypto/ecdsa.PublicKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.NewSM2SignerOption
+    arity: 2
+    return: { type: "*github.com/emmansun/gmsm/sm2.SM2SignerOption", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.P256
+    arity: 0
+    return: { type: crypto/elliptic.Curve, confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.ParseEnvelopedPrivateKey
+    arity: 2
+    return: { type: "*github.com/emmansun/gmsm/sm2.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.ParseRawPrivateKey
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm2.PrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.ParseUncompressedPublicKey
+    arity: 1
+    return: { type: "*crypto/ecdsa.PublicKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm2.RecoverPublicKeysFromSM2Signature
+    arity: 2
+    return: { type: "[]*ecdsa.PublicKey", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.Sign
+    arity: 3
+    return: { type: "*math/big.Int", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.SignASN1
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.SignDeterministic
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.Verify
+    arity: 4
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.VerifyASN1
+    arity: 3
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm2.VerifyASN1WithSM2
+    arity: 4
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm3.Kdf
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm3.New
+    arity: 0
+    return: { type: hash.Hash, confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm3.Sum
+    arity: 1
+    return: { type: "[32]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm4.NewCipher
+    arity: 1
+    return: { type: crypto/cipher.Block, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, role: metadata-contributing, contributes: { property: keySize, derivation: argument_bit_length } }
+  - method: github.com/emmansun/gmsm/sm9.(*CBCEncrypterOpts).Decrypt
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*CBCEncrypterOpts).Encrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*CFBEncrypterOpts).Decrypt
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*CFBEncrypterOpts).Encrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*ECBEncrypterOpts).Decrypt
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*ECBEncrypterOpts).Encrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptMasterPrivateKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptMasterPrivateKey).GenerateUserKey
+    arity: 2
+    return: { type: "*github.com/emmansun/gmsm/sm9.EncryptPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptMasterPrivateKey).MarshalASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptMasterPublicKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptMasterPublicKey).Encrypt
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptMasterPublicKey).MarshalASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptMasterPublicKey).MarshalCompressedASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptMasterPublicKey).WrapKey
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptMasterPublicKey).WrapKeyASN1
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).Decrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).DecryptASN1
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).MarshalASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).MarshalCompressedASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).NewKeyExchange
+    arity: 4
+    return: { type: "*github.com/emmansun/gmsm/sm9.keyExchange", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).SetMasterPublic
+    arity: 1
+    return: { type: error, confidence: high }
+    role: config
+  - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).UnwrapKey
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*OFBEncrypterOpts).Decrypt
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*OFBEncrypterOpts).Encrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*SignMasterPrivateKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*SignMasterPrivateKey).GenerateUserKey
+    arity: 2
+    return: { type: "*github.com/emmansun/gmsm/sm9.SignPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.(*SignMasterPrivateKey).MarshalASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*SignMasterPublicKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*SignMasterPublicKey).MarshalASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*SignMasterPublicKey).MarshalCompressedASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*SignMasterPublicKey).Verify
+    arity: 4
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*SignPrivateKey).Bytes
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*SignPrivateKey).MarshalASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*SignPrivateKey).MarshalCompressedASN1
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/emmansun/gmsm/sm9.(*SignPrivateKey).SetMasterPublic
+    arity: 1
+    return: { type: error, confidence: high }
+    role: config
+  - method: github.com/emmansun/gmsm/sm9.(*SignPrivateKey).Sign
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*XOREncrypterOpts).Decrypt
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*XOREncrypterOpts).Encrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.Decrypt
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.DecryptASN1
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.Encrypt
+    arity: 6
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.EncryptASN1
+    arity: 6
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.GenerateEncryptMasterKey
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.EncryptMasterPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.GenerateSignMasterKey
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.SignMasterPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.NewCBCEncrypterOpts
+    arity: 3
+    return: { type: github.com/emmansun/gmsm/sm9.EncrypterOpts, confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.NewCFBEncrypterOpts
+    arity: 2
+    return: { type: github.com/emmansun/gmsm/sm9.EncrypterOpts, confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.NewDecrypterOptsWithUID
+    arity: 2
+    return: { type: "*github.com/emmansun/gmsm/sm9.DecrypterOptsWithUID", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.NewECBEncrypterOpts
+    arity: 3
+    return: { type: github.com/emmansun/gmsm/sm9.EncrypterOpts, confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.NewOFBEncrypterOpts
+    arity: 2
+    return: { type: github.com/emmansun/gmsm/sm9.EncrypterOpts, confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.ParseEncryptMasterPublicKeyPEM
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.EncryptMasterPublicKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.ParseSignMasterPublicKeyPEM
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.SignMasterPublicKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.Sign
+    arity: 3
+    return: { type: "*math/big.Int", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.SignASN1
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalEncryptMasterPrivateKeyASN1
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.EncryptMasterPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalEncryptMasterPublicKeyASN1
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.EncryptMasterPublicKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalEncryptMasterPublicKeyRaw
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.EncryptMasterPublicKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalEncryptPrivateKeyASN1
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.EncryptPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalEncryptPrivateKeyRaw
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.EncryptPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalSM9KeyPackage
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalSignMasterPrivateKeyASN1
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.SignMasterPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalSignMasterPublicKeyASN1
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.SignMasterPublicKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalSignMasterPublicKeyRaw
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.SignMasterPublicKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalSignPrivateKeyASN1
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.SignPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnmarshalSignPrivateKeyRaw
+    arity: 1
+    return: { type: "*github.com/emmansun/gmsm/sm9.SignPrivateKey", confidence: high }
+    role: factory
+  - method: github.com/emmansun/gmsm/sm9.UnwrapKey
+    arity: 4
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.Verify
+    arity: 6
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.VerifyASN1
+    arity: 5
+    return: { type: bool, confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.WrapKey
+    arity: 5
+    return: { type: "[]byte", confidence: high }
+    role: operation
+hierarchy: {}

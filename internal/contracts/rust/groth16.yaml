@@ -1,0 +1,68 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: groth16
+  coordinates:
+    - groth16
+  version_range: ">=0.1.0,<0.2.0"
+  description: "Groth16 zkSNARK proving system and circuit machinery"
+
+# API read at groth16 0.1.0 (src/generator.rs, prover.rs, verifier.rs).
+#
+# The groth16 crate is the Groth16 proving system extracted from bellman by the
+# same authors. It DEPENDS on bellman for the circuit machinery and re-exposes
+# the identical function names at its own CRATE ROOT rather than under a
+# `groth16` module. So `groth16::verify_proof` and `bellman::groth16::verify_proof`
+# are two different keys naming two different crates, and the resolved call-site
+# keys confirm the parser keeps them apart:
+#
+#   groth16.verify_proof(?, ?, ?)
+#   bellman::groth16.verify_proof(?, ?, ?)
+#
+# The matrix lists exactly one version, 0.1.0, and the range is pinned to it.
+# It depends on bellman 0.14, so it carries the post-0.7.0 shape throughout:
+# `E: MultiMillerLoop` and `verify_proof -> Result<(), VerificationError>`.
+#
+# Arities are identical to bellman's and were read from the declarations, not
+# from prose. skipped-non-crypto is the same as bellman's: ConstraintSystem
+# bookkeeping is how any circuit is expressed and carries no crypto asset.
+#
+# KEY SHAPE: THESE ARE FREE FUNCTIONS, NOT METHODS. The call-site FQN the parser
+# emits is `groth16.generate_random_parameters` -- module path joined
+# with `::`, then a DOT before the function name. The Rust key normalisation
+# only rewrites the separator in front of a receiver TYPE and returns keys with
+# fewer than two dots unchanged, so an authored `groth16::<fn>` never
+# resolves against the emitted key. Authored in the call-site shape instead,
+# which is the same convention as the existing `x25519_dalek.x25519` contract.
+# Verified by exporting a call graph and reading the signatures, not assumed.
+contracts:
+  - method: groth16.generate_random_parameters
+    arity: 2
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["bellman::Circuit", "&mut rand_core::RngCore"]
+    role: factory
+  - method: groth16.generate_parameters
+    arity: 8
+    return: { type: core::result::Result, confidence: high }
+    role: factory
+  - method: groth16.create_random_proof
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["bellman::Circuit", "groth16::ParameterSource", "&mut rand_core::RngCore"]
+    role: operation
+  - method: groth16.create_proof
+    arity: 4
+    return: { type: core::result::Result, confidence: high }
+    role: operation
+  - method: groth16.prepare_verifying_key
+    arity: 1
+    return: { type: groth16::PreparedVerifyingKey, confidence: high }
+    parameter_types: ["&groth16::VerifyingKey"]
+    role: factory
+  - method: groth16.verify_proof
+    arity: 3
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&groth16::PreparedVerifyingKey", "&groth16::Proof", "&[E::Fr]"]
+    role: operation
+
+hierarchy: {}

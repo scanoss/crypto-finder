@@ -1,0 +1,111 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: azure-keyvault-keys
+  coordinates:
+    - azure-keyvault-keys
+  version_range: ">=4.0"
+  description: "Azure Key Vault Keys client and cryptography result contracts"
+
+contracts:
+  - method: azure.keyvault.keys.KeyClient.<init>
+    arity: 2
+    return: { type: azure.keyvault.keys.KeyClient, confidence: high }
+    role: factory
+
+  - method: azure.keyvault.keys.KeyClient.get_cryptography_client
+    arity: 1
+    return: { type: azure.keyvault.keys.crypto.CryptographyClient, confidence: high }
+    role: factory
+
+  - method: azure.keyvault.keys.KeyClient.create_rsa_key
+    arity: 1
+    return: { type: azure.keyvault.keys.KeyVaultKey, confidence: high }
+    role: factory
+
+  - method: azure.keyvault.keys.KeyClient.create_ec_key
+    arity: 1
+    return: { type: azure.keyvault.keys.KeyVaultKey, confidence: high }
+    role: factory
+
+  - method: azure.keyvault.keys.KeyClient.create_oct_key
+    arity: 1
+    return: { type: azure.keyvault.keys.KeyVaultKey, confidence: high }
+    role: factory
+
+  - method: azure.keyvault.keys.KeyClient.import_key
+    arity: 2
+    return: { type: azure.keyvault.keys.KeyVaultKey, confidence: high }
+    role: factory
+
+  - method: azure.keyvault.keys.KeyClient.get_key
+    arity: 1
+    return: { type: azure.keyvault.keys.KeyVaultKey, confidence: high }
+
+  - method: azure.keyvault.keys.KeyClient.get_random_bytes
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+  - method: azure.keyvault.keys.crypto.CryptographyClient.<init>
+    arity: 2
+    return: { type: azure.keyvault.keys.crypto.CryptographyClient, confidence: high }
+    role: factory
+
+  - method: azure.keyvault.keys.crypto.CryptographyClient.from_jwk
+    arity: 1
+    return: { type: azure.keyvault.keys.crypto.CryptographyClient, confidence: high }
+    role: factory
+
+  - method: azure.keyvault.keys.crypto.CryptographyClient.encrypt
+    arity: 2
+    return: { type: azure.keyvault.keys.crypto.EncryptResult, confidence: high }
+    role: output
+
+  - method: azure.keyvault.keys.crypto.CryptographyClient.decrypt
+    arity: 2
+    return: { type: azure.keyvault.keys.crypto.DecryptResult, confidence: high }
+    role: output
+
+  - method: azure.keyvault.keys.crypto.CryptographyClient.wrap_key
+    arity: 2
+    return: { type: azure.keyvault.keys.crypto.WrapResult, confidence: high }
+    role: output
+
+  - method: azure.keyvault.keys.crypto.CryptographyClient.unwrap_key
+    arity: 2
+    return: { type: azure.keyvault.keys.crypto.UnwrapResult, confidence: high }
+    role: output
+
+  - method: azure.keyvault.keys.crypto.CryptographyClient.sign
+    arity: 2
+    return: { type: azure.keyvault.keys.crypto.SignResult, confidence: high }
+    role: output
+
+  - method: azure.keyvault.keys.crypto.CryptographyClient.verify
+    arity: 3
+    return: { type: azure.keyvault.keys.crypto.VerifyResult, confidence: high }
+    role: output
+
+hierarchy:
+  azure.keyvault.keys.KeyClient:
+    - builtins.object
+  azure.keyvault.keys.KeyVaultKey:
+    - builtins.object
+  azure.keyvault.keys.crypto.CryptographyClient:
+    - builtins.object
+  azure.keyvault.keys.crypto.EncryptResult:
+    - builtins.object
+  azure.keyvault.keys.crypto.DecryptResult:
+    - builtins.object
+  azure.keyvault.keys.crypto.WrapResult:
+    - builtins.object
+  azure.keyvault.keys.crypto.UnwrapResult:
+    - builtins.object
+  azure.keyvault.keys.crypto.SignResult:
+    - builtins.object
+  azure.keyvault.keys.crypto.VerifyResult:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.object: []

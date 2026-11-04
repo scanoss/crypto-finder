@@ -1,0 +1,182 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: oath-0.10
+  coordinates:
+    - oath
+  version_range: ">=0.10.1,<0.11.0"
+  description: "oath 0.10's TOTP entry points with an explicit HashType selector, and its OCRA implementation"
+
+# THE 0.10.1-0.10.2 API. `0.10.1` is the first release of this surface; no
+# `0.10.0` was ever published, and `src/` is byte-identical between 0.10.1 and
+# 0.10.2 in the parts declared here.
+#
+# THE HASH IS SELECTABLE, WHICH IS THE OPPOSITE OF THE SIBLING `otpauth` CRATE.
+# Four of these entry points take a `&HashType` -- an enum with SHA1, SHA256 and
+# SHA512 variants (0.10.2 lib.rs:24-31) -- and `totp_custom` takes the digest as
+# a TYPE parameter the caller supplies through a turbofish. Each declares that
+# parameter as contributing `algorithm`, which is where the served payload gets
+# the digest when the rule layer could not read it from a literal.
+#
+# `totp_custom` IS ARITY 5 HERE AND ARITY 6 IN oath-0.1.yaml. In 0.10.x `D`
+# appears only inside the body (`hmac_and_truncate::<D>`, lib.rs:173), so the
+# compiler cannot infer it and every call site must write `totp_custom::<D>(..)`.
+# In 0.0.3-0.1.4 the digest was a sixth VALUE argument. Different arities are
+# different keys, so both eras resolve; `argument_type` is the right derivation
+# for neither, because at this arity the digest is not an argument at all --
+# hence no `parameters` entry for it here and a note instead.
+#
+# OCRA'S HASH IS NOT A PARAMETER AND CANNOT BE DECLARED AS ONE. `ocra_debug`
+# splits the `suite` string at runtime and reads the digest out of its second
+# field (lib.rs:351-361), which also carries the digit count and, through the
+# `T` parameter, the time step. So `suite` contributes `parameterSet` rather than
+# `algorithm`: naming a hash from it would require evaluating the string.
+#
+# `ocra` IS A WRAPPER OVER `ocra_debug` THAT DISCARDS THE ERROR
+# (lib.rs:304-307), which is why the two have the same arity and different
+# return types. The crate's own documentation says `ocra_debug` is for debugging
+# only. Both are declared: a consumer that calls the debug entry point is a fact
+# worth resolving, not one to normalize away.
+#
+# NO ENTRY CONTRIBUTES `keyMaterial`; see oath.yaml's header for why.
+contracts:
+  # `totp_custom<D: Digest + Default>(key: &[u8], digits: u32, epoch: u64,
+  #   time_step: u64, current_time: u64) -> u64` -- 0.10.2 lib.rs:168.
+  # The digest is the TYPE PARAMETER `D`, not an argument, so it contributes
+  # nothing here; the rule layer reads it from the turbofish instead.
+  - method: oath.totp_custom
+    arity: 5
+    return: { type: u64, confidence: high }
+    canonical_return_type: "u64"
+    parameter_types: ["&[u8]", "u32", "u64", "u64", "u64"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: time_step
+        role: metadata-contributing
+        contributes: { property: interval, derivation: argument_value }
+
+  # `totp_raw_now(key: &[u8], digits: u32, epoch: u64, time_step: u64,
+  #   hash: &HashType) -> u64` -- 0.10.2 lib.rs:232.
+  - method: oath.totp_raw_now
+    arity: 5
+    return: { type: u64, confidence: high }
+    canonical_return_type: "u64"
+    parameter_types: ["&[u8]", "u32", "u64", "u64", "&oath::HashType"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: time_step
+        role: metadata-contributing
+        contributes: { property: interval, derivation: argument_value }
+      - index: 4
+        name: hash
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # `totp_now(key: &str, digits: u32, epoch: u64, time_step: u64,
+  #   hash: &HashType) -> Result<u64, &str>` -- 0.10.2 lib.rs:293.
+  - method: oath.totp_now
+    arity: 5
+    return: { type: "core::result::Result<u64, &str>", confidence: high }
+    canonical_return_type: "core::result::Result<u64, &str>"
+    parameter_types: ["&str", "u32", "u64", "u64", "&oath::HashType"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: time_step
+        role: metadata-contributing
+        contributes: { property: interval, derivation: argument_value }
+      - index: 4
+        name: hash
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # `totp_raw_custom_time(key: &[u8], digits: u32, epoch: u64, time_step: u64,
+  #   timestamp: u64, hash: &HashType) -> u64` -- 0.10.2 lib.rs:200.
+  - method: oath.totp_raw_custom_time
+    arity: 6
+    return: { type: u64, confidence: high }
+    canonical_return_type: "u64"
+    parameter_types: ["&[u8]", "u32", "u64", "u64", "u64", "&oath::HashType"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: time_step
+        role: metadata-contributing
+        contributes: { property: interval, derivation: argument_value }
+      - index: 5
+        name: hash
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # `totp_custom_time(key: &str, digits: u32, epoch: u64, time_step: u64,
+  #   timestamp: u64, hash: &HashType) -> Result<u64, &str>`
+  # 0.10.2 lib.rs:262.
+  - method: oath.totp_custom_time
+    arity: 6
+    return: { type: "core::result::Result<u64, &str>", confidence: high }
+    canonical_return_type: "core::result::Result<u64, &str>"
+    parameter_types: ["&str", "u32", "u64", "u64", "u64", "&oath::HashType"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digits
+        role: metadata-contributing
+        contributes: { property: outputLength, derivation: argument_value }
+      - index: 3
+        name: time_step
+        role: metadata-contributing
+        contributes: { property: interval, derivation: argument_value }
+      - index: 5
+        name: hash
+        role: metadata-contributing
+        contributes: { property: algorithm, derivation: argument_value }
+
+  # `ocra(suite: &str, key: &[u8], counter: u64, question: &str,
+  #   password: &[u8], session_info: &[u8], num_of_time_steps: u64)
+  #   -> Result<u64, ()>` -- 0.10.2 lib.rs:304. The error is discarded on
+  # purpose so that internal failures leak nothing to a caller.
+  - method: oath.ocra
+    arity: 7
+    return: { type: "core::result::Result<u64, ()>", confidence: high }
+    canonical_return_type: "core::result::Result<u64, ()>"
+    parameter_types: ["&str", "&[u8]", "u64", "&str", "&[u8]", "&[u8]", "u64"]
+    role: operation
+    parameters:
+      - index: 0
+        name: suite
+        role: metadata-contributing
+        contributes: { property: parameterSet, derivation: argument_value }
+
+  # `ocra_debug(...) -> Result<u64, String>` -- 0.10.2 lib.rs:344. Same
+  # computation, verbose errors; the crate documents it as debug-only.
+  - method: oath.ocra_debug
+    arity: 7
+    return: { type: "core::result::Result<u64, alloc::string::String>", confidence: high }
+    canonical_return_type: "core::result::Result<u64, alloc::string::String>"
+    parameter_types: ["&str", "&[u8]", "u64", "&str", "&[u8]", "&[u8]", "u64"]
+    role: operation
+    parameters:
+      - index: 0
+        name: suite
+        role: metadata-contributing
+        contributes: { property: parameterSet, derivation: argument_value }
+
+hierarchy: {}

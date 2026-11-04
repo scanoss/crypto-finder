@@ -1,0 +1,66 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jwt-legacy
+  coordinates:
+    - jwt
+  version_range: ">=0.6.0,<0.10.0"
+  description: "jwt's deprecated jwt::legacy Token API, present from the 0.6.0 rewrite until the module is removed at 0.10.0"
+
+# THE `jwt::legacy` ERA. Its twin is jwt-legacy-root.yaml, which holds the
+# IDENTICAL four methods under `jwt::Token` for 0.1.0 - 0.5.0; the two ranges
+# are disjoint and the files are split for that reason (see that file's header).
+#
+# Enumerated over every published archive in the range:
+#   0.6.0 legacy/mod.rs:35/:44/:63/:90   new / parse / verify / signed
+#   0.7.0 legacy/mod.rs:35/:44/:63/:90
+#   0.8.0 legacy/mod.rs:35/:44/:63/:90
+#   0.9.0 legacy/mod.rs:35/:44/:63/:90
+#   0.10.0 ABSENT -- `pub mod legacy` is gone
+#
+# THE DIGEST VALUE IS DISCARDED HERE AND ONLY ITS TYPE IS USED, which is the one
+# real difference from the crate-root era. The parameter is named `_digest`
+# (0.9.0 legacy/mod.rs:63, :90) and the algorithm is resolved from the type
+# parameter `D` through `TypeLevelAlgorithmType`, implemented for exactly
+# `sha2::Sha256` -> Hs256, `sha2::Sha384` -> Hs384 and `sha2::Sha512` -> Hs512
+# (0.9.0 algorithm/rust_crypto.rs:33-35). The declared contribution is
+# `argument_type` for that reason; `argument_value` would be false here.
+#
+# A probe writing `use jwt::legacy::{Claims, Header, Token};` emits
+# `jwt::legacy.Token.signed`, rewritten at its second-to-last dot to
+# `jwt::legacy::Token.signed`.
+contracts:
+  - method: jwt::legacy::Token.parse
+    arity: 1
+    return: { type: jwt::legacy::Token, confidence: high }
+    canonical_return_type: "core::result::Result<jwt::legacy::Token, jwt::error::Error>"
+    parameter_types: ["&str"]
+    role: factory
+
+  - method: jwt::legacy::Token.signed
+    arity: 2
+    return: { type: alloc::string::String, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::string::String, jwt::error::Error>"
+    parameter_types: ["&[u8]", "D"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digest
+        role: operation-determining
+        contributes:
+          property: algorithmName
+          derivation: argument_type
+
+  - method: jwt::legacy::Token.verify
+    arity: 2
+    return: { type: bool, confidence: high }
+    canonical_return_type: "bool"
+    parameter_types: ["&[u8]", "D"]
+    role: operation
+    parameters:
+      - index: 1
+        name: digest
+        role: operation-determining
+        contributes:
+          property: algorithmName
+          derivation: argument_type

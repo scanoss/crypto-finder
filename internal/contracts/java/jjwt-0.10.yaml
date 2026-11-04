@@ -1,0 +1,25 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jjwt-0.10
+  coordinates:
+    - "io.jsonwebtoken:jjwt-api"
+  version_range: ">=0.10.0,<0.12.0"
+  description: "JJWT 0.10-0.11 signing key on the mutable JwtParser"
+
+# JwtParser.setSigningKey(byte[] | String | Key) exists through 0.11.5 and is
+# removed at 0.12.0, where only JwtParserBuilder keeps it. The era table is
+# in jjwt.yaml.
+contracts:
+  - method: io.jsonwebtoken.JwtParser.setSigningKey
+    arity: 1
+    return:
+      type: io.jsonwebtoken.JwtParser
+      confidence: high
+    role: config
+
+hierarchy:
+  io.jsonwebtoken.JwtParser:
+    - java.lang.Object
+  java.lang.Object: []

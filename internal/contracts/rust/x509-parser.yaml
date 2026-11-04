@@ -1,0 +1,75 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: x509-parser
+  coordinates:
+    - x509-parser
+    - x509_parser
+  version_range: ">=0.6.5,<0.19.0"
+  description: "X.509 certificate, CSR and CRL parser"
+
+# API read at x509-parser 0.18.1 (src/lib.rs, src/certificate.rs,
+# src/revocation_list.rs, src/pem.rs) and cross-checked at 0.6.5, 0.9.2 and
+# 0.13.2.
+#
+# WHY A CONTRACT EXISTS HERE AT ALL. The family row carried finder n/a /
+# not_applicable while the matrix reported contract_gap=Y. Settled against an
+# exported call graph rather than by precedence: a consumer calling
+# parse_x509_certificate produced `x509_parser.parse_x509_certificate(?)` with
+# empty parameter_types, which is what an absent contract looks like. The matrix
+# is right and the tracker row was wrong; it is corrected in this family's PR.
+#
+# KEY SHAPE: these are FREE FUNCTIONS at the crate root, so the emitted
+# call-site FQN carries ONE dot and the Rust key normalisation returns it
+# unchanged. Authored in exactly that shape, read off the exported graph rather
+# than assumed. `parse_x509_pem` lives in the `pem` module and is authored with
+# the module segment.
+#
+# VERSION RANGE STARTS AT 0.6.5, NOT AT THE MATRIX'S OLDEST ROW. 0.1.0 has no
+# top-level certificate parse at all -- its public surface is
+# parse_tbs_certificate, parse_algorithm_identifier, parse_signature_value and
+# parse_version, low-level DER pieces. Nothing here can resolve against it.
+# 0.6.5 introduces parse_x509_der and parse_crl_der; 0.9.2 adds
+# parse_x509_certificate, parse_x509_crl and parse_x509_pem and keeps the older
+# names, so both eras are contracted.
+#
+# ARITIES READ FROM THE DECLARATIONS: every parse entry point takes exactly one
+# argument, the input byte slice.
+#
+# skipped-non-crypto: the nom combinators, the extension and OID registries,
+#   the Display/Debug impls, and the ASN.1 plumbing.
+#
+# DELIBERATELY ABSENT: verify_signature. It exists on X509Certificate,
+# CertificationRequest and CertificateRevocationList from 0.9.2, but it is gated
+# behind a non-default feature (`default = []`, `verify = ["ring"]`,
+# `verify-aws = ["aws-lc-rs"]`) and the cryptography is performed by ring or
+# aws-lc-rs, which carry their own contracts. Typing it here would route another
+# crate's work through this one.
+contracts:
+  - method: x509_parser.parse_x509_certificate
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: x509_parser.parse_x509_der
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: x509_parser.parse_x509_crl
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: x509_parser.parse_crl_der
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: x509_parser::pem.parse_x509_pem
+    arity: 1
+    return: { type: core::result::Result, confidence: high }
+    parameter_types: ["&[u8]"]
+    role: factory
+
+hierarchy: {}

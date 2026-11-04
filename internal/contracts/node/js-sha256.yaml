@@ -1,0 +1,213 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "js-sha256"
+  coordinates:
+    - "js-sha256"
+  version_range: ">=0.9.0"
+  description: "js-sha256: SHA-256 and SHA-224 digests and HMAC over either"
+
+# THE EXPORT IS A FUNCTION THAT IS ALSO AN OBJECT, and the KB has to type both
+# faces of it. `sha256(msg)` returns the hex string directly; `sha256.create()`
+# returns a hasher that then chains `update` and an output method. The one-shot
+# form needs no chain and the incremental form needs the whole one, so both are
+# declared: the free-function arities return the digest, `create` returns the
+# hasher, and every `update` returns the hasher again.
+#
+# THE ALGORITHM IS IN THE TYPE. js-sha256.Sha256 and js-sha256.Sha224 are
+# distinct, so an incremental chain that began at sha224 cannot be read as a
+# SHA-256 three calls later. The same reasoning as the hash.js KB, and the same
+# reason a single shared Hasher type would have been shorter and wrong.
+#
+# HMAC IS TYPED SEPARATELY rather than folded into the digest types, because it
+# is a different primitive with a different security property -- the same key
+# produces and checks the tag. `sha256.hmac(key, msg)` is one-shot and
+# `sha256.hmac.create(key)` opens a chain, mirroring the digest surface exactly.
+#
+# Deliberately NOT contracted: toString, which is an alias of hex and adds no
+# distinct call shape a consumer writes deliberately.
+contracts:
+  - method: "js-sha256.sha256"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.hex"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.digest"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.array"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.create"
+    arity: 0
+    return: { type: "js-sha256.Sha256", confidence: high }
+    role: factory
+  - method: "js-sha256.sha256.update"
+    arity: 1
+    return: { type: "js-sha256.Sha256", confidence: high }
+    role: operation
+  - method: "js-sha256.Sha256.hex"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.Sha256.digest"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.Sha256.array"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.Sha256.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.Sha256.update"
+    arity: 1
+    return: { type: "js-sha256.Sha256", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.hmac"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.hmac.hex"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.hmac.digest"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.hmac.array"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.hmac.arrayBuffer"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha256.hmac.create"
+    arity: 1
+    return: { type: "js-sha256.HmacSha256", confidence: high }
+    role: factory
+  - method: "js-sha256.HmacSha256.update"
+    arity: 1
+    return: { type: "js-sha256.HmacSha256", confidence: high }
+    role: operation
+  - method: "js-sha256.HmacSha256.hex"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.HmacSha256.digest"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.HmacSha256.array"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.HmacSha256.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.sha224"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.hex"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.digest"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.array"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.create"
+    arity: 0
+    return: { type: "js-sha256.Sha224", confidence: high }
+    role: factory
+  - method: "js-sha256.sha224.update"
+    arity: 1
+    return: { type: "js-sha256.Sha224", confidence: high }
+    role: operation
+  - method: "js-sha256.Sha224.hex"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.Sha224.digest"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.Sha224.array"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.Sha224.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.Sha224.update"
+    arity: 1
+    return: { type: "js-sha256.Sha224", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.hmac"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.hmac.hex"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.hmac.digest"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.hmac.array"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.hmac.arrayBuffer"
+    arity: 2
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: operation
+  - method: "js-sha256.sha224.hmac.create"
+    arity: 1
+    return: { type: "js-sha256.HmacSha224", confidence: high }
+    role: factory
+  - method: "js-sha256.HmacSha224.update"
+    arity: 1
+    return: { type: "js-sha256.HmacSha224", confidence: high }
+    role: operation
+  - method: "js-sha256.HmacSha224.hex"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.HmacSha224.digest"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.HmacSha224.array"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output
+  - method: "js-sha256.HmacSha224.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha256.Digest", confidence: high }
+    role: output

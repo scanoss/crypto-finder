@@ -1,0 +1,37 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.24
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.24.0"
+  description: "M2Crypto APIs added in 0.24.0: EVP public key loaders from BIO and string, and EC public key from parameters"
+
+contracts:
+  - method: M2Crypto.EVP.load_key_bio_pubkey
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.EVP.load_key_string_pubkey
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.pub_key_from_params
+    arity: 2
+    return: { type: M2Crypto.EC.EC_pub, confidence: high }
+    role: factory
+  - method: M2Crypto.EC.EC_pub.get_key
+    arity: 0
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+hierarchy:
+  M2Crypto.EVP.PKey:
+    - builtins.object
+  M2Crypto.EC.EC_pub:
+    - M2Crypto.EC.EC
+  M2Crypto.EC.EC:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.object: []

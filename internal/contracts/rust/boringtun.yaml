@@ -1,0 +1,111 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: boringtun
+  coordinates:
+    - boringtun
+  version_range: ">=0.2.0,<0.8.0"
+  description: "boringtun: Cloudflare's userspace WireGuard (Noise IKpsk2 over X25519, ChaCha20-Poly1305, BLAKE2s)"
+
+# API read at boringtun 0.7.1 and cross-checked at 0.2.0, 0.3.0, 0.4.0, 0.5.0
+# and 0.6.0 from the committed sample. 0.0.0 is a name placeholder ("nothing to
+# see here") whose entire source is a hello-world src/main.rs, so the range
+# starts at 0.2.0, the first release that publishes a library.
+#
+# KEYS READ OFF THE EXPORTED GRAPH, NOT ASSUMED. `Tunn` is never re-exported
+# from the crate root in any published version — every consumer reaches it
+# through `boringtun::noise` — so a probe consumer's graph emits
+# `boringtun::noise.Tunn.encapsulate(?, ?)` with empty parameter_types, which
+# is what an absent contract looks like. The keys below are that list with the
+# one authoring substitution applied.
+#
+# THE DATA PATH WAS RENAMED AT 0.3.0, and both spellings are distinct keys.
+# 0.2.0 moves packets with `tunnel_to_network` / `network_to_tunnel`
+# (noise/mod.rs:136,160); 0.3.0 renames them to `encapsulate` / `decapsulate`
+# (noise/mod.rs:220,242) and no version ships both. Recording only the modern
+# pair would leave every 0.2.x consumer untyped.
+#
+# `Tunn::new` IS DECLARED AT BOTH OF ITS ARITIES: five arguments at 0.2.0
+# (noise/mod.rs:81), six from 0.3.0 on when the rate limiter lands
+# (0.3.0 noise/mod.rs:149).
+#
+# THE ARITY-6 `new` CHANGES ITS DECLARED RETURN INSIDE THE RANGE WITHOUT
+# CHANGING NAME OR ARITY: `Result<Box<Tunn>, &'static str>` at 0.3.0-0.5.3,
+# `Result<Tunn, &'static str>` at 0.6.0 (noise/mod.rs:194) and bare `Tunn` from
+# 0.7.0 (noise/mod.rs:194). A KB entry holds ONE canonical_return_type per
+# method+arity, so none is declared there — declaring either era's would be
+# false for the other, and narrowing the range instead would drop the era most
+# consumers are on. `return.type` follows the return.type /
+# canonical_return_type split the hkdf and snow KBs use: it declares the crypto
+# object the call yields — `boringtun::noise::Tunn` in every era, wrapped in a
+# Result the caller unwraps before 0.7.0 — rather than the wrapper. The
+# consequence on 0.3.0-0.6.0 is the same limitation those KBs record: a
+# receiver bound from `Tunn::new(..)?` or `.unwrap()` stays unresolved; it
+# never resolves to a wrong type.
+#
+# The same reasoning omits `parameter_types` for the arity-6 `new`: the key
+# parameters are `Arc<X25519SecretKey>` / `Arc<X25519PublicKey>` (the crate's
+# own key types) through 0.4.0 and `x25519_dalek::StaticSecret` / `PublicKey`
+# from 0.5.0 (noise/mod.rs:132), so method plus arity does not identify one
+# signature. The arity-5 entry exists only at 0.2.0, where the signature is
+# unambiguous, so it declares both.
+#
+# `update_timers` keeps the same public one-argument shape across the whole
+# range; its declaration site moves — the `impl Tunn` block in noise/timers.rs
+# at 0.2.0 (line 146) and from 0.6.0 (line 168 at 0.7.1), while at 0.5.x the
+# public method is a delegating wrapper on `Tunn` in noise/mod.rs:198 and
+# timers.rs holds only a pub(super) TunnInner method. It is
+# what drives rekeying and handshake retries, so it carries `role: operation`
+# like the data path rather than config.
+#
+# WHAT IS DELIBERATELY NOT DECLARED. The `boringtun::x25519` module (0.6.0+) is
+# a re-export of x25519-dalek for building `new`'s arguments; those calls are
+# x25519-dalek's API and typing them here would claim another crate's crypto.
+# `set_static_private`, `stats`, `time_since_last_handshake`, `dst_address` and
+# `parse_incoming_packet` are configuration and queries, not cryptographic
+# operations. The 0.2.0-0.4.0 `boringtun::crypto` module (the crate's own
+# X25519/Blake2s/ChaCha20-Poly1305 implementations, deleted at 0.5.0) is
+# reachable only as `new`'s argument types in real consumers and carries no
+# rule, so no contract key would ever be looked up for it.
+
+contracts:
+  - method: boringtun::noise::Tunn.new
+    arity: 5
+    return: { type: boringtun::noise::Tunn, confidence: high }
+    canonical_return_type: "Result<Box<Tunn>, &'static str>"
+    parameter_types: ["Arc<X25519SecretKey>", "Arc<X25519PublicKey>", "Option<[u8; 32]>", "Option<u16>", "u32"]
+    role: factory
+  - method: boringtun::noise::Tunn.new
+    arity: 6
+    return: { type: boringtun::noise::Tunn, confidence: high }
+    role: factory
+  - method: boringtun::noise::Tunn.encapsulate
+    arity: 2
+    return: { type: boringtun::noise::TunnResult, confidence: high }
+    canonical_return_type: "TunnResult<'a>"
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: boringtun::noise::Tunn.decapsulate
+    arity: 3
+    return: { type: boringtun::noise::TunnResult, confidence: high }
+    canonical_return_type: "TunnResult<'a>"
+    parameter_types: ["Option<IpAddr>", "&[u8]", "&mut [u8]"]
+    role: operation
+  - method: boringtun::noise::Tunn.update_timers
+    arity: 1
+    return: { type: boringtun::noise::TunnResult, confidence: high }
+    canonical_return_type: "TunnResult<'a>"
+    parameter_types: ["&mut [u8]"]
+    role: operation
+  - method: boringtun::noise::Tunn.tunnel_to_network
+    arity: 2
+    return: { type: boringtun::noise::TunnResult, confidence: high }
+    canonical_return_type: "TunnResult<'a>"
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation
+  - method: boringtun::noise::Tunn.network_to_tunnel
+    arity: 2
+    return: { type: boringtun::noise::TunnResult, confidence: high }
+    canonical_return_type: "TunnResult<'a>"
+    parameter_types: ["&[u8]", "&mut [u8]"]
+    role: operation

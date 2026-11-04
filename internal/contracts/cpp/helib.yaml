@@ -1,0 +1,200 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: helib
+  coordinates:
+    - homenc/HElib
+  version_range: ">=2.0.0,<3.0.0"
+  description: "HElib: BGV/CKKS key generation, encryption, decryption and bootstrapping"
+
+# Inventory sources: include/helib/keys.h, EncryptedArray.h and Ptxt.h (namespace
+# helib) from the upstream tag archives v2.0.0 and v2.3.0, which declare the same
+# signatures. A method with defaulted parameters is contracted at every arity a
+# call site can use; overloads that differ only in the plaintext type share
+# those arities.
+#
+# Constructing a helib::SecKey from a Context, or a PubKey from a SecKey, is a
+# declaration, not a call, so there is nothing to contract for it. SecKey
+# inherits reCrypt and thinReCrypt from PubKey, so they are contracted on both
+# receiver types.
+#
+# Dispositions for the rest of the reviewed surface:
+# skipped-non-crypto: the Context/ContextBuilder getters, SecKey/PubKey
+#   accessors (getContext, getKeySWmatrix, haveKeySWmatrix, ...), EncryptedArray
+#   and PtxtArray encode/decode, size and slot helpers, the I/O helpers.
+# needs-follow-up: helib::Ctxt homomorphic operations (multiplyBy, addCtxt,
+#   +=, *=, rotate, ...); the free functions addSome1DMatrices, addFrbMatrices
+#   and friends, since C++ free functions have no receiver binding; the
+#   ContextBuilder chain, whose calls the C++ parser emits without a type.
+# Resolution gap: receivers declared `auto`, as a reference initialized from
+#   another object (`const helib::PubKey& pk = sk;`), or through
+#   `using namespace helib` do not resolve to a contracted key.
+contracts:
+
+  # SecKey: key generation, symmetric encryption, decryption and bootstrapping.
+  - method: helib::SecKey.GenSecKey
+    arity: 0
+    return: {type: "long", confidence: high}
+    role: operation
+  - method: helib::SecKey.GenSecKey
+    arity: 1
+    return: {type: "long", confidence: high}
+    role: operation
+  - method: helib::SecKey.GenSecKey
+    arity: 2
+    return: {type: "long", confidence: high}
+    role: operation
+  - method: helib::SecKey.GenKeySWmatrix
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::SecKey.GenKeySWmatrix
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::SecKey.GenKeySWmatrix
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::SecKey.GenKeySWmatrix
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::SecKey.genRecryptData
+    arity: 0
+    return: {type: "long", confidence: high}
+    role: operation
+  - method: helib::SecKey.Encrypt
+    arity: 2
+    return: {type: "long", confidence: high}
+    role: operation
+  - method: helib::SecKey.Encrypt
+    arity: 3
+    return: {type: "long", confidence: high}
+    role: operation
+  - method: helib::SecKey.Decrypt
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::SecKey.Decrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::SecKey.reCrypt
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::SecKey.thinReCrypt
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # PubKey: public-key encryption and bootstrapping.
+  - method: helib::PubKey.Encrypt
+    arity: 2
+    return: {type: "long", confidence: high}
+    role: operation
+  - method: helib::PubKey.Encrypt
+    arity: 3
+    return: {type: "long", confidence: high}
+    role: operation
+  - method: helib::PubKey.Encrypt
+    arity: 4
+    return: {type: "long", confidence: high}
+    role: operation
+  - method: helib::PubKey.reCrypt
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PubKey.thinReCrypt
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # EncryptedArray: slot-array encryption and decryption.
+  - method: helib::EncryptedArray.encrypt
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.encrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.encrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.encrypt
+    arity: 5
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.decrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.decrypt
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.decryptComplex
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.decryptComplex
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.decryptReal
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.decryptReal
+    arity: 4
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::EncryptedArray.rawDecrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+
+  # PtxtArray: slot-array encryption and decryption.
+  - method: helib::PtxtArray.encrypt
+    arity: 1
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PtxtArray.encrypt
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PtxtArray.encrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PtxtArray.decrypt
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PtxtArray.decrypt
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PtxtArray.decryptComplex
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PtxtArray.decryptComplex
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PtxtArray.decryptReal
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PtxtArray.decryptReal
+    arity: 3
+    return: {type: "void", confidence: high}
+    role: operation
+  - method: helib::PtxtArray.rawDecrypt
+    arity: 2
+    return: {type: "void", confidence: high}
+    role: operation

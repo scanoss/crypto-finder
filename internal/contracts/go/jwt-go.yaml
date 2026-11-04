@@ -1,0 +1,137 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: jwt-go
+  coordinates:
+    - "github.com/dgrijalva/jwt-go"
+  version_range: ">=1.0.0,<4.0.0"
+  description: "dgrijalva/jwt-go JWT implementation (legacy lineage)"
+
+# Inventory source: github.com/dgrijalva/jwt-go v3.2.0+incompatible module
+# source from the Go module proxy. The archived legacy lineage; its maintained
+# successor github.com/golang-jwt/jwt/v5 is contracted separately in
+# golang-jwt.yaml and the two must never cross-attribute. The JWS algorithm is
+# selected by the SigningMethod argument at token creation (rule-side
+# parameterCondition); contracts carry lifecycle structure only.
+#
+# Dispositions for the remaining public surface: EncodeSegment/DecodeSegment
+# are base64 plumbing (skipped-non-crypto); (*Token).SigningString and
+# (*Parser).ParseUnverified never touch a key or signature
+# (skipped-non-crypto); NewValidationError and the error types are diagnostics
+# (skipped-non-crypto); the SigningMethod package variables are values, not
+# callables (not contractable); the request subpackage extractors delegate to
+# Parse (skipped-non-crypto). Identities added after v1.0.0 (ECDSA at v2.7.0,
+# RSA-PSS at v3.0.0) simply never match older tags.
+contracts:
+  - method: github.com/dgrijalva/jwt-go.New
+    arity: 1
+    return: { type: "*github.com/dgrijalva/jwt-go.Token", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: method, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/dgrijalva/jwt-go.NewWithClaims
+    arity: 2
+    return: { type: "*github.com/dgrijalva/jwt-go.Token", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: method, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/dgrijalva/jwt-go.(*Token).SignedString
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_type } }
+  - method: github.com/dgrijalva/jwt-go.Parse
+    arity: 2
+    return: { type: "*github.com/dgrijalva/jwt-go.Token", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.ParseWithClaims
+    arity: 3
+    return: { type: "*github.com/dgrijalva/jwt-go.Token", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.(*Parser).Parse
+    arity: 2
+    return: { type: "*github.com/dgrijalva/jwt-go.Token", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.(*Parser).ParseWithClaims
+    arity: 3
+    return: { type: "*github.com/dgrijalva/jwt-go.Token", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.GetSigningMethod
+    arity: 1
+    return: { type: "github.com/dgrijalva/jwt-go.SigningMethod", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: alg, role: operation-determining, contributes: { property: algorithm, derivation: argument_value } }
+  - method: github.com/dgrijalva/jwt-go.RegisterSigningMethod
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: config
+
+  # Signing-method terminals: the concrete Sign/Verify implementations that
+  # perform the HMAC, RSA, RSA-PSS, and ECDSA work behind SignedString/Parse.
+  - method: github.com/dgrijalva/jwt-go.(*SigningMethodHMAC).Sign
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.(*SigningMethodHMAC).Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.(*SigningMethodRSA).Sign
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.(*SigningMethodRSA).Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.(*SigningMethodRSAPSS).Sign
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.(*SigningMethodRSAPSS).Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.(*SigningMethodECDSA).Sign
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: github.com/dgrijalva/jwt-go.(*SigningMethodECDSA).Verify
+    arity: 3
+    return: { type: "()", confidence: high }
+    role: operation
+
+  # PEM key-material parsing.
+  - method: github.com/dgrijalva/jwt-go.ParseRSAPrivateKeyFromPEM
+    arity: 1
+    return: { type: "*crypto/rsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/dgrijalva/jwt-go.ParseRSAPrivateKeyFromPEMWithPassword
+    arity: 2
+    return: { type: "*crypto/rsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/dgrijalva/jwt-go.ParseRSAPublicKeyFromPEM
+    arity: 1
+    return: { type: "*crypto/rsa.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/dgrijalva/jwt-go.ParseECPrivateKeyFromPEM
+    arity: 1
+    return: { type: "*crypto/ecdsa.PrivateKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/dgrijalva/jwt-go.ParseECPublicKeyFromPEM
+    arity: 1
+    return: { type: "*crypto/ecdsa.PublicKey", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: key, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+hierarchy: {}

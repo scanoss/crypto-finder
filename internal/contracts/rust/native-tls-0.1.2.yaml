@@ -1,0 +1,49 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: native-tls-0.1.2
+  coordinates:
+    - native-tls
+    - native_tls
+  version_range: ">=0.1.2,<0.3.0"
+  description: "native-tls trust-anchor supply, from the release that introduced Certificate"
+
+# SEPARATE FILE BECAUSE THE ERA IS DIFFERENT. Both entries here arrive TOGETHER at
+# 0.1.2 and are absent at 0.1.0 and 0.1.1, established by enumerating `pub fn` and
+# `pub struct` in `src/lib.rs` for all 25 published archives in the matrix range:
+# 0.1.1 declares `Pkcs12`, `Protocol` and `supported_protocols` and NO
+# `Certificate` and no `add_root_certificate`; 0.1.2 declares both. Putting them in
+# native-tls.yaml would serve a 0.1.0 consumer a signature for a type that release
+# does not have.
+#
+# `Certificate::from_der` IS `high` AND `add_root_certificate` IS `low`, and the
+# difference is the return, not the confidence in the reading:
+#
+#   Certificate::from_der   0.1.2 and 0.2.18 alike -> Result<Certificate>
+#   add_root_certificate    0.1.5 lib.rs:353  Result<&mut TlsConnectorBuilder>
+#                           0.2.0 lib.rs:361  &mut TlsConnectorBuilder
+#
+# A single (method, arity) key cannot carry both returns — `mergeContractGroup`
+# (contracts.go:936-968, Rule 2) makes divergence a HARD LOAD ERROR — so the
+# current era is named and `low` records that it is not true for 0.1.x.
+#
+# THE KEY NAMES `TlsConnectorBuilder`, WHICH IS NOT WHAT THE FIRST EXPORT SAID.
+# With no contract loaded the graph emitted
+# `native_tls.TlsConnector.add_root_certificate(?)`; once
+# `native_tls::TlsConnector.builder` was typed, the receiver resolved and the key
+# became `native_tls.TlsConnectorBuilder.add_root_certificate`. native-tls.yaml's
+# header records the measurement and why the key list is a fixed point rather
+# than a single reading.
+#
+# NO ALGORITHM AND NO CERTIFICATE DETAIL IS DECLARED. Parsing is done by the
+# platform stack, so the signature algorithm, key size and validity of the parsed
+# certificate are not knowable at the call site.
+contracts:
+  - method: native_tls::Certificate.from_der
+    arity: 1
+    return: {type: "native_tls::Certificate", confidence: high}
+    parameter_types: ["&[u8]"]
+    canonical_return_type: "core::result::Result<native_tls::Certificate, native_tls::Error>"
+    role: factory
+
+hierarchy: {}

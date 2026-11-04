@@ -1,0 +1,244 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: jwks-rsa
+  coordinates:
+    - "com.auth0:jwks-rsa"
+  # Lower bound verified against the upstream CHANGELOG: every contracted API
+  # exists from 0.21.0 except the JwksHttpClient surface (0.24.0), annotated
+  # inline. Verified against library source at release 0.24.1.
+  version_range: ">=0.21,<1.0"
+  description: "Auth0 jwks-rsa contracts for JWKS provider construction and signing-key resolution"
+
+contracts:
+  # --- Provider builder (com.auth0.jwk.JwkProviderBuilder) ---
+  # The arity-1 constructor is overloaded (URL / String domain), so canonical
+  # signature fields are omitted there.
+  - method: com.auth0.jwk.JwkProviderBuilder.<init>
+    arity: 1
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: factory
+  - method: com.auth0.jwk.JwkProviderBuilder.cached
+    arity: 1
+    parameter_types: [boolean]
+    canonical_return_type: com.auth0.jwk.JwkProviderBuilder
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: config
+  - method: com.auth0.jwk.JwkProviderBuilder.cached
+    arity: 2
+    parameter_types: [long, java.time.Duration]
+    canonical_return_type: com.auth0.jwk.JwkProviderBuilder
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: config
+  - method: com.auth0.jwk.JwkProviderBuilder.cached
+    arity: 3
+    parameter_types: [long, long, java.util.concurrent.TimeUnit]
+    canonical_return_type: com.auth0.jwk.JwkProviderBuilder
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: config
+  - method: com.auth0.jwk.JwkProviderBuilder.rateLimited
+    arity: 1
+    parameter_types: [boolean]
+    canonical_return_type: com.auth0.jwk.JwkProviderBuilder
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: config
+  - method: com.auth0.jwk.JwkProviderBuilder.rateLimited
+    arity: 3
+    parameter_types: [long, long, java.util.concurrent.TimeUnit]
+    canonical_return_type: com.auth0.jwk.JwkProviderBuilder
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: config
+  - method: com.auth0.jwk.JwkProviderBuilder.proxied
+    arity: 1
+    parameter_types: [java.net.Proxy]
+    canonical_return_type: com.auth0.jwk.JwkProviderBuilder
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: config
+  - method: com.auth0.jwk.JwkProviderBuilder.timeouts
+    arity: 2
+    parameter_types: [int, int]
+    canonical_return_type: com.auth0.jwk.JwkProviderBuilder
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: config
+  - method: com.auth0.jwk.JwkProviderBuilder.headers
+    arity: 1
+    parameter_types: [java.util.Map]
+    canonical_return_type: com.auth0.jwk.JwkProviderBuilder
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: config
+  # httpClient(JwksHttpClient) was added in jwks-rsa 0.24.0.
+  - method: com.auth0.jwk.JwkProviderBuilder.httpClient
+    arity: 1
+    parameter_types: [com.auth0.jwk.JwksHttpClient]
+    canonical_return_type: com.auth0.jwk.JwkProviderBuilder
+    return:
+      type: com.auth0.jwk.JwkProviderBuilder
+      confidence: high
+    role: config
+  - method: com.auth0.jwk.JwkProviderBuilder.build
+    arity: 0
+    canonical_return_type: com.auth0.jwk.JwkProvider
+    return:
+      type: com.auth0.jwk.JwkProvider
+      confidence: high
+    role: factory
+
+  # --- Key resolution (com.auth0.jwk.JwkProvider) ---
+  # Authored on the interface; UrlJwkProvider, GuavaCachedJwkProvider, and
+  # RateLimitedJwkProvider resolve through the hierarchy edges below.
+  - method: com.auth0.jwk.JwkProvider.get
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: com.auth0.jwk.Jwk
+    return:
+      type: com.auth0.jwk.Jwk
+      confidence: high
+    role: factory
+
+  # --- Concrete providers ---
+  # UrlJwkProvider's arity-1 constructor is overloaded (URL / String domain).
+  - method: com.auth0.jwk.UrlJwkProvider.<init>
+    arity: 1
+    return:
+      type: com.auth0.jwk.UrlJwkProvider
+      confidence: high
+    role: factory
+  # UrlJwkProvider(URL, JwksHttpClient) was added in jwks-rsa 0.24.0.
+  - method: com.auth0.jwk.UrlJwkProvider.<init>
+    arity: 2
+    parameter_types: [java.net.URL, com.auth0.jwk.JwksHttpClient]
+    canonical_return_type: com.auth0.jwk.UrlJwkProvider
+    return:
+      type: com.auth0.jwk.UrlJwkProvider
+      confidence: high
+    role: factory
+  - method: com.auth0.jwk.UrlJwkProvider.<init>
+    arity: 3
+    parameter_types: [java.net.URL, java.lang.Integer, java.lang.Integer]
+    canonical_return_type: com.auth0.jwk.UrlJwkProvider
+    return:
+      type: com.auth0.jwk.UrlJwkProvider
+      confidence: high
+    role: factory
+  - method: com.auth0.jwk.UrlJwkProvider.<init>
+    arity: 4
+    parameter_types:
+      [java.net.URL, java.lang.Integer, java.lang.Integer, java.net.Proxy]
+    canonical_return_type: com.auth0.jwk.UrlJwkProvider
+    return:
+      type: com.auth0.jwk.UrlJwkProvider
+      confidence: high
+    role: factory
+  - method: com.auth0.jwk.UrlJwkProvider.<init>
+    arity: 5
+    parameter_types:
+      [
+        java.net.URL,
+        java.lang.Integer,
+        java.lang.Integer,
+        java.net.Proxy,
+        java.util.Map,
+      ]
+    canonical_return_type: com.auth0.jwk.UrlJwkProvider
+    return:
+      type: com.auth0.jwk.UrlJwkProvider
+      confidence: high
+    role: factory
+  - method: com.auth0.jwk.GuavaCachedJwkProvider.<init>
+    arity: 1
+    parameter_types: [com.auth0.jwk.JwkProvider]
+    canonical_return_type: com.auth0.jwk.GuavaCachedJwkProvider
+    return:
+      type: com.auth0.jwk.GuavaCachedJwkProvider
+      confidence: high
+    role: factory
+  - method: com.auth0.jwk.GuavaCachedJwkProvider.<init>
+    arity: 3
+    parameter_types: [com.auth0.jwk.JwkProvider, long, java.time.Duration]
+    canonical_return_type: com.auth0.jwk.GuavaCachedJwkProvider
+    return:
+      type: com.auth0.jwk.GuavaCachedJwkProvider
+      confidence: high
+    role: factory
+  - method: com.auth0.jwk.GuavaCachedJwkProvider.<init>
+    arity: 4
+    parameter_types:
+      [com.auth0.jwk.JwkProvider, long, long, java.util.concurrent.TimeUnit]
+    canonical_return_type: com.auth0.jwk.GuavaCachedJwkProvider
+    return:
+      type: com.auth0.jwk.GuavaCachedJwkProvider
+      confidence: high
+    role: factory
+  - method: com.auth0.jwk.RateLimitedJwkProvider.<init>
+    arity: 2
+    parameter_types: [com.auth0.jwk.JwkProvider, com.auth0.jwk.Bucket]
+    canonical_return_type: com.auth0.jwk.RateLimitedJwkProvider
+    return:
+      type: com.auth0.jwk.RateLimitedJwkProvider
+      confidence: high
+    role: factory
+
+  # --- JWK material (com.auth0.jwk.Jwk) ---
+  # Both arity-9 constructors (List vs String operations) share the return type.
+  - method: com.auth0.jwk.Jwk.<init>
+    arity: 9
+    return:
+      type: com.auth0.jwk.Jwk
+      confidence: high
+    role: factory
+  - method: com.auth0.jwk.Jwk.fromValues
+    arity: 1
+    parameter_types: [java.util.Map]
+    canonical_return_type: com.auth0.jwk.Jwk
+    return:
+      type: com.auth0.jwk.Jwk
+      confidence: high
+    role: factory
+  # Declared return is the generic java.security.PublicKey; the concrete key is
+  # RSA or EC depending on the JWK's kty, which is runtime data — the contract
+  # intentionally stays at the declared supertype.
+  - method: com.auth0.jwk.Jwk.getPublicKey
+    arity: 0
+    canonical_return_type: java.security.PublicKey
+    return:
+      type: java.security.PublicKey
+      confidence: high
+    role: output
+
+hierarchy:
+  com.auth0.jwk.JwkProviderBuilder:
+    - java.lang.Object
+  com.auth0.jwk.JwkProvider:
+    - java.lang.Object
+  com.auth0.jwk.UrlJwkProvider:
+    - com.auth0.jwk.JwkProvider
+  com.auth0.jwk.GuavaCachedJwkProvider:
+    - com.auth0.jwk.JwkProvider
+  com.auth0.jwk.RateLimitedJwkProvider:
+    - com.auth0.jwk.JwkProvider
+  com.auth0.jwk.Jwk:
+    - java.lang.Object
+  java.security.PublicKey:
+    - java.security.Key
+  java.security.Key:
+    - java.lang.Object
+  java.lang.Object: []

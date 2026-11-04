@@ -1,0 +1,676 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: ml-kem
+  coordinates:
+    - ml-kem
+    - ml_kem
+  version_range: ">=0.1.0-alpha,<0.4.0"
+  description: "ML-KEM (FIPS 203) key encapsulation, RustCrypto"
+
+# API READ FROM THE CRATE SOURCES OF ALL 22 PUBLISHED VERSIONS, and from the
+# `kem` trait crate at 0.3.0-rc.0 and 0.3.0.
+#
+# WHY THE RANGE STARTS AT 0.1.0-alpha AND NOT AT 0.0.1. `ml-kem 0.0.1` is an
+# EMPTY PLACEHOLDER: `src/lib.rs` is zero bytes and the manifest description
+# reads "Reserved to transfer ownership later". It exposes no symbol at all, so
+# declaring it in the range would claim an API that does not exist.
+#
+# KEYS READ OFF AN EXPORTED CALL GRAPH, NOT WRITTEN FROM THE API. Each key shape
+# below was produced by
+#   crypto-finder scan --export-callgraph ... <probe consumer>
+# and then had its second-to-last dot rewritten to `::` (rustAuthoredKey,
+# contracts.go:267). FOUR distinct key shapes come out of this crate, and all
+# four are declared because all four are spellings real consumers write:
+#
+#   use ml_kem::MlKem768;      MlKem768::generate(..)
+#       -> ml_kem.MlKem768.generate            -> ml_kem::MlKem768.generate
+#   ml_kem::ml_kem_768::MlKem768::generate_keypair()
+#       -> ml_kem::ml_kem_768.MlKem768.generate_keypair
+#   DecapsulationKey::<MlKem768>::from_seed(..)   [turbofish, era 2]
+#       -> ml_kem.DecapsulationKey.from_seed   (the type argument does NOT reach
+#                                               the key: the size is lost)
+#   EncapsulationKey::<MlKem768Params>::from_bytes(..)  [turbofish, era 1]
+#       -> ml_kem::kem.EncapsulationKey.from_bytes -> ml_kem::kem::EncapsulationKey.from_bytes
+#
+# NOT EVERY DECLARED KEY IS REACHED BY THE ANNOTATION PIPELINE. `ContractsFor`
+# resolves all of them -- a test pins that -- but a call graph exported over a
+# probe exercising every spelling still renders 34 of the emitted signatures as
+# `name(?)` with empty parameter_types. The same is true of keys in already
+# merged, certainly-contracted families (`chacha20poly1305.ChaCha20Poly1305.new(?)`,
+# `aes_gcm.Aes256Gcm.new(?)`), so it is a pre-existing analyzer property rather
+# than a defect in this file, and it is recorded here so nobody reads the
+# paragraph above as a claim that every key was confirmed end to end.
+#
+# THREE METHODS CARRY `confidence: low` BECAUSE THEIR RETURN TYPE CHANGED WITHIN
+# ONE (method, arity) KEY, and divergent returns on one key are a HARD LOAD
+# ERROR (contracts.go:936-968, Rule 2) rather than something to declare twice:
+#
+#   decapsulate/1               era 1 `Result<SharedKey, ()>`
+#                               era 2 `SharedKey`   (0.3.2 decapsulation_key.rs:172)
+#   encapsulate_deterministic/1 era 1 `Result<(Ct, SS), ()>`
+#                               era 2 `(Ciphertext<P>, SharedKey)` (0.3.2 encapsulation_key.rs:45)
+#   encapsulate_with_rng/1      0.3.0-pre.4 `Result<(Ct, SS), R::Error>` (kem.rs:262-265,
+#                               and pre.4 benches/mlkem.rs:26 unwraps it)
+#                               0.3.0-pre.5 on `(Ciphertext<P>, SharedKey)`
+#
+# Each names the CURRENT era with `confidence: low`, exactly as
+# rustls-native-certs does for a return that moved under one name and arity.
+# `encapsulate` needs no such treatment: era 1 takes an rng (arity 1) and era 2
+# takes nothing (arity 0), so the two are different keys. Era 1's associated
+# `type Error = ()` is read at 0.2.3 src/kem.rs:192, not guessed -- there is no
+# `ml_kem::kem::Error` path in any release.
+#
+# THE UFCS ASSOCIATED-TYPE SPELLING HAS NO CONTRACT ENTRY BECAUSE IT HAS NO KEY.
+# `<MlKem768 as KemCore>::EncapsulationKey::from_bytes(..)` -- which ml-kem's own
+# benches write at 0.1.0, 0.1.1 (:36), 0.2.3 (:36) and 0.3.0-pre (:21) -- emits
+# `<scanned crate>.from_bytes(?)` under an exported call graph: the parser does
+# not resolve an associated type reached through `<Type as Trait>::Assoc`, so the
+# call is keyed in the SCANNED crate's own namespace and no contract key can
+# join it. Measured, not assumed. It is an analyzer gap reported against
+# crypto-finder rather than something a contract entry could paper over; the
+# rules still detect the line and emit the correct parameter set.
+#
+# skipped-non-crypto: the `EncodedSizeUser` / `KeyExport` byte accessors
+#   (`as_bytes`, `to_bytes`, `to_seed`, `to_expanded_bytes`) and the pkcs8
+#   encoding impls. They serialize a key a consumer already holds; they select
+#   no algorithm and mint no key material. `from_expanded_bytes` is also absent:
+#   it decodes the expanded key form the crate deprecated at 0.3.0 in favour of
+#   `Seed`, and it appears in no sampled consumer and in none of the crate's own
+#   benches.
+contracts:
+  - method: ml_kem::MlKem512.generate
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)"
+    parameter_types: ["&mut impl rand_core::CryptoRngCore"]
+    role: factory
+  - method: ml_kem::MlKem512.generate_deterministic
+    arity: 2
+    return: { type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)"
+    parameter_types: ["&ml_kem::B32", "&ml_kem::B32"]
+    role: factory
+  - method: ml_kem::MlKem512.generate_keypair
+    arity: 0
+    return: { type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)"
+    role: factory
+  - method: ml_kem::MlKem512.generate_keypair_from_rng
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::MlKem512.from_seed
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::ml_kem_512::MlKem512.generate_keypair
+    arity: 0
+    return: { type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)"
+    role: factory
+  - method: ml_kem::ml_kem_512::MlKem512.generate_keypair_from_rng
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::ml_kem_512::MlKem512.from_seed
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey512, ml_kem::EncapsulationKey512)"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::MlKem768.generate
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)"
+    parameter_types: ["&mut impl rand_core::CryptoRngCore"]
+    role: factory
+  - method: ml_kem::MlKem768.generate_deterministic
+    arity: 2
+    return: { type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)"
+    parameter_types: ["&ml_kem::B32", "&ml_kem::B32"]
+    role: factory
+  - method: ml_kem::MlKem768.generate_keypair
+    arity: 0
+    return: { type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)"
+    role: factory
+  - method: ml_kem::MlKem768.generate_keypair_from_rng
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::MlKem768.from_seed
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::ml_kem_768::MlKem768.generate_keypair
+    arity: 0
+    return: { type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)"
+    role: factory
+  - method: ml_kem::ml_kem_768::MlKem768.generate_keypair_from_rng
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::ml_kem_768::MlKem768.from_seed
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey768, ml_kem::EncapsulationKey768)"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::MlKem1024.generate
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)"
+    parameter_types: ["&mut impl rand_core::CryptoRngCore"]
+    role: factory
+  - method: ml_kem::MlKem1024.generate_deterministic
+    arity: 2
+    return: { type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)"
+    parameter_types: ["&ml_kem::B32", "&ml_kem::B32"]
+    role: factory
+  - method: ml_kem::MlKem1024.generate_keypair
+    arity: 0
+    return: { type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)"
+    role: factory
+  - method: ml_kem::MlKem1024.generate_keypair_from_rng
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::MlKem1024.from_seed
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::MlKem1024.generate_keypair
+    arity: 0
+    return: { type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)"
+    role: factory
+  - method: ml_kem::ml_kem_1024::MlKem1024.generate_keypair_from_rng
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::MlKem1024.from_seed
+    arity: 1
+    return: { type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)", confidence: high }
+    canonical_return_type: "(ml_kem::DecapsulationKey1024, ml_kem::EncapsulationKey1024)"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::DecapsulationKey512.from_seed
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey512", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey512"
+    parameter_types: ["ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::DecapsulationKey512.new
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey512", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey512"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::DecapsulationKey512.generate_from_rng
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey512", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey512"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::DecapsulationKey512.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey512, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey512"
+    parameter_types: ["&ml_kem::param::ExpandedDecapsulationKey"]
+    role: factory
+  - method: ml_kem::EncapsulationKey512.new
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey512, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey512"
+    parameter_types: ["&ml_kem::kem::Key"]
+    role: factory
+  - method: ml_kem::EncapsulationKey512.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey512, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey512"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::ml_kem_512::DecapsulationKey.from_seed
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey512", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey512"
+    parameter_types: ["ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::ml_kem_512::DecapsulationKey.new
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey512", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey512"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::ml_kem_512::DecapsulationKey.generate_from_rng
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey512", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey512"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::ml_kem_512::DecapsulationKey.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey512, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey512"
+    parameter_types: ["&ml_kem::param::ExpandedDecapsulationKey"]
+    role: factory
+  - method: ml_kem::ml_kem_512::EncapsulationKey.new
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey512, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey512"
+    parameter_types: ["&ml_kem::kem::Key"]
+    role: factory
+  - method: ml_kem::ml_kem_512::EncapsulationKey.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey512, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey512"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::ml_kem_512::DecapsulationKey.from_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey512, ml_kem::Error>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey512"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::ml_kem_512::EncapsulationKey.from_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey512, ml_kem::Error>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey512"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::DecapsulationKey768.from_seed
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey768", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey768"
+    parameter_types: ["ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::DecapsulationKey768.new
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey768", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey768"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::DecapsulationKey768.generate_from_rng
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey768", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey768"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::DecapsulationKey768.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey768, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey768"
+    parameter_types: ["&ml_kem::param::ExpandedDecapsulationKey"]
+    role: factory
+  - method: ml_kem::EncapsulationKey768.new
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey768, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey768"
+    parameter_types: ["&ml_kem::kem::Key"]
+    role: factory
+  - method: ml_kem::EncapsulationKey768.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey768, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey768"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::ml_kem_768::DecapsulationKey.from_seed
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey768", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey768"
+    parameter_types: ["ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::ml_kem_768::DecapsulationKey.new
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey768", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey768"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::ml_kem_768::DecapsulationKey.generate_from_rng
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey768", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey768"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::ml_kem_768::DecapsulationKey.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey768, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey768"
+    parameter_types: ["&ml_kem::param::ExpandedDecapsulationKey"]
+    role: factory
+  - method: ml_kem::ml_kem_768::EncapsulationKey.new
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey768, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey768"
+    parameter_types: ["&ml_kem::kem::Key"]
+    role: factory
+  - method: ml_kem::ml_kem_768::EncapsulationKey.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey768, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey768"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::ml_kem_768::DecapsulationKey.from_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey768, ml_kem::Error>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey768"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::ml_kem_768::EncapsulationKey.from_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey768, ml_kem::Error>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey768"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::DecapsulationKey1024.from_seed
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey1024", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey1024"
+    parameter_types: ["ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::DecapsulationKey1024.new
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey1024", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey1024"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::DecapsulationKey1024.generate_from_rng
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey1024", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey1024"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::DecapsulationKey1024.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey1024, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey1024"
+    parameter_types: ["&ml_kem::param::ExpandedDecapsulationKey"]
+    role: factory
+  - method: ml_kem::EncapsulationKey1024.new
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey1024, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey1024"
+    parameter_types: ["&ml_kem::kem::Key"]
+    role: factory
+  - method: ml_kem::EncapsulationKey1024.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey1024, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey1024"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::DecapsulationKey.from_seed
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey1024", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey1024"
+    parameter_types: ["ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::DecapsulationKey.new
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey1024", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey1024"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::DecapsulationKey.generate_from_rng
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey1024", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey1024"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::DecapsulationKey.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey1024, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey1024"
+    parameter_types: ["&ml_kem::param::ExpandedDecapsulationKey"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::EncapsulationKey.new
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey1024, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey1024"
+    parameter_types: ["&ml_kem::kem::Key"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::EncapsulationKey.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey1024, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey1024"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::DecapsulationKey.from_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey1024, ml_kem::Error>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey1024"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::ml_kem_1024::EncapsulationKey.from_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey1024, ml_kem::Error>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey1024"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::DecapsulationKey.from_seed
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey"
+    parameter_types: ["ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::DecapsulationKey.new
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey"
+    parameter_types: ["&ml_kem::Seed"]
+    role: factory
+  - method: ml_kem::DecapsulationKey.generate_from_rng
+    arity: 1
+    return: { type: "ml_kem::DecapsulationKey", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey"
+    parameter_types: ["&mut R"]
+    role: factory
+  - method: ml_kem::DecapsulationKey.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::DecapsulationKey, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::DecapsulationKey"
+    parameter_types: ["&ml_kem::param::ExpandedDecapsulationKey"]
+    role: factory
+  - method: ml_kem::EncapsulationKey.new
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey"
+    parameter_types: ["&ml_kem::kem::Key"]
+    role: factory
+  - method: ml_kem::EncapsulationKey.from_encoded_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::EncapsulationKey, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::EncapsulationKey"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::kem::DecapsulationKey.from_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::kem::DecapsulationKey, ml_kem::Error>", confidence: high }
+    canonical_return_type: "ml_kem::kem::DecapsulationKey"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::kem::EncapsulationKey.from_bytes
+    arity: 1
+    return: { type: "Result<ml_kem::kem::EncapsulationKey, ml_kem::Error>", confidence: high }
+    canonical_return_type: "ml_kem::kem::EncapsulationKey"
+    parameter_types: ["&ml_kem::Encoded"]
+    role: factory
+  - method: ml_kem::EncapsulationKey.encapsulate
+    arity: 0
+    return: { type: "(ml_kem::Ciphertext, ml_kem::SharedKey)", confidence: high }
+    canonical_return_type: "(ml_kem::Ciphertext, ml_kem::SharedKey)"
+    role: operation
+  - method: ml_kem::EncapsulationKey.encapsulate
+    arity: 1
+    return: { type: "Result<(ml_kem::Ciphertext, ml_kem::SharedKey), ()>", confidence: high }
+    canonical_return_type: "(ml_kem::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&mut impl rand_core::CryptoRngCore"]
+    role: operation
+  - method: ml_kem::EncapsulationKey.encapsulate_with_rng
+    arity: 1
+    return: { type: "(ml_kem::Ciphertext, ml_kem::SharedKey)", confidence: low }
+    canonical_return_type: "(ml_kem::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&mut R"]
+    role: operation
+  - method: ml_kem::EncapsulationKey.encapsulate_deterministic
+    arity: 1
+    return: { type: "(ml_kem::Ciphertext, ml_kem::SharedKey)", confidence: low }
+    canonical_return_type: "(ml_kem::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&ml_kem::B32"]
+    role: operation
+  - method: ml_kem::DecapsulationKey.decapsulate
+    arity: 1
+    return: { type: "ml_kem::SharedKey", confidence: low }
+    canonical_return_type: "ml_kem::SharedKey"
+    parameter_types: ["&ml_kem::Ciphertext"]
+    role: operation
+  - method: ml_kem::DecapsulationKey.try_decapsulate
+    arity: 1
+    return: { type: "Result<ml_kem::SharedKey, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::SharedKey"
+    parameter_types: ["&ml_kem::Ciphertext"]
+    role: operation
+  - method: ml_kem::EncapsulationKey512.encapsulate
+    arity: 0
+    return: { type: "(ml_kem::ml_kem_512::Ciphertext, ml_kem::SharedKey)", confidence: high }
+    canonical_return_type: "(ml_kem::ml_kem_512::Ciphertext, ml_kem::SharedKey)"
+    role: operation
+  - method: ml_kem::EncapsulationKey512.encapsulate
+    arity: 1
+    return: { type: "Result<(ml_kem::ml_kem_512::Ciphertext, ml_kem::SharedKey), ()>", confidence: high }
+    canonical_return_type: "(ml_kem::ml_kem_512::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&mut impl rand_core::CryptoRngCore"]
+    role: operation
+  - method: ml_kem::EncapsulationKey512.encapsulate_with_rng
+    arity: 1
+    return: { type: "(ml_kem::ml_kem_512::Ciphertext, ml_kem::SharedKey)", confidence: low }
+    canonical_return_type: "(ml_kem::ml_kem_512::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&mut R"]
+    role: operation
+  - method: ml_kem::EncapsulationKey512.encapsulate_deterministic
+    arity: 1
+    return: { type: "(ml_kem::ml_kem_512::Ciphertext, ml_kem::SharedKey)", confidence: low }
+    canonical_return_type: "(ml_kem::ml_kem_512::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&ml_kem::B32"]
+    role: operation
+  - method: ml_kem::DecapsulationKey512.decapsulate
+    arity: 1
+    return: { type: "ml_kem::SharedKey", confidence: low }
+    canonical_return_type: "ml_kem::SharedKey"
+    parameter_types: ["&ml_kem::ml_kem_512::Ciphertext"]
+    role: operation
+  - method: ml_kem::DecapsulationKey512.try_decapsulate
+    arity: 1
+    return: { type: "Result<ml_kem::SharedKey, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::SharedKey"
+    parameter_types: ["&ml_kem::ml_kem_512::Ciphertext"]
+    role: operation
+  - method: ml_kem::DecapsulationKey512.encapsulation_key
+    arity: 0
+    return: { type: "&ml_kem::EncapsulationKey512", confidence: high }
+    canonical_return_type: "&ml_kem::EncapsulationKey512"
+    role: output
+  - method: ml_kem::EncapsulationKey768.encapsulate
+    arity: 0
+    return: { type: "(ml_kem::ml_kem_768::Ciphertext, ml_kem::SharedKey)", confidence: high }
+    canonical_return_type: "(ml_kem::ml_kem_768::Ciphertext, ml_kem::SharedKey)"
+    role: operation
+  - method: ml_kem::EncapsulationKey768.encapsulate
+    arity: 1
+    return: { type: "Result<(ml_kem::ml_kem_768::Ciphertext, ml_kem::SharedKey), ()>", confidence: high }
+    canonical_return_type: "(ml_kem::ml_kem_768::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&mut impl rand_core::CryptoRngCore"]
+    role: operation
+  - method: ml_kem::EncapsulationKey768.encapsulate_with_rng
+    arity: 1
+    return: { type: "(ml_kem::ml_kem_768::Ciphertext, ml_kem::SharedKey)", confidence: low }
+    canonical_return_type: "(ml_kem::ml_kem_768::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&mut R"]
+    role: operation
+  - method: ml_kem::EncapsulationKey768.encapsulate_deterministic
+    arity: 1
+    return: { type: "(ml_kem::ml_kem_768::Ciphertext, ml_kem::SharedKey)", confidence: low }
+    canonical_return_type: "(ml_kem::ml_kem_768::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&ml_kem::B32"]
+    role: operation
+  - method: ml_kem::DecapsulationKey768.decapsulate
+    arity: 1
+    return: { type: "ml_kem::SharedKey", confidence: low }
+    canonical_return_type: "ml_kem::SharedKey"
+    parameter_types: ["&ml_kem::ml_kem_768::Ciphertext"]
+    role: operation
+  - method: ml_kem::DecapsulationKey768.try_decapsulate
+    arity: 1
+    return: { type: "Result<ml_kem::SharedKey, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::SharedKey"
+    parameter_types: ["&ml_kem::ml_kem_768::Ciphertext"]
+    role: operation
+  - method: ml_kem::DecapsulationKey768.encapsulation_key
+    arity: 0
+    return: { type: "&ml_kem::EncapsulationKey768", confidence: high }
+    canonical_return_type: "&ml_kem::EncapsulationKey768"
+    role: output
+  - method: ml_kem::EncapsulationKey1024.encapsulate
+    arity: 0
+    return: { type: "(ml_kem::ml_kem_1024::Ciphertext, ml_kem::SharedKey)", confidence: high }
+    canonical_return_type: "(ml_kem::ml_kem_1024::Ciphertext, ml_kem::SharedKey)"
+    role: operation
+  - method: ml_kem::EncapsulationKey1024.encapsulate
+    arity: 1
+    return: { type: "Result<(ml_kem::ml_kem_1024::Ciphertext, ml_kem::SharedKey), ()>", confidence: high }
+    canonical_return_type: "(ml_kem::ml_kem_1024::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&mut impl rand_core::CryptoRngCore"]
+    role: operation
+  - method: ml_kem::EncapsulationKey1024.encapsulate_with_rng
+    arity: 1
+    return: { type: "(ml_kem::ml_kem_1024::Ciphertext, ml_kem::SharedKey)", confidence: low }
+    canonical_return_type: "(ml_kem::ml_kem_1024::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&mut R"]
+    role: operation
+  - method: ml_kem::EncapsulationKey1024.encapsulate_deterministic
+    arity: 1
+    return: { type: "(ml_kem::ml_kem_1024::Ciphertext, ml_kem::SharedKey)", confidence: low }
+    canonical_return_type: "(ml_kem::ml_kem_1024::Ciphertext, ml_kem::SharedKey)"
+    parameter_types: ["&ml_kem::B32"]
+    role: operation
+  - method: ml_kem::DecapsulationKey1024.decapsulate
+    arity: 1
+    return: { type: "ml_kem::SharedKey", confidence: low }
+    canonical_return_type: "ml_kem::SharedKey"
+    parameter_types: ["&ml_kem::ml_kem_1024::Ciphertext"]
+    role: operation
+  - method: ml_kem::DecapsulationKey1024.try_decapsulate
+    arity: 1
+    return: { type: "Result<ml_kem::SharedKey, ml_kem::InvalidKey>", confidence: high }
+    canonical_return_type: "ml_kem::SharedKey"
+    parameter_types: ["&ml_kem::ml_kem_1024::Ciphertext"]
+    role: operation
+  - method: ml_kem::DecapsulationKey1024.encapsulation_key
+    arity: 0
+    return: { type: "&ml_kem::EncapsulationKey1024", confidence: high }
+    canonical_return_type: "&ml_kem::EncapsulationKey1024"
+    role: output
+
+hierarchy: {}

@@ -1,0 +1,99 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: azkeys
+  coordinates:
+    - "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
+  version_range: ">=0.11.0,<2.0.0"
+  description: "Azure Key Vault keys client (azkeys)"
+
+# Inventory source: azkeys v1.4.0 module source from the Go module proxy. The
+# client performs every operation remotely against Key Vault/Managed HSM; the
+# algorithm and key-type selectors live in the request parameter structs and
+# are exposed to consumers as capture-side state, never as inferred vault
+# capabilities (family plan: no HSM tier or certification inference). Pagers,
+# key-lifecycle deletion/recovery, rotation-policy accessors, attestation, and
+# the serde/model plumbing are structural and stay uncontracted.
+contracts:
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.NewClient
+    arity: 3
+    return: { type: "*github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.Client", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: vaultURL, role: metadata-contributing, contributes: { property: context, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).CreateKey
+    arity: 4
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.CreateKeyResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: parameters, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).ImportKey
+    arity: 4
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.ImportKeyResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 2, name: parameters, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).RotateKey
+    arity: 3
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.RotateKeyResponse", confidence: high }
+    role: operation
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).Encrypt
+    arity: 5
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.EncryptResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 3, name: parameters, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).Decrypt
+    arity: 5
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.DecryptResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 3, name: parameters, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).Sign
+    arity: 5
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.SignResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 3, name: parameters, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).Verify
+    arity: 5
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.VerifyResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 3, name: parameters, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).WrapKey
+    arity: 5
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.WrapKeyResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 3, name: parameters, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).UnwrapKey
+    arity: 5
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.UnwrapKeyResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 3, name: parameters, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).GetRandomBytes
+    arity: 3
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.GetRandomBytesResponse", confidence: high }
+    role: operation
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).GetKey
+    arity: 4
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.GetKeyResponse", confidence: high }
+    role: output
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).BackupKey
+    arity: 3
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.BackupKeyResponse", confidence: high }
+    role: output
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).RestoreKey
+    arity: 3
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.RestoreKeyResponse", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: parameters, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+  - method: github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.(*Client).Release
+    arity: 5
+    return: { type: "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys.ReleaseResponse", confidence: high }
+    role: output
+
+hierarchy: {}

@@ -1,0 +1,185 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: bouncycastle-openpgp
+  coordinates:
+    - "org.bouncycastle:bcpg-jdk18on"
+  version_range: "1.78.1"
+  description: "Bouncy Castle OpenPGP data-encryption builder and generator contracts"
+
+contracts:
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: encAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.setWithIntegrityPacket
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.setWithAEAD
+    arity: 2
+    return: { type: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: aeadAlgorithm
+        role: operation-determining
+        contributes: { property: aeadAlgorithm, derivation: argument_value }
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.setUseV5AEAD
+    arity: 0
+    return: { type: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.setUseV6AEAD
+    arity: 0
+    return: { type: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.setProvider
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.setSecureRandom
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.getAlgorithm
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.getAeadAlgorithm
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.getChunkSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.isV5StyleAEAD
+    arity: 0
+    return: { type: boolean, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.getSecureRandom
+    arity: 0
+    return: { type: java.security.SecureRandom, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.operator.PGPDataEncryptor, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: keyBytes
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.<init>
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: encAlgorithm
+        role: operation-determining
+        contributes: { property: algorithm, derivation: argument_value }
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.setWithIntegrityPacket
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.setWithAEAD
+    arity: 2
+    return: { type: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder, confidence: high }
+    role: config
+    parameters:
+      - index: 0
+        name: aeadAlgorithm
+        role: operation-determining
+        contributes: { property: aeadAlgorithm, derivation: argument_value }
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.setUseV5AEAD
+    arity: 0
+    return: { type: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.setUseV6AEAD
+    arity: 0
+    return: { type: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.setSecureRandom
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.getAlgorithm
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.getAeadAlgorithm
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.getChunkSize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.isV5StyleAEAD
+    arity: 0
+    return: { type: boolean, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.getSecureRandom
+    arity: 0
+    return: { type: java.security.SecureRandom, confidence: high }
+    role: output
+  - method: org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder.build
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.operator.PGPDataEncryptor, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: keyBytes
+        role: metadata-contributing
+        contributes: { property: keySize, derivation: argument_bit_length }
+
+  - method: org.bouncycastle.openpgp.PGPEncryptedDataGenerator.<init>
+    arity: 1
+    return: { type: org.bouncycastle.openpgp.PGPEncryptedDataGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.openpgp.PGPEncryptedDataGenerator.<init>
+    arity: 2
+    return: { type: org.bouncycastle.openpgp.PGPEncryptedDataGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.openpgp.PGPEncryptedDataGenerator.setForceSessionKey
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.openpgp.PGPEncryptedDataGenerator.addMethod
+    arity: 1
+    return: { type: void, confidence: high }
+    role: config
+  # Both supported public open overloads have arity 2 and return OutputStream.
+  - method: org.bouncycastle.openpgp.PGPEncryptedDataGenerator.open
+    arity: 2
+    return: { type: java.io.OutputStream, confidence: high }
+    role: operation
+  - method: org.bouncycastle.openpgp.PGPEncryptedDataGenerator.close
+    arity: 0
+    return: { type: void, confidence: high }
+    role: operation
+
+hierarchy:
+  org.bouncycastle.openpgp.operator.PGPDataEncryptorBuilder:
+    - java.lang.Object
+  org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder:
+    - org.bouncycastle.openpgp.operator.PGPDataEncryptorBuilder
+  org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder:
+    - org.bouncycastle.openpgp.operator.PGPDataEncryptorBuilder
+  org.bouncycastle.openpgp.operator.PGPDataEncryptor:
+    - java.lang.Object
+  org.bouncycastle.openpgp.PGPEncryptedDataGenerator:
+    - java.lang.Object
+  java.io.OutputStream:
+    - java.lang.Object
+  java.security.SecureRandom:
+    - java.util.Random
+  java.lang.Object: []

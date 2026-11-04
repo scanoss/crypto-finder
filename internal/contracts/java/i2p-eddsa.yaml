@@ -1,0 +1,289 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: i2p-eddsa
+  coordinates:
+    - "net.i2p.crypto:eddsa"
+  # Verified against upstream source at release 0.3.0 (str4d/ed25519-java).
+  version_range: ">=0.3.0,<0.4.0"
+  description: "I2P ed25519-java contracts for EdDSA signing engine, key-pair generation, and key/spec construction"
+
+contracts:
+  # --- Signing engine (net.i2p.crypto.eddsa.EdDSAEngine) ---
+  # EdDSAEngine extends java.security.Signature directly, so initSign/initVerify/
+  # update/sign/verify are inherited public finals resolved through the
+  # hierarchy edge below against the jdk-crypto Signature contracts. Only the
+  # EdDSA-specific surface is contracted here.
+  - method: net.i2p.crypto.eddsa.EdDSAEngine.<init>
+    arity: 0
+    canonical_return_type: net.i2p.crypto.eddsa.EdDSAEngine
+    return:
+      type: net.i2p.crypto.eddsa.EdDSAEngine
+      confidence: high
+    role: factory
+  - method: net.i2p.crypto.eddsa.EdDSAEngine.<init>
+    arity: 1
+    parameter_types: [java.security.MessageDigest]
+    canonical_return_type: net.i2p.crypto.eddsa.EdDSAEngine
+    return:
+      type: net.i2p.crypto.eddsa.EdDSAEngine
+      confidence: high
+    role: factory
+  - method: net.i2p.crypto.eddsa.EdDSAEngine.signOneShot
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: net.i2p.crypto.eddsa.EdDSAEngine.signOneShot
+    arity: 3
+    parameter_types: ["byte[]", int, int]
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: operation
+  - method: net.i2p.crypto.eddsa.EdDSAEngine.verifyOneShot
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  # verifyOneShot#4 is overloaded ((data,off,len,sig) vs (data,sig,sigoff,siglen))
+  # with the same boolean return — canonical signature omitted.
+  - method: net.i2p.crypto.eddsa.EdDSAEngine.verifyOneShot
+    arity: 4
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+  - method: net.i2p.crypto.eddsa.EdDSAEngine.verifyOneShot
+    arity: 6
+    parameter_types: ["byte[]", int, int, "byte[]", int, int]
+    canonical_return_type: boolean
+    return:
+      type: boolean
+      confidence: high
+    role: operation
+
+  # --- Key-pair generation (net.i2p.crypto.eddsa.KeyPairGenerator) ---
+  # Extends KeyPairGeneratorSpi (not java.security.KeyPairGenerator), so its
+  # generateKeyPair needs its own contract.
+  - method: net.i2p.crypto.eddsa.KeyPairGenerator.<init>
+    arity: 0
+    canonical_return_type: net.i2p.crypto.eddsa.KeyPairGenerator
+    return:
+      type: net.i2p.crypto.eddsa.KeyPairGenerator
+      confidence: high
+    role: factory
+  # initialize#2 is overloaded ((int,SecureRandom) vs
+  # (AlgorithmParameterSpec,SecureRandom)) — canonical signature omitted.
+  - method: net.i2p.crypto.eddsa.KeyPairGenerator.initialize
+    arity: 2
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.i2p.crypto.eddsa.KeyPairGenerator.generateKeyPair
+    arity: 0
+    canonical_return_type: java.security.KeyPair
+    return:
+      type: java.security.KeyPair
+      confidence: high
+    role: factory
+
+  # --- Keys (net.i2p.crypto.eddsa.EdDSAPrivateKey / EdDSAPublicKey) ---
+  # Both arity-1 constructors are overloaded (EdDSA spec vs encoded JCA spec) —
+  # canonical signatures omitted.
+  - method: net.i2p.crypto.eddsa.EdDSAPrivateKey.<init>
+    arity: 1
+    return:
+      type: net.i2p.crypto.eddsa.EdDSAPrivateKey
+      confidence: high
+    role: factory
+  - method: net.i2p.crypto.eddsa.EdDSAPublicKey.<init>
+    arity: 1
+    return:
+      type: net.i2p.crypto.eddsa.EdDSAPublicKey
+      confidence: high
+    role: factory
+  - method: net.i2p.crypto.eddsa.EdDSAPrivateKey.getSeed
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: net.i2p.crypto.eddsa.EdDSAPrivateKey.getH
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: net.i2p.crypto.eddsa.EdDSAPrivateKey.getAbyte
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+  - method: net.i2p.crypto.eddsa.EdDSAPublicKey.getAbyte
+    arity: 0
+    canonical_return_type: byte[]
+    return:
+      type: byte[]
+      confidence: high
+    role: output
+
+  # --- Curve table and specs (net.i2p.crypto.eddsa.spec) ---
+  - method: net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable.getByName
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: net.i2p.crypto.eddsa.spec.EdDSANamedCurveSpec
+    return:
+      type: net.i2p.crypto.eddsa.spec.EdDSANamedCurveSpec
+      confidence: high
+    role: factory
+  - method: net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable.defineCurve
+    arity: 1
+    parameter_types: [net.i2p.crypto.eddsa.spec.EdDSANamedCurveSpec]
+    canonical_return_type: void
+    return:
+      type: void
+      confidence: high
+    role: config
+  - method: net.i2p.crypto.eddsa.spec.EdDSAParameterSpec.<init>
+    arity: 4
+    parameter_types:
+      [
+        net.i2p.crypto.eddsa.math.Curve,
+        java.lang.String,
+        net.i2p.crypto.eddsa.math.ScalarOps,
+        net.i2p.crypto.eddsa.math.GroupElement,
+      ]
+    canonical_return_type: net.i2p.crypto.eddsa.spec.EdDSAParameterSpec
+    return:
+      type: net.i2p.crypto.eddsa.spec.EdDSAParameterSpec
+      confidence: high
+    role: factory
+  - method: net.i2p.crypto.eddsa.spec.EdDSANamedCurveSpec.<init>
+    arity: 5
+    parameter_types:
+      [
+        java.lang.String,
+        net.i2p.crypto.eddsa.math.Curve,
+        java.lang.String,
+        net.i2p.crypto.eddsa.math.ScalarOps,
+        net.i2p.crypto.eddsa.math.GroupElement,
+      ]
+    canonical_return_type: net.i2p.crypto.eddsa.spec.EdDSANamedCurveSpec
+    return:
+      type: net.i2p.crypto.eddsa.spec.EdDSANamedCurveSpec
+      confidence: high
+    role: factory
+  # EdDSAPrivateKeySpec#2 is overloaded ((seed,spec) vs (spec,hash), same types
+  # in swapped order) — canonical signature omitted, and no parameter role is
+  # tagged because the key-material index differs between the overloads.
+  - method: net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec.<init>
+    arity: 2
+    return:
+      type: net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec
+      confidence: high
+    role: factory
+  - method: net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec.<init>
+    arity: 5
+    parameter_types:
+      [
+        "byte[]",
+        "byte[]",
+        "byte[]",
+        net.i2p.crypto.eddsa.math.GroupElement,
+        net.i2p.crypto.eddsa.spec.EdDSAParameterSpec,
+      ]
+    canonical_return_type: net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec
+    return:
+      type: net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec
+      confidence: high
+    role: factory
+  # EdDSAPublicKeySpec#2 is overloaded ((byte[],spec) vs (GroupElement,spec)) —
+  # canonical signature omitted.
+  - method: net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec.<init>
+    arity: 2
+    return:
+      type: net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec
+      confidence: high
+    role: factory
+  - method: net.i2p.crypto.eddsa.spec.EdDSAGenParameterSpec.<init>
+    arity: 1
+    parameter_types: [java.lang.String]
+    canonical_return_type: net.i2p.crypto.eddsa.spec.EdDSAGenParameterSpec
+    return:
+      type: net.i2p.crypto.eddsa.spec.EdDSAGenParameterSpec
+      confidence: high
+    role: factory
+
+  # --- JCA provider (net.i2p.crypto.eddsa.EdDSASecurityProvider) ---
+  - method: net.i2p.crypto.eddsa.EdDSASecurityProvider.<init>
+    arity: 0
+    canonical_return_type: net.i2p.crypto.eddsa.EdDSASecurityProvider
+    return:
+      type: net.i2p.crypto.eddsa.EdDSASecurityProvider
+      confidence: high
+    role: factory
+
+hierarchy:
+  # EdDSAEngine extends the public java.security.Signature class directly, so
+  # inherited initSign/update/sign/verify calls resolve to the jdk-crypto
+  # Signature contracts through this edge.
+  net.i2p.crypto.eddsa.EdDSAEngine:
+    - java.security.Signature
+  java.security.Signature:
+    - java.security.SignatureSpi
+    - java.lang.Object
+  net.i2p.crypto.eddsa.KeyPairGenerator:
+    - java.security.KeyPairGeneratorSpi
+  java.security.KeyPairGeneratorSpi:
+    - java.lang.Object
+  net.i2p.crypto.eddsa.EdDSAKey:
+    - java.lang.Object
+  net.i2p.crypto.eddsa.EdDSAPrivateKey:
+    - net.i2p.crypto.eddsa.EdDSAKey
+    - java.security.PrivateKey
+  net.i2p.crypto.eddsa.EdDSAPublicKey:
+    - net.i2p.crypto.eddsa.EdDSAKey
+    - java.security.PublicKey
+  java.security.PrivateKey:
+    - java.security.Key
+  java.security.PublicKey:
+    - java.security.Key
+  java.security.Key:
+    - java.lang.Object
+  java.security.KeyPair:
+    - java.lang.Object
+  net.i2p.crypto.eddsa.EdDSASecurityProvider:
+    - java.security.Provider
+  java.security.Provider:
+    - java.lang.Object
+  net.i2p.crypto.eddsa.spec.EdDSAParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  net.i2p.crypto.eddsa.spec.EdDSANamedCurveSpec:
+    - net.i2p.crypto.eddsa.spec.EdDSAParameterSpec
+  net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable:
+    - java.lang.Object
+  net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec:
+    - java.security.spec.KeySpec
+  net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec:
+    - java.security.spec.KeySpec
+  net.i2p.crypto.eddsa.spec.EdDSAGenParameterSpec:
+    - java.security.spec.AlgorithmParameterSpec
+  java.security.spec.AlgorithmParameterSpec:
+    - java.lang.Object
+  java.security.spec.KeySpec:
+    - java.lang.Object
+  java.lang.Object: []

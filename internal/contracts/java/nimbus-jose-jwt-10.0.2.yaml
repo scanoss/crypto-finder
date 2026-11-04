@@ -1,0 +1,502 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: nimbus-jose-jwt-10.0.2
+  coordinates:
+    - "com.nimbusds:nimbus-jose-jwt"
+  version_range: ">=10.0.0,<10.1.0"
+  description: >-
+    Nimbus JOSE+JWT 10.0.2 JSON serialization lifecycle contracts, additive
+    to the version-pinned 9.37.3 KB (nimbus-jose-jwt.yaml), which is left
+    untouched: the JOSEObjectJSON/JWSObjectJSON/JWEObjectJSON family
+    (RFC 7515 §7.2 / RFC 7516 §7.2 general and flattened JSON
+    serialization), their nested Signature/Recipient value types, and the
+    parse/construct, sign/verify, encrypt/decrypt, and serialization roles
+    across that surface. Verified against nimbus-jose-jwt 10.0.2 source
+    (com/nimbusds/jose/{JOSEObjectJSON,JSONSerializable,JWSObjectJSON,
+    JWEObjectJSON}.java).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#184)
+#
+# Scope per issue AC: "Extend the contract for Nimbus JOSE+JWT 10.0.2 JSON
+# JWS and JWE APIs while preserving the working 9.37.3 model" -- the
+# JOSEObjectJSON/JWSObjectJSON/JWEObjectJSON classes new in 10.0.2 (RFC 7515
+# / RFC 7516 JSON Serialization support, absent from 9.37.3) and their
+# parse-or-construct, sign-or-verify, encrypt-or-decrypt, and serialization
+# lifecycle roles. The pre-existing compact-serialization JWSObject/JWEObject
+# contracts in nimbus-jose-jwt.yaml (9.37.3) are NOT modified -- this file is
+# purely additive, matching the spring-security-crypto-7.1.yaml precedent
+# (scanoss/crypto-finder#182) for a version-pinned extension of an existing
+# library KB.
+#
+# Every public method/constructor on the classes below was inventoried
+# against nimbus-jose-jwt 10.0.2 source. Disposition legend: contracted |
+# covered-existing | skipped-non-crypto | skipped-informative-return |
+# skipped-unsupported | needs-follow-up.
+#
+# com.nimbusds.jose.JOSEObjectJSON (new abstract base; implements only
+# java.io.Serializable -- NOT com.nimbusds.jose.JSONSerializable, see note
+# below)
+#   protected JOSEObjectJSON(Payload)          skipped-non-crypto -- protected
+#                                                ctor, not externally callable.
+#   protected setPayload(Payload)               skipped-non-crypto -- protected,
+#                                                same reasoning.
+#   getPayload()                                skipped-informative-return --
+#                                                declared Payload return is
+#                                                already the semantic type
+#                                                (identical reasoning to the
+#                                                9.37.3 JWSObject.getPayload
+#                                                entry it mirrors).
+#   toGeneralJSONObject()/toFlattenedJSONObject()/
+#   serializeGeneral()/serializeFlattened() [all abstract]
+#                                                NOT contracted on this shared
+#                                                abstract declaration --
+#                                                deliberate deviation from the
+#                                                "prefer the shared interface"
+#                                                rule. Unlike BC's
+#                                                BlockCipher/Digest or
+#                                                Spring's PasswordEncoder
+#                                                (final, single dispatch
+#                                                point), JOSEObjectJSON's four
+#                                                methods are ABSTRACT with a
+#                                                mandatory, genuinely separate
+#                                                @Override in EACH concrete
+#                                                subclass (JWSObjectJSON.java,
+#                                                JWEObjectJSON.java), and
+#                                                real-world callers
+#                                                overwhelmingly declare the
+#                                                variable as the CONCRETE type
+#                                                (JWSObjectJSON/JWEObjectJSON
+#                                                expose type-specific methods
+#                                                the abstract base doesn't --
+#                                                sign()/getSignatures() vs.
+#                                                encrypt()/getRecipients() --
+#                                                so there is no idiomatic
+#                                                reason to declare against the
+#                                                shared abstract type the way
+#                                                BC code idiomatically
+#                                                declares `BlockCipher cipher
+#                                                = new AESEngine();`).
+#                                                crypto-finder's callee
+#                                                resolution keys on the
+#                                                call's own receiver-type FQN
+#                                                with no hierarchy walk
+#                                                outside the synthetic-
+#                                                entry-point export heuristic
+#                                                (verified: kb.Hierarchy is
+#                                                only consulted by
+#                                                exportBuildContext.
+#                                                typeOrAncestor in
+#                                                internal/scan/export.go,
+#                                                itself only reached from
+#                                                deriveContractSupportingCalls
+#                                                for isSyntheticEntryPoint
+#                                                findings -- NOT from
+#                                                contractMatchesForCall/
+#                                                buildDerivedSupportingCall,
+#                                                which is what tags category
+#                                                for a real structural call
+#                                                site). A base-class-only
+#                                                contract would therefore
+#                                                silently fail to tag
+#                                                `jwsJsonVar.serializeGeneral()`
+#                                                as role output in a real
+#                                                scan where jwsJsonVar is
+#                                                JWSObjectJSON-typed (the
+#                                                common case). Authored
+#                                                per-concrete-class instead
+#                                                (see JWSObjectJSON /
+#                                                JWEObjectJSON sections
+#                                                below) -- 8 entries instead
+#                                                of 4, a modest, correctness-
+#                                                motivated duplication, not
+#                                                copy-paste padding.
+#   static parse(Map<String,Object>)             contracted (factory, arity 1)
+#   static parse(String)                         collapsed into the arity-1
+#                                                entry above (same overload-
+#                                                collapsing convention as
+#                                                netty-tls.yaml: both parse()
+#                                                overloads share arity 1 and
+#                                                an identical semantic
+#                                                return). High-leverage
+#                                                generic-declared-return case
+#                                                (skill step 1, item 1): the
+#                                                declared return is the
+#                                                abstract JOSEObjectJSON, but
+#                                                source-confirmed
+#                                                (JOSEObjectJSON.java) the
+#                                                only non-throwing branch
+#                                                dispatches to
+#                                                JWSObjectJSON.parse(...) --
+#                                                the "ciphertext" (JWE JSON)
+#                                                branch always throws
+#                                                ParseException ("JWE JSON
+#                                                not supported"). Every
+#                                                successful call is therefore
+#                                                a JWSObjectJSON, the same
+#                                                "concrete return more
+#                                                informative than declared"
+#                                                pattern as
+#                                                PasswordEncoderFactories.
+#                                                createDelegatingPasswordEncoder
+#                                                in spring-security-crypto-7.1.yaml.
+#
+# com.nimbusds.jose.JSONSerializable (interface declaring
+# toGeneralJSONObject/toFlattenedJSONObject) -- skipped-non-crypto: verified
+# against 10.0.2 source that JOSEObjectJSON declares these two methods
+# directly (as its own abstract methods) and does NOT implement this
+# interface (`public abstract class JOSEObjectJSON implements Serializable`
+# only); no class in this source tree implements JSONSerializable, so there
+# is no call-site FQN to contract.
+#
+# com.nimbusds.jose.JWSObjectJSON (extends JOSEObjectJSON)
+#   <init>(Payload)                              contracted (factory, arity 1)
+#   private <init>(Payload, List<Signature>)     skipped-non-crypto -- private,
+#                                                only reachable via parse().
+#   getSignatures()                              skipped-informative-return --
+#                                                declared List<Signature> is
+#                                                already the semantic type.
+#   sign(JWSHeader, JWSSigner)                   contracted (operation, arity 2)
+#   sign(JWSHeader, UnprotectedHeader, JWSSigner) contracted (operation, arity 3)
+#   getState()                                   skipped-informative-return --
+#                                                declared enum State is
+#                                                already fully informative.
+#   toGeneralJSONObject()/toFlattenedJSONObject()/
+#   serializeGeneral()/serializeFlattened()      contracted (output, arity 0
+#                                                each) -- authored on THIS
+#                                                concrete class rather than
+#                                                the shared JOSEObjectJSON
+#                                                base; see the "deliberate
+#                                                deviation" note in the
+#                                                JOSEObjectJSON section above
+#                                                for why.
+#   static parse(Map<String,Object>)             contracted (factory, arity 1)
+#   static parse(String)                         collapsed into the arity-1
+#                                                entry above (identical
+#                                                overload-collapsing
+#                                                reasoning as JOSEObjectJSON.
+#                                                parse above).
+#
+# com.nimbusds.jose.JWSObjectJSON.Signature (public static final nested
+# value type; ENGINE GAP NOTE -- see bottom of this comment block)
+#   private <init>(...)                          skipped-non-crypto -- private,
+#                                                only reachable via parse().
+#   getHeader()/getUnprotectedHeader()/
+#   getSignature()/isVerified()                  skipped-informative-return --
+#                                                each declared return
+#                                                (JWSHeader/UnprotectedHeader/
+#                                                Base64URL/boolean) is already
+#                                                the semantic type; isVerified
+#                                                is a plain state flag, not a
+#                                                verify operation itself (see
+#                                                verify() below).
+#   private toJSONObject()                       skipped-non-crypto -- private.
+#   toJWSObject()                                 contracted (output, arity 0)
+#                                                -- bridges the JSON-lifecycle
+#                                                Signature value back to the
+#                                                compact-serialization
+#                                                JWSObject (9.37.3), the
+#                                                cross-lifecycle link the
+#                                                issue AC's "serialization
+#                                                roles" ask covers.
+#   verify(JWSVerifier)                           contracted (operation, arity 1)
+#                                                -- the per-signature verify
+#                                                operation in a multi-
+#                                                signature JSON JWS.
+#
+# com.nimbusds.jose.JWEObjectJSON (extends JOSEObjectJSON)
+#   <init>(JWEObject)                            contracted (factory, arity 1)
+#                                                -- bridges FROM the compact
+#                                                JWEObject (9.37.3).
+#   <init>(JWEHeader, Payload)                    contracted (factory, arity 2)
+#   <init>(JWEHeader, Payload, UnprotectedHeader, byte[])
+#                                                contracted (factory, arity 4)
+#   <init>(JWEHeader, Base64URL, Base64URL, Base64URL, List<Recipient>,
+#          UnprotectedHeader, byte[])             contracted (factory, arity 7)
+#   getHeader()/getUnprotectedHeader()/
+#   getEncryptedKey()/getIV()/getCipherText()/
+#   getAuthTag()/getAAD()/getRecipients()/
+#   getState()                                    skipped-informative-return --
+#                                                each declared return
+#                                                (JWEHeader/UnprotectedHeader/
+#                                                Base64URL/byte[]/
+#                                                List<Recipient>/State) is
+#                                                already the semantic type;
+#                                                none select a return TYPE
+#                                                based on an argument (unlike
+#                                                e.g. Cipher.unwrap).
+#   encrypt(JWEEncrypter)                         contracted (operation, arity 1)
+#   decrypt(JWEDecrypter)                         contracted (operation, arity 1)
+#   toGeneralJSONObject()/toFlattenedJSONObject()/
+#   serializeGeneral()/serializeFlattened()       contracted (output, arity 0
+#                                                each) -- authored on THIS
+#                                                concrete class; see the
+#                                                JOSEObjectJSON section's
+#                                                "deliberate deviation" note.
+#   static parse(Map<String,Object>)              contracted (factory, arity 1)
+#   static parse(String)                          collapsed into the arity-1
+#                                                entry above.
+#
+# com.nimbusds.jose.JWEObjectJSON.Recipient (public static final nested value
+# type; public constructor and public toJSONObject(), unlike the private
+# Signature.toJSONObject() above -- ENGINE GAP NOTE below)
+#   <init>(UnprotectedHeader, Base64URL)          contracted (factory, arity 2)
+#   getUnprotectedHeader()/getEncryptedKey()      skipped-informative-return.
+#   toJSONObject()                                 contracted (output, arity 0)
+#                                                -- public (unlike Signature's
+#                                                private equivalent).
+#   static parse(Map<String,Object>)              contracted (factory, arity 1)
+#
+# Out of scope / follow-up (present in the 10.0.2 source tree but outside
+# this ticket's narrow "JSON JWS and JWE APIs" AC):
+#   com.nimbusds.jose.CompletableJWSObjectSigning /
+#   ActionRequiredForJWSCompletionException      needs-follow-up -- new
+#                                                external/HSM-signing
+#                                                completion protocol
+#                                                (complete() -> Base64URL) on
+#                                                the existing COMPACT
+#                                                JWSObject.sign() path, not
+#                                                the JSON serialization
+#                                                surface this ticket audits;
+#                                                a distinct feature area,
+#                                                left for a follow-up ticket
+#                                                rather than silently
+#                                                expanding scope.
+#   com.nimbusds.jose.UnprotectedHeader(.Builder) needs-follow-up -- plain
+#                                                structural header metadata
+#                                                (kid, arbitrary params) with
+#                                                no algorithm/key-material
+#                                                selection; used as a
+#                                                parameter throughout the
+#                                                JSON lifecycle above but
+#                                                carries no crypto semantics
+#                                                of its own (skipped-non-crypto
+#                                                in spirit; recorded as
+#                                                needs-follow-up only in case
+#                                                a future ticket wants its
+#                                                Builder's fluent-chain
+#                                                modeled for completeness).
+#   JWSHeader.Builder / JWEHeader.Builder /
+#   com.nimbusds.jose.jwk.gen.* (beyond the
+#   pre-existing RSAKeyGenerator entry)          needs-follow-up -- pre-
+#                                                existing since early Nimbus
+#                                                releases (not new to 10.0.2),
+#                                                out of this ticket's narrow
+#                                                "10.0.2 JSON lifecycle"
+#                                                scope.
+#
+# ENGINE GAP (flag, don't fix -- out of scope for a KB-authoring PR):
+# JWSObjectJSON.Signature and JWEObjectJSON.Recipient are public STATIC
+# NESTED classes reached via a qualified receiver, e.g.
+# `new JWEObjectJSON.Recipient(header, key)` or
+# `JWEObjectJSON.Recipient.parse(jsonObject)`. Verified against
+# internal/callgraph/java_parser.go: resolveJavaObjectCallee (~L2102-2130)
+# only matches an import keyed on the LAST segment of a qualified receiver
+# (`simpleJavaObjectName`) or the receiver's full literal text; it does not
+# check whether the receiver's FIRST segment matches an import for the
+# ENCLOSING class. For the common case where only the outer class is
+# imported (`import com.nimbusds.jose.JWEObjectJSON;`), splitQualifiedJavaType
+# (~L2251-2258) then splits on the last dot only and misfiles the outer
+# class name as a "package" (`Package="JWEObjectJSON", Type="Recipient"`),
+# dropping `com.nimbusds.jose` entirely -- so the KB lookup key built from
+# that malformed FQN will not match this file's
+# `com.nimbusds.jose.JWEObjectJSON.Recipient.*` entries at Java-source-mining
+# time. Resolution only works today if the CALLER imports the nested class
+# directly (`import com.nimbusds.jose.JWEObjectJSON.Recipient;`), which is
+# uncommon. This is a parser/resolver-side qualified-nested-receiver gap
+# (analogous in kind to the assign-then-call fluent-chain gap flagged in
+# #181/PR186), not a KB authoring defect -- the two nested-class contracts
+# above are still the correct schema-level mapping (proven via
+# TestLoadEmbeddedJava_NimbusJoseJwt1002JSONLifecycle in
+# internal/callgraph/contracts/nimbus_jose_jwt_10_0_2_java_library_test.go, which asserts
+# ContractsFor("com.nimbusds.jose.JWSObjectJSON.Signature.verify", 1) etc.
+# directly against the loaded KB and so does not depend on the parser's
+# receiver resolution), and fixing java_parser.go's qualified-receiver
+# splitting is left to a follow-up engine ticket rather than attempted here.
+#
+# SEPARATE EXPORT-LAYER NOTE: even with a correctly-resolved receiver, these
+# two nested types would still not surface as supporting calls under
+# internal/scan/export.go's deriveContractSupportingCalls (the
+# isSyntheticEntryPoint path) for a JWSObjectJSON.<init>/JWEObjectJSON.<init>
+# finding -- that heuristic only follows a single builder type's own
+# return-type lineage (exportBuildContext.typeOrAncestor over kb.Hierarchy),
+# and JWSObjectJSON.Signature/JWEObjectJSON.Recipient are independent value
+# types, not part of that lineage. See
+# internal/scan/nimbus_json_lifecycle_10_0_2_export_test.go's doc comment for
+# the full explanation; this is a narrower heuristic-design mismatch than the
+# parser gap above, also left as-is (flag, don't fix engine internals).
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # JOSEObjectJSON.parse(Map)/parse(String) collapse to one arity-1 entry
+  # (see audit note above): the only non-throwing branch always dispatches
+  # to JWSObjectJSON.parse, so the concrete return is more informative than
+  # the declared abstract JOSEObjectJSON. This is a STATIC call
+  # (JOSEObjectJSON.parse(json)), so there is no receiver-variable ambiguity
+  # -- unlike the four instance methods below, authoring it on the abstract
+  # base is safe.
+  - method: com.nimbusds.jose.JOSEObjectJSON.parse
+    arity: 1
+    return: { type: com.nimbusds.jose.JWSObjectJSON, confidence: high }
+    role: factory
+
+  # ── JWSObjectJSON: JWS JSON serialization lifecycle ─────────────────────────
+  - method: com.nimbusds.jose.JWSObjectJSON.<init>
+    arity: 1
+    return: { type: com.nimbusds.jose.JWSObjectJSON, confidence: high }
+    role: factory
+
+  - method: com.nimbusds.jose.JWSObjectJSON.sign
+    arity: 2
+    return: { type: void, confidence: high }
+    role: operation
+
+  - method: com.nimbusds.jose.JWSObjectJSON.sign
+    arity: 3
+    return: { type: void, confidence: high }
+    role: operation
+
+  # The four JOSEObjectJSON-declared abstract methods, authored per concrete
+  # class rather than on the shared base -- see the JOSEObjectJSON audit note
+  # above for why ("deliberate deviation" from "prefer the shared interface").
+  - method: com.nimbusds.jose.JWSObjectJSON.toGeneralJSONObject
+    arity: 0
+    return: { type: java.util.Map, confidence: high }
+    role: output
+
+  - method: com.nimbusds.jose.JWSObjectJSON.toFlattenedJSONObject
+    arity: 0
+    return: { type: java.util.Map, confidence: high }
+    role: output
+
+  - method: com.nimbusds.jose.JWSObjectJSON.serializeGeneral
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+
+  - method: com.nimbusds.jose.JWSObjectJSON.serializeFlattened
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+
+  # parse(Map)/parse(String) collapse to one arity-1 entry.
+  - method: com.nimbusds.jose.JWSObjectJSON.parse
+    arity: 1
+    return: { type: com.nimbusds.jose.JWSObjectJSON, confidence: high }
+    role: factory
+
+  # ── JWSObjectJSON.Signature: per-signature value type ───────────────────────
+  # (see the ENGINE GAP note above re: qualified nested-class receivers)
+  - method: com.nimbusds.jose.JWSObjectJSON.Signature.toJWSObject
+    arity: 0
+    return: { type: com.nimbusds.jose.JWSObject, confidence: high }
+    role: output
+
+  - method: com.nimbusds.jose.JWSObjectJSON.Signature.verify
+    arity: 1
+    return: { type: boolean, confidence: high }
+    role: operation
+
+  # ── JWEObjectJSON: JWE JSON serialization lifecycle ─────────────────────────
+  - method: com.nimbusds.jose.JWEObjectJSON.<init>
+    arity: 1
+    return: { type: com.nimbusds.jose.JWEObjectJSON, confidence: high }
+    role: factory
+
+  - method: com.nimbusds.jose.JWEObjectJSON.<init>
+    arity: 2
+    return: { type: com.nimbusds.jose.JWEObjectJSON, confidence: high }
+    role: factory
+
+  - method: com.nimbusds.jose.JWEObjectJSON.<init>
+    arity: 4
+    return: { type: com.nimbusds.jose.JWEObjectJSON, confidence: high }
+    role: factory
+
+  - method: com.nimbusds.jose.JWEObjectJSON.<init>
+    arity: 7
+    return: { type: com.nimbusds.jose.JWEObjectJSON, confidence: high }
+    role: factory
+
+  - method: com.nimbusds.jose.JWEObjectJSON.encrypt
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+
+  - method: com.nimbusds.jose.JWEObjectJSON.decrypt
+    arity: 1
+    return: { type: void, confidence: high }
+    role: operation
+
+  # The four JOSEObjectJSON-declared abstract methods, authored per concrete
+  # class -- see the JOSEObjectJSON audit note above.
+  - method: com.nimbusds.jose.JWEObjectJSON.toGeneralJSONObject
+    arity: 0
+    return: { type: java.util.Map, confidence: high }
+    role: output
+
+  - method: com.nimbusds.jose.JWEObjectJSON.toFlattenedJSONObject
+    arity: 0
+    return: { type: java.util.Map, confidence: high }
+    role: output
+
+  - method: com.nimbusds.jose.JWEObjectJSON.serializeGeneral
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+
+  - method: com.nimbusds.jose.JWEObjectJSON.serializeFlattened
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+
+  # parse(Map)/parse(String) collapse to one arity-1 entry.
+  - method: com.nimbusds.jose.JWEObjectJSON.parse
+    arity: 1
+    return: { type: com.nimbusds.jose.JWEObjectJSON, confidence: high }
+    role: factory
+
+  # ── JWEObjectJSON.Recipient: per-recipient value type ───────────────────────
+  # (see the ENGINE GAP note above re: qualified nested-class receivers)
+  - method: com.nimbusds.jose.JWEObjectJSON.Recipient.<init>
+    arity: 2
+    return: { type: com.nimbusds.jose.JWEObjectJSON.Recipient, confidence: high }
+    role: factory
+
+  - method: com.nimbusds.jose.JWEObjectJSON.Recipient.toJSONObject
+    arity: 0
+    return: { type: java.util.Map, confidence: high }
+    role: output
+
+  - method: com.nimbusds.jose.JWEObjectJSON.Recipient.parse
+    arity: 1
+    return: { type: com.nimbusds.jose.JWEObjectJSON.Recipient, confidence: high }
+    role: factory
+
+hierarchy:
+  # Redeclared (idempotent with nimbus-jose-jwt.yaml's 9.37.3 edges) because
+  # this file's own contracts depend on them for reachability -- see the
+  # crypto-kb-author skill's "DO redeclare hierarchy edges YOUR library
+  # depends on" rule.
+  com.nimbusds.jose.JWSObject:
+    - java.lang.Object
+
+  # New in 10.0.2.
+  com.nimbusds.jose.JOSEObjectJSON:
+    - java.lang.Object
+  com.nimbusds.jose.JWSObjectJSON:
+    - com.nimbusds.jose.JOSEObjectJSON
+  com.nimbusds.jose.JWEObjectJSON:
+    - com.nimbusds.jose.JOSEObjectJSON
+  com.nimbusds.jose.JWSObjectJSON.Signature:
+    - java.lang.Object
+  com.nimbusds.jose.JWEObjectJSON.Recipient:
+    - java.lang.Object
+
+  java.util.Map:
+    - java.lang.Object
+  java.lang.String:
+    - java.lang.Object
+  java.lang.Object: []

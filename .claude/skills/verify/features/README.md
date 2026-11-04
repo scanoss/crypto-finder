@@ -34,7 +34,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 2. `How to get to it (user POV)` lists the commands and flags a user types.
 3. `Driving it with run.sh` starts with `Preconditions:` and pairs each user action with the exact invocation and the observable result the driver asserts.
 4. `Gotchas` lists traps that waste or invalidate a run.
-5. `Code paths` lists repo-relative globs of the code that implements the feature: its own commands, packages and handlers. It leaves out shared primitives (`internal/failure`, `internal/utils`, `internal/config`), the per-library knowledge-base YAML under `internal/callgraph/contracts/<ecosystem>/` (no drive exercises one library's entry, and it is validated when it loads), generated code and tests. `go run ./scripts/featuremap check-pr` uses these globs to decide which features a diff touches; see "How the map is checked" below.
+5. `Code paths` lists repo-relative globs of the code that implements the feature: its own commands, packages and handlers. It leaves out shared primitives (`internal/failure`, `internal/utils`, `internal/config`), the per-library knowledge-base YAML under `internal/contracts/<ecosystem>/` (no drive exercises one library's entry, and it is validated when it loads), generated code and tests. `go run ./scripts/featuremap check-pr` uses these globs to decide which features a diff touches; see "How the map is checked" below.
 
 ## Features
 

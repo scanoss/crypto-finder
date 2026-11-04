@@ -1,0 +1,29 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-padding-scheme-0.3
+  coordinates:
+    - rsa
+  version_range: ">=0.3.0,<0.7.0-rc.0"
+  description: "RustCrypto rsa 0.3-0.6: PaddingScheme signature selectors with runtime arguments"
+
+# Until 0.7.0-rc.0 the signature selectors take their choices at run time:
+# `new_pkcs1v15_sign(hash: Option<Hash>)` and `new_pss::<T, S>(rng: S)`
+# (0.6.1 src/padding.rs:63,145). 0.7 moves the hash to a type parameter and
+# drops the rng, so the arity-0 forms live in rsa-padding-scheme-0.7.yaml.
+contracts:
+  - method: rsa::PaddingScheme.new_pkcs1v15_sign
+    arity: 1
+    return: { type: rsa::PaddingScheme, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: hash
+        role: metadata-contributing
+        contributes: { property: hashAlgorithm, derivation: argument_value }
+  - method: rsa::PaddingScheme.new_pss
+    arity: 1
+    return: { type: rsa::PaddingScheme, confidence: high }
+    role: factory
+
+hierarchy: {}

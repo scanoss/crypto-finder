@@ -1,0 +1,134 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "circomlib"
+  coordinates:
+    - "circomlib"
+  version_range: ">=0.0.1 <2.0.0"
+  description: "circomlib 0.x: the JavaScript crypto API of the Circom toolchain -- Poseidon, MiMC7, MiMC-Sponge, Pedersen, EdDSA over BabyJubjub"
+
+# THE VERSION RANGE IS DELIBERATELY BOUNDED AT 2.0.0. circomlib 0.x ships a
+# JavaScript crypto API under src/ and re-exports it from index.js; 2.x ships
+# ONLY .circom circuit templates, and the JavaScript moved to the separate
+# `circomlibjs` package -- a different coordinate that must never be keyed here.
+# Declaring these methods without the bound would claim 2.x consumers for an API
+# their installed version does not have.
+#
+# THE SEMANTIC AUDIT ROW FOR THIS FAMILY SAYS `no_crypto_api`, and it is
+# describing 2.x only. The Tier 0 CSV asks for 42 versions from 0.0.1, and the
+# consumer draw uses the 0.x API heavily -- 128 `poseidon(..)` call sites, 20
+# `signPoseidon(..)`, 16 `mulPointEscalar(..)`, 15 `prv2pub(..)`. Recorded on
+# the ticket as a stale input row rather than treated as a blocker.
+#
+# EVERY ENTRY IS A MODULE-LEVEL FUNCTION reached through the index re-export, so
+# these keys are the ones the parser emits -- the same shape as blakejs, and
+# unlike the client-instance families whose KBs cannot join today.
+#
+# NOT DECLARED: smt.js builds and proves a Sparse Merkle Tree whose node hashing
+# is delegated to Poseidon or MiMC. The hash is already contracted at its own
+# call site, and typing the tree would double-count one operation.
+contracts:
+  - method: "circomlib.poseidon"
+    arity: 1
+    return: { type: "bigint", confidence: high }
+    role: operation
+  - method: "circomlib.mimc7.hash"
+    arity: 2
+    return: { type: "bigint", confidence: high }
+    role: operation
+  - method: "circomlib.mimc7.multiHash"
+    arity: 1
+    return: { type: "bigint", confidence: high }
+    role: operation
+  - method: "circomlib.mimc7.multiHash"
+    arity: 2
+    return: { type: "bigint", confidence: high }
+    role: operation
+  - method: "circomlib.mimcsponge.hash"
+    arity: 3
+    return: { type: "object", confidence: high }
+    role: operation
+  - method: "circomlib.mimcsponge.multiHash"
+    arity: 2
+    return: { type: "bigint", confidence: high }
+    role: operation
+  - method: "circomlib.mimcsponge.multiHash"
+    arity: 3
+    return: { type: "bigint", confidence: high }
+    role: operation
+  - method: "circomlib.pedersenHash.hash"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "circomlib.pedersenHash.getBasePoint"
+    arity: 1
+    return: { type: "object", confidence: high }
+    role: operation
+
+  # EdDSA over BabyJubjub. FOUR SIGNING VARIANTS, ONE PER HASH, because the hash
+  # is what the verifier circuit must reproduce -- a consumer switching variants
+  # changes what its circuit computes.
+  - method: "circomlib.eddsa.prv2pub"
+    arity: 1
+    return: { type: "object", confidence: high }
+    role: operation
+  - method: "circomlib.eddsa.sign"
+    arity: 2
+    return: { type: "object", confidence: high }
+    role: operation
+  - method: "circomlib.eddsa.signMiMC"
+    arity: 2
+    return: { type: "object", confidence: high }
+    role: operation
+  - method: "circomlib.eddsa.signMiMCSponge"
+    arity: 2
+    return: { type: "object", confidence: high }
+    role: operation
+  - method: "circomlib.eddsa.signPoseidon"
+    arity: 2
+    return: { type: "object", confidence: high }
+    role: operation
+  - method: "circomlib.eddsa.verify"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "circomlib.eddsa.verifyMiMC"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "circomlib.eddsa.verifyMiMCSponge"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "circomlib.eddsa.verifyPoseidon"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  # BabyJubjub curve arithmetic. The curve is NOT Ed25519 and NOT BN254: it is a
+  # twisted Edwards curve defined over BN254's scalar field, chosen so the
+  # arithmetic is cheap inside a SNARK.
+  - method: "circomlib.babyJub.addPoint"
+    arity: 2
+    return: { type: "object", confidence: high }
+    role: operation
+  - method: "circomlib.babyJub.mulPointEscalar"
+    arity: 2
+    return: { type: "object", confidence: high }
+    role: operation
+  - method: "circomlib.babyJub.inCurve"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "circomlib.babyJub.inSubgroup"
+    arity: 1
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "circomlib.babyJub.packPoint"
+    arity: 1
+    return: { type: "Uint8Array", confidence: high }
+    role: operation
+  - method: "circomlib.babyJub.unpackPoint"
+    arity: 1
+    return: { type: "object", confidence: high }
+    role: operation

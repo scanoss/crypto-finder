@@ -1,0 +1,79 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: md-5
+  coordinates:
+    - md-5
+  version_range: ">=0.4.0,<0.12.0"
+  description: "RustCrypto MD5 hash"
+
+# Inventory sources: the md-5 crate's own source at 0.4.0, 0.10.6 and 0.11.0,
+# and the APIs selected by the scanoss/crypto_rules md-5 rules.
+#
+# THE METHOD KEYS USE THE LIB NAME `md5`, NOT THE CRATE NAME `md-5`
+# (Cargo.toml `[lib] name = "md5"`, read at 0.10.6 and 0.11.0). The callgraph
+# sees the module path a consumer writes, which is `md5::Md5`. An unrelated
+# crate is published as `md5` and spells its API `md5::compute` and
+# `md5::Context`; neither appears below, so this KB cannot give identity to
+# that crate's calls.
+#
+# `input`/`result` are the pre-digest-0.9 spelling of `update`/`finalize`
+# (0.4.0 depends on digest 0.5). Both eras are in the matrix range, so both are
+# declared; method plus arity keeps them apart.
+
+# Dispositions for the rest of the public surface:
+#   skipped-non-crypto: the `digest` re-export and the `Digest`/`Output`/
+#     `OutputSizeUser` trait re-exports, which carry no identity of their own.
+#   skipped-unsupported: the `*Core` block-level types and the `block_api`
+#     module of the 0.11 line, which consumers do not construct directly.
+contracts:
+  - method: md5::Md5.new
+    arity: 0
+    return: {type: md5::Md5, confidence: high}
+    role: factory
+  - method: md5::Md5.default
+    arity: 0
+    return: {type: md5::Md5, confidence: high}
+    role: factory
+  - method: md5::Md5.new_with_prefix
+    arity: 1
+    return: {type: md5::Md5, confidence: high}
+    role: factory
+  - method: md5::Md5.update
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: md5::Md5.chain_update
+    arity: 1
+    return: {type: md5::Md5, confidence: high}
+    role: operation
+  - method: md5::Md5.finalize
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: md5::Md5.finalize_into
+    arity: 1
+    return: {type: void, confidence: high}
+    role: output
+  - method: md5::Md5.finalize_reset
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: md5::Md5.reset
+    arity: 0
+    return: {type: void, confidence: high}
+    role: operation
+  - method: md5::Md5.digest
+    arity: 1
+    return: {type: digest::Output, confidence: high}
+    role: output
+  - method: md5::Md5.input
+    arity: 1
+    return: {type: void, confidence: high}
+    role: operation
+  - method: md5::Md5.result
+    arity: 0
+    return: {type: digest::Output, confidence: high}
+    role: output
+
+hierarchy: {}

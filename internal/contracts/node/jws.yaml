@@ -1,0 +1,58 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "jws"
+  coordinates:
+    - "jws"
+  version_range: ">=3.0.0"
+  description: "jws: JWS sign, verify and decode, over jwa"
+
+# jws IS A THIN LAYER OVER jwa and this KB reflects that: it types the three free
+# functions and the two streaming constructors, and nothing else.
+#
+# decode IS role: output AND NOT operation, and in this library that is not a
+# marginal call. Measured across sixteen published consumers: sign 8 call sites,
+# verify 7, DECODE 7. `jws.decode(signature)` splits the token and base64-decodes
+# the header and payload, checking no signature at all. Typing it as an operation
+# would record a verification at a line where the library deliberately does not
+# perform one.
+#
+# verify TAKES THE ALGORITHM AS ITS SECOND ARGUMENT and that is a security
+# control rather than a convenience: jws forces the caller to name the algorithm
+# so the token's own header cannot choose it. The KB cannot read that literal --
+# the rules do -- but the arities are declared so a two-argument call and a
+# three-argument call stay distinguishable.
+#
+# isValid IS DELIBERATELY NOT CONTRACTED. It tests whether a string looks like a
+# JWS -- three base64 segments separated by dots -- and touches no key and no
+# signature. A contract on it would put an asset in the inventory for a
+# regular-expression match.
+contracts:
+  - method: "jws.sign"
+    arity: 1
+    return: { type: "jws.CompactJWS", confidence: high }
+    role: operation
+  - method: "jws.verify"
+    arity: 2
+    return: { type: "Boolean", confidence: high }
+    role: operation
+  - method: "jws.verify"
+    arity: 3
+    return: { type: "Boolean", confidence: high }
+    role: operation
+  - method: "jws.decode"
+    arity: 1
+    return: { type: "jws.JwsObject", confidence: high }
+    role: output
+  - method: "jws.decode"
+    arity: 2
+    return: { type: "jws.JwsObject", confidence: high }
+    role: output
+  - method: "jws.createSign"
+    arity: 1
+    return: { type: "jws.SignStream", confidence: high }
+    role: factory
+  - method: "jws.createVerify"
+    arity: 1
+    return: { type: "jws.VerifyStream", confidence: high }
+    role: factory

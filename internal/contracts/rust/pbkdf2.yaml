@@ -1,0 +1,87 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: pbkdf2
+  coordinates:
+    - pbkdf2
+  version_range: ">=0.13.0,<0.14.0"
+  description: "RustCrypto PBKDF2 password-based key derivation"
+
+# Inventory sources: pbkdf2 0.13.0 crate documentation and the APIs selected by
+# the scanoss/crypto_rules pbkdf2 rules. Params::default delegates to
+# Params::RECOMMENDED, whose OWASP-aligned values are 600000 rounds and a
+# 32-byte output. The four derivation functions take the PRF as a type
+# parameter; the turbofish is stripped from the callee identity by the parser,
+# so the PRF is not claimed as metadata here.
+#
+# skipped-non-crypto: the Params accessors and the PHC string helpers.
+contracts:
+  - method: pbkdf2::Pbkdf2.default
+    arity: 0
+    return: {type: pbkdf2::Pbkdf2, confidence: high}
+    role: factory
+
+  # Free functions in a single-segment crate: the call site emits
+  # "pbkdf2.pbkdf2_hmac" and the "::" bridge only rewrites package.Type.method
+  # keys, so author the dot form here.
+  - method: pbkdf2.pbkdf2
+    arity: 4
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: rounds
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: pbkdf2.pbkdf2_array
+    arity: 3
+    return: {type: core::result::Result, confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: rounds
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: pbkdf2.pbkdf2_hmac
+    arity: 4
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: rounds
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  - method: pbkdf2.pbkdf2_hmac_array
+    arity: 3
+    return: {type: "[u8; N]", confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: rounds
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+
+  # Params::new carries the rounds the file models; contracting only the free
+  # functions left the configuration object uncovered.
+  - method: pbkdf2::Params.new
+    arity: 1
+    return: {type: pbkdf2::Params, confidence: high}
+    role: config
+    parameters:
+      - index: 0
+        name: rounds
+        role: metadata-contributing
+        contributes: {property: iterations, derivation: argument_value}
+  # The only derivation function that names the PRF at the call site rather than
+  # as a type parameter, so the algorithm argument is operation-determining.
+  - method: pbkdf2.pbkdf2_hmac_with_params
+    arity: 5
+    return: {type: (), confidence: high}
+    role: operation
+    parameters:
+      - index: 2
+        name: algorithm
+        role: operation-determining
+        contributes: {property: algorithmHashFunction, derivation: argument_value}
+
+hierarchy: {}

@@ -1,0 +1,38 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "jwa"
+  coordinates:
+    - "jwa"
+  version_range: ">=1.0.0"
+  description: "jwa: JWA signers and verifiers for HS, RS, PS, ES and none"
+
+# THE MODULE EXPORT IS THE FUNCTION. There is no namespace and no class to
+# construct: `jwa("HS256")` returns an object with exactly two methods, and that
+# object is the whole API. So this KB is three entries and every one of them
+# matters.
+#
+# THE FACTORY IS WHAT CARRIES THE ALGORITHM, and it carries it in an argument
+# rather than in a type, so there is one Algorithm type rather than thirteen.
+# That is the opposite choice from the js-sha3 KB and it is forced by the shape:
+# `jwa(alg)` with a variable is a real call two of the drawn consumers write, and
+# a per-algorithm type would have no way to resolve it. Reading the literal is
+# the rules' job.
+#
+# sign AND verify ARE BOTH DECLARED OPERATIONS, and for HS* they are the same
+# secret in both directions -- `createHmacSigner` and `createHmacVerifier` close
+# over it identically in the library source. The KB cannot express that
+# asymmetry; the rules publish HS* as a mac primitive so the inventory can.
+contracts:
+  - method: "jwa"
+    arity: 1
+    return: { type: "jwa.Algorithm", confidence: high }
+    role: factory
+  - method: "jwa.Algorithm.sign"
+    arity: 2
+    return: { type: "jwa.Signature", confidence: high }
+    role: operation
+  - method: "jwa.Algorithm.verify"
+    arity: 3
+    return: { type: "Boolean", confidence: high }
+    role: operation

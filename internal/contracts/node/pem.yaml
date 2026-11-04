@@ -1,0 +1,92 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "pem"
+  coordinates:
+    - "pem"
+  version_range: ">=1.0.0"
+  description: "pem: create keys, CSRs and certificates by running OpenSSL"
+
+# Every function is callback-style and returns nothing; leading arguments are optional,
+# so each is declared from the callback-only arity up to the full one.
+contracts:
+
+  # Keys and parameters.
+  - method: "pem.createPrivateKey"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createPrivateKey"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createPrivateKey"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createDhparam"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createDhparam"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createEcparam"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createEcparam"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createEcparam"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createEcparam"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: operation
+
+  # Certificates.
+  - method: "pem.createCSR"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createCSR"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createCertificate"
+    arity: 1
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createCertificate"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.getFingerprint"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.getFingerprint"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.verifySigningChain"
+    arity: 2
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.verifySigningChain"
+    arity: 3
+    return: { type: "void", confidence: high }
+    role: operation
+  - method: "pem.createPkcs12"
+    arity: 4
+    return: { type: "void", confidence: high }
+    role: output
+  - method: "pem.createPkcs12"
+    arity: 5
+    return: { type: "void", confidence: high }
+    role: output

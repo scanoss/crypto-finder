@@ -1,0 +1,133 @@
+schema_version: "2"
+ecosystem: go
+library:
+  name: flynn-noise
+  coordinates:
+    - "github.com/flynn/noise"
+  version_range: ">=1.0.0,<2.0.0"
+  description: "flynn/noise Noise Protocol Framework implementation"
+
+# Inventory source: github.com/flynn/noise v1.0.0 through v1.1.0 module
+# sources from the Go module proxy (cipher_suite.go, state.go, patterns.go,
+# hkdf.go). The exported API is identical across the range except
+# UnsafeNewCipherState, added at v1.1.0 (declaring it across the range is
+# safe: a call that does not exist in an older release cannot appear at a
+# call site compiled against it).
+#
+# Dispositions for the remaining public surface:
+# - The sixteen Handshake* pattern vars, DH25519, CipherAESGCM,
+#   CipherChaChaPoly, and Hash* are package variables; Config, DHKey, and
+#   HandshakePattern are structs built as composite literals — non-callable,
+#   omitted. Pattern/suite selection is owned by the detection rules.
+# - DHFunc/HashFunc/CipherFunc/Cipher/CipherSuite interface methods
+#   (GenerateKeypair, DH, Cipher, Encrypt/Decrypt on Cipher, Name, ...) are
+#   declared on interfaces whose only shipped implementations are unexported;
+#   the operation contracts below anchor on the exported stateful types.
+#   DH25519.GenerateKeypair at a call site resolves through the DHFunc
+#   interface (skipped-unsupported for typed contracts; the detection rule
+#   carries the keygen semantics).
+# - MessageIndex/PeerStatic/PeerEphemeral/LocalEphemeral are session-state
+#   getters; PeerStatic/PeerEphemeral/LocalEphemeral expose key material and
+#   are contracted as outputs, MessageIndex is skipped-non-crypto.
+# - ErrMaxNonce/ErrCipherSuiteCopied/ErrShortMessage are sentinel errors.
+contracts:
+  - method: github.com/flynn/noise.NewCipherSuite
+    arity: 3
+    return: { type: github.com/flynn/noise.CipherSuite, confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: dh, role: metadata-contributing, contributes: { property: algorithm, derivation: argument_value } }
+      - { index: 1, name: c, role: metadata-contributing, contributes: { property: cipher, derivation: argument_value } }
+      - { index: 2, name: h, role: metadata-contributing, contributes: { property: algorithmHashFunction, derivation: argument_value } }
+  - method: github.com/flynn/noise.NewHandshakeState
+    arity: 1
+    return: { type: "*github.com/flynn/noise.HandshakeState", confidence: high }
+    role: factory
+    parameters:
+      - { index: 0, name: c, role: metadata-contributing, contributes: { property: options, derivation: argument_value } }
+  - method: github.com/flynn/noise.UnsafeNewCipherState
+    arity: 3
+    return: { type: "*github.com/flynn/noise.CipherState", confidence: high }
+    role: factory
+    parameters:
+      - { index: 1, name: k, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+      - { index: 2, name: n, role: metadata-contributing, contributes: { property: nonce, derivation: argument_value } }
+
+  # Handshake operations. WriteMessage/ReadMessage return the wire message or
+  # payload first, then the two split transport CipherStates.
+  - method: github.com/flynn/noise.(*HandshakeState).WriteMessage
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: payload, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+  - method: github.com/flynn/noise.(*HandshakeState).ReadMessage
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: message, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+  - method: github.com/flynn/noise.(*HandshakeState).SetPresharedKey
+    arity: 1
+    return: { type: error, confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: psk, role: metadata-contributing, contributes: { property: keyMaterial, derivation: argument_value } }
+
+  # Handshake outputs exposing material or binding state.
+  - method: github.com/flynn/noise.(*HandshakeState).ChannelBinding
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/flynn/noise.(*HandshakeState).PeerStatic
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/flynn/noise.(*HandshakeState).PeerEphemeral
+    arity: 0
+    return: { type: "[]byte", confidence: high }
+    role: output
+  - method: github.com/flynn/noise.(*HandshakeState).LocalEphemeral
+    arity: 0
+    return: { type: github.com/flynn/noise.DHKey, confidence: high }
+    role: output
+
+  # Transport phase.
+  - method: github.com/flynn/noise.(*CipherState).Encrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: ad, role: metadata-contributing, contributes: { property: associatedData, derivation: argument_value } }
+      - { index: 2, name: plaintext, role: metadata-contributing, contributes: { property: plaintext, derivation: argument_value } }
+  - method: github.com/flynn/noise.(*CipherState).Decrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+    parameters:
+      - { index: 1, name: ad, role: metadata-contributing, contributes: { property: associatedData, derivation: argument_value } }
+      - { index: 2, name: ciphertext, role: metadata-contributing, contributes: { property: ciphertext, derivation: argument_value } }
+  - method: github.com/flynn/noise.(*CipherState).Rekey
+    arity: 0
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/flynn/noise.(*CipherState).SetNonce
+    arity: 1
+    return: { type: "()", confidence: high }
+    role: config
+    parameters:
+      - { index: 0, name: n, role: metadata-contributing, contributes: { property: nonce, derivation: argument_value } }
+  - method: github.com/flynn/noise.(*CipherState).Nonce
+    arity: 0
+    return: { type: uint64, confidence: high }
+    role: output
+  - method: github.com/flynn/noise.(*CipherState).Cipher
+    arity: 0
+    return: { type: github.com/flynn/noise.Cipher, confidence: high }
+    role: output
+  - method: github.com/flynn/noise.(*CipherState).UnsafeKey
+    arity: 0
+    return: { type: "[32]byte", confidence: high }
+    role: output
+
+hierarchy: {}

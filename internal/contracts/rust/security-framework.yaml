@@ -1,0 +1,516 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: security-framework
+  coordinates:
+    - security-framework
+    - security_framework
+  # 2.8.0 is where the contracted surface begins: `KeyType` and
+  # `GenerateKeyOptions` reach `security_framework::key` there (before that
+  # `KeyType` lived in `os::macos::item`, a module this file does not type), and
+  # `SecKey::generate`/`verify_signature` first exist. Two later steps are
+  # deliberate and NOT reflected in the range, because a key that does not exist
+  # at a version simply never joins there: `SecKey::new` from 3.0.0, and
+  # `encrypt_data`/`decrypt_data`/`key_exchange` from 3.1.0. Declaring
+  # `>=0.1.0` would have been false -- 0.1.0's src/key.rs has no `pub fn` at
+  # all, and random.rs, policy.rs and the macOS transforms do not exist yet.
+  version_range: ">=2.8.0,<4.0.0"
+  description: "Apple Security.framework bindings: SecKey, SecTrust, SecRandom, Secure Transport"
+
+# API read at security-framework 3.7.0 (src/key.rs, src/trust.rs, src/random.rs,
+# src/certificate.rs, src/import_export.rs, src/secure_transport.rs,
+# src/os/macos/digest_transform.rs, src/os/macos/encrypt_transform.rs) and
+# cross-checked at 0.1.0, 0.2.0, 2.1.0, 2.8.0, 3.0.0 and 3.1.0 from the
+# committed sample.
+#
+# WHY A CONTRACT EXISTS HERE. The matrix reported contract_gap=Y. An exported
+# call graph over a probe consumer agreed: every operation came back as
+# `security_framework::key.SecKey.create_signature(?, ?)` and friends, with
+# empty parameter_types -- which is what an absent contract looks like.
+#
+# KEY SHAPE, READ OFF THE EXPORTED GRAPH RATHER THAN ASSUMED. The call sites
+# emit `<module>.<Type>.<method>`, e.g. `security_framework::key.SecKey.new`,
+# which the Rust key normalisation rewrites to the authored
+# `security_framework::key::SecKey.new`.
+#
+# THE MODULE SEGMENT IS NOT UNIFORM, AND IT FOLLOWS THE CONSUMER'S IMPORT.
+# This crate re-exports nothing from its root -- `src/lib.rs:27-48` declares the
+# modules and stops -- so every type carries its defining module. That is why
+# the macOS transform builders are `security_framework::os::macos::digest_transform::Builder`
+# and `...::encrypt_transform::Builder` rather than a bare `Builder`, and why
+# both spellings had to be read off the graph rather than shortened.
+#
+# THE BUILDERS ARE THE REASON THIS CONTRACT MATTERS MOST. Every setter returns
+# `&mut Self`, so real consumer code chains: `b.padding(Padding::pkcs7()).mode(Mode::cbc())`.
+# Without a return type on `padding`, the `mode` call has no receiver to resolve
+# and the exported graph attributed it to the CONSUMER'S OWN crate
+# (`sf_probe_consumer.mode(?)`), which is a wrong identity rather than a missing
+# one. Declaring the return type is what fixes that, and the wiring test pins it.
+#
+# THE SELECTOR CONSTRUCTORS ARE CONTRACTED AS FACTORIES, NOT OPERATIONS.
+# `KeyType::rsa()`, `DigestType::sha2()`, `Mode::cbc()` and `Padding::pkcs7()`
+# carry no cryptography of their own -- they name a constant. The RULES decide
+# what is reported; a contract entry carries only a return type, an arity and a
+# role, so typing them aids reachability without claiming they are crypto.
+#
+# ARITIES EXCLUDE `self`, matching what the graph emits.
+contracts:
+  # --- SecKey: generation ----------------------------------------------------
+  # `new` arrived in 3.0.0 (src/key.rs:136) and `generate` in 2.8.0 (:143);
+  # `generate` is deprecated in favour of `new` but still exported at 3.7.0, so
+  # both are typed.
+  - method: security_framework::key::SecKey.new
+    arity: 1
+    return: { type: security_framework::key::SecKey, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::key::SecKey, core_foundation::error::CFError>"
+    parameter_types: ["&security_framework::key::GenerateKeyOptions"]
+    role: factory
+  - method: security_framework::key::SecKey.generate
+    arity: 1
+    return: { type: security_framework::key::SecKey, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::key::SecKey, core_foundation::error::CFError>"
+    parameter_types: ["core_foundation::dictionary::CFDictionary"]
+    role: factory
+  - method: security_framework::key::SecKey.from_data
+    arity: 2
+    return: { type: security_framework::key::SecKey, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::key::SecKey, core_foundation::error::CFError>"
+    parameter_types: ["security_framework::key::KeyType", "&core_foundation::data::CFData"]
+    role: factory
+  - method: security_framework::key::SecKey.public_key
+    arity: 0
+    return: { type: security_framework::key::SecKey, confidence: high }
+    canonical_return_type: "core::option::Option<security_framework::key::SecKey>"
+    role: output
+
+  # --- SecKey: operations ----------------------------------------------------
+  # `create_signature` appeared in 2.1.0, `verify_signature` in 2.8.0, and
+  # `encrypt_data`, `decrypt_data` and `key_exchange` in 3.1.0.
+  - method: security_framework::key::SecKey.create_signature
+    arity: 2
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, core_foundation::error::CFError>"
+    parameter_types: ["security_framework::key::Algorithm", "&[u8]"]
+    role: operation
+  - method: security_framework::key::SecKey.verify_signature
+    arity: 3
+    return: { type: bool, confidence: high }
+    canonical_return_type: "core::result::Result<bool, core_foundation::error::CFError>"
+    parameter_types: ["security_framework::key::Algorithm", "&[u8]", "&[u8]"]
+    role: operation
+  - method: security_framework::key::SecKey.encrypt_data
+    arity: 2
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, core_foundation::error::CFError>"
+    parameter_types: ["security_framework::key::Algorithm", "&[u8]"]
+    role: operation
+  - method: security_framework::key::SecKey.decrypt_data
+    arity: 2
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, core_foundation::error::CFError>"
+    parameter_types: ["security_framework::key::Algorithm", "&[u8]"]
+    role: operation
+  - method: security_framework::key::SecKey.key_exchange
+    arity: 4
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<u8>, core_foundation::error::CFError>"
+    parameter_types:
+      - security_framework::key::Algorithm
+      - "&security_framework::key::SecKey"
+      - usize
+      - core::option::Option<&[u8]>
+    role: operation
+
+  # --- GenerateKeyOptions: a builder whose setters return &mut Self ----------
+  - method: security_framework::key::GenerateKeyOptions.default
+    arity: 0
+    return: { type: security_framework::key::GenerateKeyOptions, confidence: high }
+    role: factory
+  - method: security_framework::key::GenerateKeyOptions.set_key_type
+    arity: 1
+    return: { type: security_framework::key::GenerateKeyOptions, confidence: high }
+    parameter_types: ["security_framework::key::KeyType"]
+    role: config
+  - method: security_framework::key::GenerateKeyOptions.set_size_in_bits
+    arity: 1
+    return: { type: security_framework::key::GenerateKeyOptions, confidence: high }
+    parameter_types: ["u32"]
+    role: config
+  - method: security_framework::key::GenerateKeyOptions.set_label
+    arity: 1
+    return: { type: security_framework::key::GenerateKeyOptions, confidence: high }
+    parameter_types: ["impl core::convert::Into<alloc::string::String>"]
+    role: config
+  - method: security_framework::key::GenerateKeyOptions.set_token
+    arity: 1
+    return: { type: security_framework::key::GenerateKeyOptions, confidence: high }
+    parameter_types: ["security_framework::key::Token"]
+    role: config
+  - method: security_framework::key::GenerateKeyOptions.set_location
+    arity: 1
+    return: { type: security_framework::key::GenerateKeyOptions, confidence: high }
+    parameter_types: ["security_framework::item::Location"]
+    role: config
+  - method: security_framework::key::GenerateKeyOptions.to_dictionary
+    arity: 0
+    return: { type: core_foundation::dictionary::CFDictionary, confidence: high }
+    role: output
+
+  # --- KeyType selectors -----------------------------------------------------
+  # `dsa`, `aes`, `des`, `triple_des`, `rc4` and `cast` are `cfg(target_os = "macos")`
+  # at 3.7.0 (src/key.rs:61-99); `rsa`, `ec` and `ec_sec_prime_random` are not.
+  # All are typed: the contract describes the API surface, and a consumer
+  # compiling for macOS reaches every one of them.
+  - method: security_framework::key::KeyType.rsa
+    arity: 0
+    return: { type: security_framework::key::KeyType, confidence: high }
+    role: factory
+  - method: security_framework::key::KeyType.dsa
+    arity: 0
+    return: { type: security_framework::key::KeyType, confidence: high }
+    role: factory
+  - method: security_framework::key::KeyType.aes
+    arity: 0
+    return: { type: security_framework::key::KeyType, confidence: high }
+    role: factory
+  - method: security_framework::key::KeyType.des
+    arity: 0
+    return: { type: security_framework::key::KeyType, confidence: high }
+    role: factory
+  - method: security_framework::key::KeyType.triple_des
+    arity: 0
+    return: { type: security_framework::key::KeyType, confidence: high }
+    role: factory
+  - method: security_framework::key::KeyType.rc4
+    arity: 0
+    return: { type: security_framework::key::KeyType, confidence: high }
+    role: factory
+  - method: security_framework::key::KeyType.cast
+    arity: 0
+    return: { type: security_framework::key::KeyType, confidence: high }
+    role: factory
+  - method: security_framework::key::KeyType.ec
+    arity: 0
+    return: { type: security_framework::key::KeyType, confidence: high }
+    role: factory
+  - method: security_framework::key::KeyType.ec_sec_prime_random
+    arity: 0
+    return: { type: security_framework::key::KeyType, confidence: high }
+    role: factory
+
+  # --- SecRandom -------------------------------------------------------------
+  - method: security_framework::random::SecRandom.default
+    arity: 0
+    return: { type: security_framework::random::SecRandom, confidence: high }
+    role: factory
+  - method: security_framework::random::SecRandom.copy_bytes
+    arity: 1
+    return: { type: (), confidence: high }
+    canonical_return_type: "std::io::Result<()>"
+    parameter_types: ["&mut [u8]"]
+    role: operation
+
+  # --- SecTrust --------------------------------------------------------------
+  # `create_with_certificates` is the type's only public constructor, which is
+  # what makes the rules' taint anchoring safe.
+  - method: security_framework::trust::SecTrust.create_with_certificates
+    arity: 2
+    return: { type: security_framework::trust::SecTrust, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::trust::SecTrust, core_foundation::error::CFError>"
+    parameter_types:
+      - "&[security_framework::certificate::SecCertificate]"
+      - "&[security_framework::policy::SecPolicy]"
+    role: factory
+  - method: security_framework::trust::SecTrust.evaluate_with_error
+    arity: 0
+    return: { type: (), confidence: high }
+    canonical_return_type: "core::result::Result<(), core_foundation::error::CFError>"
+    role: operation
+  - method: security_framework::trust::SecTrust.evaluate
+    arity: 0
+    return: { type: security_framework::trust::TrustResult, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::trust::TrustResult, security_framework::base::Error>"
+    role: operation
+  - method: security_framework::trust::SecTrust.set_policy
+    arity: 1
+    return: { type: (), confidence: high }
+    canonical_return_type: "core::result::Result<(), security_framework::base::Error>"
+    parameter_types: ["&security_framework::policy::SecPolicy"]
+    role: config
+  - method: security_framework::trust::SecTrust.set_anchor_certificates
+    arity: 1
+    return: { type: (), confidence: high }
+    canonical_return_type: "core::result::Result<(), security_framework::base::Error>"
+    parameter_types: ["&[security_framework::certificate::SecCertificate]"]
+    role: config
+  - method: security_framework::trust::SecTrust.copy_public_key
+    arity: 0
+    return: { type: security_framework::key::SecKey, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::key::SecKey, core_foundation::error::CFError>"
+    role: output
+
+  # --- SecCertificate --------------------------------------------------------
+  - method: security_framework::certificate::SecCertificate.from_der
+    arity: 1
+    return: { type: security_framework::certificate::SecCertificate, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::certificate::SecCertificate, core_foundation::error::CFError>"
+    parameter_types: ["&[u8]"]
+    role: factory
+  - method: security_framework::certificate::SecCertificate.to_der
+    arity: 0
+    return: { type: alloc::vec::Vec<u8>, confidence: high }
+    role: output
+  - method: security_framework::certificate::SecCertificate.public_key
+    arity: 0
+    return: { type: security_framework::key::SecKey, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::key::SecKey, core_foundation::error::CFError>"
+    role: output
+
+  # --- SecIdentity -----------------------------------------------------------
+  # The wrapper shape the receiver filter exists for: a consumer holds an
+  # identity and signs through the key it hands back, so `private_key` must be
+  # typed or that `create_signature` has no receiver.
+  - method: security_framework::identity::SecIdentity.private_key
+    arity: 0
+    return: { type: security_framework::key::SecKey, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::key::SecKey, core_foundation::error::CFError>"
+    role: output
+  - method: security_framework::identity::SecIdentity.certificate
+    arity: 0
+    return: { type: security_framework::certificate::SecCertificate, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::certificate::SecCertificate, core_foundation::error::CFError>"
+    role: output
+
+  # --- PKCS#12 import --------------------------------------------------------
+  - method: security_framework::import_export::Pkcs12ImportOptions.new
+    arity: 0
+    return: { type: security_framework::import_export::Pkcs12ImportOptions, confidence: high }
+    role: factory
+  - method: security_framework::import_export::Pkcs12ImportOptions.passphrase
+    arity: 1
+    return: { type: security_framework::import_export::Pkcs12ImportOptions, confidence: high }
+    parameter_types: ["&str"]
+    role: config
+  - method: security_framework::import_export::Pkcs12ImportOptions.import
+    arity: 1
+    return: { type: alloc::vec::Vec<security_framework::import_export::ImportedIdentity>, confidence: high }
+    canonical_return_type: "core::result::Result<alloc::vec::Vec<security_framework::import_export::ImportedIdentity>, security_framework::base::Error>"
+    parameter_types: ["&[u8]"]
+    role: operation
+
+  # --- macOS digest transform ------------------------------------------------
+  - method: security_framework::os::macos::digest_transform::Builder.new
+    arity: 0
+    return: { type: security_framework::os::macos::digest_transform::Builder, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::digest_transform::Builder.type_
+    arity: 1
+    return: { type: security_framework::os::macos::digest_transform::Builder, confidence: high }
+    parameter_types: ["security_framework::os::macos::digest_transform::DigestType"]
+    role: config
+  - method: security_framework::os::macos::digest_transform::Builder.length
+    arity: 1
+    return: { type: security_framework::os::macos::digest_transform::Builder, confidence: high }
+    parameter_types: ["core_foundation::base::CFIndex"]
+    role: config
+  - method: security_framework::os::macos::digest_transform::Builder.hmac_key
+    arity: 1
+    return: { type: security_framework::os::macos::digest_transform::Builder, confidence: high }
+    parameter_types: ["core_foundation::data::CFData"]
+    role: config
+  - method: security_framework::os::macos::digest_transform::Builder.execute
+    arity: 1
+    return: { type: core_foundation::data::CFData, confidence: high }
+    canonical_return_type: "core::result::Result<core_foundation::data::CFData, core_foundation::error::CFError>"
+    parameter_types: ["&core_foundation::data::CFData"]
+    role: operation
+  - method: security_framework::os::macos::digest_transform::DigestType.hmac_md5
+    arity: 0
+    return: { type: security_framework::os::macos::digest_transform::DigestType, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::digest_transform::DigestType.hmac_sha1
+    arity: 0
+    return: { type: security_framework::os::macos::digest_transform::DigestType, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::digest_transform::DigestType.hmac_sha2
+    arity: 0
+    return: { type: security_framework::os::macos::digest_transform::DigestType, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::digest_transform::DigestType.md2
+    arity: 0
+    return: { type: security_framework::os::macos::digest_transform::DigestType, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::digest_transform::DigestType.md4
+    arity: 0
+    return: { type: security_framework::os::macos::digest_transform::DigestType, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::digest_transform::DigestType.md5
+    arity: 0
+    return: { type: security_framework::os::macos::digest_transform::DigestType, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::digest_transform::DigestType.sha1
+    arity: 0
+    return: { type: security_framework::os::macos::digest_transform::DigestType, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::digest_transform::DigestType.sha2
+    arity: 0
+    return: { type: security_framework::os::macos::digest_transform::DigestType, confidence: high }
+    role: factory
+
+  # --- macOS encrypt transform -----------------------------------------------
+  - method: security_framework::os::macos::encrypt_transform::Builder.new
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Builder, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Builder.padding
+    arity: 1
+    return: { type: security_framework::os::macos::encrypt_transform::Builder, confidence: high }
+    parameter_types: ["security_framework::os::macos::encrypt_transform::Padding"]
+    role: config
+  - method: security_framework::os::macos::encrypt_transform::Builder.mode
+    arity: 1
+    return: { type: security_framework::os::macos::encrypt_transform::Builder, confidence: high }
+    parameter_types: ["security_framework::os::macos::encrypt_transform::Mode"]
+    role: config
+  - method: security_framework::os::macos::encrypt_transform::Builder.iv
+    arity: 1
+    return: { type: security_framework::os::macos::encrypt_transform::Builder, confidence: high }
+    parameter_types: ["core_foundation::data::CFData"]
+    role: config
+  - method: security_framework::os::macos::encrypt_transform::Builder.encrypt
+    arity: 2
+    return: { type: core_foundation::data::CFData, confidence: high }
+    canonical_return_type: "core::result::Result<core_foundation::data::CFData, core_foundation::error::CFError>"
+    parameter_types: ["&security_framework::key::SecKey", "&core_foundation::data::CFData"]
+    role: operation
+  - method: security_framework::os::macos::encrypt_transform::Builder.decrypt
+    arity: 2
+    return: { type: core_foundation::data::CFData, confidence: high }
+    canonical_return_type: "core::result::Result<core_foundation::data::CFData, core_foundation::error::CFError>"
+    parameter_types: ["&security_framework::key::SecKey", "&core_foundation::data::CFData"]
+    role: operation
+  - method: security_framework::os::macos::encrypt_transform::Mode.none
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Mode, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Mode.ecb
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Mode, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Mode.cbc
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Mode, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Mode.cfb
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Mode, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Mode.ofb
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Mode, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Padding.none
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Padding, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Padding.pkcs1
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Padding, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Padding.pkcs5
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Padding, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Padding.pkcs7
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Padding, confidence: high }
+    role: factory
+  - method: security_framework::os::macos::encrypt_transform::Padding.oaep
+    arity: 0
+    return: { type: security_framework::os::macos::encrypt_transform::Padding, confidence: high }
+    role: factory
+
+  # --- Secure Transport ------------------------------------------------------
+  - method: security_framework::secure_transport::SslContext.new
+    arity: 2
+    return: { type: security_framework::secure_transport::SslContext, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::secure_transport::SslContext, core_foundation::error::CFError>"
+    parameter_types:
+      - security_framework::secure_transport::SslProtocolSide
+      - security_framework::secure_transport::SslConnectionType
+    role: factory
+  - method: security_framework::secure_transport::SslContext.set_protocol_version_min
+    arity: 1
+    return: { type: (), confidence: high }
+    canonical_return_type: "core::result::Result<(), security_framework::base::Error>"
+    parameter_types: ["security_framework::secure_transport::SslProtocol"]
+    role: config
+  - method: security_framework::secure_transport::SslContext.set_protocol_version_max
+    arity: 1
+    return: { type: (), confidence: high }
+    canonical_return_type: "core::result::Result<(), security_framework::base::Error>"
+    parameter_types: ["security_framework::secure_transport::SslProtocol"]
+    role: config
+  - method: security_framework::secure_transport::SslContext.set_enabled_ciphers
+    arity: 1
+    return: { type: (), confidence: high }
+    canonical_return_type: "core::result::Result<(), security_framework::base::Error>"
+    parameter_types: ["&[security_framework::cipher_suite::CipherSuite]"]
+    role: config
+  - method: security_framework::secure_transport::SslContext.handshake
+    arity: 1
+    return: { type: security_framework::secure_transport::SslStream, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::secure_transport::SslStream, security_framework::secure_transport::HandshakeError>"
+    parameter_types: ["S"]
+    role: operation
+  - method: security_framework::secure_transport::ClientBuilder.new
+    arity: 0
+    return: { type: security_framework::secure_transport::ClientBuilder, confidence: high }
+    role: factory
+  - method: security_framework::secure_transport::ClientBuilder.protocol_min
+    arity: 1
+    return: { type: security_framework::secure_transport::ClientBuilder, confidence: high }
+    parameter_types: ["security_framework::secure_transport::SslProtocol"]
+    role: config
+  - method: security_framework::secure_transport::ClientBuilder.protocol_max
+    arity: 1
+    return: { type: security_framework::secure_transport::ClientBuilder, confidence: high }
+    parameter_types: ["security_framework::secure_transport::SslProtocol"]
+    role: config
+  - method: security_framework::secure_transport::ClientBuilder.danger_accept_invalid_certs
+    arity: 1
+    return: { type: security_framework::secure_transport::ClientBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: security_framework::secure_transport::ClientBuilder.danger_accept_invalid_hostnames
+    arity: 1
+    return: { type: security_framework::secure_transport::ClientBuilder, confidence: high }
+    parameter_types: ["bool"]
+    role: config
+  - method: security_framework::secure_transport::ClientBuilder.identity
+    arity: 2
+    return: { type: security_framework::secure_transport::ClientBuilder, confidence: high }
+    parameter_types:
+      - "&security_framework::identity::SecIdentity"
+      - "&[security_framework::certificate::SecCertificate]"
+    role: config
+  - method: security_framework::secure_transport::ClientBuilder.handshake
+    arity: 2
+    return: { type: security_framework::secure_transport::SslStream, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::secure_transport::SslStream, security_framework::secure_transport::ClientHandshakeError>"
+    parameter_types: ["&str", "S"]
+    role: operation
+  # `new` returns Self, not a Result -- src/secure_transport.rs:1350 declares
+  # `pub fn new(identity: &SecIdentity, certs: &[SecCertificate]) -> Self`.
+  # `from_pkcs12` is the fallible constructor and is deliberately not typed here.
+  - method: security_framework::secure_transport::ServerBuilder.new
+    arity: 2
+    return: { type: security_framework::secure_transport::ServerBuilder, confidence: high }
+    parameter_types: ["&security_framework::identity::SecIdentity", "&[security_framework::certificate::SecCertificate]"]
+    role: factory
+  - method: security_framework::secure_transport::ServerBuilder.handshake
+    arity: 1
+    return: { type: security_framework::secure_transport::SslStream, confidence: high }
+    canonical_return_type: "core::result::Result<security_framework::secure_transport::SslStream, security_framework::secure_transport::HandshakeError>"
+    parameter_types: ["S"]
+    role: operation

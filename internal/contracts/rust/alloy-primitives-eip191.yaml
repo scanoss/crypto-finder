@@ -1,0 +1,53 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  # `library.name` is a per-FILE label and must be unique across the KB
+  # directory -- a repeated name is a hard load error
+  # ("duplicate library name ... in files"). `coordinates` is what ties every
+  # file back to the one crate, and it carries both spellings because the
+  # crates.io package is `alloy-primitives` and the Rust library is
+  # `alloy_primitives`.
+  name: alloy-primitives-eip191
+  coordinates:
+    - alloy-primitives
+    - alloy_primitives
+  version_range: ">=0.4.0,<1.7.0"
+  description: "alloy-primitives EIP-191 personal-message hashing (Keccak-256) at the crate root"
+
+# `eip191_hash_message` arrives at 0.4.0 (0.4.0 src/lib.rs:51 re-exports it from
+# `utils`) and is present in every release from there to 1.6.0. Compiling
+# `alloy_primitives::eip191_hash_message(m)` against 0.3.3 fails with E0425
+# `cannot find function`, which is this range's lower-bound negative control.
+#
+# Split from alloy-primitives.yaml only because of that boundary: `keccak256`
+# reaches back six further rows, and a single file would have to claim the wider
+# range for both.
+#
+# ONE DOT, so the key is authored verbatim -- see the key-shape note in
+# alloy-primitives.yaml. The `utils`-qualified spelling of the same function is
+# in alloy-primitives-utils.yaml, which starts at 0.5.0 where `utils` becomes a
+# public module.
+#
+# THE DIGEST IS KECCAK-256 over the EIP-191 prefix
+# "\x19Ethereum Signed Message:\n" plus the decimal length (1.6.0
+# src/utils/mod.rs:116-137). The sibling `eip191_message`, which returns those
+# prefixed BYTES and computes no digest, is deliberately uncontracted: it is not
+# a cryptographic operation, and contracting it would let one EIP-191 digest be
+# reported twice.
+#
+# `parameter_types` is omitted for the reason given in alloy-primitives.yaml: the
+# signature is generic over `T: AsRef<[u8]>` and the return's SPELLING changes
+# from `FixedBytes<32>` to `B256` at 0.6.0 while the type does not.
+contracts:
+  - method: alloy_primitives.eip191_hash_message
+    arity: 1
+    canonical_return_type: "alloy_primitives::B256"
+    return: {type: "alloy_primitives::B256", confidence: high}
+    role: operation
+    parameters:
+      - index: 0
+        name: message
+        role: operation-determining
+        contributes: {property: digestLength, derivation: argument_type}
+
+hierarchy: {}

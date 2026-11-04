@@ -1,0 +1,410 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: jwcrypto
+  coordinates:
+    - jwcrypto
+  version_range: ">=1.5.8,<1.6.0"
+  description: >-
+    jwcrypto JOSE (JWK/JWS/JWE/JWT) lifecycle contracts — key generation and
+    import, signature creation and verification, encryption and decryption,
+    and the JWT sign/encrypt wrapper. Verified against jwcrypto 1.5.8
+    (jwcrypto/jwk.py, jws.py, jwe.py, jwt.py).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exhaustive API audit (scanoss/crypto-finder#181)
+#
+# Scope per issue AC: JWK generation/import, JWS add_signature/verify, JWE
+# add_recipient/decrypt, and the JWT sign/encrypt/validate wrapper. Every
+# public (non "_"-prefixed) method on jwcrypto.jwk.JWK, jwcrypto.jws.JWS,
+# jwcrypto.jwe.JWE and jwcrypto.jwt.JWT was inventoried against jwcrypto
+# 1.5.8 source. Disposition legend: contracted | covered-existing |
+# skipped-non-crypto | skipped-informative-return | skipped-unsupported |
+# needs-follow-up.
+#
+# jwcrypto.jwk.JWK
+#   <init>                 contracted (factory)      — blank/import construction root
+#   generate                contracted (factory)      — rules api anchor (#169)
+#   generate_key            contracted (config)       — in-place random key generation
+#   import_key              contracted (config)       — in-place import from raw params
+#   from_json                contracted (factory)
+#   from_password            contracted (factory)     — RFC-adjacent oct-key-from-password import
+#   import_from_pyca        contracted (config)       — import from a pyca key object
+#   import_from_pem          contracted (config)       — import from PEM bytes (instance form)
+#   from_pyca                contracted (factory)
+#   from_pem                  contracted (factory)     — rules api anchor (#169)
+#   export / export_public / export_private / export_symmetric
+#                            contracted (output)       — default (JSON string) shape
+#   public                   contracted (output)       — public-only JWK projection
+#   export_to_pem            contracted (output)       — rules api anchor (#169)
+#   thumbprint / thumbprint_uri
+#                            contracted (output)
+#   has_public / has_private / is_symmetric
+#                            skipped-informative-return — bool properties, not calls
+#   key_type / key_id / key_curve
+#                            skipped-informative-return — deprecated properties, not calls
+#   get_curve                 needs-follow-up           — deprecated helper, outside AC scope
+#   get_op_key                needs-follow-up           — bridges to pyca key material; outside
+#                                                          narrow AC scope (candidate follow-up:
+#                                                          cross-KB reachability into
+#                                                          pyca-cryptography.yaml)
+#   __setitem__/update/setdefault/__delitem__/__eq__/__hash__/__getattr__/
+#   __setattr__/__repr__      skipped-non-crypto        — dict/dunder plumbing
+#
+# jwcrypto.jws.JWSCore (internal core; docstring: "SHOULD NOT be used directly")
+#   <init>/sign/verify       skipped-non-crypto         — internal, not the public surface
+#
+# jwcrypto.jws.JWS
+#   <init>                   contracted (factory)
+#   add_signature            contracted (operation)    — rules api anchor (#169)
+#   verify                    contracted (operation)     — rules api anchor (#169)
+#   deserialize                contracted (config)
+#   serialize                  contracted (output)
+#   from_jose_token            contracted (factory)
+#   allowed_algs/is_valid/payload/jose_header
+#                            skipped-informative-return — properties, not calls
+#   detach_payload             skipped-non-crypto        — bookkeeping, no key/algorithm semantics
+#   __eq__/__str__/__repr__    skipped-non-crypto
+#
+# jwcrypto.jwe.JWE
+#   <init>                   contracted (factory)
+#   add_recipient             contracted (operation)     — rules api anchor (#169)
+#   decrypt                    contracted (operation)     — rules api anchor (#169)
+#   deserialize                contracted (config)
+#   serialize                  contracted (output)
+#   from_jose_token            contracted (factory)
+#   allowed_algs/payload/jose_header
+#                            skipped-informative-return — properties, not calls
+#   __eq__/__str__/__repr__    skipped-non-crypto
+#
+# jwcrypto.jwt.JWT
+#   <init>                   contracted (factory)     — rules api anchor (#169)
+#   make_signed_token         contracted (operation)     — rules api anchor (#169)
+#   make_encrypted_token      contracted (operation)     — rules api anchor (#169)
+#   validate                   contracted (operation)     — JWS/JWE dispatch terminal
+#   deserialize                contracted (config)
+#   serialize                  contracted (output)
+#   from_jose_token            contracted (factory)
+#   header/claims/token/leeway/validity/expected_type
+#                            skipped-informative-return — properties, not calls
+#   norm_typ                   skipped-non-crypto        — string normalization helper
+#   __eq__/__str__/__repr__    skipped-non-crypto
+#
+# jwcrypto.jwk.JWKSet (multi-key container)
+#   <init>/add/export/import_keyset/from_json/get_key/get_keys
+#                            needs-follow-up           — valid crypto surface, not named in
+#                                                          issue #181's AC; candidate for a
+#                                                          dedicated JWKSet lifecycle ticket.
+#
+# Note on scope boundary: no `when:` conditional contracts are declared. Every
+# contracted method's return type is stable regardless of the "alg"/"enc"
+# algorithm selected by the caller (unlike e.g. Cipher.unwrap, where the mode
+# argument selects the Java return type) — algorithm-family selection stays in
+# crypto_rules metadata.crypto.parameterCondition, not in this KB.
+# ─────────────────────────────────────────────────────────────────────────────
+
+contracts:
+  # ── jwcrypto.jwk.JWK — generation and import ────────────────────────────────
+
+  - method: jwcrypto.jwk.JWK.<init>
+    arity: 0
+    return:
+      type: jwcrypto.jwk.JWK
+      confidence: high
+    role: factory
+
+  - method: jwcrypto.jwk.JWK.generate
+    arity: 1
+    return:
+      type: jwcrypto.jwk.JWK
+      confidence: high
+    role: factory
+    parameters:
+      - index: 0
+        name: kty
+        role: metadata-contributing
+        contributes:
+          property: keyType
+          derivation: argument_value
+
+  - method: jwcrypto.jwk.JWK.generate_key
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: jwcrypto.jwk.JWK.import_key
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: jwcrypto.jwk.JWK.from_json
+    arity: 1
+    return:
+      type: jwcrypto.jwk.JWK
+      confidence: high
+    role: factory
+
+  - method: jwcrypto.jwk.JWK.from_password
+    arity: 1
+    return:
+      type: jwcrypto.jwk.JWK
+      confidence: high
+    role: factory
+
+  - method: jwcrypto.jwk.JWK.import_from_pyca
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: jwcrypto.jwk.JWK.import_from_pem
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: jwcrypto.jwk.JWK.from_pyca
+    arity: 1
+    return:
+      type: jwcrypto.jwk.JWK
+      confidence: high
+    role: factory
+
+  - method: jwcrypto.jwk.JWK.from_pem
+    arity: 1
+    return:
+      type: jwcrypto.jwk.JWK
+      confidence: high
+    role: factory
+
+  # ── jwcrypto.jwk.JWK — output / serialization ───────────────────────────────
+  # export/export_public/export_private/export_symmetric return a JSON string by
+  # default and a dict when called with as_dict=True. The return type therefore
+  # depends on an argument VALUE, not arity (e.g. export_public(True) -> dict and
+  # export_public(False) -> str share arity 1), which this schema's arity-keyed
+  # return typing cannot express. These methods carry role: output (terminal
+  # serialization, not crypto entry points), so the default builtins.str return
+  # is modeled; the as_dict=True dict return is a documented, low-impact gap.
+
+  - method: jwcrypto.jwk.JWK.export
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jwk.JWK.export_public
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jwk.JWK.export_private
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jwk.JWK.export_symmetric
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jwk.JWK.public
+    arity: 0
+    return:
+      type: jwcrypto.jwk.JWK
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jwk.JWK.export_to_pem
+    arity: 2
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jwk.JWK.thumbprint
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jwk.JWK.thumbprint_uri
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  # ── jwcrypto.jws.JWS — signing and verification ─────────────────────────────
+
+  - method: jwcrypto.jws.JWS.<init>
+    arity: 1
+    return:
+      type: jwcrypto.jws.JWS
+      confidence: high
+    role: factory
+
+  - method: jwcrypto.jws.JWS.add_signature
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: jwcrypto.jws.JWS.verify
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: jwcrypto.jws.JWS.deserialize
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: jwcrypto.jws.JWS.serialize
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jws.JWS.from_jose_token
+    arity: 1
+    return:
+      type: jwcrypto.jws.JWS
+      confidence: high
+    role: factory
+
+  # ── jwcrypto.jwe.JWE — encryption and decryption ────────────────────────────
+
+  - method: jwcrypto.jwe.JWE.<init>
+    arity: 1
+    return:
+      type: jwcrypto.jwe.JWE
+      confidence: high
+    role: factory
+
+  - method: jwcrypto.jwe.JWE.add_recipient
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: jwcrypto.jwe.JWE.decrypt
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: jwcrypto.jwe.JWE.deserialize
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: jwcrypto.jwe.JWE.serialize
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jwe.JWE.from_jose_token
+    arity: 1
+    return:
+      type: jwcrypto.jwe.JWE
+      confidence: high
+    role: factory
+
+  # ── jwcrypto.jwt.JWT — sign/encrypt wrapper lifecycle ───────────────────────
+
+  - method: jwcrypto.jwt.JWT.<init>
+    arity: 2
+    return:
+      type: jwcrypto.jwt.JWT
+      confidence: high
+    role: factory
+
+  - method: jwcrypto.jwt.JWT.make_signed_token
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: jwcrypto.jwt.JWT.make_encrypted_token
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: jwcrypto.jwt.JWT.validate
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: jwcrypto.jwt.JWT.deserialize
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
+
+  - method: jwcrypto.jwt.JWT.serialize
+    arity: 0
+    return:
+      type: builtins.str
+      confidence: high
+    role: output
+
+  - method: jwcrypto.jwt.JWT.from_jose_token
+    arity: 1
+    return:
+      type: jwcrypto.jwt.JWT
+      confidence: high
+    role: factory
+
+hierarchy:
+  # jwcrypto.jwk.JWK is declared `class JWK(dict)`, so its direct parent is
+  # builtins.dict (which in turn derives from builtins.object).
+  jwcrypto.jwk.JWK:
+    - builtins.dict
+  builtins.dict:
+    - builtins.object
+  jwcrypto.jws.JWS:
+    - builtins.object
+  jwcrypto.jwe.JWE:
+    - builtins.object
+  jwcrypto.jwt.JWT:
+    - builtins.object
+  builtins.str:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.NoneType:
+    - builtins.object
+  builtins.object: []

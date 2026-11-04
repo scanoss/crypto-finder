@@ -1,0 +1,31 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: jsonwebtoken-validation
+  coordinates:
+    - jsonwebtoken
+  version_range: ">=4.0.0,<11.0.0"
+  description: "jsonwebtoken's decoding validation constructor, which fixes the algorithm a token is allowed to be verified with"
+
+# SPLIT OUT BECAUSE ITS RANGE STARTS AT 4.0.0 AND jsonwebtoken.yaml STARTS AT
+# 7.0.0. `Validation::new(alg: Algorithm) -> Validation` first appears in 4.0.0
+# (4.0.1 validation.rs:79) and is unchanged in name, arity, parameter and return
+# at 6.0.1 validation.rs:72, 7.2.0 validation.rs:71, 8.3.0 validation.rs:84 and
+# 10.4.0 validation.rs:113. `Validation` itself exists from 2.0.0 but only as a
+# struct literal with a `Default` -- there is no constructor to key on before
+# 4.0.0.
+#
+# WHAT THIS ENTRY MEANS, AND WHY IT IS THE VERIFYING ALGORITHM. `Validation::new`
+# sets `algorithms: vec![alg]`, and `decode` rejects any token whose header `alg`
+# is not in that list (10.4.0 decoding.rs:278-280). So the value passed here
+# bounds what the verification will accept, which is the opposite of the token's
+# own `alg` header -- that one is chosen by the sender.
+contracts:
+  - method: jsonwebtoken::Validation.new
+    arity: 1
+    return: { type: "jsonwebtoken::Validation", confidence: high }
+    canonical_return_type: "jsonwebtoken::Validation"
+    parameter_types: ["jsonwebtoken::Algorithm"]
+    role: factory
+
+hierarchy: {}

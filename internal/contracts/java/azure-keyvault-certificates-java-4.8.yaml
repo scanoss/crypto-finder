@@ -1,0 +1,48 @@
+schema_version: "2"
+ecosystem: java
+
+library:
+  name: azure-keyvault-certificates-java-4.8
+  coordinates:
+    - "com.azure:azure-security-keyvault-certificates"
+  version_range: ">=4.8.0,<5.0.0"
+  description: "Azure Key Vault Certificates creation from a CreateCertificateOptions, added in 4.8.0"
+
+contracts:
+  - method: com.azure.security.keyvault.certificates.models.CreateCertificateOptions.<init>
+    arity: 2
+    parameter_types: [java.lang.String, com.azure.security.keyvault.certificates.models.CertificatePolicy]
+    canonical_return_type: com.azure.security.keyvault.certificates.models.CreateCertificateOptions
+    return:
+      type: com.azure.security.keyvault.certificates.models.CreateCertificateOptions
+      confidence: high
+    role: factory
+  - method: com.azure.security.keyvault.certificates.CertificateClient.beginCreateCertificate
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.certificates.models.CreateCertificateOptions]
+    canonical_return_type: com.azure.core.util.polling.SyncPoller
+    return:
+      type: com.azure.core.util.polling.SyncPoller
+      confidence: high
+    role: operation
+  - method: com.azure.security.keyvault.certificates.CertificateAsyncClient.beginCreateCertificate
+    arity: 1
+    parameter_types: [com.azure.security.keyvault.certificates.models.CreateCertificateOptions]
+    canonical_return_type: com.azure.core.util.polling.PollerFlux
+    return:
+      type: com.azure.core.util.polling.PollerFlux
+      confidence: high
+    role: operation
+
+hierarchy:
+  com.azure.security.keyvault.certificates.models.CreateCertificateOptions:
+    - java.lang.Object
+  com.azure.security.keyvault.certificates.CertificateClient:
+    - java.lang.Object
+  com.azure.security.keyvault.certificates.CertificateAsyncClient:
+    - java.lang.Object
+  com.azure.core.util.polling.SyncPoller:
+    - java.lang.Object
+  com.azure.core.util.polling.PollerFlux:
+    - java.lang.Object
+  java.lang.Object: []

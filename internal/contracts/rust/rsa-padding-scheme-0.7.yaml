@@ -1,0 +1,23 @@
+schema_version: "2"
+ecosystem: rust
+library:
+  name: rsa-padding-scheme-0.7
+  coordinates:
+    - rsa
+  version_range: ">=0.7.0-rc.0,<0.8.0-rc.0"
+  description: "RustCrypto rsa 0.7: PaddingScheme signature selectors with the hash as a type parameter"
+
+# 0.7 takes the digest as a type parameter: `new_pkcs1v15_sign::<D>()` and
+# `new_pss::<T>()` (0.7.2 src/padding.rs:97,188). The hash is a type argument,
+# not a call argument, so no parameter carries it.
+contracts:
+  - method: rsa::PaddingScheme.new_pkcs1v15_sign
+    arity: 0
+    return: { type: rsa::PaddingScheme, confidence: high }
+    role: factory
+  - method: rsa::PaddingScheme.new_pss
+    arity: 0
+    return: { type: rsa::PaddingScheme, confidence: high }
+    role: factory
+
+hierarchy: {}

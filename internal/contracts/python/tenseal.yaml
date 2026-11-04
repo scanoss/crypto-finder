@@ -1,0 +1,768 @@
+schema_version: "2"
+ecosystem: python
+
+library:
+  name: tenseal
+  coordinates:
+    - tenseal
+  version_range: ">=0.1.0a0,<=0.3.16"
+  description: >-
+    TenSEAL — homomorphic encryption on tensors, a pybind11 wrapper over
+    Microsoft SEAL. Context lifecycle (BFV and CKKS key generation, Galois and
+    relinearization key generation, key export and import, secret-key
+    destruction) and the encrypted-tensor lifecycle (encryption, serialized
+    load, decryption). Read from the Python sources of all 30 committed CSV
+    versions plus the C++ of the 0.3.18 sdist.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EVERY KEY HERE WAS READ OFF AN EXPORTED CALL GRAPH AND THEN RE-EXPORTED UNTIL
+# NOTHING MOVED. None was written from the API.
+#
+# Before this file existed, a probe consumer's context operations keyed on the
+# CONSUMER'S OWN VARIABLE PATH — `cg.src.cgprobe.ctx.generate_galois_keys()`,
+# `cg.src.cgprobe.ctx.serialize()` and eight more — which no contract can ever
+# join, and which is indistinguishable from having no contract at all. The
+# FACTORY RETURN TYPES below are what make every operation entry resolve: a
+# contracted `tenseal.context -> tenseal.Context` is what turns that variable
+# path into `tenseal.Context.generate_galois_keys`.
+#
+# THE EMITTED KEY FOLLOWS THE CONSUMER'S IMPORT, AND THE SPELLINGS DO NOT COVER
+# EACH OTHER. Measured on a probe consumer with crypto-finder built from this
+# worktree:
+#
+#     import tenseal as ts; ts.Context(..)              -> tenseal.Context
+#     from tenseal.enc_context import Context; C(..)    -> tenseal.enc_context.Context.<init>
+#     from tenseal.tensors.ckksvector import CKKSVector -> tenseal.tensors.ckksvector.CKKSVector.<init>
+#
+# The written-out module-attribute call emits NO `.<init>` segment while the
+# imported-name call does, which is the same split the merged `coincurve` and
+# `ecdsa` contracts record. Both are declared, each with a return type spelled
+# to match its own key so the chains close within one spelling. Real consumers
+# write all of them: over the 1514-file corpus this family measured, 46 files
+# use `import tenseal as ts`, 2 write
+# `from tenseal.tensors.ckksvector import CKKSVector`, 1 writes
+# `from tenseal.tensors import CKKSVector` and 1 writes
+# `from tenseal.enc_context import Context as SealContext`.
+#
+# ARITY: ONE ENTRY PER METHOD, AT THE REQUIRED-ARGUMENT COUNT.
+# `ContractsForTolerant` (internal/callgraph/contracts/contracts.go:292-303)
+# tries an exact-arity match and, FOR A PYTHON KB ONLY, falls back to a
+# name-only match with the lowest-arity candidate as the deterministic tiebreak.
+# That is exactly right for this library: `tenseal.context` is declared
+# `(*args, **kwargs)` (0.3.16 tenseal/__init__.py:63) and reached at three to
+# six arguments, `Context.serialize` at zero to four, and
+# `CKKSVector.__init__` at one to four. Declaring every observed arity would
+# multiply this file several times over and change nothing.
+#
+# NO `parameters:` BLOCK AND NO CONTRIBUTED PROPERTY. The obvious candidates are
+# `poly_modulus_degree` and `plain_modulus`, which are genuine scheme
+# parameters. Measured end to end against the served payload rather than
+# assumed: the finder RESOLVES an integer literal and a module-level constant
+# name to the value, and publishes the SOURCE TEXT for an expression
+# (`2 ** 13` -> "2**13"), an instance attribute
+# (`self.poly_modulus_degree` -> "self.poly_modulus_degree") and a function
+# parameter. Over the 51 files in this family's consumer corpus, 19 of 44 degree
+# arguments would resolve to a correct value and 25 would publish a string that
+# is not a number. The rules therefore publish no parameter-set identifier, and
+# this file contributes none; the CKKS rule header carries the full table, the
+# corpus counts and the exact construction that would make it exact, so the
+# trade can be re-made rather than re-derived.
+#
+# NO KEY LENGTH IS DECLARED ANYWHERE. BFV and CKKS are lattice schemes; the
+# polynomial modulus degree and the coefficient-modulus chain are not key sizes,
+# and publishing either as one would be a false number in a field a reader
+# compares against RSA and ECC.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT IS DELIBERATELY ABSENT FROM THIS FILE:
+#
+#   the whole `tenseal.sealapi`
+#   surface — Encryptor, Decryptor,
+#   KeyGenerator, Evaluator,
+#   SEALContext, EncryptionParameters,
+#   Ciphertext, Plaintext, BatchEncoder,
+#   CKKSEncoder and all of
+#   tenseal.sealapi.util          skipped-out-of-scope — Microsoft SEAL's own
+#                                 C++ classes re-exported verbatim. Measured
+#                                 over 1514 real consumer files: 39 live
+#                                 `sealapi.X(...)` call sites, 33 of them
+#                                 zero-argument empty container allocations and
+#                                 4 evaluator/encoder constructions, leaving 2
+#                                 crypto-object constructions in one nightly
+#                                 pre-release whose every key already reaches
+#                                 the high-level API. The matching rules are
+#                                 absent for the same measured reason.
+#
+#   add / add_ / mul / mul_ /
+#   sub / sub_ / dot / dot_ / mm /
+#   matmul / polyval / sum / square /
+#   pow / neg / sum_batch /
+#   conv2d_im2col / enc_matmul_plain
+#   and the operator overloads     skipped-homomorphic-evaluation — evaluation
+#                                 over ciphertext that already exists. They
+#                                 produce no key material and state no algorithm
+#                                 the context and encryption entries have not
+#                                 already published. CycloneDX v1.7 has no
+#                                 `operation` member for homomorphic evaluation.
+#                                 Measured: of the 18 files in the consumer
+#                                 corpus containing an evaluation call, 17 also
+#                                 contain a scheme-naming entry point that IS
+#                                 claimed, and the 18th is a false hit on
+#                                 `re.sub`.
+#
+#   plain_tensor / plain_tensor_from /
+#   PlainTensor and its whole
+#   surface                       skipped-non-crypto — a PlainTensor is
+#                                 CLEARTEXT. `plain_tensor` packs a Python list
+#                                 into a `_ts_cpp.PlainTensorDouble` and
+#                                 `tolist` unpacks it; no key is used.
+#
+#   has_galois_keys / has_relin_keys /
+#   has_secret_key / has_public_key /
+#   is_private / is_public /
+#   global_scale / auto_relin /
+#   auto_rescale / auto_mod_switch /
+#   seal_context / encryptor /
+#   decryptor / scale / size /
+#   ciphertext / copy /
+#   link_context                  skipped-non-crypto — they read or duplicate a
+#                                 property of an object that already exists.
+#                                 `copy` in particular would double every
+#                                 context in a consumer that passes one around.
+#
+#   AbstractTensor.serialize      skipped-non-crypto — CIPHERTEXT serialization,
+#                                 which holds no key material. Distinct from
+#                                 `Context.serialize`, which by default writes
+#                                 the public key and both evaluation key sets
+#                                 and IS declared below.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# VERSION WINDOWS INSIDE `version_range`. The range covers the 30 committed CSV
+# rows (0.1.0a0 - 0.3.16). Symbols that arrive later than its lower bound are
+# marked at their entry:
+#   the whole `tenseal.Context` /
+#   `tenseal.enc_context` surface        >= 0.3.0a1  (before it, `ts.context()`
+#                                        returned a raw `_ts_cpp.TenSEALContext`
+#                                        and there was no Python Context class;
+#                                        the CONSUMER-VISIBLE SPELLING is
+#                                        identical, which is why the rules cover
+#                                        both eras with one pattern)
+#   ckks_tensor / ckks_tensor_from /
+#   the top-level class names            >= 0.3.0a0
+#   context_from / ckks_vector_from /
+#   bfv_vector_from / im2col_encoding /
+#   enc_matmul_encoding                  >= 0.2.0a0
+#   every lazy_*_from                    >= 0.3.0a2
+#   the whole bfv_tensor family          >= 0.3.3
+#   Context.serialize's save_* kwargs    >= 0.3.0a5  (arity only; the method
+#                                        itself exists from 0.3.0a1)
+# There is no DISJOINT pair among them: every window is left-bounded and open to
+# the top of the range, so no combination below is compilable in no release.
+
+contracts:
+  # ── Context factories. THESE ARE LOAD-BEARING FOR EVERY OPERATION BELOW ─────
+  # A contracted return type is what turns the consumer's variable path into a
+  # joinable key. Without them the graph emits `<consumer>.ctx.serialize()`.
+
+  # `ts.context(scheme, ...)` — the free-function constructor, present from the
+  # earliest archived release (0.1.0a0 tenseal/__init__.py:16; 0.3.16 :63,
+  # where it is `Context(*args, **kwargs)`). Constructing it GENERATES A KEY
+  # PAIR: `keygen.create_public_key(pk)` then `keygen.secret_key()`
+  # (0.3.18 tenseal/cpp/context/tensealcontext.cpp:51-57).
+  - method: tenseal.context
+    arity: 1
+    return:
+      type: tenseal.Context
+      confidence: high
+    role: factory
+
+  - method: tenseal.Context
+    arity: 1
+    return:
+      type: tenseal.Context
+      confidence: high
+    role: factory
+
+  - method: tenseal.Context.<init>
+    arity: 1
+    return:
+      type: tenseal.Context
+      confidence: high
+    role: factory
+
+  - method: tenseal.enc_context.Context
+    arity: 1
+    return:
+      type: tenseal.enc_context.Context
+      confidence: high
+    role: factory
+
+  - method: tenseal.enc_context.Context.<init>
+    arity: 1
+    return:
+      type: tenseal.enc_context.Context
+      confidence: high
+    role: factory
+
+  # `context_from(data)` is `Context.load(data, n_threads)`
+  # (0.3.16 tenseal/__init__.py:68-71): it deserializes a context INCLUDING its
+  # key material. >= 0.2.0a0.
+  - method: tenseal.context_from
+    arity: 1
+    return:
+      type: tenseal.Context
+      confidence: high
+    role: factory
+
+  - method: tenseal.Context.load
+    arity: 1
+    return:
+      type: tenseal.Context
+      confidence: high
+    role: factory
+
+  - method: tenseal.enc_context.Context.load
+    arity: 1
+    return:
+      type: tenseal.enc_context.Context
+      confidence: high
+    role: factory
+
+  # ── Context operations, declared for BOTH module spellings ─────────────────
+
+  # Builds a KeyGenerator from the context's secret key and creates the
+  # rotation key set: `keygen.create_galois_keys(gk)`
+  # (0.3.18 tenseal/cpp/context/tensealcontext.cpp:280-285). Python entry
+  # point 0.3.16 tenseal/enc_context.py:236.
+  - method: tenseal.Context.generate_galois_keys
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: tenseal.enc_context.Context.generate_galois_keys
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # The evaluation keys that reduce ciphertext size after a homomorphic
+  # multiplication: `keygen.create_relin_keys(rk)` (0.3.18
+  # tenseal/cpp/context/tensealcontext.cpp:300-305).
+  - method: tenseal.Context.generate_relin_keys
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: tenseal.enc_context.Context.generate_relin_keys
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # DESTROYS the secret key. The C++ body is a scope guard whose whole effect
+  # is `this->_secret_key = nullptr` (0.3.18
+  # tenseal/cpp/context/tensealcontext.cpp:326-328), after which
+  # `is_public()` returns true because the pointer is null (:346).
+  - method: tenseal.Context.make_context_public
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  - method: tenseal.enc_context.Context.make_context_public
+    arity: 0
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: operation
+
+  # CONTEXT serialization is a KEY EXPORT, which is the fact that separates
+  # this library from its closest sibling. The defaults are
+  # `save_public_key=True, save_secret_key=False, save_galois_keys=True,
+  # save_relin_keys=True` (0.3.16 tenseal/enc_context.py:181-192), so a bare
+  # `ctx.serialize()` writes the public key and BOTH evaluation key sets.
+  # `save_secret_key=True` additionally writes the decryption key; the C++
+  # side skips it otherwise (0.3.18 tensealcontext.cpp:509, :520, :551).
+  # The kwargs arrive at 0.3.0a5; the method itself at 0.3.0a1.
+  - method: tenseal.Context.serialize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  - method: tenseal.enc_context.Context.serialize
+    arity: 0
+    return:
+      type: builtins.bytes
+      confidence: high
+    role: operation
+
+  # Hands the DECRYPTION key out of the context as a `SecretKey` wrapper
+  # (0.3.16 tenseal/enc_context.py:261-262). The library's `SecretKey`
+  # naming follows Microsoft SEAL; the scheme is public-key, so this is the
+  # private half of an asymmetric pair.
+  - method: tenseal.Context.secret_key
+    arity: 0
+    return:
+      type: tenseal.enc_context.SecretKey
+      confidence: high
+    role: operation
+
+  - method: tenseal.enc_context.Context.secret_key
+    arity: 0
+    return:
+      type: tenseal.enc_context.SecretKey
+      confidence: high
+    role: operation
+
+  # 0.3.16 tenseal/enc_context.py:267-268.
+  - method: tenseal.Context.public_key
+    arity: 0
+    return:
+      type: tenseal.enc_context.PublicKey
+      confidence: high
+    role: operation
+
+  - method: tenseal.enc_context.Context.public_key
+    arity: 0
+    return:
+      type: tenseal.enc_context.PublicKey
+      confidence: high
+    role: operation
+
+  # 0.3.16 tenseal/enc_context.py:233.
+  - method: tenseal.Context.galois_keys
+    arity: 0
+    return:
+      type: tenseal.enc_context.GaloisKeys
+      confidence: high
+    role: operation
+
+  - method: tenseal.enc_context.Context.galois_keys
+    arity: 0
+    return:
+      type: tenseal.enc_context.GaloisKeys
+      confidence: high
+    role: operation
+
+  # 0.3.16 tenseal/enc_context.py:247.
+  - method: tenseal.Context.relin_keys
+    arity: 0
+    return:
+      type: tenseal.enc_context.RelinKeys
+      confidence: high
+    role: operation
+
+  - method: tenseal.enc_context.Context.relin_keys
+    arity: 0
+    return:
+      type: tenseal.enc_context.RelinKeys
+      confidence: high
+    role: operation
+
+  # ── Encrypted-tensor factories ─────────────────────────────────────────────
+  # The canonical return type is the DEEP module spelling, because that is the
+  # key the graph emits for the class itself; the shallower spellings return it
+  # too so that a chain opened by any import closes on the same operation keys.
+
+  # `ts.ckks_vector(context, data)` encrypts a vector of floats under CKKS
+  # (0.3.16 tenseal/__init__.py -> tenseal/tensors/ckksvector.py).
+  - method: tenseal.ckks_vector
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.CKKSVector
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.CKKSVector.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.CKKSVector
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.CKKSVector.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.ckksvector.CKKSVector
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.ckksvector.CKKSVector.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  # Loads a serialized CKKS ciphertext and links it to a context.
+  # >= 0.2.0a0 for the vector forms, >= 0.3.0a0 for ckks_tensor,
+  # >= 0.3.3 for bfv_tensor.
+  - method: tenseal.ckks_vector_from
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  # The deferred-link load path. >= 0.3.0a2 (>= 0.3.3 for bfv_tensor).
+  - method: tenseal.lazy_ckks_vector_from
+    arity: 1
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  # `ts.bfv_vector(context, data)` encrypts a vector of integers under BFV
+  # (0.3.16 tenseal/__init__.py -> tenseal/tensors/bfvvector.py).
+  - method: tenseal.bfv_vector
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.BFVVector
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.BFVVector.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.BFVVector
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.BFVVector.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.bfvvector.BFVVector
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVVector
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.bfvvector.BFVVector.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVVector
+      confidence: high
+    role: factory
+
+  # Loads a serialized BFV ciphertext and links it to a context.
+  # >= 0.2.0a0 for the vector forms, >= 0.3.0a0 for ckks_tensor,
+  # >= 0.3.3 for bfv_tensor.
+  - method: tenseal.bfv_vector_from
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVVector
+      confidence: high
+    role: factory
+
+  # The deferred-link load path. >= 0.3.0a2 (>= 0.3.3 for bfv_tensor).
+  - method: tenseal.lazy_bfv_vector_from
+    arity: 1
+    return:
+      type: tenseal.tensors.BFVVector
+      confidence: high
+    role: factory
+
+  # `ts.ckks_tensor(context, data)` encrypts an N-dimensional tensor under CKKS
+  # (0.3.16 tenseal/__init__.py -> tenseal/tensors/ckkstensor.py).
+  - method: tenseal.ckks_tensor
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.CKKSTensor
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.CKKSTensor.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.CKKSTensor
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.CKKSTensor.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.ckkstensor.CKKSTensor
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.ckkstensor.CKKSTensor.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSTensor
+      confidence: high
+    role: factory
+
+  # Loads a serialized CKKS ciphertext and links it to a context.
+  # >= 0.2.0a0 for the vector forms, >= 0.3.0a0 for ckks_tensor,
+  # >= 0.3.3 for bfv_tensor.
+  - method: tenseal.ckks_tensor_from
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSTensor
+      confidence: high
+    role: factory
+
+  # The deferred-link load path. >= 0.3.0a2 (>= 0.3.3 for bfv_tensor).
+  - method: tenseal.lazy_ckks_tensor_from
+    arity: 1
+    return:
+      type: tenseal.tensors.CKKSTensor
+      confidence: high
+    role: factory
+
+  # `ts.bfv_tensor(context, data)` encrypts an N-dimensional tensor under BFV
+  # (0.3.16 tenseal/__init__.py -> tenseal/tensors/bfvtensor.py).
+  - method: tenseal.bfv_tensor
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.BFVTensor
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.BFVTensor.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.BFVTensor
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.BFVTensor.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.bfvtensor.BFVTensor
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVTensor
+      confidence: high
+    role: factory
+
+  - method: tenseal.tensors.bfvtensor.BFVTensor.<init>
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVTensor
+      confidence: high
+    role: factory
+
+  # Loads a serialized BFV ciphertext and links it to a context.
+  # >= 0.2.0a0 for the vector forms, >= 0.3.0a0 for ckks_tensor,
+  # >= 0.3.3 for bfv_tensor.
+  - method: tenseal.bfv_tensor_from
+    arity: 2
+    return:
+      type: tenseal.tensors.BFVTensor
+      confidence: high
+    role: factory
+
+  # The deferred-link load path. >= 0.3.0a2 (>= 0.3.3 for bfv_tensor).
+  - method: tenseal.lazy_bfv_tensor_from
+    arity: 1
+    return:
+      type: tenseal.tensors.BFVTensor
+      confidence: high
+    role: factory
+
+  # AN ENCRYPTION ENTRY POINT DESPITE THE NAME: it takes a plaintext matrix and
+  # a context and returns `CKKSVector._wrap(_ts_cpp.im2col_encoding(
+  # context.data, matrix, ...))` (0.3.16 tenseal/__init__.py:14-39), declared
+  # `-> CKKSVector` at :14. The convolution packing path. >= 0.2.0a0.
+  - method: tenseal.im2col_encoding
+    arity: 5
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  # The matrix-multiplication packing path, same shape:
+  # `CKKSVector._wrap(_ts_cpp.enc_matmul_encoding(context.data, matrix))`
+  # (0.3.16 tenseal/__init__.py:43-60). >= 0.2.0a0.
+  - method: tenseal.enc_matmul_encoding
+    arity: 2
+    return:
+      type: tenseal.tensors.CKKSVector
+      confidence: high
+    role: factory
+
+  # ── Encrypted-tensor operations ────────────────────────────────────────────
+  # Only `decrypt` is declared. Everything else on these types is homomorphic
+  # EVALUATION or a shape query, and the header says why neither is claimed.
+
+  # `decrypt(secret_key=None)` — 0.3.16 tenseal/tensors/ckksvector.py.
+  # Both arities occur; the python name-only fallback covers them.
+  - method: tenseal.tensors.CKKSVector.decrypt
+    arity: 0
+    return:
+      type: builtins.list
+      confidence: high
+    role: operation
+
+  - method: tenseal.CKKSVector.decrypt
+    arity: 0
+    return:
+      type: builtins.list
+      confidence: high
+    role: operation
+
+  - method: tenseal.tensors.ckksvector.CKKSVector.decrypt
+    arity: 0
+    return:
+      type: builtins.list
+      confidence: high
+    role: operation
+
+  # `decrypt(secret_key=None)` — 0.3.16 tenseal/tensors/bfvvector.py.
+  # Both arities occur; the python name-only fallback covers them.
+  - method: tenseal.tensors.BFVVector.decrypt
+    arity: 0
+    return:
+      type: builtins.list
+      confidence: high
+    role: operation
+
+  - method: tenseal.BFVVector.decrypt
+    arity: 0
+    return:
+      type: builtins.list
+      confidence: high
+    role: operation
+
+  - method: tenseal.tensors.bfvvector.BFVVector.decrypt
+    arity: 0
+    return:
+      type: builtins.list
+      confidence: high
+    role: operation
+
+  # `decrypt(secret_key=None)` — 0.3.16 tenseal/tensors/ckkstensor.py.
+  # Both arities occur; the python name-only fallback covers them.
+  - method: tenseal.tensors.CKKSTensor.decrypt
+    arity: 0
+    return:
+      type: tenseal.tensors.PlainTensor
+      confidence: high
+    role: operation
+
+  - method: tenseal.CKKSTensor.decrypt
+    arity: 0
+    return:
+      type: tenseal.tensors.PlainTensor
+      confidence: high
+    role: operation
+
+  - method: tenseal.tensors.ckkstensor.CKKSTensor.decrypt
+    arity: 0
+    return:
+      type: tenseal.tensors.PlainTensor
+      confidence: high
+    role: operation
+
+  # `decrypt(secret_key=None)` — 0.3.16 tenseal/tensors/bfvtensor.py.
+  # Both arities occur; the python name-only fallback covers them.
+  - method: tenseal.tensors.BFVTensor.decrypt
+    arity: 0
+    return:
+      type: tenseal.tensors.PlainTensor
+      confidence: high
+    role: operation
+
+  - method: tenseal.BFVTensor.decrypt
+    arity: 0
+    return:
+      type: tenseal.tensors.PlainTensor
+      confidence: high
+    role: operation
+
+  - method: tenseal.tensors.bfvtensor.BFVTensor.decrypt
+    arity: 0
+    return:
+      type: tenseal.tensors.PlainTensor
+      confidence: high
+    role: operation
+

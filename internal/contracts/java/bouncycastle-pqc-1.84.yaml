@@ -1,0 +1,672 @@
+schema_version: "2"
+ecosystem: java
+library:
+  name: bouncycastle-pqc-1.84
+  coordinates:
+    - "org.bouncycastle:bcprov-jdk18on"
+    - "org.bouncycastle:bcprov-jdk15to18"
+  version_range: ">=1.84,<2.0"
+  description: "Bouncy Castle lightweight ML-KEM, ML-DSA and SLH-DSA (org.bouncycastle.crypto.* packages, 1.84 onwards)"
+
+# Bouncy Castle post-quantum lightweight API, FIPS 203 / 204 / 205.
+#
+# Layout of the PQC contract files (one library name per package spelling):
+#   bouncycastle-pqc.yaml          org.bouncycastle.pqc.crypto.{mlkem,mldsa,slhdsa}
+#                                  1.79 (first release of the ML-* names) to 1.85
+#                                  (last release that still ships these packages)
+#   bouncycastle-pqc-1.84.yaml     org.bouncycastle.crypto.{kems,generators,signers,params}
+#                                  1.84 onwards (1.84 and 1.85 ship both spellings)
+#   bouncycastle-lms.yaml          org.bouncycastle.pqc.crypto.lms, 1.65 onwards
+#                                  (deprecated in 1.86, still shipped)
+#   bouncycastle-lms-1.86.yaml     LMS/HSS under org.bouncycastle.crypto.*, 1.86 onwards
+#   bouncycastle-pqc-jcajce.yaml   org.bouncycastle.jcajce.spec PQC parameter and key specs
+# Sources: bcgit/bc-java tags r1rv79 .. r1rv86v2 and main (core/src/main/java).
+# This file: the package spelling introduced in 1.84, identical in shape to the
+# old one except where a comment says otherwise.
+#
+# Parameter-set arguments (MLKEMParameters.ml_kem_768, MLDSAParameters.ml_dsa_65,
+# SLHDSAParameters.shake_128f, ...) are static-field reads; the detection rules
+# match those directly, and the contracts record the argument position that
+# carries them as operation-determining (property: parameters).
+
+contracts:
+  # ---------------------------------------------------------------- ML-KEM
+  # MLKEMGenerator(SecureRandom): encapsulates to a recipient public key.
+  - method: org.bouncycastle.crypto.kems.MLKEMGenerator.<init>
+    arity: 1
+    parameter_types: [java.security.SecureRandom]
+    canonical_return_type: org.bouncycastle.crypto.kems.MLKEMGenerator
+    return: { type: org.bouncycastle.crypto.kems.MLKEMGenerator, confidence: high }
+    role: factory
+  # generateEncapsulated(AsymmetricKeyParameter) -> SecretWithEncapsulation
+  # (getSecret() is the shared secret, getEncapsulation() the ciphertext).
+  - method: org.bouncycastle.crypto.kems.MLKEMGenerator.generateEncapsulated
+    arity: 1
+    parameter_types: [org.bouncycastle.crypto.params.AsymmetricKeyParameter]
+    canonical_return_type: org.bouncycastle.crypto.SecretWithEncapsulation
+    return: { type: org.bouncycastle.crypto.SecretWithEncapsulation, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.kems.MLKEMExtractor.<init>
+    arity: 1
+    parameter_types: [org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters]
+    canonical_return_type: org.bouncycastle.crypto.kems.MLKEMExtractor
+    return: { type: org.bouncycastle.crypto.kems.MLKEMExtractor, confidence: high }
+    role: factory
+  # extractSecret(byte[] encapsulation) -> the shared secret.
+  - method: org.bouncycastle.crypto.kems.MLKEMExtractor.extractSecret
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.kems.MLKEMExtractor.getEncapsulationLength
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.generators.MLKEMKeyPairGenerator.<init>
+    arity: 0
+    return: { type: org.bouncycastle.crypto.generators.MLKEMKeyPairGenerator, confidence: high }
+    role: factory
+  # init(KeyGenerationParameters): the parameter set arrives through the
+  # MLKEMKeyGenerationParameters constructor below (argument sources).
+  - method: org.bouncycastle.crypto.generators.MLKEMKeyPairGenerator.init
+    arity: 1
+    parameter_types: [org.bouncycastle.crypto.KeyGenerationParameters]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.generators.MLKEMKeyPairGenerator.generateKeyPair
+    arity: 0
+    return: { type: org.bouncycastle.crypto.AsymmetricCipherKeyPair, confidence: high }
+    role: operation
+  # MLKEMKeyGenerationParameters(SecureRandom, MLKEMParameters): argument 1 is
+  # one of MLKEMParameters.ml_kem_512 / ml_kem_768 / ml_kem_1024 and selects
+  # the parameter set (the static fields themselves are field reads the KB
+  # cannot contract; the detection rules match them directly).
+  - method: org.bouncycastle.crypto.params.MLKEMKeyGenerationParameters.<init>
+    arity: 2
+    parameter_types: [java.security.SecureRandom, org.bouncycastle.crypto.params.MLKEMParameters]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMKeyGenerationParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMKeyGenerationParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: mlkemParameters
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLKEMKeyGenerationParameters.getParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.MLKEMParameters, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLKEMParameters.getName
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLKEMParameters.getSessionKeySize
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLKEMParameters.getEncapsulationLength
+    arity: 0
+    return: { type: int, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLKEMKeyParameters.<init>
+    arity: 2
+    parameter_types: [boolean, org.bouncycastle.crypto.params.MLKEMParameters]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLKEMKeyParameters.getParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.MLKEMParameters, confidence: high }
+    role: output
+  # MLKEMPublicKeyParameters(params, encoding) and (params, t, rho).
+  - method: org.bouncycastle.crypto.params.MLKEMPublicKeyParameters.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.crypto.params.MLKEMParameters, "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMPublicKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMPublicKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLKEMPublicKeyParameters.<init>
+    arity: 3
+    parameter_types: [org.bouncycastle.crypto.params.MLKEMParameters, "byte[]", "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMPublicKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMPublicKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLKEMPublicKeyParameters.getEncoded
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  # MLKEMPrivateKeyParameters(params, encoding), (params, encoding, pubKey),
+  # (params, s, hpk, nonce, t, rho) and (..., seed).
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.crypto.params.MLKEMParameters, "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.<init>
+    arity: 3
+    parameter_types: [org.bouncycastle.crypto.params.MLKEMParameters, "byte[]", org.bouncycastle.crypto.params.MLKEMPublicKeyParameters]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.<init>
+    arity: 6
+    parameter_types: [org.bouncycastle.crypto.params.MLKEMParameters, "byte[]", "byte[]", "byte[]", "byte[]", "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.<init>
+    arity: 7
+    parameter_types: [org.bouncycastle.crypto.params.MLKEMParameters, "byte[]", "byte[]", "byte[]", "byte[]", "byte[]", "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.getEncoded
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.getSeed
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.getPublicKey
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.getPublicKeyParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.MLKEMPublicKeyParameters, confidence: high }
+    role: output
+  # getParametersWithFormat(int) / withPreferredFormat(int) re-encode the same key
+  # (BOTH / SEED_ONLY / EXPANDED_KEY).
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.getParametersWithFormat
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters.withPreferredFormat
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters, confidence: high }
+    role: output
+
+  # ---------------------------------------------------------------- ML-DSA
+  # MLDSASigner implements org.bouncycastle.crypto.Signer: generateSignature()
+  # and verifySignature(byte[]) resolve through the Signer contracts of
+  # bouncycastle.yaml via the hierarchy edge; update() is declared below.
+  - method: org.bouncycastle.crypto.signers.MLDSASigner.<init>
+    arity: 0
+    return: { type: org.bouncycastle.crypto.signers.MLDSASigner, confidence: high }
+    role: factory
+  - method: org.bouncycastle.crypto.signers.MLDSASigner.init
+    arity: 2
+    parameter_types: [boolean, org.bouncycastle.crypto.CipherParameters]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+  # External-mu signing (FIPS 204 section 6.2).
+  - method: org.bouncycastle.crypto.signers.MLDSASigner.generateMu
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.signers.MLDSASigner.generateMuSignature
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.signers.MLDSASigner.verifyMu
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: boolean
+    return: { type: boolean, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.signers.MLDSASigner.verifyMuSignature
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return: { type: boolean, confidence: high }
+    role: operation
+  # HashMLDSASigner (pre-hash ML-DSA) implements Signer; the one-shot
+  # generateSignature(hash) / verifySignature(hash, signature) overloads ship in 1.85.
+  - method: org.bouncycastle.crypto.signers.HashMLDSASigner.<init>
+    arity: 0
+    return: { type: org.bouncycastle.crypto.signers.HashMLDSASigner, confidence: high }
+    role: factory
+  - method: org.bouncycastle.crypto.signers.HashMLDSASigner.init
+    arity: 2
+    parameter_types: [boolean, org.bouncycastle.crypto.CipherParameters]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.signers.HashMLDSASigner.generateSignature
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.signers.HashMLDSASigner.verifySignature
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return: { type: boolean, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.generators.MLDSAKeyPairGenerator.<init>
+    arity: 0
+    return: { type: org.bouncycastle.crypto.generators.MLDSAKeyPairGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.crypto.generators.MLDSAKeyPairGenerator.init
+    arity: 1
+    parameter_types: [org.bouncycastle.crypto.KeyGenerationParameters]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.generators.MLDSAKeyPairGenerator.generateKeyPair
+    arity: 0
+    return: { type: org.bouncycastle.crypto.AsymmetricCipherKeyPair, confidence: high }
+    role: operation
+  # Argument 1 is MLDSAParameters.ml_dsa_44 / ml_dsa_65 / ml_dsa_87 or the
+  # *_with_sha512 pre-hash variants.
+  - method: org.bouncycastle.crypto.params.MLDSAKeyGenerationParameters.<init>
+    arity: 2
+    parameter_types: [java.security.SecureRandom, org.bouncycastle.crypto.params.MLDSAParameters]
+    canonical_return_type: org.bouncycastle.crypto.params.MLDSAKeyGenerationParameters
+    return: { type: org.bouncycastle.crypto.params.MLDSAKeyGenerationParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: mldsaParameters
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLDSAKeyGenerationParameters.getParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.MLDSAParameters, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLDSAParameters.getName
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLDSAParameters.isPreHash
+    arity: 0
+    return: { type: boolean, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLDSAKeyParameters.<init>
+    arity: 2
+    parameter_types: [boolean, org.bouncycastle.crypto.params.MLDSAParameters]
+    canonical_return_type: org.bouncycastle.crypto.params.MLDSAKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLDSAKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLDSAKeyParameters.getParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.MLDSAParameters, confidence: high }
+    role: output
+  # MLDSAPublicKeyParameters(params, encoding) and (params, rho, t1).
+  - method: org.bouncycastle.crypto.params.MLDSAPublicKeyParameters.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.crypto.params.MLDSAParameters, "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLDSAPublicKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLDSAPublicKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLDSAPublicKeyParameters.<init>
+    arity: 3
+    parameter_types: [org.bouncycastle.crypto.params.MLDSAParameters, "byte[]", "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLDSAPublicKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLDSAPublicKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLDSAPublicKeyParameters.getEncoded
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  # MLDSAPrivateKeyParameters(params, encoding), (params, encoding, pubKey),
+  # (params, rho, K, tr, s1, s2, t0, t1) and (..., seed).
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.crypto.params.MLDSAParameters, "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.<init>
+    arity: 3
+    parameter_types: [org.bouncycastle.crypto.params.MLDSAParameters, "byte[]", org.bouncycastle.crypto.params.MLDSAPublicKeyParameters]
+    canonical_return_type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.<init>
+    arity: 8
+    parameter_types: [org.bouncycastle.crypto.params.MLDSAParameters, "byte[]", "byte[]", "byte[]", "byte[]", "byte[]", "byte[]", "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.<init>
+    arity: 9
+    parameter_types: [org.bouncycastle.crypto.params.MLDSAParameters, "byte[]", "byte[]", "byte[]", "byte[]", "byte[]", "byte[]", "byte[]", "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: params
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.getEncoded
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.getSeed
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.getPrivateKey
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.getPublicKey
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.getPublicKeyParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.MLDSAPublicKeyParameters, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters.getParametersWithFormat
+    arity: 1
+    parameter_types: [int]
+    canonical_return_type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters, confidence: high }
+    role: output
+
+  # --------------------------------------------------------------- SLH-DSA
+  # SLHDSASigner implements org.bouncycastle.pqc.crypto.MessageSigner (one-shot
+  # generateSignature(message) / verifySignature(message, signature), declared
+  # on the interface below and resolved through the hierarchy edge).
+  - method: org.bouncycastle.crypto.signers.SLHDSASigner.<init>
+    arity: 0
+    return: { type: org.bouncycastle.crypto.signers.SLHDSASigner, confidence: high }
+    role: factory
+  - method: org.bouncycastle.crypto.signers.SLHDSASigner.init
+    arity: 2
+    parameter_types: [boolean, org.bouncycastle.crypto.CipherParameters]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+  # HashSLHDSASigner (pre-hash SLH-DSA) implements Signer.
+  - method: org.bouncycastle.crypto.signers.HashSLHDSASigner.<init>
+    arity: 0
+    return: { type: org.bouncycastle.crypto.signers.HashSLHDSASigner, confidence: high }
+    role: factory
+  - method: org.bouncycastle.crypto.signers.HashSLHDSASigner.init
+    arity: 2
+    parameter_types: [boolean, org.bouncycastle.crypto.CipherParameters]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.generators.SLHDSAKeyPairGenerator.<init>
+    arity: 0
+    return: { type: org.bouncycastle.crypto.generators.SLHDSAKeyPairGenerator, confidence: high }
+    role: factory
+  - method: org.bouncycastle.crypto.generators.SLHDSAKeyPairGenerator.init
+    arity: 1
+    parameter_types: [org.bouncycastle.crypto.KeyGenerationParameters]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: config
+  - method: org.bouncycastle.crypto.generators.SLHDSAKeyPairGenerator.generateKeyPair
+    arity: 0
+    return: { type: org.bouncycastle.crypto.AsymmetricCipherKeyPair, confidence: high }
+    role: operation
+  # Argument 1 is one of the SLHDSAParameters.sha2_128f ... shake_256s fields
+  # or their *_with_sha256 / *_with_sha512 / *_with_shake* pre-hash variants.
+  - method: org.bouncycastle.crypto.params.SLHDSAKeyGenerationParameters.<init>
+    arity: 2
+    parameter_types: [java.security.SecureRandom, org.bouncycastle.crypto.params.SLHDSAParameters]
+    canonical_return_type: org.bouncycastle.crypto.params.SLHDSAKeyGenerationParameters
+    return: { type: org.bouncycastle.crypto.params.SLHDSAKeyGenerationParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 1
+        name: parameters
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.SLHDSAKeyGenerationParameters.getParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.SLHDSAParameters, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.SLHDSAParameters.getName
+    arity: 0
+    return: { type: java.lang.String, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.SLHDSAParameters.isPreHash
+    arity: 0
+    return: { type: boolean, confidence: high }
+    role: output
+  # SLHDSAKeyParameters' constructor is protected; only the getter is public.
+  - method: org.bouncycastle.crypto.params.SLHDSAKeyParameters.getParameters
+    arity: 0
+    return: { type: org.bouncycastle.crypto.params.SLHDSAParameters, confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.SLHDSAPublicKeyParameters.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.crypto.params.SLHDSAParameters, "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.SLHDSAPublicKeyParameters
+    return: { type: org.bouncycastle.crypto.params.SLHDSAPublicKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: parameters
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.SLHDSAPublicKeyParameters.getEncoded
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  # SLHDSAPrivateKeyParameters(parameters, skpkEncoded) and
+  # (parameters, skSeed, prf, pkSeed, pkRoot).
+  - method: org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters.<init>
+    arity: 2
+    parameter_types: [org.bouncycastle.crypto.params.SLHDSAParameters, "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: parameters
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters.<init>
+    arity: 5
+    parameter_types: [org.bouncycastle.crypto.params.SLHDSAParameters, "byte[]", "byte[]", "byte[]", "byte[]"]
+    canonical_return_type: org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters
+    return: { type: org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: parameters
+        role: operation-determining
+        contributes: { property: parameters, derivation: argument_value }
+  - method: org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters.getEncoded
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters.getPublicKey
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+  - method: org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters.getEncodedPublicKey
+    arity: 0
+    return: { type: "byte[]", confidence: high }
+    role: output
+
+  # ------------------------------------------- shared interface operations
+  # Declared on the interfaces (not per signer) so the hierarchy-aware
+  # attachment resolves every implementation; identical to the entries the
+  # sibling PQC file declares, which Merge accepts idempotently.
+  - method: org.bouncycastle.crypto.Signer.update
+    arity: 1
+    parameter_types: [byte]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.bouncycastle.crypto.Signer.update
+    arity: 3
+    parameter_types: ["byte[]", int, int]
+    canonical_return_type: void
+    return: { type: void, confidence: high }
+    role: operation
+  - method: org.bouncycastle.pqc.crypto.MessageSigner.generateSignature
+    arity: 1
+    parameter_types: ["byte[]"]
+    canonical_return_type: byte[]
+    return: { type: "byte[]", confidence: high }
+    role: operation
+  - method: org.bouncycastle.pqc.crypto.MessageSigner.verifySignature
+    arity: 2
+    parameter_types: ["byte[]", "byte[]"]
+    canonical_return_type: boolean
+    return: { type: boolean, confidence: high }
+    role: operation
+
+hierarchy:
+  org.bouncycastle.crypto.kems.MLKEMGenerator:
+    - org.bouncycastle.crypto.EncapsulatedSecretGenerator
+  org.bouncycastle.crypto.kems.MLKEMExtractor:
+    - org.bouncycastle.crypto.EncapsulatedSecretExtractor
+  org.bouncycastle.crypto.generators.MLKEMKeyPairGenerator:
+    - org.bouncycastle.crypto.AsymmetricCipherKeyPairGenerator
+  org.bouncycastle.crypto.params.MLKEMKeyGenerationParameters:
+    - org.bouncycastle.crypto.KeyGenerationParameters
+  org.bouncycastle.crypto.params.MLKEMParameters:
+    - org.bouncycastle.crypto.KEMParameters
+  org.bouncycastle.crypto.params.MLKEMKeyParameters:
+    - org.bouncycastle.crypto.params.AsymmetricKeyParameter
+  org.bouncycastle.crypto.params.MLKEMPublicKeyParameters:
+    - org.bouncycastle.crypto.params.MLKEMKeyParameters
+  org.bouncycastle.crypto.params.MLKEMPrivateKeyParameters:
+    - org.bouncycastle.crypto.params.MLKEMKeyParameters
+  org.bouncycastle.crypto.signers.MLDSASigner:
+    - org.bouncycastle.crypto.Signer
+  org.bouncycastle.crypto.signers.HashMLDSASigner:
+    - org.bouncycastle.crypto.Signer
+  org.bouncycastle.crypto.generators.MLDSAKeyPairGenerator:
+    - org.bouncycastle.crypto.AsymmetricCipherKeyPairGenerator
+  org.bouncycastle.crypto.params.MLDSAKeyGenerationParameters:
+    - org.bouncycastle.crypto.KeyGenerationParameters
+  org.bouncycastle.crypto.params.MLDSAParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.MLDSAKeyParameters:
+    - org.bouncycastle.crypto.params.AsymmetricKeyParameter
+  org.bouncycastle.crypto.params.MLDSAPublicKeyParameters:
+    - org.bouncycastle.crypto.params.MLDSAKeyParameters
+  org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters:
+    - org.bouncycastle.crypto.params.MLDSAKeyParameters
+  org.bouncycastle.crypto.signers.SLHDSASigner:
+    - org.bouncycastle.pqc.crypto.MessageSigner
+  org.bouncycastle.crypto.signers.HashSLHDSASigner:
+    - org.bouncycastle.crypto.Signer
+  org.bouncycastle.crypto.generators.SLHDSAKeyPairGenerator:
+    - org.bouncycastle.crypto.AsymmetricCipherKeyPairGenerator
+  org.bouncycastle.crypto.params.SLHDSAKeyGenerationParameters:
+    - org.bouncycastle.crypto.KeyGenerationParameters
+  org.bouncycastle.crypto.params.SLHDSAParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.SLHDSAKeyParameters:
+    - org.bouncycastle.crypto.params.AsymmetricKeyParameter
+  org.bouncycastle.crypto.params.SLHDSAPublicKeyParameters:
+    - org.bouncycastle.crypto.params.SLHDSAKeyParameters
+  org.bouncycastle.crypto.params.SLHDSAPrivateKeyParameters:
+    - org.bouncycastle.crypto.params.SLHDSAKeyParameters
+  # Shared Bouncy Castle base types (identical to bouncycastle.yaml and the
+  # sibling PQC file; Merge accepts identical edges idempotently).
+  org.bouncycastle.crypto.EncapsulatedSecretGenerator:
+    - java.lang.Object
+  org.bouncycastle.crypto.EncapsulatedSecretExtractor:
+    - java.lang.Object
+  org.bouncycastle.crypto.SecretWithEncapsulation:
+    - java.lang.Object
+  org.bouncycastle.crypto.AsymmetricCipherKeyPairGenerator:
+    - java.lang.Object
+  org.bouncycastle.crypto.KeyGenerationParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.KEMParameters:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.Signer:
+    - java.lang.Object
+  org.bouncycastle.pqc.crypto.MessageSigner:
+    - java.lang.Object
+  org.bouncycastle.crypto.params.AsymmetricKeyParameter:
+    - org.bouncycastle.crypto.CipherParameters
+  org.bouncycastle.crypto.CipherParameters:
+    - java.lang.Object
+  org.bouncycastle.crypto.AsymmetricCipherKeyPair:
+    - java.lang.Object
+  java.lang.String:
+    - java.lang.Object
+  java.lang.Object: []

@@ -1,0 +1,92 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "bcrypt"
+  coordinates:
+    - "bcrypt"
+  version_range: ">=0.8.0"
+  description: "bcrypt password hashing for Node: salt generation, hashing, verification and cost extraction"
+
+# bcrypt's whole public surface is SEVEN module-level functions, and consumers
+# reach them through the module binding -- `bcrypt.hash(pw, 10)` -- which is the
+# call shape that resolves to the library coordinate. That is why this KB can
+# join where @azure/keyvault-keys cannot: there is no client object and no
+# receiver to type.
+#
+# EVERY FUNCTION IS DECLARED AT EVERY ARITY IT ACCEPTS, read off the library's
+# own bcrypt.js rather than the README. The async functions take an optional
+# Node-style callback and return a promise when it is omitted (promises.js), so
+# each has one more arity than its sync twin.
+#
+# The sync and async twins are separate entries because they are separate
+# exports: a consumer writes one or the other, and a KB that declared only the
+# async form would leave `hashSync` uncataloged.
+#
+# genSalt returns a STRING that hash() then consumes, so its return type is
+# declared as the primitive rather than a library type -- there is no salt
+# object in this library, and inventing one would type a variable as something
+# the runtime never produces.
+#
+# NOT DECLARED: nothing. The package exports exactly these seven names and all
+# seven participate in password hashing, unlike a vault client where listing and
+# administration have to be excluded.
+contracts:
+  - method: "bcrypt.genSalt"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcrypt.genSalt"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcrypt.genSalt"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcrypt.genSaltSync"
+    arity: 0
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcrypt.genSaltSync"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcrypt.genSaltSync"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+
+  - method: "bcrypt.hash"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcrypt.hash"
+    arity: 3
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcrypt.hashSync"
+    arity: 1
+    return: { type: "string", confidence: high }
+    role: operation
+  - method: "bcrypt.hashSync"
+    arity: 2
+    return: { type: "string", confidence: high }
+    role: operation
+
+  - method: "bcrypt.compare"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bcrypt.compare"
+    arity: 3
+    return: { type: "boolean", confidence: high }
+    role: operation
+  - method: "bcrypt.compareSync"
+    arity: 2
+    return: { type: "boolean", confidence: high }
+    role: operation
+
+  - method: "bcrypt.getRounds"
+    arity: 1
+    return: { type: "number", confidence: high }
+    role: operation

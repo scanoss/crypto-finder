@@ -1,0 +1,728 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: "js-sha3"
+  coordinates:
+    - "js-sha3"
+  version_range: ">=0.8.0"
+  description: "js-sha3: SHA-3, Keccak, SHAKE, cSHAKE and KMAC"
+
+# KECCAK AND SHA-3 GET DIFFERENT TYPES, and that is the single decision this KB
+# exists to record. They are the same permutation with a different padding byte,
+# so Keccak-256 and SHA3-256 produce different digests for the same input. An
+# incremental chain that began at keccak256 must not be readable as a SHA3-256
+# three calls later -- which is exactly what one shared Hasher type would have
+# allowed, and it would have been shorter.
+#
+# BOTH EXPORT SPELLINGS RESOLVE TO THE SAME TYPE. `keccak256` and `keccak_256`
+# are one algorithm reached by two names, so both factories return
+# js-sha3.Keccak256. The draw contains both, 33 times and 5.
+#
+# THE XOF TYPES ARE SEPARATE FROM THE DIGEST TYPES because their output is not a
+# fixed size: shake128(msg, bits) takes the length as an argument, and a chain
+# that started at a SHAKE cannot be read as a fixed digest. cSHAKE is separate
+# again, since its customization string is part of what the caller relies on.
+#
+# KMAC IS THE ONE KEYED CONSTRUCTION here and takes (key, message, bits), so its
+# arities differ from every hash above. Typed apart so a MAC is never read as a
+# digest.
+#
+# Deliberately NOT contracted: toString, an alias of hex that adds no call shape a
+# consumer writes deliberately.
+contracts:
+  - method: "js-sha3.sha3_224"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_224.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_224.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_224.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_224.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_224.create"
+    arity: 0
+    return: { type: "js-sha3.Sha3_224", confidence: high }
+    role: factory
+  - method: "js-sha3.Sha3_224.update"
+    arity: 1
+    return: { type: "js-sha3.Sha3_224", confidence: high }
+    role: operation
+  - method: "js-sha3.Sha3_224.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_224.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_224.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_224.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.sha3_256"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_256.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_256.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_256.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_256.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_256.create"
+    arity: 0
+    return: { type: "js-sha3.Sha3_256", confidence: high }
+    role: factory
+  - method: "js-sha3.Sha3_256.update"
+    arity: 1
+    return: { type: "js-sha3.Sha3_256", confidence: high }
+    role: operation
+  - method: "js-sha3.Sha3_256.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_256.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_256.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_256.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.sha3_384"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_384.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_384.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_384.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_384.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_384.create"
+    arity: 0
+    return: { type: "js-sha3.Sha3_384", confidence: high }
+    role: factory
+  - method: "js-sha3.Sha3_384.update"
+    arity: 1
+    return: { type: "js-sha3.Sha3_384", confidence: high }
+    role: operation
+  - method: "js-sha3.Sha3_384.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_384.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_384.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_384.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.sha3_512"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_512.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_512.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_512.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_512.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.sha3_512.create"
+    arity: 0
+    return: { type: "js-sha3.Sha3_512", confidence: high }
+    role: factory
+  - method: "js-sha3.Sha3_512.update"
+    arity: 1
+    return: { type: "js-sha3.Sha3_512", confidence: high }
+    role: operation
+  - method: "js-sha3.Sha3_512.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_512.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_512.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Sha3_512.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.keccak_224"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_224.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_224.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_224.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_224.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_224.create"
+    arity: 0
+    return: { type: "js-sha3.Keccak224", confidence: high }
+    role: factory
+  - method: "js-sha3.Keccak224.update"
+    arity: 1
+    return: { type: "js-sha3.Keccak224", confidence: high }
+    role: operation
+  - method: "js-sha3.Keccak224.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak224.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak224.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak224.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.keccak224"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak224.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak224.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak224.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak224.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak224.create"
+    arity: 0
+    return: { type: "js-sha3.Keccak224", confidence: high }
+    role: factory
+  - method: "js-sha3.keccak_256"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_256.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_256.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_256.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_256.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_256.create"
+    arity: 0
+    return: { type: "js-sha3.Keccak256", confidence: high }
+    role: factory
+  - method: "js-sha3.Keccak256.update"
+    arity: 1
+    return: { type: "js-sha3.Keccak256", confidence: high }
+    role: operation
+  - method: "js-sha3.Keccak256.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak256.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak256.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak256.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.keccak256"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak256.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak256.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak256.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak256.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak256.create"
+    arity: 0
+    return: { type: "js-sha3.Keccak256", confidence: high }
+    role: factory
+  - method: "js-sha3.keccak_384"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_384.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_384.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_384.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_384.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_384.create"
+    arity: 0
+    return: { type: "js-sha3.Keccak384", confidence: high }
+    role: factory
+  - method: "js-sha3.Keccak384.update"
+    arity: 1
+    return: { type: "js-sha3.Keccak384", confidence: high }
+    role: operation
+  - method: "js-sha3.Keccak384.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak384.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak384.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak384.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.keccak384"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak384.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak384.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak384.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak384.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak384.create"
+    arity: 0
+    return: { type: "js-sha3.Keccak384", confidence: high }
+    role: factory
+  - method: "js-sha3.keccak_512"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_512.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_512.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_512.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_512.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak_512.create"
+    arity: 0
+    return: { type: "js-sha3.Keccak512", confidence: high }
+    role: factory
+  - method: "js-sha3.Keccak512.update"
+    arity: 1
+    return: { type: "js-sha3.Keccak512", confidence: high }
+    role: operation
+  - method: "js-sha3.Keccak512.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak512.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak512.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Keccak512.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.keccak512"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak512.hex"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak512.digest"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak512.array"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak512.arrayBuffer"
+    arity: 1
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.keccak512.create"
+    arity: 0
+    return: { type: "js-sha3.Keccak512", confidence: high }
+    role: factory
+  - method: "js-sha3.shake_128"
+    arity: 2
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.shake_128"
+    arity: 4
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.shake_128.create"
+    arity: 1
+    return: { type: "js-sha3.Shake128", confidence: high }
+    role: factory
+  - method: "js-sha3.Shake128.update"
+    arity: 1
+    return: { type: "js-sha3.Shake128", confidence: high }
+    role: operation
+  - method: "js-sha3.Shake128.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Shake128.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Shake128.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Shake128.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.shake128"
+    arity: 2
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.shake128"
+    arity: 4
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.shake128.create"
+    arity: 1
+    return: { type: "js-sha3.Shake128", confidence: high }
+    role: factory
+  - method: "js-sha3.shake_256"
+    arity: 2
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.shake_256"
+    arity: 4
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.shake_256.create"
+    arity: 1
+    return: { type: "js-sha3.Shake256", confidence: high }
+    role: factory
+  - method: "js-sha3.Shake256.update"
+    arity: 1
+    return: { type: "js-sha3.Shake256", confidence: high }
+    role: operation
+  - method: "js-sha3.Shake256.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Shake256.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Shake256.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Shake256.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.shake256"
+    arity: 2
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.shake256"
+    arity: 4
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.shake256.create"
+    arity: 1
+    return: { type: "js-sha3.Shake256", confidence: high }
+    role: factory
+  - method: "js-sha3.cshake_128"
+    arity: 2
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.cshake_128"
+    arity: 4
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.cshake_128.create"
+    arity: 1
+    return: { type: "js-sha3.Cshake128", confidence: high }
+    role: factory
+  - method: "js-sha3.Cshake128.update"
+    arity: 1
+    return: { type: "js-sha3.Cshake128", confidence: high }
+    role: operation
+  - method: "js-sha3.Cshake128.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Cshake128.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Cshake128.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Cshake128.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.cshake128"
+    arity: 2
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.cshake128"
+    arity: 4
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.cshake128.create"
+    arity: 1
+    return: { type: "js-sha3.Cshake128", confidence: high }
+    role: factory
+  - method: "js-sha3.cshake_256"
+    arity: 2
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.cshake_256"
+    arity: 4
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.cshake_256.create"
+    arity: 1
+    return: { type: "js-sha3.Cshake256", confidence: high }
+    role: factory
+  - method: "js-sha3.Cshake256.update"
+    arity: 1
+    return: { type: "js-sha3.Cshake256", confidence: high }
+    role: operation
+  - method: "js-sha3.Cshake256.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Cshake256.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Cshake256.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Cshake256.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.cshake256"
+    arity: 2
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.cshake256"
+    arity: 4
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.cshake256.create"
+    arity: 1
+    return: { type: "js-sha3.Cshake256", confidence: high }
+    role: factory
+  - method: "js-sha3.kmac_128"
+    arity: 3
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.kmac_128.create"
+    arity: 2
+    return: { type: "js-sha3.Kmac128", confidence: high }
+    role: factory
+  - method: "js-sha3.Kmac128.update"
+    arity: 1
+    return: { type: "js-sha3.Kmac128", confidence: high }
+    role: operation
+  - method: "js-sha3.Kmac128.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Kmac128.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Kmac128.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Kmac128.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.kmac128"
+    arity: 3
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.kmac128.create"
+    arity: 2
+    return: { type: "js-sha3.Kmac128", confidence: high }
+    role: factory
+  - method: "js-sha3.kmac_256"
+    arity: 3
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.kmac_256.create"
+    arity: 2
+    return: { type: "js-sha3.Kmac256", confidence: high }
+    role: factory
+  - method: "js-sha3.Kmac256.update"
+    arity: 1
+    return: { type: "js-sha3.Kmac256", confidence: high }
+    role: operation
+  - method: "js-sha3.Kmac256.hex"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Kmac256.digest"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Kmac256.array"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.Kmac256.arrayBuffer"
+    arity: 0
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: output
+  - method: "js-sha3.kmac256"
+    arity: 3
+    return: { type: "js-sha3.Digest", confidence: high }
+    role: operation
+  - method: "js-sha3.kmac256.create"
+    arity: 2
+    return: { type: "js-sha3.Kmac256", confidence: high }
+    role: factory

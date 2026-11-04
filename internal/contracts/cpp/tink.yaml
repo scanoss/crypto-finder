@@ -1,0 +1,142 @@
+schema_version: "2"
+ecosystem: cpp
+library:
+  name: tink
+  coordinates:
+    - google/tink
+  version_range: "1.7.0"
+  description: "Tink C++ public crypto API contracts for the archived google/tink v1.7.0 coordinate"
+
+# Inventory sources: google/tink tag v1.7.0 public headers
+# cc/aead/aead_key_templates.h, cc/mac/mac_key_templates.h,
+# cc/signature/signature_key_templates.h, cc/aead.h, cc/mac.h,
+# cc/public_key_sign.h, cc/public_key_verify.h, and cc/keyset_handle.h.
+# Detection rules select the template factories and GenerateNew; these
+# contracts model those calls plus the primitive terminals they unlock.
+#
+# skipped-non-crypto: GetKeysetInfo, WriteNoSecret, keyset protobuf accessors.
+# skipped-unsupported: KeysetHandle::GetPrimitive<P>() — the primitive is a
+#   template argument, not a call argument, and arity 0 cannot distinguish
+#   Aead from Mac. unique_ptr<Aead> receivers resolve as
+#   std::unique_ptr<crypto::tink::Aead>, not crypto::tink::Aead.
+# skipped-informative-return: doesSupport-style predicates.
+# needs-follow-up: AES-GCM-SIV, RSA-SSA templates, KmsEnvelopeAead, and any
+#   later split-repository C++ coordinate.
+#
+# Resolution gaps match Crypto++: unqualified names reached through
+# `using namespace crypto::tink` are not contracted keys.
+
+contracts:
+  - method: crypto::tink::AeadKeyTemplates.Aes128Gcm
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::AeadKeyTemplates.Aes128GcmNoPrefix
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::AeadKeyTemplates.Aes256Gcm
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::AeadKeyTemplates.Aes256GcmNoPrefix
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::AeadKeyTemplates.Aes128Eax
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::AeadKeyTemplates.Aes256Eax
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::AeadKeyTemplates.Aes128CtrHmacSha256
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::AeadKeyTemplates.Aes256CtrHmacSha256
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::AeadKeyTemplates.XChaCha20Poly1305
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+
+  - method: crypto::tink::MacKeyTemplates.HmacSha256
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::MacKeyTemplates.HmacSha256HalfSizeTag
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::MacKeyTemplates.HmacSha512
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::MacKeyTemplates.AesCmac
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+
+  - method: crypto::tink::SignatureKeyTemplates.EcdsaP256
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::SignatureKeyTemplates.EcdsaP384Sha384
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::SignatureKeyTemplates.EcdsaP521
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+  - method: crypto::tink::SignatureKeyTemplates.Ed25519
+    arity: 0
+    return: {type: google::crypto::tink::KeyTemplate, confidence: high}
+    role: factory
+
+  - method: crypto::tink::KeysetHandle.GenerateNew
+    arity: 1
+    return: {type: crypto::tink::KeysetHandle, confidence: high}
+    role: factory
+  - method: crypto::tink::KeysetHandle.GenerateNew
+    arity: 2
+    return: {type: crypto::tink::KeysetHandle, confidence: high}
+    role: factory
+
+  - method: crypto::tink::Aead.Encrypt
+    arity: 2
+    return: {type: std::string, confidence: high}
+    role: operation
+  - method: crypto::tink::Aead.Decrypt
+    arity: 2
+    return: {type: std::string, confidence: high}
+    role: operation
+
+  - method: crypto::tink::Mac.ComputeMac
+    arity: 1
+    return: {type: std::string, confidence: high}
+    role: operation
+  - method: crypto::tink::Mac.VerifyMac
+    arity: 2
+    return: {type: void, confidence: high}
+    role: operation
+
+  - method: crypto::tink::PublicKeySign.Sign
+    arity: 1
+    return: {type: std::string, confidence: high}
+    role: operation
+  - method: crypto::tink::PublicKeyVerify.Verify
+    arity: 2
+    return: {type: void, confidence: high}
+    role: operation
+
+hierarchy:
+  crypto::tink::Aead: []
+  crypto::tink::Mac: []
+  crypto::tink::PublicKeySign: []
+  crypto::tink::PublicKeyVerify: []
+  crypto::tink::KeysetHandle: []

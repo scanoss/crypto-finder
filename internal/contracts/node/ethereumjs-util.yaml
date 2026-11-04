@@ -1,0 +1,142 @@
+schema_version: "2"
+ecosystem: node
+library:
+  name: ethereumjs-util
+  coordinates:
+    - ethereumjs-util
+    - "@ethereumjs/util"
+  version_range: ">=7.0.0"
+  description: "ethereumjs-util and its scoped rewrite @ethereumjs/util: Keccak-256, secp256k1 ECDSA and Ethereum key material"
+
+# Keys read off an EXPORTED CALL GRAPH, not written from the documentation.
+# Scanning five real published consumers (ethereumjs-wallet 1.0.2, eth-sig-util
+# 3.0.1, ethereumjs-tx 2.1.2, @ethereumjs/tx 10.1.3, @metamask/eth-sig-util
+# 9.0.0) shows the parser emits `<package>.<function>` for the named-import
+# spelling these packages are actually used through.
+#
+# BOTH COORDINATES ARE CONTRACTED AND THEY ARE NOT THE SAME SURFACE. The legacy
+# ethereumjs-util exports the digest helpers (keccak*, sha256*, ripemd160*) and
+# ecsign; the scoped rewrite dropped them and kept recovery, validation and key
+# derivation. Entries are declared per coordinate rather than merged, so a
+# consumer on one never resolves against the other's surface.
+#
+# The cryptography itself is in another package -- ethereum-cryptography for the
+# legacy line, @noble/hashes and @noble/curves for the scoped one -- and no
+# entry here names a backend call.
+contracts:
+  - method: ethereumjs-util.keccak256
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ethereumjs-util.keccak
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ethereumjs-util.keccak
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ethereumjs-util.keccakFromString
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ethereumjs-util.rlphash
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ethereumjs-util.sha256
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ethereumjs-util.ripemd160
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ethereumjs-util.hashPersonalMessage
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: ethereumjs-util.ecsign
+    arity: 2
+    return: { type: ethereumjs-util.ECDSASignature, confidence: high }
+    role: operation
+  - method: ethereumjs-util.ecsign
+    arity: 3
+    return: { type: ethereumjs-util.ECDSASignature, confidence: high }
+    role: operation
+  - method: ethereumjs-util.ecrecover
+    arity: 4
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: ethereumjs-util.ecrecover
+    arity: 5
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: ethereumjs-util.isValidSignature
+    arity: 3
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: ethereumjs-util.privateToPublic
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: ethereumjs-util.privateToAddress
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: ethereumjs-util.publicToAddress
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: ethereumjs-util.publicToAddress
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: ethereumjs-util.importPublic
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: ethereumjs-util.isValidPrivate
+    arity: 1
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+
+  # --- the scoped rewrite: a narrower surface --------------------------------
+  - method: "@ethereumjs/util.hashPersonalMessage"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+  - method: "@ethereumjs/util.ecrecover"
+    arity: 4
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: "@ethereumjs/util.ecrecover"
+    arity: 5
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: "@ethereumjs/util.isValidSignature"
+    arity: 3
+    return: { type: builtins.bool, confidence: high }
+    role: operation
+  - method: "@ethereumjs/util.privateToPublic"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: "@ethereumjs/util.privateToAddress"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: "@ethereumjs/util.publicToAddress"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: "@ethereumjs/util.publicToAddress"
+    arity: 2
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: "@ethereumjs/util.randomBytes"
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: output
+
+hierarchy: {}

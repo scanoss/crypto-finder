@@ -1,0 +1,29 @@
+schema_version: "2"
+ecosystem: python
+library:
+  name: m2crypto-0.37
+  coordinates:
+    - M2Crypto
+  version_range: ">=0.37.0"
+  description: "M2Crypto APIs added in 0.37.0: EVP public key file loading and one-shot digest sign and verify"
+
+contracts:
+  - method: M2Crypto.EVP.load_key_pubkey
+    arity: 1
+    return: { type: M2Crypto.EVP.PKey, confidence: high }
+    role: factory
+  - method: M2Crypto.EVP.PKey.digest_sign
+    arity: 1
+    return: { type: builtins.bytes, confidence: high }
+    role: operation
+  - method: M2Crypto.EVP.PKey.digest_verify
+    arity: 2
+    return: { type: builtins.int, confidence: high }
+    role: operation
+
+hierarchy:
+  M2Crypto.EVP.PKey:
+    - builtins.object
+  builtins.bytes:
+    - builtins.object
+  builtins.object: []
