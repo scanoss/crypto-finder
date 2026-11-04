@@ -26,6 +26,7 @@ func TestLoadEmbeddedCIncludesTongsuoContracts(t *testing.T) {
 		{"EVP_eea3", "const EVP_CIPHER*", "factory", "", 0},
 		{"EVP_wbsm4_xiaolai_cbc", "const EVP_CIPHER*", "factory", "", 0},
 		{"EVP_wbsm4_wsise_gcm", "const EVP_CIPHER*", "factory", "", 0},
+		{"EVP_wbsm4_baiwu_cfb", "const EVP_CIPHER*", "factory", "", 0},
 		{"SM3_Init", "int", "config", "", 1},
 		{"SM3_Final", "int", "operation", "", 2},
 		{"TSAPI_SM3", "unsigned char*", "operation", "", 3},
@@ -106,6 +107,31 @@ func TestTongsuoDeclaresNoOpenSSLSymbol(t *testing.T) {
 		got := kb.ContractsFor(shared, 0)
 		if len(got) != 1 || got[0].SourceLibrary != "openssl-evp" {
 			t.Errorf("ContractsFor(%q, 0) = %#v, want the openssl-evp contract", shared, got)
+		}
+	}
+}
+
+// The Tongsuo SM cipher-suite rules sink on the OpenSSL list setters, so
+// openssl-ssl.yaml must declare them with the list as cipherSuite metadata.
+func TestOpenSSLSSLDeclaresCipherSuiteSetters(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("c")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(c): %v", err)
+	}
+	for _, method := range []string{
+		"SSL_CTX_set_cipher_list", "SSL_set_cipher_list",
+		"SSL_CTX_set_ciphersuites", "SSL_set_ciphersuites",
+	} {
+		got := kb.ContractsFor(method, 2)
+		if len(got) != 1 || got[0].SourceLibrary != "openssl-ssl" || got[0].Role != "config" {
+			t.Fatalf("ContractsFor(%q, 2) = %#v, want one openssl-ssl config contract", method, got)
+		}
+		params := got[0].Parameters
+		if len(params) != 1 || params[0].Index == nil || *params[0].Index != 1 ||
+			params[0].Contributes == nil || params[0].Contributes.Property != "cipherSuite" {
+			t.Errorf("%s parameters = %#v, want index 1 contributing cipherSuite", method, params)
 		}
 	}
 }

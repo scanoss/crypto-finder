@@ -265,6 +265,24 @@ contracts:
       type: builtins.bytes
       confidence: high
     role: output
+  - method: gmssl.Sm2Certificate.<init>
+    arity: 0
+    return:
+      type: gmssl.Sm2Certificate
+      confidence: high
+    role: factory
+  - method: gmssl.Sm2Certificate
+    arity: 0
+    return:
+      type: gmssl.Sm2Certificate
+      confidence: high
+    role: factory
+  - method: gmssl.Sm2Certificate.import_pem
+    arity: 1
+    return:
+      type: builtins.NoneType
+      confidence: high
+    role: config
   - method: gmssl.Sm2Key.<init>
     arity: 0
     return:
@@ -616,6 +634,8 @@ hierarchy:
   builtins.bool:
     - builtins.object
   builtins.bytes:
+    - builtins.object
+  gmssl.Sm2Certificate:
     - builtins.object
   gmssl.Sm2Key:
     - builtins.object
