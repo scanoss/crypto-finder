@@ -3,9 +3,9 @@ package cli
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/entities"
-	scanutil "github.com/scanoss/crypto-finder/internal/scan"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/static-engine/entities"
+	"github.com/scanoss/static-engine/graphfrag"
+	scanutil "github.com/scanoss/static-engine/scan"
 )
 
 func TestPrepareAnnotateProjection_PreservesFinalFindingIdentity(t *testing.T) {

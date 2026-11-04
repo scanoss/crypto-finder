@@ -45,5 +45,3 @@ Preconditions:
 
 - `internal/cli/cbom.go`
 - `pkg/sbomcbom/**`
-- `internal/api/component_findings.go`
-- `internal/api/client.go`

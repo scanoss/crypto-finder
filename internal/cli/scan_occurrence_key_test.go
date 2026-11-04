@@ -10,11 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/static-engine/domains/crypto/oid"
+	"github.com/scanoss/static-engine/entities"
 	"github.com/scanoss/static-engine/javaruntime"
-
-	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/oid"
-	"github.com/scanoss/crypto-finder/internal/output"
+	"github.com/scanoss/static-engine/output"
 )
 
 func resolvedReportForOutput(t testing.TB, report *entities.InterimReport) *oid.ResolvedReport {

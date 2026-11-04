@@ -38,6 +38,3 @@ Preconditions:
 ## Code paths
 
 - `internal/cli/convert.go`
-- `internal/converter/**`
-- `internal/output/cyclonedx.go`
-- `internal/oid/**`

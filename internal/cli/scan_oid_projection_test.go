@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/static-engine/entities"
 )
 
 func TestPrepareScanOIDProjection_FinalizesIdentityBeforeResolution(t *testing.T) {

@@ -285,5 +285,5 @@ deps: ## Download dependencies
 proof-bcprov-mine: ## Mine-path wall-clock proof on bcprov-jdk18on@1.84 (#216); skips in default CI
 	@echo "Running bcprov-jdk18on@1.84 mine-path proof (budget 10m, mining JOB_TIMEOUT is 30m)..."
 	@CRYPTO_FINDER_BCPROV_MINE_PROOF=1 \
-		go test -count=1 -timeout 15m -run TestMinePathBcprovJdk18on184_WallClockBudget ./internal/scan/
+		go test -count=1 -timeout 15m -run TestMinePathBcprovJdk18on184_WallClockBudget github.com/scanoss/static-engine/scan
 	@echo "✅ bcprov mine-path proof passed"

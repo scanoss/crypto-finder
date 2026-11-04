@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/static-engine/entities"
 )
 
 // A JavaScript string argument selects a conditioned rule whatever its

@@ -27,7 +27,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/static-engine/graphfrag"
 )
 
 // appModule stands for the scanned application in transitiveFinding.module

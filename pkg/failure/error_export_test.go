@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/failure"
+	"github.com/scanoss/static-engine/failure"
 )
 
 func TestPublicFailureContract(t *testing.T) {

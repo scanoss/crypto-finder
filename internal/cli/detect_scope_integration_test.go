@@ -306,7 +306,7 @@ func testDetectScopeKeySizes(t *testing.T, binary, root string) {
 	tmp := t.TempDir()
 	target := filepath.Join(tmp, "src")
 	require.NoError(t, os.MkdirAll(target, 0o700))
-	usage, err := os.ReadFile(filepath.Join(root, "internal", "scan", "testdata", "jca_keygen_key_length", "JcaKeygenUsage.java"))
+	usage, err := os.ReadFile(filepath.Join(root, "internal", "cli", "testdata", "jca_keygen_key_length", "JcaKeygenUsage.java"))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(target, "JcaKeygenUsage.java"), usage, 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(target, "Other.java"), []byte(`package issue273;

@@ -19,7 +19,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/static-engine/scanner"
 )
 
 func envOf(values map[string]string) func(string) (string, bool) {

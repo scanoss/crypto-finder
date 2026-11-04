@@ -17,7 +17,7 @@ import (
 
 	"github.com/xeipuuv/gojsonschema"
 
-	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/static-engine/entities"
 )
 
 func TestScanProgressWritesJSONLToStderr(t *testing.T) {

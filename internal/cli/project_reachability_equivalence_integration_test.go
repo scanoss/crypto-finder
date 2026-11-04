@@ -28,8 +28,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/static-engine/entities"
+	"github.com/scanoss/static-engine/graphfrag"
 )
 
 // divergence is a first-party finding whose two verdicts are expected to

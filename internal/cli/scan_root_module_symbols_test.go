@@ -25,9 +25,8 @@ import (
 	"testing"
 
 	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/entities"
 	"github.com/scanoss/static-engine/javaruntime"
-
-	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // A package unpacked into a temporary directory named

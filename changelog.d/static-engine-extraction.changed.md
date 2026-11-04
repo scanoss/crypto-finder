@@ -5,3 +5,9 @@
   `github.com/scanoss/static-engine` packages of the same name; code importing
   `pkg/graphwalk` or `pkg/purl` moves to `github.com/scanoss/static-engine/graphwalk`
   and `github.com/scanoss/static-engine/purl`.
+- The scan pipeline, rules loader, scanner adapters, findings writers and CBOM
+  converter also move to `github.com/scanoss/static-engine`. Scan output is
+  unchanged. `pkg/graphfrag` and `pkg/schema` keep their import paths and now
+  forward to `github.com/scanoss/static-engine/graphfrag` and
+  `github.com/scanoss/static-engine/schema`; `pkg/graphfrag/equiv` moves to
+  `github.com/scanoss/static-engine/graphfrag/equiv`.

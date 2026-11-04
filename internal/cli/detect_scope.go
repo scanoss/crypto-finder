@@ -33,8 +33,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/static-engine/failure"
-
-	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/static-engine/scanner"
 )
 
 // detectionScopeStats counts list entries that did not become scoped files.

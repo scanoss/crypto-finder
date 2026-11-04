@@ -24,8 +24,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/static-engine/config"
-
-	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/static-engine/scanner"
 )
 
 const (

@@ -25,11 +25,10 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"github.com/scanoss/static-engine/domains/crypto/enricher"
+	"github.com/scanoss/static-engine/entities"
 	"github.com/scanoss/static-engine/failure"
-
-	"github.com/scanoss/crypto-finder/internal/enricher"
-	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/output"
+	"github.com/scanoss/static-engine/output"
 )
 
 var convertOutput string

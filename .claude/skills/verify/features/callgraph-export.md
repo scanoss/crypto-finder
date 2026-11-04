@@ -57,17 +57,3 @@ Preconditions:
 
 - `internal/cli/scan.go`
 - `internal/cli/annotate.go`
-- `internal/scan/annotate*.go`
-- `internal/scan/fragment_export.go`
-- `internal/scan/export.go`
-- `internal/scan/export_ecosystems.go`
-- `internal/scan/key_length*.go`
-- `internal/scan/supporting_calls.go`
-- `internal/scan/returned_object_lifecycle.go`
-- `pkg/graphfrag/callgraph_export.go`
-- `pkg/graphfrag/export.go`
-- `pkg/graphfrag/intern_functions.go`
-- `pkg/graphfrag/encode.go`
-- `pkg/graphfrag/model.go`
-- `pkg/graphfrag/findings_envelope.go`
-- `pkg/graphfrag/stitch*.go`

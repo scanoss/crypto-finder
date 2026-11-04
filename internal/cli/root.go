@@ -34,9 +34,8 @@ import (
 	"golang.org/x/term"
 
 	"github.com/scanoss/static-engine/failure"
+	"github.com/scanoss/static-engine/scanner/semgrep"
 	"github.com/scanoss/static-engine/utils"
-
-	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
 
 var (

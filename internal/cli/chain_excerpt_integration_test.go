@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/static-engine/graphfrag"
 )
 
 // A route that runs through dependency code shows the dependency's source at

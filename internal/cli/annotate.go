@@ -25,22 +25,21 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	api "github.com/scanoss/static-engine/api"
 	"github.com/scanoss/static-engine/config"
+	"github.com/scanoss/static-engine/domains/crypto/oid"
+	"github.com/scanoss/static-engine/engine"
+	"github.com/scanoss/static-engine/entities"
 	"github.com/scanoss/static-engine/failure"
+	"github.com/scanoss/static-engine/graphfrag"
 	"github.com/scanoss/static-engine/language"
+	rules "github.com/scanoss/static-engine/ruleset"
+	"github.com/scanoss/static-engine/ruleset/cache"
+	scanutil "github.com/scanoss/static-engine/scan"
+	"github.com/scanoss/static-engine/scanner"
+	"github.com/scanoss/static-engine/scanner/opengrep"
+	"github.com/scanoss/static-engine/scanner/semgrep"
 	"github.com/scanoss/static-engine/skip"
-
-	api "github.com/scanoss/crypto-finder/internal/api"
-	"github.com/scanoss/crypto-finder/internal/cache"
-	"github.com/scanoss/crypto-finder/internal/engine"
-	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/oid"
-	"github.com/scanoss/crypto-finder/internal/rules"
-	scanutil "github.com/scanoss/crypto-finder/internal/scan"
-	"github.com/scanoss/crypto-finder/internal/scanner"
-	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
-	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 var (

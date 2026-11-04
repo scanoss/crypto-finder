@@ -24,14 +24,13 @@ import (
 	"testing"
 
 	"github.com/scanoss/static-engine/config"
+	"github.com/scanoss/static-engine/domains/crypto/oid"
+	"github.com/scanoss/static-engine/engine"
+	"github.com/scanoss/static-engine/entities"
+	"github.com/scanoss/static-engine/graphfrag"
 	"github.com/scanoss/static-engine/javaruntime"
-
-	"github.com/scanoss/crypto-finder/internal/engine"
-	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/oid"
-	scanutil "github.com/scanoss/crypto-finder/internal/scan"
-	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	scanutil "github.com/scanoss/static-engine/scan"
+	"github.com/scanoss/static-engine/scanner/semgrep"
 )
 
 func mustPrepareOIDReport(t testing.TB, report *entities.InterimReport) *oid.ResolvedReport {
