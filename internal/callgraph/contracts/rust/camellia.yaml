@@ -7,8 +7,10 @@ library:
   version_range: ">=0.1.0,<0.3.0"
   description: "RustCrypto Camellia raw block cipher (RFC 3713)"
 
-# Inventory: camellia 0.1.0 src/camellia.rs (impl_camellia!), 0.2.1 src/lib.rs. Contracts sit on the concrete types; the
-# shared `cipher` traits are blanket-implemented and carry no algorithm identity.
+# Inventory: camellia 0.1.0 src/camellia.rs (impl_camellia!), 0.2.1 src/lib.rs.
+# Per-type entries: the Rust export does not map a `cipher` trait method called on a
+# concrete receiver to a trait contract, so encrypt/decrypt sit on each type.
+# needs-follow-up (same trait gap): *_b2b, *_inout and encrypt_padded*/decrypt_padded*.
 # skipped-non-crypto: AlgorithmName/Debug/Drop/zeroize impls and the private key schedule.
 
 contracts:

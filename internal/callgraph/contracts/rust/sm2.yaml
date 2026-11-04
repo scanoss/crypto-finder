@@ -11,6 +11,10 @@ library:
 # the `SecretKey` alias. 0.0.1 is an unrelated pre-RustCrypto release and is out of range.
 # sign/verify hash Z_A || M with SM3; encrypt/decrypt and their `_der` forms default to SM3.
 # skipped-non-crypto: byte/SEC1/DER conversions, Signature encoding, Display/serde, arithmetic.
+# needs-follow-up: EncryptingKey.encrypt_cipher(_with_buf), DecryptingKey.decrypt_cipher(_with_buf),
+#   SecretKey.from_bytes/from_slice/from_sec1_der/from_sec1_pem/from_jwk*.
+# needs-follow-up (trait gap: the Rust export does not map a trait method on a concrete
+#   receiver to a trait contract): multipart_sign/multipart_verify, from_pkcs8_*.
 
 contracts:
   - method: sm2::SecretKey.random

@@ -11,6 +11,8 @@ library:
 # 0.11). `Sm3` is the only hasher in every release.
 # skipped-unsupported: `Sm3Core` and the 0.5 `block_api` module, which consumers do not build.
 # skipped-non-crypto: the `digest` and `Digest` re-exports.
+# needs-follow-up: finalize_into_reset, a `digest` trait method the Rust export does not map
+#   from a concrete receiver to a trait contract.
 
 contracts:
   - method: sm3::Sm3.new
