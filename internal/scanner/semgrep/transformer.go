@@ -162,13 +162,7 @@ func detectRuleVersion(rulePaths []string) string {
 			continue
 		}
 
-		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if len(parts) < 2 {
-			continue
-		}
-
-		rulesetRoot := filepath.Join(rulesetsDir, parts[0], parts[1])
-		candidate := readRulesetManifestVersion(filepath.Join(rulesetRoot, "manifest.json"))
+		candidate := cachedRulesetVersion(rulesetsDir, rel)
 		if candidate == "" {
 			continue
 		}
@@ -184,6 +178,31 @@ func detectRuleVersion(rulePaths []string) string {
 	}
 
 	return version
+}
+
+// cachedRulesetVersion returns the version of the cached ruleset that holds
+// rel (a path relative to the rulesets dir), or "" when it cannot tell.
+func cachedRulesetVersion(rulesetsDir, rel string) string {
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	// A per-run copy (a leased ruleset decrypted for this run, or a filtered
+	// copy) lives in <name>/.crypto-finder-filtered/<version>/run-* and
+	// belongs to the cached ruleset <name>/<version>.
+	if parts[1] == config.FilteredRulesDirName {
+		if len(parts) < 3 {
+			return ""
+		}
+		parts = []string{parts[0], parts[2]}
+	}
+	// A plain cached ruleset holds the API's manifest.json; a leased one only
+	// the cache metadata, which records the same version.
+	rulesetRoot := filepath.Join(rulesetsDir, parts[0], parts[1])
+	if version := readRulesetManifestVersion(filepath.Join(rulesetRoot, "manifest.json")); version != "" {
+		return version
+	}
+	return readRulesetManifestVersion(filepath.Join(rulesetRoot, ".cache-meta.json"))
 }
 
 func readRulesetManifestVersion(manifestPath string) string {

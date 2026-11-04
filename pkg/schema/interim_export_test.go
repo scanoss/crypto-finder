@@ -62,8 +62,8 @@ func TestInterimReportPublicContract(t *testing.T) {
 		t.Errorf("internal field leaked in %s", data)
 	}
 
-	if schema.InterimFormatVersion != "1.8" {
-		t.Errorf("InterimFormatVersion = %q, want 1.8", schema.InterimFormatVersion)
+	if schema.InterimFormatVersion != "1.9" {
+		t.Errorf("InterimFormatVersion = %q, want 1.9", schema.InterimFormatVersion)
 	}
 }
 

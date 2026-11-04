@@ -29,6 +29,8 @@ type (
 	ToolInfo = schema.ToolInfo
 	// RulesInfo describes the ruleset that fed a scan.
 	RulesInfo = schema.RulesInfo
+	// RulesLease identifies the signed lease of a remote ruleset.
+	RulesLease = schema.RulesLease
 	// Finding represents all cryptographic assets discovered in a single file.
 	Finding = schema.Finding
 	// CryptographicAsset represents a single detected cryptographic element.

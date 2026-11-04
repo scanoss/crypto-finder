@@ -22,12 +22,13 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.8"
+const InterimFormatVersion = "1.9"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -69,8 +70,9 @@ type ToolInfo struct {
 // best-effort and may be empty depending on the source type.
 //
 // For remote rulesets, Version is the manifest version returned by the
-// SCANOSS API (e.g. "v1.0.0", "latest") and ChecksumSHA256 is the manifest
-// checksum, both lifted from .cache-meta.json. For local rulesets, Version
+// SCANOSS API (e.g. "v1.0.0", "latest") and ChecksumSHA256 is the release
+// payload hash of a leased ruleset (see the field) or the manifest checksum
+// of an unleased one. For local rulesets, Version
 // is empty and ChecksumSHA256 is a hash of the loaded rule file contents
 // in deterministic order.
 type RulesInfo struct {
@@ -84,9 +86,24 @@ type RulesInfo struct {
 	Version string `json:"version,omitempty"`
 
 	// ChecksumSHA256 is the content fingerprint of the ruleset.
-	// For remote sources: the manifest checksum reported by the API.
+	// For remote sources: the release payload's SHA-256 from the lease
+	// (payload_sha256) for a leased ruleset, otherwise the checksum the API
+	// reported with the download.
 	// For local sources: SHA256 of concatenated rule file contents in path-sorted order.
 	ChecksumSHA256 string `json:"checksum_sha256,omitempty"`
+
+	// Lease is set when the remote ruleset was a signed (leased) bundle.
+	Lease *RulesLease `json:"lease,omitempty"`
+}
+
+// RulesLease describes the signed lease a remote ruleset was served with. It
+// names neither the key nor the tenant the ruleset was issued to.
+type RulesLease struct {
+	// ExpiresAt is when the lease, and the right to use the ruleset, ends.
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// SigningKeyID names the key that signed the lease.
+	SigningKeyID string `json:"signing_key_id"`
 }
 
 // Finding represents all cryptographic assets discovered in a single file.
