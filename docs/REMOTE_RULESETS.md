@@ -11,6 +11,7 @@ Crypto Finder can automatically fetch curated rulesets from the SCANOSS API, pro
   - Latest versions: 24 hours
 - **Stale Cache Fallback**: Automatically uses expired cache (up to 30 days old) when API is unreachable (opt-out with `--strict`)
 - **Checksum Verification**: SHA256 verification ensures ruleset integrity
+- **Signed Leases**: A ruleset served with a signed lease is verified (signature, expiry, bundle hash) on download and again on every scan, and is kept encrypted in the cache (see [Leased rulesets](#leased-rulesets))
 - **Retry Logic**: Automatic retry with exponential backoff on network failures
 - **Seamless Integration**: Combine remote and local rules effortlessly
 
@@ -74,6 +75,52 @@ crypto-finder scan --strict /path/to/code
 crypto-finder scan --max-stale-age 60d /path/to/code  # 60 days
 ```
 
+## Leased rulesets
+
+crypto-finder downloads a ruleset from `GET /v3/rulesets/{name}/{version}/download`. When that endpoint answers 404 (a server or gateway that does not route `/v3/rulesets` yet), crypto-finder downloads from `/v2/cryptography/rulesets/{name}/{version}/download` and caches the ruleset as plain rule files, as described under [Cache Management](#cache-management). Any other answer from `/v3`, a 401 or 403 included, is reported as is and never retried on `/v2`.
+
+A v3 download carries a signed **lease** in the `SCANOSS-Ruleset-Lease` header (base64 of the lease envelope JSON). The lease names the ruleset and version, the hash of the release payload (`payload_sha256`) and of the served bytes (`bundle_sha256`, also sent as `X-Checksum-SHA256`), the key and tenant it was issued to (`key_ref`, `tenant`), its expiry (`expires_at`) and the id of the key that signed it (`signing_key_id`). The served bundle holds only rule files; it can be personalised per tenant, so its bytes differ between tenants for the same release. A ruleset that comes with a lease is a **leased** ruleset:
+
+- **On download**, crypto-finder checks `X-Checksum-SHA256`, the lease signature against its trusted signing keys, the expiry, and that the lease vouches for exactly the downloaded bytes. A bundle that fails any check is rejected and not cached.
+- **In the cache**, it keeps `bundle.enc` (the bundle encrypted with AES-256-GCM under a key derived from your API key) and `lease.json`, never plain rule files. The cache opens only with the API key it was downloaded with; after changing keys, run once with `--no-cache`.
+- **On every scan**, it decrypts the bundle, verifies the lease again (signature, expiry, bundle hash) and extracts the rules into a per-run directory under `~/.scanoss/crypto-finder/cache/rulesets/{name}/.crypto-finder-filtered/{version}/run-*`. The directory is removed when the scan ends, also when it fails; one left by a killed process is removed by a later scan after two hours. With a leased ruleset, OpenGrep core mode writes its rules file to a temporary file instead of keeping it in `~/.scanoss/crypto-finder/cache/opengrep-core-rules/`.
+- **Expiry**: an expired lease is never used, not even as stale cache. The scan fails with an error that names the expiry date; refresh the ruleset by scanning online with a valid API key (or importing a new bundle), or scan with `--rules-dir`.
+- **Freshness**: when the cache TTL of a leased ruleset elapses, crypto-finder asks `GET /v3/rulesets/{name}/{version}` for the current release and downloads again only when the version or `payload_sha256` differs from the cached lease, or when the cached lease expires within 7 days. Otherwise it records the check and keeps the cache.
+- **Report**: `checksum_sha256` in the report's `rules` block is the lease's `payload_sha256`, the same for every tenant, never the hash of the personalised bundle; the block adds `lease: {expires_at, signing_key_id}`. Neither names the key or the tenant.
+
+### Trusted signing keys
+
+crypto-finder trusts the signing keys built into it: `srv-2026-11`, the key the SCANOSS API signs leases with. `SCANOSS_RULESET_PUBKEYS` adds keys (for example a test or on-premises API) or replaces a built-in key of the same id:
+
+```bash
+export SCANOSS_RULESET_PUBKEYS="srv-2026-11:BASE64_ED25519_PUBLIC_KEY[,other-id:BASE64...]"
+```
+
+Each entry is a key id and the base64 of a raw 32-byte Ed25519 public key. A lease signed by a key that is not trusted is rejected.
+
+### Offline bundles
+
+An air-gapped installation receives a bundle (`dca-v1.40.0.tar.gz`) and the lease envelope issued with it (the JSON `scanoss-services ruleset lease` prints). Import them once:
+
+```bash
+crypto-finder rules import dca-v1.40.0.tar.gz                     # reads dca-v1.40.0.tar.gz.lease.json
+crypto-finder rules import dca-v1.40.0.tar.gz --lease lease.json  # lease elsewhere
+crypto-finder scan --ruleset-version v1.40.0 /path/to/code
+```
+
+`rules import` verifies the bundle against the lease like a download and stores it encrypted with the configured API key under the name and version the lease names. An imported ruleset counts as current until its lease expires, so scans with `--ruleset-version <version>` use it without contacting the API.
+
+### Listing the cache
+
+```bash
+$ crypto-finder rules status
+NAME  VERSION  MODE    EXPIRES AT            KEY ID
+dca   latest   leased  2026-12-04T10:00:00Z  srv-2026-11
+dca   v1.39.0  legacy  -                     -
+```
+
+`MODE` is `leased` for an encrypted, lease-bound ruleset and `legacy` for plain rule files from the v2 endpoint.
+
 ## Cache Management
 
 ### Cache Location
@@ -85,12 +132,14 @@ crypto-finder scan --max-stale-age 60d /path/to/code  # 60 days
   └── [language dirs]/           # Rule files organized by language
 ```
 
+A leased ruleset holds `bundle.enc`, `lease.json` and `.cache-meta.json` (with `leased: true` and `expires_at`) instead.
+
 ### Cache Behavior
 
 - **First scan**: Downloads and caches the default "dca" ruleset
 - **Subsequent scans**: Uses cached version if not expired
 - **Expired cache**: Automatically re-downloads on next scan
-- **API unreachable + expired cache**: Uses stale cache as fallback (if within max age limit)
+- **API unreachable + expired cache**: Uses stale cache as fallback (if within max age limit and, for a leased ruleset, before its lease expires)
 - **Manual cleanup**: Simply delete `~/.scanoss/crypto-finder/cache/`
 
 ### Stale Cache Fallback (Default Behavior)
@@ -139,11 +188,9 @@ Or disable remote rules: crypto-finder scan --no-remote-rules [target]
 If you're in an air-gapped environment and need to use cached rules:
 
 **Solution**:
-1. Run a scan while connected to download and cache rulesets
-2. Transfer the cache directory (`~/.scanoss/crypto-finder/cache/`) to the air-gapped environment
-3. The tool will automatically use the cache within the TTL period (24h for latest, 7d for pinned versions)
-4. After TTL expires, scans will use stale cache fallback (up to 30 days) with a warning
-5. For long-term offline use, consider using `--no-remote-rules --rules-dir` with local rules
+1. Import an offline bundle with `crypto-finder rules import` (see [Offline bundles](#offline-bundles)) and scan with `--ruleset-version <version>`, or
+2. Run a scan while connected to download and cache rulesets, then transfer the cache directory (`~/.scanoss/crypto-finder/cache/`) to the air-gapped environment. The tool uses the cache within the TTL period (24h for latest, 7d for pinned versions), then falls back to the stale cache (up to 30 days) with a warning. A leased ruleset also needs the same API key there and stops at its lease expiry.
+3. For long-term offline use without a bundle, use `--no-remote-rules --rules-dir` with local rules
 
 ### API Unreachable / Network Timeout
 
