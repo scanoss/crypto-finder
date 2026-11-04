@@ -12,6 +12,15 @@ library:
 # ZUC/_ZUC.py, ZUC/_cryptography.py).
 # TWO SPELLINGS PER RE-EXPORTED NAME: consumers write pysmx.SM2.Sign, the definition
 # lives at pysmx.SM2._SM2.Sign, and the Python key follows the consumer's spelling.
+# BlockCyphers.crypt_* (inherited by Sm4, SM4BlockCyphers) never match: the Python
+# export has no inherited-contract fallback (TestSnowlandInheritedCryptIsAnExportGap).
+# skipped-non-crypto: SM2 point/prime helpers (kG, DoublePoint, AddPoint, ConvertJacb2Nor,
+#   Inverse, is_prime, get_random_str), SM3 str2bytes/byte2str/hex2byte, sm9_hex/sm9_unhex,
+#   SM3Type.copy, ZUC lfsr_*/bit_reorganization helpers.
+# needs-follow-up: *.one_round, ZUC.zuc_init, SM4StreamCipher, SM4Algorithm, SM4ModePCBC,
+#   SM3HashAlgorithm, SM3HashContext, SM3HMACContext, SM3Hash/HMACBackend, PysmxBackend,
+#   ZUCAlgorithm, SM2/SM9 curve, signature-algorithm and EllipticCurvePrivateKey/PublicKey
+#   classes, get_hash, pysmx.crypto.pbkdf2_hmac, pysmx.crypto.hashlib.new, pysmx.extra.envelope_*.
 contracts:
   - method: pysmx.SM2.generate_keypair
     arity: 0

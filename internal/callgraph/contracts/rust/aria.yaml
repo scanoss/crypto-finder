@@ -7,8 +7,10 @@ library:
   version_range: ">=0.1.0,<0.3.0"
   description: "RustCrypto ARIA raw block cipher (RFC 5794)"
 
-# Inventory: aria 0.1.0 src/lib.rs (impl_aria!), 0.2.0 src/lib.rs and src/aria{128,192,256}.rs. Contracts sit on the concrete types; the
-# shared `cipher` traits are blanket-implemented and carry no algorithm identity.
+# Inventory: aria 0.1.0 src/lib.rs (impl_aria!), 0.2.0 src/lib.rs and src/aria{128,192,256}.rs.
+# Per-type entries: the Rust export does not map a `cipher` trait method called on a
+# concrete receiver to a trait contract, so encrypt/decrypt sit on each type.
+# needs-follow-up (same trait gap): *_b2b, *_inout and encrypt_padded*/decrypt_padded*.
 # skipped-non-crypto: AlgorithmName/Debug/Drop/zeroize impls and the private key schedule.
 
 contracts:
