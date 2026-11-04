@@ -511,6 +511,39 @@ func TestSynthesizeNodeMainExportWithoutExportsMap(t *testing.T) {
 	}
 }
 
+// A rule of another language naming the same api does not decorate a Node package.
+func TestSynthesizeNodeIgnoresRulesOfOtherLanguages(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json": `{"name": "acme", "main": "index.js"}`,
+		"index.js":     "function sign() {}\nexports.sign = sign;\n",
+	})
+	rules := filepath.Join(t.TempDir(), "rules.yaml")
+	rule := func(id, language, op string) string {
+		return "  - id: " + id + "\n    languages: [" + language + "]\n    metadata:\n      crypto:\n" +
+			"        assetType: algorithm\n        algorithmPrimitive: signature\n" +
+			"        operation: " + op + "\n        api: acme.sign\n"
+	}
+	if err := os.WriteFile(rules, []byte("rules:\n"+rule("js.acme.sign", "javascript", "sign")+rule("rust.acme.sign", "rust", "verify")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{rules}); got != 1 {
+		t.Fatalf("synthesized = %d, want only the javascript rule", got)
+	}
+	if a := syntheticAssets(result.Report)["index.js acme.sign"]; a == nil || a.Metadata["operation"] != "sign" {
+		t.Errorf("assets = %v, want the javascript rule's sign", syntheticAssets(result.Report))
+	}
+}
+
 // Ids are assigned more than once per scan; a second pass keeps them.
 func TestAssignFindingIDsTwiceKeepsSharedLineIDs(t *testing.T) {
 	t.Parallel()
