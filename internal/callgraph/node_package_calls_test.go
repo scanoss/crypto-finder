@@ -17,6 +17,7 @@
 package callgraph
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -235,4 +236,40 @@ func appCalls(graph *CallGraph) []string {
 		calls = append(calls, run.Calls[i].Callee.String())
 	}
 	return calls
+}
+
+// A minified main resolves to its unminified sibling, where the dependency's
+// entry points are anchored; without a sibling it stays the minified file.
+func TestNodePackageEntry_PrefersUnminifiedMain(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name    string
+		sibling bool
+		want    string
+	}{
+		{"sibling", true, "dist/acme.js"},
+		{"no sibling", false, "dist/acme.min.js"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			files := map[string]string{"package.json": `{"name": "acme", "main": "dist/acme.min.js"}`, "dist/acme.min.js": ""}
+			if tc.sibling {
+				files["dist/acme.js"] = ""
+			}
+			for rel, body := range files {
+				p := filepath.Join(dir, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got, want := nodePackageEntry(dir, "."), filepath.Join(dir, filepath.FromSlash(tc.want)); got != want {
+				t.Errorf("nodePackageEntry = %q, want %q", got, want)
+			}
+		})
+	}
 }
