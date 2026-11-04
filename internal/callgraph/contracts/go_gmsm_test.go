@@ -27,6 +27,8 @@ func TestLoadEmbeddedGoIncludesGmsmContracts(t *testing.T) {
 		{"tjfoc-gmsm", "github.com/tjfoc/gmsm/sm3.New", "factory", "hash.Hash", "", 0},
 		{"tjfoc-gmsm", "github.com/tjfoc/gmsm/sm4.NewCipher", "factory", "crypto/cipher.Block", "keySize", 1},
 		{"tjfoc-gmsm", "github.com/tjfoc/gmsm/sm4.Sm4Cbc", "operation", "[]byte", "", 3},
+		{"tjfoc-gmsm", "github.com/tjfoc/gmsm/sm2.KeyExchangeA", "operation", "[]byte", "", 7},
+		{"tjfoc-gmsm", "github.com/tjfoc/gmsm/sm4.GCMEncrypt", "operation", "[]byte", "", 4},
 		{"emmansun-gmsm", "github.com/emmansun/gmsm/sm2.(*PrivateKey).SignWithSM2", "operation", "[]byte", "", 3},
 		{"emmansun-gmsm", "github.com/emmansun/gmsm/sm2.Encrypt", "operation", "[]byte", "", 4},
 		{"emmansun-gmsm", "github.com/emmansun/gmsm/sm3.Sum", "operation", "[32]byte", "", 1},
@@ -36,6 +38,8 @@ func TestLoadEmbeddedGoIncludesGmsmContracts(t *testing.T) {
 		{"emmansun-gmsm", "github.com/emmansun/gmsm/sm9.GenerateEncryptMasterKey", "factory", "*github.com/emmansun/gmsm/sm9.EncryptMasterPrivateKey", "", 1},
 		{"emmansun-gmsm", "github.com/emmansun/gmsm/sm9.(*EncryptMasterPrivateKey).GenerateUserKey", "factory", "*github.com/emmansun/gmsm/sm9.EncryptPrivateKey", "", 2},
 		{"emmansun-gmsm", "github.com/emmansun/gmsm/sm9.(*EncryptMasterPublicKey).WrapKey", "operation", "[]byte", "", 4},
+		{"emmansun-gmsm", "github.com/emmansun/gmsm/sm9.(*SignPrivateKey).SetMasterPublic", "config", "()", "", 1},
+		{"emmansun-gmsm", "github.com/emmansun/gmsm/sm2.RecoverPublicKeysFromSM2Signature", "operation", "[]*crypto/ecdsa.PublicKey", "", 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method, func(t *testing.T) {
@@ -58,5 +62,25 @@ func TestLoadEmbeddedGoIncludesGmsmContracts(t *testing.T) {
 			}
 			t.Fatalf("contract parameters = %#v, want contribution for %q", contract.Parameters, tt.property)
 		})
+	}
+}
+
+// The concrete SM3 and SM4 types are reached through hash.Hash and
+// cipher.Block, so their methods stay with the stdlib-crypto contracts.
+func TestLoadEmbeddedGoGmsmLeavesInterfaceMethodsToStdlib(t *testing.T) {
+	t.Parallel()
+
+	kb, err := contracts.LoadEmbedded("go")
+	if err != nil {
+		t.Fatalf("LoadEmbedded(go): %v", err)
+	}
+	for method, arity := range map[string]int{
+		"github.com/tjfoc/gmsm/sm3.(*SM3).Sum":           1,
+		"github.com/tjfoc/gmsm/sm4.(*Sm4Cipher).Encrypt": 2,
+		"github.com/tjfoc/gmsm/sm4.(*Sm4Cipher).Decrypt": 2,
+	} {
+		if got := kb.ContractsFor(method, arity); len(got) != 0 {
+			t.Errorf("ContractsFor(%q, %d) = %#v, want none", method, arity, got)
+		}
 	}
 }

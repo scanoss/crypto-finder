@@ -9,6 +9,8 @@ library:
 
 # Inventory source: github.com/tjfoc/gmsm v1.4.1 module source from the Go module proxy,
 # packages sm2, sm3, sm4. Detection rules: scanoss/crypto_rules go/tjfoc-gmsm.
+# Covered by stdlib-crypto (sm3.New and sm4.NewCipher return the interfaces):
+# sm3.(*SM3).Sum/Write -> hash.(Hash); sm4.(*Sm4Cipher).Encrypt/Decrypt -> crypto/cipher.(Block).
 contracts:
   - method: github.com/tjfoc/gmsm/sm2.(*PrivateKey).Decrypt
     arity: 3
@@ -56,11 +58,11 @@ contracts:
     role: factory
   - method: github.com/tjfoc/gmsm/sm2.KeyExchangeA
     arity: 7
-    return: { type: github.com/tjfoc/gmsm/sm2.s1, confidence: high }
+    return: { type: "[]byte", confidence: high }
     role: operation
   - method: github.com/tjfoc/gmsm/sm2.KeyExchangeB
     arity: 7
-    return: { type: github.com/tjfoc/gmsm/sm2.s1, confidence: high }
+    return: { type: "[]byte", confidence: high }
     role: operation
   - method: github.com/tjfoc/gmsm/sm2.P256Sm2
     arity: 0
@@ -82,10 +84,6 @@ contracts:
     arity: 2
     return: { type: "[]byte", confidence: high }
     role: operation
-  - method: github.com/tjfoc/gmsm/sm3.(*SM3).Sum
-    arity: 1
-    return: { type: "[]byte", confidence: high }
-    role: operation
   - method: github.com/tjfoc/gmsm/sm3.New
     arity: 0
     return: { type: hash.Hash, confidence: high }
@@ -94,21 +92,13 @@ contracts:
     arity: 1
     return: { type: "[]byte", confidence: high }
     role: operation
-  - method: github.com/tjfoc/gmsm/sm4.(*Sm4Cipher).Decrypt
-    arity: 2
-    return: { type: error, confidence: high }
-    role: operation
-  - method: github.com/tjfoc/gmsm/sm4.(*Sm4Cipher).Encrypt
-    arity: 2
-    return: { type: error, confidence: high }
-    role: operation
   - method: github.com/tjfoc/gmsm/sm4.GCMDecrypt
     arity: 4
-    return: { type: github.com/tjfoc/gmsm/sm4.P, confidence: high }
+    return: { type: "[]byte", confidence: high }
     role: operation
   - method: github.com/tjfoc/gmsm/sm4.GCMEncrypt
     arity: 4
-    return: { type: github.com/tjfoc/gmsm/sm4.C, confidence: high }
+    return: { type: "[]byte", confidence: high }
     role: operation
   - method: github.com/tjfoc/gmsm/sm4.NewCipher
     arity: 1

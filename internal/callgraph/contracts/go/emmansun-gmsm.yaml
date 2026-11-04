@@ -248,7 +248,7 @@ contracts:
     role: factory
   - method: github.com/emmansun/gmsm/sm2.RecoverPublicKeysFromSM2Signature
     arity: 2
-    return: { type: "[]*ecdsa.PublicKey", confidence: high }
+    return: { type: "[]*crypto/ecdsa.PublicKey", confidence: high }
     role: operation
   - method: github.com/emmansun/gmsm/sm2.Sign
     arity: 3
@@ -378,7 +378,7 @@ contracts:
     role: factory
   - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).SetMasterPublic
     arity: 1
-    return: { type: error, confidence: high }
+    return: { type: "()", confidence: high }
     role: config
   - method: github.com/emmansun/gmsm/sm9.(*EncryptPrivateKey).UnwrapKey
     arity: 3
@@ -434,7 +434,7 @@ contracts:
     role: output
   - method: github.com/emmansun/gmsm/sm9.(*SignPrivateKey).SetMasterPublic
     arity: 1
-    return: { type: error, confidence: high }
+    return: { type: "()", confidence: high }
     role: config
   - method: github.com/emmansun/gmsm/sm9.(*SignPrivateKey).Sign
     arity: 3
