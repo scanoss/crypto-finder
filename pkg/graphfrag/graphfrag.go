@@ -551,6 +551,11 @@ const (
 	// graph-algo-15: functions carry returns_calls, the calls whose result they
 	// return, so annotate can follow a returned crypto object into its callers. A
 	// structural graph cached under graph-algo-14 has none.
+	//
+	// graph-algo-16: Go, Rust and Node functions carry visibility and
+	// owner_visibility, which the stitcher reads to keep a public member of a
+	// public owner as a consumer entry point. A structural graph cached under
+	// graph-algo-15 has none for those ecosystems.
 	GraphAlgoVersion = enginegraphfrag.GraphAlgoVersion
 )
 

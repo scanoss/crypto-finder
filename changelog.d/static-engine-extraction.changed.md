@@ -17,3 +17,13 @@
 - `scan --format raw` writes the engine's domain-agnostic RAW report
   (`raw-1.0`): one entry per finding with its file, rule, location, purl,
   reachability (`unknown` for now) and the rule's `metadata.crypto` values.
+- Go, Rust and Node functions in the call graph export and the graph fragment
+  now carry `visibility` and, for a member of a type, class or object,
+  `owner_visibility`, as Java and Python functions already did. In Go an
+  exported name is `public` and any other `package-private`; in Rust `pub` is
+  `public`, `pub(crate)`, `pub(super)` and `pub(in path)` are
+  `package-private` and no modifier is `private`; in Node a function its module
+  exports is `public`. The stitcher reads them to keep a public member of a
+  public owner as a consumer entry point. The graph algorithm version is now
+  `graph-algo-16` (from `graph-algo-15`), so cached structural graphs are
+  rebuilt; re-mine Go, Rust and Node components to get the new fields.
