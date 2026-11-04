@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Contracts for the RustCrypto `sm2`, `sm3`, `sm4`, `aria` and `camellia` crates, so
   their findings carry call context and the block ciphers report the key size.
 
+## [0.46.3] - 2026-11-04
+### Fixed
+- Library entry points now take their crypto metadata only from rules of the
+  scanned package's language. Previously a Rust rule could tag npm
+  `jsonwebtoken` findings with `pkg:cargo/jsonwebtoken`.
+- Mining an npm package that ships only minified builds and no `exports` map
+  (openpgp 5.x) now surfaces its public crypto API as entry points. Previously
+  such a package yielded no findings.
+
 ## [0.46.2] - 2026-11-04
 ### Fixed
 - A library API entry point now keeps its rule's `parameterCondition` when the
