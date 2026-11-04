@@ -58,25 +58,40 @@ func fixture(t *testing.T, rel string) string {
 
 const (
 	repo = "o/r"
-	head = "abc123"
+	head = "abc1230000000000000000000000000000000000"
 	// Keys of the calls checkPR makes for repo#12 at head.
-	keyView     = "pr view 12 -R o/r --json number,state,isDraft,mergeable,headRefOid"
-	keyRuns     = "api --paginate repos/o/r/actions/runs?head_sha=abc123&per_page=100"
-	keyChecks   = "api --paginate repos/o/r/commits/abc123/check-runs?filter=latest&per_page=100"
-	keyStatus   = "api --paginate repos/o/r/commits/abc123/status?per_page=100"
+	keyView     = "pr view 12 -R o/r --json number,state,isDraft,mergeable,headRefOid,author,labels"
+	keyRuns     = "api --paginate repos/o/r/actions/runs?head_sha=abc1230000000000000000000000000000000000&per_page=100"
+	keyChecks   = "api --paginate repos/o/r/commits/abc1230000000000000000000000000000000000/check-runs?filter=latest&per_page=100"
+	keyStatus   = "api --paginate repos/o/r/commits/abc1230000000000000000000000000000000000/status?per_page=100"
 	keyReviews  = "api --paginate repos/o/r/pulls/12/reviews?per_page=100"
 	keyComments = "api --paginate repos/o/r/pulls/12/comments?per_page=100"
+	keyNotes    = "api --paginate repos/o/r/issues/12/comments?per_page=100"
+	keyFiles    = "api --paginate repos/o/r/pulls/12/files?per_page=100"
+	keyEvents   = "api --paginate repos/o/r/issues/12/events?per_page=100"
+
+	// claudeSummary is the comment pr-review.yml leaves on a reviewed pull request.
+	claudeSummary = `{"id":1,"user":{"login":"claude[bot]","type":"Bot"},"body":"No findings."}`
 )
+
+// assessment is ann's merge-risk comment for sha at level, last edited at.
+func assessment(sha, level, at string) string {
+	return `{"id":2,"user":{"login":"ann"},"body":"<!-- merge-risk sha=` + sha + ` level=` + level +
+		` -->\n**Merge risk**","created_at":"2026-11-01T09:00:00Z","updated_at":"` + at + `"}`
+}
 
 // readyPR is a pull request that passes every readiness check.
 func readyPR() map[string]string {
 	return map[string]string{
-		keyView:     `{"number":12,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","headRefOid":"abc123"}`,
+		keyView:     `{"number":12,"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","headRefOid":"abc1230000000000000000000000000000000000","author":{"login":"ann"}}`,
 		keyRuns:     `{"total_count":1,"workflow_runs":[{"name":"Lint","status":"completed","conclusion":"success"}]}`,
 		keyChecks:   `{"total_count":1,"check_runs":[{"name":"build","status":"completed","conclusion":"success"}]}`,
 		keyStatus:   `{"state":"pending","total_count":0,"statuses":[]}`,
 		keyReviews:  `[]`,
 		keyComments: `[]`,
+		keyNotes:    "[" + claudeSummary + "," + assessment(head, "low", "2026-11-01T10:00:00Z") + "]",
+		keyFiles:    `[{"filename":"internal/scan/export.go","status":"modified"}]`,
+		keyEvents:   `[]`,
 	}
 }
 
@@ -89,14 +104,14 @@ func TestCheckPR(t *testing.T) {
 	}{
 		{"ready", "", "", ""},
 
-		{"closed", keyView, `{"number":12,"state":"CLOSED","mergeable":"MERGEABLE","headRefOid":"abc123"}`, "not open (state CLOSED)"},
-		{"draft", keyView, `{"number":12,"state":"OPEN","isDraft":true,"mergeable":"MERGEABLE","headRefOid":"abc123"}`, "is a draft"},
+		{"closed", keyView, `{"number":12,"state":"CLOSED","mergeable":"MERGEABLE","headRefOid":"abc1230000000000000000000000000000000000","author":{"login":"ann"}}`, "not open (state CLOSED)"},
+		{"draft", keyView, `{"number":12,"state":"OPEN","isDraft":true,"mergeable":"MERGEABLE","headRefOid":"abc1230000000000000000000000000000000000","author":{"login":"ann"}}`, "is a draft"},
 		{"pr unreadable", keyView, "", "cannot read the pull request"},
 		{"pr unparseable", keyView, `not json`, "cannot read the pull request: unparseable"},
-		{"pr wrong number", keyView, `{"number":13,"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc123"}`, "unexpected response"},
+		{"pr wrong number", keyView, `{"number":13,"state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc1230000000000000000000000000000000000","author":{"login":"ann"}}`, "unexpected response"},
 
-		{"conflict", keyView, `{"number":12,"state":"OPEN","mergeable":"CONFLICTING","headRefOid":"abc123"}`, "merge conflict"},
-		{"mergeability unknown", keyView, `{"number":12,"state":"OPEN","mergeable":"UNKNOWN","headRefOid":"abc123"}`, "still computing mergeability, retry"},
+		{"conflict", keyView, `{"number":12,"state":"OPEN","mergeable":"CONFLICTING","headRefOid":"abc1230000000000000000000000000000000000","author":{"login":"ann"}}`, "merge conflict"},
+		{"mergeability unknown", keyView, `{"number":12,"state":"OPEN","mergeable":"UNKNOWN","headRefOid":"abc1230000000000000000000000000000000000","author":{"login":"ann"}}`, "still computing mergeability, retry"},
 
 		{"workflow running", keyRuns, `{"workflow_runs":[{"name":"Lint","status":"in_progress"}]}`, `workflow "Lint" has not finished`},
 		{"workflow queued on a later page", keyRuns, `{"workflow_runs":[{"name":"A","status":"completed"}]}{"workflow_runs":[{"name":"B","status":"queued"}]}`, `workflow "B" has not finished`},
@@ -164,28 +179,51 @@ func recordedPR803(t *testing.T) map[string]string {
 	const sha = "18a6545eb3bce9f5ee30826fb886457d27e14e92"
 	const base = "api --paginate repos/scanoss/crypto-finder/"
 	return map[string]string{
-		"pr view 803 -R scanoss/crypto-finder --json number,state,isDraft,mergeable,headRefOid": fixture(t, "pr803/pr.json"),
-		base + "actions/runs?head_sha=" + sha + "&per_page=100":                                 fixture(t, "pr803/runs.json"),
-		base + "commits/" + sha + "/check-runs?filter=latest&per_page=100":                      fixture(t, "pr803/check-runs.json"),
-		base + "commits/" + sha + "/status?per_page=100":                                        fixture(t, "pr803/status.json"),
-		base + "pulls/803/reviews?per_page=100":                                                 fixture(t, "pr803/reviews.json"),
-		base + "pulls/803/comments?per_page=100":                                                fixture(t, "pr803/comments.json"),
+		"pr view 803 -R scanoss/crypto-finder --json number,state,isDraft,mergeable,headRefOid,author,labels": fixture(t, "pr803/pr.json"),
+		base + "actions/runs?head_sha=" + sha + "&per_page=100":                                               fixture(t, "pr803/runs.json"),
+		base + "commits/" + sha + "/check-runs?filter=latest&per_page=100":                                    fixture(t, "pr803/check-runs.json"),
+		base + "commits/" + sha + "/status?per_page=100":                                                      fixture(t, "pr803/status.json"),
+		base + "pulls/803/reviews?per_page=100":                                                               fixture(t, "pr803/reviews.json"),
+		base + "pulls/803/comments?per_page=100":                                                              fixture(t, "pr803/comments.json"),
+		base + "issues/803/comments?per_page=100":                                                             fixture(t, "pr803/issue-comments.json"),
+		base + "pulls/803/files?per_page=100":                                                                 fixture(t, "pr803/files.json"),
+		base + "issues/803/events?per_page=100":                                                               fixture(t, "pr803/events.json"),
 	}
 }
 
+// TestCheckPRRecorded judges scanoss/crypto-finder#803, which merged before
+// the gate asked for Claude's review and a merge-risk assessment, and which
+// changed .github/workflows/test.yml.
 func TestCheckPRRecorded(t *testing.T) {
+	const view = "pr view 803 -R scanoss/crypto-finder --json number,state,isDraft,mergeable,headRefOid,author,labels"
+	const notes = "api --paginate repos/scanoss/crypto-finder/issues/803/comments?per_page=100"
+	const sha = "18a6545eb3bce9f5ee30826fb886457d27e14e92"
 	responses := recordedPR803(t)
 	c := client{gh: &fakeGH{responses: responses}, repo: "scanoss/crypto-finder"}
 	reasons := checkPR(context.Background(), c, 803)
-	want := []string{"the pull request is not open (state MERGED)"}
-	if strings.Join(reasons, "\n") != strings.Join(want, "\n") {
+	want := []string{
+		"the pull request is not open (state MERGED)",
+		"Claude has not reviewed this pull request",
+		"no merge-risk assessment of the head commit 18a6545eb",
+	}
+	if len(reasons) != len(want) {
 		t.Fatalf("merged #803: got %q, want %q", reasons, want)
 	}
+	for i := range want {
+		if !strings.HasPrefix(reasons[i], want[i]) {
+			t.Fatalf("merged #803: reason %d is %q, want it to start with %q", i, reasons[i], want[i])
+		}
+	}
 
-	// The same recorded checks on an open, mergeable pull request are ready.
-	responses["pr view 803 -R scanoss/crypto-finder --json number,state,isDraft,mergeable,headRefOid"] = `{"headRefOid":"18a6545eb3bce9f5ee30826fb886457d27e14e92","isDraft":false,"mergeable":"MERGEABLE","number":803,"state":"OPEN"}`
-	if reasons := checkPR(context.Background(), c, 803); len(reasons) != 0 {
-		t.Fatalf("open #803: want ready, got %q", reasons)
+	// Open, reviewed by Claude and judged low, the workflow change still makes it high.
+	responses[view] = strings.Replace(fixture(t, "pr803/pr.json"), `"state":"MERGED"`, `"state":"OPEN"`, 1)
+	responses[view] = strings.Replace(responses[view], `"mergeable":"UNKNOWN"`, `"mergeable":"MERGEABLE"`, 1)
+	responses[notes] = `[` + claudeSummary + `,{"id":9,"user":{"login":"matiasdaloia"},"body":"<!-- merge-risk sha=` + sha +
+		` level=low -->","created_at":"2026-11-02T10:20:00Z","updated_at":"2026-11-02T10:20:00Z"}]`
+	reasons = checkPR(context.Background(), c, 803)
+	wantHigh := "merge risk is high (CI, release and tagging workflows (`.github/workflows/test.yml`) sets at least high)"
+	if len(reasons) != 1 || !strings.HasPrefix(reasons[0], wantHigh) {
+		t.Fatalf("open #803: want one reason starting %q, got %q", wantHigh, reasons)
 	}
 }
 
@@ -196,7 +234,7 @@ func TestRunCheckExitCodes(t *testing.T) {
 	}
 	out.Reset()
 	responses := readyPR()
-	responses[keyView] = `{"number":12,"state":"OPEN","isDraft":true,"mergeable":"CONFLICTING","headRefOid":"abc123"}`
+	responses[keyView] = `{"number":12,"state":"OPEN","isDraft":true,"mergeable":"CONFLICTING","headRefOid":"abc1230000000000000000000000000000000000","author":{"login":"ann"}}`
 	code := run(context.Background(), []string{"check", "--pr", "12", "--repo", repo}, nil, &out, &out, &fakeGH{responses: responses})
 	if code != 1 || !strings.Contains(out.String(), "- the pull request is a draft\n- the pull request has a merge conflict") {
 		t.Fatalf("not ready: exit %d, want 1 and every reason on its own line, output:\n%s", code, out.String())
@@ -207,7 +245,7 @@ const (
 	mergeSHA      = "m1"
 	keyPulls      = "api --paginate repos/o/r/commits/m1/pulls?per_page=100"
 	keyIssueNotes = "api --paginate repos/o/r/issues/12/comments?per_page=100"
-	pulls12       = `[{"number":12,"merged_at":"2026-10-30T19:32:04Z","merge_commit_sha":"m1","head":{"sha":"abc123"}}]`
+	pulls12       = `[{"number":12,"merged_at":"2026-10-30T19:32:04Z","merge_commit_sha":"m1","head":{"sha":"abc1230000000000000000000000000000000000"}}]`
 )
 
 func TestAudit(t *testing.T) {

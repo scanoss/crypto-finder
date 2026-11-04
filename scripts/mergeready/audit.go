@@ -88,6 +88,7 @@ func judgeAtMerge(ctx context.Context, c client, pr mergedPull) []string {
 	}
 	for _, r := range runs {
 		switch {
+		case r.Name == reviewCheck:
 		case r.Status != statusCompleted:
 			reasons = append(reasons, fmt.Sprintf("check %q has still not finished", r.Name))
 		case !greenConclusion[r.Conclusion]:

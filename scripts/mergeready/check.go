@@ -26,12 +26,26 @@ import (
 // reviewBot is the login whose inline review comments each need a reply.
 const reviewBot = "claude[bot]"
 
+// reviewCheck and reviewWorkflow are the job and the workflow of
+// .github/workflows/pr-review.yml. They say whether Claude could run, not
+// whether the code is right, so they hold no merge: checkClaudeReview asks for
+// Claude's comment or review instead, and a review that fails (the seat out of
+// its limits) must not block every merge.
+const (
+	reviewCheck    = "claude review"
+	reviewWorkflow = "PR review"
+)
+
 type pullRequest struct {
 	Number     int    `json:"number"`
 	State      string `json:"state"`
 	IsDraft    bool   `json:"isDraft"`
 	Mergeable  string `json:"mergeable"`
 	HeadRefOid string `json:"headRefOid"`
+	Author     user   `json:"author"`
+	Labels     []struct {
+		Name string `json:"name"`
+	} `json:"labels"`
 }
 
 // readinessCheck returns why pr is not ready, or nothing. A check that cannot
@@ -48,27 +62,45 @@ var readinessChecks = []readinessCheck{
 	checkStatuses,
 	checkReviews,
 	checkBotComments,
+	checkClaudeReview,
+	checkMergeRisk,
 }
 
 // checkPR returns every reason pull request number is not ready to merge.
 func checkPR(ctx context.Context, c client, number int) []string {
-	raw, err := c.gh.run(ctx, "", "pr", "view", strconv.Itoa(number), "-R", c.repo,
-		"--json", "number,state,isDraft,mergeable,headRefOid")
+	pr, err := viewPR(ctx, c, number)
 	if err != nil {
-		return []string{fmt.Sprintf("cannot read the pull request: %v", err)}
+		return []string{err.Error()}
+	}
+	// Checks that read the same endpoint fail with the same reason; say it once.
+	seen := map[string]bool{}
+	var reasons []string
+	for _, check := range readinessChecks {
+		for _, r := range check(ctx, c, pr) {
+			if !seen[r] {
+				seen[r] = true
+				reasons = append(reasons, r)
+			}
+		}
+	}
+	return reasons
+}
+
+// viewPR reads pull request number.
+func viewPR(ctx context.Context, c client, number int) (pullRequest, error) {
+	raw, err := c.gh.run(ctx, "", "pr", "view", strconv.Itoa(number), "-R", c.repo,
+		"--json", "number,state,isDraft,mergeable,headRefOid,author,labels")
+	if err != nil {
+		return pullRequest{}, fmt.Errorf("cannot read the pull request: %w", err)
 	}
 	var pr pullRequest
 	if err := json.Unmarshal(raw, &pr); err != nil {
-		return []string{fmt.Sprintf("cannot read the pull request: unparseable response: %v", err)}
+		return pullRequest{}, fmt.Errorf("cannot read the pull request: unparseable response: %w", err)
 	}
-	if pr.Number != number || pr.HeadRefOid == "" {
-		return []string{fmt.Sprintf("cannot read the pull request: unexpected response %s", raw)}
+	if pr.Number != number || pr.HeadRefOid == "" || pr.Author.Login == "" {
+		return pullRequest{}, fmt.Errorf("cannot read the pull request: unexpected response %s", raw)
 	}
-	var reasons []string
-	for _, check := range readinessChecks {
-		reasons = append(reasons, check(ctx, c, pr)...)
-	}
-	return reasons
+	return pr, nil
 }
 
 func checkOpen(_ context.Context, _ client, pr pullRequest) []string {
@@ -121,7 +153,7 @@ func checkWorkflowRuns(ctx context.Context, c client, pr pullRequest) []string {
 			return []string{"cannot read the workflow runs: the response has no workflow_runs"}
 		}
 		for _, r := range p.WorkflowRuns {
-			if r.Status != statusCompleted {
+			if r.Name != reviewWorkflow && r.Status != statusCompleted {
 				reasons = append(reasons, fmt.Sprintf("workflow %q has not finished (status %s)", r.Name, r.Status))
 			}
 		}
@@ -155,6 +187,7 @@ func checkCheckRuns(ctx context.Context, c client, pr pullRequest) []string {
 	var reasons []string
 	for _, r := range runs {
 		switch {
+		case r.Name == reviewCheck:
 		case r.Status != statusCompleted:
 			reasons = append(reasons, fmt.Sprintf("check %q has not finished (status %s)", r.Name, r.Status))
 		case !greenConclusion[r.Conclusion]:
@@ -225,42 +258,62 @@ func fetchStatuses(ctx context.Context, c client, sha string) ([]commitStatus, e
 }
 
 type review struct {
-	User  user   `json:"user"`
-	State string `json:"state"`
+	User     user   `json:"user"`
+	State    string `json:"state"`
+	CommitID string `json:"commit_id"`
 }
 
 type user struct {
 	Login string `json:"login"`
+	Type  string `json:"type"`
 }
 
 // checkReviews blocks while a reviewer's latest verdict asks for changes. Only
 // verdicts count: a COMMENTED review, which a reply to a thread also creates,
 // does not lift a request for changes; approving or dismissing it does.
 func checkReviews(ctx context.Context, c client, pr pullRequest) []string {
-	pages, err := fetch[[]review](ctx, c, "pulls/"+strconv.Itoa(pr.Number)+"/reviews?per_page=100")
+	reviews, err := fetchReviews(ctx, c, pr.Number)
 	if err != nil {
 		return []string{"cannot read the reviews: " + err.Error()}
 	}
-	latest := map[string]string{}
-	var order []string
-	for _, p := range pages {
-		for _, r := range p {
-			if r.State == "COMMENTED" || r.State == "PENDING" {
-				continue
-			}
-			if _, seen := latest[r.User.Login]; !seen {
-				order = append(order, r.User.Login)
-			}
-			latest[r.User.Login] = r.State
-		}
-	}
 	var reasons []string
-	for _, login := range order {
-		if latest[login] == "CHANGES_REQUESTED" {
-			reasons = append(reasons, fmt.Sprintf("%s requested changes", login))
+	for _, r := range latestVerdicts(reviews) {
+		if r.State == "CHANGES_REQUESTED" {
+			reasons = append(reasons, fmt.Sprintf("%s requested changes", r.User.Login))
 		}
 	}
 	return reasons
+}
+
+func fetchReviews(ctx context.Context, c client, number int) ([]review, error) {
+	pages, err := fetch[[]review](ctx, c, "pulls/"+strconv.Itoa(number)+"/reviews?per_page=100")
+	if err != nil {
+		return nil, err
+	}
+	var reviews []review
+	for _, p := range pages {
+		reviews = append(reviews, p...)
+	}
+	return reviews, nil
+}
+
+// latestVerdicts returns each reviewer's latest verdict (approved, changes
+// requested or dismissed), in the order the reviewers first gave one.
+func latestVerdicts(reviews []review) []review {
+	index := map[string]int{}
+	var out []review
+	for _, r := range reviews {
+		if r.State == "COMMENTED" || r.State == "PENDING" {
+			continue
+		}
+		if i, seen := index[r.User.Login]; seen {
+			out[i] = r
+			continue
+		}
+		index[r.User.Login] = len(out)
+		out = append(out, r)
+	}
+	return out
 }
 
 type reviewComment struct {
