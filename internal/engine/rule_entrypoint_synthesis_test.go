@@ -1051,3 +1051,29 @@ func TestSynthesize_UnknownPURLBodyFindingSuppresses(t *testing.T) {
 		t.Fatalf("rule without purl: expected suppression, got %d", n)
 	}
 }
+
+// A parameterCondition's `$` is a regex anchor or a literal, never a template:
+// the synthesized entry point must keep it, while a templated algorithmName
+// still falls back to the family. Without the condition the AES-CBC variant of
+// CBCBlockCipher.<init> claimed every route to the constructor.
+func TestRemoveUnresolvedMetadataVariables_KeepsParameterCondition(t *testing.T) {
+	anchored := `param[0]:type~=^org\.bouncycastle\.crypto\.engines\.AES(?:Engine|LightEngine|FastEngine)$`
+	meta := map[string]string{
+		"algorithmFamily":    "AES",
+		"algorithmName":      "$family-$mode",
+		"parameterCondition": anchored,
+	}
+	removeUnresolvedMetadataVariables(meta)
+	if meta["parameterCondition"] != anchored {
+		t.Fatalf("parameterCondition = %q, want it kept", meta["parameterCondition"])
+	}
+	if meta["algorithmName"] != "AES" {
+		t.Fatalf("algorithmName = %q, want the family fallback", meta["algorithmName"])
+	}
+
+	literal := map[string]string{"parameterCondition": `param[0]=="$y$"`}
+	removeUnresolvedMetadataVariables(literal)
+	if literal["parameterCondition"] != `param[0]=="$y$"` {
+		t.Fatalf("a literal $ in a condition was dropped: %q", literal["parameterCondition"])
+	}
+}
