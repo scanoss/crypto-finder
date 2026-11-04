@@ -9,7 +9,32 @@ library:
 
 # Inventory source: github.com/emmansun/gmsm v0.45.2 module source from the Go module proxy,
 # packages sm2, sm3, sm4, sm9, cipher. Detection rules: scanoss/crypto_rules go/emmansun-gmsm.
+# needs-follow-up (no rule yet): ecdh (SM2 ECDH, SM2MQV, SM2SharedKey), cbcmac, kdf.Kdf, zuc (EEA/EIA).
 contracts:
+  - method: github.com/emmansun/gmsm/cipher.(*gxm).Open
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/cipher.(*gxm).Seal
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/cipher.(*mur).Open
+    arity: 6
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/cipher.(*mur).Seal
+    arity: 6
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/cipher.(LengthPreservingMode).DecryptBytes
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/cipher.(LengthPreservingMode).EncryptBytes
+    arity: 2
+    return: { type: "()", confidence: high }
+    role: operation
   - method: github.com/emmansun/gmsm/cipher.NewBCDecrypter
     arity: 2
     return: { type: crypto/cipher.BlockMode, confidence: high }
@@ -445,6 +470,22 @@ contracts:
     return: { type: "[]byte", confidence: high }
     role: operation
   - method: github.com/emmansun/gmsm/sm9.(*XOREncrypterOpts).Encrypt
+    arity: 3
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*keyExchange).ConfirmInitiator
+    arity: 1
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*keyExchange).ConfirmResponder
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*keyExchange).InitKeyExchange
+    arity: 2
+    return: { type: "[]byte", confidence: high }
+    role: operation
+  - method: github.com/emmansun/gmsm/sm9.(*keyExchange).RespondKeyExchange
     arity: 3
     return: { type: "[]byte", confidence: high }
     role: operation

@@ -6,20 +6,13 @@ library:
     - Tongsuo-Project/Tongsuo
   description: "Tongsuo-only symbols: SM4-GCM/CCM, white-box SM4, ZUC EEA3, SM3_*, SM2 threshold, TSAPI/SDF wrappers, Paillier, EC-ElGamal and NTLS (TLCP)"
 
-# Inventory source: the diff of Tongsuo 8.5.0 include/openssl/*.h against
-# OpenSSL 3.5.9. Tongsuo is an OpenSSL fork, so this file declares ONLY the
-# symbols OpenSSL does not have; the shared EVP and SSL APIs (EVP_sm4_cbc,
-# EVP_sm3, EVP_DigestSignInit, SSL_CTX_set_ciphersuites, ...) stay with
-# openssl-evp.yaml and openssl-ssl.yaml.
-#
-# Dispositions for the rest of the Tongsuo-only surface:
-#   skipped-non-crypto: BABASSL_* accessors, QUIC, syslog, engine and method
-#     tables (BN_METHOD_*, EC_POINT_METHOD_*), *_free/_dup/_copy/_print,
-#     ciphertext encode/decode.
-#   needs-follow-up: delegated credentials (DC_*, SSL_*_dc*), Bulletproofs,
-#     NIZK and ZKP gadgets, Paillier and EC-ElGamal homomorphic arithmetic,
-#     the TSAPI_SDF_Encrypt/Decrypt/CalculateMAC device calls (algorithm chosen
-#     by a device ID) and the TSAPI key import/export helpers.
+# Source: Tongsuo 8.5.0 include/openssl/*.h diffed against OpenSSL 3.5.9. Only
+# Tongsuo-only symbols live here; shared EVP and SSL APIs stay in openssl-evp.yaml and
+# openssl-ssl.yaml (TestTongsuoDeclaresNoOpenSSLSymbol).
+# skipped-non-crypto: BABASSL_* accessors, QUIC, syslog, BN_METHOD_*/EC_POINT_METHOD_*
+#   tables, *_free/_dup/_copy/_print, ciphertext encode/decode.
+# needs-follow-up: DC_*/SSL_*_dc*, Bulletproofs, NIZK/ZKP, Paillier and EC-ElGamal
+#   homomorphic arithmetic, TSAPI_SDF_Encrypt/Decrypt/CalculateMAC, TSAPI key import/export.
 
 contracts:
   - method: EC_ELGAMAL_bn_encrypt
@@ -54,6 +47,10 @@ contracts:
     arity: 0
     return: {type: "const EVP_CIPHER*", confidence: high}
     role: factory
+  - method: EVP_wbsm4_baiwu_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
   - method: EVP_wbsm4_baiwu_cfb128
     arity: 0
     return: {type: "const EVP_CIPHER*", confidence: high}
@@ -82,6 +79,10 @@ contracts:
     arity: 0
     return: {type: "const EVP_CIPHER*", confidence: high}
     role: factory
+  - method: EVP_wbsm4_wsise_cfb
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
   - method: EVP_wbsm4_wsise_cfb128
     arity: 0
     return: {type: "const EVP_CIPHER*", confidence: high}
@@ -107,6 +108,10 @@ contracts:
     return: {type: "const EVP_CIPHER*", confidence: high}
     role: factory
   - method: EVP_wbsm4_xiaolai_ccm
+    arity: 0
+    return: {type: "const EVP_CIPHER*", confidence: high}
+    role: factory
+  - method: EVP_wbsm4_xiaolai_cfb
     arity: 0
     return: {type: "const EVP_CIPHER*", confidence: high}
     role: factory

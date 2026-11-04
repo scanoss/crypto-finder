@@ -62,10 +62,20 @@ func TestLoadEmbeddedCIncludesGmSSLContracts(t *testing.T) {
 		{"sm9_kem_encrypt", "int", "operation", 6},
 		{"sm9_encrypt", "int", "operation", 7},
 		{"sm9_exch_step_1A", "int", "operation", 5},
+		{"sm9_exch_master_key_generate", "int", "operation", 1},
 		// TLCP / TLS 1.3 context.
 		{"tls_ctx_init", "int", "config", 3},
 		{"tls_ctx_set_cipher_suites", "int", "config", 3},
 		{"tls_ctx_set_tlcp_server_certificate_and_keys", "int", "config", 6},
+		// Generic DIGEST / BLOCK_CIPHER API.
+		{"DIGEST_sm3", "const DIGEST*", "factory", 0},
+		{"BLOCK_CIPHER_sm4", "const BLOCK_CIPHER*", "factory", 0},
+		{"digest_init", "int", "config", 2},
+		{"digest", "int", "operation", 5},
+		{"hmac", "int", "operation", 7},
+		{"pbkdf2_hmac_genkey", "int", "operation", 8},
+		{"block_cipher_set_encrypt_key", "int", "config", 3},
+		{"block_cipher_encrypt", "int", "operation", 3},
 		// GmSSL 3.1 spellings and arities.
 		{"sm3_hmac", "void", "operation", 5},
 		{"sm4_cbc_encrypt", "void", "operation", 5},

@@ -63,6 +63,8 @@ func TestLoadEmbeddedPythonGmContracts(t *testing.T) {
 		{"gmssl-python", "gmssl.Sm3Hmac.<init>", "factory", "gmssl.Sm3Hmac", "keyMaterial", 1},
 		{"gmssl-python", "gmssl.sm3_pbkdf2", "operation", "builtins.bytes", "iterations", 4},
 		{"gmssl-python", "gmssl.Sm2Key.generate_key", "factory", "builtins.NoneType", "", 0},
+		{"gmssl-python", "gmssl.Sm2Certificate.<init>", "factory", "gmssl.Sm2Certificate", "", 0},
+		{"gmssl-python", "gmssl.Sm2Certificate.import_pem", "config", "builtins.NoneType", "", 1},
 		{"gmssl-python", "gmssl.Sm2Signature.<init>", "factory", "gmssl.Sm2Signature", "operation", 3},
 		{"gmssl-python", "gmssl.Sm9EncMasterKey.extract_key", "factory", "gmssl.Sm9EncKey", "", 1},
 		{"gmssl-python", "gmssl.Zuc.update", "operation", "builtins.bytes", "", 1},
@@ -74,6 +76,11 @@ func TestLoadEmbeddedPythonGmContracts(t *testing.T) {
 		{"snowland-smx", "pysmx.SM4.sm4_crypt_cbc", "operation", "builtins.bytes", "operation", 4},
 		{"snowland-smx", "pysmx.SM9.KEM_Encapsulate", "operation", "builtins.tuple", "", 3},
 		{"snowland-smx", "pysmx.ZUC.zuc_encrypt", "operation", "builtins.bytes", "keyMaterial", 3},
+		{"snowland-smx", "pysmx.sm4_encrypt", "operation", "builtins.bytes", "mode", 4},
+		{"snowland-smx", "pysmx.SM4.sm4_encrypt_cbc", "operation", "builtins.bytes", "keyMaterial", 3},
+		{"snowland-smx", "pysmx.ciphers.algorithm._algorithm.sm4_decrypt_ecb", "operation", "builtins.bytes", "keyMaterial", 2},
+		{"snowland-smx", "pysmx.SM4.SM4BlockCyphers.<init>", "factory", "pysmx.SM4._SM4.SM4BlockCyphers", "operation", 3},
+		{"snowland-smx", "pysmx.SM4._SM4.SM4BlockCyphers.set_key", "config", "builtins.NoneType", "keyMaterial", 2},
 	}
 	for _, tt := range tests {
 		got := kb.ContractsFor(tt.method, tt.arity)
@@ -89,9 +96,11 @@ func TestLoadEmbeddedPythonGmContracts(t *testing.T) {
 		}
 	}
 
-	// Sm4's crypt_* methods are inherited from BlockCyphers.
-	parents := kb.Hierarchy["pysmx.SM4._SM4.Sm4"]
-	if len(parents) != 1 || parents[0] != "pysmx.block_cyphers._block_cyphers.BlockCyphers" {
-		t.Errorf("pysmx Sm4 parents = %v, want BlockCyphers", parents)
+	// Sm4's and SM4BlockCyphers' crypt_* methods are inherited from BlockCyphers.
+	for _, child := range []string{"pysmx.SM4._SM4.Sm4", "pysmx.SM4._SM4.SM4BlockCyphers"} {
+		parents := kb.Hierarchy[child]
+		if len(parents) != 1 || parents[0] != "pysmx.block_cyphers._block_cyphers.BlockCyphers" {
+			t.Errorf("%s parents = %v, want BlockCyphers", child, parents)
+		}
 	}
 }
