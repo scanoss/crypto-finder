@@ -19,6 +19,9 @@ package apiclient
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,11 +30,15 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/ruleset"
 )
 
 const (
-	// API endpoints.
-	rulesetsEndpointFmt = "/v2/cryptography/rulesets/%s/%s/download"
+	// API endpoints. DownloadRuleset tries v3 first and falls back to v2 when
+	// the server does not offer v3.
+	rulesetsEndpointFmt   = "/v2/cryptography/rulesets/%s/%s/download"
+	rulesetsV3DownloadFmt = "/v3/rulesets/%s/%s/download"
+	rulesetsV3ReleaseFmt  = "/v3/rulesets/%s/%s"
 
 	// HTTP headers - Request.
 	headerAPIKey    = "x-api-key"
@@ -43,6 +50,7 @@ const (
 	headerRulesetVersion   = "scanoss-ruleset-version"
 	headerChecksumSHA256   = "x-checksum-sha256"
 	headerRulesetCreatedAt = "scanoss-ruleset-created-at"
+	headerRulesetLease     = "scanoss-ruleset-lease"
 )
 
 // Manifest represents the manifest.json file reconstructed from HTTP headers.
@@ -51,6 +59,10 @@ type Manifest struct {
 	Version        string    `json:"version"`
 	ChecksumSHA256 string    `json:"checksum_sha256"`
 	CreatedAt      time.Time `json:"created_at"`
+
+	// Lease is the signed lease JSON the server sent with the bundle, or nil
+	// for an unsigned (legacy) ruleset.
+	Lease []byte `json:"-"`
 }
 
 // Client is an HTTP client for the SCANOSS REST API.
@@ -114,15 +126,67 @@ func (c *Client) WithRetryDelay(delay time.Duration) *Client {
 	return c
 }
 
+// APIKey returns the API key the client sends.
+func (c *Client) APIKey() string {
+	return c.apiKey
+}
+
 // DownloadRuleset downloads a ruleset tarball from the API
-// Returns the tarball bytes and the parsed manifest.
+// Returns the tarball bytes and the parsed manifest. It asks the v3 endpoint
+// first, which serves the bundle with its signed lease (Manifest.Lease). When
+// v3 answers 404 (a server or gateway that does not route it yet), it
+// downloads from the v2 endpoint, which serves no lease. Any other v3 error,
+// a 403 included, is returned as is: a refusal on v3 is not retried on v2.
 func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]byte, *Manifest, error) {
 	if err := CheckBaseURL(c.baseURL, c.allowHTTP); err != nil {
 		return nil, nil, err
 	}
-	endpoint := fmt.Sprintf(rulesetsEndpointFmt, name, version)
-	url := c.baseURL + endpoint
+	tarball, manifest, err := c.downloadWithRetry(ctx, name, version, c.baseURL+fmt.Sprintf(rulesetsV3DownloadFmt, name, version))
+	if !errors.Is(err, ErrNotFound) {
+		return tarball, manifest, err
+	}
+	log.Debug().Err(err).Str("ruleset", name).Str("version", version).Msg("v3 ruleset download not found, using v2")
+	return c.downloadWithRetry(ctx, name, version, c.baseURL+fmt.Sprintf(rulesetsEndpointFmt, name, version))
+}
 
+// GetRelease returns the release description of a ruleset version from the
+// v3 API ("latest" resolves to the current release). It does not retry.
+func (c *Client) GetRelease(ctx context.Context, name, version string) (*ruleset.Release, error) {
+	if err := CheckBaseURL(c.baseURL, c.allowHTTP); err != nil {
+		return nil, err
+	}
+	url := c.baseURL + fmt.Sprintf(rulesetsV3ReleaseFmt, name, version)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set(headerAPIKey, c.apiKey)
+	req.Header.Set(headerUserAgent, userAgentValue)
+
+	// #nosec G704 -- URL is constructed from configured API base URL plus a fixed endpoint format.
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Debug().Err(err).Msg("Failed to close ruleset release response body")
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleHTTPError(resp, url)
+	}
+	var release ruleset.Release
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
+		return nil, fmt.Errorf("failed to decode ruleset release: %w", err)
+	}
+	return &release, nil
+}
+
+// downloadWithRetry downloads url, retrying retryable failures with
+// exponential backoff.
+func (c *Client) downloadWithRetry(ctx context.Context, name, version, url string) ([]byte, *Manifest, error) {
 	log.Debug().
 		Str("ruleset", name).
 		Str("version", version).
@@ -203,6 +267,13 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 	manifest, err := c.manifestFromHeaders(resp.Header)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to reconstruct manifest from headers: %w", err)
+	}
+	if encoded := c.getHeaderValue(resp.Header, headerRulesetLease); encoded != "" {
+		lease, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid %s header (expected base64): %w", headerRulesetLease, err)
+		}
+		manifest.Lease = lease
 	}
 
 	// Read response body
