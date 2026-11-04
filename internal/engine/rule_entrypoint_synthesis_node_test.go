@@ -511,6 +511,58 @@ func TestSynthesizeNodeMainExportWithoutExportsMap(t *testing.T) {
 	}
 }
 
+// Without an exports map, a minified main or module gives way to the
+// unminified ESM build beside it, whose definitions keep their names.
+func TestSynthesizeNodeUnminifiedBuildWithoutExportsMap(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json":      `{"name": "acme", "main": "dist/acme.min.js", "module": "dist/acme.min.mjs"}`,
+		"dist/acme.min.js":  `"use strict";Object.defineProperty(exports,"__esModule",{value:!0});`,
+		"dist/acme.min.mjs": `function a(){}export{a as sign};`,
+		"dist/acme.mjs":     "function sign() {}\nexport { sign };\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.sign": "sign"})}); got != 1 {
+		t.Fatalf("synthesized = %d, want 1", got)
+	}
+	if a := syntheticAssets(result.Report)["dist/acme.mjs acme.sign"]; a == nil || a.StartLine != 1 {
+		t.Errorf("assets = %v, want acme.sign at dist/acme.mjs:1", syntheticAssets(result.Report))
+	}
+}
+
+// A minified CommonJS main without a module field gives way to its unminified sibling.
+func TestSynthesizeNodeUnminifiedMainWithoutExportsMap(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json":     `{"name": "acme", "main": "dist/acme.min.js"}`,
+		"dist/acme.min.js": `"use strict";Object.defineProperty(exports,"__esModule",{value:!0});`,
+		"dist/acme.js":     "function sign() {}\nexports.sign = sign;\n",
+	})
+	result := &DepScanResult{
+		Report:      &entities.InterimReport{},
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:   ecosystemNode,
+		ProjectRoot: root,
+	}
+
+	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.sign": "sign"})}); got != 1 {
+		t.Fatalf("synthesized = %d, want 1", got)
+	}
+	if a := syntheticAssets(result.Report)["dist/acme.js acme.sign"]; a == nil || a.StartLine != 1 {
+		t.Errorf("assets = %v, want acme.sign at dist/acme.js:1", syntheticAssets(result.Report))
+	}
+}
+
 // A rule of another language naming the same api does not decorate a Node package.
 func TestSynthesizeNodeIgnoresRulesOfOtherLanguages(t *testing.T) {
 	t.Parallel()
