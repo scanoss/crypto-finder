@@ -284,3 +284,57 @@ idna \
 		t.Fatalf("units = %q, want %q", units, want)
 	}
 }
+
+// A cached environment is reused only while every file the install reads is
+// unchanged: requirements.txt, what it includes, and the build files of each
+// local project it installs. Creating a missing include counts as a change.
+func TestPipInstall_RebuildsWhenAFileTheInstallReadsChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		tree    map[string]string
+		changed string
+	}{
+		{"-r include", map[string]string{requirementsFile: "-r requirements/base.txt\n", "requirements/base.txt": "six\n"}, "requirements/base.txt"},
+		{"nested include relative to its includer", map[string]string{
+			requirementsFile:          "--requirement=requirements/base.txt\n",
+			"requirements/base.txt":   "-r common.txt\n",
+			"requirements/common.txt": "six\n",
+		}, "requirements/common.txt"},
+		{"include cycle", map[string]string{requirementsFile: "six\n-r other.txt\n", "other.txt": "-r requirements.txt\nidna\n"}, "other.txt"},
+		{"-c constraint", map[string]string{requirementsFile: "-c constraints.txt\nsix\n", "constraints.txt": "six==1.16.0\n"}, "constraints.txt"},
+		{"missing include", map[string]string{requirementsFile: "six\n-r extra.txt\n"}, "extra.txt"},
+		{"-e .", map[string]string{requirementsFile: "-e .\n", "pyproject.toml": "[project]\nname = \"app\"\n"}, "pyproject.toml"},
+		{"--editable path", map[string]string{requirementsFile: "--editable ./lib\n", "lib/setup.py": "setup()\n"}, "lib/setup.py"},
+		{"bare local path", map[string]string{requirementsFile: "./lib[extra]\n"}, "lib/setup.cfg"},
+		{"file: URL", map[string]string{requirementsFile: "file:lib#egg=lib\n", "lib/pyproject.toml": "[project]\n"}, "lib/pyproject.toml"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolatePipEnv(t)
+			fake := newFakePython(t, "24.0")
+			root := writeTree(t, tc.tree)
+			resolve := func() {
+				t.Helper()
+				if _, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root); err != nil {
+					t.Fatalf("Resolve: %v", err)
+				}
+			}
+
+			resolve()
+			resolve()
+			if n := fake.count(t, "-m venv"); n != 1 {
+				t.Fatalf("venv created %d times before any change, want 1", n)
+			}
+			changed := filepath.Join(root, tc.changed)
+			if err := os.MkdirAll(filepath.Dir(changed), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(changed, []byte("changed\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			resolve()
+			if n := fake.count(t, "-m venv"); n != 2 {
+				t.Fatalf("venv created %d times after %s changed, want it rebuilt", n, tc.changed)
+			}
+		})
+	}
+}

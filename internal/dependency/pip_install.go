@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,10 +32,10 @@ type pythonManifest struct {
 
 func findPythonManifest(projectDir string) (pythonManifest, bool) {
 	if req := filepath.Join(projectDir, requirementsFile); isFile(req) {
-		return pythonManifest{requirements: req, files: []string{req}}, true
+		return pythonManifest{requirements: req}, true
 	}
 	var files []string
-	for _, name := range []string{"pyproject.toml", "setup.py", "setup.cfg"} {
+	for _, name := range pythonBuildFiles {
 		if path := filepath.Join(projectDir, name); isFile(path) {
 			files = append(files, path)
 		}
@@ -165,17 +167,31 @@ func (r *PipResolver) checkAmbientPip(ctx context.Context, projectDir, ambient s
 }
 
 // venvKey changes whenever what the environment would contain can change: the
-// manifest contents or the interpreter it is built with. The executable is part
-// of it because a venv links to its base interpreter by path.
+// contents of every file the install reads, and the interpreter it is built
+// with. The executable is part of it because a venv links to its base
+// interpreter by path. A file the install would read but that does not exist is
+// hashed as absent, so creating it changes the key too.
 func (r *PipResolver) venvKey(ctx context.Context, projectDir, ambient string, manifest pythonManifest) (string, error) {
+	files := manifest.files
+	if manifest.requirements != "" {
+		files = requirementsInputs(projectDir, manifest.requirements)
+	}
 	hash := sha256.New()
-	for _, file := range manifest.files {
-		content, err := os.ReadFile(file)
+	for _, file := range files {
+		name, err := filepath.Rel(projectDir, file)
 		if err != nil {
-			return "", err
+			name = file
 		}
-		hash.Write([]byte(filepath.Base(file) + "\x00" + strconv.Itoa(len(content)) + "\x00"))
-		hash.Write(content)
+		content, err := os.ReadFile(file)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			hash.Write([]byte(name + "\x00absent\x00"))
+		case err != nil:
+			return "", err
+		default:
+			hash.Write([]byte(name + "\x00" + strconv.Itoa(len(content)) + "\x00"))
+			hash.Write(content)
+		}
 	}
 	version, stderr, err := r.run(ctx, projectDir, ambient, "-c", "import sys; print(sys.version); print(sys.executable)")
 	if err != nil {
@@ -183,6 +199,83 @@ func (r *PipResolver) venvKey(ctx context.Context, projectDir, ambient string, m
 	}
 	hash.Write(version)
 	return hex.EncodeToString(hash.Sum(nil)[:16]), nil
+}
+
+// requirementsInputs lists every file pip reads to install a requirements
+// file: the file itself, the files it includes with -r and -c (relative to the
+// including file, recursively), and the build files of each local project it
+// installs with -e or as a path (relative to projectDir, where pip runs).
+// Remote includes and requirements are left out: their contents are not local.
+func requirementsInputs(projectDir, requirements string) []string {
+	w := requirementsWalk{projectDir: projectDir, visited: map[string]bool{}}
+	w.walk(requirements)
+	return w.inputs
+}
+
+type requirementsWalk struct {
+	projectDir string
+	visited    map[string]bool
+	inputs     []string
+}
+
+func (w *requirementsWalk) walk(file string) {
+	file = filepath.Clean(file)
+	if w.visited[file] {
+		return
+	}
+	w.visited[file] = true
+	w.inputs = append(w.inputs, file)
+	content, err := os.ReadFile(file)
+	if err != nil {
+		return
+	}
+	for _, line := range requirementLines(string(content)) {
+		w.line(filepath.Dir(file), line)
+	}
+}
+
+func (w *requirementsWalk) line(dir, line string) {
+	option, value := splitRequirementOption(line)
+	switch option {
+	case "-r", "--requirement", "-c", "--constraint":
+		if value != "" && !strings.Contains(value, "://") {
+			w.walk(resolvePath(dir, value))
+		}
+	case "-e", "--editable", "":
+		if project, ok := localProjectPath(value); ok {
+			for _, name := range pythonBuildFiles {
+				w.inputs = append(w.inputs, filepath.Join(resolvePath(w.projectDir, project), name))
+			}
+		}
+	}
+}
+
+var pythonBuildFiles = []string{"pyproject.toml", "setup.py", "setup.cfg"}
+
+func resolvePath(base, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(base, path)
+}
+
+// localProjectPath returns the directory of a requirement that names a local
+// project: ".", a path, or a file: URL, without extras, markers or options.
+func localProjectPath(requirement string) (string, bool) {
+	fields := strings.Fields(requirement)
+	if len(fields) == 0 {
+		return "", false
+	}
+	path, _, _ := strings.Cut(fields[0], ";")
+	path, _, _ = strings.Cut(path, "[")
+	path, _, _ = strings.Cut(path, "#")
+	if rest, ok := strings.CutPrefix(path, "file:"); ok {
+		return strings.TrimPrefix(rest, "//"), true
+	}
+	if path == "." || path == ".." || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") || filepath.IsAbs(path) {
+		return path, true
+	}
+	return "", false
 }
 
 // pipInstall installs the manifest and returns the requirements that failed. A
@@ -260,16 +353,7 @@ var requirementHeaderOptions = []string{
 // to all of it and the units pip can install on their own: one requirement, or
 // one -r/-c/-e line.
 func parseRequirementUnits(content string) (header []string, units [][]string) {
-	content = strings.ReplaceAll(content, "\r\n", "\n")
-	content = strings.ReplaceAll(content, "\\\n", " ")
-	for _, line := range strings.Split(content, "\n") {
-		if i := strings.Index(line, " #"); i >= 0 {
-			line = line[:i]
-		}
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
+	for _, line := range requirementLines(content) {
 		if !strings.HasPrefix(line, "-") {
 			// Per-requirement options such as --hash have no command-line form.
 			if i := strings.Index(line, " --"); i >= 0 {
@@ -287,6 +371,42 @@ func parseRequirementUnits(content string) (header []string, units [][]string) {
 		units = append(units, fields)
 	}
 	return header, units
+}
+
+// requirementLines returns the logical lines of a requirements file, with
+// continuations joined and comments and blank lines dropped.
+func requirementLines(content string) []string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = strings.ReplaceAll(content, "\\\n", " ")
+	var lines []string
+	for _, line := range strings.Split(content, "\n") {
+		if i := strings.Index(line, " #"); i >= 0 {
+			line = line[:i]
+		}
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// splitRequirementOption splits a requirements line into its option and that
+// option's value, accepting "-r file", "-rfile" and "--requirement=file". A
+// line that is a requirement has no option and is returned whole as the value.
+func splitRequirementOption(line string) (option, value string) {
+	if !strings.HasPrefix(line, "-") {
+		return "", line
+	}
+	fields := strings.Fields(line)
+	option, rest := fields[0], strings.Join(fields[1:], " ")
+	if long, attached, ok := strings.Cut(option, "="); ok && strings.HasPrefix(option, "--") {
+		return long, attached
+	}
+	if !strings.HasPrefix(option, "--") && len(option) > 2 {
+		return option[:2], option[2:]
+	}
+	return option, rest
 }
 
 // run executes name in dir and returns its stdout and the tail of its stderr.
