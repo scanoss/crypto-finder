@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/rules/prefilter"
+	"github.com/scanoss/static-engine/ruleset/prefilter"
 )
 
 // The tests below pin CLI parity of core mode and the import prefilter for

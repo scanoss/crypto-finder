@@ -16,16 +16,17 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
-	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/callgraph/contracts"
+	"github.com/scanoss/static-engine/dependency"
+	"github.com/scanoss/static-engine/paramcondition"
+	"github.com/scanoss/static-engine/purl"
+	"github.com/scanoss/static-engine/utils"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
-	"github.com/scanoss/crypto-finder/internal/utils"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
-	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 const (

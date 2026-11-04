@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/static-engine/paramcondition"
 )
 
 func TestInterimFormatVersion_Is1_7(t *testing.T) {

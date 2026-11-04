@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/scanoss/crypto-finder/pkg/purl"
+	"github.com/scanoss/static-engine/purl"
 )
 
 // CallgraphSchemaVersion is the inlined callgraph contract and the zero-value

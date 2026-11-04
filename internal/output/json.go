@@ -25,9 +25,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/scanoss/static-engine/utils"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // JSONWriter implements the Writer interface for JSON output format.

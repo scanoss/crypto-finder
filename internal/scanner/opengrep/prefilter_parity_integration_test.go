@@ -24,7 +24,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scanoss/crypto-finder/internal/rules/prefilter"
+	"github.com/scanoss/static-engine/ruleset/prefilter"
+
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 

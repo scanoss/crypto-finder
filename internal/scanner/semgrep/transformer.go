@@ -30,11 +30,12 @@ import (
 	"github.com/go-enry/go-enry/v2"
 	"github.com/rs/zerolog/log"
 
-	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/static-engine/config"
+	"github.com/scanoss/static-engine/paramcondition"
+	"github.com/scanoss/static-engine/purl"
+
 	"github.com/scanoss/crypto-finder/internal/deduplicator"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
-	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // TransformSemgrepCompatibleOutputToInterimFormat converts Semgrep compatible results to SCANOSS interim JSON format.

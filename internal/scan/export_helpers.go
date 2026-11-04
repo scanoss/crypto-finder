@@ -19,7 +19,7 @@ package scan
 import (
 	"path/filepath"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
 )
 
 // buildCallSiteParameters constructs the unified parameters slice for a call

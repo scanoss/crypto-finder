@@ -25,7 +25,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/static-engine/paramcondition"
 )
 
 const (

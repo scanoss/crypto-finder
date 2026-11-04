@@ -28,8 +28,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/scanoss/static-engine/dependency"
+
 	apiclient "github.com/scanoss/crypto-finder/internal/api"
-	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"

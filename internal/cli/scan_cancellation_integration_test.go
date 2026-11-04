@@ -33,7 +33,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/static-engine/failure"
 )
 
 func TestScanCancellationTerminatesScannerProcess(t *testing.T) {

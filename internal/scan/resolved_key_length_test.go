@@ -6,7 +6,8 @@ package scan
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 )
 

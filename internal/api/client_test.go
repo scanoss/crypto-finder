@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/static-engine/config"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

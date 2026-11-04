@@ -29,10 +29,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/scanoss/static-engine/ruleset/rulejson"
+	"github.com/scanoss/static-engine/skip"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/rules/rulejson"
 	"github.com/scanoss/crypto-finder/internal/scanner"
-	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 // mergeRulesLikeMaterializer writes the rule files below ruleDir into one

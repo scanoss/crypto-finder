@@ -19,8 +19,9 @@ import (
 
 	"github.com/go-enry/go-enry/v2"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
-	"github.com/scanoss/crypto-finder/pkg/purl"
+	"github.com/scanoss/static-engine/paramcondition"
+	"github.com/scanoss/static-engine/purl"
+
 	"github.com/scanoss/crypto-finder/pkg/schema"
 )
 

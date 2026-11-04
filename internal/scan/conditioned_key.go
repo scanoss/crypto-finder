@@ -6,7 +6,7 @@ package scan
 import (
 	"strings"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
 )
 
 // conditionedKeyMatcher decides whether a conditioned-rule catalog key, the

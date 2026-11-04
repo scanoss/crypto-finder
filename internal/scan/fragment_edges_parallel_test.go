@@ -12,7 +12,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
@@ -31,7 +32,8 @@ func withFragmentEdgeWorkers(t *testing.T, n int, fn func()) {
 }
 
 // parallelEdgeFixtures are real call graphs, large enough to span many work
-// items: this repository's own Go packages and the Java test sources.
+// items: this repository's own Go packages, the static-engine callgraph
+// package and the Java test sources.
 func parallelEdgeFixtures(t *testing.T) map[string]*engine.DepScanResult {
 	t.Helper()
 	_, testFile, _, ok := runtime.Caller(0)
@@ -39,11 +41,22 @@ func parallelEdgeFixtures(t *testing.T) map[string]*engine.DepScanResult {
 		t.Fatal("runtime.Caller failed")
 	}
 	internalDir := filepath.Dir(filepath.Dir(testFile))
+	// The callgraph package lives in the static-engine module; its sources sit
+	// next to the file that defines any of its functions.
+	callgraphFile, _ := runtime.FuncForPC(reflect.ValueOf(callgraph.NewGoParser).Pointer()).FileLine(0)
+	if !filepath.IsAbs(callgraphFile) {
+		t.Fatalf("no source path for the callgraph package: %q", callgraphFile)
+	}
+	packageDirs := map[string]string{
+		"callgraph": filepath.Dir(callgraphFile),
+		"scan":      filepath.Join(internalDir, "scan"),
+		"engine":    filepath.Join(internalDir, "engine"),
+	}
 	packages := []string{"callgraph", "scan", "engine"}
 	goDirs := make([]callgraph.PackageDir, 0, len(packages))
 	for _, pkg := range packages {
 		goDirs = append(goDirs, callgraph.PackageDir{
-			Dir:        filepath.Join(internalDir, pkg),
+			Dir:        packageDirs[pkg],
 			ImportPath: "github.com/scanoss/crypto-finder/internal/" + pkg,
 		})
 	}

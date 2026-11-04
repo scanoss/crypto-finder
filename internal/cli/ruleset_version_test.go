@@ -20,7 +20,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/static-engine/failure"
 )
 
 func TestResolveRulesetVersion(t *testing.T) {

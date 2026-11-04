@@ -28,12 +28,13 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/dependency"
+	"github.com/scanoss/static-engine/paramcondition"
+	"github.com/scanoss/static-engine/purl"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/rules"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
-	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // SyntheticEntryPointRuleID labels findings produced by surfacing a library's

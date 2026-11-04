@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/scanoss/crypto-finder/internal/utils"
+	"github.com/scanoss/static-engine/utils"
 )
 
 // ValidationOptions contains scan flag values required for validation.

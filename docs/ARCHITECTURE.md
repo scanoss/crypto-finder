@@ -2,6 +2,8 @@
 
 How crypto-finder turns a source tree into findings, reachability data, and partner-facing exports. For the domain vocabulary used below (finding, crypto entry point, supporting call, call chain, ...), see [CONTEXT.md](../CONTEXT.md).
 
+The call graph, dependency resolution, rule prefilter, language detection, skip patterns, Java runtime, config, perf, utils, failure, paramcondition and purl packages named below as `internal/...` or `pkg/...` now live in [`github.com/scanoss/static-engine`](https://github.com/scanoss/static-engine) (`internal/callgraph` -> `callgraph`, `internal/rules/prefilter` -> `ruleset/prefilter`, and so on); `pkg/failure` stays here as a forwarding package.
+
 ## Pipeline
 
 A `scan` run executes these stages in order:

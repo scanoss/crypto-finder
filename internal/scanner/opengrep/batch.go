@@ -23,8 +23,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/scanoss/static-engine/failure"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )

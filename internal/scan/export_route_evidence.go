@@ -4,7 +4,7 @@
 package scan
 
 import (
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
 )
 
 // rootKindNoCallers is the root_kind of a chain whose first frame is an

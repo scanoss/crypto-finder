@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
 )
 
 // methodsOf returns the sorted resolved method base names of the derived calls,

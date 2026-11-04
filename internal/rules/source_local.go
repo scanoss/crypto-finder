@@ -29,7 +29,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/static-engine/config"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 

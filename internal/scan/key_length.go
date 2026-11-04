@@ -8,8 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/callgraph/contracts"
+
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 

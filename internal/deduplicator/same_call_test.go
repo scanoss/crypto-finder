@@ -10,8 +10,9 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/scanoss/static-engine/paramcondition"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 func callAsset(startCol, endCol int, ruleID string, metadata map[string]string) entities.CryptographicAsset {

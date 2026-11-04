@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/static-engine/paramcondition"
 )
 
 // chainWith builds a two-node chain whose terminal node carries the given crypto

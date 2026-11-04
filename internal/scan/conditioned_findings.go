@@ -13,11 +13,12 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/paramcondition"
+	"github.com/scanoss/static-engine/purl"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
-	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // MaterializeConditionedFindings specializes generic rule anchors after the

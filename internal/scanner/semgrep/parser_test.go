@@ -27,8 +27,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/scanoss/static-engine/failure"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/failure"
 )
 
 func TestParseSemgrepCompatibleOutput_WithArrayTypeError(t *testing.T) {

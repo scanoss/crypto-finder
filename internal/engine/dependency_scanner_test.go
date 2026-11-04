@@ -19,13 +19,14 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/dependency"
+	"github.com/scanoss/static-engine/failure"
+	"github.com/scanoss/static-engine/skip"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
-	"github.com/scanoss/crypto-finder/internal/skip"
 )
 
 // scanSingleDep looks one dependency up and scans it alone, the way the

@@ -1,6 +1,6 @@
 package scan
 
-import "github.com/scanoss/crypto-finder/internal/callgraph"
+import "github.com/scanoss/static-engine/callgraph"
 
 // export_reachset.go builds crypto_entry_points from reverse reachability rather
 // than from the exported call chains (issue #249).

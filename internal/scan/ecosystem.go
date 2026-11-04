@@ -8,7 +8,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/static-engine/dependency"
 )
 
 const (

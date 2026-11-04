@@ -24,10 +24,11 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/scanoss/static-engine/failure"
+	"github.com/scanoss/static-engine/javaruntime"
+	"github.com/scanoss/static-engine/language"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/failure"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
-	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/version"

@@ -30,8 +30,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/scanoss/crypto-finder/internal/rules/prefilter"
-	"github.com/scanoss/crypto-finder/internal/rules/rulejson"
+	"github.com/scanoss/static-engine/ruleset/prefilter"
+	"github.com/scanoss/static-engine/ruleset/rulejson"
 )
 
 // ruleBase is one rule as its rule file spells it, shared by every scan

@@ -20,8 +20,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/dependency"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 )
 

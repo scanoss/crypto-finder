@@ -25,8 +25,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/static-engine/paramcondition"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 
 	"github.com/go-enry/go-enry/v2"
 )

@@ -18,7 +18,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/static-engine/config"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"

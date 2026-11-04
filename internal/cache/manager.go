@@ -32,9 +32,10 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/rs/zerolog/log"
 
+	"github.com/scanoss/static-engine/config"
+	"github.com/scanoss/static-engine/utils"
+
 	api "github.com/scanoss/crypto-finder/internal/api"
-	"github.com/scanoss/crypto-finder/internal/config"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 const (

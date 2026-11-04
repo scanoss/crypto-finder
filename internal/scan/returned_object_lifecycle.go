@@ -6,7 +6,7 @@ package scan
 import (
 	"sort"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
 )
 
 // maxReturnedObjectDepth bounds how many methods a crypto object is followed

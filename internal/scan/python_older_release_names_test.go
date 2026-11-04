@@ -12,11 +12,12 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/callgraph/contracts"
+	"github.com/scanoss/static-engine/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 // buildPythonGraph builds the call graph of one consumer file.

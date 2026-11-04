@@ -17,7 +17,7 @@
 package scan
 
 import (
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
 )
 
 // applyChainEdgeResolution stamps how the call from caller to the frame's

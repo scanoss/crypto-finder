@@ -27,9 +27,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/scanoss/crypto-finder/internal/config"
-	"github.com/scanoss/crypto-finder/internal/failure"
-	"github.com/scanoss/crypto-finder/internal/utils"
+	"github.com/scanoss/static-engine/config"
+	"github.com/scanoss/static-engine/failure"
+	"github.com/scanoss/static-engine/utils"
+
 	"github.com/scanoss/crypto-finder/internal/version"
 	"github.com/scanoss/crypto-finder/pkg/sbomcbom"
 )

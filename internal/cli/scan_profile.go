@@ -10,8 +10,8 @@ import (
 	"runtime/pprof"
 	"runtime/trace"
 
-	"github.com/scanoss/crypto-finder/internal/failure"
-	"github.com/scanoss/crypto-finder/internal/perf"
+	"github.com/scanoss/static-engine/failure"
+	"github.com/scanoss/static-engine/perf"
 )
 
 // Environment fallbacks for the hidden --cpuprofile, --memprofile and --trace

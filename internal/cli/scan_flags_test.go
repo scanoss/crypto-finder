@@ -27,7 +27,7 @@ import (
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 
-	"github.com/scanoss/crypto-finder/internal/skip"
+	"github.com/scanoss/static-engine/skip"
 )
 
 // TestBuildSkipPatterns covers the buildSkipPatterns helper across all spec scenarios.

@@ -16,9 +16,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"

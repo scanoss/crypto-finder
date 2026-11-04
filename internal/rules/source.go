@@ -19,8 +19,9 @@ package rules
 import (
 	"fmt"
 
+	"github.com/scanoss/static-engine/utils"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // RuleSource defines an interface for loading rule file paths from various sources.

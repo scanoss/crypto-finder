@@ -6,7 +6,7 @@ package graphfrag
 import (
 	"strings"
 
-	"github.com/scanoss/crypto-finder/pkg/graphwalk"
+	"github.com/scanoss/static-engine/graphwalk"
 )
 
 // stitch_condensed.go enumerates the served call chains over the cycle-collapsed

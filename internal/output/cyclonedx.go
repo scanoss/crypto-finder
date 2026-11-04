@@ -25,9 +25,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/scanoss/static-engine/utils"
+
 	"github.com/scanoss/crypto-finder/internal/converter"
 	"github.com/scanoss/crypto-finder/internal/oid"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // CycloneDXWriter implements the Writer interface for CycloneDX CBOM format.

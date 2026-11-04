@@ -22,7 +22,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/static-engine/dependency"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )

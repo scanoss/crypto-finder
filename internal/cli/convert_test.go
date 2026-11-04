@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/static-engine/failure"
 )
 
 func TestConvertCommand_InputFailuresAreTyped(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/scanoss/crypto-finder/pkg/graphwalk"
+	"github.com/scanoss/static-engine/graphwalk"
 )
 
 // StitchOptions tunes which root-fragment functions a stitch traces from. The

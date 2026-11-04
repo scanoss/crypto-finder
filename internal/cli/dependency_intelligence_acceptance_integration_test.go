@@ -33,9 +33,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/scanoss/static-engine/paramcondition"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 const acceptanceCondition = `param[0]==true,param[algorithm]~=^AES,param[1|key]:type==key,param[2]:type~=^bytes?$`

@@ -23,7 +23,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/static-engine/paramcondition"
 )
 
 // InterimFormatVersion is the current version of the interim report schema.

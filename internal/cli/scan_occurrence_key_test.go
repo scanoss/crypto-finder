@@ -10,8 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/static-engine/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/output"
 )

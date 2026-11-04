@@ -1,6 +1,6 @@
 package scan
 
-import "github.com/scanoss/crypto-finder/internal/callgraph"
+import "github.com/scanoss/static-engine/callgraph"
 
 // objectIdentity is the minimal per-call identity the object-lifecycle grouping
 // policy needs: the variable a call is invoked on, the variable its result is

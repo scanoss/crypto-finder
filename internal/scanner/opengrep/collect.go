@@ -29,8 +29,9 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/scanoss/static-engine/ruleset/prefilter"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/rules/prefilter"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 

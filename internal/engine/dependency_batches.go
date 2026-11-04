@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/static-engine/dependency"
+
 	"github.com/scanoss/crypto-finder/internal/scanner"
 )
 

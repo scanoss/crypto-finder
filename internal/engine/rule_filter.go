@@ -13,9 +13,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/static-engine/config"
+	"github.com/scanoss/static-engine/ruleset/rulejson"
+
 	"github.com/scanoss/crypto-finder/internal/rules"
-	"github.com/scanoss/crypto-finder/internal/rules/rulejson"
 )
 
 // ruleFile is a minimal representation of a semgrep rule file, used only to

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/static-engine/failure"
 )
 
 func TestValidateErrorOutputFormat(t *testing.T) {

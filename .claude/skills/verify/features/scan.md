@@ -55,8 +55,6 @@ Preconditions:
 - `internal/engine/rule_filter.go`
 - `internal/scanner/**`
 - `internal/rules/**`
-- `internal/skip/**`
-- `internal/language/**`
 - `internal/deduplicator/**`
 - `internal/enricher/**`
 - `internal/output/json.go`

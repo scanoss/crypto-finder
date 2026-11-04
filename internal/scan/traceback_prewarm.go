@@ -8,8 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/perf"
+	"github.com/scanoss/static-engine/callgraph"
+	"github.com/scanoss/static-engine/perf"
 )
 
 // prewarmTracebacks traces, concurrently, the functions structuralTracebackChains
