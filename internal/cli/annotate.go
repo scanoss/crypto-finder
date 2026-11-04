@@ -40,6 +40,8 @@ import (
 	"github.com/scanoss/static-engine/scanner/opengrep"
 	"github.com/scanoss/static-engine/scanner/semgrep"
 	"github.com/scanoss/static-engine/skip"
+
+	"github.com/scanoss/crypto-finder/internal/version"
 )
 
 var (
@@ -265,7 +267,8 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 	))
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
-	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
+	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry,
+		engine.WithToolInfo(entities.ToolInfo{Name: version.ToolName, Version: version.Version}))
 
 	log.Info().Msgf("Running crypto detection over %s (annotate-only, no callgraph)...", target)
 	report, err := orchestrator.Scan(ctx, engine.ScanOptions{

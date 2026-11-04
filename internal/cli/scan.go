@@ -50,6 +50,8 @@ import (
 	"github.com/scanoss/static-engine/scanner/opengrep"
 	"github.com/scanoss/static-engine/scanner/semgrep"
 	"github.com/scanoss/static-engine/skip"
+
+	"github.com/scanoss/crypto-finder/internal/version"
 )
 
 const (
@@ -1053,7 +1055,8 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	))
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
-	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
+	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry,
+		engine.WithToolInfo(entities.ToolInfo{Name: version.ToolName, Version: version.Version}))
 
 	scanOpts := engine.ScanOptions{
 		Target:                target,
