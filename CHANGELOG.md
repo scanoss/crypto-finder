@@ -6,20 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Added
-- OpenSSL contracts for the SM4, Camellia, ARIA and SEED cipher constructors
-  (`EVP_sm4_cbc`, `EVP_aria_256_gcm`, ...), so their findings carry the same call
-  context as AES.
-- Go contracts for `github.com/tjfoc/gmsm` and `github.com/emmansun/gmsm` (SM2, SM3,
-  SM4 with its cipher modes, and SM9), so findings in code that uses them carry
-  call context.
-- Contracts for the GM/T libraries sm-crypto (npm), gmssl, gmssl-python and
-  snowland-smx (PyPI), so their SM2, SM3, SM4, SM9 and ZUC findings carry call
-  context.
-- C contracts for GmSSL and for the Tongsuo-only APIs, so SM2, SM3, SM4, SM9 and
-  ZUC findings in code that uses them carry call context.
-- Contracts for the RustCrypto `sm2`, `sm3`, `sm4`, `aria` and `camellia` crates, so
-  their findings carry call context and the block ciphers report the key size.
 
 ## [0.46.3] - 2026-11-04
 ### Fixed
