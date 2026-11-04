@@ -149,11 +149,7 @@ func runConvert(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("prepare exact OID report: nil report")
 	}
 	// Convert to CycloneDX using the writer
-	factory := output.NewWriterFactory()
-	writer, err := factory.GetWriter("cyclonedx")
-	if err != nil {
-		return fmt.Errorf("failed to get CycloneDX writer: %w", err)
-	}
+	writer := output.NewCycloneDXWriter()
 
 	// Determine output destination
 	outputDest := convertOutput

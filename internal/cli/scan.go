@@ -35,6 +35,7 @@ import (
 	"github.com/scanoss/static-engine/callgraph"
 	"github.com/scanoss/static-engine/config"
 	"github.com/scanoss/static-engine/dependency"
+	cryptodomain "github.com/scanoss/static-engine/domains/crypto"
 	"github.com/scanoss/static-engine/domains/crypto/oid"
 	"github.com/scanoss/static-engine/engine"
 	"github.com/scanoss/static-engine/entities"
@@ -78,8 +79,22 @@ var AllowedFindingsCacheBackends = []string{findingsCacheBackendDisk, findingsCa
 // TODO: We'll support more scanners in the future (e.g., cbom-toolkit).
 var AllowedScanners = []string{opengrep.ScannerName, semgrep.ScannerName}
 
+// scanDomain is the detection domain crypto-finder runs.
+var scanDomain = cryptodomain.Domain()
+
+// newWriterRegistry returns the scan output formats: the domain's writers
+// and the domain-agnostic RAW writer.
+func newWriterRegistry() *output.Registry {
+	registry := output.NewRegistry()
+	for name, writer := range scanDomain.Writers() {
+		registry.Register(name, writer)
+	}
+	registry.Register("raw", output.NewRAWWriter())
+	return registry
+}
+
 // SupportedFormats lists the output formats supported by the tool.
-var SupportedFormats = []string{formatJSON, "cyclonedx"}
+var SupportedFormats = newWriterRegistry().Formats()
 
 var (
 	scanRules                    []string
@@ -170,7 +185,7 @@ func init() {
 	scanCmd.Flags().StringArrayVarP(&scanRules, "rules", "r", []string{}, "Rule file path (repeatable)")
 	scanCmd.Flags().StringArrayVar(&scanRuleDirs, "rules-dir", []string{}, "Rule directory path (repeatable)")
 	scanCmd.Flags().StringVar(&scanScanner, "scanner", defaultScanner, fmt.Sprintf("Scanner to use (default: %s)", defaultScanner))
-	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", defaultFormat, "Output format: json, cyclonedx (default: json)")
+	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", defaultFormat, fmt.Sprintf("Output format: %s (default: %s)", strings.Join(SupportedFormats, ", "), defaultFormat))
 	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "Output file path (default: stdout)")
 	scanCmd.Flags().StringSliceVar(&scanLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanFailOnFind, "fail-on-findings", false, "Exit with error if findings detected")
@@ -1056,7 +1071,8 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry,
-		engine.WithToolInfo(entities.ToolInfo{Name: version.ToolName, Version: version.Version}))
+		engine.WithToolInfo(entities.ToolInfo{Name: version.ToolName, Version: version.Version}),
+		engine.WithDomain(scanDomain))
 
 	scanOpts := engine.ScanOptions{
 		Target:                target,
@@ -1430,7 +1446,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	}
 
 	if err := runScanPhase(progress, "output", "scan", func() error {
-		return writeScanOutput(resolved)
+		return writeScanOutput(report, resolved)
 	}); err != nil {
 		return err
 	}
@@ -1494,8 +1510,8 @@ func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesM
 	})
 }
 
-func writeScanOutput(resolved *oid.ResolvedReport) error {
-	writer, err := output.NewWriterFactory().GetWriter(scanFormat)
+func writeScanOutput(report *entities.InterimReport, resolved *oid.ResolvedReport) error {
+	writer, err := newWriterRegistry().Get(scanFormat)
 	if err != nil {
 		return failure.WrapUnknown(
 			err,
@@ -1510,7 +1526,8 @@ func writeScanOutput(resolved *oid.ResolvedReport) error {
 		Str("destination", scanOutput).
 		Str("format", scanFormat).
 		Msg("Writing scan output")
-	if err := writer.WriteResolved(resolved, scanOutput); err != nil {
+	result := &output.Result{Domain: scanDomain.Name(), Interim: report, Resolved: resolved}
+	if err := writer.Write(result, scanOutput); err != nil {
 		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write output")
 	}
 	log.Info().

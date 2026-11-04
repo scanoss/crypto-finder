@@ -698,7 +698,7 @@ func TestAllowedScannersAndFormats(t *testing.T) {
 			t.Error("SupportedFormats should not be empty")
 		}
 
-		expectedFormats := []string{"json", "cyclonedx"}
+		expectedFormats := []string{"json", "cyclonedx", "raw"}
 		for _, format := range expectedFormats {
 			found := false
 			for _, supported := range SupportedFormats {

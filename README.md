@@ -161,7 +161,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--ruleset-version <ver>` | `latest` | Remote ruleset release to fetch (e.g. `v1.39.0`); pin it to rerun a scan with identical rules |
 | `--rule-prefilter <mode>` | `imports` | Skip, per scanned unit (the project and each dependency batch), the rules for libraries its sources never import; `off` runs every rule (also via `SCANOSS_RULE_PREFILTER`). OpenGrep only |
 | `--scanner <name>` | `opengrep` | Scanner engine: `opengrep`, `semgrep` |
-| `-f`, `--format <fmt>` | `json` | Output format: `json` (interim), `cyclonedx` |
+| `-f`, `--format <fmt>` | `json` | Output format: `json` (interim), `cyclonedx`, `raw` (domain-agnostic findings with their rule metadata) |
 | `-o`, `--output <file>` | stdout | Output file path for the findings report |
 | `--languages <langs>` | auto | Override language detection (comma-separated) |
 | `--fail-on-findings` | off | Exit non-zero if findings are detected |

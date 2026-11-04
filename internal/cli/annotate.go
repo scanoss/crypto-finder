@@ -268,7 +268,8 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry,
-		engine.WithToolInfo(entities.ToolInfo{Name: version.ToolName, Version: version.Version}))
+		engine.WithToolInfo(entities.ToolInfo{Name: version.ToolName, Version: version.Version}),
+		engine.WithDomain(scanDomain))
 
 	log.Info().Msgf("Running crypto detection over %s (annotate-only, no callgraph)...", target)
 	report, err := orchestrator.Scan(ctx, engine.ScanOptions{

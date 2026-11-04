@@ -11,3 +11,9 @@
   forward to `github.com/scanoss/static-engine/graphfrag` and
   `github.com/scanoss/static-engine/schema`; `pkg/graphfrag/equiv` moves to
   `github.com/scanoss/static-engine/graphfrag/equiv`.
+- The engine is domain-agnostic: crypto-finder runs it with the crypto domain,
+  which reads each rule's `metadata.crypto` block as before. Findings JSON,
+  CycloneDX, call graph and graph fragment output are unchanged.
+- `scan --format raw` writes the engine's domain-agnostic RAW report
+  (`raw-1.0`): one entry per finding with its file, rule, location, purl,
+  reachability (`unknown` for now) and the rule's `metadata.crypto` values.
