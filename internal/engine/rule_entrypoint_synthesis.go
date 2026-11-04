@@ -900,8 +900,17 @@ func stringifyCryptoBlock(crypto map[string]any) map[string]string {
 	return md
 }
 
+// removeUnresolvedMetadataVariables drops metadata fields that template a
+// Semgrep metavariable ($family, $curve) a mined definition cannot bind.
+// parameterCondition is a predicate, not a template: its `$` is a regex anchor
+// (param[0]:type~=^...AESEngine$) or a literal ("$y$"), and dropping it left the
+// entry point unconditioned, so every route to the API counted for every
+// variant (AES-CBC and Serpent-CBC alike).
 func removeUnresolvedMetadataVariables(meta map[string]string) {
 	for k, v := range meta {
+		if k == "parameterCondition" {
+			continue
+		}
 		if strings.Contains(v, "$") {
 			delete(meta, k)
 		}
