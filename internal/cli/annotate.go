@@ -54,6 +54,7 @@ var (
 	annotateOpengrepMode     string
 	annotateNoRemoteRules    bool
 	annotateNoCache          bool
+	annotateRulesetVersion   string
 	annotateAPIKey           string
 	annotateAPIURL           string
 	annotateLanguages        []string
@@ -100,6 +101,8 @@ func init() {
 			"or cli (opts out of core). Can also be set via "+opengrepModeEnv)
 	annotateCmd.Flags().BoolVar(&annotateNoRemoteRules, "no-remote-rules", false, "Disable the default remote ruleset")
 	annotateCmd.Flags().BoolVar(&annotateNoCache, "no-cache", false, "Force fresh download of remote rules, bypass cache")
+	annotateCmd.Flags().StringVar(&annotateRulesetVersion, rulesetVersionFlag, defaultRulesetVersion,
+		"Remote ruleset version to fetch, as for scan: latest or a release version such as v1.39.0")
 	annotateCmd.Flags().StringVar(&annotateAPIKey, "api-key", "", "SCANOSS API key")
 	annotateCmd.Flags().StringVar(&annotateAPIURL, "api-url", "", "SCANOSS API base URL")
 	annotateCmd.Flags().StringSliceVar(&annotateLanguages, "languages", []string{}, "Override language detection (comma-separated)")
@@ -136,10 +139,14 @@ func runAnnotate(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
+	rulesetVersion, err := resolveRulesetVersion(annotateRulesetVersion, cmd.Flags().Changed(rulesetVersionFlag), annotateNoRemoteRules)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	report, err := runAnnotateDetection(ctx, timeout, scannerJobs, opengrepMode)
+	report, err := runAnnotateDetection(ctx, timeout, scannerJobs, opengrepMode, rulesetVersion)
 	if err != nil {
 		return err
 	}
@@ -203,7 +210,7 @@ func loadImportedFragment(path string) (graphfrag.Fragment, error) {
 // over --source and returns the interim report. It mirrors the detection setup
 // of the scan command but stops at orchestrator.Scan — deliberately skipping the
 // callgraph/inference work that annotate exists to avoid.
-func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJobs int16, opengrepMode scanner.OpengrepMode) (*entities.InterimReport, error) {
+func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJobs int16, opengrepMode scanner.OpengrepMode, rulesetVersion string) (*entities.InterimReport, error) {
 	target := annotateSource
 
 	normalizedLanguages, err := scanutil.ValidateFlags(target, scanutil.ValidationOptions{
@@ -245,7 +252,7 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 		return nil, failure.WrapUnknown(err, failure.CodeConfigInitializationFailed, failure.StageConfig, "failed to initialize config")
 	}
 
-	rulesManager, err := buildAnnotateRulesManager(ctx, cfg)
+	rulesManager, err := buildAnnotateRulesManager(ctx, cfg, rulesetVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +285,7 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 	return report, nil
 }
 
-func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config) (*rules.Manager, error) {
+func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config, rulesetVersion string) (*rules.Manager, error) {
 	ruleSources := make([]rules.RuleSource, 0)
 
 	if !annotateNoRemoteRules {
@@ -288,7 +295,7 @@ func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config) (*rules.
 			return nil, failure.WrapUnknown(err, failure.CodeCacheInitializationFailed, failure.StageConfig, "failed to create cache manager")
 		}
 		cacheManager.SetNoCache(annotateNoCache)
-		remoteSource := rules.NewRemoteRuleSource(ctx, defaultRulesetName, defaultRulesetVersion, cacheManager)
+		remoteSource := rules.NewRemoteRuleSource(ctx, defaultRulesetName, rulesetVersion, cacheManager)
 		ruleSources = append(ruleSources, remoteSource)
 	}
 

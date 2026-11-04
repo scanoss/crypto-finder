@@ -94,6 +94,7 @@ var (
 	scanAPIURL                   string
 	scanStrict                   bool
 	scanMaxStaleAge              string
+	scanRulesetVersion           string
 	scanNoDedup                  bool
 	scanInterfile                bool
 	scanDependencies             bool
@@ -178,6 +179,8 @@ func init() {
 	scanCmd.Flags().StringVar(&scanAPIURL, "api-url", "", "SCANOSS API base URL")
 	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "Fail if cache expired and API unreachable (no stale cache fallback)")
 	scanCmd.Flags().StringVar(&scanMaxStaleAge, "max-stale-age", "30d", "Maximum age for stale cache fallback (e.g., 30d, 720h, 2w, max: 90d)")
+	scanCmd.Flags().StringVar(&scanRulesetVersion, rulesetVersionFlag, defaultRulesetVersion,
+		"Remote ruleset version to fetch: latest or a release version such as v1.39.0 (pin it to reproduce a scan with identical rules)")
 	scanCmd.Flags().BoolVar(&scanNoDedup, "no-dedup", false, "Disable per-line deduplication of findings")
 	scanCmd.Flags().BoolVar(&scanInterfile, "interfile", false, "Enable cross-file analysis (Semgrep Pro only, adds --pro flag)")
 	scanCmd.Flags().BoolVar(&scanDependencies, "scan-dependencies", false, "Enable recursive dependency scanning for cryptographic usage")
@@ -767,6 +770,10 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
 	}
 	scanLanguages = normalizedLanguages
+	rulesetVersion, err := resolveRulesetVersion(scanRulesetVersion, cmd.Flags().Changed(rulesetVersionFlag), scanNoRemoteRules)
+	if err != nil {
+		return err
+	}
 	if scanExportCallgraphMaxChains < 1 {
 		return failure.WrapUnknown(
 			fmt.Errorf("export-callgraph-max-chains must be at least 1"),
@@ -899,7 +906,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	if !scanNoRemoteRules {
 		log.Info().
 			Str("ruleset", defaultRulesetName).
-			Str("version", defaultRulesetVersion).
+			Str("version", rulesetVersion).
 			Bool("no-cache", scanNoCache).
 			Msg("Remote rules enabled")
 
@@ -941,7 +948,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		remoteSource := rules.NewRemoteRuleSource(
 			ctx,
 			defaultRulesetName,
-			defaultRulesetVersion,
+			rulesetVersion,
 			cacheManager,
 		)
 		ruleSources = append(ruleSources, remoteSource)

@@ -54,6 +54,10 @@ crypto-finder scan --api-url https://custom.scanoss.com /path/to/code
 # Use remote rules (default behavior with stale cache fallback)
 crypto-finder scan /path/to/code
 
+# Pin a ruleset release to rerun a scan with identical rules
+# (the report's "rules" block records the release every scan used)
+crypto-finder scan --ruleset-version v1.39.0 /path/to/code
+
 # Combine remote rules with local custom rules
 crypto-finder scan --rules-dir ./my-rules /path/to/code
 

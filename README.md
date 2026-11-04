@@ -158,6 +158,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--no-cache` | off | Force fresh download of remote rules, bypass cache |
 | `--strict` | off | Fail if the rules cache expired and the API is unreachable (no stale-cache fallback) |
 | `--max-stale-age <dur>` | `30d` | Maximum age for stale cache fallback (max `90d`) |
+| `--ruleset-version <ver>` | `latest` | Remote ruleset release to fetch (e.g. `v1.39.0`); pin it to rerun a scan with identical rules |
 | `--rule-prefilter <mode>` | `imports` | Skip, per scanned unit (the project and each dependency batch), the rules for libraries its sources never import; `off` runs every rule (also via `SCANOSS_RULE_PREFILTER`). OpenGrep only |
 | `--scanner <name>` | `opengrep` | Scanner engine: `opengrep`, `semgrep` |
 | `-f`, `--format <fmt>` | `json` | Output format: `json` (interim), `cyclonedx` |
@@ -196,7 +197,7 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--source <dir>` | required | Source directory to run crypto detection over |
 | `-o`, `--output <file>` | stdout | Output file for the annotation JSON |
 
-`annotate` also accepts the detection-related subset of `scan` flags: `--rules`, `--rules-dir`, `--no-remote-rules`, `--no-cache`, `--scanner`, `--scanner-jobs` (and `SCANOSS_SCANNER_JOBS`), `--timeout`, `--languages`, `--include-tests`, `--no-default-exclusions`, `--exclude`, `--api-key`, `--api-url`.
+`annotate` also accepts the detection-related subset of `scan` flags: `--rules`, `--rules-dir`, `--no-remote-rules`, `--no-cache`, `--ruleset-version`, `--scanner`, `--scanner-jobs` (and `SCANOSS_SCANNER_JOBS`), `--timeout`, `--languages`, `--include-tests`, `--no-default-exclusions`, `--exclude`, `--api-key`, `--api-url`.
 
 ## Language Coverage
 
