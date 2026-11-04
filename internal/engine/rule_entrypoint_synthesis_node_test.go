@@ -511,17 +511,15 @@ func TestSynthesizeNodeMainExportWithoutExportsMap(t *testing.T) {
 	}
 }
 
-// Without an exports map, a minified main or module gives way to the
-// unminified ESM build beside it, whose definitions keep their names.
-func TestSynthesizeNodeUnminifiedBuildWithoutExportsMap(t *testing.T) {
+// A module build does not move entry points off main: consumers resolve main.
+func TestSynthesizeNodeKeepsMainOverModuleWithoutExportsMap(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
 	writeNodeFiles(t, root, map[string]string{
-		"package.json":      `{"name": "acme", "main": "dist/acme.min.js", "module": "dist/acme.min.mjs"}`,
-		"dist/acme.min.js":  `"use strict";Object.defineProperty(exports,"__esModule",{value:!0});`,
-		"dist/acme.min.mjs": `function a(){}export{a as sign};`,
-		"dist/acme.mjs":     "function sign() {}\nexport { sign };\n",
+		"package.json": `{"name": "acme", "main": "lib/index.js", "module": "es/index.mjs"}`,
+		"lib/index.js": "function sign() {}\nexports.sign = sign;\n",
+		"es/index.mjs": "export function sign() {}\n",
 	})
 	result := &DepScanResult{
 		Report:      &entities.InterimReport{},
@@ -533,12 +531,12 @@ func TestSynthesizeNodeUnminifiedBuildWithoutExportsMap(t *testing.T) {
 	if got := SynthesizeRuleCryptoEntryPointsForResult(result, []string{writeNodeRules(t, map[string]string{"acme.sign": "sign"})}); got != 1 {
 		t.Fatalf("synthesized = %d, want 1", got)
 	}
-	if a := syntheticAssets(result.Report)["dist/acme.mjs acme.sign"]; a == nil || a.StartLine != 1 {
-		t.Errorf("assets = %v, want acme.sign at dist/acme.mjs:1", syntheticAssets(result.Report))
+	if a := syntheticAssets(result.Report)["lib/index.js acme.sign"]; a == nil {
+		t.Errorf("assets = %v, want acme.sign in main, lib/index.js", syntheticAssets(result.Report))
 	}
 }
 
-// A minified CommonJS main without a module field gives way to its unminified sibling.
+// A minified main gives way to its unminified sibling, whose definitions keep their names.
 func TestSynthesizeNodeUnminifiedMainWithoutExportsMap(t *testing.T) {
 	t.Parallel()
 
