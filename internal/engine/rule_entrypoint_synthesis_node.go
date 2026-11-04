@@ -381,6 +381,7 @@ func isNodeRuntimeSource(name string) bool {
 type nodePackage struct {
 	Name    string          `json:"name"`
 	Main    string          `json:"main"`
+	Module  string          `json:"module"`
 	Exports json.RawMessage `json:"exports"`
 }
 
@@ -412,13 +413,33 @@ func nodeModuleFiles(root string, pkg nodePackage) map[string][]string {
 		}
 		return files.out
 	}
+	// The ESM build comes first, and a minified build gives way to the
+	// unminified one beside it: minifying renames the definitions an export names.
+	if module := strings.TrimPrefix(path.Clean(pkg.Module), "./"); pkg.Module != "" && nodeFileExists(root, module) {
+		files.add(".", unminifiedNodeFile(root, module))
+	}
 	if main := nodeMainFile(root, pkg.Main); main != "" {
-		files.add(".", main)
+		files.add(".", unminifiedNodeFile(root, main))
 	}
 	if err := filepath.WalkDir(root, files.walk(root)); err != nil {
 		log.Debug().Err(err).Str("root", root).Msg("node export index walk stopped early")
 	}
 	return files.out
+}
+
+// unminifiedNodeFile returns rel's unminified sibling (a.min.js -> a.js) when
+// the package ships one, else rel.
+func unminifiedNodeFile(root, rel string) string {
+	dir, base := path.Split(rel)
+	if plain := dir + strings.Replace(base, ".min.", ".", 1); plain != rel && nodeFileExists(root, plain) {
+		return plain
+	}
+	return rel
+}
+
+func nodeFileExists(root, rel string) bool {
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
+	return err == nil && !info.IsDir()
 }
 
 // nodeSubpathExcluded reports whether a subpath matches an exports entry mapped
