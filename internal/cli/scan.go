@@ -919,6 +919,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	}
 
 	ruleSources := make([]rules.RuleSource, 0)
+	var remoteSource *rules.RemoteRuleSource
 
 	if !scanNoRemoteRules {
 		log.Info().
@@ -962,12 +963,15 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		}
 		cacheManager.SetMaxStaleCacheAge(maxStaleAge)
 
-		remoteSource := rules.NewRemoteRuleSource(
+		remoteSource = rules.NewRemoteRuleSource(
 			ctx,
 			defaultRulesetName,
 			rulesetVersion,
 			cacheManager,
 		)
+		// A leased ruleset is decrypted into a per-run directory; remove it
+		// when the scan ends, however it ends.
+		defer remoteSource.Close()
 		ruleSources = append(ruleSources, remoteSource)
 	}
 
@@ -1064,10 +1068,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	scannerRegistry := scanner.NewRegistry()
 
 	// Register scanners
-	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(
-		opengrep.WithProbeCacheDir(opengrepProbeCacheDir()),
-		opengrep.WithCoreRulesCacheDir(opengrepCoreRulesCacheDir()),
-	))
+	registerOpengrep(scannerRegistry, remoteSource)
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)

@@ -86,6 +86,7 @@ func init() {
 	rootCmd.AddCommand(cbomCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(configureCmd)
+	rootCmd.AddCommand(rulesCmd)
 }
 
 func setupLogging() {

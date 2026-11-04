@@ -24,7 +24,9 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 )
 
 const (
@@ -107,4 +109,27 @@ func opengrepCoreRulesCacheDir() string {
 		return ""
 	}
 	return filepath.Join(cacheDir, opengrepCoreRulesCacheDirName)
+}
+
+// registerOpengrep registers the OpenGrep scanner with the on-disk probe and
+// core rules caches. When the remote ruleset turns out to be leased, the core
+// rules cache is left out, so no plaintext copy of the rules outlives the
+// run. The registry builds a scanner after the rules are loaded, which is
+// when remote.Leased() is known.
+func registerOpengrep(registry *scanner.Registry, remote *rules.RemoteRuleSource) {
+	cached := opengrep.NewScannerFactory(
+		opengrep.WithProbeCacheDir(opengrepProbeCacheDir()),
+		opengrep.WithCoreRulesCacheDir(opengrepCoreRulesCacheDir()),
+	)
+	if remote == nil {
+		registry.RegisterFactory(opengrep.ScannerName, cached)
+		return
+	}
+	uncached := opengrep.NewScannerFactory(opengrep.WithProbeCacheDir(opengrepProbeCacheDir()))
+	registry.RegisterFactory(opengrep.ScannerName, func() scanner.Scanner {
+		if remote.Leased() {
+			return uncached()
+		}
+		return cached()
+	})
 }

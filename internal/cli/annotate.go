@@ -36,7 +36,6 @@ import (
 	"github.com/scanoss/crypto-finder/internal/rules"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner"
-	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/skip"
 	"github.com/scanoss/crypto-finder/pkg/graphfrag"
@@ -254,17 +253,17 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 		return nil, failure.WrapUnknown(err, failure.CodeConfigInitializationFailed, failure.StageConfig, "failed to initialize config")
 	}
 
-	rulesManager, err := buildAnnotateRulesManager(ctx, cfg, rulesetVersion)
+	rulesManager, remoteSource, err := buildAnnotateRulesManager(ctx, cfg, rulesetVersion)
 	if err != nil {
 		return nil, err
+	}
+	if remoteSource != nil {
+		defer remoteSource.Close()
 	}
 
 	langDetector := language.NewEnryDetector(skipMatcher)
 	scannerRegistry := scanner.NewRegistry()
-	scannerRegistry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(
-		opengrep.WithProbeCacheDir(opengrepProbeCacheDir()),
-		opengrep.WithCoreRulesCacheDir(opengrepCoreRulesCacheDir()),
-	))
+	registerOpengrep(scannerRegistry, remoteSource)
 	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
@@ -287,20 +286,23 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 	return report, nil
 }
 
-func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config, rulesetVersion string) (*rules.Manager, error) {
+// buildAnnotateRulesManager returns the rules manager and, when remote rules
+// are enabled, the remote source, which the caller must Close.
+func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config, rulesetVersion string) (*rules.Manager, *rules.RemoteRuleSource, error) {
 	ruleSources := make([]rules.RuleSource, 0)
+	var remoteSource *rules.RemoteRuleSource
 
 	if !annotateNoRemoteRules {
 		if err := checkAPIURL(cfg.GetAPIURL(), cfg.GetAllowHTTP()); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey(), api.WithAllowHTTP(cfg.GetAllowHTTP()))
 		cacheManager, err := cache.NewManager(apiClient)
 		if err != nil {
-			return nil, failure.WrapUnknown(err, failure.CodeCacheInitializationFailed, failure.StageConfig, "failed to create cache manager")
+			return nil, nil, failure.WrapUnknown(err, failure.CodeCacheInitializationFailed, failure.StageConfig, "failed to create cache manager")
 		}
 		cacheManager.SetNoCache(annotateNoCache)
-		remoteSource := rules.NewRemoteRuleSource(ctx, defaultRulesetName, rulesetVersion, cacheManager)
+		remoteSource = rules.NewRemoteRuleSource(ctx, defaultRulesetName, rulesetVersion, cacheManager)
 		ruleSources = append(ruleSources, remoteSource)
 	}
 
@@ -310,11 +312,11 @@ func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config, rulesetV
 
 	switch len(ruleSources) {
 	case 0:
-		return nil, failure.New(failure.CodeRulesLoadFailed, failure.StageRules,
+		return nil, nil, failure.New(failure.CodeRulesLoadFailed, failure.StageRules,
 			"no rule sources configured (use --rules, --rules-dir, or enable remote rules)")
 	case 1:
-		return rules.NewManager(ruleSources[0]), nil
+		return rules.NewManager(ruleSources[0]), remoteSource, nil
 	default:
-		return rules.NewManager(rules.NewMultiSource(ruleSources...)), nil
+		return rules.NewManager(rules.NewMultiSource(ruleSources...)), remoteSource, nil
 	}
 }
