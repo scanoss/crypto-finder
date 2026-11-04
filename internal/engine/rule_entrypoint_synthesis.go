@@ -826,6 +826,9 @@ func addRuleCryptoFile(out map[string][]map[string]string, file, ecosystem strin
 	}
 
 	for i := range rf.Rules {
+		if !RuleTargetsEcosystem(rf.Rules[i].Languages, ecosystem) {
+			continue
+		}
 		addRuleCrypto(out, rf.Rules[i].Metadata.Crypto, rf.Rules[i].Metadata.PURL, ecosystem)
 	}
 }
