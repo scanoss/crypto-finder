@@ -342,33 +342,27 @@ func (r *PipResolver) uninstallFirstParty(ctx context.Context, projectDir string
 	}
 }
 
-// requirementHeaderOptions apply to every requirement of the file, so the
-// per-requirement retry passes them along with each one.
-var requirementHeaderOptions = []string{
-	"--index-url", "-i", "--extra-index-url", "--find-links", "-f", "--trusted-host",
-	"--pre", "--prefer-binary", "--only-binary", "--no-binary",
-}
-
 // parseRequirementUnits splits a requirements file into the options that apply
-// to all of it and the units pip can install on their own: one requirement, or
-// one -r/-c/-e line.
+// to all of it and the units pip can install on their own: a requirement, or
+// an -r or -e line. Every other option, such as -c, --index-url or --no-index,
+// goes in the header passed with each unit, except --require-hashes: the
+// per-requirement --hash options it would demand are not passed on.
 func parseRequirementUnits(content string) (header []string, units [][]string) {
 	for _, line := range requirementLines(content) {
-		if !strings.HasPrefix(line, "-") {
+		option, _ := splitRequirementOption(line)
+		switch option {
+		case "":
 			// Per-requirement options such as --hash have no command-line form.
 			if i := strings.Index(line, " --"); i >= 0 {
 				line = strings.TrimSpace(line[:i])
 			}
 			units = append(units, []string{line})
-			continue
+		case "-r", "--requirement", "-e", "--editable":
+			units = append(units, strings.Fields(line))
+		case "--require-hashes":
+		default:
+			header = append(header, strings.Fields(line)...)
 		}
-		fields := strings.Fields(line)
-		option, _, _ := strings.Cut(fields[0], "=")
-		if slices.Contains(requirementHeaderOptions, option) {
-			header = append(header, fields...)
-			continue
-		}
-		units = append(units, fields)
 	}
 	return header, units
 }

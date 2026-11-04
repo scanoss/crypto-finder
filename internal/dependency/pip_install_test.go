@@ -15,8 +15,11 @@ import (
 // `-m pip [--python <venv>] install|list|show|uninstall`. Installing a
 // requirement makes a package directory under the target environment's site
 // dir; a requirement starting with "broken" fails to build, and a
-// requirements file holding one fails as a whole. Its own environment holds
-// pip, as a real ambient interpreter does.
+// requirements file holding one, or the word fail-whole, fails as a whole. As
+// real pip does, an install of only a -c constraint fails, and so does a
+// requirement given on the command line under --require-hashes, which has no
+// hash there. Its own environment holds pip, as a real ambient interpreter
+// does.
 type fakePython struct {
 	ambient string
 	log     string
@@ -53,10 +56,12 @@ install_one() {
 case $cmd in
 install)
   last=; prev=; for a in "$@"; do prev=$last; last=$a; done
+  if [ "$prev" = "-c" ]; then echo "ERROR: You must give at least one requirement to install" >&2; exit 1; fi
   if [ "$prev" = "-r" ]; then
-    if grep -q broken "$last"; then echo "whole file failed" >&2; exit 1; fi
+    if grep -q -e broken -e fail-whole "$last"; then echo "whole file failed" >&2; exit 1; fi
     while read -r l; do [ -n "$l" ] && install_one "$l"; done < "$last"; exit 0
   fi
+  case " $* " in *" --require-hashes "*) echo "ERROR: Hashes are required in --require-hashes mode" >&2; exit 1;; esac
   if [ -d "$last" ]; then install_one projdep; exit $?; fi
   install_one "$last"; exit $?;;
 list)
@@ -153,6 +158,59 @@ func TestPipInstall_RetriesEachRequirementAfterWholeFileFails(t *testing.T) {
 	}
 	if n := fake.count(t, "-m venv"); n != 2 {
 		t.Fatalf("venv created %d times, want an incomplete one never reused", n)
+	}
+}
+
+// A -c constraint is not a requirement of its own: the retry passes it with
+// every requirement, and a retry in which every requirement installed caches
+// the environment like a whole-file install does.
+func TestPipInstall_RetryAppliesConstraintsToEveryRequirement(t *testing.T) {
+	isolatePipEnv(t)
+	fake := newFakePython(t, "24.0")
+	root := writeTree(t, map[string]string{
+		requirementsFile:  "# fail-whole\n-c constraints.txt\nsix\nidna\n",
+		"constraints.txt": "six==1.16.0\n",
+	})
+
+	result, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got, want := moduleNames(result), []string{"idna", "six"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("modules = %v, want %v", got, want)
+	}
+	for _, req := range []string{"six", "idna"} {
+		if n := fake.count(t, "install --disable-pip-version-check --no-input -c constraints.txt "+req+"\n"); n != 1 {
+			t.Fatalf("%s retried %d times with -c constraints.txt, want once", req, n)
+		}
+	}
+	if n := fake.count(t, "-c constraints.txt\n"); n != 0 {
+		t.Fatalf("-c constraints.txt was installed on its own %d times", n)
+	}
+
+	if _, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root); err != nil {
+		t.Fatalf("second Resolve: %v", err)
+	}
+	if n := fake.count(t, "-m venv"); n != 1 {
+		t.Fatalf("venv created %d times, want the fully retried one cached and reused", n)
+	}
+}
+
+// Under --require-hashes the retry cannot pass each requirement's --hash, so it
+// drops the option rather than fail every requirement for a missing hash.
+func TestPipInstall_RetryDropsRequireHashes(t *testing.T) {
+	isolatePipEnv(t)
+	fake := newFakePython(t, "24.0")
+	root := writeTree(t, map[string]string{
+		requirementsFile: "--require-hashes\nsix --hash=sha256:abc\nbroken-pkg --hash=sha256:def\n",
+	})
+
+	result, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got, want := moduleNames(result), []string{"six"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("modules = %v, want %v installed by the retry", got, want)
 	}
 }
 
@@ -261,6 +319,9 @@ func writeExecutableAll(t *testing.T, dir, name string) {
 func TestParseRequirementUnits(t *testing.T) {
 	header, units := parseRequirementUnits(`# pinned
 --index-url https://mirror.example/simple
+--require-hashes
+-c constraints.txt
+--no-index
 six==1.16.0 --hash=sha256:abc
 requests[security] >= 2.0 ; python_version > "3.8"  # comment
 -r other.txt
@@ -269,7 +330,7 @@ git+https://example.com/repo.git#egg=pkg
 idna \
   ==3.7
 `)
-	if want := []string{"--index-url", "https://mirror.example/simple"}; !reflect.DeepEqual(header, want) {
+	if want := []string{"--index-url", "https://mirror.example/simple", "-c", "constraints.txt", "--no-index"}; !reflect.DeepEqual(header, want) {
 		t.Fatalf("header = %q, want %q", header, want)
 	}
 	want := [][]string{
