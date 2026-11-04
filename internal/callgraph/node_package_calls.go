@@ -233,12 +233,26 @@ func nodePackageEntry(dir, subpath string) string {
 	if subpath == "." {
 		if manifest.Main != "" {
 			if file := nodeSourceFile(dir, manifest.Main); file != "" {
-				return file
+				return UnminifiedNodeFile("", file)
 			}
 		}
 		return nodeSourceFile(dir, "index.js")
 	}
 	return nodeSourceFile(dir, subpath)
+}
+
+// UnminifiedNodeFile returns file's unminified sibling (a.min.js -> a.js) when
+// root ships one, else file: minifying renames the definitions exports name.
+func UnminifiedNodeFile(root, file string) string {
+	dir, base := filepath.Split(file)
+	plain := filepath.Join(dir, strings.Replace(base, ".min.", ".", 1))
+	if plain == filepath.Clean(file) {
+		return file
+	}
+	if info, err := os.Stat(filepath.Join(root, plain)); err != nil || info.IsDir() {
+		return file
+	}
+	return plain
 }
 
 // nodeExportTarget reads the target "exports" maps subpath to. The value is a
