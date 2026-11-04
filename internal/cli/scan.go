@@ -100,6 +100,7 @@ var (
 	scanDependencies             bool
 	scanIncludeTests             bool
 	scanIncludeDevDependencies   bool
+	scanInstallDependencies      bool
 	scanNoDependencyFindingsAPI  bool
 	scanNoDefaultExclusions      bool     // --no-default-exclusions flag
 	scanExcludePatterns          []string // --exclude flag (repeatable)
@@ -187,6 +188,11 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanIncludeTests, "include-tests", false, "Include test sources in findings and dependency scans")
 	scanCmd.Flags().BoolVar(&scanIncludeDevDependencies, "include-dev-dependencies", false,
 		"Also scan npm dev-only dependencies (packages marked dev in package-lock.json); by default dependency scans cover the production tree")
+	scanCmd.Flags().BoolVar(&scanInstallDependencies, "install-dependencies", false,
+		"With --scan-dependencies, install npm and Python dependencies that are not already installed: "+
+			"npm ci --ignore-scripts from package-lock.json, and pip into a cached virtual environment outside the scanned tree "+
+			"from requirements.txt or the project's pyproject.toml/setup.py/setup.cfg. Needs network access. "+
+			"Building a Python source distribution runs its build backend, which executes code from the package")
 	scanCmd.Flags().BoolVar(&scanNoDependencyFindingsAPI, "no-dependency-findings-api", false,
 		"Scan every dependency locally instead of taking the findings the SCANOSS API publishes for its package version "+
 			"(used only when an API key is configured)")
@@ -1128,7 +1134,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		}
 
 		if ecosystem != "" {
-			depRegistry := newDependencyRegistry(scanIncludeDevDependencies)
+			depRegistry := newDependencyRegistry(scanIncludeDevDependencies, scanInstallDependencies)
 			var depScannerOptions []engine.DependencyScannerOption
 			if source := newDependencyFindingsSource(cfg.GetAPIURL(), cfg.GetAPIKey(), scanNoDependencyFindingsAPI); source != nil {
 				depScannerOptions = append(depScannerOptions, engine.WithDependencyFindingsSource(source))
@@ -1651,16 +1657,21 @@ func newDependencyFindingsSource(apiURL, apiKey string, disabled bool) engine.De
 }
 
 // newDependencyRegistry registers the resolver of every supported ecosystem.
-func newDependencyRegistry(includeDevDependencies bool) *dependency.Registry {
+func newDependencyRegistry(includeDevDependencies, installDependencies bool) *dependency.Registry {
 	registry := dependency.NewRegistry()
 	registry.Register("go", dependency.NewGoResolver())
 	registry.Register("java", dependency.NewJavaResolver())
-	registry.Register("python", dependency.NewPipResolver())
-	registry.Register("rust", dependency.NewCargoResolver())
+	var pipOptions []dependency.PipResolverOption
 	var npmOptions []dependency.NpmResolverOption
+	if installDependencies {
+		pipOptions = append(pipOptions, dependency.WithPipInstall())
+		npmOptions = append(npmOptions, dependency.WithNpmInstall())
+	}
 	if includeDevDependencies {
 		npmOptions = append(npmOptions, dependency.WithNpmDevDependencies())
 	}
+	registry.Register("python", dependency.NewPipResolver(pipOptions...))
+	registry.Register("rust", dependency.NewCargoResolver())
 	registry.Register(ecosystemNode, dependency.NewNpmResolver(npmOptions...))
 	return registry
 }

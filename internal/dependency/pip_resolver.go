@@ -36,16 +36,31 @@ type pipShowInfo struct {
 
 // PipResolver resolves Python dependencies using the `pip` CLI.
 type PipResolver struct {
+	install     bool
 	lookPath    func(string) (string, error)
 	execCommand func(context.Context, string, ...string) *exec.Cmd
 }
 
+// PipResolverOption configures a PipResolver.
+type PipResolverOption func(*PipResolver)
+
+// WithPipInstall installs a project's declared dependencies into a virtual
+// environment outside the scanned tree when the user has no environment of
+// their own, and resolves from it. Building an sdist runs its build backend.
+func WithPipInstall() PipResolverOption {
+	return func(r *PipResolver) { r.install = true }
+}
+
 // NewPipResolver creates a new Python/pip dependency resolver.
-func NewPipResolver() *PipResolver {
-	return &PipResolver{
+func NewPipResolver(opts ...PipResolverOption) *PipResolver {
+	r := &PipResolver{
 		lookPath:    exec.LookPath,
 		execCommand: exec.CommandContext,
 	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // Ecosystem returns "python".
@@ -71,19 +86,23 @@ func (r *PipResolver) CanResolve(targetDir string) bool {
 func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	// Step 1: Detect root module name
 	rootModule := r.detectRootModule(targetDir)
-	pythonExec, err := r.resolvePythonExecutable(targetDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to locate Python interpreter: %w", err)
-	}
-
 	result := &ResolveResult{
 		RootModule:   rootModule,
 		Dependencies: make([]Dependency, 0),
 		Graph:        make(map[string][]string),
 	}
+	env, ok, err := r.pythonFor(ctx, targetDir)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		log.Info().Str("root", targetDir).
+			Msg("No virtual environment and no requirements.txt, pyproject.toml, setup.py or setup.cfg to install from: no Python dependencies")
+		return result, nil
+	}
 
 	// Step 2: List installed packages
-	packages, err := r.pipList(ctx, pythonExec)
+	packages, err := r.pipList(ctx, env)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pip packages: %w", err)
 	}
@@ -99,13 +118,13 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		pkgNames[i] = pkg.Name
 	}
 
-	infoMap, err := r.pipShow(ctx, pythonExec, pkgNames)
+	infoMap, err := r.pipShow(ctx, env, pkgNames)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to get pip show info, falling back to basic resolution")
 	}
 
 	// Step 4: Build distribution→import mapping via importlib.metadata
-	distToImport := r.pythonPackagesDistributions(ctx, pythonExec)
+	distToImport := r.pythonPackagesDistributions(ctx, env.python)
 	if len(distToImport) > 0 {
 		log.Info().Int("mappings", len(distToImport)).Msg("Loaded Python distribution-to-import mapping via importlib.metadata")
 	} else {
@@ -173,12 +192,21 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 // Using a project-local venv prevents ambient globally-installed packages from
 // leaking into the dependency list for a project that manages its own environment.
 func (r *PipResolver) resolvePythonExecutable(projectDir string) (string, error) {
+	if python := userVenvPython(projectDir); python != "" {
+		return python, nil
+	}
+	return r.ambientPython()
+}
+
+// userVenvPython returns the interpreter of an environment the user set up
+// themselves, VIRTUAL_ENV first, or "" when there is none.
+func userVenvPython(projectDir string) string {
 	// Priority 1: activated venv via VIRTUAL_ENV env var.
 	if virtualEnv := strings.TrimSpace(os.Getenv("VIRTUAL_ENV")); virtualEnv != "" {
 		if python := venvPythonCandidate(virtualEnv); python != "" {
 			log.Debug().Str("venv", virtualEnv).Str("python", python).
 				Msg("Using activated VIRTUAL_ENV interpreter")
-			return python, nil
+			return python
 		}
 	}
 
@@ -188,11 +216,14 @@ func (r *PipResolver) resolvePythonExecutable(projectDir string) (string, error)
 		if python := venvPythonCandidate(venvPath); python != "" {
 			log.Debug().Str("venv", venvPath).Str("python", python).
 				Msg("Using project-local venv interpreter (auto-detected)")
-			return python, nil
+			return python
 		}
 	}
+	return ""
+}
 
-	// Priority 4: ambient interpreter from PATH.
+// ambientPython returns the python3 or python found on PATH.
+func (r *PipResolver) ambientPython() (string, error) {
 	for _, candidate := range []string{"python3", pythonExecutable} {
 		path, err := r.lookPath(candidate)
 		if err == nil {
@@ -283,16 +314,16 @@ func parseNameFromSection(content, section string) string {
 	return ""
 }
 
-// pipList runs `python -m pip list --format=json` and parses the output.
-func (r *PipResolver) pipList(ctx context.Context, pythonExec string) ([]pipPackage, error) {
-	cmd := r.execCommand(ctx, pythonExec, "-m", "pip", "list", "--format=json")
+// pipList runs `pip list --format=json` against env and parses the output.
+func (r *PipResolver) pipList(ctx context.Context, env pythonEnv) ([]pipPackage, error) {
+	cmd := r.execCommand(ctx, env.pip[0], append(slices.Clone(env.pip[1:]), "list", "--format=json")...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s -m pip list --format=json: %w\nstderr: %s", pythonExec, err, stderr.String())
+		return nil, fmt.Errorf("%s list --format=json: %w\nstderr: %s", strings.Join(env.pip, " "), err, stderr.String())
 	}
 
 	var packages []pipPackage
@@ -306,7 +337,7 @@ func (r *PipResolver) pipList(ctx context.Context, pythonExec string) ([]pipPack
 // pipShow runs `pip show pkg1 pkg2 ...` and parses the multi-package output.
 //
 //nolint:unparam // error return kept for interface consistency; per-batch errors are logged and swallowed.
-func (r *PipResolver) pipShow(ctx context.Context, pythonExec string, packageNames []string) (map[string]pipShowInfo, error) {
+func (r *PipResolver) pipShow(ctx context.Context, env pythonEnv, packageNames []string) (map[string]pipShowInfo, error) {
 	if len(packageNames) == 0 {
 		return nil, nil
 	}
@@ -319,8 +350,8 @@ func (r *PipResolver) pipShow(ctx context.Context, pythonExec string, packageNam
 		end := min(i+batchSize, len(packageNames))
 		batch := packageNames[i:end]
 
-		args := append([]string{"-m", "pip", "show"}, batch...)
-		cmd := r.execCommand(ctx, pythonExec, args...)
+		args := slices.Concat(env.pip[1:], []string{"show"}, batch)
+		cmd := r.execCommand(ctx, env.pip[0], args...)
 
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout

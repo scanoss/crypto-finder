@@ -1,16 +1,22 @@
 package dependency
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
+
+	"github.com/scanoss/crypto-finder/internal/failure"
 )
 
 const (
@@ -19,6 +25,7 @@ const (
 	npmLockfile     = "package-lock.json"
 	npmModulesDir   = "node_modules"
 	npmModulesSlash = npmModulesDir + "/"
+	npmInstallHint  = "run `npm install` before scanning, or scan with --install-dependencies"
 )
 
 // npmManifestFile is the subset of package.json this resolver reads.
@@ -90,16 +97,22 @@ func (e npmLockV1Entry) requireMap() map[string]string {
 	return out
 }
 
+// errNpmNotInstalled marks a lockfile whose required packages are not on disk:
+// the one state an install can fix.
+var errNpmNotInstalled = errors.New("dependencies not installed")
+
 // NpmResolver resolves Node dependencies from package-lock.json and the
-// node_modules tree npm has already installed.
+// node_modules tree npm has installed.
 //
-// Unlike the cargo, go and java resolvers it runs no tool: npm puts dependency
-// sources on disk at install time, so resolution is reading the lockfile and
-// pointing at directories that are already there. That is also the constraint —
-// without an install there is nothing to point at, and this resolver fails
-// rather than return dependencies whose Dir is empty.
+// npm puts dependency sources on disk at install time, so resolution is reading
+// the lockfile and pointing at directories that are already there. Without an
+// install there is nothing to point at, and this resolver fails rather than
+// return dependencies whose Dir is empty, unless install is enabled, in which
+// case it runs `npm ci` itself first.
 type NpmResolver struct {
 	includeDev bool
+	install    bool
+	lookPath   func(string) (string, error)
 }
 
 // NpmResolverOption configures an NpmResolver.
@@ -110,9 +123,16 @@ func WithNpmDevDependencies() NpmResolverOption {
 	return func(r *NpmResolver) { r.includeDev = true }
 }
 
+// WithNpmInstall runs `npm ci --ignore-scripts` at a root whose lockfile names
+// required packages that node_modules does not hold, then resolves the fresh
+// tree.
+func WithNpmInstall() NpmResolverOption {
+	return func(r *NpmResolver) { r.install = true }
+}
+
 // NewNpmResolver creates a new npm dependency resolver.
 func NewNpmResolver(opts ...NpmResolverOption) *NpmResolver {
-	r := &NpmResolver{}
+	r := &NpmResolver{lookPath: exec.LookPath}
 	for _, opt := range opts {
 		opt(r)
 	}
@@ -135,7 +155,48 @@ func (r *NpmResolver) CanResolve(targetDir string) bool {
 
 // Resolve reads package.json and package-lock.json at targetDir and maps every
 // production dependency to the directory npm installed it in.
-func (r *NpmResolver) Resolve(_ context.Context, targetDir string) (*ResolveResult, error) {
+func (r *NpmResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
+	result, err := r.resolveTree(targetDir)
+	if !r.install || !errors.Is(err, errNpmNotInstalled) {
+		return result, err
+	}
+	if err := r.npmCI(ctx, targetDir); err != nil {
+		return nil, err
+	}
+	return r.resolveTree(targetDir)
+}
+
+// npmCI installs exactly what the lockfile records. --ignore-scripts is the
+// security boundary: no package's lifecycle script runs on the scanning host.
+func (r *NpmResolver) npmCI(ctx context.Context, targetDir string) error {
+	npm, err := r.lookPath("npm")
+	if err != nil {
+		return failure.Wrap(err, failure.CodeDependencyResolutionFailed, failure.StageDependency,
+			"npm is not on PATH, and --install-dependencies needs it to install the dependencies of "+targetDir)
+	}
+	args := []string{"ci", "--ignore-scripts", "--no-audit", "--no-fund"}
+	if !r.includeDev {
+		args = append(args, "--omit=dev")
+	}
+	log.Info().Str("root", targetDir).Strs("args", args).Msg("Installing npm dependencies")
+	start := time.Now()
+	cmd := exec.CommandContext(ctx, npm, args...)
+	cmd.Dir = targetDir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		tail := tailForFailure(strings.TrimSpace(stderr.String()), failureOutputLimit)
+		return failure.Wrap(err, failure.CodeDependencyResolutionFailed, failure.StageDependency,
+			fmt.Sprintf("npm ci failed in %s: %s", targetDir, tail),
+			failure.WithDetail("target_dir", targetDir),
+			failure.WithDetail("stderr", tail),
+		)
+	}
+	log.Info().Str("root", targetDir).Dur("duration", time.Since(start)).Msg("Installed npm dependencies")
+	return nil
+}
+
+func (r *NpmResolver) resolveTree(targetDir string) (*ResolveResult, error) {
 	manifest, err := readNpmManifest(targetDir)
 	if err != nil {
 		return nil, err
@@ -166,15 +227,15 @@ func (r *NpmResolver) Resolve(_ context.Context, targetDir string) (*ResolveResu
 	// absent REQUIRED production package.
 	if len(absent.required) > 0 {
 		return nil, fmt.Errorf(
-			"npm resolver: %d required %s in %s are in %s but not installed under %s (%s): run `npm install` before scanning",
-			len(absent.required), npmPluralPackages(len(absent.required)), targetDir, npmLockfile,
-			npmModulesDir, strings.Join(npmSampleNames(absent.required), ", "),
+			"npm resolver: %w: %d required %s in %s are in %s but not installed under %s (%s): %s",
+			errNpmNotInstalled, len(absent.required), npmPluralPackages(len(absent.required)), targetDir, npmLockfile,
+			npmModulesDir, strings.Join(npmSampleNames(absent.required), ", "), npmInstallHint,
 		)
 	}
 	if len(result.Dependencies) == 0 && len(packages) > 0 {
 		return nil, fmt.Errorf(
-			"npm resolver: %s in %s lists %d dependencies and none are installed under %s: run `npm install` before scanning",
-			npmLockfile, targetDir, len(packages), npmModulesDir,
+			"npm resolver: %w: %s in %s lists %d dependencies and none are installed under %s: %s",
+			errNpmNotInstalled, npmLockfile, targetDir, len(packages), npmModulesDir, npmInstallHint,
 		)
 	}
 	if len(absent.dev) > 0 {
