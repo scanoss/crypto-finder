@@ -22,6 +22,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,7 +35,6 @@ import (
 
 	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/config"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 const (
@@ -113,7 +113,7 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 			}
 
 			// Validate that cached ruleset contains rule files
-			if err := utils.ValidateRuleDirNotEmpty(rulesetPath); err != nil {
+			if err := validateCachedRuleset(rulesetPath); err != nil {
 				log.Warn().
 					Err(err).
 					Str("ruleset", name).
@@ -123,6 +123,8 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 			} else {
 				return rulesetPath, nil
 			}
+		} else if m.confirmCurrentRelease(ctx, name, version, rulesetPath, metadataPath) {
+			return rulesetPath, nil
 		}
 	} else {
 		log.Info().
@@ -138,23 +140,33 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 		Msg("Downloading ruleset")
 
 	if err := m.downloadAndCache(ctx, name, version, rulesetPath); err != nil {
-		// Download failed - try stale cache fallback if not in strict mode
-		if !m.strictMode {
-			if stalePath, staleErr := m.tryStaleCache(rulesetPath, metadataPath, name, version); staleErr == nil {
-				// Successfully using stale cache
-				return stalePath, nil
-			}
-			// Stale cache fallback also failed, log why and return original error
-			log.Debug().Msg("Stale cache fallback unavailable")
-		}
-		return "", fmt.Errorf("failed to download ruleset: %w", err)
+		return m.fallbackAfterDownloadError(rulesetPath, metadataPath, name, version, err)
 	}
 
-	if err := utils.ValidateRuleDirNotEmpty(rulesetPath); err != nil {
+	if err := validateCachedRuleset(rulesetPath); err != nil {
 		return "", fmt.Errorf("downloaded ruleset validation failed: %w", err)
 	}
 
 	return rulesetPath, nil
+}
+
+// fallbackAfterDownloadError uses the stale cache when a download failed,
+// unless strict mode is on. An expired lease is reported instead of the
+// download error alone, since it is why no cached copy can be used.
+func (m *Manager) fallbackAfterDownloadError(rulesetPath, metadataPath, name, version string, downloadErr error) (string, error) {
+	if !m.strictMode {
+		stalePath, staleErr := m.tryStaleCache(rulesetPath, metadataPath, name, version)
+		if staleErr == nil {
+			return stalePath, nil
+		}
+		var expired *ExpiredLeaseError
+		if errors.As(staleErr, &expired) {
+			return "", fmt.Errorf("%w (download failed: %w)", staleErr, downloadErr)
+		}
+		// Stale cache fallback also failed, log why and return original error
+		log.Debug().Err(staleErr).Msg("Stale cache fallback unavailable")
+	}
+	return "", fmt.Errorf("failed to download ruleset: %w", downloadErr)
 }
 
 // getRulesetCachePath returns the cache path for a specific ruleset.
@@ -204,6 +216,14 @@ func (m *Manager) isCacheValid(rulesetPath, metadataPath string) bool {
 	metadata, err := LoadMetadata(metadataPath)
 	if err != nil {
 		log.Debug().Err(err).Msg("Failed to load cache metadata")
+		return false
+	}
+
+	if metadata.LeaseExpired() {
+		log.Debug().
+			Str("ruleset", metadata.RulesetName).
+			Time("expires_at", metadata.ExpiresAt).
+			Msg("Cached ruleset lease expired")
 		return false
 	}
 
@@ -275,7 +295,12 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 		Str("checksum", manifest.ChecksumSHA256).
 		Msg("Checksum verified successfully")
 
-	if err := m.persistDownloadedRuleset(name, version, targetPath, tarball, manifest); err != nil {
+	if manifest.Lease != nil {
+		err = m.persistLeasedRuleset(name, version, targetPath, tarball, manifest)
+	} else {
+		err = m.persistDownloadedRuleset(name, version, targetPath, tarball, manifest)
+	}
+	if err != nil {
 		return err
 	}
 
@@ -292,7 +317,7 @@ func (m *Manager) hasUsableCache(rulesetPath, metadataPath string) bool {
 	if !m.isCacheValid(rulesetPath, metadataPath) {
 		return false
 	}
-	return utils.ValidateRuleDirNotEmpty(rulesetPath) == nil
+	return validateCachedRuleset(rulesetPath) == nil
 }
 
 func (m *Manager) persistDownloadedRuleset(name, version, targetPath string, tarball []byte, manifest *api.Manifest) error {
@@ -509,6 +534,11 @@ func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string)
 		return "", fmt.Errorf("failed to load cache metadata: %w", err)
 	}
 
+	// A leased ruleset is never used past its lease
+	if metadata.LeaseExpired() {
+		return "", &ExpiredLeaseError{Name: name, Version: version, ExpiresAt: metadata.ExpiresAt}
+	}
+
 	// Check if cache is too stale
 	if metadata.IsTooStale(m.maxStaleCacheAge) {
 		cacheAge := metadata.Age()
@@ -518,7 +548,7 @@ func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string)
 	}
 
 	// Validate that cached ruleset contains rule files
-	if err := utils.ValidateRuleDirNotEmpty(rulesetPath); err != nil {
+	if err := validateCachedRuleset(rulesetPath); err != nil {
 		return "", fmt.Errorf("cached ruleset is invalid: %w", err)
 	}
 

@@ -33,17 +33,41 @@ type Metadata struct {
 	LastAccessed   time.Time `json:"last_accessed"`
 	ChecksumSHA256 string    `json:"checksum_sha256"`
 	TTLSeconds     int64     `json:"ttl_seconds"`
+
+	// Leased marks a signed ruleset kept encrypted (bundle.enc + lease.json)
+	// rather than as plain rule files. ExpiresAt is its lease expiry.
+	Leased    bool      `json:"leased,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitzero"`
+
+	// CheckedAt is when the API last confirmed that the cached release is
+	// still the current one; the TTL then runs from it instead of from
+	// DownloadedAt.
+	CheckedAt time.Time `json:"checked_at,omitzero"`
+}
+
+// freshSince is when the cache was last known to be current.
+func (m *Metadata) freshSince() time.Time {
+	if m.CheckedAt.After(m.DownloadedAt) {
+		return m.CheckedAt
+	}
+	return m.DownloadedAt
 }
 
 // IsExpired checks if the cache has expired based on TTL.
 func (m *Metadata) IsExpired() bool {
-	expiryTime := m.DownloadedAt.Add(time.Duration(m.TTLSeconds) * time.Second)
+	expiryTime := m.freshSince().Add(time.Duration(m.TTLSeconds) * time.Second)
 	return time.Now().After(expiryTime)
 }
 
-// Age returns the age of the cache (time since download).
+// LeaseExpired reports whether a leased ruleset's lease has expired.
+func (m *Metadata) LeaseExpired() bool {
+	return m.Leased && !time.Now().Before(m.ExpiresAt)
+}
+
+// Age returns the age of the cache (time since download, or since the API
+// last confirmed it is current).
 func (m *Metadata) Age() time.Duration {
-	return time.Since(m.DownloadedAt)
+	return time.Since(m.freshSince())
 }
 
 // IsTooStale checks if the cache is older than the specified maximum age.

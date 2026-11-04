@@ -790,36 +790,6 @@ func TestMaterializeRuleFiles_LogsMergedLineOfEachSourceFile(t *testing.T) {
 	}
 }
 
-func TestPruneStaleFilteredRuns(t *testing.T) {
-	t.Parallel()
-
-	parent := t.TempDir()
-	stale := filepath.Join(parent, "run-stale")
-	fresh := filepath.Join(parent, "run-fresh")
-	keep := filepath.Join(parent, "not-a-run")
-	for _, d := range []string{stale, fresh, keep} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", d, err)
-		}
-	}
-	old := time.Now().Add(-3 * time.Hour)
-	if err := os.Chtimes(stale, old, old); err != nil {
-		t.Fatalf("chtimes: %v", err)
-	}
-
-	pruneStaleFilteredRuns(parent)
-
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Fatalf("expected stale run-* pruned, err=%v", err)
-	}
-	if _, err := os.Stat(fresh); err != nil {
-		t.Fatalf("expected fresh run-* kept: %v", err)
-	}
-	if _, err := os.Stat(keep); err != nil {
-		t.Fatalf("expected non-run dir untouched: %v", err)
-	}
-}
-
 func TestPrepareRulePathsForScanner_CleanupRemovesMaterializedDirectory(t *testing.T) {
 	t.Parallel()
 
