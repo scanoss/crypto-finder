@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Contracts for the RustCrypto `sm2`, `sm3`, `sm4`, `aria` and `camellia` crates, so
   their findings carry call context and the block ciphers report the key size.
 
+## [0.46.2] - 2026-11-04
+### Fixed
+- A library API entry point now keeps its rule's `parameterCondition` when the
+  condition holds a `$`: a regex anchor (`param[0]:type~=^...AESEngine$`) or a
+  literal (`"$y$"`). It was dropped as if it were an unbound Semgrep
+  metavariable, so the entry point had no condition and every route to the API
+  counted for every variant: the AES-CBC and Serpent-CBC entry points of
+  BouncyCastle's `CBCBlockCipher` were both reachable through any CBC cipher.
+
 ## [0.46.1] - 2026-11-03
 ### Fixed
 - A library API entry point whose rule carries a `parameterCondition` (the
