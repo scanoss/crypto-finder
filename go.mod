@@ -7,7 +7,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/pterm/pterm v0.12.82
 	github.com/rs/zerolog v1.34.0
-	github.com/scanoss/static-engine v0.0.0-00010101000000-000000000000
+	github.com/scanoss/static-engine v0.0.0-20261104193049-ba68775ce044
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	github.com/xeipuuv/gojsonschema v1.2.0
@@ -58,5 +58,3 @@ require (
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
-
-replace github.com/scanoss/static-engine => /tmp/claude-1001/-home-claude-work/09e2d3a6-697f-4698-a3d8-fe830ee4dbe1/scratchpad/se-hist
