@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -123,9 +124,9 @@ func WithNpmDevDependencies() NpmResolverOption {
 	return func(r *NpmResolver) { r.includeDev = true }
 }
 
-// WithNpmInstall runs `npm ci --ignore-scripts` at a root whose lockfile names
-// required packages that node_modules does not hold, then resolves the fresh
-// tree.
+// WithNpmInstall installs the lockfile at a root whose lockfile names required
+// packages that node_modules does not hold, then resolves the fresh tree (see
+// npmInstallArgs).
 func WithNpmInstall() NpmResolverOption {
 	return func(r *NpmResolver) { r.install = true }
 }
@@ -160,24 +161,36 @@ func (r *NpmResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	if !r.install || !errors.Is(err, errNpmNotInstalled) {
 		return result, err
 	}
-	if err := r.npmCI(ctx, targetDir); err != nil {
+	if err := r.npmInstall(ctx, targetDir); err != nil {
 		return nil, err
 	}
 	return r.resolveTree(targetDir)
 }
 
-// npmCI installs exactly what the lockfile records. --ignore-scripts is the
-// security boundary: no package's lifecycle script runs on the scanning host.
-func (r *NpmResolver) npmCI(ctx context.Context, targetDir string) error {
+// npmInstallArgs installs what the lockfile records. Without node_modules,
+// `npm ci` installs exactly that. `npm ci` deletes an existing node_modules
+// first, so over one `npm install --no-save` adds what is missing and keeps the
+// installed packages the lockfile lists, dev ones included: --omit=dev would
+// remove them. --ignore-scripts is the security boundary in both: no package's
+// lifecycle script runs on the scanning host.
+func (r *NpmResolver) npmInstallArgs(targetDir string) []string {
+	flags := []string{"--ignore-scripts", "--no-audit", "--no-fund"}
+	if isDir(filepath.Join(targetDir, npmModulesDir)) {
+		return slices.Concat([]string{"install", "--no-save"}, flags)
+	}
+	if !r.includeDev {
+		flags = append(flags, "--omit=dev")
+	}
+	return slices.Concat([]string{"ci"}, flags)
+}
+
+func (r *NpmResolver) npmInstall(ctx context.Context, targetDir string) error {
 	npm, err := r.lookPath("npm")
 	if err != nil {
 		return failure.Wrap(err, failure.CodeDependencyResolutionFailed, failure.StageDependency,
 			"npm is not on PATH, and --install-dependencies needs it to install the dependencies of "+targetDir)
 	}
-	args := []string{"ci", "--ignore-scripts", "--no-audit", "--no-fund"}
-	if !r.includeDev {
-		args = append(args, "--omit=dev")
-	}
+	args := r.npmInstallArgs(targetDir)
 	log.Info().Str("root", targetDir).Strs("args", args).Msg("Installing npm dependencies")
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, npm, args...)
@@ -187,7 +200,7 @@ func (r *NpmResolver) npmCI(ctx context.Context, targetDir string) error {
 	if err := cmd.Run(); err != nil {
 		tail := tailForFailure(strings.TrimSpace(stderr.String()), failureOutputLimit)
 		return failure.Wrap(err, failure.CodeDependencyResolutionFailed, failure.StageDependency,
-			fmt.Sprintf("npm ci failed in %s: %s", targetDir, tail),
+			fmt.Sprintf("npm %s failed in %s: %s", args[0], targetDir, tail),
 			failure.WithDetail("target_dir", targetDir),
 			failure.WithDetail("stderr", tail),
 		)

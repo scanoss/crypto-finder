@@ -190,7 +190,8 @@ func init() {
 		"Also scan npm dev-only dependencies (packages marked dev in package-lock.json); by default dependency scans cover the production tree")
 	scanCmd.Flags().BoolVar(&scanInstallDependencies, "install-dependencies", false,
 		"With --scan-dependencies, install npm and Python dependencies that are not already installed: "+
-			"npm ci --ignore-scripts from package-lock.json, and pip into a cached virtual environment outside the scanned tree "+
+			"from package-lock.json with npm ci --ignore-scripts, or npm install --no-save --ignore-scripts when node_modules exists "+
+			"(npm ci would delete it), and pip into a cached virtual environment outside the scanned tree "+
 			"from requirements.txt or the project's pyproject.toml/setup.py/setup.cfg. Needs network access. "+
 			"Building a Python source distribution runs its build backend, which executes code from the package")
 	scanCmd.Flags().BoolVar(&scanNoDependencyFindingsAPI, "no-dependency-findings-api", false,

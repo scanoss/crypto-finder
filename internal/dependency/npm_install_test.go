@@ -68,7 +68,9 @@ func readArgs(t *testing.T, argsFile string) []string {
 	return strings.Split(strings.TrimSpace(string(raw)), "\n")
 }
 
-func TestNpmInstall_RunsCIWhenRequiredPackagesAreAbsent(t *testing.T) {
+// Without node_modules there is nothing of the user's to keep, and `npm ci`
+// installs exactly the lockfile.
+func TestNpmInstall_RunsCIWithoutNodeModules(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		opts []NpmResolverOption
@@ -91,6 +93,40 @@ func TestNpmInstall_RunsCIWhenRequiredPackagesAreAbsent(t *testing.T) {
 			ms, ok := depsByModule(result)["ms"]
 			if !ok || ms.Version != "2.1.3" || ms.Dir != filepath.Join(root, "node_modules", "ms") {
 				t.Fatalf("ms = %+v (found %v), want 2.1.3 at the installed node_modules/ms", ms, ok)
+			}
+		})
+	}
+}
+
+// An existing node_modules may hold what the user installed, which `npm ci`
+// would delete: over it, `npm install --no-save` adds the missing packages and
+// keeps dev ones even for a production scan. Both keep --ignore-scripts.
+func TestNpmInstall_RunsInstallOverAnExistingNodeModules(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts []NpmResolverOption
+	}{
+		{"production", []NpmResolverOption{WithNpmInstall()}},
+		{"with dev", []NpmResolverOption{WithNpmInstall(), WithNpmDevDependencies()}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := writeTree(t, map[string]string{
+				npmManifest:                       msManifest,
+				npmLockfile:                       msLockfile,
+				"node_modules/other/package.json": `{"name":"other","version":"1.0.0"}`,
+			})
+			npm, argsFile := fakeNpm(t, npmInstallsMs)
+
+			result, err := npmResolverWith(npm, tc.opts...).Resolve(context.Background(), root)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			want := "install --no-save --ignore-scripts --no-audit --no-fund"
+			if got := readArgs(t, argsFile); len(got) != 1 || got[0] != want {
+				t.Fatalf("npm invocations = %q, want exactly %q", got, want)
+			}
+			if _, ok := depsByModule(result)["ms"]; !ok {
+				t.Fatalf("ms not resolved: %+v", result.Dependencies)
 			}
 		})
 	}
