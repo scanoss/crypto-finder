@@ -118,16 +118,28 @@ func (c *SourceCache) ExtractZip(archivePath, key, version string, extensions []
 	}
 	defer removeBestEffort(tmpDir)
 
-	for _, f := range r.File {
+	extractEntries(r.File, tmpDir, extensions)
+	if err := publishEntry(tmpDir, destDir, keyDir, version); err != nil {
+		return "", err
+	}
+	if err := writeStamp(stampPath, stamp, keyDir, version); err != nil {
+		return "", err
+	}
+	return destDir, nil
+}
+
+// extractEntries writes the archive files kept for extensions below dir.
+func extractEntries(files []*zip.File, dir string, extensions []string) {
+	for _, f := range files {
 		if !keptEntry(f.Name, extensions) {
 			continue
 		}
 
 		// #nosec G305 -- validated against zip slip with a canonical prefix check below.
-		destPath := filepath.Join(tmpDir, f.Name)
+		destPath := filepath.Join(dir, f.Name)
 
 		// Prevent zip slip
-		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(tmpDir)+string(os.PathSeparator)) {
+		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(dir)+string(os.PathSeparator)) {
 			continue
 		}
 
@@ -136,14 +148,6 @@ func (c *SourceCache) ExtractZip(archivePath, key, version string, extensions []
 			continue
 		}
 	}
-
-	if err := publishEntry(tmpDir, destDir, keyDir, version); err != nil {
-		return "", err
-	}
-	if err := writeStamp(stampPath, stamp, keyDir, version); err != nil {
-		return "", err
-	}
-	return destDir, nil
 }
 
 // keptEntry reports whether an archive entry is extracted for extensions.
@@ -207,6 +211,7 @@ func writeStamp(stampPath, stamp, keyDir, version string) error {
 		removeBestEffort(tmp.Name())
 		return fmt.Errorf("write source cache stamp: %w", err)
 	}
+	// #nosec G703 -- tmp is created by os.CreateTemp in this function and stampPath lies in the source cache.
 	if err := os.Rename(tmp.Name(), stampPath); err != nil {
 		removeBestEffort(tmp.Name())
 		return fmt.Errorf("write source cache stamp: %w", err)
@@ -216,6 +221,7 @@ func writeStamp(stampPath, stamp, keyDir, version string) error {
 
 // removeBestEffort removes path, logging a failure.
 func removeBestEffort(path string) {
+	// #nosec G703 -- path is a temporary path this file created in the source cache.
 	if err := os.RemoveAll(path); err != nil {
 		log.Debug().Err(err).Str("path", path).Msg("Failed to remove source cache temp path")
 	}
