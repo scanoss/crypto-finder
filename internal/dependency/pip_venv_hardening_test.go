@@ -148,6 +148,7 @@ func TestPipResolver_Resolve_UsesLocalVenv_WhenPresent(t *testing.T) {
 	}
 	writeExecutable(t, venvBin, "python", `#!/bin/sh
 printf 'local-venv:%s\n' "$@" >> "`+logPath+`"
+[ "$1" = "-I" ] && shift
 if [ "$1" = "-m" ] && [ "$2" = "pip" ] && [ "$3" = "list" ]; then
   printf '[{"name":"cryptography","version":"41.0.7"}]'
   exit 0

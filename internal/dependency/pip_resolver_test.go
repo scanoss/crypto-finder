@@ -230,6 +230,7 @@ func TestPipResolver_Resolve_UsesSameInterpreterForPipAndMetadata(t *testing.T) 
 	}
 	writeExecutable(t, tmpBin, "python3", `#!/bin/sh
 printf '%s\n' "$@" >> "`+logPath+`"
+[ "$1" = "-I" ] && shift
 if [ "$1" = "-m" ] && [ "$2" = "pip" ] && [ "$3" = "list" ]; then
   cat <<'JSON'
 [{"name":"cryptography","version":"41.0.7"}]
@@ -619,6 +620,7 @@ func TestPipResolver_Resolve_PreservesDistributionAndImportRoot(t *testing.T) {
 		t.Fatalf("mkdir argon2 package: %v", err)
 	}
 	writeExecutable(t, tmpBin, "python3", `#!/bin/sh
+[ "$1" = "-I" ] && shift
 if [ "$1" = "-m" ] && [ "$2" = "pip" ] && [ "$3" = "list" ]; then
   printf '%s\n' '[{"name":"argon2-cffi","version":"25.1.0"}]'
   exit 0

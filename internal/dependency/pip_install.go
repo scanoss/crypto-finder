@@ -503,11 +503,13 @@ func splitRequirementOption(line string) (option, value string) {
 	return option, rest
 }
 
-// runPython executes the interpreter python in dir and returns its stdout and
-// the tail of its stderr. dir is the project, because pip resolves the relative
-// paths of a requirements file against it. -I keeps that directory, and any
+// runPython executes the interpreter python in dir (crypto-finder's own working
+// directory when empty) and returns its stdout and the tail of its stderr. An
+// install runs in the project, because pip resolves the relative paths of a
+// requirements file against it. -I keeps the working directory, and any
 // PYTHON* variable, off sys.path, so a project module named json.py or a
-// package named email/ cannot shadow the standard library and run.
+// package named email/ cannot shadow the standard library and run. Every
+// interpreter the resolver starts goes through here.
 func (r *PipResolver) runPython(ctx context.Context, dir, python string, args ...string) ([]byte, string, error) {
 	cmd := r.execCommand(ctx, python, slices.Concat([]string{"-I"}, args)...)
 	cmd.Dir = dir

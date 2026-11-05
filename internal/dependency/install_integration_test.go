@@ -139,6 +139,9 @@ func TestPipInstall_RealProjectModulesDoNotShadowTheStandardLibrary(t *testing.T
 		"json.py":           marker,
 		"email/__init__.py": marker,
 	})
+	// Scanning from inside the project puts it in crypto-finder's own working
+	// directory too, which the listing commands inherit.
+	t.Chdir(root)
 
 	result, err := NewPipResolver(WithPipInstall()).Resolve(context.Background(), root)
 	if err != nil {

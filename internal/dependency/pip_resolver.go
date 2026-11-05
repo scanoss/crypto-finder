@@ -314,18 +314,13 @@ func parseNameFromSection(content, section string) string {
 
 // pipList runs `pip list --format=json` against env and parses the output.
 func (r *PipResolver) pipList(ctx context.Context, env pythonEnv) ([]pipPackage, error) {
-	cmd := r.execCommand(ctx, env.pip[0], append(slices.Clone(env.pip[1:]), "list", "--format=json")...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s list --format=json: %w\nstderr: %s", strings.Join(env.pip, " "), err, stderr.String())
+	stdout, stderr, err := r.runPython(ctx, "", env.pip[0], append(slices.Clone(env.pip[1:]), "list", "--format=json")...)
+	if err != nil {
+		return nil, fmt.Errorf("%s list --format=json: %w\nstderr: %s", strings.Join(env.pip, " "), err, stderr)
 	}
 
 	var packages []pipPackage
-	if err := json.Unmarshal(stdout.Bytes(), &packages); err != nil {
+	if err := json.Unmarshal(stdout, &packages); err != nil {
 		return nil, fmt.Errorf("failed to parse pip list output: %w", err)
 	}
 
@@ -349,18 +344,13 @@ func (r *PipResolver) pipShow(ctx context.Context, env pythonEnv, packageNames [
 		batch := packageNames[i:end]
 
 		args := slices.Concat(env.pip[1:], []string{"show"}, batch)
-		cmd := r.execCommand(ctx, env.pip[0], args...)
-
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err != nil {
+		stdout, _, err := r.runPython(ctx, "", env.pip[0], args...)
+		if err != nil {
 			log.Debug().Err(err).Msg("pip show batch failed")
 			continue
 		}
 
-		infos := parsePipShowOutput(stdout.String())
+		infos := parsePipShowOutput(string(stdout))
 		maps.Copy(result, infos)
 	}
 
@@ -461,20 +451,15 @@ func (r *PipResolver) resolvePackageRoots(pkgName string, info pipShowInfo, dist
 // importlib.metadata.packages_distributions()
 // (available in Python 3.10+) and inverts the mapping to: normalized_dist_name → []import_names.
 func (r *PipResolver) pythonPackagesDistributions(ctx context.Context, pythonExec string) map[string][]string {
-	cmd := r.execCommand(ctx, pythonExec, "-c",
+	stdout, stderr, err := r.runPython(ctx, "", pythonExec, "-c",
 		"import json,importlib.metadata as m; print(json.dumps(m.packages_distributions()))")
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Debug().Err(err).Str("stderr", stderr.String()).
+	if err != nil {
+		log.Debug().Err(err).Str("stderr", stderr).
 			Msg("importlib.metadata.packages_distributions() unavailable (requires Python 3.10+)")
 		return nil
 	}
 
-	return parsePackagesDistributions(stdout.Bytes())
+	return parsePackagesDistributions(stdout)
 }
 
 // parsePackagesDistributions parses the JSON output of packages_distributions()

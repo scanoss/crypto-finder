@@ -42,6 +42,7 @@ func TestPipResolver_Resolve_CoversEveryTopLevelRoot(t *testing.T) {
 	})
 	bin := t.TempDir()
 	writeExecutable(t, bin, "python3", `#!/bin/sh
+[ "$1" = "-I" ] && shift
 if [ "$1" = "-m" ] && [ "$3" = "list" ]; then
   echo '[{"name":"configobj","version":"5.0"},{"name":"six","version":"1.16"},{"name":"solo","version":"3.0"},{"name":"ns-a","version":"1.0"},{"name":"ns-b","version":"2.0"}]'
   exit 0
