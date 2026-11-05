@@ -374,7 +374,9 @@ func rustMacroUseRoots(filePath string) []string {
 	}
 	if rel, err := filepath.Rel(filepath.Join(dir, "bin"), filePath); err == nil && !strings.HasPrefix(rel, "..") {
 		if first, _, nested := strings.Cut(filepath.ToSlash(rel), "/"); nested {
-			candidates = append(candidates, filepath.Join(dir, "bin", first, "main.rs"))
+			// src/bin/<name>/main.rs, or src/bin/<name>.rs whose submodules
+			// live in src/bin/<name>/.
+			candidates = append(candidates, filepath.Join(dir, "bin", first, "main.rs"), filepath.Join(dir, "bin", first+".rs"))
 		} else {
 			candidates = append(candidates, filePath)
 		}
