@@ -40,7 +40,12 @@ const nativeDedupRules = `rules:
 // and the generic anchor of the call that specialization starts from.
 func nativeDedupFixture(t *testing.T, value string, nativeAssets ...entities.CryptographicAsset) (*entities.InterimReport, *engine.DepScanResult, string) {
 	t.Helper()
-	rules := writeConditionedRules(t, nativeDedupRules)
+	return nativeDedupFixtureWithRules(t, nativeDedupRules, value, nativeAssets...)
+}
+
+func nativeDedupFixtureWithRules(t *testing.T, rulesYAML, value string, nativeAssets ...entities.CryptographicAsset) (*entities.InterimReport, *engine.DepScanResult, string) {
+	t.Helper()
+	rules := writeConditionedRules(t, rulesYAML)
 	fnID := callgraph.FunctionID{Package: "example", Type: "DigestFlow", Name: "main#0"}
 	callee := callgraph.FunctionID{Package: "java.security", Type: "MessageDigest", Name: "getInstance#1"}
 	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
@@ -155,5 +160,85 @@ func TestMaterializeConditionedFindings_KeepsNativeMatchWithoutSpecialization(t 
 	}
 	if !kept {
 		t.Fatalf("assets = %#v, want the unspecialized native SHA-1 asset kept", report.Findings[0].CryptographicAssets)
+	}
+}
+
+const nativeMaterialDedupRules = `rules:
+  - id: java.jca.related-crypto-material.key.keypairgenerator-rsa
+    message: RSA key material
+    severity: INFO
+    pattern: MessageDigest.getInstance($ALGO)
+    metadata:
+      crypto:
+        assetType: related-crypto-material
+        materialType: key
+        materialAlgorithm: RSA
+        parameterCondition: param[0]~=^RSA$
+        api: MessageDigest.getInstance
+`
+
+func nativeMaterialAsset(ruleID, material string) entities.CryptographicAsset {
+	condition := "param[0]~=^" + material + "$"
+	return entities.CryptographicAsset{
+		FindingID: "native-" + material,
+		StartLine: 3, EndLine: 3, StartCol: 5, EndCol: 40,
+		Rules: []entities.RuleInfo{{ID: ruleID}},
+		Metadata: map[string]string{
+			"assetType": "related-crypto-material", "materialType": "key", "materialAlgorithm": material,
+			"parameterCondition": condition, "api": "MessageDigest.getInstance",
+		},
+		ParameterConditions: []paramcondition.Condition{{Raw: condition}},
+	}
+}
+
+// CF-JAVA-002: a rule that names its value in materialAlgorithm rather than
+// algorithmName must not come out twice on one call, once as the scanner's
+// match and once as the per-value specialization.
+func TestMaterializeConditionedFindings_SpecializationReplacesNativeMaterialMatch(t *testing.T) {
+	t.Parallel()
+
+	for name, ruleID := range map[string]string{
+		"path-prefixed rule id": "jca.key.java.jca.related-crypto-material.key.keypairgenerator-rsa",
+		"bare rule id":          "java.jca.related-crypto-material.key.keypairgenerator-rsa",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			report, result, rules := nativeDedupFixtureWithRules(t, nativeMaterialDedupRules, `"RSA"`, nativeMaterialAsset(ruleID, "RSA"))
+			if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 1 {
+				t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+			}
+			var material []entities.CryptographicAsset
+			for _, asset := range report.Findings[0].CryptographicAssets {
+				if asset.Metadata["materialAlgorithm"] != "" {
+					material = append(material, asset)
+				}
+			}
+			if len(material) != 1 || material[0].Metadata["parameterCondition"] != "param[0]==RSA" {
+				t.Fatalf("key material assets = %#v, want the RSA specialization alone", material)
+			}
+			if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 0 {
+				t.Fatalf("second run = %d, want idempotent", got)
+			}
+		})
+	}
+}
+
+func TestMaterializeConditionedFindings_KeepsNativeMaterialMatchOfAnotherValue(t *testing.T) {
+	t.Parallel()
+
+	// The scanner reported EC key material under the same rule id; the call
+	// resolves to RSA. EC is not what the specialization says, so it stays.
+	native := nativeMaterialAsset("jca.key.java.jca.related-crypto-material.key.keypairgenerator-rsa", "EC")
+	report, result, rules := nativeDedupFixtureWithRules(t, nativeMaterialDedupRules, `"RSA"`, native)
+
+	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 1 {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+	}
+	var kept bool
+	for _, asset := range report.Findings[0].CryptographicAssets {
+		kept = kept || asset.FindingID == "native-EC"
+	}
+	if !kept {
+		t.Fatalf("assets = %#v, want the native EC asset kept", report.Findings[0].CryptographicAssets)
 	}
 }
