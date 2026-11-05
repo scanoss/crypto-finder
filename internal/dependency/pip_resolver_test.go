@@ -660,6 +660,110 @@ exit 1
 	}
 }
 
+// The pip graph has no application node. Without a manifest naming the
+// project's requirements, a distribution nothing in the environment requires
+// is a direct dependency, whether or not it requires anything itself. One
+// that requires nothing used to get no path at all.
+func TestPipResolver_Resolve_UnrequiredDistributionIsDirect(t *testing.T) {
+	paths := resolveDirectFixture(t, t.TempDir())
+
+	assertSteps(t, paths, "cbench-direct-liba", []PathStep{{Module: "cbench-direct-liba"}})
+	assertSteps(t, paths, "transa", []PathStep{{Module: "transa"}})
+	assertSteps(t, paths, "transb", []PathStep{{Module: "transa"}, {Module: "transb"}})
+}
+
+// When requirements.txt names the project's requirements, those are the
+// direct dependencies: another distribution in the environment, such as a
+// tool installed next to them, is not reached from the application.
+func TestPipResolver_Resolve_DeclaredRequirementsAreDirect(t *testing.T) {
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, "requirements.txt"), []byte("# pinned\nCbench_Direct.LibA==1.0.0  # the library\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	paths := resolveDirectFixture(t, project)
+
+	assertSteps(t, paths, "cbench-direct-liba", []PathStep{{Module: "cbench-direct-liba"}})
+	for _, module := range []string{"transa", "transb"} {
+		if path, ok := paths[module]; ok {
+			t.Errorf("paths[%q] = %+v, want none: the project does not declare transa", module, path)
+		}
+	}
+}
+
+// resolveDirectFixture resolves project against an environment holding
+// cbench-direct-liba, which requires nothing, and transa, which requires
+// transb (spelled TransB in its metadata), and returns the dependency paths.
+func resolveDirectFixture(t *testing.T, project string) map[string]Path {
+	t.Helper()
+	site := filepath.Join(t.TempDir(), "site-packages")
+	writeSitePackages(t, site, map[string]string{
+		"liba/__init__.py":   "",
+		"transa/__init__.py": "",
+		"transb/__init__.py": "",
+	})
+	bin := t.TempDir()
+	writeExecutable(t, bin, "python3", `#!/bin/sh
+if [ "$1" = "-m" ] && [ "$3" = "list" ]; then
+  echo '[{"name":"cbench-direct-liba","version":"1.0.0"},{"name":"transa","version":"1.0.0"},{"name":"transb","version":"1.0.0"}]'
+  exit 0
+fi
+if [ "$1" = "-m" ] && [ "$3" = "show" ]; then
+  printf 'Name: cbench-direct-liba\nVersion: 1.0.0\nLocation: `+site+`\nRequires:\n---\n'
+  printf 'Name: transa\nVersion: 1.0.0\nLocation: `+site+`\nRequires: TransB\n---\n'
+  printf 'Name: transb\nVersion: 1.0.0\nLocation: `+site+`\nRequires:\n'
+  exit 0
+fi
+if [ "$1" = "-c" ]; then
+  echo '{"liba":["cbench-direct-liba"],"transa":["transa"],"transb":["transb"]}'
+  exit 0
+fi
+exit 1
+`)
+	prependPath(t, bin)
+	t.Setenv("VIRTUAL_ENV", "")
+
+	result, err := NewPipResolver().Resolve(context.Background(), project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Paths(result, map[string]bool{"cbench-direct-liba": true, "transa": true, "transb": true})
+}
+
+func TestDeclaredPythonRequirements(t *testing.T) {
+	project := t.TempDir()
+	writeSitePackages(t, project, map[string]string{
+		"requirements.txt": `# comment
+requests[socks]>=2.0 ; python_version > "3.8"
+-r requirements/base.txt
+--requirement=requirements/extra.txt
+-c constraints.txt
+--index-url https://example.com/simple
+git+https://example.com/repo.git#egg=vcsonly
+mylib @ https://example.com/mylib-1.0.tar.gz
+Flask==3.0  # web
+`,
+		"requirements/base.txt":  "PyYAML\n-r ../requirements.txt\n",
+		"requirements/extra.txt": "cryptography\n",
+		"constraints.txt":        "constrained==1.0\n",
+		"pyproject.toml": `[project]
+name = "app"
+dependencies = ["argon2-cffi>=23", "pynacl"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+bcrypt = "^4"
+`,
+	})
+
+	want := []string{"argon2_cffi", "bcrypt", "cryptography", "flask", "mylib", "pynacl", "pyyaml", "requests"}
+	if got := declaredPythonRequirements(project); !slices.Equal(got, want) {
+		t.Errorf("declaredPythonRequirements = %v, want %v", got, want)
+	}
+	if got := declaredPythonRequirements(t.TempDir()); got != nil {
+		t.Errorf("declaredPythonRequirements(no manifest) = %v, want nil", got)
+	}
+}
+
 // A manifest-less Python target is deliberately resolvable: the pip resolver
 // reads the ambient interpreter's installed packages, not a manifest.
 func TestPipResolver_CanResolve(t *testing.T) {

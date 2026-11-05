@@ -66,8 +66,6 @@ func (r *PipResolver) CanResolve(targetDir string) bool {
 
 // Resolve uses `pip list` and `pip show` to resolve all installed Python packages
 // for the environment associated with the project at targetDir.
-//
-//nolint:gocognit // This workflow intentionally keeps fallback resolution logic together.
 func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
 	// Step 1: Detect root module name
 	rootModule := r.detectRootModule(targetDir)
@@ -119,7 +117,14 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		}
 	}
 
-	// Step 5: Build dependencies list and graph
+	// Step 5: Build dependencies list and graph. A Requires entry spells a
+	// name as its distribution's metadata does (typing-extensions), pip list
+	// as the installed distribution does (typing_extensions): edges take the
+	// installed spelling, so a required distribution is never a graph source.
+	installedNames := make(map[string]string, len(packages))
+	for _, pkg := range packages {
+		installedNames[normalizePackageName(pkg.Name)] = pkg.Name
+	}
 	skippedNoSource := 0
 	var installs []installedDistribution
 	for _, pkg := range packages {
@@ -139,18 +144,11 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		result.Dependencies = append(result.Dependencies, Dependency{Module: pkg.Name, Version: pkg.Version})
 		installs = append(installs, installedDistribution{location: info.Location, roots: roots})
 
-		// Build graph from Requires field
-		if info.Requires != "" {
-			for _, req := range strings.Split(info.Requires, ", ") {
-				req = strings.TrimSpace(req)
-				if req != "" {
-					result.Graph[pkg.Name] = append(result.Graph[pkg.Name], req)
-				}
-			}
-		}
+		addRequires(result.Graph, pkg.Name, info.Requires, installedNames)
 	}
 
 	placeDistributions(result.Dependencies, installs)
+	result.DirectDependencies = declaredInstalled(declaredPythonRequirements(targetDir), result.Dependencies)
 
 	log.Info().
 		Int("resolved", len(result.Dependencies)).
@@ -159,6 +157,29 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		Msg("Resolved pip dependencies")
 
 	return result, nil
+}
+
+// addRequires records distribution name and its pip show Requires in graph.
+// Every distribution is a node, requirements or not: the graph has no
+// application node, so the distributions nothing requires are the direct
+// dependencies (graphApplication), and one that requires nothing is one too.
+// A requirement takes the spelling of the installed distribution it names.
+func addRequires(graph map[string][]string, name, requires string, installedNames map[string]string) {
+	if _, listed := graph[name]; !listed {
+		graph[name] = []string{}
+	}
+	if requires == "" {
+		return
+	}
+	for _, req := range strings.Split(requires, ", ") {
+		req = strings.TrimSpace(req)
+		if installed, ok := installedNames[normalizePackageName(req)]; ok {
+			req = installed
+		}
+		if req != "" {
+			graph[name] = append(graph[name], req)
+		}
+	}
 }
 
 // resolvePythonExecutable returns the Python interpreter to use for the project

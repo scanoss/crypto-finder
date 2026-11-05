@@ -4,6 +4,7 @@
 package dependency
 
 import (
+	"slices"
 	"sort"
 	"strings"
 )
@@ -223,7 +224,8 @@ func versionedApplication(result *ResolveResult, graph map[string][]string) (app
 
 // graphApplication splits the graph's starting nodes into the application,
 // whose children are the direct dependencies, and direct dependencies found
-// as graph sources when the graph does not name the application.
+// when the graph does not name the application: the ones the project
+// declares (DirectDependencies), or else the graph sources.
 func graphApplication(result *ResolveResult) (application map[string]bool, direct []string) {
 	application = make(map[string]bool)
 	if result.RootModule != "" {
@@ -238,6 +240,11 @@ func graphApplication(result *ResolveResult) (application map[string]bool, direc
 		if _, ok := result.Graph[module]; ok {
 			return application, nil
 		}
+	}
+	if len(result.DirectDependencies) > 0 {
+		direct = slices.Clone(result.DirectDependencies)
+		sort.Strings(direct)
+		return application, direct
 	}
 	dependencies := make(map[string]bool, len(result.Dependencies))
 	for _, dep := range result.Dependencies {
