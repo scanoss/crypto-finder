@@ -10,7 +10,7 @@
   through `pyproject.toml`/`setup.py`/`setup.cfg` (a project that cannot be built
   yields no Python dependencies with a warning), are installed with the ambient pip (22.3 or
   later) into a virtual environment outside the scanned tree, reused by later scans unless
-  the project itself had to be built; if
+  a local project directory had to be built; if
   `requirements.txt` fails as a whole, each requirement is retried on its own. With the
   flag, the ambient interpreter's own packages are never reported as dependencies. The
   flag needs network access, is off by default, and building a Python source distribution

@@ -466,10 +466,6 @@ func TestPipInstall_RebuildsWhenAFileTheInstallReadsChanges(t *testing.T) {
 		{"include cycle", map[string]string{requirementsFile: "six\n-r other.txt\n", "other.txt": "-r requirements.txt\nidna\n"}, "other.txt"},
 		{"-c constraint", map[string]string{requirementsFile: "-c constraints.txt\nsix\n", "constraints.txt": "six==1.16.0\n"}, "constraints.txt"},
 		{"missing include", map[string]string{requirementsFile: "six\n-r extra.txt\n"}, "extra.txt"},
-		{"-e .", map[string]string{requirementsFile: "-e .\n", "pyproject.toml": "[project]\nname = \"app\"\n"}, "pyproject.toml"},
-		{"--editable path", map[string]string{requirementsFile: "--editable ./lib\n", "lib/setup.py": "setup()\n"}, "lib/setup.py"},
-		{"bare local path", map[string]string{requirementsFile: "./lib[extra]\n"}, "lib/setup.cfg"},
-		{"file: URL", map[string]string{requirementsFile: "file:lib#egg=lib\n", "lib/pyproject.toml": "[project]\n"}, "lib/pyproject.toml"},
 		{"static [project].dependencies", map[string]string{"pyproject.toml": "[project]\nname = \"app\"\ndependencies = [\"six\"]\n"}, "pyproject.toml"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -507,20 +503,47 @@ func TestPipInstall_RebuildsWhenAFileTheInstallReadsChanges(t *testing.T) {
 // such as a setuptools dynamic file, so no key covers its inputs: its
 // environment is rebuilt for every scan instead of reused stale.
 func TestPipInstall_ProjectBuildIsNeverReused(t *testing.T) {
+	dynamic := "[project]\nname = \"app\"\ndynamic = [\"dependencies\"]\n" +
+		"[tool.setuptools.dynamic]\ndependencies = {file = [\"requirements.in\"]}\n"
+	for _, tc := range []struct {
+		name string
+		tree map[string]string
+	}{
+		{"project build", map[string]string{"pyproject.toml": dynamic, "requirements.in": "six\n"}},
+		{"-e .", map[string]string{requirementsFile: "-e .\n", "pyproject.toml": dynamic, "requirements.in": "six\n"}},
+		{"--editable path", map[string]string{requirementsFile: "--editable ./lib\n", "lib/setup.py": "setup()\n"}},
+		{"bare local path", map[string]string{requirementsFile: "./lib[extra]\n", "lib/setup.cfg": "[metadata]\n"}},
+		{"file: URL", map[string]string{requirementsFile: "file:lib#egg=lib\n", "lib/pyproject.toml": "[project]\n"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolatePipEnv(t)
+			fake := newFakePython(t, "24.0")
+			root := writeTree(t, tc.tree)
+			for range 2 {
+				if _, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root); err != nil {
+					t.Fatalf("Resolve: %v", err)
+				}
+			}
+			if n := fake.count(t, "-m venv"); n != 2 {
+				t.Fatalf("venv created %d times over two scans of a local project build, want 2", n)
+			}
+		})
+	}
+}
+
+// A relative target reaches Resolve as given. pip runs inside it, so the paths
+// handed to it must be absolute, or `myapp` is installed from PyPI.
+func TestPipInstall_RelativeTargetInstallsTheProjectDirectory(t *testing.T) {
 	isolatePipEnv(t)
 	fake := newFakePython(t, "24.0")
-	root := writeTree(t, map[string]string{
-		"pyproject.toml": "[project]\nname = \"app\"\ndynamic = [\"dependencies\"]\n" +
-			"[tool.setuptools.dynamic]\ndependencies = {file = [\"requirements.in\"]}\n",
-		"requirements.in": "six\n",
-	})
-	for range 2 {
-		if _, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root); err != nil {
-			t.Fatalf("Resolve: %v", err)
-		}
+	root := writeTree(t, map[string]string{"setup.cfg": "[metadata]\nname = app\n"})
+	t.Chdir(filepath.Dir(root))
+
+	if _, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), filepath.Base(root)); err != nil {
+		t.Fatalf("Resolve: %v", err)
 	}
-	if n := fake.count(t, "-m venv"); n != 2 {
-		t.Fatalf("venv created %d times over two scans of a project build, want 2", n)
+	if n := fake.count(t, " install --disable-pip-version-check --no-input "+root+"\n"); n != 1 {
+		t.Fatalf("pip installed the absolute project directory %d times, want 1", n)
 	}
 }
 

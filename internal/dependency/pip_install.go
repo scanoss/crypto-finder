@@ -101,6 +101,20 @@ func (m pythonManifest) inputs(projectDir string) []string {
 	return nil
 }
 
+// reusable reports whether a complete environment built from the manifest can
+// serve later scans: false when the install builds a local project directory.
+func (m pythonManifest) reusable(projectDir string) bool {
+	switch m.kind {
+	case manifestRequirements:
+		return !walkRequirements(projectDir, m.requirements).buildsProject
+	case manifestDeclared:
+		return true
+	case manifestProject:
+		return false
+	}
+	return false
+}
+
 // pythonEnv is the environment Resolve lists: the interpreter that runs the
 // introspection scripts, and the argv prefix that runs pip against it.
 type pythonEnv struct {
@@ -131,6 +145,12 @@ func (r *PipResolver) pythonFor(ctx context.Context, projectDir string) (pythonE
 	}
 	if !r.install {
 		return ownPipEnv(ambient), true, nil
+	}
+	// pip runs in projectDir and is handed paths built from it, so a relative
+	// target would be resolved twice: `myapp` would become a PyPI name.
+	projectDir, err = filepath.Abs(projectDir)
+	if err != nil {
+		return pythonEnv{}, false, fmt.Errorf("failed to resolve %s: %w", projectDir, err)
 	}
 	manifest, ok := findPythonManifest(projectDir)
 	if !ok {
@@ -173,7 +193,8 @@ func (r *PipResolver) provisionVenv(ctx context.Context, projectDir, ambient str
 	// The build backend can read the dependencies from any file, such as a
 	// setuptools dynamic file = [...] or an open() in setup.py, so the key
 	// cannot cover a project build's inputs: its environment is never reused.
-	reusable := manifest.kind != manifestProject
+	// That holds for a requirements file that installs a local project too.
+	reusable := manifest.reusable(projectDir)
 	if python := venvPythonCandidate(final); reusable && python != "" {
 		log.Info().Str("root", projectDir).Str("venv", final).Msg("Reusing provisioned Python environment")
 		return ambientPipEnv(ambient, python), nil
@@ -285,15 +306,22 @@ func (r *PipResolver) venvKey(ctx context.Context, projectDir, ambient string, m
 // installs with -e or as a path (relative to projectDir, where pip runs).
 // Remote includes and requirements are left out: their contents are not local.
 func requirementsInputs(projectDir, requirements string) []string {
-	w := requirementsWalk{projectDir: projectDir, visited: map[string]bool{}}
+	return walkRequirements(projectDir, requirements).inputs
+}
+
+func walkRequirements(projectDir, requirements string) *requirementsWalk {
+	w := &requirementsWalk{projectDir: projectDir, visited: map[string]bool{}}
 	w.walk(requirements)
-	return w.inputs
+	return w
 }
 
 type requirementsWalk struct {
 	projectDir string
 	visited    map[string]bool
 	inputs     []string
+	// buildsProject is set when a line installs a local project directory,
+	// whose build backend reads files the inputs cannot list.
+	buildsProject bool
 }
 
 func (w *requirementsWalk) walk(file string) {
@@ -328,6 +356,7 @@ func (w *requirementsWalk) line(dir, line string) {
 				w.inputs = append(w.inputs, path)
 				return
 			}
+			w.buildsProject = true
 			for _, name := range pythonBuildFiles {
 				w.inputs = append(w.inputs, filepath.Join(path, name))
 			}
