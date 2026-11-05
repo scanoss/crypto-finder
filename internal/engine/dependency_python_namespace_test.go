@@ -133,8 +133,9 @@ func scanPythonFixture(t *testing.T, project string, factory func() scanner.Scan
 
 // Distributions that install into one namespace directory share it as their
 // root, but each owns only the files its RECORD lists: every file is scanned
-// once and reported under the distribution that installed it, with the path
-// a whole-directory scan gives it. The siblings share one scanner process.
+// once and reported under the distribution that installed it, with its path
+// in site-packages as its RECORD names it. The siblings share one scanner
+// process, scanning the namespace directory.
 func TestDependencyScanner_PythonNamespaceSiblingsOwnTheirFilesIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires real OpenGrep subprocesses")
@@ -144,9 +145,9 @@ func TestDependencyScanner_PythonNamespaceSiblingsOwnTheirFilesIntegration(t *te
 	}
 	project, sitePackages := pythonNamespaceFixture(t)
 	want := map[string][]string{
-		"ns-a": {"a/hash.py"},
-		"ns-b": {"b/hash.py"},
-		"solo": {"x.py"},
+		"ns-a": {"google/a/hash.py"},
+		"ns-b": {"google/b/hash.py"},
+		"solo": {"solo/x.py"},
 	}
 
 	invocations := &invocationLog{}
@@ -197,8 +198,8 @@ func TestDependencyScanner_PythonDistributionScansEveryTopLevelRootIntegration(t
 	want := map[string][]string{
 		"configobj": {"configobj/hash.py", "validate/hash.py"},
 		"six":       {"six.py"},
-		"solo":      {"x.py"},
-		"ns-a":      {"a/hash.py"},
+		"solo":      {"solo/x.py"},
+		"ns-a":      {"google/a/hash.py"},
 		"ns-b":      {"google/b/hash.py", "nsb_util.py"},
 	}
 

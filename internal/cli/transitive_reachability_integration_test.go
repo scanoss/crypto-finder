@@ -44,6 +44,9 @@ type transitiveFinding struct {
 	// chain lists, in order, the modules a reachable finding's call chain
 	// must pass through, from the application to the finding.
 	chain []string
+	// path, when set, is the file path the findings report and the call
+	// graph's finding frame must give, in slash form.
+	path string
 }
 
 // transitiveReachabilityCase names a fixture under
@@ -105,8 +108,10 @@ func TestTransitiveReachability(t *testing.T) {
 			findings: []transitiveFinding{
 				{module: appModule, file: "main.py", line: 7, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule}},
 				{module: appModule, file: "main.py", line: 11, reachability: graphfrag.ReachabilityUnreachable},
-				{module: "translibb", file: "__init__.py", line: 7, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "transliba", "translibb"}},
-				{module: "translibb", file: "__init__.py", line: 11, reachability: graphfrag.ReachabilityUnreachable},
+				// The path is relative to site-packages, as the wheel
+				// RECORD names the file, not to the import package.
+				{module: "translibb", file: "__init__.py", line: 7, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "transliba", "translibb"}, path: "translibb/__init__.py"},
+				{module: "translibb", file: "__init__.py", line: 11, reachability: graphfrag.ReachabilityUnreachable, path: "translibb/__init__.py"},
 			},
 		},
 		{
@@ -239,6 +244,10 @@ func TestTransitiveReachability(t *testing.T) {
 						}
 						require.Equal(t, []string{tc.liba, tc.libb}, route, "dependency path to %s", want.module)
 					}
+					if want.path != "" {
+						require.Equal(t, want.path, v.path, "findings report file path of %s", key)
+						require.Equal(t, want.path, v.framePath, "call graph file path of the function holding %s", key)
+					}
 					require.Equal(t, want.reachability, v.graph.Reachability, "reachability of %s", key)
 					if want.chain != nil {
 						require.Truef(t, hasChainThrough(v.chains, want.chain), "no call chain of %s crosses %q in order; chains: %v", key, want.chain, v.chains)
@@ -254,6 +263,10 @@ func TestTransitiveReachability(t *testing.T) {
 type transitiveVerdict struct {
 	graph  graphfrag.ExportFindingGraph
 	source string
+	// path is the finding's file path in the findings report, slash form.
+	path string
+	// framePath is the file path of the last frame of its first chain.
+	framePath string
 	// chains lists each call chain as the module of every frame, appModule
 	// for frames in the application.
 	chains [][]string
@@ -261,7 +274,7 @@ type transitiveVerdict struct {
 
 func transitiveVerdicts(pass *reachabilityPass) map[string]transitiveVerdict {
 	type located struct {
-		file   string
+		path   string
 		line   int
 		source string
 	}
@@ -269,7 +282,7 @@ func transitiveVerdicts(pass *reachabilityPass) map[string]transitiveVerdict {
 	for _, finding := range pass.report.Findings {
 		for i := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[i]
-			byID[asset.FindingID] = located{file: path.Base(filepath.ToSlash(finding.FilePath)), line: asset.StartLine, source: asset.Source}
+			byID[asset.FindingID] = located{path: filepath.ToSlash(finding.FilePath), line: asset.StartLine, source: asset.Source}
 		}
 	}
 	functions := pass.export.Functions
@@ -281,7 +294,11 @@ func transitiveVerdicts(pass *reachabilityPass) map[string]transitiveVerdict {
 		if graph.Dependency != nil {
 			module = graph.Dependency.Module
 		}
-		v := transitiveVerdict{graph: graph, source: loc.source}
+		v := transitiveVerdict{graph: graph, source: loc.source, path: loc.path}
+		if len(graph.CallChainIndexes) > 0 && len(graph.CallChainIndexes[0]) > 0 {
+			chain := graph.CallChainIndexes[0]
+			v.framePath = functions[chain[len(chain)-1]].FilePath
+		}
 		for _, chain := range graph.CallChainIndexes {
 			modules := make([]string, 0, len(chain))
 			for _, idx := range chain {
@@ -293,7 +310,7 @@ func transitiveVerdicts(pass *reachabilityPass) map[string]transitiveVerdict {
 			}
 			v.chains = append(v.chains, modules)
 		}
-		out[transitiveKey(module, loc.file, loc.line)] = v
+		out[transitiveKey(module, path.Base(loc.path), loc.line)] = v
 	}
 	return out
 }

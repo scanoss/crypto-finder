@@ -295,7 +295,7 @@ func (ds *DependencyScanner) ScanWithDependencies(
 		RootModule:      resolved.RootModule,
 		Ecosystem:       ds.resolver.Ecosystem(),
 		ProjectRoot:     opts.ScanOptions.Target,
-		Dependencies:    canonicalDependencies(resolved.Dependencies),
+		Dependencies:    reportedDependencies(ds.resolver.Ecosystem(), canonicalDependencies(resolved.Dependencies)),
 		DependencyPaths: dependencyPaths,
 		summary:         summary,
 	}, nil
@@ -1367,12 +1367,22 @@ func (ds *DependencyScanner) mergeReports(
 	merged.Findings = append(merged.Findings, userReport.Findings...)
 
 	// Include all dependency findings
+	ecosystem := ""
+	if ds.resolver != nil {
+		ecosystem = ds.resolver.Ecosystem()
+	}
 	for i := range depResults {
 		result := &depResults[i]
 		if result.status != depScanStatusScanned || result.report == nil {
 			continue
 		}
-		merged.Findings = append(merged.Findings, result.report.Findings...)
+		// Scanned, cached and published findings name files relative to
+		// the scanned directory; the report names them as the dependency
+		// reports its paths (dependency.ReportedPath).
+		for _, finding := range result.report.Findings {
+			finding.FilePath = dependency.ReportedPath(ecosystem, &result.dep, finding.FilePath)
+			merged.Findings = append(merged.Findings, finding)
+		}
 	}
 
 	EnsureFindingSources(merged)
@@ -1644,6 +1654,18 @@ func ecosystemToLanguages(ecosystem string) []string {
 	default:
 		return nil
 	}
+}
+
+// reportedDependencies is deps as the scan result names them: each rooted
+// where its reported paths are relative to (dependency.Reported),
+// so the exports locate a finding's file and name a frame's file the way
+// the findings report does.
+func reportedDependencies(ecosystem string, deps []dependency.Dependency) []dependency.Dependency {
+	reported := make([]dependency.Dependency, len(deps))
+	for i := range deps {
+		reported[i] = dependency.Reported(ecosystem, deps[i])
+	}
+	return reported
 }
 
 func canonicalDependencies(deps []dependency.Dependency) []dependency.Dependency {

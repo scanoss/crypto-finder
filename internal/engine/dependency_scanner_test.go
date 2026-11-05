@@ -316,6 +316,32 @@ func TestDependencyScanner_MergeReports(t *testing.T) {
 	}
 }
 
+// A PyPI distribution is scanned from its package directory, and the
+// SCANOSS API publishes its findings the same way (codec.py). The merged
+// report names them from site-packages, as the wheel RECORD does, and leaves
+// the per-dependency report, which the findings cache stores, as scanned.
+func TestDependencyScanner_MergeReportsNamesPathsFromTheReportDir(t *testing.T) {
+	site := filepath.Join(t.TempDir(), "site-packages")
+	scanned := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath:            "codec.py",
+		CryptographicAssets: []entities.CryptographicAsset{{Source: "dependency"}},
+	}}}
+	depResults := []depScanResult{{
+		dep:    dependency.Dependency{Module: "libb", Version: "1.0.0", ImportPath: "libb", Dir: filepath.Join(site, "libb")},
+		status: depScanStatusScanned,
+		report: scanned,
+	}}
+
+	merged := (&DependencyScanner{resolver: dependency.NewPipResolver()}).mergeReports(&entities.InterimReport{}, depResults)
+
+	if len(merged.Findings) != 1 || merged.Findings[0].FilePath != "libb/codec.py" {
+		t.Fatalf("merged findings = %#v, want one at libb/codec.py", merged.Findings)
+	}
+	if scanned.Findings[0].FilePath != "codec.py" {
+		t.Errorf("the dependency's own report changed to %q; it must stay as scanned", scanned.Findings[0].FilePath)
+	}
+}
+
 func TestEnsureFindingSources(t *testing.T) {
 	report := &entities.InterimReport{
 		Findings: []entities.Finding{

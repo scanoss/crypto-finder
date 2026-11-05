@@ -134,3 +134,35 @@ func TestListsFile(t *testing.T) {
 		t.Error("nil Files must include every path")
 	}
 }
+
+// A distribution scanned from its package directory reports its paths from
+// site-packages: the files it owns, named as its RECORD names them. Only a
+// Python distribution does; another ecosystem's import path names no
+// directory of its own.
+func TestReported_PythonDistributionFromSitePackages(t *testing.T) {
+	site := t.TempDir()
+	writeSitePackages(t, site, map[string]string{"libb/__init__.py": "", "libb/codec.py": ""})
+	dep := Dependency{Module: "libb", ImportPath: "libb", Dir: filepath.Join(site, "libb")}
+
+	for in, want := range map[string]string{"codec.py": "libb/codec.py", "__init__.py": "libb/__init__.py", "/abs/x.py": "/abs/x.py", "": ""} {
+		if got := ReportedPath("python", &dep, in); got != want {
+			t.Errorf("ReportedPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+	reported := Reported("python", dep)
+	wantFiles := []string{filepath.Join(site, "libb", "__init__.py"), filepath.Join(site, "libb", "codec.py")}
+	if reported.Dir != site || !reflect.DeepEqual(reported.Files, wantFiles) {
+		t.Errorf("Reported = Dir %q Files %v, want %q, %v", reported.Dir, reported.Files, site, wantFiles)
+	}
+	for _, plain := range []struct {
+		ecosystem string
+		dep       Dependency
+	}{
+		{"rust", Dependency{Module: "my-lib", ImportPath: "my_lib", Dir: filepath.Join(site, "my_lib")}},
+		{"python", Dependency{Module: "six", Dir: site, Files: []string{filepath.Join(site, "six.py")}}},
+	} {
+		if got := Reported(plain.ecosystem, plain.dep); !reflect.DeepEqual(got, plain.dep) || ReportedPath(plain.ecosystem, &plain.dep, "a.py") != "a.py" {
+			t.Errorf("%s %s must report as it scans, got %+v", plain.ecosystem, plain.dep.Module, got)
+		}
+	}
+}

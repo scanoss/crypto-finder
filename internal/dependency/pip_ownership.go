@@ -38,7 +38,8 @@ func (d *installedDistribution) path(root string) string {
 
 // placeDistributions gives deps[i], installed as installs[i], its Dir,
 // ImportPath and Files. A distribution with one top-level package keeps that
-// directory as its root and import path, as it always had. Any other one
+// directory as its root and import path, as it always had, and reports its
+// paths from site-packages (Reported, ReportedPath). Any other one
 // (several packages, or a module file) is rooted at site-packages, the one
 // directory holding all of its roots, and lists their files: so its finding
 // paths name the package (validate/__init__.py), and its scope names nothing
@@ -71,6 +72,57 @@ func placeDistributions(deps []Dependency, installs []installedDistribution) {
 		slices.Sort(files)
 		deps[i].Files = slices.Compact(files)
 	}
+}
+
+// pythonEcosystem is the ecosystem name of the pip resolver.
+const pythonEcosystem = "python"
+
+// reportDir returns the directory dep's reported file paths are relative to.
+// A Python distribution with one top-level package is scanned from that
+// package's directory, its ImportPath (placeDistributions), and reports its
+// paths from site-packages, as its RECORD names them: libb/codec.py, not
+// codec.py. Any other dependency reports from Dir.
+func reportDir(ecosystem string, dep *Dependency) string {
+	if ecosystem != pythonEcosystem || dep.ImportPath == "" || dep.Dir == "" {
+		return dep.Dir
+	}
+	dir := filepath.Clean(dep.Dir)
+	if filepath.Base(dir) != filepath.Base(filepath.FromSlash(dep.ImportPath)) {
+		return dep.Dir
+	}
+	return filepath.Dir(dir)
+}
+
+// Reported returns dep of ecosystem as its reported paths name it: rooted
+// where they are relative to and owning the files below Dir (its Files when
+// it lists them), so a path relative to the root names the file the way
+// ReportedPath does. A dependency that reports from Dir is returned as is.
+func Reported(ecosystem string, dep Dependency) Dependency {
+	root := reportDir(ecosystem, &dep)
+	if root == dep.Dir {
+		return dep
+	}
+	if dep.Files == nil {
+		dep.Files = unclaimedFiles(dep.Dir, nil)
+	}
+	dep.Dir = root
+	return dep
+}
+
+// ReportedPath turns path, a slash path relative to dep.Dir as a scan of Dir
+// (or a published report of the same package) gives it, into the path dep
+// reports. An absolute path, or a dependency that reports from Dir, keeps
+// path.
+func ReportedPath(ecosystem string, dep *Dependency, path string) string {
+	root := reportDir(ecosystem, dep)
+	if root == dep.Dir || path == "" || filepath.IsAbs(filepath.FromSlash(path)) {
+		return path
+	}
+	rel, err := filepath.Rel(root, filepath.Join(dep.Dir, filepath.FromSlash(path)))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return path
+	}
+	return filepath.ToSlash(rel)
 }
 
 // placement is the state placeDistributions shares between distributions:
