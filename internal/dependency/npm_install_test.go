@@ -221,3 +221,22 @@ func TestNpmInstall_FailsWhenTheInstalledVersionIsNotTheLockfiles(t *testing.T) 
 		t.Fatalf("err = %v, want it to name ms and both versions", err)
 	}
 }
+
+// A v1 lockfile records a git or npm: alias dependency by its spec, which is
+// never the installed version: the check must not call that out of sync.
+func TestNpmInstall_V1SpecVersionsAreNotOutOfSync(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		npmManifest: `{"name":"fixture","version":"1.0.0","dependencies":{"foo":"github:user/foo#abc123","bar":"npm:baz@1.0.0"}}`,
+		npmLockfile: `{"name":"fixture","version":"1.0.0","lockfileVersion":1,"requires":true,"dependencies":{
+  "foo":{"version":"github:user/foo#abc123"},
+  "bar":{"version":"npm:baz@1.0.0"}}}`,
+		"node_modules/other/package.json": `{"name":"other","version":"1.0.0"}`,
+	})
+	npm, _ := fakeNpm(t, `mkdir -p node_modules/foo node_modules/bar
+echo '{"name":"foo","version":"1.2.3"}' > node_modules/foo/package.json
+echo '{"name":"baz","version":"1.0.0"}' > node_modules/bar/package.json
+`)
+	if _, err := npmResolverWith(npm, WithNpmInstall()).Resolve(context.Background(), root); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+}

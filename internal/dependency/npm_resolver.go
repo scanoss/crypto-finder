@@ -161,12 +161,15 @@ func (r *NpmResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	if !r.install || !errors.Is(err, errNpmNotInstalled) {
 		return result, err
 	}
+	overExisting := isDir(filepath.Join(targetDir, npmModulesDir))
 	if err := r.npmInstall(ctx, targetDir); err != nil {
 		return nil, err
 	}
 	result, err = r.resolveTree(targetDir)
-	if err != nil {
-		return nil, err
+	if err != nil || !overExisting {
+		// npm ci, used without node_modules, already refuses a lockfile out of
+		// sync with package.json.
+		return result, err
 	}
 	return result, installedVersionsMatchLockfile(targetDir, result)
 }
@@ -188,6 +191,11 @@ func installedVersionsMatchLockfile(targetDir string, result *ResolveResult) err
 			Version string `json:"version"`
 		}
 		if json.Unmarshal(raw, &installed) != nil || installed.Version == "" || installed.Version == dep.Version {
+			continue
+		}
+		if strings.ContainsAny(dep.Version, ":#/") {
+			// A v1 lockfile records a git or npm: alias dependency by its spec,
+			// not by the version it installs.
 			continue
 		}
 		stale = append(stale, fmt.Sprintf("%s %s installed, %s in %s", dep.Module, installed.Version, dep.Version, npmLockfile))
