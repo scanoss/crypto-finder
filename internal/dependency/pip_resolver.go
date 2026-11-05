@@ -96,8 +96,6 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		return nil, err
 	}
 	if !ok {
-		log.Info().Str("root", targetDir).
-			Msg("No virtual environment and no requirements.txt, pyproject.toml, setup.py or setup.cfg to install from: no Python dependencies")
 		return result, nil
 	}
 

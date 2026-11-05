@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/failure"
@@ -22,25 +23,82 @@ import (
 
 const requirementsFile = "requirements.txt"
 
-// pythonManifest is what a provisioned environment is built from: a
-// requirements file when the project has one, otherwise the project directory
-// itself, whose build backend reads its pyproject.toml, setup.py or setup.cfg.
+// pythonManifest is what a provisioned environment is built from, in order
+// of preference: a requirements file, the dependencies pyproject.toml declares
+// statically, or the project directory itself, whose build backend reads its
+// pyproject.toml, setup.py or setup.cfg.
 type pythonManifest struct {
+	kind pythonManifestKind
+	// requirements is the requirements file of a manifestRequirements.
 	requirements string
-	files        []string
+	// dependencies are the [project].dependencies of a manifestDeclared.
+	dependencies []string
 }
+
+type pythonManifestKind int
+
+const (
+	manifestRequirements pythonManifestKind = iota
+	manifestDeclared
+	manifestProject
+)
+
+const pyprojectFile = "pyproject.toml"
+
+var pythonBuildFiles = []string{pyprojectFile, "setup.py", "setup.cfg"}
 
 func findPythonManifest(projectDir string) (pythonManifest, bool) {
 	if req := filepath.Join(projectDir, requirementsFile); isFile(req) {
-		return pythonManifest{requirements: req}, true
+		return pythonManifest{kind: manifestRequirements, requirements: req}, true
 	}
-	var files []string
+	if deps, ok := declaredDependencies(filepath.Join(projectDir, pyprojectFile)); ok {
+		return pythonManifest{kind: manifestDeclared, dependencies: deps}, true
+	}
 	for _, name := range pythonBuildFiles {
-		if path := filepath.Join(projectDir, name); isFile(path) {
-			files = append(files, path)
+		if isFile(filepath.Join(projectDir, name)) {
+			return pythonManifest{kind: manifestProject}, true
 		}
 	}
-	return pythonManifest{files: files}, len(files) > 0
+	return pythonManifest{}, false
+}
+
+// declaredDependencies returns the dependencies a pyproject.toml declares
+// statically (PEP 621), and false when it declares none to rely on: no
+// [project] table, or dependencies listed in dynamic, which only the build
+// backend can compute. A [project] table without dependencies that does not
+// list them in dynamic declares that there are none.
+func declaredDependencies(pyproject string) ([]string, bool) {
+	content, err := os.ReadFile(pyproject)
+	if err != nil {
+		return nil, false
+	}
+	var doc struct {
+		Project *struct {
+			Dependencies []string `toml:"dependencies"`
+			Dynamic      []string `toml:"dynamic"`
+		} `toml:"project"`
+	}
+	if err := toml.Unmarshal(content, &doc); err != nil || doc.Project == nil || slices.Contains(doc.Project.Dynamic, "dependencies") {
+		return nil, false
+	}
+	return doc.Project.Dependencies, true
+}
+
+// inputs lists every file the install of the manifest reads.
+func (m pythonManifest) inputs(projectDir string) []string {
+	switch m.kind {
+	case manifestRequirements:
+		return requirementsInputs(projectDir, m.requirements)
+	case manifestDeclared:
+		return []string{filepath.Join(projectDir, pyprojectFile)}
+	case manifestProject:
+		files := make([]string, 0, len(pythonBuildFiles))
+		for _, name := range pythonBuildFiles {
+			files = append(files, filepath.Join(projectDir, name))
+		}
+		return files
+	}
+	return nil
 }
 
 // pythonEnv is the environment Resolve lists: the interpreter that runs the
@@ -71,9 +129,18 @@ func (r *PipResolver) pythonFor(ctx context.Context, projectDir string) (pythonE
 	}
 	manifest, ok := findPythonManifest(projectDir)
 	if !ok {
+		log.Info().Str("root", projectDir).
+			Msg("No virtual environment and no requirements.txt, pyproject.toml, setup.py or setup.cfg to install from: no Python dependencies")
+		return pythonEnv{}, false, nil
+	}
+	if manifest.kind == manifestDeclared && len(manifest.dependencies) == 0 {
+		log.Info().Str("root", projectDir).Msg("pyproject.toml declares no dependencies: no Python dependencies")
 		return pythonEnv{}, false, nil
 	}
 	env, err := r.provisionVenv(ctx, projectDir, ambient, manifest)
+	if errors.Is(err, errProjectNotBuilt) {
+		return pythonEnv{}, false, nil
+	}
 	return env, err == nil, err
 }
 
@@ -172,12 +239,8 @@ func (r *PipResolver) checkAmbientPip(ctx context.Context, projectDir, ambient s
 // interpreter by path. A file the install would read but that does not exist is
 // hashed as absent, so creating it changes the key too.
 func (r *PipResolver) venvKey(ctx context.Context, projectDir, ambient string, manifest pythonManifest) (string, error) {
-	files := manifest.files
-	if manifest.requirements != "" {
-		files = requirementsInputs(projectDir, manifest.requirements)
-	}
 	hash := sha256.New()
-	for _, file := range files {
+	for _, file := range manifest.inputs(projectDir) {
 		name, err := filepath.Rel(projectDir, file)
 		if err != nil {
 			name = file
@@ -250,8 +313,6 @@ func (w *requirementsWalk) line(dir, line string) {
 	}
 }
 
-var pythonBuildFiles = []string{"pyproject.toml", "setup.py", "setup.cfg"}
-
 func resolvePath(base, path string) string {
 	if filepath.IsAbs(path) {
 		return path
@@ -278,30 +339,50 @@ func localProjectPath(requirement string) (string, bool) {
 	return "", false
 }
 
-// pipInstall installs the manifest and returns the requirements that failed. A
-// requirements file that fails as a whole is retried one requirement at a time,
-// so one package that cannot build costs that package, not every dependency.
-// Nothing installed at all is an error.
+// errProjectNotBuilt is returned when pip could not build the project
+// directory. The project then has no dependencies to scan, as it had without
+// --install-dependencies, rather than failing the scan.
+var errProjectNotBuilt = errors.New("pip could not build the project")
+
+// pipInstall installs the manifest and returns the requirements that failed.
 func (r *PipResolver) pipInstall(ctx context.Context, projectDir string, env pythonEnv, manifest pythonManifest) ([]string, error) {
 	pip := env.pip[0]
 	base := slices.Concat(env.pip[1:], []string{"install", "--disable-pip-version-check", "--no-input"})
-	if manifest.requirements == "" {
+	switch manifest.kind {
+	case manifestRequirements:
+		content, err := os.ReadFile(manifest.requirements)
+		if err != nil {
+			return nil, provisionFailure(err, projectDir, "could not read "+requirementsFile)
+		}
+		header, units := parseRequirementUnits(string(content))
+		return r.installUnits(ctx, projectDir, pip, base, []string{"-r", manifest.requirements}, header, units, requirementsFile)
+	case manifestDeclared:
+		units := make([][]string, 0, len(manifest.dependencies))
+		for _, dep := range manifest.dependencies {
+			units = append(units, []string{dep})
+		}
+		return r.installUnits(ctx, projectDir, pip, base, manifest.dependencies, nil, units, "the dependencies of "+pyprojectFile)
+	case manifestProject:
 		if _, stderr, err := r.run(ctx, projectDir, pip, append(base, projectDir)...); err != nil {
-			return nil, provisionFailure(err, projectDir, "pip install of the project failed: "+stderr)
+			log.Warn().Str("root", projectDir).Str("stderr", stderr).
+				Msg("pip could not build the project to install its dependencies: no Python dependencies")
+			return nil, errProjectNotBuilt
 		}
 		return nil, nil
 	}
-	_, stderr, err := r.run(ctx, projectDir, pip, append(base, "-r", manifest.requirements)...)
+	return nil, fmt.Errorf("dependency: unknown Python manifest kind %d", manifest.kind)
+}
+
+// installUnits installs whole, and when that fails retries each unit on its
+// own with header, so one package that cannot build costs that package, not
+// every dependency. Nothing installed at all is an error.
+func (r *PipResolver) installUnits(ctx context.Context, projectDir, pip string, base, whole, header []string, units [][]string, what string) ([]string, error) {
+	_, stderr, err := r.run(ctx, projectDir, pip, slices.Concat(base, whole)...)
 	if err == nil {
 		return nil, nil
 	}
 	log.Warn().Str("root", projectDir).Str("stderr", stderr).
-		Msg("Installing requirements.txt failed as a whole, retrying one requirement at a time")
-	content, readErr := os.ReadFile(manifest.requirements)
-	if readErr != nil {
-		return nil, provisionFailure(readErr, projectDir, "could not read "+requirementsFile)
-	}
-	header, units := parseRequirementUnits(string(content))
+		Msg("Installing " + what + " failed as a whole, retrying one requirement at a time")
 	var failed []string
 	for _, unit := range units {
 		if _, unitStderr, unitErr := r.run(ctx, projectDir, pip, slices.Concat(base, header, unit)...); unitErr != nil {
@@ -311,7 +392,7 @@ func (r *PipResolver) pipInstall(ctx context.Context, projectDir string, env pyt
 		}
 	}
 	if len(failed) == len(units) {
-		return nil, provisionFailure(err, projectDir, "pip install -r "+requirementsFile+" failed: "+stderr)
+		return nil, provisionFailure(err, projectDir, "pip install of "+what+" failed: "+stderr)
 	}
 	return failed, nil
 }

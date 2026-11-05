@@ -15,7 +15,10 @@ import (
 // `-m pip [--python <venv>] install|list|show|uninstall`. Installing a
 // requirement makes a package directory under the target environment's site
 // dir; a requirement starting with "broken" fails to build, and a
-// requirements file holding one, or the word fail-whole, fails as a whole. As
+// requirements file holding one, or the word fail-whole, fails as a whole, as
+// does an install of several requirements that holds one. Installing a project
+// directory installs its dependency projdep, and fails when the directory
+// holds a "broken" entry, as a project its build backend refuses does. As
 // real pip does, an install of only a -c constraint fails, and so does a
 // requirement given on the command line under --require-hashes, which has no
 // hash there. Its own environment holds pip, as a real ambient interpreter
@@ -62,8 +65,17 @@ install)
     while read -r l; do [ -n "$l" ] && install_one "$l"; done < "$last"; exit 0
   fi
   case " $* " in *" --require-hashes "*) echo "ERROR: Hashes are required in --require-hashes mode" >&2; exit 1;; esac
-  if [ -d "$last" ]; then install_one projdep; exit $?; fi
-  install_one "$last"; exit $?;;
+  if [ -d "$last" ]; then
+    if [ -e "$last/broken" ]; then echo "error: Multiple top-level packages discovered in a flat-layout" >&2; exit 1; fi
+    install_one projdep; exit $?
+  fi
+  skip=; reqs=
+  for a in "$@"; do
+    if [ -n "$skip" ]; then skip=; continue; fi
+    case "$a" in -c) skip=1;; -*) ;; *) reqs="$reqs $a";; esac
+  done
+  case "$reqs " in *" broken"*) echo "error: failed building wheel" >&2; exit 1;; esac
+  for a in $reqs; do install_one "$a"; done; exit 0;;
 list)
   printf '['; sep=
   if [ -f "$env/installed" ]; then while read -r n; do printf '%s{"name":"%s","version":"1.0"}' "$sep" "$n"; sep=,; done < "$env/installed"; fi
@@ -225,17 +237,103 @@ func TestPipInstall_FailsWhenNothingInstalls(t *testing.T) {
 	}
 }
 
-func TestPipInstall_InstallsProjectWithoutRequirementsFile(t *testing.T) {
+// Without static [project].dependencies, the project is built to learn its
+// dependencies.
+func TestPipInstall_BuildsProjectWithoutStaticDependencies(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tree map[string]string
+	}{
+		{"dynamic dependencies", map[string]string{"pyproject.toml": "[project]\nname = \"app\"\ndynamic = [\"dependencies\"]\n"}},
+		{"setup.py", map[string]string{"setup.py": "setup()\n"}},
+		{"pyproject.toml without [project]", map[string]string{"pyproject.toml": "[build-system]\nrequires = [\"setuptools\"]\n"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolatePipEnv(t)
+			fake := newFakePython(t, "24.0")
+			root := writeTree(t, tc.tree)
+
+			result, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if got, want := moduleNames(result), []string{"projdep"}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("modules = %v, want %v", got, want)
+			}
+			if n := fake.count(t, "--no-input "+root+"\n"); n != 1 {
+				t.Fatalf("project built %d times, want once", n)
+			}
+		})
+	}
+}
+
+// Static [project].dependencies are installed as requirements: the project's
+// build backend never runs, so a project it could not build still yields them.
+func TestPipInstall_InstallsStaticDependenciesWithoutBuildingTheProject(t *testing.T) {
 	isolatePipEnv(t)
 	fake := newFakePython(t, "24.0")
-	root := writeTree(t, map[string]string{"pyproject.toml": "[project]\nname = \"app\"\n"})
+	root := writeTree(t, map[string]string{
+		"pyproject.toml":     "[project]\nname = \"app\"\ndependencies = [\"six\", \"idna\"]\n",
+		"broken/__init__.py": "",
+	})
 
 	result, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if got, want := moduleNames(result), []string{"projdep"}; !reflect.DeepEqual(got, want) {
+	if got, want := moduleNames(result), []string{"idna", "six"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("modules = %v, want %v", got, want)
+	}
+	if n := fake.count(t, root+"\n"); n != 0 {
+		t.Fatalf("the project directory was passed to pip %d times, want never", n)
+	}
+}
+
+func TestPipInstall_RetriesEachStaticDependency(t *testing.T) {
+	isolatePipEnv(t)
+	fake := newFakePython(t, "24.0")
+	root := writeTree(t, map[string]string{
+		"pyproject.toml": "[project]\nname = \"app\"\ndependencies = [\"six\", \"broken-pkg\", \"idna\"]\n",
+	})
+
+	result, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got, want := moduleNames(result), []string{"idna", "six"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("modules = %v, want %v despite broken-pkg", got, want)
+	}
+	for _, req := range []string{"six", "broken-pkg", "idna"} {
+		if n := fake.count(t, "--no-input "+req+"\n"); n != 1 {
+			t.Fatalf("%s retried %d times on its own, want once", req, n)
+		}
+	}
+}
+
+// A project pip cannot build, such as a flat layout with several top-level
+// packages and a pyproject.toml holding only tool configuration, has no Python
+// dependencies to scan, as without --install-dependencies: the scan goes on,
+// and the empty environment is not cached.
+func TestPipInstall_ProjectThatCannotBuildYieldsNoDependencies(t *testing.T) {
+	isolatePipEnv(t)
+	fake := newFakePython(t, "24.0")
+	root := writeTree(t, map[string]string{
+		"pyproject.toml":     "[tool.black]\nline-length = 88\n",
+		"app/__init__.py":    "",
+		"broken/__init__.py": "",
+	})
+
+	for range 2 {
+		result, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root)
+		if err != nil {
+			t.Fatalf("Resolve: %v, want the scan to go on", err)
+		}
+		if len(result.Dependencies) != 0 {
+			t.Fatalf("modules = %v, want none", moduleNames(result))
+		}
+	}
+	if n := fake.count(t, "-m venv"); n != 2 {
+		t.Fatalf("venv created %d times, want the failed one never reused", n)
 	}
 }
 
@@ -368,6 +466,8 @@ func TestPipInstall_RebuildsWhenAFileTheInstallReadsChanges(t *testing.T) {
 		{"--editable path", map[string]string{requirementsFile: "--editable ./lib\n", "lib/setup.py": "setup()\n"}, "lib/setup.py"},
 		{"bare local path", map[string]string{requirementsFile: "./lib[extra]\n"}, "lib/setup.cfg"},
 		{"file: URL", map[string]string{requirementsFile: "file:lib#egg=lib\n", "lib/pyproject.toml": "[project]\n"}, "lib/pyproject.toml"},
+		{"static [project].dependencies", map[string]string{"pyproject.toml": "[project]\nname = \"app\"\ndependencies = [\"six\"]\n"}, "pyproject.toml"},
+		{"project build", map[string]string{"setup.cfg": "[metadata]\nname = app\n"}, "setup.py"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			isolatePipEnv(t)
