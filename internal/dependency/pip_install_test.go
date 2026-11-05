@@ -284,8 +284,8 @@ func TestPipInstall_InstallsStaticDependenciesWithoutBuildingTheProject(t *testi
 	if got, want := moduleNames(result), []string{"idna", "six"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("modules = %v, want %v", got, want)
 	}
-	if n := fake.count(t, root+"\n"); n != 0 {
-		t.Fatalf("the project directory was passed to pip %d times, want never", n)
+	if n := fake.count(t, " install --disable-pip-version-check --no-input "+root+"\n"); n != 0 {
+		t.Fatalf("pip installed the project directory %d times, want never", n)
 	}
 }
 

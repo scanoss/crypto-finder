@@ -306,8 +306,15 @@ func (w *requirementsWalk) line(dir, line string) {
 		}
 	case "-e", "--editable", "":
 		if project, ok := localProjectPath(value); ok {
+			path := resolvePath(w.projectDir, project)
+			// A local wheel or sdist is read as a file; a project directory
+			// through its build files.
+			if isFile(path) {
+				w.inputs = append(w.inputs, path)
+				return
+			}
 			for _, name := range pythonBuildFiles {
-				w.inputs = append(w.inputs, filepath.Join(resolvePath(w.projectDir, project), name))
+				w.inputs = append(w.inputs, filepath.Join(path, name))
 			}
 		}
 	}
@@ -320,8 +327,9 @@ func resolvePath(base, path string) string {
 	return filepath.Join(base, path)
 }
 
-// localProjectPath returns the directory of a requirement that names a local
-// project: ".", a path, or a file: URL, without extras, markers or options.
+// localProjectPath returns the path of a requirement that names a local
+// project directory or archive: ".", a path, or a file: URL, without extras,
+// markers or options.
 func localProjectPath(requirement string) (string, bool) {
 	fields := strings.Fields(requirement)
 	if len(fields) == 0 {
@@ -398,17 +406,28 @@ func (r *PipResolver) installUnits(ctx context.Context, projectDir, pip string, 
 }
 
 // firstPartyDistributionsScript names every distribution pip installed from a
-// local path (PEP 610 direct_url.json with a file: URL). In an environment
-// built from one project, that is the project itself, or a sibling path the
-// user wrote: first-party source that must not be reported as a dependency.
-const firstPartyDistributionsScript = `import json, importlib.metadata as m
+// directory inside the project (PEP 610 direct_url.json with dir_info and a
+// file: URL under argv[1]): the project itself, or an -e/path package of it,
+// which is first-party source and must not be reported as a dependency. A
+// wheel or sdist installed from a local file carries archive_info instead and
+// is a dependency like any other.
+const firstPartyDistributionsScript = `import json, os, sys, importlib.metadata as m
+from urllib.parse import unquote, urlparse
+root = os.path.realpath(sys.argv[1])
 for d in m.distributions():
     u = d.read_text("direct_url.json")
-    if u and json.loads(u).get("url", "").startswith("file:"):
+    if not u:
+        continue
+    info = json.loads(u)
+    url = urlparse(info.get("url", ""))
+    if "dir_info" not in info or url.scheme != "file":
+        continue
+    path = os.path.realpath(unquote(url.path))
+    if path == root or path.startswith(root + os.sep):
         print(d.metadata["Name"])`
 
 func (r *PipResolver) uninstallFirstParty(ctx context.Context, projectDir string, env pythonEnv) {
-	stdout, stderr, err := r.run(ctx, projectDir, env.python, "-c", firstPartyDistributionsScript)
+	stdout, stderr, err := r.run(ctx, projectDir, env.python, "-c", firstPartyDistributionsScript, projectDir)
 	if err != nil {
 		log.Warn().Str("stderr", stderr).Msg("Could not list locally installed Python distributions")
 		return

@@ -1,10 +1,12 @@
 package dependency
 
 import (
+	"archive/zip"
 	"context"
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -122,5 +124,60 @@ func TestPipInstall_RealProjectInstallDropsTheProject(t *testing.T) {
 	}
 	if got := moduleNames(result); len(got) != 1 || got[0] != "six" {
 		t.Fatalf("modules = %v, want only six", got)
+	}
+}
+
+// A wheel installed from a local file is a vendored or offline dependency, not
+// first-party source: it carries archive_info, not dir_info, and stays.
+func TestPipInstall_RealLocalWheelStaysADependency(t *testing.T) {
+	requireRealInstall(t, "python3", "pypi.org:443")
+	isolatePipEnv(t)
+	root := writeTree(t, map[string]string{
+		"requirements.txt": "./vendor/vendoredpkg-0.1-py3-none-any.whl\nsix==1.16.0\n",
+		"app.py":           "import vendoredpkg\n",
+	})
+	writeWheel(t, filepath.Join(root, "vendor", "vendoredpkg-0.1-py3-none-any.whl"), "vendoredpkg", "0.1")
+
+	result, err := NewPipResolver(WithPipInstall()).Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	got := moduleNames(result)
+	if len(got) != 2 || got[0] != "six" || got[1] != "vendoredpkg" {
+		t.Fatalf("modules = %v, want [six vendoredpkg]", got)
+	}
+}
+
+// writeWheel writes a minimal pure-Python wheel holding one empty package.
+func writeWheel(t *testing.T, path, name, version string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	zw := zip.NewWriter(f)
+	distInfo := name + "-" + version + ".dist-info/"
+	files := []struct{ name, body string }{
+		{name + "/__init__.py", ""},
+		{distInfo + "METADATA", "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version + "\n"},
+		{distInfo + "WHEEL", "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n"},
+		{distInfo + "top_level.txt", name + "\n"},
+		{distInfo + "RECORD", ""},
+	}
+	for _, file := range files {
+		w, err := zw.Create(file.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(file.body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
