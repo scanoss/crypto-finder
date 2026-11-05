@@ -290,24 +290,49 @@ func specializeAnchor(
 }
 
 // dropNativeDuplicates removes the scanner-reported assets that report the
-// same rule and algorithm as specialized at the same span. The scanner names a
+// same rule and value as specialized at the same span. The scanner names a
 // rule by the dotted path of its rule file followed by the rule's own id
-// ("<path>.<id>"), while the catalog holds the bare id, so a native asset is
-// one whose rule id ends with ".<ruleID>". The parameter condition is not
+// ("<path>.<id>"), or by the bare id when the rule file sits at the rules root,
+// while the catalog holds the bare id. The parameter condition is not
 // compared: a scanner match states the rule's pattern where a specialization
-// states the value it resolved. An asset without an algorithm name is never
-// treated as a duplicate.
+// states the value it resolved. The value is what the asset names: its
+// algorithm (algorithmName, algorithmFamily) or, for related crypto material,
+// the material (materialType, materialAlgorithm). An asset that names neither
+// is never treated as a duplicate.
 func dropNativeDuplicates(finding *entities.Finding, specialized entities.CryptographicAsset, ruleID string) {
-	name := specialized.Metadata["algorithmName"]
-	if name == "" {
+	value := conditionedValueIdentity(specialized.Metadata)
+	if value == nil {
 		return
 	}
 	finding.CryptographicAssets = slices.DeleteFunc(finding.CryptographicAssets, func(asset entities.CryptographicAsset) bool {
 		return asset.StartLine == specialized.StartLine && asset.StartCol == specialized.StartCol &&
 			asset.EndLine == specialized.EndLine && asset.EndCol == specialized.EndCol &&
-			asset.Metadata["algorithmName"] == name && asset.Metadata["algorithmFamily"] == specialized.Metadata["algorithmFamily"] &&
-			slices.ContainsFunc(asset.Rules, func(rule entities.RuleInfo) bool { return strings.HasSuffix(rule.ID, "."+ruleID) })
+			slices.Equal(conditionedValueIdentity(asset.Metadata), value) &&
+			slices.ContainsFunc(asset.Rules, func(rule entities.RuleInfo) bool { return sameCatalogRule(rule.ID, ruleID) })
 	})
+}
+
+// conditionedValueIdentityKeys are the metadata fields that say which value an
+// asset reports.
+var conditionedValueIdentityKeys = []string{"algorithmName", "algorithmFamily", "materialType", "materialAlgorithm"}
+
+// conditionedValueIdentity returns the values of conditionedValueIdentityKeys
+// in metadata, or nil when it names no algorithm and no material algorithm.
+func conditionedValueIdentity(metadata map[string]string) []string {
+	if metadata["algorithmName"] == "" && metadata["materialAlgorithm"] == "" {
+		return nil
+	}
+	identity := make([]string, len(conditionedValueIdentityKeys))
+	for i, key := range conditionedValueIdentityKeys {
+		identity[i] = metadata[key]
+	}
+	return identity
+}
+
+// sameCatalogRule reports that the scanner's rule id reportedID names the
+// catalog rule ruleID, bare or behind its rule file's dotted path.
+func sameCatalogRule(reportedID, ruleID string) bool {
+	return reportedID == ruleID || strings.HasSuffix(reportedID, "."+ruleID)
 }
 
 func indexExistingFindingRules(report *entities.InterimReport) map[string]struct{} {
