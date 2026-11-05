@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/fs"
 	"os"
@@ -89,7 +90,8 @@ func (c *SourceCache) ExtractZip(archivePath, key, version string, extensions []
 		}
 	}()
 
-	stamp := archiveStamp(r.File, extensions)
+	planned := plannedFiles(r.File, extensions)
+	stamp := archiveStamp(planned, extensions)
 	if entryHolds(destDir, stampPath, stamp) {
 		return destDir, nil
 	}
@@ -111,15 +113,17 @@ func (c *SourceCache) ExtractZip(archivePath, key, version string, extensions []
 	if entryHolds(destDir, stampPath, stamp) {
 		return destDir, nil
 	}
-
-	tmpDir, err := os.MkdirTemp(keyDir, "."+version+".partial-*")
-	if err != nil {
-		return "", fmt.Errorf("create extraction dir: %w", err)
+	// An entry without the archive's stamp that already holds exactly the
+	// archive's files (one extracted before entries had stamps) is kept, not
+	// replaced under a scan that may be reading it.
+	if entryMatches(destDir, planned) {
+		if err := writeStamp(stampPath, stamp, keyDir, version); err != nil {
+			return "", err
+		}
+		return destDir, nil
 	}
-	defer removeBestEffort(tmpDir)
 
-	extractEntries(r.File, tmpDir, extensions)
-	if err := publishEntry(tmpDir, destDir, keyDir, version); err != nil {
+	if err := extractEntry(archivePath, planned, destDir, keyDir, version); err != nil {
 		return "", err
 	}
 	if err := writeStamp(stampPath, stamp, keyDir, version); err != nil {
@@ -128,43 +132,86 @@ func (c *SourceCache) ExtractZip(archivePath, key, version string, extensions []
 	return destDir, nil
 }
 
-// extractEntries writes the archive files kept for extensions below dir.
-func extractEntries(files []*zip.File, dir string, extensions []string) {
-	for _, f := range files {
-		if !keptEntry(f.Name, extensions) {
-			continue
-		}
+// extractEntry writes the planned files of archivePath to a directory of
+// its own and moves it to destDir when complete. A file that cannot be
+// written (a full disk) fails the extraction: the entry in place and its
+// stamp stay as they were.
+func extractEntry(archivePath string, planned []plannedFile, destDir, keyDir, version string) error {
+	tmpDir, err := os.MkdirTemp(keyDir, "."+version+".partial-*")
+	if err != nil {
+		return fmt.Errorf("create extraction dir: %w", err)
+	}
+	defer removeBestEffort(tmpDir)
 
-		// #nosec G305 -- validated against zip slip with a canonical prefix check below.
-		destPath := filepath.Join(dir, f.Name)
-
-		// Prevent zip slip
-		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(dir)+string(os.PathSeparator)) {
-			continue
-		}
-
-		if err := extractZipFile(f, destPath); err != nil {
-			// Non-fatal — skip individual files that fail
-			continue
+	for _, p := range planned {
+		if err := extractZipFile(p.file, filepath.Join(tmpDir, p.rel)); err != nil {
+			return fmt.Errorf("extract %s from %s: %w", p.file.Name, archivePath, err)
 		}
 	}
+	return publishEntry(tmpDir, destDir, keyDir, version)
 }
 
-// keptEntry reports whether an archive entry is extracted for extensions.
-func keptEntry(name string, extensions []string) bool {
-	return len(extensions) == 0 || hasMatchingExtension(name, extensions)
+// plannedFile is an archive file an extraction writes, at rel below the
+// entry.
+type plannedFile struct {
+	file *zip.File
+	rel  string
 }
 
-// archiveStamp identifies the files an extraction for extensions takes from
-// an archive by their names, CRC-32 checksums and sizes, read from the
+// plannedFiles returns the archive files an extraction for extensions
+// writes: regular files of a matching name that stay below the entry (no
+// zip slip) and are within the size limit.
+func plannedFiles(files []*zip.File, extensions []string) []plannedFile {
+	var planned []plannedFile
+	for _, f := range files {
+		rel := filepath.FromSlash(f.Name)
+		if f.FileInfo().IsDir() || !filepath.IsLocal(rel) || f.UncompressedSize64 > maxExtractedFileSize {
+			continue
+		}
+		if len(extensions) > 0 && !hasMatchingExtension(f.Name, extensions) {
+			continue
+		}
+		planned = append(planned, plannedFile{file: f, rel: filepath.Clean(rel)})
+	}
+	return planned
+}
+
+// entryMatches reports whether destDir holds exactly the planned files,
+// each with the size and CRC-32 the archive records for it.
+func entryMatches(destDir string, planned []plannedFile) bool {
+	if !isDir(destDir) {
+		return false
+	}
+	count := 0
+	walkErr := filepath.WalkDir(destDir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			count++
+		}
+		return nil
+	})
+	if walkErr != nil || count != len(planned) {
+		return false
+	}
+	for _, p := range planned {
+		data, err := os.ReadFile(filepath.Join(destDir, p.rel)) // #nosec G304 -- a file of the source cache entry.
+		if err != nil || uint64(len(data)) != p.file.UncompressedSize64 || crc32.ChecksumIEEE(data) != p.file.CRC32 {
+			return false
+		}
+	}
+	return true
+}
+
+// archiveStamp identifies the planned files of an extraction for
+// extensions by their names, CRC-32 checksums and sizes, read from the
 // archive's directory. A rebuilt archive holding the same sources has the
 // same stamp.
-func archiveStamp(files []*zip.File, extensions []string) string {
-	lines := make([]string, 0, len(files)+1)
-	for _, f := range files {
-		if keptEntry(f.Name, extensions) {
-			lines = append(lines, fmt.Sprintf("%q %08x %d", f.Name, f.CRC32, f.UncompressedSize64))
-		}
+func archiveStamp(planned []plannedFile, extensions []string) string {
+	lines := make([]string, 0, len(planned)+1)
+	for _, p := range planned {
+		lines = append(lines, fmt.Sprintf("%q %08x %d", p.file.Name, p.file.CRC32, p.file.UncompressedSize64))
 	}
 	sort.Strings(lines)
 	lines = append(lines, fmt.Sprintf("extensions %q", extensions))

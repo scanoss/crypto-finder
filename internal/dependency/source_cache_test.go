@@ -280,6 +280,83 @@ func TestSourceCache_ExtractZip_CompletesInterruptedEntry(t *testing.T) {
 	}
 }
 
+// An entry extracted completely before entries had stamps is kept as it
+// is: replacing it would pull it from under a scan reading it.
+func TestSourceCache_ExtractZip_KeepsCompleteUnstampedEntry(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	cache, err := NewSourceCache()
+	if err != nil {
+		t.Fatalf("NewSourceCache: %v", err)
+	}
+	archive := filepath.Join(t.TempDir(), "sources.jar")
+	createZipArchive(t, archive, map[string]string{"a/A.java": "class A {}", "b/B.java": "class B {}"})
+	entry := filepath.Join(cache.baseDir, "org.example-lib", "1.0.0")
+	for name, content := range map[string]string{"a/A.java": "class A {}", "b/B.java": "class B {}"} {
+		path := filepath.Join(entry, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, err := os.Stat(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := cache.ExtractZip(archive, "org.example:lib", "1.0.0", []string{".java"})
+	if err != nil {
+		t.Fatalf("ExtractZip: %v", err)
+	}
+	after, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("complete unstamped entry was replaced")
+	}
+}
+
+// An extraction that cannot write a file (a full disk) fails and leaves the
+// entry in place, with its stamp, as it was.
+func TestSourceCache_ExtractZip_WriteFailureKeepsPreviousEntry(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	cache, err := NewSourceCache()
+	if err != nil {
+		t.Fatalf("NewSourceCache: %v", err)
+	}
+	first := filepath.Join(t.TempDir(), "first.jar")
+	createZipArchive(t, first, map[string]string{"a/A.java": "class A {}"})
+	dir, err := cache.ExtractZip(first, "org.example:lib", "1.0-SNAPSHOT", []string{".java"})
+	if err != nil {
+		t.Fatalf("ExtractZip: %v", err)
+	}
+
+	// a/B.java is both a file and a directory: one of the two cannot be written.
+	rebuilt := filepath.Join(t.TempDir(), "rebuilt.jar")
+	createZipArchive(t, rebuilt, map[string]string{"a/B.java": "class B {}", "a/B.java/C.java": "class C {}"})
+	if _, err := cache.ExtractZip(rebuilt, "org.example:lib", "1.0-SNAPSHOT", []string{".java"}); err == nil {
+		t.Fatal("extraction with an unwritable file succeeded")
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, "a", "A.java")); err != nil || string(got) != "class A {}" {
+		t.Fatalf("previous entry changed: %q, %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a", "B.java")); !os.IsNotExist(err) {
+		t.Fatalf("partial extraction published: %v", err)
+	}
+	before, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.ExtractZip(first, "org.example:lib", "1.0-SNAPSHOT", []string{".java"}); err != nil {
+		t.Fatalf("ExtractZip of the first archive again: %v", err)
+	}
+	if after, err := os.Stat(dir); err != nil || !os.SameFile(before, after) {
+		t.Fatalf("previous entry lost its stamp and was extracted again: %v", err)
+	}
+}
+
 // Scans running side by side (parallel CI jobs sharing a home directory)
 // extract the same dependency at once; none may return before the entry
 // holds every source file.
