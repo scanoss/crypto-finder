@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -438,7 +439,7 @@ func (r *PipResolver) installUnits(ctx context.Context, projectDir, pip string, 
 	var failed []string
 	for _, unit := range units {
 		if _, unitStderr, unitErr := r.runPython(ctx, projectDir, pip, slices.Concat(base, header, unit)...); unitErr != nil {
-			name := strings.Join(unit, " ")
+			name := redactURLCredentials(strings.Join(unit, " "))
 			failed = append(failed, name)
 			log.Warn().Str("requirement", name).Str("stderr", unitStderr).Msg("Python requirement failed to install")
 		}
@@ -612,6 +613,17 @@ func (r *PipResolver) listPython(ctx context.Context, env pythonEnv, python stri
 	cmd.Stderr = &stderr
 	err = cmd.Run()
 	return stdout.Bytes(), tailForFailure(strings.TrimSpace(stderr.String()), failureOutputLimit), err
+}
+
+// urlUserinfo matches the credentials of a URL, as in
+// git+https://oauth2:<token>@host/repo.git.
+var urlUserinfo = regexp.MustCompile(`://[^/@\s]+@`)
+
+// redactURLCredentials hides the credentials of every URL in a requirement
+// before it is logged: a private dependency often carries its token in the
+// line.
+func redactURLCredentials(requirement string) string {
+	return urlUserinfo.ReplaceAllString(requirement, "://****@")
 }
 
 func discardStaging(dir string) {

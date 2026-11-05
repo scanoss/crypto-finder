@@ -1,6 +1,7 @@
 package dependency
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -10,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // fakePython is an ambient python3 that implements what provisioning and
@@ -572,5 +576,43 @@ func TestSweepStaleStaging(t *testing.T) {
 	}
 	if !slices.Equal(left, []string{"k2.tmp-2", "k3"}) {
 		t.Fatalf("left %v, want [k2.tmp-2 k3]", left)
+	}
+}
+
+func TestRedactURLCredentials(t *testing.T) {
+	for in, want := range map[string]string{
+		"mylib @ git+https://oauth2:tok3n@gitlab.example.com/org/mylib.git": "mylib @ git+https://****@gitlab.example.com/org/mylib.git",
+		"https://user:pass@host/simple/pkg-1.0-py3-none-any.whl":            "https://****@host/simple/pkg-1.0-py3-none-any.whl",
+		"-e git+ssh://git@github.com/org/repo.git#egg=repo":                 "-e git+ssh://****@github.com/org/repo.git#egg=repo",
+		"six==1.16.0":                "six==1.16.0",
+		"pkg @ https://host/a@b.whl": "pkg @ https://host/a@b.whl",
+	} {
+		if got := redactURLCredentials(in); got != want {
+			t.Errorf("redactURLCredentials(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A private requirement often carries its token in the URL. When it fails to
+// install, the warnings name it without the token.
+func TestPipInstall_FailedRequirementIsLoggedWithoutItsCredentials(t *testing.T) {
+	isolatePipEnv(t)
+	var logs bytes.Buffer
+	previous := log.Logger
+	log.Logger = zerolog.New(&logs)
+	t.Cleanup(func() { log.Logger = previous })
+	fake := newFakePython(t, "24.0")
+	root := writeTree(t, map[string]string{
+		requirementsFile: "six\nbroken @ git+https://oauth2:tok3n@gitlab.example.com/org/broken.git\n",
+	})
+
+	if _, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if strings.Contains(logs.String(), "tok3n") {
+		t.Fatalf("logs carry the requirement's token:\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "git+https://****@gitlab.example.com/org/broken.git") {
+		t.Fatalf("logs do not name the failed requirement:\n%s", logs.String())
 	}
 }
