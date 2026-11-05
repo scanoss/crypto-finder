@@ -112,9 +112,30 @@ COPY --from=eclipse-temurin:8-jdk@sha256:4dddc36dca6bb5ee63b7ce805b9dee93d8b0029
 COPY --from=eclipse-temurin:11-jdk@sha256:7841c1e70df7206633b42a38e0199a61a5f7d32b9ec22f27cab624e9f00a8d8d /opt/java/openjdk /opt/jdks/jdk11
 COPY --from=eclipse-temurin:17-jdk@sha256:f9b295135b39ed8c650c713c6116600dd4c39ac5f3883f566d96fdec917ce3b2 /opt/java/openjdk /opt/jdks/jdk17
 COPY --from=eclipse-temurin:21-jdk@sha256:57865c22b954cf920cb05a610af81d577e89783282514ba071e99c7357f6c769 /opt/java/openjdk /opt/jdks/jdk21
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Debian's gradle and maven, and the groovy, ant, ivy, junit4 and antlr they
+# pull in, depend on a Java runtime. Left alone, apt satisfies that with
+# openjdk-21-jre-headless (~200 MB) beside the Temurin JDKs above. A stub
+# package that provides the virtual javaN-runtime-headless names satisfies it
+# instead. Debian's gradle 4.4.1 is patched to run on Java 21, so it runs on
+# Temurin 21 through JAVA_HOME exactly as it ran on the Debian runtime.
+RUN mkdir -p /tmp/jre-stub/DEBIAN \
+    && printf '%s\n' \
+        'Package: crypto-finder-jre-stub' \
+        'Version: 1' \
+        'Architecture: all' \
+        'Maintainer: SCANOSS' \
+        'Provides: java2-runtime-headless, java5-runtime-headless, java6-runtime-headless, java7-runtime-headless, java8-runtime-headless' \
+        'Description: Temurin JDKs under /opt/jdks satisfy Debian Java runtime dependencies' \
+        > /tmp/jre-stub/DEBIAN/control \
+    && dpkg-deb --build /tmp/jre-stub /tmp/jre-stub.deb \
+    && dpkg -i /tmp/jre-stub.deb \
+    && rm -rf /tmp/jre-stub /tmp/jre-stub.deb \
+    && apt-get update && apt-get install -y --no-install-recommends \
     gradle=4.4.1-22 \
     maven=3.9.9-1 \
+    && if dpkg -l 'openjdk-*' 'default-jre*' 2>/dev/null | grep -q '^ii'; then \
+        echo "a Debian Java runtime was installed; extend the stub's Provides" >&2; exit 1; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 ENV JAVA_HOME=/opt/jdks/jdk21
 ENV SCANOSS_JAVA_JDK_HOMES=8=/opt/jdks/jdk8,11=/opt/jdks/jdk11,17=/opt/jdks/jdk17,21=/opt/jdks/jdk21
