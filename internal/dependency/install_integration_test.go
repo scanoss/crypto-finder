@@ -127,6 +127,33 @@ func TestPipInstall_RealProjectInstallDropsTheProject(t *testing.T) {
 	}
 }
 
+// Provisioning runs pip in the project directory, so a project module named
+// like a standard-library one must not shadow it: that would run project code
+// on the scanning host.
+func TestPipInstall_RealProjectModulesDoNotShadowTheStandardLibrary(t *testing.T) {
+	requireRealInstall(t, "python3", "pypi.org:443")
+	isolatePipEnv(t)
+	marker := "open(__file__ + '.ran', 'w').close()\n"
+	root := writeTree(t, map[string]string{
+		"requirements.txt":  "six==1.16.0\n",
+		"json.py":           marker,
+		"email/__init__.py": marker,
+	})
+
+	result, err := NewPipResolver(WithPipInstall()).Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := moduleNames(result); len(got) != 1 || got[0] != "six" {
+		t.Fatalf("modules = %v, want only six", got)
+	}
+	for _, ran := range []string{"json.py.ran", "email/__init__.py.ran"} {
+		if _, err := os.Stat(filepath.Join(root, ran)); err == nil {
+			t.Errorf("%s exists: provisioning imported the project's module instead of the standard library", ran)
+		}
+	}
+}
+
 // A wheel installed from a local file is a vendored or offline dependency, not
 // first-party source: it carries archive_info, not dir_info, and stays.
 func TestPipInstall_RealLocalWheelStaysADependency(t *testing.T) {

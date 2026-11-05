@@ -179,7 +179,7 @@ func (r *PipResolver) provisionVenv(ctx context.Context, projectDir, ambient str
 
 	log.Info().Str("root", projectDir).Str("venv", final).Msg("Provisioning Python environment")
 	start := time.Now()
-	if _, stderr, err := r.run(ctx, projectDir, ambient, "-m", "venv", "--without-pip", staging); err != nil {
+	if _, stderr, err := r.runPython(ctx, projectDir, ambient, "-m", "venv", "--without-pip", staging); err != nil {
 		discardStaging(staging)
 		return pythonEnv{}, provisionFailure(err, projectDir, "python -m venv failed: "+stderr)
 	}
@@ -220,7 +220,7 @@ func ambientPipEnv(ambient, venvPython string) pythonEnv {
 // checkAmbientPip fails unless the ambient pip can install into another
 // interpreter, which `pip --python` needs pip 22.3 or later for.
 func (r *PipResolver) checkAmbientPip(ctx context.Context, projectDir, ambient string) error {
-	stdout, stderr, err := r.run(ctx, projectDir, ambient, "-m", "pip", "--version")
+	stdout, stderr, err := r.runPython(ctx, projectDir, ambient, "-m", "pip", "--version")
 	if err != nil {
 		return provisionFailure(err, projectDir,
 			"--install-dependencies needs pip for "+ambient+", and `"+ambient+" -m pip --version` failed: "+stderr)
@@ -256,7 +256,7 @@ func (r *PipResolver) venvKey(ctx context.Context, projectDir, ambient string, m
 			hash.Write(content)
 		}
 	}
-	version, stderr, err := r.run(ctx, projectDir, ambient, "-c", "import sys; print(sys.version); print(sys.executable)")
+	version, stderr, err := r.runPython(ctx, projectDir, ambient, "-c", "import sys; print(sys.version); print(sys.executable)")
 	if err != nil {
 		return "", fmt.Errorf("%s: %w: %s", ambient, err, stderr)
 	}
@@ -371,7 +371,7 @@ func (r *PipResolver) pipInstall(ctx context.Context, projectDir string, env pyt
 		}
 		return r.installUnits(ctx, projectDir, pip, base, manifest.dependencies, nil, units, "the dependencies of "+pyprojectFile)
 	case manifestProject:
-		if _, stderr, err := r.run(ctx, projectDir, pip, append(base, projectDir)...); err != nil {
+		if _, stderr, err := r.runPython(ctx, projectDir, pip, append(base, projectDir)...); err != nil {
 			log.Warn().Str("root", projectDir).Str("stderr", stderr).
 				Msg("pip could not build the project to install its dependencies: no Python dependencies")
 			return nil, errProjectNotBuilt
@@ -385,7 +385,7 @@ func (r *PipResolver) pipInstall(ctx context.Context, projectDir string, env pyt
 // own with header, so one package that cannot build costs that package, not
 // every dependency. Nothing installed at all is an error.
 func (r *PipResolver) installUnits(ctx context.Context, projectDir, pip string, base, whole, header []string, units [][]string, what string) ([]string, error) {
-	_, stderr, err := r.run(ctx, projectDir, pip, slices.Concat(base, whole)...)
+	_, stderr, err := r.runPython(ctx, projectDir, pip, slices.Concat(base, whole)...)
 	if err == nil {
 		return nil, nil
 	}
@@ -393,7 +393,7 @@ func (r *PipResolver) installUnits(ctx context.Context, projectDir, pip string, 
 		Msg("Installing " + what + " failed as a whole, retrying one requirement at a time")
 	var failed []string
 	for _, unit := range units {
-		if _, unitStderr, unitErr := r.run(ctx, projectDir, pip, slices.Concat(base, header, unit)...); unitErr != nil {
+		if _, unitStderr, unitErr := r.runPython(ctx, projectDir, pip, slices.Concat(base, header, unit)...); unitErr != nil {
 			name := strings.Join(unit, " ")
 			failed = append(failed, name)
 			log.Warn().Str("requirement", name).Str("stderr", unitStderr).Msg("Python requirement failed to install")
@@ -427,7 +427,7 @@ for d in m.distributions():
         print(d.metadata["Name"])`
 
 func (r *PipResolver) uninstallFirstParty(ctx context.Context, projectDir string, env pythonEnv) {
-	stdout, stderr, err := r.run(ctx, projectDir, env.python, "-c", firstPartyDistributionsScript, projectDir)
+	stdout, stderr, err := r.runPython(ctx, projectDir, env.python, "-c", firstPartyDistributionsScript, projectDir)
 	if err != nil {
 		log.Warn().Str("stderr", stderr).Msg("Could not list locally installed Python distributions")
 		return
@@ -437,7 +437,7 @@ func (r *PipResolver) uninstallFirstParty(ctx context.Context, projectDir string
 		return
 	}
 	args := slices.Concat(env.pip[1:], []string{"uninstall", "--disable-pip-version-check", "-y"}, names)
-	if _, stderr, err := r.run(ctx, projectDir, env.pip[0], args...); err != nil {
+	if _, stderr, err := r.runPython(ctx, projectDir, env.pip[0], args...); err != nil {
 		log.Warn().Strs("distributions", names).Str("stderr", stderr).Msg("Could not remove first-party distributions from the environment")
 	}
 }
@@ -503,9 +503,13 @@ func splitRequirementOption(line string) (option, value string) {
 	return option, rest
 }
 
-// run executes name in dir and returns its stdout and the tail of its stderr.
-func (r *PipResolver) run(ctx context.Context, dir, name string, args ...string) ([]byte, string, error) {
-	cmd := r.execCommand(ctx, name, args...)
+// runPython executes the interpreter python in dir and returns its stdout and
+// the tail of its stderr. dir is the project, because pip resolves the relative
+// paths of a requirements file against it. -I keeps that directory, and any
+// PYTHON* variable, off sys.path, so a project module named json.py or a
+// package named email/ cannot shadow the standard library and run.
+func (r *PipResolver) runPython(ctx context.Context, dir, python string, args ...string) ([]byte, string, error) {
+	cmd := r.execCommand(ctx, python, slices.Concat([]string{"-I"}, args)...)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

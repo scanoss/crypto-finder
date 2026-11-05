@@ -40,10 +40,12 @@ func newFakePython(t *testing.T, pipVersion string) fakePython {
 		t.Fatal(err)
 	}
 	writeExecutable(t, dir, "venv-python", `#!/bin/sh
+[ "$1" = "-I" ] && shift
 echo "venv-python $*" >> '`+log+`'
 exit 1
 `)
 	writeExecutable(t, dir, "python3", `#!/bin/sh
+[ "$1" = "-I" ] && shift
 echo "python3 $*" >> '`+log+`'
 if [ "$1 $2" = "-m venv" ]; then
   mkdir -p "$4/bin" && cp '`+filepath.Join(dir, "venv-python")+`' "$4/bin/python"; exit 0
