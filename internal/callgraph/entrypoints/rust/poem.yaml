@@ -1,0 +1,14 @@
+schema_version: "1"
+language: rust
+framework:
+  name: poem
+  description: "poem 3 handlers marked #[handler], and the operations of a poem-openapi 5 #[OpenApi] impl block."
+entries:
+  - shape: decorator
+    from: [poem]
+    names: [handler]
+    root_kind: framework_entry
+  - shape: decorator
+    from: [poem_openapi]
+    names: [OpenApi]
+    root_kind: framework_entry

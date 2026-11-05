@@ -1,0 +1,10 @@
+schema_version: "1"
+language: rust
+framework:
+  name: tonic
+  description: "tonic 0.14 gRPC services: tonic calls every method of an impl of a generated service trait, which carries #[tonic::async_trait]."
+entries:
+  - shape: decorator
+    from: [tonic]
+    names: [async_trait]
+    root_kind: framework_entry

@@ -90,6 +90,15 @@ type RustParser struct {
 	// CloneParser builds a fresh instance for each worker.
 	macroParser *sitter.Parser
 	macroBuf    []byte
+	// macroUseCache memoizes the crates each crate root brings in with
+	// #[macro_use] extern crate, keyed by the root source file.
+	macroUseCache map[string][]string
+	// entryRefs collects the file being parsed's registered handlers
+	// (recordRustRegistration) until parseFile hands them to its analysis.
+	entryRefs []EntryRef
+	// letIndex holds, per function of the file being parsed, the values its
+	// let bindings give each name (rustLetValue).
+	letIndex map[[2]uint32]map[string][]rustLetBinding
 }
 
 // NewRustParser creates a new Rust source parser backed by tree-sitter.
@@ -372,7 +381,9 @@ func (p *RustParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// Extract function and method declarations with their calls. The analysis
 	// doubles as the file-level resolution scope; nested scopes get their own
 	// copy of the name tables.
+	p.entryRefs, p.letIndex = nil, nil
 	p.extractDeclarations(root, src, filePath, packagePath, analysis, analysis)
+	analysis.EntryRefs, p.entryRefs, p.letIndex = p.entryRefs, nil, nil
 
 	return analysis, nil
 }
@@ -1009,6 +1020,10 @@ func (p *RustParser) parseFunctionItemWithGenerics(node *sitter.Node, src []byte
 		Parameters:   parameters,
 	}
 
+	if mark, ok := p.rustAttributeEntryMark(node, src, analysis, filePath); ok {
+		markEntry(decl, mark)
+	}
+
 	if body != nil {
 		ctx := p.newRustTypeCtx(node, paramsNode, src, analysis, selfType, outerGenerics)
 		decl.Calls = p.extractCalls(body, ctx, filePath)
@@ -1154,6 +1169,9 @@ func (p *RustParser) processImplBlock(node *sitter.Node, src []byte, filePath, p
 	if qualifiedPkg, _, ok := splitQualifiedRustType(selfType); ok && qualifiedPkg != "" {
 		declPackage = qualifiedPkg
 	}
+	// An attribute on the impl block, as #[tonic::async_trait] on a service
+	// implementation, makes every method of the block a framework entry.
+	implMark, implIsEntry := p.rustAttributeEntryMark(node, src, scope, filePath)
 	bodyChildren := int(body.ChildCount())
 	for i := 0; i < bodyChildren; i++ {
 		child := body.Child(i)
@@ -1161,6 +1179,9 @@ func (p *RustParser) processImplBlock(node *sitter.Node, src []byte, filePath, p
 			fnScope := p.rustChildImportScope(child.ChildByFieldName("body"), src, implScope, packagePath)
 			decl := p.parseFunctionItemWithGenerics(child, src, filePath, declPackage, typeName, fnScope, implGenerics, selfType)
 			if decl != nil {
+				if implIsEntry {
+					markEntry(decl, implMark)
+				}
 				decl.OwnerTraits = implTraits
 				analysis.Functions = append(analysis.Functions, *decl)
 			}
@@ -1302,6 +1323,7 @@ func (p *RustParser) extractCalls(body *sitter.Node, ctx *rustTypeCtx, filePath 
 		if node.Type() != rustNodeCallExpression {
 			return true
 		}
+		p.recordRustRegistration(node, nodeCtx, filePath)
 		if call := p.parseCallExpr(node, nodeCtx, filePath); call != nil {
 			p.anchors.set(call, node)
 			// Chain identity is a property of the syntax, not of how the callee

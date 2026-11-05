@@ -70,6 +70,18 @@ func TestLoadEmbedded(t *testing.T) {
 		{"go", ShapeServerRegistration, "example.com/shop/gen/keys", "", "RegisterKeysClient", false},
 		{"go", ShapeServerRegistration, "example.com/shop/gen/keys", "", "ServeKeysServer", false},
 		{"go", ShapeServerRegistration, "", "", "RegisterKeysServer", false},
+		{"rust", ShapeDecorator, "actix_web", "", "get", true},
+		{"rust", ShapeDecorator, "rocket", "", "get", true},
+		{"rust", ShapeDecorator, "my_macros", "", "get", false},
+		{"rust", ShapeDecorator, "tonic::codegen", "", "async_trait", true},
+		{"rust", ShapeDecorator, "async_trait", "", "async_trait", false},
+		{"rust", ShapeRegistrationCall, "axum::routing", "", "get", true},
+		{"rust", ShapeRegistrationCall, "axum_extra", "", "get", false},
+		{"rust", ShapeRegistrationCall, "actix_web::web", "", "to", true},
+		{"rust", ShapeRegistrationCall, "warp::filters::path", "", "and_then", true},
+		{"rust", ShapeRegistrationCall, "futures::future", "", "and_then", false},
+		{"rust", ShapeRegistrationCall, "lambda_runtime", "", "service_fn", true},
+		{"rust", ShapeRegistrationCall, "tower", "", "service_fn", false},
 	} {
 		if _, got := catalog.Match(tc.language, tc.shape, tc.pkg, tc.typeName, tc.name); got != tc.want {
 			t.Errorf("Match(%s, %s, %q, %q, %q) = %v, want %v", tc.language, tc.shape, tc.pkg, tc.typeName, tc.name, got, tc.want)

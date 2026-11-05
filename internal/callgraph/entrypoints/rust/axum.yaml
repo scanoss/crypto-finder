@@ -1,0 +1,11 @@
+schema_version: "1"
+language: rust
+framework:
+  name: axum
+  description: "axum 0.8 method routers: a handler passed to axum::routing's get(h), post(h), any(h), on(filter, h), chained on a method router (get(a).post(b)), or to Router::fallback(h)."
+entries:
+  - shape: registration_call
+    from: [axum]
+    names: [get, post, put, delete, patch, head, options, trace, connect, any, on, fallback]
+    path: optional
+    root_kind: framework_entry
