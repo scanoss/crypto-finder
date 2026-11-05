@@ -18,10 +18,12 @@ package callgraph
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -50,12 +52,18 @@ import (
 //   - it is test code, or it is a free function or a static method. An
 //     instance method may be invoked through an interface, a trait or a
 //     framework the graph has no edge for, so it stays a root;
-//   - nothing in the application's source refers to it by name besides its
-//     own declaration, and no decorator, attribute or annotation sits on it.
-//     A function handed out as a value (a handler passed to a router, a
-//     thread target, a callback) has no call edge, and a decorator or an
-//     attribute macro registers its function with something that calls it.
-//     Either keeps it a root. When its source cannot be read, it stays one.
+//   - nothing in the application's source or its module's configuration
+//     files refers to it by name besides its own declaration, and no
+//     decorator, attribute or annotation other than a test marker sits on
+//     it. A function handed out as a value (a handler passed to a router, a
+//     thread target, a callback, a handler a deployment file names) has no
+//     call edge, and a decorator or an attribute macro registers its
+//     function with something that calls it. Either keeps it a root. When
+//     its source cannot be read, it stays one.
+//
+// A module's manifest is looked for no higher than the scanned project's
+// root (SetProjectRoot), so a manifest in an enclosing directory never
+// makes a module.
 //
 // Implicit roots the runtime runs without a call (Go init functions and
 // package variable initializers, Java static initializers, Python and Node
@@ -123,13 +131,14 @@ func (t *Tracer) buildRootScope(userPackages map[string]bool) *rootScope {
 	scope := &rootScope{entryModules: map[string]bool{}, moduleOf: map[string]string{}, dead: map[string]bool{}}
 	isUserType := func(typeName string) bool { return t.isUserType(typeName, userPackages) }
 	modules := map[string]string{}
+	stop := t.moduleSearchRoot(userPackages)
 	candidates := map[string][]*FunctionDecl{}
 	declared := map[string]int{}
 	for key, decl := range t.graph.Functions {
 		if decl == nil || !t.isUserFunction(key, userPackages) {
 			continue
 		}
-		module := moduleDir(decl.FilePath, modules)
+		module := moduleDir(decl.FilePath, stop, modules)
 		scope.moduleOf[key] = module
 		declared[BaseFunctionName(decl.ID.Name)]++
 		mark, isEntry := t.entryMark(decl, isUserType)
@@ -159,7 +168,7 @@ func (t *Tracer) markDead(scope *rootScope, candidates map[string][]*FunctionDec
 			names[BaseFunctionName(decl.ID.Name)] = true
 		}
 	}
-	mentions, readable := t.countMentions(names, userPackages)
+	mentions, readable := t.countMentions(names, userPackages, scope.entryModuleDirs())
 	for file, decls := range candidates {
 		lines, ok := readable[file]
 		if !ok {
@@ -173,6 +182,19 @@ func (t *Tracer) markDead(scope *rootScope, candidates map[string][]*FunctionDec
 			scope.dead[decl.ID.String()] = true
 		}
 	}
+}
+
+// entryModuleDirs lists the manifest directories of the modules with an
+// entry point: only their candidates can stop being roots.
+func (s *rootScope) entryModuleDirs() []string {
+	out := make([]string, 0, len(s.entryModules))
+	for module := range s.entryModules {
+		if module != "" {
+			out = append(out, module)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // establishesEntry reports whether an entry point shows that its module is a
@@ -210,10 +232,12 @@ func droppableShape(decl *FunctionDecl) bool {
 	return isTestDeclaration(decl) || decl.ID.Type == "" || decl.Static
 }
 
-// countMentions counts, over the application's source files, how often each
-// of names occurs as an identifier, and returns the lines of every file it
-// read.
-func (t *Tracer) countMentions(names, userPackages map[string]bool) (map[string]int, map[string][][]byte) {
+// countMentions counts, over the application's source files and the
+// configuration files of its modules, how often each of names occurs as an
+// identifier, and returns the lines of every source file it read. A
+// configuration file can name a function as well as source can: a
+// serverless handler, a Spring XML factory method.
+func (t *Tracer) countMentions(names, userPackages map[string]bool, modules []string) (map[string]int, map[string][][]byte) {
 	files := map[string]bool{}
 	for key, decl := range t.graph.Functions {
 		if decl != nil && decl.FilePath != "" && t.isUserFunction(key, userPackages) {
@@ -221,6 +245,13 @@ func (t *Tracer) countMentions(names, userPackages map[string]bool) (map[string]
 		}
 	}
 	mentions := map[string]int{}
+	count := func(src []byte) {
+		for _, word := range identifierPattern.FindAll(src, -1) {
+			if names[string(word)] {
+				mentions[string(word)]++
+			}
+		}
+	}
 	readable := map[string][][]byte{}
 	for file := range files {
 		src, err := os.ReadFile(file)
@@ -228,27 +259,82 @@ func (t *Tracer) countMentions(names, userPackages map[string]bool) (map[string]
 			continue
 		}
 		readable[file] = bytes.Split(src, []byte("\n"))
-		for _, word := range identifierPattern.FindAll(src, -1) {
-			if names[string(word)] {
-				mentions[string(word)]++
-			}
+		count(src)
+	}
+	for _, file := range configFiles(modules) {
+		if src, err := os.ReadFile(file); err == nil {
+			count(src)
 		}
 	}
 	return mentions, readable
 }
 
+// configExtensions are the files a framework or a deployment names a
+// function in.
+var configExtensions = map[string]bool{
+	".yaml": true, ".yml": true, ".xml": true, ".json": true, ".toml": true,
+	".cfg": true, ".ini": true, ".properties": true, ".conf": true,
+}
+
+// configSkipDirs are directories that hold dependencies or build output, not
+// the module's own configuration.
+var configSkipDirs = map[string]bool{
+	"node_modules": true, "vendor": true, "target": true, "build": true, "dist": true,
+	"out": true, "venv": true, "__pycache__": true, "site-packages": true,
+}
+
+// configFiles lists the configuration files under the module directories,
+// each once, skipping hidden, dependency and build directories and files
+// over 1 MiB.
+func configFiles(modules []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, root := range modules {
+		if err := filepath.WalkDir(root, configVisitor(root, seen, &out)); err != nil {
+			continue // a module that cannot be walked only means fewer mentions
+		}
+	}
+	return out
+}
+
+// configVisitor collects the configuration files of one module walk.
+func configVisitor(root string, seen map[string]bool, out *[]string) fs.WalkDirFunc {
+	const maxConfigBytes = 1 << 20
+	return func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // an unreadable entry only means fewer mentions
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			if path != root && (strings.HasPrefix(name, ".") || configSkipDirs[name]) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if seen[path] || !configExtensions[strings.ToLower(filepath.Ext(name))] {
+			return nil
+		}
+		seen[path] = true
+		if info, infoErr := entry.Info(); infoErr == nil && info.Size() <= maxConfigBytes {
+			*out = append(*out, path)
+		}
+		return nil
+	}
+}
+
 // decorated reports whether a decorator (@x), an attribute (#[x]) or an
 // annotation sits on the declaration starting at line (1-based), on its own
-// line or on the lines above it. One that names a test (#[test], @Test) does
-// not count: a test runner is not the application.
+// line or on the lines above it. A test marker (#[test], @Test,
+// @pytest.mark.x, #[cfg(test)]) does not count, since a test runner is not
+// the application, but a registering decorator above it still does.
 func decorated(lines [][]byte, line int) bool {
 	const maxDecoratorLines = 20
 	for i := line - 1; i >= 0 && i < len(lines) && i >= line-1-maxDecoratorLines; i-- {
 		text := strings.TrimSpace(string(lines[i]))
 		isDecorator := strings.HasPrefix(text, "@") || strings.HasPrefix(text, "#[")
 		switch {
-		case isDecorator && strings.Contains(strings.ToLower(text), "test"):
-			return false
+		case isDecorator && testMarker(text):
+			continue
 		case isDecorator:
 			return true
 		case i == line-1:
@@ -260,13 +346,39 @@ func decorated(lines [][]byte, line int) bool {
 	return false
 }
 
+// testMarker reports whether a decorator or attribute line marks test code,
+// by its name and never its arguments: @routes.post("/attestation") is not
+// one.
+func testMarker(text string) bool {
+	name := strings.TrimPrefix(strings.TrimPrefix(text, "#["), "@")
+	args := ""
+	if cut := strings.IndexAny(name, "( ]"); cut >= 0 {
+		name, args = name[:cut], name[cut:]
+	}
+	last := name
+	if cut := strings.LastIndexAny(last, ".:"); cut >= 0 {
+		last = last[cut+1:]
+	}
+	switch {
+	case testAnnotations[last], strings.EqualFold(last, "test"):
+		return true
+	case name == "pytest" || strings.HasPrefix(name, "pytest."):
+		return true
+	case name == "cfg" || name == "cfg_attr":
+		return strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(args, "(")), "test")
+	default:
+		return false
+	}
+}
+
 // moduleDir returns the directory of the nearest build manifest above file,
-// or "" when there is none. cache memoizes directories.
-func moduleDir(file string, cache map[string]string) string {
+// no higher than stop, or "" when there is none. cache memoizes
+// directories.
+func moduleDir(file, stop string, cache map[string]string) string {
 	if file == "" {
 		return ""
 	}
-	dir := filepath.Dir(file)
+	dir := filepath.Dir(absPath(file))
 	var visited []string
 	module := ""
 	for {
@@ -280,7 +392,7 @@ func moduleDir(file string, cache map[string]string) string {
 			break
 		}
 		parent := filepath.Dir(dir)
-		if parent == dir {
+		if dir == stop || parent == dir {
 			break
 		}
 		dir = parent
@@ -289,6 +401,62 @@ func moduleDir(file string, cache map[string]string) string {
 		cache[d] = module
 	}
 	return module
+}
+
+// moduleSearchRoot is the highest directory a module lookup may reach: the
+// scanned project's root when the producer set it (SetProjectRoot) and it
+// holds the application's sources, else the deepest directory holding every
+// application source file. A manifest above it belongs to something else (a
+// home directory, an enclosing checkout).
+func (t *Tracer) moduleSearchRoot(userPackages map[string]bool) string {
+	root := t.userRoot(userPackages)
+	if t.projectRoot != "" && (root == t.projectRoot || strings.HasPrefix(root, t.projectRoot+string(filepath.Separator))) {
+		return t.projectRoot
+	}
+	return root
+}
+
+// SetProjectRoot names the scanned project's directory, the highest place a
+// module's build manifest is looked for (entry_scope.go). Without it the
+// lookup stops at the deepest directory holding every application source
+// file, which misses a manifest above a src/ layout.
+func (t *Tracer) SetProjectRoot(dir string) {
+	if dir != "" {
+		t.projectRoot = absPath(dir)
+	}
+}
+
+func absPath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return filepath.Clean(path)
+}
+
+// userRoot is the deepest directory holding every application source file.
+// A manifest above it belongs to something else (a home directory, an
+// enclosing checkout), so module lookup stops there.
+func (t *Tracer) userRoot(userPackages map[string]bool) string {
+	root := ""
+	first := true
+	for key, decl := range t.graph.Functions {
+		if decl == nil || decl.FilePath == "" || !t.isUserFunction(key, userPackages) {
+			continue
+		}
+		dir := filepath.Dir(absPath(decl.FilePath))
+		if first {
+			root, first = dir, false
+			continue
+		}
+		for root != dir && !strings.HasPrefix(dir, root+string(filepath.Separator)) {
+			parent := filepath.Dir(root)
+			if parent == root {
+				break
+			}
+			root = parent
+		}
+	}
+	return root
 }
 
 func hasManifest(dir string) bool {

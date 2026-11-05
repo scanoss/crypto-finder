@@ -71,7 +71,9 @@ func (c scopeCase) trace(t *testing.T) CondensedTrace {
 	if c.ecosystem == ecosystemRust {
 		sep = "::"
 	}
-	return NewTracer(graph, sep).TraceBackCondensed(target.ID, userPackages, 0, 0)
+	tracer := NewTracer(graph, sep)
+	tracer.SetProjectRoot(root)
+	return tracer.TraceBackCondensed(target.ID, userPackages, 0, 0)
 }
 
 func goParser() Parser     { return NewGoParser() }
@@ -234,6 +236,51 @@ HOOKS = {"start": worker}
 def warm():
     digest(b"x")
 `)}.trace(t), "warm")
+	// A route whose path holds "test" is still a registering decorator.
+	wantNoCallersRoot(t, scopeCase{ecosystem: ecosystemPython, parser: pythonParser, target: "digest", files: app(`
+
+@routes.post("/attestation/verify")
+def verify_attestation(request):
+    digest(b"x")
+`)}.trace(t), "verify_attestation")
+	// A deployment file names the handler: the source never does.
+	files := app(`
+
+def handler(event, context):
+    digest(b"x")
+`)
+	files["template.yaml"] = "Resources:\n  Fn:\n    Properties:\n      Handler: app.main.handler\n"
+	wantNoCallersRoot(t, scopeCase{ecosystem: ecosystemPython, parser: pythonParser, target: "digest", files: files}.trace(t), "handler")
+}
+
+// TestDecorated_ReadsTheDecoratorNameNotItsArguments: a test marker is told
+// by its name, and a registering decorator above one still counts.
+func TestDecorated_ReadsTheDecoratorNameNotItsArguments(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		src  string
+		want bool
+	}{
+		{"@routes.post(\"/attestation\")\ndef f(): pass", true},
+		{"@app.get(\"/latest\")\ndef f(): pass", true},
+		{"#[post(\"/attest\")]\nfn f() {}", true},
+		{"#[test]\nfn f() {}", false},
+		{"#[tokio::test]\nasync fn f() {}", false},
+		{"#[cfg(test)]\nfn f() {}", false},
+		{"@pytest.mark.slow\ndef f(): pass", false},
+		{"@Test\nstatic void f() {}", false},
+		{"#[get(\"/\")]\n#[cfg(not(test))]\nfn f() {}", true},
+		{"@app.task\n@pytest.mark.slow\ndef f(): pass", true},
+		{"}\nfn f() {}", false},
+	} {
+		var lines [][]byte
+		for _, line := range strings.Split(tc.src, "\n") {
+			lines = append(lines, []byte(line))
+		}
+		if got := decorated(lines, len(lines)); got != tc.want {
+			t.Errorf("decorated(%q) = %v, want %v", tc.src, got, tc.want)
+		}
+	}
 }
 
 // TestUncalledRoots_TestIsNotARoot: under --include-tests, a test nothing

@@ -27,6 +27,8 @@ type Tracer struct {
 	// roots decides which application functions nothing calls are chain
 	// roots (entry_scope.go). Shared with forks.
 	roots *rootScopeCache
+	// projectRoot bounds the module manifest lookup (SetProjectRoot).
+	projectRoot string
 }
 
 // SetModuleFunc lets chain selection tell library paths apart. With it set,
@@ -45,7 +47,7 @@ type traceBFSItem struct {
 // then on, and classifies modules with moduleOf, which must be safe for
 // concurrent use and answer as t's module function does.
 func (t *Tracer) Fork(moduleOf func(key string) string) *Tracer {
-	return &Tracer{graph: t.graph, pkgSep: t.pkgSep, edgeIdx: t.edges(), moduleOf: moduleOf, roots: t.roots}
+	return &Tracer{graph: t.graph, pkgSep: t.pkgSep, edgeIdx: t.edges(), moduleOf: moduleOf, roots: t.roots, projectRoot: t.projectRoot}
 }
 
 // NewTracer creates a new backward tracer for the given call graph.

@@ -9,8 +9,10 @@
   `setup.cfg`), so one application in a monorepo does not affect its siblings. A module with
   no entry point (a library scanned alone, or an application whose framework the catalog does
   not know) keeps `no_callers` roots as before. An uncalled function stays a root when it is
-  an instance method, when its name appears anywhere else in the application's source (a
-  handler passed to a router, a callback, a value in a table), or when a decorator,
-  attribute or annotation sits on it (`#[get("/")]`, `@app.on_event`). Go `init` functions,
+  an instance method, when its name appears anywhere else in the application's source or in
+  its module's configuration files (a handler passed to a router, a callback, a value in a
+  table, a handler named in `template.yaml` or a Spring XML file), or when a decorator,
+  attribute or annotation other than a test marker sits on it (`#[get("/")]`,
+  `@app.on_event`). Go `init` functions,
   Java static initializers and module bodies stay roots. Test code nothing calls is no longer
   a root in a module with an entry point. The `root_kind` values are unchanged.

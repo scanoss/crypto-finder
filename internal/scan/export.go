@@ -4033,6 +4033,7 @@ func (ctx *exportBuildContext) sharedTracer() *callgraph.Tracer {
 	if ctx.tracer == nil {
 		ctx.tracer = callgraph.NewTracer(ctx.graph, ctx.packageSeparator)
 		ctx.tracer.SetModuleFunc(ctx.traceModule)
+		ctx.tracer.SetProjectRoot(ctx.projectRoot)
 	}
 	return ctx.tracer
 }
