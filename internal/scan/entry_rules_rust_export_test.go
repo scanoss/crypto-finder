@@ -87,4 +87,11 @@ func TestExportCallGraph_RustRocketEntryPoints(t *testing.T) {
 		{id: "rocket-unmounted", file: "src/routes.rs", needle: `b"rocket-unmounted"`, reachability: graphfrag.ReachabilityUnreachable},
 	}
 	checkEntryRules(t, entryRulesFixture(t, "rust_rocket", "rust", "rust", callgraph.NewRustParser(), cases), cases)
+
+	// A package with only src/bin binaries, one file and one directory.
+	bins := []entryRuleCase{
+		{id: "bins-server", file: "src/bin/server.rs", needle: `b"bins-only-server"`, reachability: reachable, rootKind: framework, first: "index"},
+		{id: "bins-gateway", file: "src/bin/gateway/routes.rs", needle: `b"bins-only-gateway"`, reachability: reachable, rootKind: framework, first: "health"},
+	}
+	checkEntryRules(t, entryRulesFixture(t, "rust_rocket_bins", "rust", "rust", callgraph.NewRustParser(), bins), bins)
 }

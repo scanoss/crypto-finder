@@ -358,14 +358,20 @@ func (p *RustParser) crateMacroUseCrates(filePath string) []string {
 	return crates
 }
 
-// rustMacroUseRoots lists the crate root files that may compile filePath.
+// rustMacroUseRoots lists the crate root files that may compile filePath:
+// the library and main roots of the nearest package, under src/ or at the
+// package root, and the src/bin root the file sits under. A package may have
+// only binaries under src/bin.
 func rustMacroUseRoots(filePath string) []string {
-	rootFile := rustCrateRootFile(filePath)
-	if rootFile == "" {
+	pkgDir := rustPackageDir(filePath)
+	if pkgDir == "" {
 		return nil
 	}
-	dir := filepath.Dir(rootFile)
-	candidates := []string{filepath.Join(dir, "lib.rs"), filepath.Join(dir, "main.rs")}
+	dir := filepath.Join(pkgDir, "src")
+	candidates := []string{
+		filepath.Join(dir, "lib.rs"), filepath.Join(dir, "main.rs"),
+		filepath.Join(pkgDir, "lib.rs"), filepath.Join(pkgDir, "main.rs"),
+	}
 	if rel, err := filepath.Rel(filepath.Join(dir, "bin"), filePath); err == nil && !strings.HasPrefix(rel, "..") {
 		if first, _, nested := strings.Cut(filepath.ToSlash(rel), "/"); nested {
 			candidates = append(candidates, filepath.Join(dir, "bin", first, "main.rs"))
@@ -380,6 +386,23 @@ func rustMacroUseRoots(filePath string) []string {
 		}
 	}
 	return roots
+}
+
+// rustPackageDir returns the directory of the nearest Cargo.toml above
+// filePath, or "".
+func rustPackageDir(filePath string) string {
+	dir := filepath.Dir(filePath)
+	for depth := 0; depth < 12 && dir != "" && dir != string(filepath.Separator); depth++ {
+		if _, err := os.Stat(filepath.Join(dir, "Cargo.toml")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
 }
 
 func (p *RustParser) readCrateMacroUseCrates(rootFile string) []string {
