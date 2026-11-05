@@ -196,3 +196,28 @@ func TestTailForFailure_KeepsTheEnd(t *testing.T) {
 		t.Fatalf("tailForFailure = %q, want abc", got)
 	}
 }
+
+// `npm install --no-save` accepts a lockfile out of sync with package.json and
+// installs another version without rewriting it. The scan fails, as `npm ci`
+// does, instead of reporting findings under the lockfile's version.
+func TestNpmInstall_FailsWhenTheInstalledVersionIsNotTheLockfiles(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		npmManifest:                       `{"name":"fixture","version":"1.0.0","dependencies":{"ms":"^3"}}`,
+		npmLockfile:                       msLockfile,
+		"node_modules/other/package.json": `{"name":"other","version":"1.0.0"}`,
+	})
+	npm, _ := fakeNpm(t, `mkdir -p node_modules/ms && echo '{"name":"ms","version":"3.0.0"}' > node_modules/ms/package.json
+`)
+
+	_, err := npmResolverWith(npm, WithNpmInstall()).Resolve(context.Background(), root)
+	if err == nil {
+		t.Fatal("Resolve succeeded with ms 3.0.0 on disk and 2.1.3 in the lockfile")
+	}
+	var fe *failure.Error
+	if !errors.As(err, &fe) || fe.Code != failure.CodeDependencyResolutionFailed {
+		t.Fatalf("err = %v, want a %s failure", err, failure.CodeDependencyResolutionFailed)
+	}
+	if !strings.Contains(err.Error(), "ms 3.0.0 installed, 2.1.3 in package-lock.json") {
+		t.Fatalf("err = %v, want it to name ms and both versions", err)
+	}
+}

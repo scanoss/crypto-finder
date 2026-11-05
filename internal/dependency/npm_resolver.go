@@ -164,7 +164,42 @@ func (r *NpmResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	if err := r.npmInstall(ctx, targetDir); err != nil {
 		return nil, err
 	}
-	return r.resolveTree(targetDir)
+	result, err = r.resolveTree(targetDir)
+	if err != nil {
+		return nil, err
+	}
+	return result, installedVersionsMatchLockfile(targetDir, result)
+}
+
+// installedVersionsMatchLockfile fails when an installed package's version is
+// not the one package-lock.json records. `npm install --no-save` accepts a
+// lockfile out of sync with package.json and installs what package.json asks
+// for without rewriting the lockfile; the findings would then be reported
+// under a version that is not on disk. `npm ci` refuses such a lockfile, and
+// this makes the install over an existing node_modules refuse it as well.
+func installedVersionsMatchLockfile(targetDir string, result *ResolveResult) error {
+	var stale []string
+	for _, dep := range result.Dependencies {
+		raw, err := os.ReadFile(filepath.Join(dep.Dir, npmManifest))
+		if err != nil {
+			continue
+		}
+		var installed struct {
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(raw, &installed) != nil || installed.Version == "" || installed.Version == dep.Version {
+			continue
+		}
+		stale = append(stale, fmt.Sprintf("%s %s installed, %s in %s", dep.Module, installed.Version, dep.Version, npmLockfile))
+	}
+	if len(stale) == 0 {
+		return nil
+	}
+	return failure.New(failure.CodeDependencyResolutionFailed, failure.StageDependency,
+		fmt.Sprintf("%s in %s is out of sync with %s (%s): run npm install to update it, then scan again",
+			npmLockfile, targetDir, npmManifest, strings.Join(npmSampleNames(stale), "; ")),
+		failure.WithDetail("target_dir", targetDir),
+	)
 }
 
 // npmInstallArgs installs what the lockfile records. Without node_modules,
