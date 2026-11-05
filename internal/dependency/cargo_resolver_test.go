@@ -271,6 +271,43 @@ func TestNewCargoResolveResult_FallsBackWhenResolveRootMissing(t *testing.T) {
 	}
 }
 
+// A crate is named in source by its library target, not its package: callers
+// of package my-core write my_core::f, and `[lib] name` overrides that.
+func TestNewCargoResolveResult_ImportPathIsTheLibraryName(t *testing.T) {
+	lib := func(name string) []cargoTarget { return []cargoTarget{{Name: name, Kind: []string{"lib"}}} }
+	meta := &cargoMetadata{
+		Packages: []cargoPackage{
+			{ID: "path+file:///w/core#my-core@0.1.0", Name: "my-core", Version: "0.1.0", ManifestPath: "/w/core/Cargo.toml", Targets: lib("my_core")},
+			{ID: "path+file:///w/cli#my-cli@0.1.0", Name: "my-cli", Version: "0.1.0", ManifestPath: "/w/cli/Cargo.toml", Targets: []cargoTarget{{Name: "my-cli", Kind: []string{"bin"}}}},
+			{ID: "registry+r#aes-gcm@0.10.3", Name: "aes-gcm", Version: "0.10.3", ManifestPath: "/r/aes-gcm/Cargo.toml", Targets: lib("aes_gcm")},
+			{ID: "registry+r#trans-libb@1.0.0", Name: "trans-libb", Version: "1.0.0", ManifestPath: "/r/libb/Cargo.toml", Targets: []cargoTarget{{Name: "build-script-build", Kind: []string{"custom-build"}}, {Name: "libb_hashing", Kind: []string{"lib"}}}},
+			{ID: "registry+r#serde@1.0.0", Name: "serde", Version: "1.0.0", ManifestPath: "/r/serde/Cargo.toml", Targets: lib("serde")},
+			{ID: "registry+r#old-meta@1.0.0", Name: "old-meta", Version: "1.0.0", ManifestPath: "/r/old/Cargo.toml"},
+		},
+		WorkspaceMembers: []string{"path+file:///w/core#my-core@0.1.0", "path+file:///w/cli#my-cli@0.1.0"},
+	}
+
+	result := newCargoResolveResult(meta)
+
+	members := map[string]string{}
+	for _, m := range result.WorkspaceMembers {
+		members[m.Name] = m.ImportPath
+	}
+	if len(members) != 2 || members["my-core"] != "my_core" || members["my-cli"] != "" {
+		t.Fatalf("member import paths = %v, want my-core: my_core and binary-only my-cli: none", members)
+	}
+	deps := map[string]string{}
+	for _, d := range result.Dependencies {
+		deps[d.Module] = d.ImportPath
+	}
+	want := map[string]string{"aes-gcm": "aes_gcm", "trans-libb": "libb_hashing", "serde": "", "old-meta": "old_meta"}
+	for module, importPath := range want {
+		if got, ok := deps[module]; !ok || got != importPath {
+			t.Errorf("dependency %s ImportPath = %q (listed %v), want %q", module, got, ok, importPath)
+		}
+	}
+}
+
 func TestCargoResolver_CanResolve(t *testing.T) {
 	t.Parallel()
 

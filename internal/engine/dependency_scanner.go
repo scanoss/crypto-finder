@@ -1112,7 +1112,7 @@ func (ds *DependencyScanner) collectPackageSets(
 			memberDirs = append(memberDirs, member.Dir)
 			sets.graphPackages = append(sets.graphPackages, callgraph.PackageDir{
 				Dir:        member.Dir,
-				ImportPath: member.Name,
+				ImportPath: member.SourceNamespace(),
 			})
 		}
 		// The root itself carries source in some ecosystems. A Cargo workspace

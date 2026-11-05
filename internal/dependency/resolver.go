@@ -62,8 +62,20 @@ func (d Ref) Key() string {
 type WorkspaceMember struct {
 	// Name is the module/crate name (e.g., "rustls", "rustls-webpki")
 	Name string
+	// ImportPath is the source namespace when it differs from Name: a Cargo
+	// member's library name (my_core for package my-core).
+	ImportPath string
 	// Dir is the absolute filesystem path to the member's source root
 	Dir string
+}
+
+// SourceNamespace is the name the member's code is reached by in source:
+// ImportPath, or Name when that is empty.
+func (m WorkspaceMember) SourceNamespace() string {
+	if m.ImportPath != "" {
+		return m.ImportPath
+	}
+	return m.Name
 }
 
 // ResolveResult holds the complete dependency resolution output.

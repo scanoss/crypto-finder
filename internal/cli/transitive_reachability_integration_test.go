@@ -138,6 +138,20 @@ func TestTransitiveReachability(t *testing.T) {
 			},
 		},
 		{
+			// The rust case with packages source cannot spell: trans-liba is
+			// trans_liba in a caller, and trans-libb sets [lib] name, so
+			// callers write libb_hashing.
+			language: "rust", fixture: "rust_dashed", tools: []string{"cargo"},
+			env:  cargoWithIsolatedHome,
+			liba: "trans-liba", libb: "trans-libb",
+			findings: []transitiveFinding{
+				{module: appModule, file: "main.rs", line: 4, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule}},
+				{module: appModule, file: "main.rs", line: 9, reachability: graphfrag.ReachabilityUnreachable},
+				{module: "trans-libb", file: "lib.rs", line: 8, reachability: graphfrag.ReachabilityReachable, chain: []string{appModule, "trans-liba", "trans-libb"}},
+				{module: "trans-libb", file: "lib.rs", line: 13, reachability: graphfrag.ReachabilityUnreachable},
+			},
+		},
+		{
 			// Maven downloads its plugins even though liba and libb are
 			// installed from the fixture, into a local repository of the
 			// test's own that the scan reaches through MAVEN_OPTS. Each

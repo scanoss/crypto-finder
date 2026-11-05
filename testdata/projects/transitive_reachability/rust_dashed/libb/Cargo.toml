@@ -1,0 +1,10 @@
+[package]
+name = "trans-libb"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "libb_hashing"
+
+[dependencies]
+transhash = { path = "../hash" }
