@@ -4,6 +4,8 @@ build
 dist
 target
 bin/
+# Rust fixtures keep binary targets under src/bin.
+!**/testdata/**/src/bin/
 *results*.json
 coverage.out
 coverage.html
