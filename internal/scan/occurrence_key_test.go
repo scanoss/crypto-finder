@@ -5,6 +5,7 @@ package scan
 
 import (
 	"regexp"
+	"slices"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -266,5 +267,119 @@ func TestAssignOccurrenceKeys_NonCollidingKeysArePinned(t *testing.T) {
 	AssignOccurrenceKeys(single)
 	if got, want := single.Report.Findings[0].CryptographicAssets[0].OccurrenceKey, "v1:8c9eb83dcd4f3cb7"; got != want {
 		t.Errorf("single call occurrence_key = %q, want pinned %q", got, want)
+	}
+}
+
+// misanchoredTernaryResult is the ternary of ternaryStatementResult when the
+// call graph cannot place its matches: the report's line holds one unrelated
+// call, as when a published dependency report was produced from another
+// revision of the source. Both matches of the rule fall back to that call.
+// The protocol argument of the first call, matched by another rule, sits
+// inside it.
+func misanchoredTernaryResult() *engine.DepScanResult {
+	const file = "/workspace/HttpsURLConnectionFactory.java"
+	rule := []entities.RuleInfo{{ID: "java.jca.protocol.tls.sslcontext"}}
+	return &engine.DepScanResult{
+		RootModule:  "com.example:app",
+		ProjectRoot: "/workspace",
+		CallGraph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+			"com.example.Factory.decorate#1": {
+				ID: callgraph.FunctionID{Package: "com.example", Type: "Factory", Name: "decorate#1"}, FilePath: file, StartLine: 120, EndLine: 170,
+				Calls: []callgraph.FunctionCall{
+					{FilePath: file, Line: 160, StartCol: 27, EndCol: 59, ASTKind: "method_invocation", NamedASTPath: "block[0]/if_statement[0]/block[0]/expression_statement[7]/method_invocation[0]"},
+				},
+			},
+		}},
+		Report: &entities.InterimReport{Findings: []entities.Finding{{
+			FilePath: file,
+			CryptographicAssets: []entities.CryptographicAsset{
+				{StartLine: 160, EndLine: 160, StartCol: 49, EndCol: 81, Rules: rule},
+				{StartLine: 160, EndLine: 160, StartCol: 72, EndCol: 80, Rules: []entities.RuleInfo{{ID: "java.jca.protocol.tls.protocol-version"}}},
+				{StartLine: 160, EndLine: 161, StartCol: 84, EndCol: 49, Rules: rule},
+			},
+		}}},
+	}
+}
+
+func TestAssignOccurrenceKeys_TwoMatchesOfOneRuleOnOneAnchorGetDistinctKeys(t *testing.T) {
+	result := misanchoredTernaryResult()
+	engine.AssignFindingIDs(result.Report)
+	AssignOccurrenceKeys(result)
+
+	assets := result.Report.Findings[0].CryptographicAssets
+	first, argument, second := assets[0], assets[1], assets[2]
+	if first.OccurrenceKey == "" || second.OccurrenceKey == "" {
+		t.Fatalf("keys = %q, %q; want both set", first.OccurrenceKey, second.OccurrenceKey)
+	}
+	if first.OccurrenceKey == second.OccurrenceKey {
+		t.Fatalf("both calls share occurrence_key %q", first.OccurrenceKey)
+	}
+	if second.OccurrenceKey != first.OccurrenceKey+"-2" {
+		t.Errorf("second call occurrence_key = %q, want %q", second.OccurrenceKey, first.OccurrenceKey+"-2")
+	}
+	if first.FindingID == second.FindingID {
+		t.Errorf("both calls share finding_id %q", first.FindingID)
+	}
+	if argument.OccurrenceKey != first.OccurrenceKey {
+		t.Errorf("argument occurrence_key = %q, want the key of the call that holds it, %q", argument.OccurrenceKey, first.OccurrenceKey)
+	}
+
+	// The first call keeps the key it had before the second was told apart:
+	// the key it gets when it is the only match on the anchor.
+	alone := misanchoredTernaryResult()
+	alone.Report.Findings[0].CryptographicAssets = alone.Report.Findings[0].CryptographicAssets[:2]
+	AssignOccurrenceKeys(alone)
+	if got, want := first.OccurrenceKey, alone.Report.Findings[0].CryptographicAssets[0].OccurrenceKey; got != want {
+		t.Errorf("first call occurrence_key = %q, want %q, the key it has alone", got, want)
+	}
+	if got, want := first.OccurrenceKey, "v1:1555d5930ea969aa"; got != want {
+		t.Errorf("first call occurrence_key = %q, want pinned %q", got, want)
+	}
+}
+
+// An asset of another rule that sits inside the second call belongs to it, not
+// to the first call it happens not to conflict with (review on #861: a
+// provider-argument match inside getInstance(protocol, provider), on the line
+// the fallback anchors).
+func TestAssignOccurrenceKeys_AnotherRulesMatchJoinsTheCallThatHoldsIt(t *testing.T) {
+	result := misanchoredTernaryResult()
+	f := &result.Report.Findings[0]
+	f.CryptographicAssets = append(f.CryptographicAssets, entities.CryptographicAsset{
+		StartLine: 160, EndLine: 160, StartCol: 90, EndCol: 100,
+		Rules: []entities.RuleInfo{{ID: "java.jca.protocol.tls.provider"}},
+	})
+	AssignOccurrenceKeys(result)
+
+	assets := f.CryptographicAssets
+	first, argument, second, provider := assets[0], assets[1], assets[2], assets[3]
+	if provider.OccurrenceKey != second.OccurrenceKey {
+		t.Errorf("provider occurrence_key = %q, want the second call's %q", provider.OccurrenceKey, second.OccurrenceKey)
+	}
+	if argument.OccurrenceKey != first.OccurrenceKey {
+		t.Errorf("argument occurrence_key = %q, want the first call's %q", argument.OccurrenceKey, first.OccurrenceKey)
+	}
+}
+
+// The first call in source order keeps the base key whatever order the report
+// lists the matches in, and a second run gives the same keys.
+func TestAssignOccurrenceKeys_TwoMatchesOfOneRuleOnOneAnchorAreDeterministic(t *testing.T) {
+	forward := misanchoredTernaryResult()
+	AssignOccurrenceKeys(forward)
+	again := misanchoredTernaryResult()
+	AssignOccurrenceKeys(again)
+	reversed := misanchoredTernaryResult()
+	slices.Reverse(reversed.Report.Findings[0].CryptographicAssets)
+	AssignOccurrenceKeys(reversed)
+
+	want := forward.Report.Findings[0].CryptographicAssets
+	got := again.Report.Findings[0].CryptographicAssets
+	rev := reversed.Report.Findings[0].CryptographicAssets
+	for i := range want {
+		if got[i].OccurrenceKey != want[i].OccurrenceKey {
+			t.Errorf("asset %d key differs between runs: %q vs %q", i, got[i].OccurrenceKey, want[i].OccurrenceKey)
+		}
+		if r := rev[len(rev)-1-i]; r.OccurrenceKey != want[i].OccurrenceKey {
+			t.Errorf("asset %d key in a reversed report = %q, want %q", i, r.OccurrenceKey, want[i].OccurrenceKey)
+		}
 	}
 }
