@@ -34,7 +34,8 @@ const (
 	// RootKindNoCallers is an application function that no application code
 	// calls and that is not recognized as an entry point. On a scan without
 	// user code (a library scanned alone) it is a graph root: the library's
-	// public surface.
+	// public surface. In a module with an entry point most such functions are
+	// dead code, not roots (entry_scope.go).
 	RootKindNoCallers RootKind = "no_callers"
 	// RootKindDepthLimit is an application frame where the walk stopped
 	// because of the depth limit, with callers it did not follow. The chain is

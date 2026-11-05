@@ -24,6 +24,9 @@ type Tracer struct {
 	// moduleOf names the module a function key belongs to, "" for first-party
 	// code. Optional: see SetModuleFunc.
 	moduleOf func(key string) string
+	// roots decides which application functions nothing calls are chain
+	// roots (entry_scope.go). Shared with forks.
+	roots *rootScopeCache
 }
 
 // SetModuleFunc lets chain selection tell library paths apart. With it set,
@@ -42,13 +45,13 @@ type traceBFSItem struct {
 // then on, and classifies modules with moduleOf, which must be safe for
 // concurrent use and answer as t's module function does.
 func (t *Tracer) Fork(moduleOf func(key string) string) *Tracer {
-	return &Tracer{graph: t.graph, pkgSep: t.pkgSep, edgeIdx: t.edges(), moduleOf: moduleOf}
+	return &Tracer{graph: t.graph, pkgSep: t.pkgSep, edgeIdx: t.edges(), moduleOf: moduleOf, roots: t.roots}
 }
 
 // NewTracer creates a new backward tracer for the given call graph.
 // pkgSep is the package path separator ("/" for Go, "." for Java).
 func NewTracer(graph *CallGraph, pkgSep string) *Tracer {
-	return &Tracer{graph: graph, pkgSep: pkgSep}
+	return &Tracer{graph: graph, pkgSep: pkgSep, roots: &rootScopeCache{}}
 }
 
 // TraceBackLimited behaves like TraceBack but can stop early after collecting

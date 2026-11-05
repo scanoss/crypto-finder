@@ -48,7 +48,8 @@ func nodeLess(a, b string) bool { return a < b }
 // first application frame instead hides which entry point runs the crypto.
 // Application functions therefore follow only their application callers
 // (a library calling back into the application does not make the application
-// function any less of a root), and one with none is a terminal. Library code
+// function any less of a root), and one with none is a terminal unless its
+// module has an entry point that never reaches it (uncalledIsRoot). Library code
 // follows every caller, and a library function nothing calls is a dead end.
 // The target follows every caller either way: crypto in an application
 // callback is reached through the library that calls it back.
@@ -87,7 +88,9 @@ func (t *Tracer) walkOptions(targetKey string, userPackages map[string]bool, max
 		opts.RootIsTerminal = true
 		return opts
 	}
-	opts.RootTerminal = func(key string) bool { return t.isUserFunction(key, userPackages) }
+	opts.RootTerminal = func(key string) bool {
+		return t.isUserFunction(key, userPackages) && t.uncalledIsRoot(key, userPackages)
+	}
 	return opts
 }
 
@@ -217,7 +220,7 @@ func (t *Tracer) rootUncalledCycles(w *reverseWalk, targetKey string, userPackag
 			continue
 		}
 		for _, member := range members {
-			if t.isUserFunction(member, userPackages) {
+			if t.isUserFunction(member, userPackages) && t.uncalledIsRoot(member, userPackages) {
 				w.reach.Terminal[member] = true
 				break
 			}

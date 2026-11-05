@@ -1,7 +1,7 @@
 import express from 'express';
 import { createHash } from 'crypto';
 import { exportHandler } from './routes/export';
-import { signSession, warmCache } from './security/tokens';
+import { fetchLegacy, signSession, warmCache } from './security/tokens';
 
 const app = express();
 
@@ -17,4 +17,5 @@ app.get('/export', exportHandler);
 
 app.listen(8080, () => {
   warmCache();
+  fetchLegacy();
 });
