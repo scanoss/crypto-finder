@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 
 	packageurl "github.com/package-url/packageurl-go"
 	"github.com/rs/zerolog/log"
@@ -152,7 +153,31 @@ func newSharedAdjacency(graphs []resolve.Graph, result *ResolveResult, ecosystem
 			adjacency.versions[ref.Module]++
 		}
 	}
+	if ecosystem == "go" && result != nil {
+		adjacency.keepImportEdges(result.Graph)
+	}
 	return adjacency
+}
+
+// keepImportEdges drops each edge from a module imports lists to a module its
+// packages do not import. The shared Go graph is the module requirement
+// graph, where a go.mod lists every module its build needs, // indirect or
+// not: liba requires libc when only libb, which liba imports, imports libc,
+// and the path to libc would skip libb. imports is the Go resolver's module
+// import graph; a module it does not list keeps its edges.
+func (s *sharedAdjacency) keepImportEdges(imports map[string][]string) {
+	for from, targets := range s.graph {
+		if from == applicationNode {
+			continue
+		}
+		imported, listed := imports[s.refs[from].Module]
+		if !listed {
+			continue
+		}
+		s.graph[from] = slices.DeleteFunc(targets, func(to string) bool {
+			return !slices.Contains(imported, s.refs[to].Module)
+		})
+	}
 }
 
 func (s *sharedAdjacency) addRoot(root *resolve.Root, keys map[resolve.NodeID]string) {
