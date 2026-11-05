@@ -186,7 +186,10 @@ func TestExportCallGraph_NodeEntryPoints(t *testing.T) {
 		// app.listen(8080, () => warmCache()) at the top of the package entry
 		{id: "listen-callback", file: "src/security/tokens.ts", needle: `createHash('sha384')`, reachability: reachable, rootKind: callgraph.RootKindMain, first: "server.<module>"},
 		{id: "exported-uncalled", file: "src/security/tokens.ts", needle: `createHash('md4')`, reachability: graphfrag.ReachabilityUnreachable},
-		{id: "promise-executor", file: "src/security/tokens.ts", needle: `createHash('ripemd160')`, reachability: reachable, rootKind: callgraph.RootKindNoCallers, first: "tokens.fetchLegacy"},
+		// app.listen(8080, () => fetchLegacy()): fetchLegacy creates the
+		// promise whose executor holds the crypto. Nothing calling
+		// fetchLegacy would make it dead code: the package has entry points.
+		{id: "promise-executor", file: "src/security/tokens.ts", needle: `createHash('ripemd160')`, reachability: reachable, rootKind: callgraph.RootKindMain, first: "server.<module>"},
 		// AccountPage renders <Statements/>, which calls avatarUrl
 		{id: "jsx", file: "src/lib/avatar.ts", needle: `createHash('md5')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "AccountPage.AccountPage"},
 		{id: "next-route", file: "src/app/api/keys/route.ts", needle: `createHash('sha224')`, reachability: reachable, rootKind: callgraph.RootKindFrameworkEntry, first: "route.POST"},

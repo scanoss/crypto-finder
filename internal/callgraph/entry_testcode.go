@@ -33,8 +33,8 @@ var testAnnotations = map[string]bool{
 
 // isTestDeclaration reports whether decl is test code: a test annotation, or
 // a file in a test source location. A test is never an entry point, so a test
-// method nothing calls stays a no_callers root and a test doing crypto inline
-// stays unreachable. Test sources are only in the graph under --include-tests.
+// method nothing calls is a no_callers root only in a module without an entry
+// point (entry_scope.go), and a test doing crypto inline stays unreachable. Test sources are only in the graph under --include-tests.
 func isTestDeclaration(decl *FunctionDecl) bool {
 	for _, annotation := range decl.Annotations {
 		if testAnnotations[annotation] {
