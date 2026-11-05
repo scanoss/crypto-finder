@@ -115,7 +115,11 @@ const SchemaVersion = "graph-fragment-1.15"
 // [lib] name), so calls into crates with a dashed package name are edges. A
 // structural graph cached under graph-algo-15 keys them my-lib and lacks
 // those edges.
-const GraphAlgoVersion = "graph-algo-16"
+// graph-algo-17: Rust functions the entry-point catalog recognizes (actix-web,
+// axum, Rocket, warp, tonic, poem and Lambda handlers) carry entry_kind
+// framework_entry. A Rust structural graph cached under graph-algo-16 has
+// none for them.
+const GraphAlgoVersion = "graph-algo-17"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
