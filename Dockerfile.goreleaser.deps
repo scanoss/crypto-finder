@@ -27,10 +27,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates=20250419 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Semgrep 1.145.0
-# semgrep's mcp dependency imports a private pydantic API removed in 2.14.
-RUN pip install --no-cache-dir semgrep==1.145.0 "pydantic<2.14"
-
 # Create the non-root runtime user before anything is installed under its
 # home. Each tool below lands in its final location and is chowned in the same
 # layer that writes it: a later `mv` or `chown -R` would store every file a
@@ -144,7 +140,7 @@ LABEL org.opencontainers.image.licenses="GPL-2.0"
 LABEL org.opencontainers.image.version="${VERSION}"
 
 # Verify installations
-RUN crypto-finder version && semgrep --version && opengrep --version && \
+RUN crypto-finder version && opengrep --version && \
     go version && mvn --version && cargo --version && pip --version
 
 # Run as non-root user at runtime
