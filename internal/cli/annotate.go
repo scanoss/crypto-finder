@@ -57,6 +57,7 @@ var (
 	annotateRulesetVersion   string
 	annotateAPIKey           string
 	annotateAPIURL           string
+	annotateAllowHTTP        bool
 	annotateLanguages        []string
 	annotateIncludeTests     bool
 	annotateNoDefaultExclude bool
@@ -105,6 +106,7 @@ func init() {
 		"Remote ruleset version to fetch, as for scan: latest or a release version such as v1.39.0")
 	annotateCmd.Flags().StringVar(&annotateAPIKey, "api-key", "", "SCANOSS API key")
 	annotateCmd.Flags().StringVar(&annotateAPIURL, "api-url", "", "SCANOSS API base URL")
+	annotateCmd.Flags().BoolVar(&annotateAllowHTTP, allowHTTPFlag, false, allowHTTPUsage)
 	annotateCmd.Flags().StringSliceVar(&annotateLanguages, "languages", []string{}, "Override language detection (comma-separated)")
 	annotateCmd.Flags().BoolVar(&annotateIncludeTests, "include-tests", false, "Include test sources in detection")
 	annotateCmd.Flags().BoolVar(&annotateNoDefaultExclude, "no-default-exclusions", false, "Disable the built-in default exclusions")
@@ -248,7 +250,7 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 	}
 
 	cfg := config.GetInstance()
-	if err := cfg.Initialize(config.InitOptions{APIKey: annotateAPIKey, APIURL: annotateAPIURL}); err != nil {
+	if err := cfg.Initialize(config.InitOptions{APIKey: annotateAPIKey, APIURL: annotateAPIURL, AllowHTTP: annotateAllowHTTP}); err != nil {
 		return nil, failure.WrapUnknown(err, failure.CodeConfigInitializationFailed, failure.StageConfig, "failed to initialize config")
 	}
 
@@ -289,7 +291,10 @@ func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config, rulesetV
 	ruleSources := make([]rules.RuleSource, 0)
 
 	if !annotateNoRemoteRules {
-		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
+		if err := checkAPIURL(cfg.GetAPIURL(), cfg.GetAllowHTTP()); err != nil {
+			return nil, err
+		}
+		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey(), api.WithAllowHTTP(cfg.GetAllowHTTP()))
 		cacheManager, err := cache.NewManager(apiClient)
 		if err != nil {
 			return nil, failure.WrapUnknown(err, failure.CodeCacheInitializationFailed, failure.StageConfig, "failed to create cache manager")

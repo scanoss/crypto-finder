@@ -25,8 +25,9 @@ import (
 )
 
 var (
-	configAPIKey string
-	configAPIURL string
+	configAPIKey    string
+	configAPIURL    string
+	configAllowHTTP bool
 )
 
 var configureCmd = &cobra.Command{
@@ -42,18 +43,23 @@ var configureCmd = &cobra.Command{
 	  crypto-finder configure --api-url https://api.scanoss.com
 
 	  # Configure multiple values
-	  crypto-finder configure --api-key YOUR_API_KEY --api-url https://api.scanoss.com`,
+	  crypto-finder configure --api-key YOUR_API_KEY --api-url https://api.scanoss.com
+
+	  # Configure an on-premises API that only serves plain HTTP
+	  crypto-finder configure --api-url http://scanoss.internal:5443 --allow-http`,
 	RunE: runConfigure,
 }
 
 func init() {
 	configureCmd.Flags().StringVar(&configAPIKey, "api-key", "", "SCANOSS API key")
 	configureCmd.Flags().StringVar(&configAPIURL, "api-url", "", "SCANOSS API base URL")
+	configureCmd.Flags().BoolVar(&configAllowHTTP, allowHTTPFlag, false,
+		"Allow and save a plain-HTTP --api-url on a remote host (sends the API key unencrypted)")
 }
 
 func runConfigure(_ *cobra.Command, _ []string) error {
-	if configAPIKey == "" && configAPIURL == "" {
-		return fmt.Errorf("at least one of --api-key or --api-url must be provided")
+	if configAPIKey == "" && configAPIURL == "" && !configAllowHTTP {
+		return fmt.Errorf("at least one of --api-key, --api-url or --allow-http must be provided")
 	}
 
 	cfg := config.GetInstance()
@@ -62,7 +68,26 @@ func runConfigure(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to initialize config: %w", err)
 	}
 
-	// Update only the provided values using setters
+	if configAPIURL != "" {
+		if err := checkAPIURL(configAPIURL, configAllowHTTP || cfg.GetAllowHTTP()); err != nil {
+			return err
+		}
+	}
+
+	if err := saveConfigure(cfg); err != nil {
+		return err
+	}
+	printConfigure()
+	return nil
+}
+
+// saveConfigure persists only the values given on the command line.
+func saveConfigure(cfg *config.Config) error {
+	if configAllowHTTP {
+		if err := cfg.SetAllowHTTP(true); err != nil {
+			return fmt.Errorf("failed to set allow_http: %w", err)
+		}
+	}
 	if configAPIKey != "" {
 		if err := cfg.SetAPIKey(configAPIKey); err != nil {
 			return fmt.Errorf("failed to set API key: %w", err)
@@ -73,15 +98,18 @@ func runConfigure(_ *cobra.Command, _ []string) error {
 			return fmt.Errorf("failed to set API URL: %w", err)
 		}
 	}
+	return nil
+}
 
+func printConfigure() {
 	fmt.Println("Configuration updated successfully!")
-
 	if configAPIKey != "" {
 		fmt.Println("✓ API key configured")
 	}
 	if configAPIURL != "" {
 		fmt.Printf("✓ API URL set to: %s\n", configAPIURL)
 	}
-
-	return nil
+	if configAllowHTTP {
+		fmt.Println("✓ Plain-HTTP API URLs allowed")
+	}
 }

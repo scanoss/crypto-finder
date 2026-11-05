@@ -92,6 +92,7 @@ var (
 	scanNoCache                  bool
 	scanAPIKey                   string
 	scanAPIURL                   string
+	scanAllowHTTP                bool
 	scanStrict                   bool
 	scanMaxStaleAge              string
 	scanRulesetVersion           string
@@ -177,6 +178,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanNoCache, "no-cache", false, "Force fresh download of remote rules, bypass cache")
 	scanCmd.Flags().StringVar(&scanAPIKey, "api-key", "", "SCANOSS API key")
 	scanCmd.Flags().StringVar(&scanAPIURL, "api-url", "", "SCANOSS API base URL")
+	scanCmd.Flags().BoolVar(&scanAllowHTTP, allowHTTPFlag, false, allowHTTPUsage)
 	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "Fail if cache expired and API unreachable (no stale cache fallback)")
 	scanCmd.Flags().StringVar(&scanMaxStaleAge, "max-stale-age", "30d", "Maximum age for stale cache fallback (e.g., 30d, 720h, 2w, max: 90d)")
 	scanCmd.Flags().StringVar(&scanRulesetVersion, rulesetVersionFlag, defaultRulesetVersion,
@@ -868,6 +870,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	if err := cfg.Initialize(config.InitOptions{
 		APIKey:               scanAPIKey,
 		APIURL:               scanAPIURL,
+		AllowHTTP:            scanAllowHTTP,
 		FindingsCacheBackend: scanFindingsCache,
 	}); err != nil {
 		return failure.WrapUnknown(
@@ -876,6 +879,12 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			failure.StageConfig,
 			"failed to initialize config",
 		)
+	}
+	// The API serves the remote ruleset and, with a key, dependency findings.
+	if !scanNoRemoteRules || (cfg.GetAPIKey() != "" && !scanNoDependencyFindingsAPI) {
+		if err := checkAPIURL(cfg.GetAPIURL(), cfg.GetAllowHTTP()); err != nil {
+			return err
+		}
 	}
 	var (
 		javaRuntime         javaruntime.Config
@@ -910,7 +919,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			Bool("no-cache", scanNoCache).
 			Msg("Remote rules enabled")
 
-		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey())
+		apiClient := api.NewClient(cfg.GetAPIURL(), cfg.GetAPIKey(), api.WithAllowHTTP(cfg.GetAllowHTTP()))
 		cacheManager, err := cache.NewManager(apiClient)
 		if err != nil {
 			return failure.WrapUnknown(
@@ -1130,7 +1139,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		if ecosystem != "" {
 			depRegistry := newDependencyRegistry(scanIncludeDevDependencies)
 			var depScannerOptions []engine.DependencyScannerOption
-			if source := newDependencyFindingsSource(cfg.GetAPIURL(), cfg.GetAPIKey(), scanNoDependencyFindingsAPI); source != nil {
+			if source := newDependencyFindingsSource(cfg.GetAPIURL(), cfg.GetAPIKey(), cfg.GetAllowHTTP(), scanNoDependencyFindingsAPI); source != nil {
 				depScannerOptions = append(depScannerOptions, engine.WithDependencyFindingsSource(source))
 			}
 
@@ -1643,11 +1652,11 @@ func newFindingsCache(ctx context.Context, cfg *config.Config) (engine.FindingsC
 // newDependencyFindingsSource returns the SCANOSS API as the source of
 // published dependency findings, or nil when no API key is configured or
 // disabled is set.
-func newDependencyFindingsSource(apiURL, apiKey string, disabled bool) engine.DependencyFindingsSource {
+func newDependencyFindingsSource(apiURL, apiKey string, allowHTTP, disabled bool) engine.DependencyFindingsSource {
 	if disabled || apiKey == "" {
 		return nil
 	}
-	return engine.NewAPIFindingsSource(api.NewClient(apiURL, apiKey))
+	return engine.NewAPIFindingsSource(api.NewClient(apiURL, apiKey, api.WithAllowHTTP(allowHTTP)))
 }
 
 // newDependencyRegistry registers the resolver of every supported ecosystem.

@@ -19,6 +19,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -49,6 +50,7 @@ func setupTest(t *testing.T) func() {
 	// Clear environment variables
 	os.Unsetenv("SCANOSS_API_KEY")
 	os.Unsetenv("SCANOSS_API_URL")
+	os.Unsetenv("SCANOSS_ALLOW_HTTP")
 	os.Unsetenv("SCANOSS_JAVA_JDK_MAJOR")
 	os.Unsetenv("SCANOSS_JAVA_JDK_HOMES")
 
@@ -679,5 +681,59 @@ func TestEnsureConfigPermissions_StatError(t *testing.T) {
 
 	if err := cfg.ensureConfigPermissions(); err == nil {
 		t.Fatal("Expected error from stat failure due to symlink loop")
+	}
+}
+
+func TestInitialize_AllowHTTP(t *testing.T) {
+	cases := []struct {
+		name  string
+		env   string
+		flag  bool
+		saved bool
+		want  bool
+	}{
+		{name: "off by default", want: false},
+		{name: "env var", env: "true", want: true},
+		{name: "flag", flag: true, want: true},
+		{name: "config file", saved: true, want: true},
+		{name: "env false leaves it off", env: "false", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer setupTest(t)()
+			if tc.env != "" {
+				t.Setenv("SCANOSS_ALLOW_HTTP", tc.env)
+			}
+			if tc.saved {
+				if err := os.WriteFile(viper.ConfigFileUsed(), []byte(`{"allow_http": true}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg := GetInstance()
+			if err := cfg.Initialize(InitOptions{AllowHTTP: tc.flag}); err != nil {
+				t.Fatalf("Initialize failed: %v", err)
+			}
+			if got := cfg.GetAllowHTTP(); got != tc.want {
+				t.Errorf("GetAllowHTTP() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSetAllowHTTP_Persistence(t *testing.T) {
+	defer setupTest(t)()
+	cfg := GetInstance()
+	if err := cfg.Initialize(InitOptions{}); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if err := cfg.SetAllowHTTP(true); err != nil {
+		t.Fatalf("SetAllowHTTP failed: %v", err)
+	}
+	data, err := os.ReadFile(viper.ConfigFileUsed())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"allow_http": true`) {
+		t.Errorf("config file does not hold allow_http: %s", data)
 	}
 }

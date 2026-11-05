@@ -54,6 +54,7 @@ const (
 type Config struct {
 	apiKey               string
 	apiURL               string
+	allowHTTP            bool
 	javaJDKMajor         string
 	javaJDKHomes         map[string]string
 	findingsCacheBackend string
@@ -88,6 +89,14 @@ func (c *Config) GetAPIURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.apiURL
+}
+
+// GetAllowHTTP reports whether the API may be reached over plain HTTP on a
+// remote host (flag --allow-http, env SCANOSS_ALLOW_HTTP, config allow_http).
+func (c *Config) GetAllowHTTP() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.allowHTTP
 }
 
 // GetJavaJDKMajor returns the configured Java JDK major selector.
@@ -155,13 +164,27 @@ func (c *Config) SetAPIURL(url string) error {
 	return c.writeConfig()
 }
 
+// SetAllowHTTP updates allow_http and persists it to the config file.
+func (c *Config) SetAllowHTTP(allow bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.allowHTTP = allow
+	viper.Set("allow_http", allow)
+
+	return c.writeConfig()
+}
+
 // InitOptions groups the runtime overrides accepted by Initialize so that
 // adding new flag-driven configuration does not change the function signature
 // at every call site.
 type InitOptions struct {
 	//nolint:gosec // G117: APIKey is a runtime override supplied by the operator, not a hardcoded secret.
-	APIKey               string
-	APIURL               string
+	APIKey string
+	APIURL string
+	// AllowHTTP set to true turns on allow_http for this run. False leaves
+	// the env var and config file in charge.
+	AllowHTTP            bool
 	FindingsCacheBackend string
 }
 
@@ -169,7 +192,7 @@ type InitOptions struct {
 // Viper automatically handles priority (highest to lowest):
 //  1. Set() calls (used for CLI flags) - highest
 //  2. Environment variables (SCANOSS_API_KEY, SCANOSS_API_URL,
-//     SCANOSS_FINDINGS_CACHE_BACKEND, SCANOSS_FINDINGS_CACHE_DSN,
+//     SCANOSS_ALLOW_HTTP, SCANOSS_FINDINGS_CACHE_BACKEND, SCANOSS_FINDINGS_CACHE_DSN,
 //     SCANOSS_FINDINGS_CACHE_TABLE)
 //  3. Config file (~/.scanoss/crypto-finder/config.json)
 //  4. Defaults (SetDefault) - lowest
@@ -199,6 +222,7 @@ func (c *Config) Initialize(opts InitOptions) error {
 	c.mu.Lock()
 	c.apiKey = viper.GetString("api_key")
 	c.apiURL = viper.GetString("api_url")
+	c.allowHTTP = viper.GetBool("allow_http")
 	c.javaJDKMajor = javaJDKMajor
 	c.javaJDKHomes = javaJDKHomes
 	c.findingsCacheBackend = viper.GetString("findings_cache_backend")
@@ -242,6 +266,7 @@ func (c *Config) bindEnvVars() error {
 	envBindings := map[string]string{
 		"api_key":                "API key",
 		"api_url":                "API URL",
+		"allow_http":             "allow HTTP",
 		"java_jdk_major":         "Java JDK major",
 		"java_jdk_homes":         "Java JDK homes",
 		"findings_cache_backend": "FindingsCache backend",
@@ -271,6 +296,9 @@ func (c *Config) applyRuntimeOverrides(opts InitOptions) error {
 	}
 	if opts.APIURL != "" {
 		viper.Set("api_url", opts.APIURL)
+	}
+	if opts.AllowHTTP {
+		viper.Set("allow_http", true)
 	}
 	if opts.FindingsCacheBackend != "" {
 		viper.Set("findings_cache_backend", opts.FindingsCacheBackend)

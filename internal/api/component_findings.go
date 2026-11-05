@@ -121,6 +121,9 @@ func rebaseGoFindings(purl string, answer *ComponentFindings) bool {
 // the purl and the requirement selects the findings-only answer, without
 // reachability. InfoCode is READY only when the API served a component.
 func (c *Client) LookupComponent(ctx context.Context, purl, requirement string) (*ComponentFindings, error) {
+	if err := CheckBaseURL(c.baseURL, c.allowHTTP); err != nil {
+		return nil, err
+	}
 	payload, err := json.Marshal(componentRequest{Purl: purl, Requirement: lookupRequirement(purl, requirement)})
 	if err != nil {
 		return nil, fmt.Errorf("apiclient: encode component request: %w", err)

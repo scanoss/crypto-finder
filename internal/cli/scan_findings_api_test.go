@@ -45,13 +45,13 @@ func TestNewDependencyFindingsSource_OnlyWithAPIKeyAndNotDisabled(t *testing.T) 
 	}))
 	t.Cleanup(server.Close)
 
-	if source := newDependencyFindingsSource(server.URL, "", false); source != nil {
+	if source := newDependencyFindingsSource(server.URL, "", false, false); source != nil {
 		t.Error("a source without an API key")
 	}
-	if source := newDependencyFindingsSource(server.URL, "key", true); source != nil {
+	if source := newDependencyFindingsSource(server.URL, "key", false, true); source != nil {
 		t.Error("a source with --no-dependency-findings-api")
 	}
-	source := newDependencyFindingsSource(server.URL, "key", false)
+	source := newDependencyFindingsSource(server.URL, "key", false, false)
 	if source == nil {
 		t.Fatal("no source with an API key")
 	}
