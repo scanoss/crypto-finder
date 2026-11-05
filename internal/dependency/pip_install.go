@@ -106,6 +106,11 @@ func (m pythonManifest) inputs(projectDir string) []string {
 type pythonEnv struct {
 	python string
 	pip    []string
+	// provisioned marks an environment this resolver built. Its listing runs
+	// with -I: only the venv's own packages belong to the project. A user's
+	// environment is listed as their interpreter sees it, user site directory
+	// and PYTHONPATH included.
+	provisioned bool
 }
 
 func ownPipEnv(python string) pythonEnv {
@@ -165,13 +170,18 @@ func (r *PipResolver) provisionVenv(ctx context.Context, projectDir, ambient str
 	}
 	parent := filepath.Join(cacheRoot, "crypto-finder", "python-envs")
 	final := filepath.Join(parent, key)
-	if python := venvPythonCandidate(final); python != "" {
+	// The build backend can read the dependencies from any file, such as a
+	// setuptools dynamic file = [...] or an open() in setup.py, so the key
+	// cannot cover a project build's inputs: its environment is never reused.
+	reusable := manifest.kind != manifestProject
+	if python := venvPythonCandidate(final); reusable && python != "" {
 		log.Info().Str("root", projectDir).Str("venv", final).Msg("Reusing provisioned Python environment")
 		return ambientPipEnv(ambient, python), nil
 	}
 	if err := os.MkdirAll(parent, 0o750); err != nil {
 		return pythonEnv{}, provisionFailure(err, projectDir, "could not create "+parent)
 	}
+	sweepStaleStaging(parent, time.Now().Add(-staleStagingAge))
 	staging, err := os.MkdirTemp(parent, key+".tmp-")
 	if err != nil {
 		return pythonEnv{}, provisionFailure(err, projectDir, "could not create a staging directory in "+parent)
@@ -201,6 +211,11 @@ func (r *PipResolver) provisionVenv(ctx context.Context, projectDir, ambient str
 			Msg("Provisioned Python environment without some requirements; it is used for this scan only")
 		return env, nil
 	}
+	if !reusable {
+		log.Info().Str("root", projectDir).Str("venv", staging).Dur("duration", duration).
+			Msg("Provisioned Python environment from a project build; it is used for this scan only")
+		return env, nil
+	}
 	if err := os.Rename(staging, final); err != nil {
 		// A concurrent scan of the same manifest finished first.
 		discardStaging(staging)
@@ -214,7 +229,7 @@ func (r *PipResolver) provisionVenv(ctx context.Context, projectDir, ambient str
 }
 
 func ambientPipEnv(ambient, venvPython string) pythonEnv {
-	return pythonEnv{python: venvPython, pip: []string{ambient, "-m", "pip", "--python", venvPython}}
+	return pythonEnv{python: venvPython, pip: []string{ambient, "-m", "pip", "--python", venvPython}, provisioned: true}
 }
 
 // checkAmbientPip fails unless the ambient pip can install into another
@@ -503,13 +518,11 @@ func splitRequirementOption(line string) (option, value string) {
 	return option, rest
 }
 
-// runPython executes the interpreter python in dir (crypto-finder's own working
-// directory when empty) and returns its stdout and the tail of its stderr. An
-// install runs in the project, because pip resolves the relative paths of a
-// requirements file against it. -I keeps the working directory, and any
+// runPython executes the interpreter python in dir and returns its stdout and
+// the tail of its stderr. dir is the project, because pip resolves the relative
+// paths of a requirements file against it. -I keeps that directory, and any
 // PYTHON* variable, off sys.path, so a project module named json.py or a
-// package named email/ cannot shadow the standard library and run. Every
-// interpreter the resolver starts goes through here.
+// package named email/ cannot shadow the standard library and run.
 func (r *PipResolver) runPython(ctx context.Context, dir, python string, args ...string) ([]byte, string, error) {
 	cmd := r.execCommand(ctx, python, slices.Concat([]string{"-I"}, args)...)
 	cmd.Dir = dir
@@ -517,6 +530,58 @@ func (r *PipResolver) runPython(ctx context.Context, dir, python string, args ..
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
+	return stdout.Bytes(), tailForFailure(strings.TrimSpace(stderr.String()), failureOutputLimit), err
+}
+
+// staleStagingAge is how long an environment used for one scan only is kept.
+// The scan that built it reads its files after Resolve returns, so it cannot
+// be removed then; a later provision removes it once no scan can still be
+// using it.
+const staleStagingAge = 24 * time.Hour
+
+// sweepStaleStaging removes the single-scan environments in parent that were
+// created before cutoff.
+func sweepStaleStaging(parent string, cutoff time.Time) {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.Contains(entry.Name(), ".tmp-") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		discardStaging(filepath.Join(parent, entry.Name()))
+	}
+}
+
+// listPython runs a listing command of env. It runs in an empty directory,
+// because python -m and python -c put the working directory first on
+// sys.path: started from inside the scanned project, a top-level json.py would
+// run in its place. It adds -I only for a provisioned environment, so the
+// listing of a user's interpreter keeps their user site and PYTHONPATH.
+func (r *PipResolver) listPython(ctx context.Context, env pythonEnv, python string, args ...string) ([]byte, string, error) {
+	dir, err := os.MkdirTemp("", "crypto-finder-python-")
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() {
+		if err := os.RemoveAll(dir); err != nil {
+			log.Debug().Err(err).Str("dir", dir).Msg("Could not remove a Python listing directory")
+		}
+	}()
+	if env.provisioned {
+		return r.runPython(ctx, dir, python, args...)
+	}
+	cmd := r.execCommand(ctx, python, args...)
+	cmd.Dir = dir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
 	return stdout.Bytes(), tailForFailure(strings.TrimSpace(stderr.String()), failureOutputLimit), err
 }
 

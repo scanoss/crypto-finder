@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakePython is an ambient python3 that implements what provisioning and
@@ -469,7 +471,6 @@ func TestPipInstall_RebuildsWhenAFileTheInstallReadsChanges(t *testing.T) {
 		{"bare local path", map[string]string{requirementsFile: "./lib[extra]\n"}, "lib/setup.cfg"},
 		{"file: URL", map[string]string{requirementsFile: "file:lib#egg=lib\n", "lib/pyproject.toml": "[project]\n"}, "lib/pyproject.toml"},
 		{"static [project].dependencies", map[string]string{"pyproject.toml": "[project]\nname = \"app\"\ndependencies = [\"six\"]\n"}, "pyproject.toml"},
-		{"project build", map[string]string{"setup.cfg": "[metadata]\nname = app\n"}, "setup.py"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			isolatePipEnv(t)
@@ -499,5 +500,54 @@ func TestPipInstall_RebuildsWhenAFileTheInstallReadsChanges(t *testing.T) {
 				t.Fatalf("venv created %d times after %s changed, want it rebuilt", n, tc.changed)
 			}
 		})
+	}
+}
+
+// A project build reads its dependencies wherever the build backend looks,
+// such as a setuptools dynamic file, so no key covers its inputs: its
+// environment is rebuilt for every scan instead of reused stale.
+func TestPipInstall_ProjectBuildIsNeverReused(t *testing.T) {
+	isolatePipEnv(t)
+	fake := newFakePython(t, "24.0")
+	root := writeTree(t, map[string]string{
+		"pyproject.toml": "[project]\nname = \"app\"\ndynamic = [\"dependencies\"]\n" +
+			"[tool.setuptools.dynamic]\ndependencies = {file = [\"requirements.in\"]}\n",
+		"requirements.in": "six\n",
+	})
+	for range 2 {
+		if _, err := fake.resolver(WithPipInstall()).Resolve(context.Background(), root); err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+	}
+	if n := fake.count(t, "-m venv"); n != 2 {
+		t.Fatalf("venv created %d times over two scans of a project build, want 2", n)
+	}
+}
+
+// An environment used for one scan only stays until a later provision finds it
+// older than staleStagingAge; a complete environment and a recent one stay.
+func TestSweepStaleStaging(t *testing.T) {
+	parent := t.TempDir()
+	old := time.Now().Add(-2 * staleStagingAge)
+	for name, mtime := range map[string]time.Time{"k1.tmp-1": old, "k2.tmp-2": time.Now(), "k3": old} {
+		dir := filepath.Join(parent, name)
+		if err := os.Mkdir(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(dir, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sweepStaleStaging(parent, time.Now().Add(-staleStagingAge))
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left := make([]string, 0, len(entries))
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if !slices.Equal(left, []string{"k2.tmp-2", "k3"}) {
+		t.Fatalf("left %v, want [k2.tmp-2 k3]", left)
 	}
 }

@@ -122,7 +122,7 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	}
 
 	// Step 4: Build distribution→import mapping via importlib.metadata
-	distToImport := r.pythonPackagesDistributions(ctx, env.python)
+	distToImport := r.pythonPackagesDistributions(ctx, env)
 	if len(distToImport) > 0 {
 		log.Info().Int("mappings", len(distToImport)).Msg("Loaded Python distribution-to-import mapping via importlib.metadata")
 	} else {
@@ -314,7 +314,7 @@ func parseNameFromSection(content, section string) string {
 
 // pipList runs `pip list --format=json` against env and parses the output.
 func (r *PipResolver) pipList(ctx context.Context, env pythonEnv) ([]pipPackage, error) {
-	stdout, stderr, err := r.runPython(ctx, "", env.pip[0], append(slices.Clone(env.pip[1:]), "list", "--format=json")...)
+	stdout, stderr, err := r.listPython(ctx, env, env.pip[0], append(slices.Clone(env.pip[1:]), "list", "--format=json")...)
 	if err != nil {
 		return nil, fmt.Errorf("%s list --format=json: %w\nstderr: %s", strings.Join(env.pip, " "), err, stderr)
 	}
@@ -344,7 +344,7 @@ func (r *PipResolver) pipShow(ctx context.Context, env pythonEnv, packageNames [
 		batch := packageNames[i:end]
 
 		args := slices.Concat(env.pip[1:], []string{"show"}, batch)
-		stdout, _, err := r.runPython(ctx, "", env.pip[0], args...)
+		stdout, _, err := r.listPython(ctx, env, env.pip[0], args...)
 		if err != nil {
 			log.Debug().Err(err).Msg("pip show batch failed")
 			continue
@@ -450,8 +450,8 @@ func (r *PipResolver) resolvePackageRoots(pkgName string, info pipShowInfo, dist
 // pythonPackagesDistributions calls the selected interpreter's
 // importlib.metadata.packages_distributions()
 // (available in Python 3.10+) and inverts the mapping to: normalized_dist_name → []import_names.
-func (r *PipResolver) pythonPackagesDistributions(ctx context.Context, pythonExec string) map[string][]string {
-	stdout, stderr, err := r.runPython(ctx, "", pythonExec, "-c",
+func (r *PipResolver) pythonPackagesDistributions(ctx context.Context, env pythonEnv) map[string][]string {
+	stdout, stderr, err := r.listPython(ctx, env, env.python, "-c",
 		"import json,importlib.metadata as m; print(json.dumps(m.packages_distributions()))")
 	if err != nil {
 		log.Debug().Err(err).Str("stderr", stderr).

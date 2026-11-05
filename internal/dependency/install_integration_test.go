@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -209,5 +210,45 @@ func writeWheel(t *testing.T, path, name, version string) {
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Without --install-dependencies the user's interpreter is listed as they set
+// it up, PYTHONPATH included, and scanning from inside the project does not
+// run its modules in place of the standard library.
+func TestPip_RealDefaultModeKeepsPythonPathAndIgnoresProjectModules(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs a real interpreter; skipped with -short")
+	}
+	if err := exec.CommandContext(context.Background(), "python3", "-m", "pip", "--version").Run(); err != nil {
+		t.Skip("python3 with pip not installed")
+	}
+	isolatePipEnv(t)
+	marker := "open(__file__ + '.ran', 'w').close()\n"
+	deps := writeTree(t, map[string]string{
+		"onpath_pkg/__init__.py":                 "",
+		"onpath_pkg-1.0.dist-info/METADATA":      "Metadata-Version: 2.1\nName: onpath-pkg\nVersion: 1.0\n",
+		"onpath_pkg-1.0.dist-info/RECORD":        "onpath_pkg/__init__.py,,\n",
+		"onpath_pkg-1.0.dist-info/top_level.txt": "onpath_pkg\n",
+	})
+	t.Setenv("PYTHONPATH", deps)
+	root := writeTree(t, map[string]string{
+		"app.py":            "import onpath_pkg\n",
+		"json.py":           marker,
+		"email/__init__.py": marker,
+	})
+	t.Chdir(root)
+
+	result, err := NewPipResolver().Resolve(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !slices.Contains(moduleNames(result), "onpath-pkg") {
+		t.Error("onpath-pkg, installed on PYTHONPATH, is not listed")
+	}
+	for _, ran := range []string{"json.py.ran", "email/__init__.py.ran"} {
+		if _, err := os.Stat(filepath.Join(root, ran)); err == nil {
+			t.Errorf("%s exists: listing imported the project's module instead of the standard library", ran)
+		}
 	}
 }
