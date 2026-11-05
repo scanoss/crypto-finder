@@ -37,6 +37,7 @@ type goPackage struct {
 	Dir        string    `json:"Dir"`
 	GoFiles    []string  `json:"GoFiles"`
 	CgoFiles   []string  `json:"CgoFiles"`
+	Imports    []string  `json:"Imports"`
 	Module     *goModule `json:"Module"`
 	Error      *struct {
 		Err string `json:"Err"`
@@ -95,7 +96,7 @@ func (r *GoResolver) CanResolve(targetDir string) bool {
 // project at targetDir: the modules that provide a package imported, directly
 // or transitively, by a non-test package of a main module.
 func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
-	modules, err := r.goListModules(ctx, targetDir)
+	modules, imports, err := r.goListModules(ctx, targetDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Go modules in %s: %w", targetDir, err)
 	}
@@ -103,6 +104,7 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 	result := &ResolveResult{
 		Dependencies: make([]Dependency, 0, len(modules)),
 		Graph:        make(map[string][]string),
+		ImportGraph:  imports,
 	}
 
 	for _, m := range modules {
@@ -144,27 +146,28 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 // goListModules returns the main modules, then each module that provides a
 // package in their non-test import closure, once, with the Go files the
 // build compiles in those packages. Requirements reached only from tests,
-// build-tagged tool files or nothing at all never enter it.
-func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule, error) {
+// build-tagged tool files or nothing at all never enter it. It also returns
+// the closure's module import graph (moduleImportGraph).
+func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule, map[string][]string, error) {
 	modules, err := goList[goModule](ctx, dir, "-m", "-json")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// -e keeps a package that fails to load, such as a directory mixing two
 	// package names, from discarding the closure of every package that loads.
 	// Each main module's directory is listed because `./...` matches nothing
 	// at a go.work root and only a subtree below a module root.
-	args := []string{"-e", "-deps", "-json=ImportPath,Dir,GoFiles,CgoFiles,Module,Error"}
+	args := []string{"-e", "-deps", "-json=ImportPath,Dir,GoFiles,CgoFiles,Imports,Module,Error"}
 	for _, m := range modules {
 		if m.Dir == "" {
-			return nil, fmt.Errorf("go list -m: main module %s has no directory", m.Path)
+			return nil, nil, fmt.Errorf("go list -m: main module %s has no directory", m.Path)
 		}
 		args = append(args, filepath.Join(m.Dir, "..."))
 	}
 	packages, err := goList[goPackage](ctx, dir, args...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	index := make(map[string]int)
@@ -200,7 +203,38 @@ func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule,
 		log.Warn().Int("packages", failed).Msg("Go packages failed to load; modules imported only through them are not inventoried")
 	}
 
-	return modules, nil
+	return modules, moduleImportGraph(packages), nil
+}
+
+// moduleImportGraph maps each module that provides one of packages to the
+// other modules whose packages its packages import, in first-import order; a
+// module whose packages import no other module maps to an empty list. Unlike
+// the requirement graph (go mod graph), it names the module that imports the
+// next one: since Go 1.17 a go.mod lists, // indirect, every module its build
+// needs, including those only its dependencies import.
+func moduleImportGraph(packages []goPackage) map[string][]string {
+	owner := make(map[string]string, len(packages))
+	for _, p := range packages {
+		if p.Module != nil {
+			owner[p.ImportPath] = p.Module.Path
+		}
+	}
+	graph := make(map[string][]string)
+	for _, p := range packages {
+		if p.Module == nil {
+			continue
+		}
+		from := p.Module.Path
+		if graph[from] == nil {
+			graph[from] = []string{}
+		}
+		for _, imported := range p.Imports {
+			if to := owner[imported]; to != "" && to != from && !slices.Contains(graph[from], to) {
+				graph[from] = append(graph[from], to)
+			}
+		}
+	}
+	return graph
 }
 
 // goList runs `go list` with args and decodes its output, a stream of JSON

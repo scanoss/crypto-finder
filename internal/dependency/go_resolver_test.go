@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -34,10 +35,10 @@ if [ "$1" = "list" ] && [ "$2" = "-m" ]; then
 fi
 if [ "$1" = "list" ]; then
   cat <<'JSON'
-{"Module":{"Path":"example.com/app","Main":true,"Dir":"/src/app"}}
-{"Module":{"Path":"example.com/dep","Version":"v1.0.0","Dir":"/deps/dep"}}
-{"Module":{"Path":"example.com/no-dir","Version":"v1.2.0"}}
-{}
+{"ImportPath":"example.com/app","Imports":["example.com/dep","example.com/no-dir/x","fmt"],"Module":{"Path":"example.com/app","Main":true,"Dir":"/src/app"}}
+{"ImportPath":"example.com/dep","Imports":["fmt"],"Module":{"Path":"example.com/dep","Version":"v1.0.0","Dir":"/deps/dep"}}
+{"ImportPath":"example.com/no-dir/x","Module":{"Path":"example.com/no-dir","Version":"v1.2.0"}}
+{"ImportPath":"fmt"}
 JSON
   exit 0
 fi
@@ -70,6 +71,14 @@ exit 1
 	children := result.Graph["example.com/app"]
 	if len(children) != 2 {
 		t.Fatalf("graph children len = %d, want 2", len(children))
+	}
+	wantImports := map[string][]string{
+		"example.com/app":    {"example.com/dep", "example.com/no-dir"},
+		"example.com/dep":    {},
+		"example.com/no-dir": {},
+	}
+	if !reflect.DeepEqual(result.ImportGraph, wantImports) {
+		t.Fatalf("ImportGraph = %v, want %v: the modules each module's packages import", result.ImportGraph, wantImports)
 	}
 }
 
@@ -118,7 +127,7 @@ exit 1
 	prependPath(t, tmpBin)
 
 	r := NewGoResolver()
-	_, err := r.goListModules(context.Background(), t.TempDir())
+	_, _, err := r.goListModules(context.Background(), t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "failed to decode go list output") {
 		t.Fatalf("expected decode error, got %v", err)
 	}
@@ -429,4 +438,49 @@ func TestGoResolver_ListsTheFilesTheHostBuildCompiles(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Since Go 1.17 a module's go.mod lists every module its build needs, so
+// liba's lists libc, which only libb imports. The module requirement graph
+// then holds liba -> libc, and a path built on it skips libb. The path names
+// the module that imports the next one: liba, libb, libc.
+func TestGoResolver_PathFollowsImportsNotPrunedRequirements(t *testing.T) {
+	requireGoToolchain(t)
+	// The go.mod files go mod tidy writes: each lists what its build needs,
+	// marking what it does not import itself // indirect.
+	goMod := func(path string, direct []string, indirect ...string) string {
+		var b strings.Builder
+		b.WriteString("module " + path + "\n\ngo 1.22\n")
+		for _, name := range direct {
+			b.WriteString("\nrequire example.com/" + name + " v1.0.0\n")
+		}
+		for _, name := range indirect {
+			b.WriteString("\nrequire example.com/" + name + " v1.0.0 // indirect\n")
+		}
+		for _, name := range slices.Concat(direct, indirect) {
+			b.WriteString("\nreplace example.com/" + name + " => ../" + name + "\n")
+		}
+		return b.String()
+	}
+	root := writeTree(t, map[string]string{
+		"libc/go.mod":  goMod("example.com/libc", nil),
+		"libc/libc.go": "package libc\n\nfunc Sum() {}\n",
+		"libb/go.mod":  goMod("example.com/libb", []string{"libc"}),
+		"libb/libb.go": "package libb\n\nimport \"example.com/libc\"\n\nfunc Sum() { libc.Sum() }\n",
+		"liba/go.mod":  goMod("example.com/liba", []string{"libb"}, "libc"),
+		"liba/liba.go": "package liba\n\nimport \"example.com/libb\"\n\nfunc Sum() { libb.Sum() }\n",
+		"app/go.mod":   goMod("example.com/app", []string{"liba"}, "libb", "libc"),
+		"app/main.go":  "package main\n\nimport \"example.com/liba\"\n\nfunc main() { liba.Sum() }\n",
+	})
+	app := filepath.Join(root, "app")
+	result, err := NewGoResolver().Resolve(context.Background(), app)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	parsed := map[string]bool{"example.com/liba": true, "example.com/libb": true, "example.com/libc": true}
+
+	want := []PathStep{{Module: "example.com/liba"}, {Module: "example.com/libb"}, {Module: "example.com/libc"}}
+	assertSteps(t, Paths(result, parsed), "example.com/libc", want)
+	shared := SharedGraphs(context.Background(), []string{app}, "go")
+	assertSteps(t, ResolvedPaths(shared, result, "go", parsed), "example.com/libc", want)
 }

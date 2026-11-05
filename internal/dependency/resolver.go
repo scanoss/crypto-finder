@@ -77,6 +77,11 @@ type ResolveResult struct {
 	Dependencies []Dependency
 	// Graph maps each module path to its direct dependency module paths (adjacency list)
 	Graph map[string][]string
+	// ImportGraph, set by the Go resolver, maps each module of the production
+	// import closure to the modules its packages import. Dependency paths
+	// follow it instead of Graph, the requirement graph, where a go.mod lists
+	// modules only its dependencies import.
+	ImportGraph map[string][]string
 	// VersionedGraph maps each parent node key to its direct dependency targets with versions preserved.
 	// Parent keys should use the same canonical coordinate form as Ref.Key() when a version is known.
 	VersionedGraph map[string][]Ref

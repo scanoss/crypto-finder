@@ -116,6 +116,31 @@ func TestResolvedPaths_LocalNodeResolvedAsDependencyStaysOnThePath(t *testing.T)
 	})
 }
 
+// A Go requirement edge the module's imports refute is dropped, so the path
+// goes through the module that imports the target; a module the import graph
+// does not list keeps its requirement edges.
+func TestResolvedPaths_GoFollowsTheModuleImportGraph(t *testing.T) {
+	t.Parallel()
+	goNode := func(name string) resolve.Node {
+		return resolve.Node{ID: resolve.NodeID("pkg:golang/example.com/" + name + "@v1.0.0"), PURL: "pkg:golang/example.com/" + name, Version: "v1.0.0"}
+	}
+	a, b, c, d := goNode("a"), goNode("b"), goNode("c"), goNode("d")
+	graph := completeGraph(append(direct(a), indirect(b, c, d)...),
+		[]resolve.Edge{edge(a, b), edge(a, c), edge(b, c), edge(b, d)}, a, b, c, d)
+	result := &ResolveResult{
+		Dependencies: deps(Ref{"example.com/a", "v1.0.0"}, Ref{"example.com/b", "v1.0.0"}, Ref{"example.com/c", "v1.0.0"}, Ref{"example.com/d", "v1.0.0"}),
+		ImportGraph:  map[string][]string{"example.com/a": {"example.com/b"}, "example.com/c": {}},
+	}
+
+	paths := ResolvedPaths([]resolve.Graph{graph}, result, "go", nil)
+
+	step := func(name string) PathStep {
+		return PathStep{Module: "example.com/" + name, Version: "v1.0.0", WithoutSource: true}
+	}
+	assertSteps(t, paths, "example.com/c", []PathStep{step("a"), step("b"), step("c")})
+	assertSteps(t, paths, "example.com/d", []PathStep{step("a"), step("b"), step("d")})
+}
+
 func TestResolvedPaths_UnattributedMemberGetsNoPath(t *testing.T) {
 	t.Parallel()
 	a, orphan := npmNode("a", "1.0.0"), npmNode("orphan", "1.0.0")
