@@ -1,5 +1,7 @@
 mod actix;
 mod axum_app;
+mod glob_actix;
+mod glob_axum;
 mod lambda_app;
 mod lookalike;
 mod poem_app;

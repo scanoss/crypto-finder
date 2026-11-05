@@ -57,6 +57,12 @@ func TestExportCallGraph_RustFrameworkEntryPoints(t *testing.T) {
 		{id: "poem-openapi", file: "src/poem_app.rs", needle: `b"poem-openapi"`, reachability: reachable, rootKind: framework, first: "Api"},
 		{id: "lambda-runtime", file: "src/lambda_app.rs", needle: `b"lambda-runtime"`, reachability: reachable, rootKind: framework, first: "function_handler"},
 		{id: "lambda-http", file: "src/lambda_app.rs", needle: `b"lambda-http"`, reachability: reachable, rootKind: framework, first: "http_handler"},
+		// Names brought in by a glob import (use actix_web::*, use
+		// axum::routing::*). A warp glob does not claim futures' and_then.
+		{id: "glob-actix-attribute", file: "src/glob_actix.rs", needle: `b"glob-actix-attribute"`, reachability: reachable, rootKind: framework, first: "glob_get"},
+		{id: "glob-actix-to", file: "src/glob_actix.rs", needle: `b"glob-actix-to"`, reachability: reachable, rootKind: framework, first: "glob_to"},
+		{id: "glob-axum-get", file: "src/glob_axum.rs", needle: `b"glob-axum-get"`, reachability: reachable, rootKind: framework, first: "glob_list"},
+		{id: "glob-futures-and-then", file: "src/glob_axum.rs", needle: `b"glob-futures-and-then"`, reachability: unreachable},
 		// #[get] from a local module; get, service_fn and and_then from no
 		// framework crate; async_trait from the async_trait crate.
 		{id: "lookalike-attribute", file: "src/lookalike.rs", needle: `b"lookalike-attribute"`, reachability: unreachable},

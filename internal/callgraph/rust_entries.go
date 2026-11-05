@@ -112,19 +112,31 @@ func (p *RustParser) rustAttributeEntryMark(item *sitter.Node, src []byte, scope
 		if !catalog.Named(entryLanguageRust, entrypoints.ShapeDecorator, name) {
 			continue
 		}
-		var packages []string
-		if parent := rustPathParent(rustEntryPath(scope, written)); parent != "" {
-			packages = []string{rustCratePath(parent)}
-		} else {
-			packages = p.crateMacroUseCrates(filePath)
-		}
-		for _, pkg := range packages {
-			if entry, ok := catalog.Match(entryLanguageRust, entrypoints.ShapeDecorator, pkg, "", name); ok {
+		for _, pkg := range p.rustAttributePackages(scope, written, filePath) {
+			if entry, ok := catalog.Match(entryLanguageRust, entrypoints.ShapeDecorator, rustCratePath(pkg), "", name); ok {
 				return catalogEntryMark(&entry), true
 			}
 		}
 	}
 	return EntryMark{}, false
+}
+
+// rustAttributePackages returns the packages an attribute written as written
+// may come from: its import or qualified path, the same path under each glob
+// import, and for a bare name the crates a crate root brings in with
+// #[macro_use].
+func (p *RustParser) rustAttributePackages(scope *FileAnalysis, written, filePath string) []string {
+	full := rustEntryPath(scope, written)
+	var packages []string
+	for _, path := range append([]string{full}, rustGlobCandidates(scope, full)...) {
+		if parent := rustPathParent(path); parent != "" {
+			packages = append(packages, parent)
+		}
+	}
+	if rustPathParent(full) == "" {
+		packages = append(packages, p.crateMacroUseCrates(filePath)...)
+	}
+	return packages
 }
 
 // recordRustRegistration records an EntryRef for each function a catalog
@@ -185,12 +197,47 @@ func rustRegistrationEntry(call *sitter.Node, ctx *rustTypeCtx) (entrypoints.Ent
 	if !catalog.Named(entryLanguageRust, entrypoints.ShapeRegistrationCall, name) {
 		return entrypoints.Entry{}, false
 	}
-	if fn.Type() == rustNodeFieldExpression {
+	isMethod := fn.Type() == rustNodeFieldExpression
+	if isMethod {
 		origin = rustValueOrigin(fn.ChildByFieldName("value"), ctx, 0)
 	} else {
-		origin = rustPathParent(rustEntryPath(ctx.analysis, fn.Content(ctx.src)))
+		origin = rustEntryPath(ctx.analysis, fn.Content(ctx.src))
 	}
-	return catalog.Match(entryLanguageRust, entrypoints.ShapeRegistrationCall, rustCratePath(origin), "", name)
+	for _, path := range append([]string{origin}, rustGlobCandidates(ctx.analysis, origin)...) {
+		pkg := path
+		if !isMethod {
+			pkg = rustPathParent(path)
+		}
+		if entry, ok := catalog.Match(entryLanguageRust, entrypoints.ShapeRegistrationCall, rustCratePath(pkg), "", name); ok {
+			return entry, true
+		}
+	}
+	return entrypoints.Entry{}, false
+}
+
+// rustGlobCandidates returns path under each glob import of the scope
+// (`use actix_web::*;` turns web::get into actix_web::web::get), when its
+// first segment is not already a name the scope knows: not imported, not a
+// keyword root, and not a crate the manifest declares.
+func rustGlobCandidates(scope *FileAnalysis, path string) []string {
+	if scope == nil || path == "" || len(scope.WildcardImports) == 0 {
+		return nil
+	}
+	first, _, nested := strings.Cut(path, "::")
+	if _, imported := scope.Imports[first]; imported {
+		return nil
+	}
+	if _, aliased := scope.ImportAliases[first]; aliased {
+		return nil
+	}
+	if nested && !rustSegmentCannotBeACrate(scope, first, rustCrateRoot(scope.PackagePath)) {
+		return nil
+	}
+	candidates := make([]string, 0, len(scope.WildcardImports))
+	for _, glob := range scope.WildcardImports {
+		candidates = append(candidates, glob+"::"+path)
+	}
+	return candidates
 }
 
 // rustHandlerID is the identity of a function passed by name, resolved as a
