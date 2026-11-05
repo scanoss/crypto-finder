@@ -52,6 +52,9 @@ var (
 	ErrTooManyComponents = errors.New("sbomcbom: too many components")
 	// ErrAccessDenied reports that the API refused the key.
 	ErrAccessDenied = errors.New("sbomcbom: the SCANOSS API refused the API key")
+	// ErrInsecureURL reports a plain-HTTP APIURL on a remote host without
+	// Options.AllowHTTP.
+	ErrInsecureURL = apiclient.ErrInsecureURL
 )
 
 // Status is what the lookup learned about one component.
@@ -96,6 +99,10 @@ type Options struct {
 	APIURL string
 	// HTTPClient defaults to the API client's own.
 	HTTPClient *http.Client
+	// AllowHTTP lets APIURL be a plain-HTTP URL on a remote host, for an
+	// on-premises API that only serves HTTP. Without it, Generate refuses
+	// such a URL with ErrInsecureURL; https and loopback http always work.
+	AllowHTTP bool
 	// Concurrency bounds the lookups in flight. Default 8.
 	Concurrency int
 	// MaxComponents bounds the distinct components looked up. Default 500.
@@ -133,6 +140,9 @@ func Generate(ctx context.Context, doc *Document, opts Options) (*Result, error)
 		return nil, fmt.Errorf("sbomcbom: nil document")
 	}
 	opts = withDefaults(opts)
+	if err := apiclient.CheckBaseURL(opts.APIURL, opts.AllowHTTP); err != nil {
+		return nil, fmt.Errorf("sbomcbom: %w", err)
+	}
 
 	perEntry, distinct := planLookups(doc.Components)
 	if len(distinct) > opts.MaxComponents {
@@ -237,10 +247,11 @@ func withDefaults(opts Options) Options {
 }
 
 func newClient(opts Options) *apiclient.Client {
+	allow := apiclient.WithAllowHTTP(opts.AllowHTTP)
 	if opts.HTTPClient != nil {
-		return apiclient.NewClientWithHTTPClient(opts.APIURL, opts.APIKey, opts.HTTPClient)
+		return apiclient.NewClientWithHTTPClient(opts.APIURL, opts.APIKey, opts.HTTPClient, allow)
 	}
-	return apiclient.NewClient(opts.APIURL, opts.APIKey)
+	return apiclient.NewClient(opts.APIURL, opts.APIKey, allow)
 }
 
 // lookUp asks the API about every lookup, Concurrency at a time. A refused

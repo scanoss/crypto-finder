@@ -61,15 +61,37 @@ type Client struct {
 	// retryDelay is the wait before the first download retry; it doubles
 	// on each later retry.
 	retryDelay time.Duration
+	// allowHTTP lets the client talk plain HTTP to a remote host. Without
+	// it, only https and loopback http are used (see CheckBaseURL).
+	allowHTTP bool
+}
+
+// Option configures a Client.
+type Option func(*options)
+
+type options struct {
+	allowHTTP bool
+}
+
+// WithAllowHTTP lets the client send requests, and the API key, over plain
+// HTTP to a remote host, for an on-premises API that only serves HTTP.
+func WithAllowHTTP(allow bool) Option {
+	return func(o *options) { o.allowHTTP = allow }
 }
 
 // NewClient creates a new API client.
-func NewClient(baseURL, apiKey string) *Client {
-	return NewClientWithHTTPClient(baseURL, apiKey, nil)
+func NewClient(baseURL, apiKey string, opts ...Option) *Client {
+	return NewClientWithHTTPClient(baseURL, apiKey, nil, opts...)
 }
 
-// NewClientWithHTTPClient creates a new API client with an optional custom HTTP client.
-func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *Client {
+// NewClientWithHTTPClient creates a new API client with an optional custom
+// HTTP client. The client is copied, never modified, to add the redirect
+// policy.
+func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, opts ...Option) *Client {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	if httpClient == nil {
 		httpClient = &http.Client{
 			Timeout: config.DefaultTimeout,
@@ -77,10 +99,11 @@ func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client) *C
 	}
 
 	return &Client{
-		httpClient: httpClient,
+		httpClient: withRedirectPolicy(httpClient, o.allowHTTP),
 		baseURL:    baseURL,
 		apiKey:     apiKey,
 		retryDelay: config.DefaultRetryDelay,
+		allowHTTP:  o.allowHTTP,
 	}
 }
 
@@ -94,6 +117,9 @@ func (c *Client) WithRetryDelay(delay time.Duration) *Client {
 // DownloadRuleset downloads a ruleset tarball from the API
 // Returns the tarball bytes and the parsed manifest.
 func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]byte, *Manifest, error) {
+	if err := CheckBaseURL(c.baseURL, c.allowHTTP); err != nil {
+		return nil, nil, err
+	}
 	endpoint := fmt.Sprintf(rulesetsEndpointFmt, name, version)
 	url := c.baseURL + endpoint
 

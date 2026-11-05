@@ -38,6 +38,7 @@ var (
 	cbomOutput        string
 	cbomAPIKey        string
 	cbomAPIURL        string
+	cbomAllowHTTP     bool
 	cbomMaxComponents int
 )
 
@@ -67,6 +68,7 @@ func init() {
 	cbomCmd.Flags().StringVarP(&cbomOutput, "output", "o", "", "Output file path (default: stdout)")
 	cbomCmd.Flags().StringVar(&cbomAPIKey, "api-key", "", "SCANOSS API key")
 	cbomCmd.Flags().StringVar(&cbomAPIURL, "api-url", "", "SCANOSS API base URL")
+	cbomCmd.Flags().BoolVar(&cbomAllowHTTP, allowHTTPFlag, false, allowHTTPUsage)
 	cbomCmd.Flags().IntVar(&cbomMaxComponents, "max-components", 2000, "Refuse SBOMs with more distinct components than this")
 }
 
@@ -81,13 +83,17 @@ func runCBOM(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := config.GetInstance()
-	if err := cfg.Initialize(config.InitOptions{APIKey: cbomAPIKey, APIURL: cbomAPIURL}); err != nil {
+	if err := cfg.Initialize(config.InitOptions{APIKey: cbomAPIKey, APIURL: cbomAPIURL, AllowHTTP: cbomAllowHTTP}); err != nil {
 		return failure.WrapUnknown(err, failure.CodeConfigInitializationFailed, failure.StageConfig, "failed to initialize config")
+	}
+	if err := checkAPIURL(cfg.GetAPIURL(), cfg.GetAllowHTTP()); err != nil {
+		return err
 	}
 
 	res, err := sbomcbom.Generate(cmd.Context(), doc, sbomcbom.Options{
 		APIKey:        cfg.GetAPIKey(),
 		APIURL:        cfg.GetAPIURL(),
+		AllowHTTP:     cfg.GetAllowHTTP(),
 		MaxComponents: cbomMaxComponents,
 		ToolVersion:   version.Version,
 	})

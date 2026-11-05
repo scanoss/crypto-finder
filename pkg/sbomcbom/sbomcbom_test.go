@@ -375,3 +375,19 @@ func TestGenerate_CapsDistinctComponents(t *testing.T) {
 		t.Errorf("two distinct components under a cap of two: %v", err)
 	}
 }
+
+func TestGenerate_RefusesRemoteHTTPWithoutAllowHTTP(t *testing.T) {
+	doc := &Document{Components: []Component{{Name: "x", Version: "1", PURL: "pkg:golang/x@v1"}}}
+	hc := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		t.Errorf("unexpected request to %s", req.URL)
+		return nil, errors.New("unexpected request")
+	})}
+	_, err := Generate(context.Background(), doc, Options{APIURL: "http://api.example.com", APIKey: "k", HTTPClient: hc})
+	if !errors.Is(err, ErrInsecureURL) {
+		t.Fatalf("Generate error = %v, want ErrInsecureURL", err)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
