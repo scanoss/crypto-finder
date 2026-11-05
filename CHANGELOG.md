@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-11-05
+### Added
+- With `--progress` and `--scan-dependencies`, the completed `dependencies` phase now names the dependencies behind three of its counts: `deps_skipped_list` (no local source), `deps_failed_list` and `deps_incomplete_list` (scan stopped at a time or memory limit). Each is as long as its count, sorted by module, version and purl, and empty when the count is zero. An entry carries `module`, `version`, `reason` (`no_local_source`, `scan_failed` or `time_or_memory_limit`), the `purl` the dependency's findings carry in `cryptographic_assets[].dependency_info.purl` when the module has one, and on a failed scan its failure `error_code` when the error has one. The fields are optional within scan-progress schema v1, published in `schemas/scan-progress-schema.json`.
+### Changed
+- The `-deps` container image no longer installs Debian's `openjdk-21-jre-headless`, which
+  apt pulled in only to satisfy the Java dependency of Debian's `gradle` and `maven`. Both
+  already ran on the Temurin JDK under `/opt/jdks` through `JAVA_HOME`, so the Debian
+  runtime was never used. The image is about 210 MB smaller unpacked and about 70 MB smaller
+  to download (amd64). `/usr/lib/jvm` is now empty; Gradle 4.4.1, Maven 3.9.9 and the four
+  Temurin JDKs are unchanged.
+- The `-deps` container image is about 880 MB smaller unpacked and about 310 MB smaller to
+  download (0.46.2-deps: 3.9 GB to 3.0 GB unpacked, 1.5 GB to 1.2 GB compressed, amd64).
+  Rust and OpenGrep are now installed straight into `/home/crypto` instead of being moved
+  there from `/root` in a later layer, which stored a second copy of both. Tools, versions,
+  paths and the `crypto` user's ownership of `/home/crypto`, `/opt/target-venv` and
+  `/workspace` are unchanged.
+### Removed
+- The `-deps` container image no longer bundles Semgrep. Dependency scanning runs OpenGrep,
+  the default scanner, so `scan --scan-dependencies` is unchanged. `scan --scanner semgrep`
+  in the `-deps` image now fails because `semgrep` is not on PATH; use the standard image
+  (`latest`), which still ships Semgrep, or install it into the container. The image is
+  about 290 MB smaller unpacked and about 70 MB smaller to download (amd64).
+### Fixed
+- `scan` with a call graph (`--export-callgraph`, `--export-callgraph-project-reachability`,
+  `--scan-dependencies`) no longer reports a related-crypto-material asset twice on one call,
+  once as the rule's own match (with its `parameterCondition` pattern) and once as the
+  per-value asset with `conditioned_value` (for example `param[0]==RSA` on
+  `KeyPairGenerator.getInstance("RSA", "BC")`). As for algorithm assets, the per-value asset
+  now replaces the rule's match when both name the same material type and algorithm, also
+  when the rule file sits at the rules root and the match carries the bare rule id.
+- `scan` no longer merges two calls on one line into one asset when the same rule matches
+  both, side by side (`a = f(x); b = f(y)`) or nested
+  (`bcrypt.hashpw(pw, bcrypt.gensalt())`). The deduplicator now reads the match columns:
+  matches merge only when their spans overlap and no rule matched them at two different
+  spans. Matches without columns are still grouped by line, and different rules that
+  report one call are still merged into one asset.
+- `finding_id` is now unique within a file's findings. When one rule reports two assets on one
+  line, the first in source order keeps the id it always had. The others get an id that also
+  hashes their columns. Before, every such asset shared one id, so joins on `finding_id`
+  (callgraph and graph-fragment exports, `annotate`) mixed them up. Ids that were already
+  unique do not change.
+- `scan --scan-dependencies`: a Go dependency's `dependency.path` in the callgraph export now
+  follows imports. Each step is the module whose packages import the next one. Before, the
+  path followed the module requirement graph, where a `go.mod` lists, `// indirect`, modules
+  only its dependencies import, so for app -> liba -> libb -> libc the path to libc read
+  `[liba, libc]` (distance 2) instead of `[liba, libb, libc]`.
+- `occurrence_key` no longer gives two calls the same key when one rule matched both and the
+  call graph could not tell the matches apart, for example the two `SSLContext.getInstance`
+  calls of `provider == null ? SSLContext.getInstance(p) : SSLContext.getInstance(p, provider)`
+  in a dependency report whose lines do not hold those calls in the local source. The first
+  match in source order keeps the key it had; each later match of that rule gets the next
+  `-N` suffix. Consumers that key findings on `occurrence_key` and the rule id no longer drop
+  one of the calls. Keys that were not shared by two matches of one rule do not change.
+- `scan --scan-dependencies`: a Python dependency the project declares now gets its
+  `relationship` (`direct`) and `path` in the callgraph export even when it requires nothing
+  itself. Without a Python lockfile, the direct dependencies are the installed distributions
+  the target's `requirements.txt` (and the files it includes through `-r`) and
+  `pyproject.toml` (`[project]` `dependencies`, `[tool.poetry.dependencies]`) declare. A
+  distribution installed next to them that the project does not declare, such as `pip` or a
+  tool, is no longer labeled `direct` and has no path unless a declared one requires it.
+  A target that declares no requirements takes every installed distribution no other one
+  requires as direct, including one that requires nothing; before, such a distribution got
+  no relationship, path or depth.
+- `scan --scan-dependencies` now links Rust calls into a crate whose package name holds a
+  dash, or whose manifest sets `[lib] name`. Callgraph symbols of a Cargo dependency or
+  workspace member are keyed by the crate's library name, the name source code writes
+  (`cbench_transitive_libb.digest` for package `cbench-transitive-libb`), so a call such as
+  `cbench_transitive_libb::digest(..)` from another crate resolves. Before, every finding in
+  such a crate read `unreachable` with a one-frame chain. Dependency identity
+  (`dependency_info.module`, `purl`, `dependency.path`) keeps the package name.
+- The graph algorithm version is now `graph-algo-16`, so structural graphs cached under
+  `graph-algo-15` are rebuilt: their Rust crates with a dashed package name or a `[lib] name`
+  carry the old keys and none of the calls into those crates. Re-mine such Rust components.
+- `scan` no longer reports a truncated algorithm name such as `ECDH-`, `ML-KEM-` or
+  `PBKDF2---32` when a rule's metadata template references a metavariable or capture
+  group that did not bind on the match. The field whose template stayed unresolved is
+  left out of the asset instead (the rest of the rule metadata, such as
+  `algorithmFamily`, is kept), and a `parameterCondition` keeps a `$` reference that
+  does not bind as written instead of losing it.
+### Security
+- `scan`, `annotate`, `cbom` and `configure` now refuse a plain-HTTP SCANOSS API URL
+  on a remote host, wherever it comes from (`--api-url`, `SCANOSS_API_URL` or the
+  config file), and refuse a redirect from HTTPS to plain HTTP. Plain HTTP would send
+  the API key and the downloaded ruleset unencrypted. HTTP to `localhost` or a loopback
+  address still works. **Migration:** an on-premises API that only serves HTTP needs the
+  new opt-in: pass `--allow-http`, set `SCANOSS_ALLOW_HTTP=true`, or save it once with
+  `crypto-finder configure --api-url http://<host> --allow-http`
+  (`configure --allow-http=false` clears it). Each run that uses
+  plain HTTP logs a warning. The command fails with `invalid_arguments` before any
+  request, so a refused URL no longer falls back to a stale cached ruleset.
+- `pkg/sbomcbom`: `Options.AllowHTTP` is new, and `Generate` returns `ErrInsecureURL`
+  for a plain-HTTP `APIURL` on a remote host unless it is set.
+
 ## [0.47.0] - 2026-11-04
 ### Added
 - C contracts for GmSSL, including its generic digest and block-cipher API, and
