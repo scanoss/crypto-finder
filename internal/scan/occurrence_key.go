@@ -6,6 +6,7 @@ package scan
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -95,7 +96,89 @@ func groupOccurrenceKeyCandidates(candidates []occurrenceKeyCandidate) map[strin
 		}
 		group.assets = append(group.assets, candidate.asset)
 	}
+	for _, groups := range byHash {
+		splitTwoMatchesOfOneRule(groups)
+	}
 	return byHash
+}
+
+// splitTwoMatchesOfOneRule keeps two matches of one rule apart when both
+// anchor to the same call. That happens when the call graph cannot place a
+// match: a span that ends on a later line, or a report whose lines do not hold
+// the call, falls back to the best call on its lines, so the two calls of
+// provider == null ? SSLContext.getInstance(p) : SSLContext.getInstance(p, provider)
+// can both land on one. A rule reports a call once, so its two spans are two
+// occurrences. The first match in source order stays in the group and keeps its
+// key; each later one opens a group of its own, ordered by its position like
+// any other collision, so it gets the next -N suffix. A group no rule matched
+// twice is left as it is, so its key does not change.
+func splitTwoMatchesOfOneRule(groups map[string]*occurrenceKeyGroup) {
+	var split []*occurrenceKeyGroup
+	for _, group := range groups {
+		if len(group.assets) < 2 {
+			continue
+		}
+		assets := append([]*entities.CryptographicAsset(nil), group.assets...)
+		sort.SliceStable(assets, func(i, j int) bool { return assetSpanLess(assets[i], assets[j]) })
+		var parts [][]*entities.CryptographicAsset
+		for _, asset := range assets {
+			i := slices.IndexFunc(parts, func(part []*entities.CryptographicAsset) bool {
+				return !slices.ContainsFunc(part, func(member *entities.CryptographicAsset) bool { return twoMatchesOfOneRule(member, asset) })
+			})
+			if i < 0 {
+				parts = append(parts, []*entities.CryptographicAsset{asset})
+				continue
+			}
+			parts[i] = append(parts[i], asset)
+		}
+		if len(parts) == 1 {
+			continue
+		}
+		// The group takes the position of its first match, so a later match
+		// never orders before it and takes its key.
+		group.assets = parts[0]
+		group.line, group.col = parts[0][0].StartLine, parts[0][0].StartCol
+		for n, part := range parts[1:] {
+			first := part[0]
+			split = append(split, &occurrenceKeyGroup{
+				assets:   part,
+				line:     first.StartLine,
+				col:      first.StartCol,
+				identity: group.identity + "\n" + assetSpan(first) + "#" + strconv.Itoa(n+1),
+			})
+		}
+	}
+	for _, group := range split {
+		groups[group.identity] = group
+	}
+}
+
+// twoMatchesOfOneRule reports that a rule both assets list matched each of
+// them at a different span, the deduplicator's test for two calls.
+func twoMatchesOfOneRule(a, b *entities.CryptographicAsset) bool {
+	if assetSpan(a) == assetSpan(b) {
+		return false
+	}
+	return slices.ContainsFunc(a.Rules, func(rule entities.RuleInfo) bool {
+		return slices.ContainsFunc(b.Rules, func(other entities.RuleInfo) bool { return other.ID == rule.ID })
+	})
+}
+
+func assetSpan(asset *entities.CryptographicAsset) string {
+	return strings.Join([]string{strconv.Itoa(asset.StartLine), strconv.Itoa(asset.StartCol), strconv.Itoa(asset.EndLine), strconv.Itoa(asset.EndCol)}, ":")
+}
+
+func assetSpanLess(a, b *entities.CryptographicAsset) bool {
+	if a.StartLine != b.StartLine {
+		return a.StartLine < b.StartLine
+	}
+	if a.StartCol != b.StartCol {
+		return a.StartCol < b.StartCol
+	}
+	if a.EndLine != b.EndLine {
+		return a.EndLine < b.EndLine
+	}
+	return a.EndCol < b.EndCol
 }
 
 func assignOccurrenceKeyGroups(byHash map[string]map[string]*occurrenceKeyGroup) {
