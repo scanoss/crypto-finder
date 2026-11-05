@@ -109,7 +109,13 @@ const SchemaVersion = "graph-fragment-1.15"
 // graph-algo-15: functions carry returns_calls, the calls whose result they
 // return, so annotate can follow a returned crypto object into its callers. A
 // structural graph cached under graph-algo-14 has none.
-const GraphAlgoVersion = "graph-algo-15"
+//
+// graph-algo-16: a Cargo dependency or workspace member is keyed by its
+// library name, the name source writes (my_lib for package my-lib, or its
+// [lib] name), so calls into crates with a dashed package name are edges. A
+// structural graph cached under graph-algo-15 keys them my-lib and lacks
+// those edges.
+const GraphAlgoVersion = "graph-algo-16"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
