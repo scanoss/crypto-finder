@@ -1,1 +1,0 @@
-- The graph algorithm version is now `graph-algo-17` (from `graph-algo-16`), so cached structural graphs are rebuilt: Rust functions the entry-point catalog recognizes now carry `entry_kind` `framework_entry` in graph fragments (under Added). Re-mine Rust components, or the stitched export keeps rooting their handlers at `no_callers`.

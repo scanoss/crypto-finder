@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-11-05
+### Added
+- `scan --scan-dependencies` accepts `--install-dependencies` to install Node and Python
+  dependencies that are not installed yet, instead of finding none. For Node, a lockfile
+  whose production packages are missing from `node_modules` gets
+  `npm ci --ignore-scripts --no-audit --no-fund` (with `--omit=dev` unless
+  `--include-dev-dependencies` is set) when there is no `node_modules`, and
+  `npm install --no-save --ignore-scripts --no-audit --no-fund` when there is one, which
+  keeps the installed packages the lockfile lists instead of deleting the directory. For Python without an activated or project-local
+  virtual environment, the dependencies declared in `requirements.txt`, in the
+  `[project]` table of `pyproject.toml` (installed without building the project), or
+  through `pyproject.toml`/`setup.py`/`setup.cfg` (a project that cannot be built
+  yields no Python dependencies with a warning), are installed with the ambient pip (22.3 or
+  later) into a virtual environment outside the scanned tree, reused by later scans unless
+  a local project directory had to be built; if
+  `requirements.txt` fails as a whole, each requirement is retried on its own. With the
+  flag, the ambient interpreter's own packages are never reported as dependencies. The
+  flag needs network access, is off by default, and building a Python source distribution
+  runs its build backend.
+- Rust framework handlers are now entry points in the callgraph export, so a chain into crypto they reach starts at the handler with `root_kind` `framework_entry` and an `entry_rule` such as `rust/axum:registration_call:get`, instead of at `no_callers`, and crypto written directly in a handler reads `reachable` instead of `unreachable`. Recognized: actix-web 4 route attributes (`#[get("/")]` and the other methods, `#[route]`, `#[routes]`) and handlers passed to `to()` (`web::get().to(h)`, `web::resource(..).to(h)`, `web::to(h)`); axum 0.8 handlers passed to `axum::routing` `get`, `post` and the other method routers, chained (`get(a).post(b)`), or to `fallback`; Rocket 0.5 route, `#[catch]` and `#[launch]` attributes, imported, qualified or brought in by `#[macro_use] extern crate rocket`; warp 0.4 handlers passed to `map`, `then`, `and_then`, `or_else` or `recover` on a filter from the crate; every method of a `#[tonic::async_trait]` impl (tonic 0.14 services); poem 3 `#[handler]` functions and poem-openapi 5 `#[OpenApi]` impls; and AWS Lambda handlers passed to `service_fn` from `lambda_runtime` or `lambda_http` 1. An attribute or call counts only when it comes from the framework's crate. `#[tokio::main]` and `#[actix_web::main]` functions are `main`, as any `fn main` is.
+### Changed
+- The graph algorithm version is now `graph-algo-17` (from `graph-algo-16`), so cached structural graphs are rebuilt: Rust functions the entry-point catalog recognizes now carry `entry_kind` `framework_entry` in graph fragments (under Added). Re-mine Rust components, or the stitched export keeps rooting their handlers at `no_callers`.
+- `scan --scan-dependencies`: every PyPI dependency finding's `file_path`, in the findings
+  report and in the callgraph export (`functions[].file_path`, chain frames), is now relative
+  to the environment's package directory (site-packages) and starts with the top-level
+  package, as the wheel `RECORD` names the file: `libb/codec.py`. Before, a distribution with
+  one top-level package, or a share of a namespace package such as `google/`, was reported
+  relative to that package directory (`codec.py`, `protobuf/message.py`), so two packages of
+  one distribution could report the same path. Such a distribution is still scanned from
+  its package directory, and findings the SCANOSS API publishes for it are read as before;
+  only the reported path changes. Dependency identity, callgraph symbols and the graph
+  algorithm version are unchanged; `finding_id` and occurrence keys of those findings change
+  with the path.
+### Fixed
+- `--scan-dependencies` on Maven and Gradle projects scans the sources of a
+  library rebuilt at the same version (a `-SNAPSHOT`, or a module reinstalled
+  with `mvn install`). Before, crypto-finder kept scanning the sources it had
+  extracted into `~/.scanoss/crypto-finder/cache/sources` from the earlier
+  sources JAR until the cache was deleted by hand. Deleting a cache entry
+  while another scan used it made that scan fail with opengrep
+  `File not found` and drop the dependency's findings.
+- An interrupted extraction of a sources JAR (a killed scan, a full disk) no
+  longer leaves a partial cache entry that later scans read as the
+  dependency's complete sources, and scans running side by side on one host
+  no longer read an entry another scan is still extracting.
+
 ## [0.48.0] - 2026-11-05
 ### Added
 - With `--progress` and `--scan-dependencies`, the completed `dependencies` phase now names the dependencies behind three of its counts: `deps_skipped_list` (no local source), `deps_failed_list` and `deps_incomplete_list` (scan stopped at a time or memory limit). Each is as long as its count, sorted by module, version and purl, and empty when the count is zero. An entry carries `module`, `version`, `reason` (`no_local_source`, `scan_failed` or `time_or_memory_limit`), the `purl` the dependency's findings carry in `cryptographic_assets[].dependency_info.purl` when the module has one, and on a failed scan its failure `error_code` when the error has one. The fields are optional within scan-progress schema v1, published in `schemas/scan-progress-schema.json`.
