@@ -10,7 +10,7 @@ Crypto Finder provides a three-tier image strategy so you can choose the right t
 |-------|-----|------|----------|
 | **Standard** | `latest` | ~800MB | Default: binary + OpenGrep + Semgrep |
 | **Slim** | `latest-slim` | ~15MB | Binary only, bring your own scanner |
-| **Deps** | `latest-deps` | ~3-4GB | All language toolchains for dependency scanning |
+| **Deps** | `latest-deps` | ~3GB | Binary + OpenGrep + all language toolchains for dependency scanning (no Semgrep) |
 
 ### Standard Image (Recommended)
 
@@ -48,7 +48,7 @@ docker pull ghcr.io/scanoss/crypto-finder:latest-deps
 ```
 
 **Features:**
-- Everything in the standard image, plus:
+- Everything in the standard image except Semgrep, plus:
 - **Go** toolchain for `go list` / `go mod graph` dependency resolution
 - **Java** (JDK 8, 11, 17, and 21 + Maven + Gradle) for JDK-aware Java dependency resolution and deterministic platform signature indexing
 - **Rust** (Cargo) for `cargo metadata` dependency resolution
@@ -234,7 +234,7 @@ docker run --rm \
    crypto-finder scan --scan-dependencies /workspace/code"
 ```
 
-> **Note:** The deps image uses an isolated virtualenv for project dependencies, separate from the scanner tooling (semgrep), so `pip install` only affects the target project's environment.
+> **Note:** The deps image uses an isolated virtualenv for project dependencies, separate from the image's own Python packages, so `pip install` only affects the target project's environment.
 
 ### CI/CD with Dependency Scanning (GitHub Actions)
 
