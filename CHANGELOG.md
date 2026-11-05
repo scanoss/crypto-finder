@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.5] - 2026-11-05
+### Fixed
+- `scan` no longer merges two calls on one line into one asset when the same rule matches
+  both, side by side (`a = f(x); b = f(y)`) or nested
+  (`bcrypt.hashpw(pw, bcrypt.gensalt())`). The deduplicator now reads the match columns:
+  matches merge only when their spans overlap and no rule matched them at two different
+  spans. Matches without columns are still grouped by line, and different rules that
+  report one call are still merged into one asset.
+- `finding_id` is now unique within a file's findings. When one rule reports two assets on one
+  line, the first in source order keeps the id it always had. The others get an id that also
+  hashes their columns. Before, every such asset shared one id, so joins on `finding_id`
+  (callgraph and graph-fragment exports, `annotate`) mixed them up. Ids that were already
+  unique do not change.
+- `occurrence_key` no longer gives two calls the same key when one rule matched both and the
+  call graph could not tell the matches apart, for example the two `SSLContext.getInstance`
+  calls of `provider == null ? SSLContext.getInstance(p) : SSLContext.getInstance(p, provider)`
+  in a dependency report whose lines do not hold those calls in the local source. The first
+  match in source order keeps the key it had; each later match of that rule gets the next
+  `-N` suffix. Consumers that key findings on `occurrence_key` and the rule id no longer drop
+  one of the calls. Keys that were not shared by two matches of one rule do not change.
+
 ## [0.46.4] - 2026-11-05
 ### Added
 - With `--progress` and `--scan-dependencies`, the completed `dependencies` phase now names the dependencies behind three of its counts: `deps_skipped_list` (no local source), `deps_failed_list` and `deps_incomplete_list` (scan stopped at a time or memory limit). Each is as long as its count, sorted by module, version and purl, and empty when the count is zero. An entry carries `module`, `version`, `reason` (`no_local_source`, `scan_failed` or `time_or_memory_limit`), the `purl` the dependency's findings carry in `cryptographic_assets[].dependency_info.purl` when the module has one, and on a failed scan its failure `error_code` when the error has one. The fields are optional within scan-progress schema v1, published in `schemas/scan-progress-schema.json`.
