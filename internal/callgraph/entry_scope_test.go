@@ -41,7 +41,7 @@ func (c scopeCase) trace(t *testing.T) CondensedTrace {
 	packages := make([]PackageDir, 0, len(dirs))
 	for _, dir := range dirs {
 		pkg := PackageDir{Dir: root + "/" + dir, ImportPath: "app"}
-		if c.ecosystem == "python" {
+		if c.ecosystem == ecosystemPython {
 			pkg.ImportPath = ""
 		}
 		packages = append(packages, pkg)
@@ -68,7 +68,7 @@ func (c scopeCase) trace(t *testing.T) CondensedTrace {
 		t.Fatalf("no function %s in %v", c.target, keys)
 	}
 	sep := "."
-	if c.ecosystem == "rust" {
+	if c.ecosystem == ecosystemRust {
 		sep = "::"
 	}
 	return NewTracer(graph, sep).TraceBackCondensed(target.ID, userPackages, 0, 0)
@@ -81,7 +81,7 @@ func rustParser() Parser   { return NewRustParser() }
 func javaParser() Parser   { return NewJavaParser() }
 
 func rootNames(trace CondensedTrace) []string {
-	var out []string
+	out := make([]string, 0, len(trace.Chains))
 	for _, chain := range trace.Chains {
 		out = append(out, chain.Steps[0].Function.Name+"["+string(chain.RootKind)+"]")
 	}
@@ -95,14 +95,15 @@ func wantUnreachable(t *testing.T, trace CondensedTrace) {
 	}
 }
 
-func wantRoot(t *testing.T, trace CondensedTrace, name string, kind RootKind) {
+// wantNoCallersRoot asserts a chain rooted at name, a function nothing calls.
+func wantNoCallersRoot(t *testing.T, trace CondensedTrace, name string) {
 	t.Helper()
 	for _, chain := range trace.Chains {
-		if BaseFunctionName(chain.Steps[0].Function.Name) == name && chain.RootKind == kind {
+		if BaseFunctionName(chain.Steps[0].Function.Name) == name && chain.RootKind == RootKindNoCallers {
 			return
 		}
 	}
-	t.Fatalf("chains rooted at %v, want one rooted at %s[%s]", rootNames(trace), name, kind)
+	t.Fatalf("chains rooted at %v, want one rooted at %s[no_callers]", rootNames(trace), name)
 }
 
 const goMod = "module app\n\ngo 1.22\n"
@@ -130,7 +131,7 @@ func digest(data []byte) []byte { s := sha256.Sum256(data); return s[:] }
 // point keeps its uncalled functions as roots, its public surface.
 func TestUncalledRoots_GoLibraryKeepsTheFallback(t *testing.T) {
 	t.Parallel()
-	wantRoot(t, scopeCase{ecosystem: "go", parser: goParser, target: "digest", files: map[string]string{
+	wantNoCallersRoot(t, scopeCase{ecosystem: "go", parser: goParser, target: "digest", files: map[string]string{
 		"go.mod": goMod,
 		"lib.go": `package lib
 
@@ -140,14 +141,14 @@ func Fingerprint(data []byte) []byte { return digest(data) }
 
 func digest(data []byte) []byte { s := sha256.Sum256(data); return s[:] }
 `,
-	}}.trace(t), "Fingerprint", RootKindNoCallers)
+	}}.trace(t), "Fingerprint")
 }
 
 // TestUncalledRoots_GoFunctionValueStaysARoot: a function handed out as a
 // value has no call edge; it is not dead code.
 func TestUncalledRoots_GoFunctionValueStaysARoot(t *testing.T) {
 	t.Parallel()
-	wantRoot(t, scopeCase{ecosystem: "go", parser: goParser, target: "digest", files: map[string]string{
+	wantNoCallersRoot(t, scopeCase{ecosystem: "go", parser: goParser, target: "digest", files: map[string]string{
 		"go.mod": goMod,
 		"main.go": `package main
 
@@ -163,7 +164,7 @@ func onStart() { digest(nil) }
 
 func digest(data []byte) []byte { s := sha256.Sum256(data); return s[:] }
 `,
-	}}.trace(t), "onStart", RootKindNoCallers)
+	}}.trace(t), "onStart")
 }
 
 // TestUncalledRoots_GoInitIsARoot: the runtime runs init without a call.
@@ -218,21 +219,21 @@ if __name__ == "__main__":
 `,
 		}
 	}
-	wantUnreachable(t, scopeCase{ecosystem: "python", parser: pythonParser, target: "digest", files: app("")}.trace(t))
-	wantRoot(t, scopeCase{ecosystem: "python", parser: pythonParser, target: "digest", files: app(`
+	wantUnreachable(t, scopeCase{ecosystem: ecosystemPython, parser: pythonParser, target: "digest", files: app("")}.trace(t))
+	wantNoCallersRoot(t, scopeCase{ecosystem: ecosystemPython, parser: pythonParser, target: "digest", files: app(`
 
 def worker():
     digest(b"x")
 
 
 HOOKS = {"start": worker}
-`)}.trace(t), "worker", RootKindNoCallers)
-	wantRoot(t, scopeCase{ecosystem: "python", parser: pythonParser, target: "digest", files: app(`
+`)}.trace(t), "worker")
+	wantNoCallersRoot(t, scopeCase{ecosystem: ecosystemPython, parser: pythonParser, target: "digest", files: app(`
 
 @events.on("startup")
 def warm():
     digest(b"x")
-`)}.trace(t), "warm", RootKindNoCallers)
+`)}.trace(t), "warm")
 }
 
 // TestUncalledRoots_TestIsNotARoot: under --include-tests, a test nothing
@@ -263,7 +264,7 @@ func TestDigest(t *testing.T) { digest(nil) }
 // module.
 func TestUncalledRoots_ScopedPerModule(t *testing.T) {
 	t.Parallel()
-	wantRoot(t, scopeCase{ecosystem: "python", parser: pythonParser, target: "digest", files: map[string]string{
+	wantNoCallersRoot(t, scopeCase{ecosystem: ecosystemPython, parser: pythonParser, target: "digest", files: map[string]string{
 		"cli/pyproject.toml":  "[project]\nname = \"cli\"\n",
 		"cli/cli/__init__.py": "",
 		"cli/cli/main.py":     "def main():\n    print(\"hello\")\n\n\nif __name__ == \"__main__\":\n    main()\n",
@@ -278,7 +279,7 @@ def digest(data):
 def fingerprint(data):
     return digest(data)
 `,
-	}}.trace(t), "fingerprint", RootKindNoCallers)
+	}}.trace(t), "fingerprint")
 }
 
 // TestUncalledRoots_RustHandlers: Rust has no framework catalog, so a web
@@ -297,7 +298,7 @@ fn digest(data: &[u8]) -> Vec<u8> {
 ` + body,
 		}
 	}
-	wantRoot(t, scopeCase{ecosystem: "rust", parser: rustParser, target: "digest", dirs: []string{"src"}, files: crate(`
+	wantNoCallersRoot(t, scopeCase{ecosystem: ecosystemRust, parser: rustParser, target: "digest", dirs: []string{"src"}, files: crate(`
 async fn handler() -> Vec<u8> {
     digest(b"x")
 }
@@ -307,8 +308,8 @@ async fn main() {
     let app = Router::new().route("/", get(handler));
     serve(app).await;
 }
-`)}.trace(t), "handler", RootKindNoCallers)
-	wantRoot(t, scopeCase{ecosystem: "rust", parser: rustParser, target: "digest", dirs: []string{"src"}, files: crate(`
+`)}.trace(t), "handler")
+	wantNoCallersRoot(t, scopeCase{ecosystem: ecosystemRust, parser: rustParser, target: "digest", dirs: []string{"src"}, files: crate(`
 #[get("/")]
 async fn index() -> Vec<u8> {
     digest(b"x")
@@ -317,8 +318,8 @@ async fn index() -> Vec<u8> {
 fn main() {
     println!("hello");
 }
-`)}.trace(t), "index", RootKindNoCallers)
-	wantUnreachable(t, scopeCase{ecosystem: "rust", parser: rustParser, target: "digest", dirs: []string{"src"}, files: crate(`
+`)}.trace(t), "index")
+	wantUnreachable(t, scopeCase{ecosystem: ecosystemRust, parser: rustParser, target: "digest", dirs: []string{"src"}, files: crate(`
 fn run() -> Vec<u8> {
     digest(b"x")
 }
@@ -355,8 +356,12 @@ public final class Main {
 `,
 		}
 	}
-	wantUnreachable(t, scopeCase{ecosystem: "java", parser: javaParser, target: "digest", dirs: []string{"src/main/java"},
-		files: program("    static byte[] run(byte[] data) throws Exception {\n        return digest(data);\n    }\n")}.trace(t))
-	wantRoot(t, scopeCase{ecosystem: "java", parser: javaParser, target: "digest", dirs: []string{"src/main/java"},
-		files: program("    byte[] apply(byte[] data) throws Exception {\n        return digest(data);\n    }\n")}.trace(t), "apply", RootKindNoCallers)
+	wantUnreachable(t, scopeCase{
+		ecosystem: "java", parser: javaParser, target: "digest", dirs: []string{"src/main/java"},
+		files: program("    static byte[] run(byte[] data) throws Exception {\n        return digest(data);\n    }\n"),
+	}.trace(t))
+	wantNoCallersRoot(t, scopeCase{
+		ecosystem: "java", parser: javaParser, target: "digest", dirs: []string{"src/main/java"},
+		files: program("    byte[] apply(byte[] data) throws Exception {\n        return digest(data);\n    }\n"),
+	}.trace(t), "apply")
 }

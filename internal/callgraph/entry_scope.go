@@ -144,6 +144,15 @@ func (t *Tracer) buildRootScope(userPackages map[string]bool) *rootScope {
 		return scope
 	}
 
+	t.markDead(scope, candidates, declared, userPackages)
+	return scope
+}
+
+// markDead records the candidates that are not roots once their module has
+// an entry point: test code, or code whose name nothing else in the source
+// mentions and that carries no decorator. A candidate whose file cannot be
+// read is never recorded.
+func (t *Tracer) markDead(scope *rootScope, candidates map[string][]*FunctionDecl, declared map[string]int, userPackages map[string]bool) {
 	names := map[string]bool{}
 	for _, decls := range candidates {
 		for _, decl := range decls {
@@ -164,7 +173,6 @@ func (t *Tracer) buildRootScope(userPackages map[string]bool) *rootScope {
 			scope.dead[decl.ID.String()] = true
 		}
 	}
-	return scope
 }
 
 // establishesEntry reports whether an entry point shows that its module is a
@@ -180,6 +188,8 @@ func establishesEntry(decl *FunctionDecl, mark EntryMark) bool {
 		return true
 	case RootKindFrameworkEntry:
 		return mark.Rule != ""
+	case RootKindNoCallers, RootKindDepthLimit:
+		return false
 	default:
 		return false
 	}
@@ -203,7 +213,7 @@ func droppableShape(decl *FunctionDecl) bool {
 // countMentions counts, over the application's source files, how often each
 // of names occurs as an identifier, and returns the lines of every file it
 // read.
-func (t *Tracer) countMentions(names map[string]bool, userPackages map[string]bool) (map[string]int, map[string][][]byte) {
+func (t *Tracer) countMentions(names, userPackages map[string]bool) (map[string]int, map[string][][]byte) {
 	files := map[string]bool{}
 	for key, decl := range t.graph.Functions {
 		if decl != nil && decl.FilePath != "" && t.isUserFunction(key, userPackages) {
