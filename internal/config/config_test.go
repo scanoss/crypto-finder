@@ -737,3 +737,29 @@ func TestSetAllowHTTP_Persistence(t *testing.T) {
 		t.Errorf("config file does not hold allow_http: %s", data)
 	}
 }
+
+func TestSetAllowHTTP_Clears(t *testing.T) {
+	defer setupTest(t)()
+	cfg := GetInstance()
+	if err := cfg.Initialize(InitOptions{}); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if err := cfg.SetAllowHTTP(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetAllowHTTP(false); err != nil {
+		t.Fatal(err)
+	}
+	path := viper.ConfigFileUsed()
+	resetTestInstance()
+	viper.Reset()
+	viper.SetConfigFile(path)
+	viper.SetConfigType("json")
+	reloaded := GetInstance()
+	if err := reloaded.Initialize(InitOptions{}); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if reloaded.GetAllowHTTP() {
+		t.Error("allow_http still true after SetAllowHTTP(false)")
+	}
+}

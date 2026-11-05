@@ -4,7 +4,8 @@
   the API key and the downloaded ruleset unencrypted. HTTP to `localhost` or a loopback
   address still works. **Migration:** an on-premises API that only serves HTTP needs the
   new opt-in: pass `--allow-http`, set `SCANOSS_ALLOW_HTTP=true`, or save it once with
-  `crypto-finder configure --api-url http://<host> --allow-http`. Each run that uses
+  `crypto-finder configure --api-url http://<host> --allow-http`
+  (`configure --allow-http=false` clears it). Each run that uses
   plain HTTP logs a warning. The command fails with `invalid_arguments` before any
   request, so a refused URL no longer falls back to a stale cached ruleset.
 - `pkg/sbomcbom`: `Options.AllowHTTP` is new, and `Generate` returns `ErrInsecureURL`

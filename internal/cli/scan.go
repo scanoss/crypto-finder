@@ -881,7 +881,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		)
 	}
 	// The API serves the remote ruleset and, with a key, dependency findings.
-	if !scanNoRemoteRules || (cfg.GetAPIKey() != "" && !scanNoDependencyFindingsAPI) {
+	if !scanNoRemoteRules || (scanDependencies && cfg.GetAPIKey() != "" && !scanNoDependencyFindingsAPI) {
 		if err := checkAPIURL(cfg.GetAPIURL(), cfg.GetAllowHTTP()); err != nil {
 			return err
 		}
