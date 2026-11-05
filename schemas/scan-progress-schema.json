@@ -6,6 +6,36 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["event", "schema_version", "phase", "status"],
+  "definitions": {
+    "dependencyOutcomeList": {
+      "description": "Dependencies the scan did not observe completely, sorted by module, version and purl. Its length equals the matching counter.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["module", "version", "reason"],
+        "properties": {
+          "module": {"type": "string", "minLength": 1},
+          "version": {"type": "string"},
+          "purl": {
+            "description": "The package URL the dependency's findings carry in dependency_info.purl. Absent when the module has no package URL form.",
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "description": "Open set within v1: a consumer must accept an unrecognized reason.",
+            "type": "string",
+            "minLength": 1
+          },
+          "error_code": {
+            "description": "The failure code of a failed dependency scan, when it has one.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
   "properties": {
     "event": {
       "const": "scan_progress"
@@ -70,6 +100,15 @@
           "type": "integer",
           "minimum": 0
         },
+        "deps_skipped_list": {
+          "$ref": "#/definitions/dependencyOutcomeList"
+        },
+        "deps_failed_list": {
+          "$ref": "#/definitions/dependencyOutcomeList"
+        },
+        "deps_incomplete_list": {
+          "$ref": "#/definitions/dependencyOutcomeList"
+        },
         "files_incomplete": {
           "type": "integer",
           "minimum": 0
@@ -94,7 +133,10 @@
               {"required": ["deps_incomplete"]},
               {"required": ["deps_with_findings"]},
               {"required": ["total_dep_findings"]},
-              {"required": ["files_incomplete"]}
+              {"required": ["files_incomplete"]},
+              {"required": ["deps_skipped_list"]},
+              {"required": ["deps_failed_list"]},
+              {"required": ["deps_incomplete_list"]}
             ]
           }
         },
@@ -123,7 +165,10 @@
               {"required": ["deps_failed"]},
               {"required": ["deps_incomplete"]},
               {"required": ["deps_with_findings"]},
-              {"required": ["total_dep_findings"]}
+              {"required": ["total_dep_findings"]},
+              {"required": ["deps_skipped_list"]},
+              {"required": ["deps_failed_list"]},
+              {"required": ["deps_incomplete_list"]}
             ]
           }
         }

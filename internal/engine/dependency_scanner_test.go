@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -917,7 +918,8 @@ func TestDependencyScanner_IncompleteDependencyIsCountedAndNeverCached(t *testin
 	}
 
 	details := run()
-	want := map[string]any{"deps_scanned": 2, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 1, "deps_with_findings": 2, "total_dep_findings": 2}
+	want := progressWant(map[string]any{"deps_scanned": 2, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 1, "deps_with_findings": 2, "total_dep_findings": 2},
+		nil, nil, []DependencyOutcome{{Module: "example.com/slow", Version: "1", PURL: "pkg:golang/example.com/slow@1", Reason: DependencyOutcomeTimeOrMemoryLimit}})
 	if !reflect.DeepEqual(details, want) {
 		t.Errorf("progress details = %v, want %v", details, want)
 	}
@@ -1756,5 +1758,119 @@ func TestDependencyScanJobs_FollowTheUsableCPUs(t *testing.T) {
 	}
 	if got := dependencyScanWorkers(0, "go"); got != 3 {
 		t.Fatalf("default go workers on 6 usable CPUs = %d, want 3", got)
+	}
+}
+
+// progressWant adds the dependency outcome lists to the counters a progress
+// event carries; a nil list is the empty list the event always writes.
+func progressWant(counters map[string]any, skipped, failed, incomplete []DependencyOutcome) map[string]any {
+	want := make(map[string]any, len(counters)+3)
+	for key, value := range counters {
+		want[key] = value
+	}
+	want["deps_skipped_list"] = nonNilOutcomes(skipped)
+	want["deps_failed_list"] = nonNilOutcomes(failed)
+	want["deps_incomplete_list"] = nonNilOutcomes(incomplete)
+	return want
+}
+
+// A consumer marks absent the findings of the dependencies a scan observed
+// completely and keeps the others, so the completed event names each
+// skipped, failed and incomplete dependency by the package URL its findings
+// carry, in one order whatever the resolver's order or the worker count.
+func TestDependencyScanner_ProgressNamesDependenciesNotObservedCompletely(t *testing.T) {
+	dir := t.TempDir()
+	rule := filepath.Join(dir, "rule.yaml")
+	if err := os.WriteFile(rule, []byte("rules:\n- id: fixture\n  languages: [go]\n  pattern: $X\n  message: fixture\n  severity: WARNING\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	slow, fast, broken := filepath.Join(dir, "slow"), filepath.Join(dir, "fast"), filepath.Join(dir, "broken")
+	registry := scanner.NewRegistry()
+	registry.Register("test-scanner", &mockScanner{
+		getInfoFunc: func() scanner.Info { return scanner.Info{Name: "test-scanner", Version: "1"} },
+		scanFunc: func(_ context.Context, target string, _ []string, info entities.ToolInfo) (*entities.InterimReport, error) {
+			if target == broken {
+				return nil, failure.New(failure.CodeScannerExecutionFailed, failure.StageScan, "opengrep exited 2")
+			}
+			report := &entities.InterimReport{Version: "1.0", Tool: info, Findings: []entities.Finding{{
+				FilePath:            filepath.Join(target, "found.go"),
+				CryptographicAssets: []entities.CryptographicAsset{{StartLine: 1, EndLine: 1, Metadata: map[string]string{"assetType": "algorithm"}}},
+			}}}
+			if target == slow {
+				report.IncompleteFiles = []string{filepath.Join(slow, "bundle.go")}
+			}
+			return report, nil
+		},
+	})
+	orch := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{loadFunc: func() ([]string, error) { return []string{rule}, nil }}), registry)
+	deps := []dependency.Dependency{
+		{Module: "example.com/zeta", Version: "v1.2.0"},
+		{Module: "example.com/broken", Version: "v1.0.0", Dir: broken},
+		{Module: "example.com/slow", Version: "v0.3.0", Dir: slow},
+		{Module: "example.com/alpha", Version: "v2.0.0"},
+		{Module: "example.com/fast", Version: "v1.0.0", Dir: fast},
+	}
+	scan := func(deps []dependency.Dependency, workers int) *DepScanResult {
+		t.Helper()
+		resolver := &fakeResolver{ecosystem: "go", resolveFn: func(context.Context, string) (*dependency.ResolveResult, error) {
+			return &dependency.ResolveResult{RootModule: "app", Dependencies: deps}, nil
+		}}
+		ds := NewDependencyScanner(orch, resolver, callgraph.NewBuilder(noopCallgraphParser{}), nil)
+		result, err := ds.ScanWithDependencies(t.Context(), &entities.InterimReport{}, DepScanOptions{Workers: workers, ScanOptions: ScanOptions{Target: dir, ScannerName: "test-scanner"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	result := scan(deps, 4)
+	details := result.ProgressDetails()
+	want := progressWant(
+		map[string]any{"deps_scanned": 2, "deps_skipped": 2, "deps_failed": 1, "deps_incomplete": 1, "deps_with_findings": 2, "total_dep_findings": 2},
+		[]DependencyOutcome{
+			{Module: "example.com/alpha", Version: "v2.0.0", PURL: "pkg:golang/example.com/alpha@v2.0.0", Reason: DependencyOutcomeNoLocalSource},
+			{Module: "example.com/zeta", Version: "v1.2.0", PURL: "pkg:golang/example.com/zeta@v1.2.0", Reason: DependencyOutcomeNoLocalSource},
+		},
+		[]DependencyOutcome{{Module: "example.com/broken", Version: "v1.0.0", PURL: "pkg:golang/example.com/broken@v1.0.0", Reason: DependencyOutcomeScanFailed, ErrorCode: "scanner_execution_failed"}},
+		[]DependencyOutcome{{Module: "example.com/slow", Version: "v0.3.0", PURL: "pkg:golang/example.com/slow@v0.3.0", Reason: DependencyOutcomeTimeOrMemoryLimit}},
+	)
+	if !reflect.DeepEqual(details, want) {
+		t.Fatalf("progress details =\n%v\nwant\n%v", details, want)
+	}
+	for list, counter := range map[string]string{"deps_skipped_list": "deps_skipped", "deps_failed_list": "deps_failed", "deps_incomplete_list": "deps_incomplete"} {
+		if got := len(details[list].([]DependencyOutcome)); got != details[counter] {
+			t.Errorf("%s holds %d dependencies, %s = %v", list, got, counter, details[counter])
+		}
+	}
+
+	// The incomplete dependency's own findings carry the purl the list names.
+	matched := 0
+	for _, finding := range result.Report.Findings {
+		for _, asset := range finding.CryptographicAssets {
+			if asset.DependencyInfo == nil || asset.DependencyInfo.Module != "example.com/slow" {
+				continue
+			}
+			matched++
+			if asset.DependencyInfo.PURL != "pkg:golang/example.com/slow@v0.3.0" {
+				t.Errorf("finding of example.com/slow carries purl %q, the incomplete list names pkg:golang/example.com/slow@v0.3.0", asset.DependencyInfo.PURL)
+			}
+		}
+	}
+	if matched != 1 {
+		t.Fatalf("found %d findings of example.com/slow, want 1", matched)
+	}
+
+	reversed := slices.Clone(deps)
+	slices.Reverse(reversed)
+	if again := scan(reversed, 1).ProgressDetails(); !reflect.DeepEqual(again, details) {
+		t.Errorf("progress details depend on resolver order or worker count:\n%v\nwant\n%v", again, details)
+	}
+}
+
+func TestDependencyScanResult_NilProgressDetailsCarriesEmptyLists(t *testing.T) {
+	var result *DepScanResult
+	want := progressWant(map[string]any{"deps_scanned": 0, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 0, "deps_with_findings": 0, "total_dep_findings": 0}, nil, nil, nil)
+	if got := result.ProgressDetails(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("progress details = %v, want %v", got, want)
 	}
 }

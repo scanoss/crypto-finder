@@ -331,6 +331,75 @@ func TestScanProgressSchema(t *testing.T) {
 			}`,
 			wantValid: false,
 		},
+		{
+			name: "completed-dependencies-with-outcome-lists",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1,
+				"details": {
+					"deps_scanned": 2,
+					"deps_skipped": 1,
+					"deps_failed": 1,
+					"deps_incomplete": 1,
+					"deps_with_findings": 1,
+					"total_dep_findings": 3,
+					"deps_skipped_list": [{"module": "github.com/a/b", "version": "v1.0.0", "purl": "pkg:golang/github.com/a/b@v1.0.0", "reason": "no_local_source"}],
+					"deps_failed_list": [{"module": "x", "version": "", "reason": "scan_failed", "error_code": "scanner_failed"}],
+					"deps_incomplete_list": [{"module": "dep", "version": "1.0.0", "purl": "pkg:npm/dep@1.0.0", "reason": "time_or_memory_limit"}]
+				}
+			}`,
+			wantValid: true,
+		},
+		{
+			name: "outcome-list-without-dependency-counters",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1,
+				"details": {"deps_skipped_list": []}
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "outcome-list-on-detection-event",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "detection",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1,
+				"details": {"files_incomplete": 1, "deps_incomplete_list": []}
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "outcome-entry-without-module",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1,
+				"details": {
+					"deps_scanned": 0,
+					"deps_skipped": 1,
+					"deps_failed": 0,
+					"deps_with_findings": 0,
+					"total_dep_findings": 0,
+					"deps_skipped_list": [{"version": "1", "reason": "no_local_source"}]
+				}
+			}`,
+			wantValid: false,
+		},
 	}
 
 	for _, tc := range tests {
