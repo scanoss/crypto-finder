@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.4] - 2026-11-05
+### Added
+- With `--progress` and `--scan-dependencies`, the completed `dependencies` phase now names the dependencies behind three of its counts: `deps_skipped_list` (no local source), `deps_failed_list` and `deps_incomplete_list` (scan stopped at a time or memory limit). Each is as long as its count, sorted by module, version and purl, and empty when the count is zero. An entry carries `module`, `version`, `reason` (`no_local_source`, `scan_failed` or `time_or_memory_limit`), the `purl` the dependency's findings carry in `cryptographic_assets[].dependency_info.purl` when the module has one, and on a failed scan its failure `error_code` when the error has one. The fields are optional within scan-progress schema v1, published in `schemas/scan-progress-schema.json`.
+
 ## [0.46.3] - 2026-11-04
 ### Fixed
 - Library entry points now take their crypto metadata only from rules of the
