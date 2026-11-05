@@ -231,7 +231,7 @@ func TestDependencyScanner_BatchesCacheMissesAcrossWorkers(t *testing.T) {
 			t.Errorf("dependency %s scanned %d times, want once", module, seen[dir])
 		}
 	}
-	want := map[string]any{"deps_scanned": 6, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 0, "deps_with_findings": 6, "total_dep_findings": 6}
+	want := progressWant(map[string]any{"deps_scanned": 6, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 0, "deps_with_findings": 6, "total_dep_findings": 6}, nil, nil, nil)
 	if got := result.ProgressDetails(); !reflect.DeepEqual(got, want) {
 		t.Errorf("progress details = %v, want %v", got, want)
 	}
@@ -315,7 +315,8 @@ func TestDependencyScanner_BatchFailureFallsBackToSingleScans(t *testing.T) {
 	}
 
 	got := f.progress(t, 1)
-	want := map[string]any{"deps_scanned": 3, "deps_skipped": 0, "deps_failed": 1, "deps_incomplete": 0, "deps_with_findings": 3, "total_dep_findings": 3}
+	want := progressWant(map[string]any{"deps_scanned": 3, "deps_skipped": 0, "deps_failed": 1, "deps_incomplete": 0, "deps_with_findings": 3, "total_dep_findings": 3},
+		nil, []DependencyOutcome{{Module: "bad", Version: "1", PURL: "pkg:golang/bad@1", Reason: DependencyOutcomeScanFailed, ErrorCode: "scanner_execution_failed"}}, nil)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("progress details = %v, want %v", got, want)
 	}
@@ -359,7 +360,8 @@ func TestDependencyScanner_BatchIncompletenessIsPerDependency(t *testing.T) {
 	f.recorder.slowRoot = f.dirs["slow"]
 
 	got := f.progress(t, 1)
-	want := map[string]any{"deps_scanned": 3, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 1, "deps_with_findings": 3, "total_dep_findings": 3}
+	want := progressWant(map[string]any{"deps_scanned": 3, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 1, "deps_with_findings": 3, "total_dep_findings": 3},
+		nil, nil, []DependencyOutcome{{Module: "slow", Version: "1", PURL: "pkg:golang/slow@1", Reason: DependencyOutcomeTimeOrMemoryLimit}})
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("progress details = %v, want %v", got, want)
 	}

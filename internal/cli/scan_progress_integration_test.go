@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -644,6 +645,15 @@ func TestScanProgressCountsScansCutShortByTimeouts(t *testing.T) {
 	}
 	if got := details["dependencies"]["deps_incomplete"]; got != float64(1) {
 		t.Errorf("dependencies deps_incomplete = %v, want 1: %v", got, details["dependencies"])
+	}
+	wantList := []any{map[string]any{"module": "dep", "version": "1.0.0", "purl": "pkg:npm/dep@1.0.0", "reason": "time_or_memory_limit"}}
+	if got := details["dependencies"]["deps_incomplete_list"]; !reflect.DeepEqual(got, wantList) {
+		t.Errorf("dependencies deps_incomplete_list = %v, want %v", got, wantList)
+	}
+	for _, list := range []string{"deps_skipped_list", "deps_failed_list"} {
+		if got := details["dependencies"][list]; !reflect.DeepEqual(got, []any{}) {
+			t.Errorf("dependencies %s = %v, want empty", list, got)
+		}
 	}
 }
 
