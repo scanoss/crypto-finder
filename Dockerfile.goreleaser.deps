@@ -31,9 +31,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # semgrep's mcp dependency imports a private pydantic API removed in 2.14.
 RUN pip install --no-cache-dir semgrep==1.145.0 "pydantic<2.14"
 
+# Create the non-root runtime user before anything is installed under its
+# home. Each tool below lands in its final location and is chowned in the same
+# layer that writes it: a later `mv` or `chown -R` would store every file a
+# second time, which used to add ~880 MB to this image.
+RUN groupadd --system crypto \
+    && useradd --system --gid crypto --create-home --home-dir /home/crypto --shell /usr/sbin/nologin crypto
+
 # Install the pinned opengrep release directly. This avoids the installer's
 # live releases API lookup while retaining binary integrity verification.
-# Running it once unpacks opengrep-core into /root/.cache/opengrep/<version>,
+# Running it once unpacks opengrep-core into /home/crypto/.cache/opengrep/<version>,
 # so the first scan in a fresh container runs in core mode instead of falling
 # back to the CLI.
 RUN case "${TARGETARCH}" in \
@@ -41,13 +48,16 @@ RUN case "${TARGETARCH}" in \
         arm64) asset="opengrep_manylinux_aarch64"; hash="${OPENGREP_ARM64_SHA256}" ;; \
         *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
     esac \
-    && install_dir="/root/.opengrep/cli/${OPENGREP_VERSION}" \
+    && install_dir="/home/crypto/.opengrep/cli/${OPENGREP_VERSION}" \
     && mkdir -p "${install_dir}" \
     && curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${asset}" -o "${install_dir}/opengrep" \
     && echo "${hash}  ${install_dir}/opengrep" | sha256sum -c - \
     && chmod a+x "${install_dir}/opengrep" \
-    && "${install_dir}/opengrep" --version \
-    && ln -s "${install_dir}" /root/.opengrep/cli/latest
+    && mkdir -p /home/crypto/.config /home/crypto/.cache \
+    && HOME=/home/crypto "${install_dir}/opengrep" --version \
+    && ln -s "${install_dir}" /home/crypto/.opengrep/cli/latest \
+    && ln -sf "${install_dir}/opengrep" /usr/local/bin/opengrep \
+    && chown -R crypto:crypto /home/crypto
 
 # Copy the pre-built crypto-finder binary from GoReleaser's build context
 COPY crypto-finder /usr/local/bin/crypto-finder
@@ -74,6 +84,8 @@ ENV SCANOSS_JAVA_JDK_HOMES=8=/opt/jdks/jdk8,11=/opt/jdks/jdk11,17=/opt/jdks/jdk1
 # ── Rust/Cargo (for dependency resolution only, not compilation) ──
 # Install pinned rustup-init from the versioned archive. This avoids the live
 # rustup installer script, whose checksum changes whenever rustup ships.
+ENV CARGO_HOME=/home/crypto/.cargo
+ENV RUSTUP_HOME=/home/crypto/.rustup
 RUN case "${TARGETARCH}" in \
         amd64) triple="x86_64-unknown-linux-gnu"; hash="${RUSTUP_AMD64_SHA256}" ;; \
         arm64) triple="aarch64-unknown-linux-gnu"; hash="${RUSTUP_ARM64_SHA256}" ;; \
@@ -84,45 +96,19 @@ RUN case "${TARGETARCH}" in \
         -o /tmp/rustup-init \
     && echo "${hash}  /tmp/rustup-init" | sha256sum -c - \
     && chmod +x /tmp/rustup-init \
-    && /tmp/rustup-init -y --default-toolchain "${RUST_VERSION}" --profile minimal \
-    && rm -f /tmp/rustup-init
+    && /tmp/rustup-init -y --no-modify-path --default-toolchain "${RUST_VERSION}" --profile minimal \
+    && rm -f /tmp/rustup-init \
+    && chown -R crypto:crypto "${CARGO_HOME}" "${RUSTUP_HOME}"
 
 # ── Python: isolated virtualenv for target project deps ──
-RUN python -m venv /opt/target-venv
+RUN python -m venv /opt/target-venv \
+    && chown -R crypto:crypto /opt/target-venv
 
-# ── Create non-root runtime user and migrate tool homes ──
-#
-# This image is consumed by downstream runtimes that run as the `crypto`
-# user. The scanner/tool installers above run as root and place state under
-# /root, so we must migrate those homes before dropping privileges.
-#
-# OpenGrep needs an extra step: the install places an ABSOLUTE symlink at
-# /root/.opengrep/cli/latest. After the move that symlink dangles. We locate
-# the real binary and pin a stable /usr/local/bin/opengrep symlink instead.
-RUN groupadd --system crypto && \
-    useradd --system --gid crypto --create-home --home-dir /home/crypto --shell /usr/sbin/nologin crypto && \
-    mkdir -p /workspace /home/crypto/.config /home/crypto/.cache && \
-    if [ -d /root/.cargo ]; then mv /root/.cargo /home/crypto/.cargo; fi && \
-    if [ -d /root/.rustup ]; then mv /root/.rustup /home/crypto/.rustup; fi && \
-    if [ -d /root/.opengrep ]; then mv /root/.opengrep /home/crypto/.opengrep; fi && \
-    if [ -d /root/.cache/opengrep ]; then mv /root/.cache/opengrep /home/crypto/.cache/opengrep; fi && \
-    OPENGREP_BIN=$(find /home/crypto/.opengrep -name opengrep -type f -executable 2>/dev/null | head -n1) && \
-    if [ -z "$OPENGREP_BIN" ]; then \
-        echo "ERROR: opengrep binary not found under /home/crypto/.opengrep" >&2; \
-        ls -laR /home/crypto/.opengrep >&2 || true; \
-        exit 1; \
-    fi && \
-    ln -sf "$OPENGREP_BIN" /usr/local/bin/opengrep && \
-    chown -R crypto:crypto /workspace /opt/target-venv /home/crypto
+RUN mkdir -p /workspace && chown crypto:crypto /workspace
 
 # ── Unified PATH ──
 ENV HOME=/home/crypto
-ENV CARGO_HOME=/home/crypto/.cargo
-ENV RUSTUP_HOME=/home/crypto/.rustup
-# Note: opengrep is reached via /usr/local/bin/opengrep (already on $PATH),
-# pinned by the symlink created during user setup above. We deliberately don't
-# append /home/crypto/.opengrep/cli/latest here because that path is an
-# absolute symlink that becomes invalid after migration.
+# opengrep is reached through /usr/local/bin/opengrep, linked when it was installed.
 ENV PATH="${JAVA_HOME}/bin:/opt/target-venv/bin:/usr/local/go/bin:/home/crypto/.cargo/bin:$PATH"
 
 # Create workspace directory
