@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -22,11 +23,51 @@ type cargoMetadata struct {
 
 // cargoPackage represents a single package in cargo metadata output.
 type cargoPackage struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	Version      string  `json:"version"`
-	ManifestPath string  `json:"manifest_path"`
-	Source       *string `json:"source"` // nil = local/workspace crate
+	ID           string        `json:"id"`
+	Name         string        `json:"name"`
+	Version      string        `json:"version"`
+	ManifestPath string        `json:"manifest_path"`
+	Source       *string       `json:"source"` // nil = local/workspace crate
+	Targets      []cargoTarget `json:"targets"`
+}
+
+// cargoTarget is one build target of a package in cargo metadata output.
+type cargoTarget struct {
+	Name string   `json:"name"`
+	Kind []string `json:"kind"`
+}
+
+// cargoLibraryKinds are the target kinds of a library other crates link
+// against and name in source.
+var cargoLibraryKinds = []string{"lib", "rlib", "dylib", "proc-macro"}
+
+// libraryName returns the name source code uses for the package's library:
+// its library target's name, which `[lib] name` sets and which otherwise is
+// the package name with each "-" turned into "_". A package the metadata
+// lists no targets for gets that default; one with targets but no library
+// (a binary-only crate) gets "", as nothing can name it in source.
+func (pkg cargoPackage) libraryName() string {
+	if len(pkg.Targets) == 0 {
+		return strings.ReplaceAll(pkg.Name, "-", "_")
+	}
+	for _, target := range pkg.Targets {
+		for _, kind := range target.Kind {
+			if slices.Contains(cargoLibraryKinds, kind) && target.Name != "" {
+				return target.Name
+			}
+		}
+	}
+	return ""
+}
+
+// importPath is the package's Dependency.ImportPath or
+// WorkspaceMember.ImportPath: its library name when that differs from its
+// package name, else "".
+func (pkg cargoPackage) importPath() string {
+	if name := pkg.libraryName(); name != pkg.Name {
+		return name
+	}
+	return ""
 }
 
 // cargoResolve represents the dependency graph in cargo metadata output.
@@ -108,16 +149,21 @@ func appendCargoPackage(result *ResolveResult, pkg cargoPackage, workspaceMember
 	dir := filepath.Dir(pkg.ManifestPath)
 	if isCargoWorkspacePackage(pkg, workspaceMemberIDs, workspaceMemberFallbacks) {
 		result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember{
-			Name: pkg.Name,
-			Dir:  dir,
+			Name:       pkg.Name,
+			ImportPath: pkg.importPath(),
+			Dir:        dir,
 		})
 		return
 	}
 
+	// Source reaches a crate by its library name, not its package name: a
+	// caller of package my-lib writes my_lib::f, so its functions are keyed
+	// under my_lib for that call to resolve.
 	result.Dependencies = append(result.Dependencies, Dependency{
-		Module:  pkg.Name,
-		Version: pkg.Version,
-		Dir:     dir,
+		Module:     pkg.Name,
+		ImportPath: pkg.importPath(),
+		Version:    pkg.Version,
+		Dir:        dir,
 	})
 }
 

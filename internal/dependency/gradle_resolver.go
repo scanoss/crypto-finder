@@ -94,7 +94,7 @@ func (r *GradleResolver) Resolve(ctx context.Context, targetDir string) (*Resolv
 	if len(output.WorkspaceMembers) > 1 {
 		result.WorkspaceMembers = make([]WorkspaceMember, 0, len(output.WorkspaceMembers))
 		for _, member := range output.WorkspaceMembers {
-			result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember(member))
+			result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember{Name: member.Name, Dir: member.Dir})
 		}
 	}
 
