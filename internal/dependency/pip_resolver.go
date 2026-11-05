@@ -119,7 +119,14 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		}
 	}
 
-	// Step 5: Build dependencies list and graph
+	// Step 5: Build dependencies list and graph. A Requires entry spells a
+	// name as its distribution's metadata does (typing-extensions), pip list
+	// as the installed distribution does (typing_extensions): edges take the
+	// installed spelling, so a required distribution is never a graph source.
+	installedNames := make(map[string]string, len(packages))
+	for _, pkg := range packages {
+		installedNames[normalizePackageName(pkg.Name)] = pkg.Name
+	}
 	skippedNoSource := 0
 	var installs []installedDistribution
 	for _, pkg := range packages {
@@ -149,6 +156,9 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		if info.Requires != "" {
 			for _, req := range strings.Split(info.Requires, ", ") {
 				req = strings.TrimSpace(req)
+				if installed, ok := installedNames[normalizePackageName(req)]; ok {
+					req = installed
+				}
 				if req != "" {
 					result.Graph[pkg.Name] = append(result.Graph[pkg.Name], req)
 				}

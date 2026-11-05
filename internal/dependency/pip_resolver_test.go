@@ -692,7 +692,7 @@ func TestPipResolver_Resolve_DeclaredRequirementsAreDirect(t *testing.T) {
 
 // resolveDirectFixture resolves project against an environment holding
 // cbench-direct-liba, which requires nothing, and transa, which requires
-// transb, and returns the dependency paths.
+// transb (spelled TransB in its metadata), and returns the dependency paths.
 func resolveDirectFixture(t *testing.T, project string) map[string]Path {
 	t.Helper()
 	site := filepath.Join(t.TempDir(), "site-packages")
@@ -709,7 +709,7 @@ if [ "$1" = "-m" ] && [ "$3" = "list" ]; then
 fi
 if [ "$1" = "-m" ] && [ "$3" = "show" ]; then
   printf 'Name: cbench-direct-liba\nVersion: 1.0.0\nLocation: `+site+`\nRequires:\n---\n'
-  printf 'Name: transa\nVersion: 1.0.0\nLocation: `+site+`\nRequires: transb\n---\n'
+  printf 'Name: transa\nVersion: 1.0.0\nLocation: `+site+`\nRequires: TransB\n---\n'
   printf 'Name: transb\nVersion: 1.0.0\nLocation: `+site+`\nRequires:\n'
   exit 0
 fi
