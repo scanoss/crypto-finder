@@ -1,0 +1,11 @@
+schema_version: "1"
+language: rust
+framework:
+  name: warp
+  description: "warp 0.4 filters: a handler passed to map, then, and_then, or_else or recover on a filter built from the crate (warp::path(\"x\").and_then(h), warp::path!(..).map(h))."
+entries:
+  - shape: registration_call
+    from: [warp]
+    names: [map, then, and_then, or_else, recover]
+    path: optional
+    root_kind: framework_entry

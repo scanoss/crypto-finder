@@ -1,0 +1,11 @@
+schema_version: "1"
+language: rust
+framework:
+  name: lambda_runtime
+  description: "AWS Lambda functions: the handler passed to service_fn from lambda_runtime 1 or lambda_http 1 (lambda_runtime::run(service_fn(h)))."
+entries:
+  - shape: registration_call
+    from: [lambda_runtime, lambda_http]
+    names: [service_fn]
+    path: optional
+    root_kind: framework_entry

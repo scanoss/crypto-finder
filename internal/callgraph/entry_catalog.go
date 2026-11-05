@@ -29,6 +29,7 @@ const (
 	entryLanguageNode   = "node"
 	entryLanguagePython = "python"
 	entryLanguageGo     = "go"
+	entryLanguageRust   = "rust"
 )
 
 // entryCatalog is the framework entry-point catalog built into the binary

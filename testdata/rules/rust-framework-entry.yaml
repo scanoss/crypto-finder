@@ -1,0 +1,22 @@
+rules:
+  - id: rust.framework-entry.sha256
+    message: Detected SHA-256 hashing
+    severity: INFO
+    languages:
+      - rust
+    pattern: Sha256::digest($DATA)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: hash
+
+  - id: rust.framework-entry.hmac
+    message: Detected HMAC-SHA256 keying
+    severity: INFO
+    languages:
+      - rust
+    pattern: HmacSha256::new_from_slice($KEY)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmPrimitive: mac

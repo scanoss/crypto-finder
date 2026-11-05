@@ -1,0 +1,10 @@
+schema_version: "1"
+language: rust
+framework:
+  name: rocket
+  description: "Rocket 0.5 route, catcher and launch attributes (#[get(\"/\")], #[catch(404)], #[launch]), imported or brought in by #[macro_use] extern crate rocket."
+entries:
+  - shape: decorator
+    from: [rocket, rocket_codegen]
+    names: [get, post, put, delete, patch, head, options, route, catch, launch]
+    root_kind: framework_entry

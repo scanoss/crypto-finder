@@ -53,11 +53,14 @@ type Shape string
 
 const (
 	// ShapeDecorator is a Java annotation or a Python or TypeScript decorator
-	// on the function: @GetMapping, @app.route("/x"), @Post().
+	// on the function: @GetMapping, @app.route("/x"), @Post(). In Rust it is
+	// an attribute on the function (#[get("/")]) or on the impl block whose
+	// methods the framework calls (#[tonic::async_trait]).
 	ShapeDecorator Shape = "decorator"
 	// ShapeRegistrationCall is a call that passes the function to the
 	// framework: app.get("/x", handler), http.HandleFunc("/x", h),
-	// path("x/", views.index).
+	// path("x/", views.index). In Rust it may be a method of a value that
+	// comes from the framework's crate: web::get().to(handler).
 	ShapeRegistrationCall Shape = "registration_call"
 	// ShapeHandlerField is a struct literal of a framework type whose field
 	// holds the function: &cobra.Command{RunE: run}.
@@ -111,12 +114,13 @@ var shapesByLanguage = map[string][]Shape{
 	"node":   {ShapeDecorator, ShapeRegistrationCall, ShapeFileConvention},
 	"python": {ShapeDecorator, ShapeRegistrationCall, ShapeSupertype},
 	"go":     {ShapeRegistrationCall, ShapeHandlerField, ShapeSupertype, ShapeInterfaceMethod, ShapeServerRegistration},
+	"rust":   {ShapeDecorator, ShapeRegistrationCall},
 }
 
 // packageSeparator is how each language spells a subpackage, for matching
 // from: "flask" covers "flask.views", "github.com/go-chi/chi" covers
-// "github.com/go-chi/chi/v5".
-var packageSeparator = map[string]string{"java": ".", "python": ".", "node": "/", "go": "/"}
+// "github.com/go-chi/chi/v5", "actix_web" covers "actix_web::web".
+var packageSeparator = map[string]string{"java": ".", "python": ".", "node": "/", "go": "/", "rust": "::"}
 
 // Entry is one catalog entry.
 type Entry struct {

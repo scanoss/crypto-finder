@@ -1,0 +1,15 @@
+schema_version: "1"
+language: rust
+framework:
+  name: actix-web
+  description: "actix-web 4 handlers: a route attribute (#[get(\"/\")], #[route], #[routes]) on the handler, and a handler passed to to() on a value from the crate (web::get().to(h), web::resource(\"/\").to(h), web::to(h))."
+entries:
+  - shape: decorator
+    from: [actix_web, actix_web_codegen]
+    names: [get, post, put, delete, patch, head, options, trace, connect, query, route, routes]
+    root_kind: framework_entry
+  - shape: registration_call
+    from: [actix_web]
+    names: [to]
+    path: optional
+    root_kind: framework_entry
