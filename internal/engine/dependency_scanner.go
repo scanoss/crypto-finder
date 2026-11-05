@@ -1551,12 +1551,54 @@ func AssignFindingIDs(report *entities.InterimReport) {
 
 	MarkSyntheticVariants(report)
 	for i := range report.Findings {
-		finding := &report.Findings[i]
-		for j := range finding.CryptographicAssets {
-			asset := &finding.CryptographicAssets[j]
-			asset.FindingID = generateFindingID(findingIDPath(*finding, *asset), asset.StartLine, asset.Rules, asset.ConditionedValue)
-		}
+		assignFindingIDs(&report.Findings[i])
 	}
+}
+
+// assignFindingIDs gives each asset of finding its id. The id hashes the line,
+// not the columns, so two assets one rule reported on one line (two calls side
+// by side, or one nested in the other's arguments) would share it. The first
+// of them in source order keeps the id it always had; each later one also
+// hashes its columns, and a counter when even those are shared, so every id
+// in the finding names one asset.
+func assignFindingIDs(finding *entities.Finding) {
+	assets := finding.CryptographicAssets
+	order := make([]int, len(assets))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(x, y int) bool {
+		a, b := &assets[order[x]], &assets[order[y]]
+		if a.StartCol != b.StartCol {
+			return a.StartCol < b.StartCol
+		}
+		return a.EndCol < b.EndCol
+	})
+	taken := make(map[string]struct{}, len(assets))
+	for _, j := range order {
+		asset := &assets[j]
+		path := findingIDPath(*finding, *asset)
+		id := generateFindingID(path, asset.StartLine, asset.Rules, asset.ConditionedValue)
+		for n := 0; ; n++ {
+			if _, shared := taken[id]; !shared {
+				break
+			}
+			id = generateFindingID(path, asset.StartLine, asset.Rules, findingIDSpanSalt(asset, n))
+		}
+		taken[id] = struct{}{}
+		asset.FindingID = id
+	}
+}
+
+// findingIDSpanSalt is what an asset whose line id is taken hashes in place of
+// its conditioned value alone: the value, its columns and, past the first
+// retry, a counter.
+func findingIDSpanSalt(asset *entities.CryptographicAsset, retry int) string {
+	salt := asset.ConditionedValue + "@" + strconv.Itoa(asset.StartCol) + "-" + strconv.Itoa(asset.EndCol)
+	if retry > 0 {
+		salt += "#" + strconv.Itoa(retry)
+	}
+	return salt
 }
 
 // generateFindingID produces a stable short hash for a finding.
