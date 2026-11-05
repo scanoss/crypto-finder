@@ -203,7 +203,7 @@ func (r *GradleResolver) exportDependencyModel(ctx context.Context, targetDir, c
 			failure.StageDependency,
 			"Gradle dependency export failed",
 			failure.WithDetail("target_dir", targetDir),
-			failure.WithDetail("output", truncateForFailure(strings.TrimSpace(string(output)), 4000)),
+			failure.WithDetail("output", truncateForFailure(strings.TrimSpace(string(output)), failureOutputLimit)),
 		)
 	}
 
@@ -628,6 +628,18 @@ func canonicalGradleDependencies(deps []gradleDependencyRecord) []gradleDependen
 		out = append(out, byKey[key])
 	}
 	return out
+}
+
+// failureOutputLimit bounds the tool output a failure carries.
+const failureOutputLimit = 4000
+
+// tailForFailure keeps the end of a tool's output, where npm and pip print the
+// reason they failed.
+func tailForFailure(value string, limit int) string {
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	return "..." + value[len(value)-limit:]
 }
 
 func truncateForFailure(value string, limit int) string {

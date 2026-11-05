@@ -62,7 +62,7 @@ func TestNewDependencyRegistry_NpmDevDependencies(t *testing.T) {
 		{false, []string{"node-forge"}},
 		{true, []string{"node-forge", "tap"}},
 	} {
-		resolver, err := newDependencyRegistry(tc.includeDev).Get(ecosystemNode)
+		resolver, err := newDependencyRegistry(tc.includeDev, false).Get(ecosystemNode)
 		if err != nil {
 			t.Fatalf("npm resolver: %v", err)
 		}
@@ -78,5 +78,15 @@ func TestNewDependencyRegistry_NpmDevDependencies(t *testing.T) {
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("includeDev=%v modules = %v, want %v", tc.includeDev, got, tc.want)
 		}
+	}
+}
+
+func TestScanCommand_InstallDependenciesFlagIsOptIn(t *testing.T) {
+	flag := scanCmd.Flags().Lookup("install-dependencies")
+	if flag == nil {
+		t.Fatal("expected --install-dependencies flag")
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("default = %q, want false: a scan installs nothing unless asked", flag.DefValue)
 	}
 }
