@@ -69,6 +69,15 @@ type WorkspaceMember struct {
 	Dir string
 }
 
+// SourceNamespace is the name the member's code is reached by in source:
+// ImportPath, or Name when that is empty.
+func (m WorkspaceMember) SourceNamespace() string {
+	if m.ImportPath != "" {
+		return m.ImportPath
+	}
+	return m.Name
+}
+
 // ResolveResult holds the complete dependency resolution output.
 type ResolveResult struct {
 	// RootModule is the root module path (e.g., "github.com/myorg/myproject")
