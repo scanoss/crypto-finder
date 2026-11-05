@@ -79,3 +79,37 @@ func TestAssignFindingIDs_PerValueAssetsGetDistinctIDs(t *testing.T) {
 		t.Fatalf("per-value finding_id is not stable, want %q", want)
 	}
 }
+
+// CF-GEN-002: the deduplicator keeps two calls one rule matched on one line
+// apart (bcrypt.hashpw(pw, bcrypt.gensalt())), so their ids must differ too.
+// The first in source order keeps the id it always had.
+func TestAssignFindingIDs_SameRuleSameLineAssetsGetDistinctIDs(t *testing.T) {
+	t.Parallel()
+
+	rule := []entities.RuleInfo{{ID: "python.bcrypt"}}
+	report := &entities.InterimReport{Findings: []entities.Finding{{
+		FilePath: "hashpw/main.py",
+		CryptographicAssets: []entities.CryptographicAsset{
+			{StartLine: 6, EndLine: 6, StartCol: 38, EndCol: 63, Rules: rule},
+			{StartLine: 6, EndLine: 6, StartCol: 14, EndCol: 64, Rules: rule},
+			{StartLine: 6, EndLine: 6, StartCol: 14, EndCol: 64, Rules: rule},
+		},
+	}}}
+
+	AssignFindingIDs(report)
+	assets := report.Findings[0].CryptographicAssets
+	first := []string{assets[0].FindingID, assets[1].FindingID, assets[2].FindingID}
+	if first[0] == first[1] || first[0] == first[2] || first[1] == first[2] {
+		t.Fatalf("finding ids = %q, want three distinct ids", first)
+	}
+	if want := generateFindingID("hashpw/main.py", 6, rule, ""); first[1] != want {
+		t.Fatalf("outer hashpw id = %q, want the line id %q it always had", first[1], want)
+	}
+
+	AssignFindingIDs(report)
+	for i := range assets {
+		if assets[i].FindingID != first[i] {
+			t.Fatalf("second pass changed asset %d id %q -> %q", i, first[i], assets[i].FindingID)
+		}
+	}
+}

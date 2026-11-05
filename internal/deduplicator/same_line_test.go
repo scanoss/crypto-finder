@@ -16,10 +16,9 @@ func bcryptMatch(startCol, endCol int) entities.CryptographicAsset {
 	})
 }
 
-// CF-GEN-002: one rule matching two calls side by side on one line reports two
-// operations, not one.
+// CF-GEN-002: one rule matching two calls side by side on one line, such as
+// two bcrypt.hashpw calls in two statements, reports two operations, not one.
 func TestDeduplicate_SameLineCallsAtDifferentColumnsStayApart(t *testing.T) {
-	// a = bcrypt.hashpw(x, s); b = bcrypt.hashpw(y, s)
 	if got := dedupFile(bcryptMatch(9, 30), bcryptMatch(36, 57)); len(got) != 2 {
 		t.Fatalf("two calls at different columns of one line, want 2 assets, got %q", got)
 	}

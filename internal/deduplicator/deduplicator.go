@@ -117,7 +117,8 @@ func deduplicateAssets(filePath string, assets []entities.CryptographicAsset) []
 // the group stays one call, as before columns were read.
 func splitByCall(assets []entities.CryptographicAsset) [][]entities.CryptographicAsset {
 	var calls [][]entities.CryptographicAsset
-	for _, asset := range assets {
+	for k := range assets {
+		asset := assets[k]
 		i := slices.IndexFunc(calls, func(call []entities.CryptographicAsset) bool {
 			return slices.ContainsFunc(call, func(member entities.CryptographicAsset) bool { return sameCall(member, asset) }) &&
 				!slices.ContainsFunc(call, func(member entities.CryptographicAsset) bool { return twoMatchesOfOneRule(member, asset) })
