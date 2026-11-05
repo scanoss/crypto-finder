@@ -2,10 +2,12 @@ package dependency
 
 import (
 	"archive/zip"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -219,5 +221,103 @@ func TestHasMatchingExtension(t *testing.T) {
 	}
 	if hasMatchingExtension("x/README.md", []string{".java", ".py"}) {
 		t.Fatal("expected extension mismatch")
+	}
+}
+
+// A library rebuilt and reinstalled at the same version (a Maven SNAPSHOT,
+// a module installed with mvn install) must be scanned as rebuilt, not as
+// the sources the cache extracted from its earlier archive.
+func TestSourceCache_ExtractZip_ReextractsChangedArchive(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	cache, err := NewSourceCache()
+	if err != nil {
+		t.Fatalf("NewSourceCache: %v", err)
+	}
+	archive := filepath.Join(t.TempDir(), "sources.jar")
+	createZipArchive(t, archive, map[string]string{"src/Old.java": "class Old {}"})
+	if _, err := cache.ExtractZip(archive, "org.example:lib", "1.0-SNAPSHOT", []string{".java"}); err != nil {
+		t.Fatalf("ExtractZip: %v", err)
+	}
+
+	createZipArchive(t, archive, map[string]string{"src/New.java": "class New { int digest; }"})
+	dir, err := cache.ExtractZip(archive, "org.example:lib", "1.0-SNAPSHOT", []string{".java"})
+	if err != nil {
+		t.Fatalf("ExtractZip after rebuild: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, "src", "New.java")); err != nil || string(got) != "class New { int digest; }" {
+		t.Fatalf("rebuilt source = %q, %v; want the rebuilt archive's", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "src", "Old.java")); !os.IsNotExist(err) {
+		t.Fatalf("source removed from the archive is still served: %v", err)
+	}
+}
+
+// An extraction cut short (a killed scan, a full disk) must not leave an
+// entry later scans take as the dependency's sources.
+func TestSourceCache_ExtractZip_CompletesInterruptedEntry(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	cache, err := NewSourceCache()
+	if err != nil {
+		t.Fatalf("NewSourceCache: %v", err)
+	}
+	archive := filepath.Join(t.TempDir(), "sources.jar")
+	createZipArchive(t, archive, map[string]string{"a/A.java": "class A {}", "b/B.java": "class B {}"})
+	// What an extraction killed after its first file left behind.
+	partial := filepath.Join(cache.baseDir, "org.example-lib", "1.0.0", "a")
+	if err := os.MkdirAll(partial, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(partial, "A.java"), []byte("class A {}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := cache.ExtractZip(archive, "org.example:lib", "1.0.0", []string{".java"})
+	if err != nil {
+		t.Fatalf("ExtractZip: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b", "B.java")); err != nil {
+		t.Fatalf("interrupted entry served without the rest of its sources: %v", err)
+	}
+}
+
+// Scans running side by side (parallel CI jobs sharing a home directory)
+// extract the same dependency at once; none may return before the entry
+// holds every source file.
+func TestSourceCache_ExtractZip_ConcurrentExtractionsSeeCompleteEntry(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	cache, err := NewSourceCache()
+	if err != nil {
+		t.Fatalf("NewSourceCache: %v", err)
+	}
+	files := make(map[string]string)
+	for i := range 300 {
+		files[fmt.Sprintf("p%03d/C%03d.java", i, i)] = strings.Repeat("class C {}\n", 200)
+	}
+	archive := filepath.Join(t.TempDir(), "sources.jar")
+	createZipArchive(t, archive, files)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dir, err := cache.ExtractZip(archive, "org.example:lib", "1.0.0", []string{".java"})
+			if err != nil {
+				errs <- err
+				return
+			}
+			for name := range files {
+				if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(name))); err != nil {
+					errs <- fmt.Errorf("entry returned without %s: %w", name, err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
 	}
 }

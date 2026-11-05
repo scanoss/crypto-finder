@@ -914,22 +914,18 @@ func (r *MavenResolver) resolveSourceDir(dep Dependency, m2Repo string, cache *S
 		return ""
 	}
 
-	// Check cache first
-	if dir := cache.CachedDir(dep.Module, dep.Version); dir != "" {
-		return dir
-	}
-
-	// Locate the source JAR in the local repository.
+	// The source JAR in the local repository is what the cache must hold: a
+	// JAR rebuilt at the same version replaces the sources extracted from
+	// the earlier one. Without it, the cache's copy is all there is.
 	sourceJAR := r.sourceJarPath(dep, m2Repo)
 	if sourceJAR == "" {
-		return ""
+		return cache.CachedDir(dep.Module, dep.Version)
 	}
 
 	if _, err := os.Stat(sourceJAR); err != nil {
-		return ""
+		return cache.CachedDir(dep.Module, dep.Version)
 	}
 
-	// Extract to cache
 	dir, err := cache.ExtractZip(sourceJAR, dep.Module, dep.Version, []string{".java"})
 	if err != nil {
 		log.Debug().Err(err).Str("jar", sourceJAR).Msg("Failed to extract source JAR")
