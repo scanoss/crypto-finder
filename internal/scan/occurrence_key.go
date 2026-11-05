@@ -110,8 +110,10 @@ func groupOccurrenceKeyCandidates(candidates []occurrenceKeyCandidate) map[strin
 // can both land on one. A rule reports a call once, so its two spans are two
 // occurrences. The first match in source order stays in the group and keeps its
 // key; each later one opens a group of its own, ordered by its position like
-// any other collision, so it gets the next -N suffix. A group no rule matched
-// twice is left as it is, so its key does not change.
+// any other collision, so it gets the next -N suffix. An asset of another rule
+// joins the call whose span holds it (partHolding), else the first call it does
+// not conflict with. A group no rule matched twice is left as it is, so its key
+// does not change.
 func splitTwoMatchesOfOneRule(groups map[string]*occurrenceKeyGroup) {
 	var split []*occurrenceKeyGroup
 	for _, group := range groups {
@@ -122,9 +124,12 @@ func splitTwoMatchesOfOneRule(groups map[string]*occurrenceKeyGroup) {
 		sort.SliceStable(assets, func(i, j int) bool { return assetSpanLess(assets[i], assets[j]) })
 		var parts [][]*entities.CryptographicAsset
 		for _, asset := range assets {
-			i := slices.IndexFunc(parts, func(part []*entities.CryptographicAsset) bool {
-				return !slices.ContainsFunc(part, func(member *entities.CryptographicAsset) bool { return twoMatchesOfOneRule(member, asset) })
-			})
+			i := partHolding(parts, asset)
+			if i < 0 {
+				i = slices.IndexFunc(parts, func(part []*entities.CryptographicAsset) bool {
+					return !conflictsWithPart(part, asset)
+				})
+			}
 			if i < 0 {
 				parts = append(parts, []*entities.CryptographicAsset{asset})
 				continue
@@ -151,6 +156,36 @@ func splitTwoMatchesOfOneRule(groups map[string]*occurrenceKeyGroup) {
 	for _, group := range split {
 		groups[group.identity] = group
 	}
+}
+
+// partHolding is the part whose call span (its first match, which opened it)
+// contains asset and which asset does not conflict with, the innermost when
+// several do; -1 when none. An asset of another rule belongs to the call it
+// sits in: without this, first-fit sent a provider argument of the second
+// call of a ternary to the first call, the first part it did not conflict
+// with.
+func partHolding(parts [][]*entities.CryptographicAsset, asset *entities.CryptographicAsset) int {
+	best := -1
+	for i, part := range parts {
+		if !spanContains(part[0], asset) || conflictsWithPart(part, asset) {
+			continue
+		}
+		if best < 0 || spanContains(parts[best][0], part[0]) {
+			best = i
+		}
+	}
+	return best
+}
+
+func conflictsWithPart(part []*entities.CryptographicAsset, asset *entities.CryptographicAsset) bool {
+	return slices.ContainsFunc(part, func(member *entities.CryptographicAsset) bool { return twoMatchesOfOneRule(member, asset) })
+}
+
+// spanContains reports that inner's span lies within outer's.
+func spanContains(outer, inner *entities.CryptographicAsset) bool {
+	startsAfter := inner.StartLine > outer.StartLine || (inner.StartLine == outer.StartLine && inner.StartCol >= outer.StartCol)
+	endsBefore := inner.EndLine < outer.EndLine || (inner.EndLine == outer.EndLine && inner.EndCol <= outer.EndCol)
+	return startsAfter && endsBefore
 }
 
 // twoMatchesOfOneRule reports that a rule both assets list matched each of

@@ -337,6 +337,29 @@ func TestAssignOccurrenceKeys_TwoMatchesOfOneRuleOnOneAnchorGetDistinctKeys(t *t
 	}
 }
 
+// An asset of another rule that sits inside the second call belongs to it, not
+// to the first call it happens not to conflict with (review on #861: a
+// provider-argument match inside getInstance(protocol, provider), on the line
+// the fallback anchors).
+func TestAssignOccurrenceKeys_AnotherRulesMatchJoinsTheCallThatHoldsIt(t *testing.T) {
+	result := misanchoredTernaryResult()
+	f := &result.Report.Findings[0]
+	f.CryptographicAssets = append(f.CryptographicAssets, entities.CryptographicAsset{
+		StartLine: 160, EndLine: 160, StartCol: 90, EndCol: 100,
+		Rules: []entities.RuleInfo{{ID: "java.jca.protocol.tls.provider"}},
+	})
+	AssignOccurrenceKeys(result)
+
+	assets := f.CryptographicAssets
+	first, argument, second, provider := assets[0], assets[1], assets[2], assets[3]
+	if provider.OccurrenceKey != second.OccurrenceKey {
+		t.Errorf("provider occurrence_key = %q, want the second call's %q", provider.OccurrenceKey, second.OccurrenceKey)
+	}
+	if argument.OccurrenceKey != first.OccurrenceKey {
+		t.Errorf("argument occurrence_key = %q, want the first call's %q", argument.OccurrenceKey, first.OccurrenceKey)
+	}
+}
+
 // The first call in source order keeps the base key whatever order the report
 // lists the matches in, and a second run gives the same keys.
 func TestAssignOccurrenceKeys_TwoMatchesOfOneRuleOnOneAnchorAreDeterministic(t *testing.T) {
