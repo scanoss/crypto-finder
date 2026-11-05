@@ -19,6 +19,7 @@ package callgraph
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -248,7 +249,10 @@ func rustValueOrigin(node *sitter.Node, ctx *rustTypeCtx, depth int) string {
 		return rustEntryPath(ctx.analysis, node.Content(ctx.src))
 	case rustSyms.identifier:
 		name := node.Content(ctx.src)
-		if value := rustLetValue(node, name, ctx.src); value != nil {
+		if ctx.parser == nil {
+			return ""
+		}
+		if value := ctx.parser.rustLetValue(node, name, ctx.src); value != nil {
 			return rustValueOrigin(value, ctx, depth+1)
 		}
 		if _, imported := ctx.analysis.Imports[name]; imported {
@@ -258,9 +262,17 @@ func rustValueOrigin(node *sitter.Node, ctx *rustTypeCtx, depth int) string {
 	return ""
 }
 
+// rustLetBinding is one `let name = value` of a function, in source order.
+type rustLetBinding struct {
+	end   uint32
+	value *sitter.Node
+}
+
 // rustLetValue returns the value of the last `let name = value` of the
-// function enclosing use that comes before it, or nil.
-func rustLetValue(use *sitter.Node, name string, src []byte) *sitter.Node {
+// function enclosing use that ends before it, or nil. Each function's let
+// bindings are indexed once per file, so a function with many registration
+// calls on variables is walked once, not once per call.
+func (p *RustParser) rustLetValue(use *sitter.Node, name string, src []byte) *sitter.Node {
 	fn := use.Parent()
 	for fn != nil && fn.Type() != rustNodeFunctionItem {
 		fn = fn.Parent()
@@ -268,16 +280,35 @@ func rustLetValue(use *sitter.Node, name string, src []byte) *sitter.Node {
 	if fn == nil {
 		return nil
 	}
+	key := [2]uint32{fn.StartByte(), fn.EndByte()}
+	index, ok := p.letIndex[key]
+	if !ok {
+		index = rustIndexLetBindings(fn.ChildByFieldName("body"), src)
+		if p.letIndex == nil {
+			p.letIndex = make(map[[2]uint32]map[string][]rustLetBinding)
+		}
+		p.letIndex[key] = index
+	}
 	var found *sitter.Node
+	for _, binding := range index[name] {
+		if binding.end <= use.StartByte() {
+			found = binding.value
+		}
+	}
+	return found
+}
+
+// rustIndexLetBindings maps each name a let in body binds to its values, in
+// source order.
+func rustIndexLetBindings(body *sitter.Node, src []byte) map[string][]rustLetBinding {
+	index := make(map[string][]rustLetBinding)
 	var walk func(*sitter.Node)
 	walk = func(n *sitter.Node) {
-		if n.StartByte() >= use.StartByte() {
-			return
-		}
 		if n.Type() == rustNodeLetDeclaration {
-			if pattern := n.ChildByFieldName("pattern"); pattern != nil && rustPatternName(pattern, src) == name {
-				if value := n.ChildByFieldName("value"); value != nil && value.EndByte() <= use.StartByte() {
-					found = value
+			pattern, value := n.ChildByFieldName("pattern"), n.ChildByFieldName("value")
+			if pattern != nil && value != nil {
+				if name := rustPatternName(pattern, src); name != "" {
+					index[name] = append(index[name], rustLetBinding{end: value.EndByte(), value: value})
 				}
 			}
 		}
@@ -285,10 +316,10 @@ func rustLetValue(use *sitter.Node, name string, src []byte) *sitter.Node {
 			walk(n.NamedChild(i))
 		}
 	}
-	if body := fn.ChildByFieldName("body"); body != nil {
+	if body != nil {
 		walk(body)
 	}
-	return found
+	return index
 }
 
 // rustPatternName returns the name a let pattern binds when it binds one name
@@ -305,22 +336,50 @@ func rustPatternName(pattern *sitter.Node, src []byte) string {
 	return text
 }
 
-// crateMacroUseCrates returns the crates whose macros the crate root brings
+// crateMacroUseCrates returns the crates whose macros a crate root brings
 // into every module with #[macro_use] extern crate, as Rocket's guide does.
+// A package can hold a library and binaries, and which of them compiles the
+// file is not known here, so every root that may: src/lib.rs, src/main.rs,
+// and the binary root the file sits under in src/bin.
 func (p *RustParser) crateMacroUseCrates(filePath string) []string {
+	roots := rustMacroUseRoots(filePath)
+	crates := make([]string, 0, len(roots))
+	for _, rootFile := range roots {
+		cached, ok := p.macroUseCache[rootFile]
+		if !ok {
+			cached = p.readCrateMacroUseCrates(rootFile)
+			if p.macroUseCache == nil {
+				p.macroUseCache = make(map[string][]string)
+			}
+			p.macroUseCache[rootFile] = cached
+		}
+		crates = append(crates, cached...)
+	}
+	return crates
+}
+
+// rustMacroUseRoots lists the crate root files that may compile filePath.
+func rustMacroUseRoots(filePath string) []string {
 	rootFile := rustCrateRootFile(filePath)
 	if rootFile == "" {
 		return nil
 	}
-	if cached, ok := p.macroUseCache[rootFile]; ok {
-		return cached
+	dir := filepath.Dir(rootFile)
+	candidates := []string{filepath.Join(dir, "lib.rs"), filepath.Join(dir, "main.rs")}
+	if rel, err := filepath.Rel(filepath.Join(dir, "bin"), filePath); err == nil && !strings.HasPrefix(rel, "..") {
+		if first, _, nested := strings.Cut(filepath.ToSlash(rel), "/"); nested {
+			candidates = append(candidates, filepath.Join(dir, "bin", first, "main.rs"))
+		} else {
+			candidates = append(candidates, filePath)
+		}
 	}
-	crates := p.readCrateMacroUseCrates(rootFile)
-	if p.macroUseCache == nil {
-		p.macroUseCache = make(map[string][]string)
+	var roots []string
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			roots = append(roots, candidate)
+		}
 	}
-	p.macroUseCache[rootFile] = crates
-	return crates
+	return roots
 }
 
 func (p *RustParser) readCrateMacroUseCrates(rootFile string) []string {

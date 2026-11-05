@@ -96,6 +96,9 @@ type RustParser struct {
 	// entryRefs collects the file being parsed's registered handlers
 	// (recordRustRegistration) until parseFile hands them to its analysis.
 	entryRefs []EntryRef
+	// letIndex holds, per function of the file being parsed, the values its
+	// let bindings give each name (rustLetValue).
+	letIndex map[[2]uint32]map[string][]rustLetBinding
 }
 
 // NewRustParser creates a new Rust source parser backed by tree-sitter.
@@ -378,9 +381,9 @@ func (p *RustParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// Extract function and method declarations with their calls. The analysis
 	// doubles as the file-level resolution scope; nested scopes get their own
 	// copy of the name tables.
-	p.entryRefs = nil
+	p.entryRefs, p.letIndex = nil, nil
 	p.extractDeclarations(root, src, filePath, packagePath, analysis, analysis)
-	analysis.EntryRefs, p.entryRefs = p.entryRefs, nil
+	analysis.EntryRefs, p.entryRefs, p.letIndex = p.entryRefs, nil, nil
 
 	return analysis, nil
 }

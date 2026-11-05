@@ -71,8 +71,9 @@ func TestExportCallGraph_RustFrameworkEntryPoints(t *testing.T) {
 
 // TestExportCallGraph_RustRocketEntryPoints: Rocket route, catcher and launch
 // attributes are entry points, written bare under the crate root's
-// #[macro_use] extern crate rocket or qualified. A function no attribute
-// marks and nothing calls stays unreachable.
+// #[macro_use] extern crate rocket or qualified. The #[macro_use] counts from
+// main.rs when the package also has a lib.rs, and from a src/bin binary's own
+// root. A function no attribute marks and nothing calls stays unreachable.
 func TestExportCallGraph_RustRocketEntryPoints(t *testing.T) {
 	t.Parallel()
 	reachable := graphfrag.ReachabilityReachable
@@ -82,6 +83,7 @@ func TestExportCallGraph_RustRocketEntryPoints(t *testing.T) {
 		{id: "rocket-macro-use", file: "src/routes.rs", needle: `b"rocket-macro-use"`, reachability: reachable, rootKind: framework, first: "index"},
 		{id: "rocket-qualified", file: "src/routes.rs", needle: `body.as_bytes()`, reachability: reachable, rootKind: framework, first: "store"},
 		{id: "rocket-catch", file: "src/routes.rs", needle: `b"rocket-catch"`, reachability: reachable, rootKind: framework, first: "not_found"},
+		{id: "rocket-bin-macro-use", file: "src/bin/admin.rs", needle: `b"rocket-bin-macro-use"`, reachability: reachable, rootKind: framework, first: "admin"},
 		{id: "rocket-unmounted", file: "src/routes.rs", needle: `b"rocket-unmounted"`, reachability: graphfrag.ReachabilityUnreachable},
 	}
 	checkEntryRules(t, entryRulesFixture(t, "rust_rocket", "rust", "rust", callgraph.NewRustParser(), cases), cases)
