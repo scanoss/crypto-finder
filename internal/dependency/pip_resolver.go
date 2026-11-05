@@ -139,7 +139,13 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 		result.Dependencies = append(result.Dependencies, Dependency{Module: pkg.Name, Version: pkg.Version})
 		installs = append(installs, installedDistribution{location: info.Location, roots: roots})
 
-		// Build graph from Requires field
+		// Build graph from Requires field. Every distribution is a node,
+		// requirements or not: the graph has no application node, so the
+		// distributions nothing requires are the direct dependencies
+		// (graphApplication), and one that requires nothing is one too.
+		if _, listed := result.Graph[pkg.Name]; !listed {
+			result.Graph[pkg.Name] = []string{}
+		}
 		if info.Requires != "" {
 			for _, req := range strings.Split(info.Requires, ", ") {
 				req = strings.TrimSpace(req)
@@ -151,6 +157,7 @@ func (r *PipResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRe
 	}
 
 	placeDistributions(result.Dependencies, installs)
+	result.DirectDependencies = declaredInstalled(declaredPythonRequirements(targetDir), result.Dependencies)
 
 	log.Info().
 		Int("resolved", len(result.Dependencies)).

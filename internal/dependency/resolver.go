@@ -82,6 +82,10 @@ type ResolveResult struct {
 	// follow it instead of Graph, the requirement graph, where a go.mod lists
 	// modules only its dependencies import.
 	ImportGraph map[string][]string
+	// DirectDependencies, for a Graph with no application node, names the
+	// modules the project's manifests declare: the application's children.
+	// The pip resolver sets it from requirements.txt and pyproject.toml.
+	DirectDependencies []string
 	// VersionedGraph maps each parent node key to its direct dependency targets with versions preserved.
 	// Parent keys should use the same canonical coordinate form as Ref.Key() when a version is known.
 	VersionedGraph map[string][]Ref
