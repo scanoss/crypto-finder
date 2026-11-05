@@ -147,7 +147,7 @@ func TestDependencyScanner_BatchedNpmScanMatchesSingleScansIntegration(t *testin
 	if got := findingsByModule(batched.Report); !reflect.DeepEqual(got, want) {
 		t.Errorf("findings by dependency = %v, want %v", got, want)
 	}
-	details := map[string]any{"deps_scanned": 3, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 0, "deps_with_findings": 3, "total_dep_findings": 4}
+	details := progressWant(map[string]any{"deps_scanned": 3, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 0, "deps_with_findings": 3, "total_dep_findings": 4}, nil, nil, nil)
 	if got := batched.ProgressDetails(); !reflect.DeepEqual(got, details) {
 		t.Errorf("progress details = %v, want %v", got, details)
 	}

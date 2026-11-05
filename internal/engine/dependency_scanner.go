@@ -114,21 +114,78 @@ type DepScanResult struct {
 	summary              dependencyScanSummary
 }
 
-// ProgressDetails returns the aggregate dependency counters for structured progress.
+// ProgressDetails returns the aggregate dependency counters for structured
+// progress, and the dependencies behind the skipped, failed and incomplete
+// counters. Each list is as long as its counter and is always present, empty
+// when the counter is zero.
 func (r *DepScanResult) ProgressDetails() map[string]any {
-	if r == nil {
-		return map[string]any{
-			"deps_scanned": 0, "deps_skipped": 0, "deps_failed": 0, "deps_incomplete": 0, "deps_with_findings": 0, "total_dep_findings": 0,
-		}
+	summary := dependencyScanSummary{}
+	if r != nil {
+		summary = r.summary
 	}
 	return map[string]any{
-		"deps_scanned":       r.summary.depsScanned,
-		"deps_skipped":       r.summary.depsSkippedSource,
-		"deps_failed":        r.summary.depsFailed,
-		"deps_incomplete":    r.summary.depsIncomplete,
-		"deps_with_findings": r.summary.depsWithFindings,
-		"total_dep_findings": r.summary.totalDepFindings,
+		"deps_scanned":         summary.depsScanned,
+		"deps_skipped":         summary.depsSkippedSource,
+		"deps_failed":          summary.depsFailed,
+		"deps_incomplete":      summary.depsIncomplete,
+		"deps_with_findings":   summary.depsWithFindings,
+		"total_dep_findings":   summary.totalDepFindings,
+		"deps_skipped_list":    nonNilOutcomes(summary.skipped),
+		"deps_failed_list":     nonNilOutcomes(summary.failed),
+		"deps_incomplete_list": nonNilOutcomes(summary.incomplete),
 	}
+}
+
+// Reasons a dependency outcome carries in structured progress.
+const (
+	// DependencyOutcomeNoLocalSource: the resolver found no source directory
+	// for the dependency, so it was not scanned.
+	DependencyOutcomeNoLocalSource = "no_local_source"
+	// DependencyOutcomeScanFailed: the dependency's scan returned an error.
+	DependencyOutcomeScanFailed = "scan_failed"
+	// DependencyOutcomeTimeOrMemoryLimit: a time or memory limit stopped the
+	// scan in at least one of the dependency's files.
+	DependencyOutcomeTimeOrMemoryLimit = "time_or_memory_limit"
+)
+
+// DependencyOutcome names one dependency a scan did not observe completely.
+// PURL is the package URL the dependency's findings carry in
+// dependency_info.purl; it is empty when the module has no package URL form.
+type DependencyOutcome struct {
+	Module  string `json:"module"`
+	Version string `json:"version"`
+	PURL    string `json:"purl,omitempty"`
+	Reason  string `json:"reason"`
+	// ErrorCode is the failure code of a failed scan, when it has one.
+	ErrorCode string `json:"error_code,omitempty"`
+}
+
+func newDependencyOutcome(dep *dependency.Dependency, ecosystem, reason string) DependencyOutcome {
+	return DependencyOutcome{
+		Module:  dep.Module,
+		Version: dep.Version,
+		PURL:    purl.Dependency(ecosystem, dep.Module, dep.Version),
+		Reason:  reason,
+	}
+}
+
+func nonNilOutcomes(outcomes []DependencyOutcome) []DependencyOutcome {
+	if outcomes == nil {
+		return []DependencyOutcome{}
+	}
+	return outcomes
+}
+
+func sortDependencyOutcomes(outcomes []DependencyOutcome) {
+	slices.SortFunc(outcomes, func(a, b DependencyOutcome) int {
+		if c := strings.Compare(a.Module, b.Module); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.Version, b.Version); c != 0 {
+			return c
+		}
+		return strings.Compare(a.PURL, b.PURL)
+	})
 }
 
 type depScanStatus int
@@ -190,7 +247,7 @@ func (ds *DependencyScanner) ScanWithDependencies(
 	if err != nil {
 		return nil, err
 	}
-	summary := summarizeDependencyResults(depResults)
+	summary := summarizeDependencyResults(depResults, ecosystem)
 	logDependencyScanSummary(summary)
 	if err := ds.reportProgress(opts, progressStatusStarted, nil); err != nil {
 		return nil, err
@@ -405,9 +462,12 @@ type dependencyScanSummary struct {
 	depsSkippedSource int
 	depsFailed        int
 	depsIncomplete    int
+	skipped           []DependencyOutcome
+	failed            []DependencyOutcome
+	incomplete        []DependencyOutcome
 }
 
-func summarizeDependencyResults(depResults []depScanResult) dependencyScanSummary {
+func summarizeDependencyResults(depResults []depScanResult, ecosystem string) dependencyScanSummary {
 	summary := dependencyScanSummary{}
 	for i := range depResults {
 		result := &depResults[i]
@@ -416,11 +476,18 @@ func summarizeDependencyResults(depResults []depScanResult) dependencyScanSummar
 			summary.depsScanned++
 		case depScanStatusSkippedNoSource:
 			summary.depsSkippedSource++
+			summary.skipped = append(summary.skipped, newDependencyOutcome(&result.dep, ecosystem, DependencyOutcomeNoLocalSource))
 		case depScanStatusFailed:
 			summary.depsFailed++
+			outcome := newDependencyOutcome(&result.dep, ecosystem, DependencyOutcomeScanFailed)
+			if structured, ok := failure.As(result.err); ok {
+				outcome.ErrorCode = string(structured.Code)
+			}
+			summary.failed = append(summary.failed, outcome)
 		}
 		if result.incomplete {
 			summary.depsIncomplete++
+			summary.incomplete = append(summary.incomplete, newDependencyOutcome(&result.dep, ecosystem, DependencyOutcomeTimeOrMemoryLimit))
 		}
 		if result.report != nil && hasFindings(result.report) {
 			summary.depsWithFindings++
@@ -429,6 +496,9 @@ func summarizeDependencyResults(depResults []depScanResult) dependencyScanSummar
 			}
 		}
 	}
+	sortDependencyOutcomes(summary.skipped)
+	sortDependencyOutcomes(summary.failed)
+	sortDependencyOutcomes(summary.incomplete)
 	return summary
 }
 
