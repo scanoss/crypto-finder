@@ -37,7 +37,7 @@ type fakePython struct {
 func newFakePython(t *testing.T, pipVersion string) fakePython {
 	t.Helper()
 	dir := t.TempDir()
-	log := filepath.Join(dir, "log")
+	logFile := filepath.Join(dir, "log")
 	ambientEnv := filepath.Join(dir, "ambient-env")
 	if err := os.MkdirAll(filepath.Join(ambientEnv, "site", "pip"), 0o755); err != nil {
 		t.Fatal(err)
@@ -47,12 +47,12 @@ func newFakePython(t *testing.T, pipVersion string) fakePython {
 	}
 	writeExecutable(t, dir, "venv-python", `#!/bin/sh
 [ "$1" = "-I" ] && shift
-echo "venv-python $*" >> '`+log+`'
+echo "venv-python $*" >> '`+logFile+`'
 exit 1
 `)
 	writeExecutable(t, dir, "python3", `#!/bin/sh
 [ "$1" = "-I" ] && shift
-echo "python3 $*" >> '`+log+`'
+echo "python3 $*" >> '`+logFile+`'
 if [ "$1 $2" = "-m venv" ]; then
   mkdir -p "$4/bin" && cp '`+filepath.Join(dir, "venv-python")+`' "$4/bin/python"; exit 0
 fi
@@ -93,7 +93,7 @@ show)
 esac
 exit 0
 `)
-	return fakePython{ambient: filepath.Join(dir, "python3"), log: log}
+	return fakePython{ambient: filepath.Join(dir, "python3"), log: logFile}
 }
 
 func (f fakePython) resolver(opts ...PipResolverOption) *PipResolver {
