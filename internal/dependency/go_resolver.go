@@ -96,14 +96,15 @@ func (r *GoResolver) CanResolve(targetDir string) bool {
 // project at targetDir: the modules that provide a package imported, directly
 // or transitively, by a non-test package of a main module.
 func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
-	modules, graph, err := r.goListModules(ctx, targetDir)
+	modules, imports, err := r.goListModules(ctx, targetDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Go modules in %s: %w", targetDir, err)
 	}
 
 	result := &ResolveResult{
 		Dependencies: make([]Dependency, 0, len(modules)),
-		Graph:        graph,
+		Graph:        make(map[string][]string),
+		ImportGraph:  imports,
 	}
 
 	for _, m := range modules {
@@ -126,6 +127,14 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 		})
 	}
 
+	// Build dependency graph using `go mod graph`
+	graph, err := r.goModGraph(ctx, targetDir)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to build dependency graph, call chain tracing may be limited")
+	} else {
+		result.Graph = graph
+	}
+
 	log.Info().
 		Int("count", len(result.Dependencies)).
 		Str("root", result.RootModule).
@@ -137,13 +146,8 @@ func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveRes
 // goListModules returns the main modules, then each module that provides a
 // package in their non-test import closure, once, with the Go files the
 // build compiles in those packages. Requirements reached only from tests,
-// build-tagged tool files or nothing at all never enter it.
-//
-// It also returns the module import graph of that closure: each module that
-// provides a package, mapped to the other modules its packages import. Unlike
-// the requirement graph (go mod graph), it names the module that imports the
-// next one: since Go 1.17 a go.mod lists every module its build needs, so a
-// module requires, // indirect, modules only its dependencies import.
+// build-tagged tool files or nothing at all never enter it. It also returns
+// the closure's module import graph (moduleImportGraph).
 func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule, map[string][]string, error) {
 	modules, err := goList[goModule](ctx, dir, "-m", "-json")
 	if err != nil {
@@ -203,8 +207,11 @@ func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule,
 }
 
 // moduleImportGraph maps each module that provides one of packages to the
-// other modules whose packages its packages import, in first-import order.
-// A module whose packages import no other module maps to an empty list.
+// other modules whose packages its packages import, in first-import order; a
+// module whose packages import no other module maps to an empty list. Unlike
+// the requirement graph (go mod graph), it names the module that imports the
+// next one: since Go 1.17 a go.mod lists, // indirect, every module its build
+// needs, including those only its dependencies import.
 func moduleImportGraph(packages []goPackage) map[string][]string {
 	owner := make(map[string]string, len(packages))
 	for _, p := range packages {
@@ -255,4 +262,46 @@ func goList[T any](ctx context.Context, dir string, args ...string) ([]T, error)
 		out = append(out, v)
 	}
 	return out, nil
+}
+
+// goModGraph runs `go mod graph` and parses the output into an adjacency list.
+// Each line of output is: "module@version module@version" (parent -> dependency).
+func (r *GoResolver) goModGraph(ctx context.Context, dir string) (map[string][]string, error) {
+	cmd := exec.CommandContext(ctx, "go", "mod", "graph")
+	cmd.Dir = dir
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("go mod graph: %w\nstderr: %s", err, stderr.String())
+	}
+
+	graph := make(map[string][]string)
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) != 2 {
+			continue
+		}
+		// Strip version from module paths for cleaner lookup
+		parent := stripVersion(parts[0])
+		child := stripVersion(parts[1])
+		graph[parent] = append(graph[parent], child)
+	}
+
+	return graph, nil
+}
+
+// stripVersion removes the @version suffix from a module path.
+// "golang.org/x/crypto@v0.17.0" -> "golang.org/x/crypto".
+func stripVersion(moduleAtVersion string) string {
+	if idx := strings.LastIndex(moduleAtVersion, "@"); idx != -1 {
+		return moduleAtVersion[:idx]
+	}
+	return moduleAtVersion
 }

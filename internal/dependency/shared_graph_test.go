@@ -129,7 +129,7 @@ func TestResolvedPaths_GoFollowsTheModuleImportGraph(t *testing.T) {
 		[]resolve.Edge{edge(a, b), edge(a, c), edge(b, c), edge(b, d)}, a, b, c, d)
 	result := &ResolveResult{
 		Dependencies: deps(Ref{"example.com/a", "v1.0.0"}, Ref{"example.com/b", "v1.0.0"}, Ref{"example.com/c", "v1.0.0"}, Ref{"example.com/d", "v1.0.0"}),
-		Graph:        map[string][]string{"example.com/a": {"example.com/b"}, "example.com/c": {}},
+		ImportGraph:  map[string][]string{"example.com/a": {"example.com/b"}, "example.com/c": {}},
 	}
 
 	paths := ResolvedPaths([]resolve.Graph{graph}, result, "go", nil)

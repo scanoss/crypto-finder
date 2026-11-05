@@ -60,6 +60,11 @@ type PathStep struct {
 // direct dependencies. A dependency the graph does not connect to the
 // application has no entry. Returns nil when the result has no graph.
 func Paths(result *ResolveResult, parsed map[string]bool) map[string]Path {
+	if result != nil && result.ImportGraph != nil {
+		byImports := *result
+		byImports.Graph = result.ImportGraph
+		result = &byImports
+	}
 	if result == nil || len(result.Graph) == 0 {
 		return nil
 	}

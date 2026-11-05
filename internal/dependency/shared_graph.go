@@ -153,8 +153,8 @@ func newSharedAdjacency(graphs []resolve.Graph, result *ResolveResult, ecosystem
 			adjacency.versions[ref.Module]++
 		}
 	}
-	if ecosystem == "go" && result != nil {
-		adjacency.keepImportEdges(result.Graph)
+	if result != nil && result.ImportGraph != nil {
+		adjacency.keepImportEdges(result.ImportGraph)
 	}
 	return adjacency
 }
@@ -163,8 +163,8 @@ func newSharedAdjacency(graphs []resolve.Graph, result *ResolveResult, ecosystem
 // packages do not import. The shared Go graph is the module requirement
 // graph, where a go.mod lists every module its build needs, // indirect or
 // not: liba requires libc when only libb, which liba imports, imports libc,
-// and the path to libc would skip libb. imports is the Go resolver's module
-// import graph; a module it does not list keeps its edges.
+// and the path to libc would skip libb. imports is ResolveResult.ImportGraph;
+// a module it does not list keeps its edges.
 func (s *sharedAdjacency) keepImportEdges(imports map[string][]string) {
 	for from, targets := range s.graph {
 		if from == applicationNode {

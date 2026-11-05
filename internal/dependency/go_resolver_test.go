@@ -42,6 +42,12 @@ if [ "$1" = "list" ]; then
 JSON
   exit 0
 fi
+if [ "$1" = "mod" ] && [ "$2" = "graph" ]; then
+  echo "example.com/app@v0.0.0 example.com/dep@v1.0.0"
+  echo "example.com/app@v0.0.0 example.com/no-dir@v1.2.0"
+  echo "malformed line"
+  exit 0
+fi
 echo "unexpected args: $*" >&2
 exit 1
 `)
@@ -62,13 +68,50 @@ exit 1
 	if result.Dependencies[0].Module != "example.com/dep" {
 		t.Fatalf("unexpected dependency module: %s", result.Dependencies[0].Module)
 	}
-	wantGraph := map[string][]string{
+	children := result.Graph["example.com/app"]
+	if len(children) != 2 {
+		t.Fatalf("graph children len = %d, want 2", len(children))
+	}
+	wantImports := map[string][]string{
 		"example.com/app":    {"example.com/dep", "example.com/no-dir"},
 		"example.com/dep":    {},
 		"example.com/no-dir": {},
 	}
-	if !reflect.DeepEqual(result.Graph, wantGraph) {
-		t.Fatalf("Graph = %v, want %v: the modules each module's packages import", result.Graph, wantGraph)
+	if !reflect.DeepEqual(result.ImportGraph, wantImports) {
+		t.Fatalf("ImportGraph = %v, want %v: the modules each module's packages import", result.ImportGraph, wantImports)
+	}
+}
+
+func TestGoResolver_Resolve_GraphFailureIsNonFatal(t *testing.T) {
+	tmpBin := t.TempDir()
+	writeExecutable(t, tmpBin, "go", `#!/bin/sh
+if [ "$1" = "list" ] && [ "$2" = "-m" ]; then
+  echo '{"Path":"example.com/app","Main":true,"Dir":"/src/app"}'
+  exit 0
+fi
+if [ "$1" = "list" ]; then
+  echo '{"Module":{"Path":"example.com/dep","Version":"v1.0.0","Dir":"/deps/dep"}}'
+  exit 0
+fi
+if [ "$1" = "mod" ] && [ "$2" = "graph" ]; then
+  echo "mod graph failed" >&2
+  exit 2
+fi
+exit 1
+`)
+	prependPath(t, tmpBin)
+
+	r := NewGoResolver()
+	result, err := r.Resolve(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("Resolve should not fail when graph fails: %v", err)
+	}
+
+	if len(result.Dependencies) != 1 {
+		t.Fatalf("Dependencies len = %d, want 1", len(result.Dependencies))
+	}
+	if len(result.Graph) != 0 {
+		t.Fatalf("expected empty graph on graph command failure, got %#v", result.Graph)
 	}
 }
 
@@ -90,9 +133,20 @@ exit 1
 	}
 }
 
-func TestGoResolver_Ecosystem(t *testing.T) {
+func TestGoResolver_EcosystemAndStripVersion(t *testing.T) {
 	if NewGoResolver().Ecosystem() != "go" {
 		t.Fatal("Ecosystem() should return go")
+	}
+
+	tests := map[string]string{
+		"golang.org/x/crypto@v0.17.0": "golang.org/x/crypto",
+		"example.com/no-version":      "example.com/no-version",
+	}
+
+	for in, want := range tests {
+		if got := stripVersion(in); got != want {
+			t.Fatalf("stripVersion(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
