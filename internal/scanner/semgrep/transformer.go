@@ -323,6 +323,11 @@ func getMetavarValue(metavars map[string]entities.MetavarInfo, key string) strin
 	return ""
 }
 
+// metavarReference matches a metavariable reference: a named metavar
+// ($WORD, starting with a letter or underscore) or a numbered regex capture
+// group ($1, $2, ...).
+var metavarReference = regexp.MustCompile(`\$(?:[a-zA-Z_][a-zA-Z0-9_]*|\d+)`)
+
 // resolveMetavars replaces all metavariable references ($VAR) in a string with their actual values.
 // If a metavariable is not found in the metavars map, the original reference is kept.
 // Examples:
@@ -331,28 +336,26 @@ func getMetavarValue(metavars map[string]entities.MetavarInfo, key string) strin
 //   - "SHA-$unknown" stays as "SHA-$unknown" if $unknown is not in metavars
 //   - "ECDSA-$2" with $2=256 becomes "ECDSA-256" (numbered capture groups from regex)
 func resolveMetavars(s string, metavars map[string]entities.MetavarInfo) string {
-	// If the string doesn't contain $, return as-is for efficiency
+	resolved, _ := substituteMetavars(s, metavars)
+	return resolved
+}
+
+// substituteMetavars is resolveMetavars that also reports whether every
+// reference in s had a value. complete is false when at least one reference
+// was kept as written because it did not bind.
+func substituteMetavars(s string, metavars map[string]entities.MetavarInfo) (resolved string, complete bool) {
 	if !strings.Contains(s, "$") {
-		return s
+		return s, true
 	}
-
-	// Regular expression to match metavariable names:
-	// - Traditional metavars: $WORD (letters, numbers, underscores, must start with letter/underscore)
-	// - Numbered metavars: $1, $2, etc. (from regex capture groups)
-	// Pattern matches either: $[a-zA-Z_][a-zA-Z0-9_]* OR $[0-9]+
-	re := regexp.MustCompile(`\$(?:[a-zA-Z_][a-zA-Z0-9_]*|\d+)`)
-
-	// Replace all metavariable references with their values
-	result := re.ReplaceAllStringFunc(s, func(match string) string {
-		value := getMetavarValue(metavars, match)
-		if value != "" {
+	complete = true
+	resolved = metavarReference.ReplaceAllStringFunc(s, func(match string) string {
+		if value := getMetavarValue(metavars, match); value != "" {
 			return value
 		}
-		// If metavar not found, return an empty string
-		return ""
+		complete = false
+		return match
 	})
-
-	return result
+	return resolved, complete
 }
 
 // extractCryptoMetadata extracts cryptographic details from Semgrep rule metadata.
@@ -375,8 +378,16 @@ func extractCryptoMetadata(asset *entities.CryptographicAsset, cryptoMetadata ma
 		// Handle different types of values in the cryptoMetadata map
 		switch v := metavarValue.(type) {
 		case string:
-			// Replace any metavariable references in the string (e.g., "SHA-$variant" -> "SHA-256")
-			value = resolveMetavars(v, metavars)
+			// Replace any metavariable references in the string (e.g., "SHA-$variant" -> "SHA-256").
+			// A template with a reference that did not bind would emit a
+			// valid-looking but wrong value ("ECDH-$1" -> "ECDH-"), so the field
+			// is left out. parameterCondition is a predicate, not a template: its
+			// "$" may be a regex anchor or a literal, so it keeps what it has.
+			var complete bool
+			value, complete = substituteMetavars(v, metavars)
+			if !complete && key != "parameterCondition" {
+				continue
+			}
 		case bool:
 			// Convert boolean to string
 			if v {

@@ -92,7 +92,7 @@ func TestResolveMetavars(t *testing.T) {
 					AbstractContent: "CBC",
 				},
 			},
-			want: "AES-128-CBC-",
+			want: "AES-128-CBC-$unknown",
 		},
 		{
 			name:  "Empty string",
@@ -133,13 +133,13 @@ func TestResolveMetavars(t *testing.T) {
 			name:     "Empty metavars map",
 			input:    "SHA-$variant",
 			metavars: map[string]entities.MetavarInfo{},
-			want:     "SHA-",
+			want:     "SHA-$variant",
 		},
 		{
 			name:     "Nil metavars map",
 			input:    "SHA-$variant",
 			metavars: nil,
-			want:     "SHA-",
+			want:     "SHA-$variant",
 		},
 		{
 			name:  "Complex pattern with multiple variations",
@@ -457,7 +457,7 @@ func TestExtractCryptoMetadata(t *testing.T) {
 			},
 		},
 		{
-			name: "Metavar not found - keeps original",
+			name: "Metavar not found - field dropped",
 			cryptoMetadata: map[string]any{
 				"algorithmName": "SHA-$unknown",
 			},
@@ -466,8 +466,38 @@ func TestExtractCryptoMetadata(t *testing.T) {
 					AbstractContent: "256",
 				},
 			},
+			wantMetadata: map[string]string{},
+		},
+		{
+			// CF-GO-002: a name template whose capture did not bind must not
+			// become a valid-looking but wrong name such as "ECDH-" or
+			// "PBKDF2---32"; the field is left out instead.
+			name: "Unbound capture in a name template drops only that field",
+			cryptoMetadata: map[string]any{
+				"algorithmFamily":        "ECDH",
+				"algorithmName":          "ECDH-$1",
+				"curve":                  "$1",
+				"kdfName":                "PBKDF2-$hash-$iterations-$keylen",
+				"parameterSetIdentifier": "$keylen",
+			},
+			metavars: map[string]entities.MetavarInfo{
+				"$keylen": {AbstractContent: "32"},
+			},
 			wantMetadata: map[string]string{
-				"algorithmName": "SHA-",
+				"algorithmFamily":        "ECDH",
+				"parameterSetIdentifier": "32",
+			},
+		},
+		{
+			// A parameterCondition is a predicate, not a template: a literal
+			// "$y$" in it is kept as written.
+			name: "parameterCondition keeps an unbound reference",
+			cryptoMetadata: map[string]any{
+				"parameterCondition": `param[0]=="$y$"`,
+			},
+			metavars: map[string]entities.MetavarInfo{},
+			wantMetadata: map[string]string{
+				"parameterCondition": `param[0]=="$y$"`,
 			},
 		},
 		{
