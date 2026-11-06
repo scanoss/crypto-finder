@@ -39,6 +39,9 @@ import (
 //	InlineDigestHandler.handle (HttpHandler) hashes inline
 //	LegacyChecksum.legacyChecksum (@Deprecated, nothing calls it) hashes inline
 //
+// ReplayTool carries @AdminCommand, so a console outside the application may
+// create it: its uncalled instance method stays a root.
+//
 // submit calls hash on two lines, so every route through it has two call-site
 // variants.
 type entryRootsFixture struct {
