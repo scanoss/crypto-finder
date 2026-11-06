@@ -226,25 +226,28 @@ func nodeUnfrozen(n *sitter.Node, src []byte) *sitter.Node {
 // `(function(nacl) {...})(module.exports)`).
 func nodeExportAliases(root *sitter.Node, src []byte) map[string]bool {
 	aliases := make(map[string]bool)
-	nodeWalk(root, func(n *sitter.Node) {
-		switch n.Type() {
-		case nodeVariableDeclarator:
-			name, value := n.ChildByFieldName("name"), n.ChildByFieldName("value")
-			if name != nil && value != nil && isNodeExportsObject(value.Content(src)) {
-				aliases[name.Content(src)] = true
-			}
-		case nodeAssignmentExpression:
-			left, right := n.ChildByFieldName("left"), n.ChildByFieldName("right")
-			if left != nil && right != nil && left.Content(src) == nodeModuleExportsTarget && right.Type() == goNodeIdentifier {
-				aliases[right.Content(src)] = true
-			}
-		case nodeCallExpression:
-			if param := nodeExportsIIFEParam(n, src); param != "" {
-				aliases[param] = true
-			}
-		}
-	})
+	nodeWalk(root, func(n *sitter.Node) { nodeExportAlias(n, src, aliases) })
 	return aliases
+}
+
+// nodeExportAlias adds the name n binds to the exports object, if any, to aliases.
+func nodeExportAlias(n *sitter.Node, src []byte, aliases map[string]bool) {
+	switch n.Type() {
+	case nodeVariableDeclarator:
+		name, value := n.ChildByFieldName("name"), n.ChildByFieldName("value")
+		if name != nil && value != nil && isNodeExportsObject(value.Content(src)) {
+			aliases[name.Content(src)] = true
+		}
+	case nodeAssignmentExpression:
+		left, right := n.ChildByFieldName("left"), n.ChildByFieldName("right")
+		if left != nil && right != nil && left.Content(src) == nodeModuleExportsTarget && right.Type() == goNodeIdentifier {
+			aliases[right.Content(src)] = true
+		}
+	case nodeCallExpression:
+		if param := nodeExportsIIFEParam(n, src); param != "" {
+			aliases[param] = true
+		}
+	}
 }
 
 // nodeExportsIIFEParam returns the first parameter of an IIFE whose first
