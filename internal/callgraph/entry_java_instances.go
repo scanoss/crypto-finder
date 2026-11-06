@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -72,6 +73,10 @@ type javaClassInfo struct {
 	// supertypes holds, for each type the class extends or implements, the
 	// fully qualified names it may resolve to.
 	supertypes [][]string
+	// duplicate is set when two files declare the same fully qualified name
+	// (two modules of a monorepo): which one a method belongs to is unknown,
+	// so the class is live.
+	duplicate bool
 }
 
 // javaClassFacts is what the application's Java source says about its
@@ -157,7 +162,8 @@ func (s *rootScope) addUnliveInstanceMethods(candidates map[string][]*FunctionDe
 }
 
 // javaSourceFiles lists the .java files under roots, each once, skipping
-// hidden, dependency and build directories.
+// hidden directories and the dependency and build output directories at a
+// module's top (javaSkipDir).
 // complete is false when a directory could not be read.
 func javaSourceFiles(roots []string) (files []string, complete bool) {
 	seen := map[string]bool{}
@@ -170,7 +176,7 @@ func javaSourceFiles(roots []string) (files []string, complete bool) {
 				return nil //nolint:nilerr // recorded: the facts are incomplete
 			}
 			if entry.IsDir() {
-				if path != root && (strings.HasPrefix(entry.Name(), ".") || configSkipDirs[entry.Name()]) {
+				if javaSkipDir(root, path, entry.Name()) {
 					return filepath.SkipDir
 				}
 				return nil
@@ -188,8 +194,19 @@ func javaSourceFiles(roots []string) (files []string, complete bool) {
 	return out, complete
 }
 
-// moduleRoots lists the directories of the application's modules, stop for
-// code in no module.
+// javaSkipDir reports a directory the Java walk leaves out: a hidden one, or
+// a dependency or build output directory directly under the module root. A
+// source package may be named build, out or target (com.app.build), so the
+// names are skipped only there: the walk errs toward reading too much.
+func javaSkipDir(root, path, name string) bool {
+	if path == root {
+		return false
+	}
+	return strings.HasPrefix(name, ".") || (configSkipDirs[name] && filepath.Dir(path) == root)
+}
+
+// moduleRoots lists the directories of the application's modules, sorted,
+// stop for code in no module.
 func (s *rootScope) moduleRoots(stop string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -202,6 +219,7 @@ func (s *rootScope) moduleRoots(stop string) []string {
 			out = append(out, module)
 		}
 	}
+	sort.Strings(out)
 	return out
 }
 
@@ -243,10 +261,14 @@ func (r *javaFileReader) read(node *sitter.Node, enclosing []string) {
 		if name := node.ChildByFieldName("name"); name != nil {
 			simple := name.Content(r.src)
 			fqn := r.qualify(simple, enclosing)
-			r.facts.classes[fqn] = &javaClassInfo{
-				simple: simple, kind: node.Type(),
-				annotations: javaWrittenAnnotations(node, r.src),
-				supertypes:  r.supertypes(node, append(enclosing[:len(enclosing):len(enclosing)], fqn)),
+			if existing := r.facts.classes[fqn]; existing != nil {
+				existing.duplicate = true
+			} else {
+				r.facts.classes[fqn] = &javaClassInfo{
+					simple: simple, kind: node.Type(),
+					annotations: javaWrittenAnnotations(node, r.src),
+					supertypes:  r.supertypes(node, append(enclosing[:len(enclosing):len(enclosing)], fqn)),
+				}
 			}
 			enclosing = append(enclosing[:len(enclosing):len(enclosing)], fqn)
 		}
@@ -388,7 +410,7 @@ func (f *javaClassFacts) live(fqn string) bool {
 
 func (f *javaClassFacts) decideLive(fqn string) bool {
 	info := f.classes[fqn]
-	if info == nil || (info.kind != javaNodeClassDeclaration && info.kind != javaNodeRecordDeclaration) {
+	if info == nil || info.duplicate || (info.kind != javaNodeClassDeclaration && info.kind != javaNodeRecordDeclaration) {
 		return true
 	}
 	if f.named[info.simple] {
