@@ -109,6 +109,9 @@ func TestUncalledRoots_JavaInstanceMethodOfALiveClassStaysARoot(t *testing.T) {
 		"service loader": javaInstanceApp(hello, "public class Handler", map[string]string{
 			"src/main/resources/META-INF/services/app.Op": "app.Handler\n",
 		}),
+		"created in a package named build": javaInstanceApp(hello, "public class Handler", map[string]string{
+			"src/main/java/app/build/Factory.java": "package app.build;\n\nimport app.Handler;\n\npublic class Factory {\n    public static Object make() { return new Handler(); }\n}\n",
+		}),
 		"enum": javaInstanceApp(hello, "public enum Handler", nil),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -124,5 +127,25 @@ func TestUncalledRoots_JavaInstanceMethodOfALiveClassStaysARoot(t *testing.T) {
 			}
 			wantNoCallersRoot(t, trace.trace(t), "apply")
 		})
+	}
+}
+
+// TestJavaClassFacts_DuplicateClassIsLive: two modules declaring the same
+// fully qualified class leave it unknown which one a method belongs to, so
+// the class is live whichever file is read first.
+func TestJavaClassFacts_DuplicateClassIsLive(t *testing.T) {
+	t.Parallel()
+	root := writePythonTree(t, map[string]string{
+		"a/src/main/java/app/Handler.java": "package app;\n\n@Component\npublic class Handler {}\n",
+		"b/src/main/java/app/Handler.java": "package app;\n\npublic class Handler {}\n",
+	})
+	for _, order := range [][]string{{"a", "b"}, {"b", "a"}} {
+		sources := []string{
+			root + "/" + order[0] + "/src/main/java/app/Handler.java",
+			root + "/" + order[1] + "/src/main/java/app/Handler.java",
+		}
+		if !newJavaClassFacts(sources, nil).live("app.Handler") {
+			t.Errorf("read %v first: app.Handler not live, want live", order[0])
+		}
 	}
 }
