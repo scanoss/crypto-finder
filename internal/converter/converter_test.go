@@ -766,3 +766,48 @@ func loadFixture(t *testing.T, filename string) *entities.InterimReport {
 
 	return &report
 }
+
+func TestConverter_ConvertPQCProperties(t *testing.T) {
+	report := loadFixture(t, "all_asset_types.json")
+	report.Findings[0].CryptographicAssets[0].Metadata = map[string]string{
+		"assetType": "algorithm", "algorithmPrimitive": "pke", "algorithmFamily": "RSAES-OAEP", "algorithmName": "RSA-OAEP",
+	}
+	bom, err := NewConverter().Convert(preparedReport(t, report))
+	if err != nil {
+		t.Fatalf("Convert() unexpected error: %v", err)
+	}
+	for _, component := range *bom.Components {
+		properties := propertyValues(&component)
+		if component.CryptoProperties.AssetType == cdx.CryptoAssetTypeAlgorithm {
+			if properties["scanoss:pqcStatus"] != "vulnerable" || properties["scanoss:pqcFamily"] != "RSA" ||
+				properties["scanoss:pqcNISTDisallowedAfter"] != "2035" || properties["scanoss:pqcDeadline"] != "2030" || properties["scanoss:pqcDatasetVersion"] == "" {
+				t.Errorf("RSA-OAEP properties = %v", properties)
+			}
+			continue
+		}
+		// The protocol, the certificate and a material naming no algorithm stay unclassified.
+		if _, ok := properties["scanoss:pqcStatus"]; ok {
+			t.Errorf("%s %s classified: %v", component.CryptoProperties.AssetType, component.Name, properties)
+		}
+	}
+}
+
+// A report that already carries a classification keeps it in the CBOM.
+func TestConverter_ConvertKeepsReportPQC(t *testing.T) {
+	report := loadFixture(t, "all_asset_types.json")
+	asset := &report.Findings[0].CryptographicAssets[0]
+	asset.Metadata = map[string]string{"assetType": "algorithm", "algorithmPrimitive": "pke", "algorithmFamily": "RSAES-OAEP"}
+	asset.PQC = &entities.PQCClassification{Status: "vulnerable", Family: "RSA", DatasetVersion: "9.9.9"}
+	bom, err := NewConverter().Convert(preparedReport(t, report))
+	if err != nil {
+		t.Fatalf("Convert() unexpected error: %v", err)
+	}
+	for _, component := range *bom.Components {
+		if component.CryptoProperties.AssetType != cdx.CryptoAssetTypeAlgorithm {
+			continue
+		}
+		if properties := propertyValues(&component); properties["scanoss:pqcDatasetVersion"] != "9.9.9" {
+			t.Errorf("properties = %v, want the report's classification", properties)
+		}
+	}
+}

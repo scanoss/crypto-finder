@@ -44,6 +44,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/output"
 	"github.com/scanoss/crypto-finder/internal/perf"
+	"github.com/scanoss/crypto-finder/internal/pqc"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner"
@@ -1511,6 +1512,8 @@ func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesM
 }
 
 func writeScanOutput(resolved *oid.ResolvedReport) error {
+	// After the exports, so the classification never enters a mined fragment.
+	pqc.Annotate(resolved)
 	writer, err := output.NewWriterFactory().GetWriter(scanFormat)
 	if err != nil {
 		return failure.WrapUnknown(

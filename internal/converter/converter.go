@@ -29,6 +29,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
+	"github.com/scanoss/crypto-finder/internal/pqc"
 )
 
 // Asset type constants matching CycloneDX 1.7 cryptographic asset type enum.
@@ -239,6 +240,16 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 
 	baseComponent.Name = componentName
 	baseComponent.Evidence = c.buildEvidence(aggregated)
+	if aggregated.AssetType == AssetTypeAlgorithm || aggregated.AssetType == AssetTypeRelatedCryptoMaterial {
+		classification := aggregated.ReferenceAsset.PQC
+		if classification == nil {
+			// A report from before scan format 1.8 has no classification.
+			classification = pqc.Classify(aggregated.ReferenceAsset.Metadata)
+		}
+		for _, p := range pqc.Properties(classification) {
+			addCustomProperty(baseComponent, p.Name, p.Value)
+		}
+	}
 
 	if aggregated.AssetType == AssetTypeAlgorithm {
 		mergeCryptoFunctions(baseComponent, aggregated.CryptoFunctions)
