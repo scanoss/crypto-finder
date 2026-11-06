@@ -56,12 +56,13 @@ import (
 //     files refers to it by name besides its own declaration (a comment, a
 //     longer string literal, or a qualified name whose qualifier the file
 //     imports from another module does not: entry_mentions.go), and no
-//     decorator, attribute or annotation other than a test marker sits on
-//     it. A function handed out as a value (a handler passed to a router, a
-//     thread target, a callback, a handler a deployment file names) has no
-//     call edge, and a decorator or an attribute macro registers its
-//     function with something that calls it. Either keeps it a root. When
-//     its source cannot be read, it stays one.
+//     decorator, attribute or annotation other than a test marker or an inert
+//     built-in (entry_markers.go) sits on it. A function handed out as a
+//     value (a handler passed to a router, a thread target, a callback, a
+//     handler a deployment file names) has no call edge, and a decorator or
+//     an attribute macro registers its function with something that calls
+//     it. Either keeps it a root. When its source cannot be read, it stays
+//     one.
 //
 // A module's manifest is looked for no higher than the scanned project's
 // root (SetProjectRoot), so a manifest in an enclosing directory never
@@ -324,14 +325,16 @@ func configVisitor(root string, seen map[string]bool, out *[]string) fs.WalkDirF
 // annotation sits on the declaration starting at line (1-based), on its own
 // line or on the lines above it. A test marker (#[test], @Test,
 // @pytest.mark.x, #[cfg(test)]) does not count, since a test runner is not
-// the application, but a registering decorator above it still does.
+// the application, and neither does an inert built-in (#[allow(dead_code)],
+// @functools.cache, @Deprecated: entry_markers.go), but a registering
+// decorator above or beside one still does.
 func decorated(lines [][]byte, line int) bool {
 	const maxDecoratorLines = 20
 	for i := line - 1; i >= 0 && i < len(lines) && i >= line-1-maxDecoratorLines; i-- {
 		text := strings.TrimSpace(string(lines[i]))
 		isDecorator := strings.HasPrefix(text, "@") || strings.HasPrefix(text, "#[")
 		switch {
-		case isDecorator && testMarker(text):
+		case isDecorator && !registeringLine(text):
 			continue
 		case isDecorator:
 			return true
