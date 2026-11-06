@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Only the PQC dataset: a new release reclassifies findings without a code change.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: github.com/scanoss/crypto-pqc-dataset

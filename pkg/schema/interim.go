@@ -27,7 +27,7 @@ import (
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
-const InterimFormatVersion = "1.7"
+const InterimFormatVersion = "1.8"
 
 // InterimReport is the standardized output format for all scanners.
 // This format provides a unified representation of cryptographic findings
@@ -182,6 +182,36 @@ type CryptographicAsset struct {
 
 	// PURL is the optional package URL promoted from a direct finding's rule metadata.
 	PURL string `json:"purl,omitempty"`
+
+	// PQC is the post-quantum classification of an asset that names an
+	// algorithm, from the shared PQC dataset (v1.8+).
+	PQC *PQCClassification `json:"pqc,omitempty"`
+}
+
+// PQCClassification is an asset's post-quantum status, with each source's
+// cited deadlines for its family.
+type PQCClassification struct {
+	// Status is vulnerable, safe, hybrid, not_applicable or unassessed; new
+	// values may appear.
+	Status string `json:"status"`
+	// Family is the dataset family the status was read from; empty when unassessed.
+	Family string `json:"family,omitempty"`
+	// Deadline is the earliest year any source sets for the family: the worst case.
+	Deadline int `json:"deadline,omitempty"`
+	// Deadlines holds one cited schedule per source that dates the family.
+	Deadlines []PQCDeadline `json:"deadlines,omitempty"`
+	// DatasetVersion is the PQC dataset version that produced the classification.
+	DatasetVersion string `json:"dataset_version"`
+}
+
+// PQCDeadline is one source's schedule for a family; a year the source does
+// not set is zero.
+type PQCDeadline struct {
+	Source          string `json:"source"`
+	DeprecatedAfter int    `json:"deprecated_after,omitempty"`
+	DisallowedAfter int    `json:"disallowed_after,omitempty"`
+	MigrateBy       int    `json:"migrate_by,omitempty"`
+	Citation        string `json:"citation"`
 }
 
 // DependencyInfo contains attribution metadata for findings originating from dependencies.

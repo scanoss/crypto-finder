@@ -47,7 +47,7 @@ func TestInterimReportPublicContract(t *testing.T) {
 	}
 
 	asset := got["findings"].([]any)[0].(map[string]any)["cryptographic_assets"].([]any)[0].(map[string]any)
-	for _, key := range []string{"start_col", "end_col", "parameter_conditions", "oid", "finding_id", "occurrence_key", "dependency_info"} {
+	for _, key := range []string{"start_col", "end_col", "parameter_conditions", "oid", "finding_id", "occurrence_key", "dependency_info", "pqc"} {
 		if _, ok := asset[key]; ok {
 			t.Errorf("optional field %q present in %s", key, data)
 		}
@@ -62,8 +62,8 @@ func TestInterimReportPublicContract(t *testing.T) {
 		t.Errorf("internal field leaked in %s", data)
 	}
 
-	if schema.InterimFormatVersion != "1.7" {
-		t.Errorf("InterimFormatVersion = %q, want 1.7", schema.InterimFormatVersion)
+	if schema.InterimFormatVersion != "1.8" {
+		t.Errorf("InterimFormatVersion = %q, want 1.8", schema.InterimFormatVersion)
 	}
 }
 

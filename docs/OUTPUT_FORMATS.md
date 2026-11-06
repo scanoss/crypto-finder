@@ -91,6 +91,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 | `parameter_conditions` | Structured argument predicates parsed from the rule's `parameterCondition` metadata — which argument value/type selects this asset variant (v1.4+, omitted when the rule carries no predicate) |
 | `conditioned_value` | The resolved condition, such as `param[0]==HmacSHA256`, a per-value asset was specialized for. It is part of the asset's `finding_id` and `occurrence_key`, so a report read back by another scan, such as published dependency findings, keeps one identity per value (v1.7+, omitted on every other asset) |
 | `terminal_start_col`, `terminal_end_col` | Columns of the call that encloses an asset matched on an argument span, such as `new KeyParameter(key)` inside `cipher.init(...)`. They locate the crypto call for the callgraph export and the `occurrence_key`, so a report read back by another scan finds the same call (v1.7+, omitted on every other asset) |
+| `pqc` | Post-quantum classification of an asset that names an algorithm (v1.8+, omitted on every other asset): `status` (`vulnerable`, `safe`, `hybrid`, `not_applicable` or `unassessed`; new values may appear), `family` (omitted when `unassessed`), `deadline` (the earliest year any cited source sets: the worst case to plan against), `deadlines` (one entry per source: `source`, `deprecated_after`, `disallowed_after`, `migrate_by`, `citation`) and `dataset_version`. A CBOM carries the same classification as flat `scanoss:pqc*` properties |
 | `file_path` | For dependency findings, path relative to the dependency root; use `dependency_info` for artifact identity |
 
 ### Related Material Followed From Random Draws
@@ -99,7 +100,7 @@ When the scan builds a call graph (`--export-callgraph`, `--export-graph-fragmen
 
 ### Public Go Contract
 
-Go consumers can import `github.com/scanoss/crypto-finder/pkg/schema` to read or write the interim report without importing implementation packages. `InterimFormatVersion` is currently `"1.7"`.
+Go consumers can import `github.com/scanoss/crypto-finder/pkg/schema` to read or write the interim report without importing implementation packages. `InterimFormatVersion` is currently `"1.8"`.
 
 The report always emits `version`, `tool`, and `findings`. `rules` is a value field and currently emits as `{}` when empty. Findings always emit `file_path`, `language`, and `cryptographic_assets`. Assets always emit `start_line`, `end_line`, `match`, `rules`, `status`, and `metadata`; `start_col`, `end_col`, `parameter_conditions`, `conditioned_value`, `terminal_start_col`, `terminal_end_col`, `oid`, `finding_id`, `occurrence_key`, `source`, `dependency_info`, and direct `purl` are omitted when empty. Rules always emit `id`, `message`, and `severity`; `version` is omitted when empty. Dependency metadata always emits `module` and `version` when present.
 

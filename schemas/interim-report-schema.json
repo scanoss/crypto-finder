@@ -11,10 +11,11 @@
   ],
   "properties": {
     "version": {
-      "const": "1.7",
+      "const": "1.8",
       "type": "string",
-      "description": "Version of the interim report schema (e.g., \"1.7\")",
+      "description": "Version of the interim report schema (e.g., \"1.8\")",
       "examples": [
+        "1.8",
         "1.7",
         "1.6",
         "1.5",
@@ -208,6 +209,10 @@
         "terminal_end_col": {
           "type": "integer",
           "description": "Exclusive end column of the call enclosing an asset matched on an argument span (v1.7+)."
+        },
+        "pqc": {
+          "$ref": "#/definitions/PQCClassification",
+          "description": "Post-quantum classification of an asset that names an algorithm, from the shared PQC dataset (v1.8+). Absent when the asset names no algorithm."
         }
       },
       "oneOf": [
@@ -377,6 +382,69 @@
         }
       },
       "additionalProperties": false
+    },
+    "PQCClassification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "dataset_version"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "vulnerable, safe, hybrid, not_applicable or unassessed; new values may appear."
+        },
+        "family": {
+          "type": "string",
+          "description": "Dataset family the status was read from; absent when unassessed."
+        },
+        "deadline": {
+          "type": "integer",
+          "description": "Earliest year any source sets for the family: the worst case."
+        },
+        "deadlines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PQCDeadline"
+          },
+          "description": "One cited schedule per source that dates the family."
+        },
+        "dataset_version": {
+          "type": "string",
+          "description": "PQC dataset version that produced the classification."
+        }
+      }
+    },
+    "PQCDeadline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "citation"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "The document that sets the schedule, such as NIST IR 8547 or CNSA 2.0."
+        },
+        "deprecated_after": {
+          "type": "integer",
+          "description": "Year after which the source deprecates the family."
+        },
+        "disallowed_after": {
+          "type": "integer",
+          "description": "Year after which the source disallows the family."
+        },
+        "migrate_by": {
+          "type": "integer",
+          "description": "Year by which the source requires migrating off the family."
+        },
+        "citation": {
+          "type": "string",
+          "description": "What the source states, with its table or section."
+        }
+      }
     }
   },
   "additionalProperties": false

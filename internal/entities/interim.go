@@ -37,4 +37,10 @@ type (
 	DependencyInfo = schema.DependencyInfo
 	// RuleInfo contains information about the detection rule that identified an asset.
 	RuleInfo = schema.RuleInfo
+
+	// PQCClassification is an asset's post-quantum classification (v1.8+).
+	PQCClassification = schema.PQCClassification
+
+	// PQCDeadline is one source's cited schedule for a family.
+	PQCDeadline = schema.PQCDeadline
 )
