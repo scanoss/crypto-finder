@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-11-06
+### Changed
+- `scan_metadata.graph_algo_version` is `graph-algo-18`: Python functions
+  registered as handlers by a Flask, FastAPI or Starlette call carry
+  `entry_kind: framework_entry` in the structural graph and graph fragment. A
+  Python structural graph cached under `graph-algo-17` lacks it.
+- Reachability with application code known (`scan --scan-dependencies`,
+  `--export-callgraph-project-reachability`) no longer takes an application function nothing
+  calls as a chain root when its module has a recognized entry point: `main`, a Python
+  `if __name__ == "__main__":` module or console script, a `package.json` `main` or `bin`
+  target, `require.main === module`, or a framework entry from the entry-point catalog. Crypto
+  that only such dead code reaches now reads `unreachable` instead of `reachable` with a
+  `no_callers` root. A module is the directory of the nearest build manifest (`go.mod`,
+  `package.json`, `pom.xml`, `build.gradle`, `Cargo.toml`, `pyproject.toml`, `setup.py`,
+  `setup.cfg`), so one application in a monorepo does not affect its siblings. A module with
+  no entry point (a library scanned alone, or an application whose framework the catalog does
+  not know) keeps `no_callers` roots as before. An uncalled function stays a root when it is
+  an instance method, when its name appears anywhere else in the application's source or in
+  its module's configuration files (a handler passed to a router, a callback, a value in a
+  table, a handler named in `template.yaml` or a Spring XML file), or when a decorator,
+  attribute or annotation other than a test marker sits on it (`#[get("/")]`,
+  `@app.on_event`). Go `init` functions,
+  Java static initializers and module bodies stay roots. Test code nothing calls is no longer
+  a root in a module with an entry point. The `root_kind` values are unchanged.
+### Fixed
+- Python handlers registered by a call are framework entry points
+  (`root_kind: framework_entry`), like their decorated counterparts: Flask and
+  Blueprint `add_url_rule`, FastAPI and `APIRouter` `add_api_route`,
+  `add_api_websocket_route`, `add_route` and `add_websocket_route`, and
+  Starlette `add_route` and `add_websocket_route`. The handler may be passed
+  positionally after the path or as the `view_func=`, `endpoint=` or `route=`
+  keyword argument. The receiver must come from the framework (`app = Flask(__name__)`,
+  `router = APIRouter()`); the same method on another object is not an entry
+  point. Crypto written directly in such a handler now reads `reachable`, and a
+  chain through it starts at the handler with `entry_rule`
+  `python/flask:registration_call:add_url_rule`,
+  `python/fastapi:registration_call:add_api_route` or
+  `python/starlette:registration_call:add_route`, instead of `no_callers`.
+
 ## [0.49.0] - 2026-11-05
 ### Added
 - `scan --scan-dependencies` accepts `--install-dependencies` to install Node and Python
