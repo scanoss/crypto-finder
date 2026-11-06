@@ -140,7 +140,9 @@ func newMentionCounter(names map[string]bool, decls []*FunctionDecl) *mentionCou
 
 // moduleKeys names the places a qualifier can point at to reach decl: its
 // file, its file's directory (a package, or the module of an index.js,
-// __init__.py or mod.rs), each segment of its package and of its type.
+// __init__.py or mod.rs), each segment of its package and of its type. A
+// key with a hyphen also counts with underscores, the way Rust source names
+// a crate whose manifest spells it crypto-svc.
 func moduleKeys(decl *FunctionDecl) []string {
 	var keys []string
 	if decl.FilePath != "" {
@@ -150,6 +152,11 @@ func moduleKeys(decl *FunctionDecl) []string {
 	}
 	keys = append(keys, pathSegments(decl.ID.Package)...)
 	keys = append(keys, pathSegments(decl.ID.Type)...)
+	for _, key := range keys {
+		if strings.Contains(key, "-") {
+			keys = append(keys, strings.ReplaceAll(key, "-", "_"))
+		}
+	}
 	return keys
 }
 

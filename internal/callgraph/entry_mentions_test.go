@@ -64,6 +64,18 @@ func TestMentionCounter_CountsReferencesInCodeOnly(t *testing.T) {
 	}
 }
 
+// TestMentionCounter_RustCrateWithAHyphen: source names the crate crypto-svc
+// as crypto_svc, so crypto_svc::fingerprint refers to its function.
+func TestMentionCounter_RustCrateWithAHyphen(t *testing.T) {
+	t.Parallel()
+	home := &FunctionDecl{ID: FunctionID{Package: "crypto-svc", Name: "fingerprint"}, FilePath: "/src/crypto-svc/src/lib.rs"}
+	counter := newMentionCounter(map[string]bool{"fingerprint": true}, []*FunctionDecl{home})
+	counter.countSource("/src/crypto-svc/src/main.rs", []byte("fn main() { Router::new().route(\"/fp\", get(crypto_svc::fingerprint)); }\n"))
+	if got := counter.mentions["fingerprint"]; got != 1 {
+		t.Fatalf("mentions = %d, want 1: crypto_svc is the crate crypto-svc", got)
+	}
+}
+
 // TestUncalledRoots_GoHandlerNamedOnlyInAStringOrComment: a handler main
 // never registers is dead code even when a route string and its own doc
 // comment spell its name.
