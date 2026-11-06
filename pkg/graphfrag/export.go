@@ -123,7 +123,7 @@ const SchemaVersion = "graph-fragment-1.15"
 // graph-algo-18: Python handlers registered by call (Flask and Blueprint
 // add_url_rule, FastAPI and APIRouter add_api_route and
 // add_api_websocket_route, Starlette add_route and add_websocket_route), with
-// the handler positional or as view_func= or endpoint=, carry entry_kind
+// the handler positional or as view_func=, endpoint= or route=, carry entry_kind
 // framework_entry. A Python structural graph cached under graph-algo-17 has
 // none for them.
 const GraphAlgoVersion = "graph-algo-18"

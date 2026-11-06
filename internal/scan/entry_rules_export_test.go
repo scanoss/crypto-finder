@@ -263,6 +263,7 @@ func TestExportCallGraph_PythonEntryPoints(t *testing.T) {
 		{id: "apirouter-add-api-route", file: "src/shop/registered/fastapi_rules.py", needle: "hashlib.sha256(", reachability: reachable, rootKind: framework, first: "sign", entryRule: "python/fastapi:registration_call:add_api_route"},
 		{id: "fastapi-add-api-websocket-route", file: "src/shop/registered/fastapi_rules.py", needle: "hashlib.sha384(", reachability: reachable, rootKind: framework, first: "stream", entryRule: "python/fastapi:registration_call:add_api_route"},
 		{id: "starlette-add-route", file: "src/shop/registered/starlette_rules.py", needle: "hashlib.sha1(", reachability: reachable, rootKind: framework, first: "homepage", entryRule: "python/starlette:registration_call:add_route"},
+		{id: "starlette-add-route-keyword", file: "src/shop/registered/starlette_rules.py", needle: "hashlib.sha384(", reachability: reachable, rootKind: framework, first: "status", entryRule: "python/starlette:registration_call:add_route"},
 		{id: "starlette-add-websocket-route", file: "src/shop/registered/starlette_rules.py", needle: "hashlib.sha256(", reachability: reachable, rootKind: framework, first: "feed", entryRule: "python/starlette:registration_call:add_route"},
 	}
 	checkEntryRules(t, entryRulesFixture(t, "python", "python", "python", callgraph.NewPythonParser(), cases), cases)

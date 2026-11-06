@@ -313,10 +313,11 @@ func pythonHasMainGuard(root *sitter.Node, src []byte) bool {
 
 // pythonHandlerKeywords are the keyword arguments through which a
 // registration call takes its handler: Flask's add_url_rule(rule,
-// view_func=f), and FastAPI's and Starlette's add_api_route(path,
-// endpoint=f) and add_route(path, endpoint=f). Flask's endpoint= is a
-// string, which names no function, so it never becomes a reference.
-var pythonHandlerKeywords = map[string]bool{"view_func": true, "endpoint": true}
+// view_func=f), FastAPI's add_api_route(path, endpoint=f), Starlette's
+// Router.add_route(path, endpoint=f), and the Starlette (and FastAPI)
+// application's add_route(path, route=f). Flask's endpoint= is a string,
+// which names no function, so it never becomes a reference.
+var pythonHandlerKeywords = map[string]bool{"view_func": true, "endpoint": true, "route": true}
 
 // registeredViews returns the views a catalog registration call names by
 // reference, as Django's path("x/", views.index) or path("x/", index), or
