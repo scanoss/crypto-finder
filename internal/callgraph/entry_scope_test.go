@@ -378,20 +378,42 @@ fn main() {
 }
 
 // TestUncalledRoots_JavaStaticAndInstanceMethods: an uncalled static method
-// of a program is dead code; an instance method may be reached through an
-// interface the graph does not resolve, so it stays a root.
+// of a program is dead code. An uncalled instance method may be reached
+// through an interface the graph does not resolve, so it stays a root once
+// something creates its class; while nothing does, it is dead code too
+// (entry_java_instances.go).
 func TestUncalledRoots_JavaStaticAndInstanceMethods(t *testing.T) {
 	t.Parallel()
 	program := func(method string) map[string]string {
-		return map[string]string{
-			"pom.xml": "<project/>\n",
-			"src/main/java/app/Main.java": `package app;
+		return programWith("System.out.println(\"hello\");", method)
+	}
+	wantUnreachable(t, scopeCase{
+		ecosystem: "java", parser: javaParser, target: "digest", dirs: []string{"src/main/java"},
+		files: program("    static byte[] run(byte[] data) throws Exception {\n        return digest(data);\n    }\n"),
+	}.trace(t))
+	instance := "    byte[] apply(byte[] data) throws Exception {\n        return digest(data);\n    }\n"
+	wantUnreachable(t, scopeCase{
+		ecosystem: "java", parser: javaParser, target: "digest", dirs: []string{"src/main/java"},
+		files: program(instance),
+	}.trace(t))
+	wantNoCallersRoot(t, scopeCase{
+		ecosystem: "java", parser: javaParser, target: "digest", dirs: []string{"src/main/java"},
+		files: programWith("Runnable r = () -> System.out.println(new Main());", instance),
+	}.trace(t), "apply")
+}
+
+// programWith is a Java program whose main runs body, with method added to
+// its class.
+func programWith(body, method string) map[string]string {
+	return map[string]string{
+		"pom.xml": "<project/>\n",
+		"src/main/java/app/Main.java": `package app;
 
 import java.security.MessageDigest;
 
 public final class Main {
     public static void main(String[] args) {
-        System.out.println("hello");
+        ` + body + `
     }
 
     static byte[] digest(byte[] data) throws Exception {
@@ -401,14 +423,5 @@ public final class Main {
 ` + method + `
 }
 `,
-		}
 	}
-	wantUnreachable(t, scopeCase{
-		ecosystem: "java", parser: javaParser, target: "digest", dirs: []string{"src/main/java"},
-		files: program("    static byte[] run(byte[] data) throws Exception {\n        return digest(data);\n    }\n"),
-	}.trace(t))
-	wantNoCallersRoot(t, scopeCase{
-		ecosystem: "java", parser: javaParser, target: "digest", dirs: []string{"src/main/java"},
-		files: program("    byte[] apply(byte[] data) throws Exception {\n        return digest(data);\n    }\n"),
-	}.trace(t), "apply")
 }
