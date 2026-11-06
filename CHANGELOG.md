@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.1] - 2026-11-06
+### Fixed
+- The call graph of an npm package no longer panics when one of the modules it
+  resolves cannot be loaded; the scan used to exit with status 2. (#877)
+- Scanning an npm package that ships a large bundle (`dist/*.min.js`, asm.js or
+  WASM builds) no longer spends minutes to hours building the call graph: since
+  0.46.0 each call inside a bundle re-read the whole bundle to find what it
+  exports. Each module is now read once. web3@4.0.0-alpha.0 takes about 10 s
+  instead of 24 min. Findings and the exported graph fragment are unchanged.
+
 ## [0.50.0] - 2026-11-06
 ### Changed
 - `scan_metadata.graph_algo_version` is `graph-algo-18`: Python functions
