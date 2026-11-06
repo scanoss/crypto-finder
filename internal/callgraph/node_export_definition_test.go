@@ -89,3 +89,18 @@ func TestNodeShapesDefinitionWalksAModuleOnce(t *testing.T) {
 		t.Errorf("%d Definition calls walked the module %d times, want 1", 2*exported, walks)
 	}
 }
+
+// Close must skip the modules cached as unloadable: a missing file or one with
+// no parser panicked it, failing the whole scan.
+func TestNodeShapesCloseSkipsUnloadableModules(t *testing.T) {
+	t.Parallel()
+	root := writeShapeFiles(t, map[string]string{
+		"index.js":  "exports.ok = function () {};\n",
+		"style.css": "body {}\n",
+	})
+	s := NewNodeShapes()
+	for _, file := range []string{"index.js", "style.css", "missing.js"} {
+		s.ExportMembers(filepath.Join(root, file), "ok")
+	}
+	s.Close()
+}
