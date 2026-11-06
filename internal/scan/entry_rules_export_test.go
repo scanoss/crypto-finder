@@ -31,12 +31,14 @@ import (
 // entryRuleCase is one planted crypto call in an entry_rules fixture and the
 // verdict it must get. rootKind and first describe one of its chains: the
 // root kind of its first frame and a substring of that frame's name. An empty
-// rootKind asks for no chain check.
+// rootKind asks for no chain check. entryRule, when set, is the catalog entry
+// that chain's first frame must name.
 type entryRuleCase struct {
 	id, file, needle string
 	reachability     string
 	rootKind         callgraph.RootKind
 	first            string
+	entryRule        string
 }
 
 // entryRulesFixture builds testdata/entry_rules/<dir> with parser and plants
@@ -109,13 +111,14 @@ func checkEntryRules(t *testing.T, fixture entryRootsFixture, cases []entryRuleC
 		}
 		found := false
 		for _, chain := range fg.CallChains {
-			if chain[0].RootKind == string(c.rootKind) && strings.Contains(chain[0].FunctionName, c.first) {
+			if chain[0].RootKind == string(c.rootKind) && strings.Contains(chain[0].FunctionName, c.first) &&
+				(c.entryRule == "" || chain[0].EntryRule == c.entryRule) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Errorf("%s: chains = %+v, want one starting at %q as %s", c.id, shortChains(fg), c.first, c.rootKind)
+			t.Errorf("%s: chains = %+v, want one starting at %q as %s (entry rule %q)", c.id, shortChains(fg), c.first, c.rootKind, c.entryRule)
 		}
 	}
 }
@@ -247,6 +250,21 @@ func TestExportCallGraph_PythonEntryPoints(t *testing.T) {
 		{id: "migration-elsewhere", file: "src/shop/ledger.py", needle: "hashlib.pbkdf2_hmac(", reachability: reachable, rootKind: callgraph.RootKindNoCallers, first: "Migration"},
 		{id: "main-guard", file: "src/shop/batch.py", needle: "hashlib.shake_128(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "batch.<module>"},
 		{id: "console-script", file: "src/shop/cli.py", needle: "hashlib.sha512(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "rotate_keys"},
+		// Handlers registered by call: the handler as a keyword (view_func=,
+		// endpoint=) or a positional argument after the path.
+		{id: "flask-add-url-rule", file: "src/shop/registered/flask_rules.py", needle: "hashlib.sha1(", reachability: reachable, rootKind: framework, first: "fingerprint", entryRule: "python/flask:registration_call:add_url_rule"},
+		{id: "blueprint-add-url-rule", file: "src/shop/registered/flask_rules.py", needle: "hashlib.sha256(", reachability: reachable, rootKind: framework, first: "rotate", entryRule: "python/flask:registration_call:add_url_rule"},
+		// add_url_rule on an application object that comes from neither Flask
+		// nor a Blueprint: the handler is not an entry point, so the crypto
+		// written in it is not reached.
+		{id: "not-flask-add-url-rule", file: "src/shop/registered/flask_rules.py", needle: "hashlib.md5(", reachability: graphfrag.ReachabilityUnreachable},
+		{id: "registered-helper", file: "src/shop/registered/flask_rules.py", needle: "hashlib.sha512(", reachability: graphfrag.ReachabilityUnreachable},
+		{id: "fastapi-add-api-route", file: "src/shop/registered/fastapi_rules.py", needle: "hashlib.sha1(", reachability: reachable, rootKind: framework, first: "fingerprint", entryRule: "python/fastapi:registration_call:add_api_route"},
+		{id: "apirouter-add-api-route", file: "src/shop/registered/fastapi_rules.py", needle: "hashlib.sha256(", reachability: reachable, rootKind: framework, first: "sign", entryRule: "python/fastapi:registration_call:add_api_route"},
+		{id: "fastapi-add-api-websocket-route", file: "src/shop/registered/fastapi_rules.py", needle: "hashlib.sha384(", reachability: reachable, rootKind: framework, first: "stream", entryRule: "python/fastapi:registration_call:add_api_route"},
+		{id: "starlette-add-route", file: "src/shop/registered/starlette_rules.py", needle: "hashlib.sha1(", reachability: reachable, rootKind: framework, first: "homepage", entryRule: "python/starlette:registration_call:add_route"},
+		{id: "starlette-add-route-keyword", file: "src/shop/registered/starlette_rules.py", needle: "hashlib.sha384(", reachability: reachable, rootKind: framework, first: "status", entryRule: "python/starlette:registration_call:add_route"},
+		{id: "starlette-add-websocket-route", file: "src/shop/registered/starlette_rules.py", needle: "hashlib.sha256(", reachability: reachable, rootKind: framework, first: "feed", entryRule: "python/starlette:registration_call:add_route"},
 	}
 	checkEntryRules(t, entryRulesFixture(t, "python", "python", "python", callgraph.NewPythonParser(), cases), cases)
 }

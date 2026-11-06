@@ -2,7 +2,7 @@ schema_version: "1"
 language: python
 framework:
   name: flask
-  description: "Flask views and request hooks on an application or blueprint (@app.route, @bp.get, @app.before_request), and the methods of a class-based MethodView."
+  description: "Flask views and request hooks on an application or blueprint (@app.route, @bp.get, @app.before_request), views it registers by call (app.add_url_rule(\"/x\", view_func=f)), and the methods of a class-based MethodView."
 entries:
   - shape: decorator
     from: [flask]
@@ -12,4 +12,9 @@ entries:
   - shape: supertype
     from: [flask.views]
     names: [get, post, put, patch, delete, head, options, dispatch_request]
+    root_kind: framework_entry
+  - shape: registration_call
+    from: [flask]
+    names: [add_url_rule]
+    path: required
     root_kind: framework_entry

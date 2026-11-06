@@ -2,7 +2,7 @@ schema_version: "1"
 language: python
 framework:
   name: starlette
-  description: "Starlette application routes and hooks, and HTTPEndpoint methods."
+  description: "Starlette application routes and hooks, routes it registers by call (app.add_route(\"/x\", f)), and HTTPEndpoint methods."
 entries:
   - shape: decorator
     from: [starlette]
@@ -12,4 +12,9 @@ entries:
     from: [starlette.endpoints]
     types: [HTTPEndpoint]
     names: [get, post, put, patch, delete, head, options]
+    root_kind: framework_entry
+  - shape: registration_call
+    from: [starlette]
+    names: [add_route, add_websocket_route]
+    path: required
     root_kind: framework_entry

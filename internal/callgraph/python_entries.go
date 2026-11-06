@@ -39,6 +39,7 @@ import (
 const (
 	pythonDecoratedDefinition = "decorated_definition"
 	pythonAttribute           = "attribute"
+	pythonKeywordArgument     = "keyword_argument"
 )
 
 // pythonEntryScope is what one file's names are bound to: the module a
@@ -310,10 +311,19 @@ func pythonHasMainGuard(root *sitter.Node, src []byte) bool {
 	return false
 }
 
+// pythonHandlerKeywords are the keyword arguments through which a
+// registration call takes its handler: Flask's add_url_rule(rule,
+// view_func=f), FastAPI's add_api_route(path, endpoint=f), Starlette's
+// Router.add_route(path, endpoint=f), and the Starlette (and FastAPI)
+// application's add_route(path, route=f). Flask's endpoint= is a string,
+// which names no function, so it never becomes a reference.
+var pythonHandlerKeywords = map[string]bool{"view_func": true, "endpoint": true, "route": true}
+
 // registeredViews returns the views a catalog registration call names by
-// reference, as Django's path("x/", views.index) or path("x/", index). The
-// call must come from the framework (from django.urls import path), and its
-// first argument must be the pattern.
+// reference, as Django's path("x/", views.index) or path("x/", index), or
+// Flask's app.add_url_rule("/x", view_func=index). The call must come from
+// the framework (from django.urls import path, app = Flask(__name__)), and
+// its first argument must be the pattern.
 func (s *pythonEntryScope) registeredViews(root *sitter.Node, src []byte, module string) []EntryRef {
 	catalog := entryCatalog()
 	var refs []EntryRef
@@ -342,7 +352,17 @@ func (s *pythonEntryScope) registrationRefs(catalog *entrypoints.Catalog, call *
 	}
 	var refs []EntryRef
 	for i := 1; i < int(args.NamedChildCount()); i++ {
-		if ref, found := s.viewReference(args.NamedChild(i), src, module); found {
+		arg := args.NamedChild(i)
+		if arg.Type() == pythonKeywordArgument {
+			keyword := arg.ChildByFieldName("name")
+			if keyword == nil || !pythonHandlerKeywords[keyword.Content(src)] {
+				continue
+			}
+			if arg = arg.ChildByFieldName("value"); arg == nil {
+				continue
+			}
+		}
+		if ref, found := s.viewReference(arg, src, module); found {
 			ref.Mark = catalogEntryMark(&entry)
 			refs = append(refs, ref)
 		}

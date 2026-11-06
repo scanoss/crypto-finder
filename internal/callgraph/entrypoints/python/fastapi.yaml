@@ -2,10 +2,15 @@ schema_version: "1"
 language: python
 framework:
   name: fastapi
-  description: "FastAPI path operations and hooks on an application or APIRouter (@app.get, @router.post, @app.middleware)."
+  description: "FastAPI path operations and hooks on an application or APIRouter (@app.get, @router.post, @app.middleware), and routes it registers by call (app.add_api_route(\"/x\", f))."
 entries:
   - shape: decorator
     from: [fastapi]
     names: [get, post, put, delete, patch, head, options, trace, api_route, websocket,
             on_event, exception_handler, middleware]
+    root_kind: framework_entry
+  - shape: registration_call
+    from: [fastapi]
+    names: [add_api_route, add_api_websocket_route, add_route, add_websocket_route]
+    path: required
     root_kind: framework_entry
