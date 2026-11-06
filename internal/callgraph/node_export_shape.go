@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -47,6 +46,68 @@ type nodeShapeModule struct {
 	src  []byte
 	tree *sitter.Tree
 	root *sitter.Node
+	// assigned is built on first use; see assignments.
+	assigned *nodeAssignments
+	// walks counts the walks of the whole tree, which tests bound.
+	walks int
+}
+
+// nodeAssignments is what Definition reads from a module on every call, kept
+// so that a bundle with thousands of calls into itself is walked once, not
+// once per call: the names bound to the exports object, and the assignments
+// to each target that contains a dot (`exports.a.b = v`, `Name.prototype.m = v`).
+type nodeAssignments struct {
+	aliases  map[string]bool
+	byTarget map[string]*nodeTargetAssignments
+}
+
+// nodeTargetAssignments holds the first assignment to one target and the first
+// that is not a `void 0` forward declaration. The orders are positions in a
+// walk of the tree, so a lookup that tries several targets still picks the
+// one assigned first.
+type nodeTargetAssignments struct {
+	first, defined           *sitter.Node
+	firstOrder, definedOrder int
+}
+
+// walk visits the whole tree of the module.
+func (m *nodeShapeModule) walk(visit func(*sitter.Node)) {
+	m.walks++
+	nodeWalk(m.root, visit)
+}
+
+// assignments indexes the module's export aliases and assignments on first use.
+func (m *nodeShapeModule) assignments() *nodeAssignments {
+	if m.assigned != nil {
+		return m.assigned
+	}
+	a := &nodeAssignments{aliases: make(map[string]bool), byTarget: make(map[string]*nodeTargetAssignments)}
+	order := 0
+	m.walk(func(n *sitter.Node) {
+		nodeExportAlias(n, m.src, a.aliases)
+		if n.Type() != nodeAssignmentExpression {
+			return
+		}
+		left, right := n.ChildByFieldName("left"), n.ChildByFieldName("right")
+		if left == nil || right == nil {
+			return
+		}
+		target := left.Content(m.src)
+		if !strings.Contains(target, ".") {
+			return // every target looked up is `base.member`
+		}
+		order++
+		t := a.byTarget[target]
+		if t == nil {
+			t = &nodeTargetAssignments{first: right, firstOrder: order}
+			a.byTarget[target] = t
+		}
+		if t.defined == nil && !nodeForwardDeclaration(right, m.src) {
+			t.defined, t.definedOrder = right, order
+		}
+	})
+	m.assigned = a
+	return a
 }
 
 type nodeShape struct {
@@ -139,7 +200,7 @@ func (s *NodeShapes) valueShape(m *nodeShapeModule, n *sitter.Node, name string,
 	sh := s.shapeOf(m, n, depth)
 	// `var hotp = {}; hotp.gen = function..` builds the object after its literal.
 	if n != nil && nodeUnwrapValue(n).Type() == nodeObjectLiteral && name != "" && !sh.open {
-		nodeWalk(m.root, func(a *sitter.Node) {
+		m.walk(func(a *sitter.Node) {
 			if a.Type() == nodeAssignmentExpression {
 				s.addAssignedMember(m, a, name, &sh)
 			}
@@ -159,7 +220,7 @@ func (s *NodeShapes) functionShape(m *nodeShapeModule, fn *sitter.Node, name str
 	if sh.open || name == "" || name == nodeDefaultExport {
 		return sh
 	}
-	nodeWalk(m.root, func(n *sitter.Node) {
+	m.walk(func(n *sitter.Node) {
 		switch n.Type() {
 		case nodeAssignmentExpression:
 			s.addAssignedMember(m, n, name, &sh)
@@ -934,40 +995,40 @@ func (s *NodeShapes) functionMember(m *nodeShapeModule, fn *sitter.Node, name, m
 	return nodeAssignedValue(m, name+"."+member, name+"."+nodePrototypeMember+"."+member), m
 }
 
-// nodeAssignedValue returns the right side of the first assignment to one of targets.
+// nodeAssignedValue returns the right side of the first assignment to one of
+// targets, each of the form `base.member`.
 func nodeAssignedValue(m *nodeShapeModule, targets ...string) *sitter.Node {
 	var found *sitter.Node
-	nodeWalk(m.root, func(n *sitter.Node) {
-		if found != nil || n.Type() != nodeAssignmentExpression {
-			return
+	first := 0
+	for _, target := range targets {
+		if t := m.assignments().byTarget[target]; t != nil && (found == nil || t.firstOrder < first) {
+			found, first = t.first, t.firstOrder
 		}
-		if left := n.ChildByFieldName("left"); left != nil && slices.Contains(targets, left.Content(m.src)) {
-			found = n.ChildByFieldName("right")
-		}
-	})
+	}
 	return found
 }
 
 // assignedExportPath finds `exports.name.m1 = v`, or the same through an alias
 // of the exports object (`var nacl = exports; nacl.box.before = v`).
 func assignedExportPath(m *nodeShapeModule, name string, members []string) *sitter.Node {
-	suffix := strings.Join(append([]string{name}, members...), ".")
-	aliases := nodeExportAliases(m.root, m.src)
-	aliases[nodeCommonJSExportsObject], aliases[nodeModuleExportsTarget] = true, true
+	suffix := "." + strings.Join(append([]string{name}, members...), ".")
+	assigned := m.assignments()
 	var found *sitter.Node
-	nodeWalk(m.root, func(n *sitter.Node) {
-		if found != nil || n.Type() != nodeAssignmentExpression {
-			return
+	first := 0
+	try := func(base string) {
+		target := base + suffix
+		if strings.Index(target, suffix) != len(base) {
+			return // the path starts inside base: `a.x.a.x` is not alias a's path x.a.x
 		}
-		left := n.ChildByFieldName("left")
-		if left == nil {
-			return
+		if t := assigned.byTarget[target]; t != nil && t.defined != nil && (found == nil || t.definedOrder < first) {
+			found, first = t.defined, t.definedOrder
 		}
-		base, rest, ok := strings.Cut(left.Content(m.src), "."+suffix)
-		if right := n.ChildByFieldName("right"); ok && rest == "" && aliases[base] && !nodeForwardDeclaration(right, m.src) {
-			found = right
-		}
-	})
+	}
+	for alias := range assigned.aliases {
+		try(alias)
+	}
+	try(nodeCommonJSExportsObject)
+	try(nodeModuleExportsTarget)
 	return found
 }
 
@@ -979,7 +1040,7 @@ func (s *NodeShapes) Constructor(file string, line int) (int, bool) {
 		return 0, false
 	}
 	found := 0
-	nodeWalk(mod.root, func(n *sitter.Node) {
+	mod.walk(func(n *sitter.Node) {
 		if found != 0 || nodeLine(n) != line || (n.Type() != nodeClassDeclaration && n.Type() != nodeClassExpression) {
 			return
 		}
@@ -1004,8 +1065,7 @@ func (s *NodeShapes) followExportAlias(m *nodeShapeModule, value *sitter.Node, d
 	if !ok {
 		return value
 	}
-	aliases := nodeExportAliases(m.root, m.src)
-	if !aliases[base] && base != nodeCommonJSExportsObject {
+	if !m.assignments().aliases[base] && base != nodeCommonJSExportsObject {
 		return value
 	}
 	parts := strings.Split(path, ".")
