@@ -120,10 +120,13 @@ func NewNodeShapes() *NodeShapes {
 	return &NodeShapes{parser: NewNodeParser(), modules: make(map[string]*nodeShapeModule)}
 }
 
-// Close releases the parse trees.
+// Close releases the parse trees. A module that could not be loaded is cached
+// as nil and has none.
 func (s *NodeShapes) Close() {
 	for _, m := range s.modules {
-		m.tree.Close()
+		if m != nil {
+			m.tree.Close()
+		}
 	}
 }
 
