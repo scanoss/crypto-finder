@@ -123,6 +123,56 @@ type Contract struct {
 	// lower-arity contract when that contract is explicitly marked varargs.
 	// Absent (false) means every declared parameter is positional.
 	Varargs bool
+	// MaterialRoles names the related crypto material an argument of this
+	// method is: the iv of `new IvParameterSpec(iv)` or the salt of
+	// `PBKDF2HMAC(salt=...)`. The scan follows a random draw into such an
+	// argument and reports the drawn value as that material. Nil when the
+	// method takes no related crypto material (the common case).
+	MaterialRoles []MaterialRole
+}
+
+// MaterialRole maps one parameter of a contract method to the CycloneDX
+// relatedCryptoMaterial type the value passed there is. Index, Name or both
+// identify the parameter: Index matches a positional argument, Name a keyword
+// argument (Python).
+type MaterialRole struct {
+	// Index is the 0-based parameter position; nil when only Name identifies
+	// the parameter.
+	Index *int
+	// Name is the declared parameter name a keyword argument uses.
+	Name string
+	// Material is a CycloneDX relatedCryptoMaterial type, see
+	// RelatedCryptoMaterialTypes.
+	Material string
+}
+
+// RelatedCryptoMaterialTypes are the CycloneDX 1.7 relatedCryptoMaterial types
+// a material role may name. The schema's "other" and "unknown" are left out:
+// a role names what the value is, and an author who cannot say should not
+// declare one.
+var RelatedCryptoMaterialTypes = []string{
+	"private-key", "public-key", "secret-key", "key", "ciphertext", "signature",
+	"digest", "initialization-vector", "nonce", "seed", "salt", "shared-secret",
+	"tag", "additional-data", "password", "credential", "token",
+}
+
+// MaterialAt returns the material role a contract declares for an argument:
+// the one named name when name is not empty, otherwise the one at index.
+// Empty when the contract declares none there.
+func (c *Contract) MaterialAt(index int, name string) string {
+	for i := range c.MaterialRoles {
+		r := &c.MaterialRoles[i]
+		if name != "" {
+			if r.Name == name {
+				return r.Material
+			}
+			continue
+		}
+		if r.Index != nil && *r.Index == index {
+			return r.Material
+		}
+	}
+	return ""
 }
 
 // Role classifies a contract method's part in a crypto object's lifecycle.
@@ -416,6 +466,15 @@ type yamlContract struct {
 	// Varargs marks the final declared parameter as variadic; see
 	// Contract.Varargs. Optional, defaults to false.
 	Varargs bool `yaml:"varargs,omitempty"`
+	// MaterialRoles declares which arguments are related crypto material; see
+	// Contract.MaterialRoles.
+	MaterialRoles []yamlMaterialRole `yaml:"material_roles,omitempty"`
+}
+
+type yamlMaterialRole struct {
+	Index    *int   `yaml:"index,omitempty"`
+	Name     string `yaml:"name,omitempty"`
+	Material string `yaml:"material"`
 }
 
 type yamlParameterRole struct {
@@ -663,6 +722,66 @@ func validateParameters(i int, c yamlContract) ([]ParameterContract, error) {
 	return out, nil
 }
 
+// validateMaterialRoles checks the material_roles entries of one YAML
+// contract: each names a known material and a parameter inside the arity,
+// and no parameter carries two roles.
+func validateMaterialRoles(i int, c yamlContract) ([]MaterialRole, error) {
+	if len(c.MaterialRoles) == 0 {
+		return nil, nil
+	}
+	out := make([]MaterialRole, 0, len(c.MaterialRoles))
+	seenIndex := map[int]bool{}
+	seenName := map[string]bool{}
+	for j, r := range c.MaterialRoles {
+		if err := validateMaterialRole(c, r); err != nil {
+			return nil, fmt.Errorf("contracts: contract[%d] (%s): material_roles[%d]%w", i, c.Method, j, err)
+		}
+		if r.Index != nil {
+			if seenIndex[*r.Index] {
+				return nil, fmt.Errorf("contracts: contract[%d] (%s): material_roles[%d] repeats index %d", i, c.Method, j, *r.Index)
+			}
+			seenIndex[*r.Index] = true
+		}
+		if r.Name != "" {
+			if seenName[r.Name] {
+				return nil, fmt.Errorf("contracts: contract[%d] (%s): material_roles[%d] repeats name %q", i, c.Method, j, r.Name)
+			}
+			seenName[r.Name] = true
+		}
+		out = append(out, MaterialRole(r))
+	}
+	return out, nil
+}
+
+// validateMaterialRole checks one material_roles entry on its own. The error
+// text continues the caller's "material_roles[j]" prefix.
+func validateMaterialRole(c yamlContract, r yamlMaterialRole) error {
+	if !slices.Contains(RelatedCryptoMaterialTypes, r.Material) {
+		return fmt.Errorf(".material %q is not a CycloneDX relatedCryptoMaterial type {%s}", r.Material, strings.Join(RelatedCryptoMaterialTypes, ", "))
+	}
+	if r.Index == nil && r.Name == "" {
+		return fmt.Errorf(" needs an index or a name")
+	}
+	if r.Index != nil && (*r.Index < 0 || *r.Index >= c.Arity) {
+		return fmt.Errorf(".index %d is outside arity %d", *r.Index, c.Arity)
+	}
+	return nil
+}
+
+// validateArgumentPropertyEcosystem rejects contributes.argument_property
+// outside the node ecosystem: it reads a JavaScript object literal.
+func validateArgumentPropertyEcosystem(ecosystem string, i int, method string, params []ParameterContract) error {
+	if ecosystem == ecosystemNode {
+		return nil
+	}
+	for _, p := range params {
+		if p.Contributes != nil && p.Contributes.ArgumentProperty != "" {
+			return fmt.Errorf("contracts: contract[%d] (%s): contributes.argument_property reads a JavaScript object literal and is valid only in the node ecosystem", i, method)
+		}
+	}
+	return nil
+}
+
 // indexContracts validates and indexes all contract entries into the KnowledgeBase.
 func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 	unconditionalSeen := make(map[string]struct{})
@@ -676,12 +795,12 @@ func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 		if err != nil {
 			return err
 		}
-		if raw.Ecosystem != ecosystemNode {
-			for _, p := range params {
-				if p.Contributes != nil && p.Contributes.ArgumentProperty != "" {
-					return fmt.Errorf("contracts: contract[%d] (%s): contributes.argument_property reads a JavaScript object literal and is valid only in the node ecosystem", i, c.Method)
-				}
-			}
+		if err := validateArgumentPropertyEcosystem(raw.Ecosystem, i, c.Method, params); err != nil {
+			return err
+		}
+		materials, err := validateMaterialRoles(i, c)
+		if err != nil {
+			return err
 		}
 		key := fmt.Sprintf("%s#%d", c.Method, c.Arity)
 		// Reject duplicate unconditional contracts for the same key.
@@ -702,6 +821,7 @@ func indexContracts(raw *yamlKB, kb *KnowledgeBase) error {
 			Role:                c.Role,
 			Parameters:          params,
 			Varargs:             c.Varargs,
+			MaterialRoles:       materials,
 		})
 	}
 	return nil
@@ -926,6 +1046,7 @@ func cloneKB(kb *KnowledgeBase) *KnowledgeBase {
 		for i := range dst {
 			dst[i].ParameterTypes = append([]string(nil), v[i].ParameterTypes...)
 			dst[i].Parameters = append([]ParameterContract(nil), v[i].Parameters...)
+			dst[i].MaterialRoles = append([]MaterialRole(nil), v[i].MaterialRoles...)
 		}
 		clone.Contracts[k] = dst
 	}
@@ -1050,10 +1171,10 @@ func mergeContractGroup(index map[string]Contract, cs []Contract, key string) er
 		}
 		// Rule 2: same condition + divergent return/role/parameters → HARD ERROR
 		return fmt.Errorf(
-			"contracts: contract conflict for %s: library %q has return %q (%s) canonical signature (%v): %q role %q; library %q has return %q (%s) canonical signature (%v): %q role %q",
+			"contracts: contract conflict for %s: library %q has return %q (%s) canonical signature (%v): %q role %q material roles [%s]; library %q has return %q (%s) canonical signature (%v): %q role %q material roles [%s]",
 			key,
-			existing.SourceLibrary, existing.Return.Type, existing.Return.Confidence, existing.ParameterTypes, existing.CanonicalReturnType, existing.Role,
-			c.SourceLibrary, c.Return.Type, c.Return.Confidence, c.ParameterTypes, c.CanonicalReturnType, c.Role,
+			existing.SourceLibrary, existing.Return.Type, existing.Return.Confidence, existing.ParameterTypes, existing.CanonicalReturnType, existing.Role, materialRolesKey(existing.MaterialRoles),
+			c.SourceLibrary, c.Return.Type, c.Return.Confidence, c.ParameterTypes, c.CanonicalReturnType, c.Role, materialRolesKey(c.MaterialRoles),
 		)
 	}
 	return nil
@@ -1068,7 +1189,27 @@ func contractsEquivalent(a, b Contract) bool {
 		slices.Equal(a.ParameterTypes, b.ParameterTypes) &&
 		a.CanonicalReturnType == b.CanonicalReturnType &&
 		a.Role == b.Role &&
-		parametersKey(a.Parameters) == parametersKey(b.Parameters)
+		parametersKey(a.Parameters) == parametersKey(b.Parameters) &&
+		materialRolesKey(a.MaterialRoles) == materialRolesKey(b.MaterialRoles)
+}
+
+// materialRolesKey produces a canonical, order-insensitive key for a
+// MaterialRole slice, so Merge treats the same roles in another order as
+// identical and different roles as a conflict.
+func materialRolesKey(roles []MaterialRole) string {
+	if len(roles) == 0 {
+		return ""
+	}
+	parts := make([]string, len(roles))
+	for i, r := range roles {
+		idx := "-"
+		if r.Index != nil {
+			idx = strconv.Itoa(*r.Index)
+		}
+		parts[i] = idx + "|" + r.Name + "|" + r.Material
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ";")
 }
 
 // parametersKey produces a canonical, order-insensitive key for a
