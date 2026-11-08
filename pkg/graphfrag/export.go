@@ -127,10 +127,14 @@ const SchemaVersion = "graph-fragment-1.15"
 // framework_entry. A Python structural graph cached under graph-algo-17 has
 // none for them.
 //
-// graph-algo-19: Go and Rust function parameters carry their names. Parameter
+// graph-algo-19: a Rust parameter list that names a lifetime splits into its
+// parameters (the lifetime's quote used to merge the rest of the list into one
+// parameter), and Go and Rust parameters carry their names. Parameter
 // pass-through dispatch matches a call's receiver to a parameter by name, so a
-// Go or Rust wrapper that forwards its parameter to an ambiguous interface or
-// trait call can now gain the bypass edge Java and Python graphs already had.
+// Go wrapper that forwards its parameter to an ambiguous interface call can now
+// gain the bypass edge Java and Python graphs already had. Rust gains none yet:
+// a Rust method's parameters count self while its call arguments do not, and
+// Rust calls record no argument sources.
 const GraphAlgoVersion = "graph-algo-19"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
