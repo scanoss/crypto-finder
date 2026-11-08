@@ -129,19 +129,43 @@ func (t *materialTracer) drawnMaterials(finding *entities.Finding, draw entities
 	return materials
 }
 
+// randomFillBuffer maps the name of a call that fills a caller's buffer with
+// random bytes to the position of that buffer: Go `rand.Read(b)` and
+// `io.ReadFull(rand.Reader, b)`, Java `nextBytes(b)`, Rust `fill_bytes(&mut b)`,
+// `try_fill_bytes`, `fill`, `try_fill`, `getrandom` and OpenSSL `rand_bytes`,
+// Node `randomFillSync(b)`, `randomFill(b, cb)` and `getRandomValues(b)`. Any
+// other draw's arguments are inputs (a size, or a seed as in `setSeed(seed)`),
+// never the drawn value.
+var randomFillBuffer = map[string]int{
+	"Read":            0,
+	"ReadFull":        1,
+	"nextBytes":       0,
+	"fill_bytes":      0,
+	"try_fill_bytes":  0,
+	"fill":            0,
+	"try_fill":        0,
+	"getrandom":       0,
+	"rand_bytes":      0,
+	"randomFillSync":  0,
+	"randomFill":      0,
+	"getRandomValues": 0,
+}
+
 // drawnNames are the variables that may hold a draw's value: the one its
-// result is bound to, and each plain identifier it is passed, which a draw
-// that fills a buffer writes. A name that is not the drawn value (the `n` of
-// `token_bytes(n)`, the `err` of Go's rand.Read) reaches no material role.
+// result is bound to, and the buffer a filling draw (randomFillBuffer) writes.
+// A bound name that is not the drawn value (the `err` of Go's rand.Read, a
+// generator `new SecureRandom(seed)` returns) reaches no material role.
 func drawnNames(call *callgraph.FunctionCall, ecosystem string) []string {
 	var names []string
 	if isSimpleIdentifier(call.AssignedVar) {
 		names = append(names, call.AssignedVar)
 	}
-	for _, arg := range call.Arguments {
-		if name := bareArgument(arg, ecosystem); isSimpleIdentifier(name) && !slices.Contains(names, name) {
-			names = append(names, name)
-		}
+	index, fills := randomFillBuffer[callgraph.BaseFunctionName(call.Callee.Name)]
+	if !fills || index >= len(call.Arguments) {
+		return names
+	}
+	if name := bareArgument(call.Arguments[index], ecosystem); isSimpleIdentifier(name) && !slices.Contains(names, name) {
+		names = append(names, name)
 	}
 	return names
 }
@@ -371,8 +395,9 @@ func isCommentLine(text string) bool {
 
 // rebindPatterns are the shapes of a line that may give name another value or
 // overwrite the buffer it holds: an assignment (also compound, indexed, a
-// tuple target or Go's :=), a declaration or loop that binds it (let, var,
-// const, for, as, del), a mutable borrow, and the standard in-place fills.
+// tuple or destructuring target, or Go's :=), a declaration or loop whose
+// target is the name (let, var, const, for, as, del; not one that only reads
+// it), a mutable borrow, and the standard in-place fills.
 func (t *materialTracer) rebindPatterns(name string) []*regexp.Regexp {
 	if patterns, ok := t.rebinders[name]; ok {
 		return patterns
@@ -382,7 +407,12 @@ func (t *materialTracer) rebindPatterns(name string) []*regexp.Regexp {
 	patterns := []*regexp.Regexp{
 		regexp.MustCompile(word + `\s*(?:\[[^\]]*\]\s*)?(?:[-+*/%&|^]|<<|>>|\?\?|:)?=(?:[^=>]|$)`),
 		regexp.MustCompile(word + `\s*,[^=]*:?=(?:[^=>]|$)`),
-		regexp.MustCompile(`\b(?:let|var|const|for|as|del|global|nonlocal)\b.*` + word + `(?:[^\w$]|$)`),
+		// The name closing a destructuring target: `(salt, n) = ...`, `[a, iv] = ...`.
+		regexp.MustCompile(word + `\s*[)\]][^=()]*:?=(?:[^=>]|$)`),
+		// A declaration or binder whose target is the name, not one that only
+		// reads it (`let n = Nonce::from_slice(&nonce)` keeps nonce).
+		regexp.MustCompile(`\b(?:let(?:\s+mut)?|var|const|as|del)\s+` + n + `\b`),
+		regexp.MustCompile(`\bfor\b[^:{]*?` + word + `\b[^:{]*?\b(?:in|of)\b`),
 		regexp.MustCompile(`&mut\s+` + n + `\b`),
 		regexp.MustCompile(`\bcopy\s*\(\s*` + n + `\b`),
 		regexp.MustCompile(word + `\s*\.\s*(?:copy_from_slice|clone_from_slice|fill|fill_bytes|try_fill_bytes|set|write)\s*\(`),

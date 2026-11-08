@@ -250,6 +250,17 @@ def main(password, helper):
 			fx:   materialFixture{ecosystem: ecosystemJava, file: "app/A.java", importPath: "app", draw: "random.nextBytes(salt)", src: javaMaterialSource},
 			want: []string{"salt"},
 		},
+		"java seed input is not the drawn value": {
+			fx: materialFixture{ecosystem: ecosystemJava, file: "app/A.java", importPath: "app", draw: "random.setSeed(salt)", src: javaMaterialSource},
+		},
+		"rust declaration that only reads the buffer": {
+			fx:   materialFixture{ecosystem: ecosystemRust, file: "src/lib.rs", importPath: "app", draw: "rand::rngs::OsRng.fill_bytes(&mut nonce)", src: rustMaterialSource},
+			want: []string{"initialization-vector"},
+		},
+		"node declaration that only reads the value": {
+			fx:   materialFixture{ecosystem: ecosystemNode, file: "a.js", importPath: "app", draw: "crypto.randomBytes(IV_LENGTH)", src: nodeMaterialSource},
+			want: []string{"initialization-vector"},
+		},
 		"java buffer reassigned before passing": {
 			fx: materialFixture{ecosystem: ecosystemJava, file: "app/A.java", importPath: "app", draw: "random.nextBytes(spare)", src: javaMaterialSource},
 		},
@@ -390,6 +401,12 @@ public class A {
         spare = key;
         init(key, spare);
     }
+
+    public void seeded(char[] pw, byte[] salt) {
+        SecureRandom random = new SecureRandom();
+        random.setSeed(salt);
+        this.spec(pw, salt);
+    }
 }
 `
 
@@ -416,6 +433,14 @@ pub fn run(key: &[u8], data: &[u8]) {
     let mut out = [0u8; 32];
     derive(key, &salt, &mut out);
 }
+
+pub fn run_measured(key: &[u8], data: &[u8]) -> usize {
+    let mut nonce = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut nonce);
+    let size = nonce.len();
+    enc(key, &nonce, data);
+    size
+}
 `
 
 const nodeMaterialSource = `const crypto = require('crypto');
@@ -436,5 +461,14 @@ function run(key, data) {
   derive(data, salt);
 }
 
-module.exports = { run };
+function runLogged(key, data) {
+  const nonce = crypto.randomBytes(IV_LENGTH);
+  const nonceHex = nonce.toString('hex');
+  console.log(nonceHex);
+  return enc(key, nonce, data);
+}
+
+const IV_LENGTH = 16;
+
+module.exports = { run, runLogged };
 `
