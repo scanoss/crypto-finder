@@ -2278,14 +2278,43 @@ func parseRustParameters(node *sitter.Node, src []byte) ([]FunctionParameter, bo
 			hasSelf = true
 		}
 
-		typ := ""
+		typ, name := "", ""
 		if idx := strings.Index(clean, ":"); idx >= 0 {
 			typ = strings.TrimSpace(clean[idx+1:])
+			name = rustParameterName(clean[:idx])
+		} else {
+			// A shorthand receiver: `self`, `mut self`, `&self`, `&mut self`.
+			name = rustParameterName(strings.TrimLeft(clean, "&"))
 		}
-		params = append(params, FunctionParameter{Type: typ})
+		params = append(params, FunctionParameter{Type: typ, Name: name})
 	}
 
 	return params, hasSelf
+}
+
+// rustParameterName is the name a parameter pattern binds: `key` for `key`,
+// `mut key` or `self: Box<Self>`'s `self`. Empty for a destructuring pattern
+// such as `(a, b)` or `Point { x, y }`, which binds no single name.
+func rustParameterName(pattern string) string {
+	name := strings.TrimSpace(pattern)
+	name = strings.TrimSpace(strings.TrimPrefix(name, "mut "))
+	if !isRustIdentifier(name) {
+		return ""
+	}
+	return name
+}
+
+func isRustIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if r == '_' || unicode.IsLetter(r) || (i > 0 && unicode.IsDigit(r)) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func parseRustReturnType(funcContent string) string {

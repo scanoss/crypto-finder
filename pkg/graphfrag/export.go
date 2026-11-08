@@ -126,7 +126,12 @@ const SchemaVersion = "graph-fragment-1.15"
 // the handler positional or as view_func=, endpoint= or route=, carry entry_kind
 // framework_entry. A Python structural graph cached under graph-algo-17 has
 // none for them.
-const GraphAlgoVersion = "graph-algo-18"
+//
+// graph-algo-19: Go and Rust function parameters carry their names. Parameter
+// pass-through dispatch matches a call's receiver to a parameter by name, so a
+// Go or Rust wrapper that forwards its parameter to an ambiguous interface or
+// trait call can now gain the bypass edge Java and Python graphs already had.
+const GraphAlgoVersion = "graph-algo-19"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is
