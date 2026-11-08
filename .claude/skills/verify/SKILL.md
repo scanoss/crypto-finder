@@ -77,6 +77,7 @@ Run it first, and again whenever a drive surprises you.
 | `convert-cbom` | - | `convert` (file and stdin) and `scan --format cyclonedx` produce CycloneDX 1.7 CBOMs that passed the embedded schema |
 | `cbom-from-sbom` | - | `cbom` from CycloneDX and SPDX SBOMs against `scripts/api-stub.py` on 127.0.0.1 |
 | `callgraph-export` | - | `--export-callgraph` schema 6.18 and 6.14, chains, `--export-callgraph-max-chains`, `--export-callgraph-entry-points`, `--export-graph-fragment`, Java key size resolved across methods, live and through `annotate` |
+| `related-material` | `python` (default), `go`, `rust`, `node`, `all` | a random draw whose value a helper passes to a KDF or cipher gets a `related-crypto-material` asset (salt, iv, nonce) at the draw line; an overwritten draw gets none; nothing without a call graph; the CBOM carries it |
 
 `all` drives every language whose toolchain is present and prints `SKIP <feature> <lang>` for the rest. A skipped language is not verified. Report it as skipped.
 

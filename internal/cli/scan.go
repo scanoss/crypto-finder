@@ -1501,8 +1501,11 @@ func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesM
 	}); err != nil {
 		return err
 	}
+	// Both passes add assets the call graph derives from rule findings, so they
+	// report as one progress phase.
 	return runScanPhase(progress, "conditioned_findings", parent, func() error {
 		scanutil.MaterializeConditionedFindings(report, result, rulePaths)
+		scanutil.MaterializeRelatedMaterial(report, result)
 		return nil
 	})
 }

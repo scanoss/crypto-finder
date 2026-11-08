@@ -1,0 +1,66 @@
+# Synthetic rules for the fixtures under testdata/projects/related_material.
+# Each reports a random draw as a drbg algorithm, the way a detection rule
+# reports one; the scan follows the drawn value into other functions. They
+# match only the calls those fixtures make and are not detection rules.
+rules:
+  - id: python.related-material.os-urandom
+    message: Detected a random draw
+    severity: INFO
+    languages:
+      - python
+    pattern: os.urandom($N)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: CSPRNG
+        algorithmPrimitive: drbg
+
+  - id: go.related-material.rand-read
+    message: Detected a random draw
+    severity: INFO
+    languages:
+      - go
+    pattern-either:
+      - pattern: rand.Read($BUF)
+      - pattern: io.ReadFull(rand.Reader, $BUF)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: CSPRNG
+        algorithmPrimitive: drbg
+
+  - id: rust.related-material.fill-bytes
+    message: Detected a random draw
+    severity: INFO
+    languages:
+      - rust
+    pattern: $RNG.fill_bytes(&mut $BUF)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: CSPRNG
+        algorithmPrimitive: drbg
+
+  - id: javascript.related-material.random-bytes
+    message: Detected a random draw
+    severity: INFO
+    languages:
+      - javascript
+    pattern: crypto.randomBytes($N)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: CSPRNG
+        algorithmPrimitive: drbg
+
+  - id: java.related-material.next-bytes
+    message: Detected a random draw
+    severity: INFO
+    languages:
+      - java
+    pattern: $RANDOM.nextBytes($BUF)
+    metadata:
+      crypto:
+        assetType: algorithm
+        algorithmName: CSPRNG
+        algorithmPrimitive: drbg
