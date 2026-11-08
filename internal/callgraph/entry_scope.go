@@ -53,7 +53,9 @@ import (
 //     instance method may be invoked through an interface, a trait or a
 //     framework the graph has no edge for, so it stays a root;
 //   - nothing in the application's source or its module's configuration
-//     files refers to it by name besides its own declaration, and no
+//     files refers to it by name besides its own declaration (a comment, a
+//     longer string literal, or a qualified name whose qualifier the file
+//     imports from another module does not: entry_mentions.go), and no
 //     decorator, attribute or annotation other than a test marker sits on
 //     it. A function handed out as a value (a handler passed to a router, a
 //     thread target, a callback, a handler a deployment file names) has no
@@ -233,25 +235,21 @@ func droppableShape(decl *FunctionDecl) bool {
 }
 
 // countMentions counts, over the application's source files and the
-// configuration files of its modules, how often each of names occurs as an
-// identifier, and returns the lines of every source file it read. A
-// configuration file can name a function as well as source can: a
-// serverless handler, a Spring XML factory method.
+// configuration files of its modules, how often each of names is referred
+// to, and returns the lines of every source file it read. Source counts the
+// references its parser reads in code (entry_mentions.go). A configuration
+// file is read word by word, strings included: it names a function inside a
+// string by design (a serverless handler, a Spring XML factory method).
 func (t *Tracer) countMentions(names, userPackages map[string]bool, modules []string) (map[string]int, map[string][][]byte) {
 	files := map[string]bool{}
+	var decls []*FunctionDecl
 	for key, decl := range t.graph.Functions {
 		if decl != nil && decl.FilePath != "" && t.isUserFunction(key, userPackages) {
 			files[decl.FilePath] = true
+			decls = append(decls, decl)
 		}
 	}
-	mentions := map[string]int{}
-	count := func(src []byte) {
-		for _, word := range identifierPattern.FindAll(src, -1) {
-			if names[string(word)] {
-				mentions[string(word)]++
-			}
-		}
-	}
+	counter := newMentionCounter(names, decls)
 	readable := map[string][][]byte{}
 	for file := range files {
 		src, err := os.ReadFile(file)
@@ -259,14 +257,14 @@ func (t *Tracer) countMentions(names, userPackages map[string]bool, modules []st
 			continue
 		}
 		readable[file] = bytes.Split(src, []byte("\n"))
-		count(src)
+		counter.countSource(file, src)
 	}
 	for _, file := range configFiles(modules) {
 		if src, err := os.ReadFile(file); err == nil {
-			count(src)
+			counter.countRaw(src)
 		}
 	}
-	return mentions, readable
+	return counter.mentions, readable
 }
 
 // configExtensions are the files a framework or a deployment names a
