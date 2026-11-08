@@ -56,6 +56,8 @@ contracts:
       - { index: 1, role: metadata-contributing, contributes: { property: tagSize, derivation: argument_value } }
   - method: crypto/cipher.NewCBCEncrypter
     arity: 2
+    material_roles:
+      - { index: 1, material: initialization-vector }
     return: { type: crypto/cipher.BlockMode, confidence: high }
     role: factory
     parameters: &mode_factory
@@ -63,26 +65,36 @@ contracts:
       - { index: 1, role: metadata-contributing, contributes: { property: iv, derivation: argument_value } }
   - method: crypto/cipher.NewCBCDecrypter
     arity: 2
+    material_roles:
+      - { index: 1, material: initialization-vector }
     return: { type: crypto/cipher.BlockMode, confidence: high }
     role: factory
     parameters: *mode_factory
   - method: crypto/cipher.NewCFBEncrypter
     arity: 2
+    material_roles:
+      - { index: 1, material: initialization-vector }
     return: { type: crypto/cipher.Stream, confidence: high }
     role: factory
     parameters: *mode_factory
   - method: crypto/cipher.NewCFBDecrypter
     arity: 2
+    material_roles:
+      - { index: 1, material: initialization-vector }
     return: { type: crypto/cipher.Stream, confidence: high }
     role: factory
     parameters: *mode_factory
   - method: crypto/cipher.NewCTR
     arity: 2
+    material_roles:
+      - { index: 1, material: initialization-vector }
     return: { type: crypto/cipher.Stream, confidence: high }
     role: factory
     parameters: *mode_factory
   - method: crypto/cipher.NewOFB
     arity: 2
+    material_roles:
+      - { index: 1, material: initialization-vector }
     return: { type: crypto/cipher.Stream, confidence: high }
     role: factory
     parameters: *mode_factory
@@ -110,6 +122,8 @@ contracts:
     parameters: *block_operation
   - method: crypto/cipher.(AEAD).Seal
     arity: 4
+    material_roles:
+      - { index: 1, material: nonce }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters: &aead_operation
@@ -118,6 +132,8 @@ contracts:
       - { index: 3, role: metadata-contributing, contributes: { property: associatedData, derivation: argument_value } }
   - method: crypto/cipher.(AEAD).Open
     arity: 4
+    material_roles:
+      - { index: 1, material: nonce }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters:
@@ -358,6 +374,8 @@ contracts:
   # KDF, MAC, digest, and random APIs.
   - method: crypto/hkdf.Key
     arity: 5
+    material_roles:
+      - { index: 2, material: salt }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters: &kdf_parameters
@@ -368,6 +386,8 @@ contracts:
       - { index: 4, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
   - method: crypto/hkdf.Extract
     arity: 3
+    material_roles:
+      - { index: 2, material: salt }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters:
@@ -385,6 +405,8 @@ contracts:
       - { index: 3, role: metadata-contributing, contributes: { property: outputLength, derivation: argument_value } }
   - method: crypto/pbkdf2.Key
     arity: 5
+    material_roles:
+      - { index: 2, material: salt }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters:

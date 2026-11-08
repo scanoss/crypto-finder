@@ -31,4 +31,46 @@ contracts:
         role: metadata-contributing
         contributes: { property: keySize, derivation: argument_value }
 
+  # Symmetric ciphers (src/symm.rs). encrypt/decrypt(t, key, iv: Option<&[u8]>,
+  # data) and encrypt_aead/decrypt_aead(t, key, iv, aad, data, tag) carry the
+  # iv third; Crypter::new(t, mode, key, iv) carries it fourth.
+  - method: openssl::symm.encrypt
+    arity: 4
+    return: { type: "alloc::vec::Vec", confidence: high }
+    role: operation
+    material_roles:
+      - { index: 2, name: iv, material: initialization-vector }
+  - method: openssl::symm.decrypt
+    arity: 4
+    return: { type: "alloc::vec::Vec", confidence: high }
+    role: operation
+    material_roles:
+      - { index: 2, name: iv, material: initialization-vector }
+  - method: openssl::symm.encrypt_aead
+    arity: 6
+    return: { type: "alloc::vec::Vec", confidence: high }
+    role: operation
+    material_roles:
+      - { index: 2, name: iv, material: initialization-vector }
+  - method: openssl::symm.decrypt_aead
+    arity: 6
+    return: { type: "alloc::vec::Vec", confidence: high }
+    role: operation
+    material_roles:
+      - { index: 2, name: iv, material: initialization-vector }
+  - method: openssl::symm::Crypter.new
+    arity: 4
+    return: { type: "openssl::symm::Crypter", confidence: high }
+    role: factory
+    material_roles:
+      - { index: 3, name: iv, material: initialization-vector }
+
+  # PBKDF2 (src/pkcs5.rs): pbkdf2_hmac(pass, salt, iter, hash, key).
+  - method: openssl::pkcs5.pbkdf2_hmac
+    arity: 5
+    return: { type: "()", confidence: high }
+    role: operation
+    material_roles:
+      - { index: 1, name: salt, material: salt }
+
 hierarchy: {}

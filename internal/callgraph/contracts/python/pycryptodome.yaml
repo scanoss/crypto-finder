@@ -32,6 +32,10 @@ contracts:
   # AEAD methods are a superset of the classic modes' encrypt/decrypt.
   - method: Crypto.Cipher.AES.new
     arity: 2
+    material_roles:
+      - { name: iv, material: initialization-vector }
+      - { name: IV, material: initialization-vector }
+      - { name: nonce, material: nonce }
     return: { type: Crypto.Cipher.AES.AESCipher, confidence: high }
     role: factory
     parameters:
@@ -486,6 +490,8 @@ contracts:
   # `from ..Protocol import KDF; KDF.PBKDF2(..)` keys as the bare name.
   - method: Crypto.Protocol.KDF.PBKDF2.<init>
     arity: 3
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:
@@ -501,6 +507,8 @@ contracts:
           derivation: argument_byte_length
   - method: Crypto.Protocol.KDF.PBKDF2
     arity: 3
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:
@@ -546,6 +554,8 @@ contracts:
           derivation: argument_byte_length
   - method: Crypto.Protocol.KDF.HKDF.<init>
     arity: 4
+    material_roles:
+      - { index: 2, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:
@@ -562,6 +572,8 @@ contracts:
           derivation: argument_byte_length
   - method: Crypto.Protocol.KDF.HKDF
     arity: 4
+    material_roles:
+      - { index: 2, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:
@@ -578,6 +590,8 @@ contracts:
           derivation: argument_byte_length
   - method: Crypto.Protocol.KDF.scrypt
     arity: 6
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:

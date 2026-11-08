@@ -96,6 +96,8 @@ contracts:
     role: factory
   - method: aes_gcm::Aes128Gcm.encrypt
     arity: 2
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return: { type: alloc::vec::Vec, confidence: high }
     role: operation
     parameters:
@@ -109,6 +111,8 @@ contracts:
         contributes: { property: plaintext, derivation: argument_value }
   - method: aes_gcm::Aes128Gcm.decrypt
     arity: 2
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return: { type: alloc::vec::Vec, confidence: high }
     role: operation
     parameters:
@@ -232,6 +236,8 @@ contracts:
         contributes: { property: authenticationTag, derivation: argument_value }
   - method: aes_gcm::Aes256Gcm.encrypt
     arity: 2
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return: { type: alloc::vec::Vec, confidence: high }
     role: operation
     parameters:
@@ -245,6 +251,8 @@ contracts:
         contributes: { property: plaintext, derivation: argument_value }
   - method: aes_gcm::Aes256Gcm.decrypt
     arity: 2
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return: { type: alloc::vec::Vec, confidence: high }
     role: operation
     parameters:
@@ -368,6 +376,8 @@ contracts:
         contributes: { property: authenticationTag, derivation: argument_value }
   - method: aes_gcm::AesGcm.encrypt
     arity: 2
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return: { type: alloc::vec::Vec, confidence: high }
     role: operation
     parameters:
@@ -381,6 +391,8 @@ contracts:
         contributes: { property: plaintext, derivation: argument_value }
   - method: aes_gcm::AesGcm.decrypt
     arity: 2
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return: { type: alloc::vec::Vec, confidence: high }
     role: operation
     parameters:
@@ -521,6 +533,8 @@ contracts:
     role: factory
   - method: aes_gcm::Nonce.from_slice
     arity: 1
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return: { type: aes_gcm::Nonce, confidence: high }
     role: factory
     parameters:
@@ -554,6 +568,8 @@ contracts:
     role: factory
   - method: aes_gcm::aead::Nonce.from_slice
     arity: 1
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return: { type: aes_gcm::aead::Nonce, confidence: high }
     role: factory
     parameters:

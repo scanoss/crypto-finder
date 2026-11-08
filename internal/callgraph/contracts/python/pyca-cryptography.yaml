@@ -73,6 +73,8 @@ contracts:
 
   - method: cryptography.hazmat.primitives.ciphers.aead.AESGCM.encrypt
     arity: 3
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return:
       type: builtins.bytes
       confidence: high
@@ -80,6 +82,8 @@ contracts:
 
   - method: cryptography.hazmat.primitives.ciphers.aead.AESGCM.decrypt
     arity: 3
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return:
       type: builtins.bytes
       confidence: high
@@ -94,6 +98,8 @@ contracts:
 
   - method: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt
     arity: 3
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return:
       type: builtins.bytes
       confidence: high
@@ -101,6 +107,8 @@ contracts:
 
   - method: cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.decrypt
     arity: 3
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
     return:
       type: builtins.bytes
       confidence: high
@@ -297,6 +305,8 @@ contracts:
 
   - method: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC.<init>
     arity: 4
+    material_roles:
+      - { index: 2, name: salt, material: salt }
     return:
       type: cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC
       confidence: high
@@ -323,6 +333,8 @@ contracts:
 
   - method: cryptography.hazmat.primitives.kdf.hkdf.HKDF.<init>
     arity: 4
+    material_roles:
+      - { index: 2, name: salt, material: salt }
     return:
       type: cryptography.hazmat.primitives.kdf.hkdf.HKDF
       confidence: high
@@ -374,6 +386,8 @@ contracts:
 
   - method: cryptography.hazmat.primitives.kdf.scrypt.Scrypt.<init>
     arity: 5
+    material_roles:
+      - { index: 0, name: salt, material: salt }
     return:
       type: cryptography.hazmat.primitives.kdf.scrypt.Scrypt
       confidence: high
@@ -1891,7 +1905,103 @@ contracts:
       confidence: high
     role: output
 
+  # Cipher modes (hazmat/primitives/ciphers/modes.py). Each mode object only
+  # carries its iv or nonce, so the contract exists for the material role:
+  # CBC/CFB/CFB8/OFB(initialization_vector), CTR(nonce),
+  # GCM(initialization_vector, tag=None, min_tag_length=16). The class name
+  # starts uppercase, so `from ..modes import CBC; CBC(iv)` keys as `.<init>`
+  # while `modes.CBC(iv)` keys as the bare name: both spellings are contracted.
+  - method: cryptography.hazmat.primitives.ciphers.modes.CBC.<init>
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.CBC", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+  - method: cryptography.hazmat.primitives.ciphers.modes.CBC
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.CBC", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+
+  - method: cryptography.hazmat.primitives.ciphers.modes.CFB.<init>
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.CFB", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+  - method: cryptography.hazmat.primitives.ciphers.modes.CFB
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.CFB", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+
+  - method: cryptography.hazmat.primitives.ciphers.modes.CFB8.<init>
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.CFB8", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+  - method: cryptography.hazmat.primitives.ciphers.modes.CFB8
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.CFB8", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+
+  - method: cryptography.hazmat.primitives.ciphers.modes.OFB.<init>
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.OFB", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+  - method: cryptography.hazmat.primitives.ciphers.modes.OFB
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.OFB", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+
+  - method: cryptography.hazmat.primitives.ciphers.modes.CTR.<init>
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.CTR", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
+  - method: cryptography.hazmat.primitives.ciphers.modes.CTR
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.CTR", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: nonce, material: nonce }
+
+  - method: cryptography.hazmat.primitives.ciphers.modes.GCM.<init>
+    arity: 3
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.GCM", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+  - method: cryptography.hazmat.primitives.ciphers.modes.GCM
+    arity: 3
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.GCM", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+
 hierarchy:
+  cryptography.hazmat.primitives.ciphers.modes.CBC:
+    - cryptography.hazmat.primitives.ciphers.modes.Mode
+  cryptography.hazmat.primitives.ciphers.modes.CFB:
+    - cryptography.hazmat.primitives.ciphers.modes.Mode
+  cryptography.hazmat.primitives.ciphers.modes.CFB8:
+    - cryptography.hazmat.primitives.ciphers.modes.Mode
+  cryptography.hazmat.primitives.ciphers.modes.OFB:
+    - cryptography.hazmat.primitives.ciphers.modes.Mode
+  cryptography.hazmat.primitives.ciphers.modes.CTR:
+    - cryptography.hazmat.primitives.ciphers.modes.Mode
+  cryptography.hazmat.primitives.ciphers.modes.GCM:
+    - cryptography.hazmat.primitives.ciphers.modes.Mode
   cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext:
     - builtins.object
   cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext:
