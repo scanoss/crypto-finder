@@ -32,7 +32,7 @@ jobs:
             crypto-finder-test:latest
 
       - name: Check coverage thresholds
-        uses: vladopajic/go-test-coverage@v2
+        uses: vladopajic/go-test-coverage@v2.23.0
         with:
           profile: coverage.out
           config: ./.testcoverage.yml
