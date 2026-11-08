@@ -1830,12 +1830,14 @@ func (p *GoParser) extractParameterTypes(node *sitter.Node, src []byte) []Functi
 			continue
 		}
 
-		paramCount := 1
-		if namedCount > 1 {
-			paramCount = namedCount - 1
-		}
-		for j := 0; j < paramCount; j++ {
+		if namedCount == 1 {
+			// An unnamed parameter: `func(int)`.
 			params = append(params, FunctionParameter{Type: typeText})
+			continue
+		}
+		// `a, b []byte` declares one parameter per name, all of the last type.
+		for j := 0; j < namedCount-1; j++ {
+			params = append(params, FunctionParameter{Type: typeText, Name: child.NamedChild(j).Content(src)})
 		}
 	}
 
