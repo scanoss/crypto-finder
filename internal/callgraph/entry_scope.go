@@ -49,9 +49,12 @@ import (
 //     does not know, behaves as before. Scoping by module rather than by scan
 //     keeps one application of a monorepo from turning the entry-less
 //     libraries and services next to it into dead code;
-//   - it is test code, or it is a free function or a static method. An
-//     instance method may be invoked through an interface, a trait or a
-//     framework the graph has no edge for, so it stays a root;
+//   - it is test code, a free function, a static method, or an instance
+//     method of a Java class that is not live: nothing in the application
+//     creates, registers or annotates the class, and it extends nothing
+//     outside the application (entry_java_instances.go). Any other instance
+//     method may be invoked through an interface, a trait or a framework the
+//     graph has no edge for, so it stays a root;
 //   - nothing in the application's source or its module's configuration
 //     files refers to it by name besides its own declaration (a comment, a
 //     longer string literal, or a qualified name whose qualifier the file
@@ -137,6 +140,7 @@ func (t *Tracer) buildRootScope(userPackages map[string]bool) *rootScope {
 	stop := t.moduleSearchRoot(userPackages)
 	candidates := map[string][]*FunctionDecl{}
 	declared := map[string]int{}
+	var instanceMethods []*FunctionDecl
 	for key, decl := range t.graph.Functions {
 		if decl == nil || !t.isUserFunction(key, userPackages) {
 			continue
@@ -150,9 +154,15 @@ func (t *Tracer) buildRootScope(userPackages map[string]bool) *rootScope {
 			scope.entryModules[module] = true
 		case !isEntry && droppableShape(decl) && decl.FilePath != "":
 			candidates[decl.FilePath] = append(candidates[decl.FilePath], decl)
+		case !isEntry && javaInstanceShape(decl):
+			instanceMethods = append(instanceMethods, decl)
 		}
 	}
-	if len(scope.entryModules) == 0 || len(candidates) == 0 {
+	if len(scope.entryModules) == 0 {
+		return scope
+	}
+	scope.addUnliveInstanceMethods(candidates, instanceMethods, stop)
+	if len(candidates) == 0 {
 		return scope
 	}
 
@@ -269,10 +279,13 @@ func (t *Tracer) countMentions(names, userPackages map[string]bool, modules []st
 }
 
 // configExtensions are the files a framework or a deployment names a
-// function in.
+// function or a class in: deployment and framework files, Spring
+// spring.factories and AutoConfiguration.imports, and (configFile) the
+// META-INF/services files of the Java service loader, which have none.
 var configExtensions = map[string]bool{
 	".yaml": true, ".yml": true, ".xml": true, ".json": true, ".toml": true,
 	".cfg": true, ".ini": true, ".properties": true, ".conf": true,
+	".factories": true, ".imports": true,
 }
 
 // configSkipDirs are directories that hold dependencies or build output, not
@@ -310,7 +323,7 @@ func configVisitor(root string, seen map[string]bool, out *[]string) fs.WalkDirF
 			}
 			return nil
 		}
-		if seen[path] || !configExtensions[strings.ToLower(filepath.Ext(name))] {
+		if seen[path] || !configFile(path) {
 			return nil
 		}
 		seen[path] = true
@@ -319,6 +332,16 @@ func configVisitor(root string, seen map[string]bool, out *[]string) fs.WalkDirF
 		}
 		return nil
 	}
+}
+
+// configFile reports a configuration file by its extension, or a Java
+// service-loader registration (META-INF/services/<interface>).
+func configFile(path string) bool {
+	if configExtensions[strings.ToLower(filepath.Ext(path))] {
+		return true
+	}
+	dir := filepath.Dir(path)
+	return filepath.Base(dir) == "services" && filepath.Base(filepath.Dir(dir)) == "META-INF"
 }
 
 // decorated reports whether a decorator (@x), an attribute (#[x]) or an
