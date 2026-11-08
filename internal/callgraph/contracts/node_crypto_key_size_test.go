@@ -84,7 +84,15 @@ func TestNodeCryptoKeySizeSpellingsAgree(t *testing.T) {
 				role = p.Contributes.ArgumentProperty + ":" + p.Contributes.Derivation
 			}
 		}
-		return strings.Join(c.When.ArgValueIn, ",") + "|" + role
+		when := ""
+		if c.When != nil {
+			when = strings.Join(c.When.ArgValueIn, ",")
+		}
+		materials := make([]string, 0, len(c.MaterialRoles))
+		for _, m := range c.MaterialRoles {
+			materials = append(materials, fmt.Sprintf("%d:%s", *m.Index, m.Material))
+		}
+		return when + "|" + role + "|" + strings.Join(materials, ",")
 	}
 	signatures := func(group []contracts.Contract) []string {
 		out := make([]string, 0, len(group))

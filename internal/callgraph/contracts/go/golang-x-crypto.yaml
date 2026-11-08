@@ -22,6 +22,8 @@ library:
 contracts:
   - method: "golang.org/x/crypto/argon2.IDKey"
     arity: 6
+    material_roles:
+      - { index: 1, material: salt }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters:
@@ -33,6 +35,8 @@ contracts:
       - { index: 5, role: metadata-contributing, contributes: { property: "outputLength", derivation: argument_value } }
   - method: "golang.org/x/crypto/argon2.Key"
     arity: 6
+    material_roles:
+      - { index: 1, material: salt }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters:
@@ -64,6 +68,8 @@ contracts:
       - { index: 0, role: metadata-contributing, contributes: { property: "passwordHash", derivation: argument_value } }
   - method: "golang.org/x/crypto/pbkdf2.Key"
     arity: 5
+    material_roles:
+      - { index: 1, material: salt }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters:
@@ -74,6 +80,8 @@ contracts:
       - { index: 4, role: operation-determining, contributes: { property: "algorithm", derivation: argument_type } }
   - method: "golang.org/x/crypto/scrypt.Key"
     arity: 6
+    material_roles:
+      - { index: 1, material: salt }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters:
@@ -85,6 +93,8 @@ contracts:
       - { index: 5, role: metadata-contributing, contributes: { property: "outputLength", derivation: argument_value } }
   - method: "golang.org/x/crypto/hkdf.New"
     arity: 4
+    material_roles:
+      - { index: 2, material: salt }
     return: { type: "io.Reader", confidence: high }
     role: factory
     parameters:
@@ -94,6 +104,8 @@ contracts:
       - { index: 3, role: metadata-contributing, contributes: { property: "info", derivation: argument_value } }
   - method: "golang.org/x/crypto/hkdf.Extract"
     arity: 3
+    material_roles:
+      - { index: 2, material: salt }
     return: { type: "[]byte", confidence: high }
     role: operation
     parameters:

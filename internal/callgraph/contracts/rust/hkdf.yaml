@@ -100,6 +100,8 @@ contracts:
 # ---- Hkdf: the crate-root type, and a 0.13.0 alias of GenericHkdf ---------
   - method: hkdf::Hkdf.new
     arity: 2
+    material_roles:
+      - { index: 0, name: salt, material: salt }
     return: { type: "hkdf::Hkdf", confidence: high }
     parameter_types: ["Option<&[u8]>", "&[u8]"]
     role: factory
