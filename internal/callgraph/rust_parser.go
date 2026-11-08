@@ -2266,11 +2266,15 @@ func parseRustParameters(node *sitter.Node, src []byte) ([]FunctionParameter, bo
 		return nil, false
 	}
 
-	parts := splitTopLevelCommaList(content)
+	// A parameter list holds no character literal, so every ' starts a lifetime
+	// (`&'a [u8]`). The comma splitter would read it as a quote and keep the rest
+	// of the list as one parameter; hide it while splitting.
+	const lifetimeMark = "\x00"
+	parts := splitTopLevelCommaList(strings.ReplaceAll(content, "'", lifetimeMark))
 	params := make([]FunctionParameter, 0, len(parts))
 	hasSelf := false
 	for _, part := range parts {
-		clean := strings.TrimSpace(part)
+		clean := strings.TrimSpace(strings.ReplaceAll(part, lifetimeMark, "'"))
 		if clean == "" {
 			continue
 		}
@@ -2283,8 +2287,9 @@ func parseRustParameters(node *sitter.Node, src []byte) ([]FunctionParameter, bo
 			typ = strings.TrimSpace(clean[idx+1:])
 			name = rustParameterName(clean[:idx])
 		} else {
-			// A shorthand receiver: `self`, `mut self`, `&self`, `&mut self`.
-			name = rustParameterName(strings.TrimLeft(clean, "&"))
+			// A shorthand receiver: `self`, `mut self`, `&self`, `&mut self`,
+			// `&'a self`, `&'a mut self`.
+			name = rustParameterName(trimRustReferenceLifetime(strings.TrimLeft(clean, "&")))
 		}
 		params = append(params, FunctionParameter{Type: typ, Name: name})
 	}
@@ -2302,6 +2307,18 @@ func rustParameterName(pattern string) string {
 		return ""
 	}
 	return name
+}
+
+// trimRustReferenceLifetime drops the lifetime a reference names before its
+// pattern: `'a mut self` becomes `mut self`.
+func trimRustReferenceLifetime(s string) string {
+	if !strings.HasPrefix(s, "'") {
+		return s
+	}
+	if _, rest, ok := strings.Cut(s, " "); ok {
+		return strings.TrimSpace(rest)
+	}
+	return s
 }
 
 func isRustIdentifier(s string) bool {

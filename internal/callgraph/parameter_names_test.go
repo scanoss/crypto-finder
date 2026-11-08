@@ -74,16 +74,25 @@ struct S;
 
 impl S {
     fn seal(&self, mut key: Vec<u8>, nonce: &[u8]) {}
+    fn open<'a>(&'a self, iv: &'a [u8]) {}
+    fn reset<'a>(&'a mut self) {}
 }
 
 fn derive(pw: &[u8], (a, b): (u8, u8), salt: &[u8]) {}
 `)
 	for name, want := range map[string][]string{
 		"seal":   {"self", "key", "nonce"},
+		"open":   {"self", "iv"},
+		"reset":  {"self"},
 		"derive": {"pw", "", "salt"},
 	} {
 		if got := parameterNames(rustFunctionByName(t, fns, name)); !slices.Equal(got, want) {
 			t.Errorf("%s parameter names = %q, want %q", name, got, want)
 		}
+	}
+	// A lifetime's quote does not merge the rest of the list into one parameter.
+	open := rustFunctionByName(t, fns, "open")
+	if len(open.Parameters) != 2 || open.Parameters[1].Type != "&'a [u8]" {
+		t.Errorf("open parameters = %+v, want self and iv: &'a [u8]", open.Parameters)
 	}
 }
