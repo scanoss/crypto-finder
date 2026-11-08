@@ -145,6 +145,20 @@ pair — never invent a value. Merge applies the same rule 1/2 discipline as
 contracts: identical entries across libraries are idempotent; the same
 `(trait, name)` with a different `type` is a HARD ERROR naming both libraries.
 
+A contract may declare `material_roles`, a list of `{index, name, material}`
+entries naming which argument is related crypto material: the iv of
+`new IvParameterSpec(iv)`, the salt of `PBKDF2HMAC(salt=...)`, the nonce of
+`AEAD.Seal(dst, nonce, ...)`. `material` must be a CycloneDX 1.7
+relatedCryptoMaterial type (`salt`, `nonce`, `initialization-vector`, `seed`,
+`key`, `secret-key`, ...; never `other` or `unknown`). `index` (0-based, below
+`arity`) matches a positional argument and `name` a keyword argument; give both
+for a Python parameter callers pass either way. The loader validates the field;
+no scan pass reads it yet (the related-material pass that follows a random draw
+into such an argument is a separate change). The field is additive, so
+the schema stays `"2"`. Merge applies the rule 1/2 discipline: the same roles
+are idempotent, different roles for the same method+arity+condition are a HARD
+ERROR naming both libraries.
+
 Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
 INTERNAL to the loader; the partner-facing export schema is independent (currently
 `6.18` for default local CLI callgraph exports and `6.14` for zero-value SDK/stitch — `pkg/graphfrag.CallgraphSchemaVersion` — and
