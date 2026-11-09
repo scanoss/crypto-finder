@@ -29,6 +29,8 @@ func wantPycryptodomeContracts() []string {
 		"Crypto.Cipher.AES.AESCipher.update#1 Crypto.Cipher.AES.AESCipher.update/config/Crypto.Cipher.AES.AESCipher/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Cipher.AES.AESCipher.verify#1 Crypto.Cipher.AES.AESCipher.verify/operation/builtins.NoneType/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Cipher.AES.new#2 Crypto.Cipher.AES.new/factory/Crypto.Cipher.AES.AESCipher/high/-/-/params=0:key:metadata-contributing:keySize:argument_byte_length,1:mode:operation-determining:-:-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.AES.new#3 Crypto.Cipher.AES.new/factory/Crypto.Cipher.AES.AESCipher/high/-/-/params=0:key:metadata-contributing:keySize:argument_byte_length,1:mode:operation-determining:-:-/varargs=false/when=-/lib=pycryptodome",
+		"Crypto.Cipher.AES.new#4 Crypto.Cipher.AES.new/factory/Crypto.Cipher.AES.AESCipher/high/-/-/params=0:key:metadata-contributing:keySize:argument_byte_length,1:mode:operation-determining:-:-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Cipher.ChaCha20.ChaCha20Cipher.decrypt#1 Crypto.Cipher.ChaCha20.ChaCha20Cipher.decrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Cipher.ChaCha20.ChaCha20Cipher.encrypt#1 Crypto.Cipher.ChaCha20.ChaCha20Cipher.encrypt/operation/builtins.bytes/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",
 		"Crypto.Cipher.ChaCha20.new#1 Crypto.Cipher.ChaCha20.new/factory/Crypto.Cipher.ChaCha20.ChaCha20Cipher/high/-/-/params=-/varargs=false/when=-/lib=pycryptodome",

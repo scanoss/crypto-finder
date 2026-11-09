@@ -432,6 +432,8 @@ contracts:
   # IvParameterSpec constructor: (byte[])
   - method: javax.crypto.spec.IvParameterSpec.<init>
     arity: 1
+    material_roles:
+      - { index: 0, material: initialization-vector }
     return:
       type: java.security.spec.AlgorithmParameterSpec
       confidence: high
@@ -439,6 +441,8 @@ contracts:
   # GCMParameterSpec constructor: (int, byte[])
   - method: javax.crypto.spec.GCMParameterSpec.<init>
     arity: 2
+    material_roles:
+      - { index: 1, material: initialization-vector }
     return:
       type: java.security.spec.AlgorithmParameterSpec
       confidence: high
@@ -681,6 +685,49 @@ contracts:
         contributes: { property: algorithm, derivation: argument_value }
 
 
+  # IvParameterSpec constructor: (byte[] iv, int offset, int len)
+  - method: javax.crypto.spec.IvParameterSpec.<init>
+    arity: 3
+    return: { type: "java.security.spec.AlgorithmParameterSpec", confidence: high }
+    material_roles:
+      - { index: 0, material: initialization-vector }
+
+  # GCMParameterSpec constructor: (int tLen, byte[] src, int offset, int len)
+  - method: javax.crypto.spec.GCMParameterSpec.<init>
+    arity: 4
+    return: { type: "java.security.spec.AlgorithmParameterSpec", confidence: high }
+    material_roles:
+      - { index: 1, material: initialization-vector }
+
+  # PBEKeySpec constructors: (char[] password, byte[] salt, int iterationCount)
+  # and (char[] password, byte[] salt, int iterationCount, int keyLength)
+  - method: javax.crypto.spec.PBEKeySpec.<init>
+    arity: 3
+    return: { type: "javax.crypto.spec.PBEKeySpec", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+
+  - method: javax.crypto.spec.PBEKeySpec.<init>
+    arity: 4
+    return: { type: "javax.crypto.spec.PBEKeySpec", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+
+  # PBEParameterSpec constructors: (byte[] salt, int iterationCount) and
+  # (byte[] salt, int iterationCount, AlgorithmParameterSpec paramSpec)
+  - method: javax.crypto.spec.PBEParameterSpec.<init>
+    arity: 2
+    return: { type: "javax.crypto.spec.PBEParameterSpec", confidence: high }
+    material_roles:
+      - { index: 0, material: salt }
+
+  - method: javax.crypto.spec.PBEParameterSpec.<init>
+    arity: 3
+    return: { type: "javax.crypto.spec.PBEParameterSpec", confidence: high }
+    material_roles:
+      - { index: 0, material: salt }
+
+
 hierarchy:
   javax.net.ssl.SSLContext:
     - java.lang.Object
@@ -713,6 +760,9 @@ hierarchy:
   # Concrete spec classes that double as keys
   javax.crypto.spec.SecretKeySpec:
     - javax.crypto.SecretKey
+    - java.security.spec.KeySpec
+
+  javax.crypto.spec.PBEKeySpec:
     - java.security.spec.KeySpec
 
   # AlgorithmParameterSpec family

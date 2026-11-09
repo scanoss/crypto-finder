@@ -44,6 +44,42 @@ contracts:
       - index: 1
         name: mode
         role: operation-determining
+  - method: Crypto.Cipher.AES.new
+    arity: 3
+    material_roles:
+      - { name: iv, material: initialization-vector }
+      - { name: IV, material: initialization-vector }
+      - { name: nonce, material: nonce }
+    return: { type: Crypto.Cipher.AES.AESCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
+  - method: Crypto.Cipher.AES.new
+    arity: 4
+    material_roles:
+      - { name: iv, material: initialization-vector }
+      - { name: IV, material: initialization-vector }
+      - { name: nonce, material: nonce }
+    return: { type: Crypto.Cipher.AES.AESCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
   - method: Crypto.Cipher.AES.AESCipher.encrypt
     arity: 1
     return: { type: builtins.bytes, confidence: high }
@@ -486,6 +522,8 @@ contracts:
   # `from ..Protocol import KDF; KDF.PBKDF2(..)` keys as the bare name.
   - method: Crypto.Protocol.KDF.PBKDF2.<init>
     arity: 3
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:
@@ -501,6 +539,8 @@ contracts:
           derivation: argument_byte_length
   - method: Crypto.Protocol.KDF.PBKDF2
     arity: 3
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:
@@ -546,6 +586,8 @@ contracts:
           derivation: argument_byte_length
   - method: Crypto.Protocol.KDF.HKDF.<init>
     arity: 4
+    material_roles:
+      - { index: 2, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:
@@ -562,6 +604,8 @@ contracts:
           derivation: argument_byte_length
   - method: Crypto.Protocol.KDF.HKDF
     arity: 4
+    material_roles:
+      - { index: 2, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:
@@ -578,6 +622,8 @@ contracts:
           derivation: argument_byte_length
   - method: Crypto.Protocol.KDF.scrypt
     arity: 6
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: { type: builtins.bytes, confidence: high }
     role: operation
     parameter_types:

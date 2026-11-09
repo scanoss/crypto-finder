@@ -5,9 +5,10 @@ library:
   coordinates:
     - "crypto"
     - "node:crypto"
-  description: "Node.js built-in crypto module: key sizes of generateKeyPair, generateKeyPairSync, generateKey and generateKeySync"
+  description: "Node.js built-in crypto module: key sizes of generateKeyPair, generateKeyPairSync, generateKey and generateKeySync, and the iv and salt arguments of the cipher and KDF calls"
 
-# THIS KB EXISTS FOR ONE REASON: THE KEY SIZE OF A NODE KEY-GENERATION CALL SITS
+# THIS KB EXISTS FIRST FOR THE KEY SIZE (the material roles at the end are the
+# other reason): THE KEY SIZE OF A NODE KEY-GENERATION CALL SITS
 # INSIDE AN OPTIONS OBJECT, NOT IN A POSITIONAL ARGUMENT. `crypto.generateKeyPairSync(
 # 'rsa', { modulusLength: 2048 })` fixes its size in a property of the second
 # argument, and which property depends on the first argument. A parameter role
@@ -187,3 +188,129 @@ contracts:
       - index: 1
         role: metadata-contributing
         contributes: { property: keySize, derivation: argument_value, argument_property: length }
+
+  # RELATED CRYPTO MATERIAL. createCipheriv/createDecipheriv(algorithm, key, iv[,
+  # options]) take the iv third; pbkdf2(password, salt, iterations, keylen, digest,
+  # callback), pbkdf2Sync (no callback), scrypt(password, salt, keylen[, options],
+  # callback) and scryptSync take the salt second; hkdf(digest, ikm, salt, info,
+  # keylen, callback) and hkdfSync take it third. Each arity is its own entry.
+  - method: "crypto.createCipheriv"
+    arity: 3
+    return: { type: "crypto.Cipher", confidence: high }
+    material_roles:
+      - { index: 2, material: initialization-vector }
+  - method: "crypto.createCipheriv"
+    arity: 4
+    return: { type: "crypto.Cipher", confidence: high }
+    material_roles:
+      - { index: 2, material: initialization-vector }
+  - method: "crypto.createDecipheriv"
+    arity: 3
+    return: { type: "crypto.Decipher", confidence: high }
+    material_roles:
+      - { index: 2, material: initialization-vector }
+  - method: "crypto.createDecipheriv"
+    arity: 4
+    return: { type: "crypto.Decipher", confidence: high }
+    material_roles:
+      - { index: 2, material: initialization-vector }
+  - method: "crypto.pbkdf2"
+    arity: 6
+    return: { type: "void", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "crypto.pbkdf2Sync"
+    arity: 5
+    return: { type: "Buffer", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "crypto.scrypt"
+    arity: 4
+    return: { type: "void", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "crypto.scrypt"
+    arity: 5
+    return: { type: "void", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "crypto.scryptSync"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "crypto.scryptSync"
+    arity: 4
+    return: { type: "Buffer", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "crypto.hkdf"
+    arity: 6
+    return: { type: "void", confidence: high }
+    material_roles:
+      - { index: 2, material: salt }
+  - method: "crypto.hkdfSync"
+    arity: 5
+    return: { type: "ArrayBuffer", confidence: high }
+    material_roles:
+      - { index: 2, material: salt }
+  - method: "node:crypto.createCipheriv"
+    arity: 3
+    return: { type: "crypto.Cipher", confidence: high }
+    material_roles:
+      - { index: 2, material: initialization-vector }
+  - method: "node:crypto.createCipheriv"
+    arity: 4
+    return: { type: "crypto.Cipher", confidence: high }
+    material_roles:
+      - { index: 2, material: initialization-vector }
+  - method: "node:crypto.createDecipheriv"
+    arity: 3
+    return: { type: "crypto.Decipher", confidence: high }
+    material_roles:
+      - { index: 2, material: initialization-vector }
+  - method: "node:crypto.createDecipheriv"
+    arity: 4
+    return: { type: "crypto.Decipher", confidence: high }
+    material_roles:
+      - { index: 2, material: initialization-vector }
+  - method: "node:crypto.pbkdf2"
+    arity: 6
+    return: { type: "void", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "node:crypto.pbkdf2Sync"
+    arity: 5
+    return: { type: "Buffer", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "node:crypto.scrypt"
+    arity: 4
+    return: { type: "void", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "node:crypto.scrypt"
+    arity: 5
+    return: { type: "void", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "node:crypto.scryptSync"
+    arity: 3
+    return: { type: "Buffer", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "node:crypto.scryptSync"
+    arity: 4
+    return: { type: "Buffer", confidence: high }
+    material_roles:
+      - { index: 1, material: salt }
+  - method: "node:crypto.hkdf"
+    arity: 6
+    return: { type: "void", confidence: high }
+    material_roles:
+      - { index: 2, material: salt }
+  - method: "node:crypto.hkdfSync"
+    arity: 5
+    return: { type: "ArrayBuffer", confidence: high }
+    material_roles:
+      - { index: 2, material: salt }

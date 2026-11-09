@@ -26,6 +26,8 @@ contracts:
   # keys, so author the dot form here.
   - method: pbkdf2.pbkdf2
     arity: 4
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: {type: core::result::Result, confidence: high}
     role: operation
     parameters:
@@ -35,6 +37,8 @@ contracts:
         contributes: {property: iterations, derivation: argument_value}
   - method: pbkdf2.pbkdf2_array
     arity: 3
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: {type: core::result::Result, confidence: high}
     role: operation
     parameters:
@@ -44,6 +48,8 @@ contracts:
         contributes: {property: iterations, derivation: argument_value}
   - method: pbkdf2.pbkdf2_hmac
     arity: 4
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: {type: (), confidence: high}
     role: operation
     parameters:
@@ -53,6 +59,8 @@ contracts:
         contributes: {property: iterations, derivation: argument_value}
   - method: pbkdf2.pbkdf2_hmac_array
     arity: 3
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return: {type: "[u8; N]", confidence: high}
     role: operation
     parameters:
