@@ -437,7 +437,7 @@ func TestMaterializeConditionedFindings_KeepsMaterialOnSpecializedCall(t *testin
 	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 	}
-	var kinds []string
+	kinds := make([]string, 0, len(report.Findings[0].CryptographicAssets))
 	for _, asset := range report.Findings[0].CryptographicAssets {
 		kind := asset.Metadata["assetType"] + "/" + asset.Metadata["materialType"] + "/" + asset.Metadata["algorithmName"]
 		if len(asset.ParameterConditions) == 0 {
