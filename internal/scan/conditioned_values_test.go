@@ -420,6 +420,35 @@ func blankAnchors(report *entities.InterimReport) int {
 	return blank
 }
 
+// A related-crypto-material asset on a conditioned call names no algorithm, but
+// the per-value algorithm assets it is specialized into do not stand for it:
+// the material is not a blank duplicate and stays beside them.
+func TestMaterializeConditionedFindings_KeepsMaterialOnSpecializedCall(t *testing.T) {
+	t.Parallel()
+
+	rules := writeConditionedRules(t, selectorValueRules)
+	g := newSelectorGraph()
+	g.addLiteralCaller("literal", selectorHelperID, 1)
+	report := g.report()
+	material := &report.Findings[0].CryptographicAssets[0]
+	material.Rules = []entities.RuleInfo{{ID: "java.key.private"}}
+	material.Metadata = map[string]string{"assetType": "related-crypto-material", "materialType": "private-key"}
+
+	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != 1 {
+		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+	}
+	var kinds []string
+	for _, asset := range report.Findings[0].CryptographicAssets {
+		kind := asset.Metadata["assetType"] + "/" + asset.Metadata["materialType"] + "/" + asset.Metadata["algorithmName"]
+		if len(asset.ParameterConditions) == 0 {
+			kind = "unconditioned " + kind
+		}
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	assertNames(t, kinds, []string{"algorithm//V1", "unconditioned related-crypto-material/private-key/"})
+}
+
 // The blank anchor is the report's only entry for a caller whose value does not
 // resolve, so it stays beside the per-value assets of the callers that do, and
 // its chains still reach that caller.

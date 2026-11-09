@@ -623,6 +623,21 @@ func TestDropBlankAnchor(t *testing.T) {
 			t.Fatalf("assets = %#v, want both anchors kept", finding.CryptographicAssets)
 		}
 	})
+	t.Run("an anchor of another kind than the per-value assets is kept", func(t *testing.T) {
+		t.Parallel()
+		typed := perValue
+		typed.Metadata = map[string]string{"assetType": "algorithm"}
+		algorithm := at("r.dyn", 3, 5, 40)
+		algorithm.Metadata = map[string]string{"assetType": "algorithm"}
+		material := at("r.key", 3, 5, 40)
+		material.Metadata = map[string]string{"assetType": "related-crypto-material", "materialType": "private-key"}
+		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{algorithm, material, typed}}
+		dropBlankAnchor(finding, material)
+		dropBlankAnchor(finding, algorithm)
+		if len(finding.CryptographicAssets) != 2 || finding.CryptographicAssets[0].Rules[0].ID != "r.key" {
+			t.Fatalf("assets = %#v, want the material kept and the algorithm anchor dropped", finding.CryptographicAssets)
+		}
+	})
 	t.Run("two calls on one line with columns stay separate", func(t *testing.T) {
 		t.Parallel()
 		finding := &entities.Finding{CryptographicAssets: []entities.CryptographicAsset{at("r.dyn", 3, 5, 40), at("r.dyn", 3, 50, 90), perValue}}
