@@ -19,6 +19,7 @@ package pqc
 
 import (
 	"strconv"
+	"strings"
 
 	pqcdataset "github.com/scanoss/crypto-pqc-dataset"
 
@@ -43,6 +44,56 @@ func Classify(metadata map[string]string) *entities.PQCClassification {
 		c.Deadlines = append(c.Deadlines, entities.PQCDeadline(d))
 	}
 	return c
+}
+
+// Current returns an asset's classification: the one it carries when this
+// binary's dataset version or a newer one produced it, recomputed from the
+// metadata otherwise.
+func Current(asset *entities.CryptographicAsset) *entities.PQCClassification {
+	if asset.PQC != nil && compareVersions(asset.PQC.DatasetVersion, pqcdataset.Version()) >= 0 {
+		return asset.PQC
+	}
+	return Classify(asset.Metadata)
+}
+
+// compareVersions compares two MAJOR.MINOR.PATCH versions; an unparsable one
+// sorts first, so it is recomputed.
+func compareVersions(a, b string) int {
+	pa, okA := parseVersion(a)
+	pb, okB := parseVersion(b)
+	switch {
+	case !okA && !okB:
+		return 0
+	case !okA:
+		return -1
+	case !okB:
+		return 1
+	}
+	for i := range 3 {
+		if pa[i] != pb[i] {
+			if pa[i] < pb[i] {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+func parseVersion(v string) ([]int, bool) {
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return nil, false
+	}
+	out := make([]int, 3)
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return nil, false
+		}
+		out[i] = n
+	}
+	return out, true
 }
 
 // Annotate sets the classification of every asset that names an algorithm.
