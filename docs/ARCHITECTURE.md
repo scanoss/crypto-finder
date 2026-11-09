@@ -160,7 +160,7 @@ Four independent version numbers ship in the outputs — do not conflate them:
 
 | Version | Constant | Current | Bumps when |
 |---------|----------|---------|------------|
-| Interim report format | `schema.InterimFormatVersion` | `1.7` | The findings.json envelope changes |
+| Interim report format | `schema.InterimFormatVersion` | `1.8` | The findings.json envelope changes |
 | Callgraph export schema | `graphfrag.CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | SDK `6.14`; CLI `6.18` | The partner-facing reachability contract changes |
 | Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.15` | The fragment wire format changes |
 | Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-7` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |

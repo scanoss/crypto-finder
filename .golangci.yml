@@ -118,7 +118,9 @@ linters:
         - unnamedResult
       settings:
         hugeParam:
-          sizeThreshold: 256
+          # Above entities.CryptographicAsset (256 bytes since scan format 1.8),
+          # which is passed by value throughout the scan.
+          sizeThreshold: 264
 
     gosec:
       severity: medium
