@@ -5,6 +5,7 @@ package scan
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"testing"
 
@@ -422,31 +423,54 @@ func blankAnchors(report *entities.InterimReport) int {
 
 // A related-crypto-material asset on a conditioned call names no algorithm, but
 // the per-value algorithm assets it is specialized into do not stand for it:
-// the material is not a blank duplicate and stays beside them.
+// the material is not a blank duplicate and stays beside them. A blank
+// algorithm anchor on the same call is still dropped, whichever anchor comes
+// first.
 func TestMaterializeConditionedFindings_KeepsMaterialOnSpecializedCall(t *testing.T) {
 	t.Parallel()
 
-	rules := writeConditionedRules(t, selectorValueRules)
-	g := newSelectorGraph()
-	g.addLiteralCaller("literal", selectorHelperID, 1)
-	report := g.report()
-	material := &report.Findings[0].CryptographicAssets[0]
-	material.Rules = []entities.RuleInfo{{ID: "java.key.private"}}
-	material.Metadata = map[string]string{"assetType": "related-crypto-material", "materialType": "private-key"}
+	type kind = map[string]string
+	material := kind{"assetType": "related-crypto-material", "materialType": "private-key"}
+	algorithm := kind{"assetType": "algorithm"}
+	tests := []struct {
+		name    string
+		anchors []kind
+	}{
+		{"material only", []kind{material}},
+		{"material before blank algorithm", []kind{material, algorithm}},
+		{"blank algorithm before material", []kind{algorithm, material}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rules := writeConditionedRules(t, selectorValueRules)
+			g := newSelectorGraph()
+			g.addLiteralCaller("literal", selectorHelperID, 1)
+			report := g.report()
+			base := report.Findings[0].CryptographicAssets[0]
+			report.Findings[0].CryptographicAssets = nil
+			for _, metadata := range tc.anchors {
+				anchor := base
+				anchor.Metadata = maps.Clone(metadata)
+				anchor.Rules = []entities.RuleInfo{{ID: "java.anchor." + metadata["assetType"]}}
+				report.Findings[0].CryptographicAssets = append(report.Findings[0].CryptographicAssets, anchor)
+			}
 
-	if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != 1 {
-		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+			if got := MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: g.graph, Ecosystem: "java"}, []string{rules}); got != 1 {
+				t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
+			}
+			kinds := make([]string, 0, len(report.Findings[0].CryptographicAssets))
+			for _, asset := range report.Findings[0].CryptographicAssets {
+				kind := asset.Metadata["assetType"] + "/" + asset.Metadata["materialType"] + "/" + asset.Metadata["algorithmName"]
+				if len(asset.ParameterConditions) == 0 {
+					kind = "unconditioned " + kind
+				}
+				kinds = append(kinds, kind)
+			}
+			sort.Strings(kinds)
+			assertNames(t, kinds, []string{"algorithm//V1", "unconditioned related-crypto-material/private-key/"})
+		})
 	}
-	kinds := make([]string, 0, len(report.Findings[0].CryptographicAssets))
-	for _, asset := range report.Findings[0].CryptographicAssets {
-		kind := asset.Metadata["assetType"] + "/" + asset.Metadata["materialType"] + "/" + asset.Metadata["algorithmName"]
-		if len(asset.ParameterConditions) == 0 {
-			kind = "unconditioned " + kind
-		}
-		kinds = append(kinds, kind)
-	}
-	sort.Strings(kinds)
-	assertNames(t, kinds, []string{"algorithm//V1", "unconditioned related-crypto-material/private-key/"})
 }
 
 // The blank anchor is the report's only entry for a caller whose value does not

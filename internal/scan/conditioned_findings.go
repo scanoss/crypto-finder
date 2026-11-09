@@ -124,9 +124,10 @@ func materializeConditionedAnchor(
 	// The blank anchor is the only report entry for a route whose value is
 	// unknown, so it stays unless the per-value assets account for every route:
 	// every enumerated value resolved and matched a variant, no route is
-	// dynamic, and no caller value was cut off.
-	covered := !unresolvedRoute && unmatched == 0 && !truncated && !dynamicSelector(rules, terminal.Parameters, dynamic)
-	if added > 0 && covered {
+	// dynamic, and no caller value was cut off. Another anchor on the call may
+	// have appended those assets first, so this one's own count does not decide.
+	covered := len(candidates) > 0 && !unresolvedRoute && unmatched == 0 && !truncated && !dynamicSelector(rules, terminal.Parameters, dynamic)
+	if covered {
 		dropBlankAnchor(finding, anchor)
 	}
 	return added
