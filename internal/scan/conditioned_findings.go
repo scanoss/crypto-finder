@@ -124,9 +124,10 @@ func materializeConditionedAnchor(
 	// The blank anchor is the only report entry for a route whose value is
 	// unknown, so it stays unless the per-value assets account for every route:
 	// every enumerated value resolved and matched a variant, no route is
-	// dynamic, and no caller value was cut off.
-	covered := !unresolvedRoute && unmatched == 0 && !truncated && !dynamicSelector(rules, terminal.Parameters, dynamic)
-	if added > 0 && covered {
+	// dynamic, and no caller value was cut off. Another anchor on the call may
+	// have appended those assets first, so this one's own count does not decide.
+	covered := len(candidates) > 0 && !unresolvedRoute && unmatched == 0 && !truncated && !dynamicSelector(rules, terminal.Parameters, dynamic)
+	if covered {
 		dropBlankAnchor(finding, anchor)
 	}
 	return added
@@ -148,14 +149,36 @@ func dynamicSelector(rules []engine.RuleCryptoMetadata, params []callGraphParame
 // dropBlankAnchor removes the generic anchor asset once per-value assets stand
 // for its call. A dynamic-selector anchor names no algorithm, so beside the
 // specialized assets it is a blank duplicate of the same call. An anchor that
-// does name an algorithm is a real finding and stays.
+// does name an algorithm is a real finding and stays, and so does an anchor of
+// another kind than the per-value assets (a private key on a key generation
+// call): they do not stand for it.
 func dropBlankAnchor(finding *entities.Finding, anchor entities.CryptographicAsset) {
 	if anchor.Metadata["algorithmName"] != "" || anchor.Metadata["algorithmFamily"] != "" {
+		return
+	}
+	if !slices.ContainsFunc(finding.CryptographicAssets, func(asset entities.CryptographicAsset) bool {
+		return len(asset.ParameterConditions) > 0 && sameAssetSpan(asset, anchor) && sameAssetKind(anchor, asset)
+	}) {
 		return
 	}
 	finding.CryptographicAssets = slices.DeleteFunc(finding.CryptographicAssets, func(asset entities.CryptographicAsset) bool {
 		return len(asset.ParameterConditions) == 0 && sameAssetSpan(asset, anchor) && sameRules(asset.Rules, anchor.Rules)
 	})
+}
+
+// assetKindKeys are the metadata fields that say what kind of asset a finding
+// reports, as opposed to which value it names.
+var assetKindKeys = []string{"assetType", "materialType"}
+
+// sameAssetKind reports that specialized is the same kind of asset as anchor.
+// A kind field the anchor leaves empty does not tell them apart.
+func sameAssetKind(anchor, specialized entities.CryptographicAsset) bool {
+	for _, key := range assetKindKeys {
+		if kind := anchor.Metadata[key]; kind != "" && kind != specialized.Metadata[key] {
+			return false
+		}
+	}
+	return true
 }
 
 // sameAssetSpan reports that two assets cover the same source span. A span
