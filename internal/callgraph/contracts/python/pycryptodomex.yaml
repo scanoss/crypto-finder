@@ -31,6 +31,38 @@ contracts:
   # AEAD methods are a superset of the classic modes' encrypt/decrypt.
   - method: Cryptodome.Cipher.AES.new
     arity: 2
+    return: { type: Cryptodome.Cipher.AES.AESCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
+  - method: Cryptodome.Cipher.AES.new
+    arity: 3
+    material_roles:
+      - { name: iv, material: initialization-vector }
+      - { name: IV, material: initialization-vector }
+      - { name: nonce, material: nonce }
+    return: { type: Cryptodome.Cipher.AES.AESCipher, confidence: high }
+    role: factory
+    parameters:
+      - index: 0
+        name: key
+        role: metadata-contributing
+        contributes:
+          property: keySize
+          derivation: argument_byte_length
+      - index: 1
+        name: mode
+        role: operation-determining
+  - method: Cryptodome.Cipher.AES.new
+    arity: 4
     material_roles:
       - { name: iv, material: initialization-vector }
       - { name: IV, material: initialization-vector }

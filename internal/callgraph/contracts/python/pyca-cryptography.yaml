@@ -1977,7 +1977,31 @@ contracts:
       - { index: 0, name: nonce, material: nonce }
 
   - method: cryptography.hazmat.primitives.ciphers.modes.GCM.<init>
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.GCM", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+  - method: cryptography.hazmat.primitives.ciphers.modes.GCM.<init>
+    arity: 2
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.GCM", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+  - method: cryptography.hazmat.primitives.ciphers.modes.GCM.<init>
     arity: 3
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.GCM", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+  - method: cryptography.hazmat.primitives.ciphers.modes.GCM
+    arity: 1
+    return: { type: "cryptography.hazmat.primitives.ciphers.modes.GCM", confidence: high }
+    role: config
+    material_roles:
+      - { index: 0, name: initialization_vector, material: initialization-vector }
+  - method: cryptography.hazmat.primitives.ciphers.modes.GCM
+    arity: 2
     return: { type: "cryptography.hazmat.primitives.ciphers.modes.GCM", confidence: high }
     role: config
     material_roles:
