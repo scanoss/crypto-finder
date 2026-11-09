@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-11-09
+### Added
+- Scans that build a call graph (`--export-callgraph`, `--export-graph-fragment`,
+  `--scan-dependencies`) now report a salt, nonce or iv drawn from a random source in one
+  function and used in another. The drawn value of a `drbg` finding (`os.urandom`, `rand.Read`,
+  `SecureRandom.nextBytes`, `fill_bytes`, `crypto.randomBytes`, ...) is followed through up to
+  three application functions; when it reaches an argument the knowledge base marks as related
+  crypto material, a `related-crypto-material` asset with that `materialType` is added at the draw
+  line with the draw's rule, and it appears in the CBOM. Seeded for Python `cryptography` and
+  PyCryptodome, Go `crypto/cipher`, `pbkdf2`, `hkdf`, `scrypt` and `argon2`, Java JCA parameter
+  specs, Rust OpenSSL, `pbkdf2`, `hkdf` and `aes-gcm`, and Node `crypto`. A value that may be
+  reassigned or overwritten before use is not reported, and a material a rule already reports at
+  the draw is not duplicated.
+- Contract knowledge bases accept an optional `material_roles` list per contract, mapping an
+  argument position or keyword to a CycloneDX relatedCryptoMaterial type. The schema stays `"2"`.
+### Changed
+- Graph fragments and call-graph exports stamp `graph_algo_version` `graph-algo-19`. A Rust
+  function whose parameters name a lifetime (`fn f<'a>(key: &'a [u8], iv: &'a [u8])`) now has one
+  parameter per declaration in `parameter_types`; the lifetime used to swallow the rest of the
+  list into a single parameter. Go and Rust parameters also carry their names, so a Go wrapper
+  that forwards its parameter to an interface call can gain the pass-through dispatch edge Java
+  and Python graphs already had. Structural graphs cached under `graph-algo-18` should be rebuilt.
+- Reachability with application code known (`scan --scan-dependencies`,
+  `--export-callgraph-project-reachability`): in a Java module with an entry point, an uncalled
+  instance method is no longer a `no_callers` root when its class can have no instance. That is
+  when the application never creates or names the class (no `new C(..)`, `C::new`, `C.class`,
+  `C` in a created type's type arguments, `C` in a string literal or in a configuration file such
+  as Spring XML, `META-INF/services` or `spring.factories`), no annotation other than
+  `@Deprecated`, `@SuppressWarnings`, `@SafeVarargs` or `@Override` sits on the class, the class
+  is a plain class or record that extends and implements only application types, and no subclass
+  of it is live. Crypto reached only from such a method now reads `unreachable` instead of
+  `reachable` with `analysis.no_callers_only: true`. Enum, interface and framework-annotated
+  classes, classes with an outside supertype, and instance methods in Python, TypeScript,
+  JavaScript, Go and Rust keep the old rule.
+### Fixed
+- A related-crypto-material asset (for example `materialType: private-key`) reported on the
+  same call as an algorithm asset specialized for its resolved argument value is no longer
+  dropped when a call graph is built (`--export-callgraph`, `--export-graph-fragment`,
+  `--scan-dependencies`). Scans with and without a call graph now report the same material.
+- Reachability with application code known: in a module with an entry point, an uncalled
+  application function no longer stays a `no_callers` root because of an inert built-in marker.
+  Rust lint, codegen and conditional-compilation attributes (`#[allow(dead_code)]`, `warn`,
+  `deny`, `forbid`, `expect`, `inline`, `cold`, `track_caller`, `must_use`, `deprecated`, `doc`,
+  `cfg`, `target_feature`, `rustfmt::*`, `clippy::*`, and a `cfg_attr` applying only those),
+  Python standard-library decorators (`functools.cache`, `functools.lru_cache`, `functools.wraps`,
+  `contextlib.contextmanager`, `typing.overload`, `typing.override`, `abc.abstractmethod`,
+  `staticmethod`, `classmethod`, ...) and Java `@Deprecated`, `@SuppressWarnings`, `@SafeVarargs`
+  and `@Override` register nothing. Crypto reached only from such a function now reads
+  `unreachable`. Any other decorator, attribute or annotation (a framework's, a procedural
+  macro, `#[no_mangle]`, `#[export_name]`) still keeps it a root, and every marker on a line is
+  now read, not only the first.
+- Reachability with application code known (`scan --scan-dependencies`,
+  `--export-callgraph-project-reachability`): in a module with an entry point, an application
+  function nothing calls no longer stays a `no_callers` root just because its name occurs in a
+  comment, inside a longer string literal (a route path such as `"/fingerprint?data=hello"`, a
+  log message), or as the member of a qualified name whose qualifier the file imports from
+  another module (`liba.fingerprint(...)`, `liba::fingerprint`). Source references are now read
+  with the language parser for Go, Python, Java, JavaScript, TypeScript and Rust (C and C++ skip
+  strings and comments only). A string literal that is exactly the name (`getattr(m, "f")`,
+  `getMethod("f")`) and a member of the function's own module still count, and configuration
+  files are still read word by word. Crypto reached only from such a never-registered handler or
+  callback now reads `unreachable` instead of `reachable` with `analysis.no_callers_only: true`.
+
 ## [0.50.1] - 2026-11-06
 ### Fixed
 - The call graph of an npm package no longer panics when one of the modules it
