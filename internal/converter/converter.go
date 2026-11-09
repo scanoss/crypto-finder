@@ -241,14 +241,7 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 	baseComponent.Name = componentName
 	baseComponent.Evidence = c.buildEvidence(aggregated)
 	if aggregated.AssetType == AssetTypeAlgorithm || aggregated.AssetType == AssetTypeRelatedCryptoMaterial {
-		classification := aggregated.ReferenceAsset.PQC
-		if classification == nil {
-			// A report from before scan format 1.8 has no classification.
-			classification = pqc.Classify(aggregated.ReferenceAsset.Metadata)
-		}
-		for _, p := range pqc.Properties(classification) {
-			addCustomProperty(baseComponent, p.Name, p.Value)
-		}
+		addPQCProperties(baseComponent, aggregated.ReferenceAsset)
 	}
 
 	if aggregated.AssetType == AssetTypeAlgorithm {
@@ -256,6 +249,18 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 	}
 
 	return baseComponent, nil
+}
+
+// addPQCProperties writes the asset's post-quantum classification as flat
+// properties, classifying a report from before scan format 1.8 that has none.
+func addPQCProperties(component *cdx.Component, asset *entities.CryptographicAsset) {
+	classification := asset.PQC
+	if classification == nil {
+		classification = pqc.Classify(asset.Metadata)
+	}
+	for _, p := range pqc.Properties(classification) {
+		addCustomProperty(component, p.Name, p.Value)
+	}
 }
 
 // mergeCryptoFunctions overwrites the component's CycloneDX CryptoFunctions
