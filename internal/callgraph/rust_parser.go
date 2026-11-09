@@ -2266,11 +2266,15 @@ func parseRustParameters(node *sitter.Node, src []byte) ([]FunctionParameter, bo
 		return nil, false
 	}
 
-	parts := splitTopLevelCommaList(content)
+	// A parameter list holds no character literal, so every ' starts a lifetime
+	// (`&'a [u8]`). The comma splitter would read it as a quote and keep the rest
+	// of the list as one parameter; hide it while splitting.
+	const lifetimeMark = "\x00"
+	parts := splitTopLevelCommaList(strings.ReplaceAll(content, "'", lifetimeMark))
 	params := make([]FunctionParameter, 0, len(parts))
 	hasSelf := false
 	for _, part := range parts {
-		clean := strings.TrimSpace(part)
+		clean := strings.TrimSpace(strings.ReplaceAll(part, lifetimeMark, "'"))
 		if clean == "" {
 			continue
 		}
@@ -2278,14 +2282,56 @@ func parseRustParameters(node *sitter.Node, src []byte) ([]FunctionParameter, bo
 			hasSelf = true
 		}
 
-		typ := ""
+		typ, name := "", ""
 		if idx := strings.Index(clean, ":"); idx >= 0 {
 			typ = strings.TrimSpace(clean[idx+1:])
+			name = rustParameterName(clean[:idx])
+		} else {
+			// A shorthand receiver: `self`, `mut self`, `&self`, `&mut self`,
+			// `&'a self`, `&'a mut self`.
+			name = rustParameterName(trimRustReferenceLifetime(strings.TrimLeft(clean, "&")))
 		}
-		params = append(params, FunctionParameter{Type: typ})
+		params = append(params, FunctionParameter{Type: typ, Name: name})
 	}
 
 	return params, hasSelf
+}
+
+// rustParameterName is the name a parameter pattern binds: `key` for `key`,
+// `mut key` or `self: Box<Self>`'s `self`. Empty for a destructuring pattern
+// such as `(a, b)` or `Point { x, y }`, which binds no single name.
+func rustParameterName(pattern string) string {
+	name := strings.TrimSpace(pattern)
+	name = strings.TrimSpace(strings.TrimPrefix(name, "mut "))
+	if !isRustIdentifier(name) {
+		return ""
+	}
+	return name
+}
+
+// trimRustReferenceLifetime drops the lifetime a reference names before its
+// pattern: `'a mut self` becomes `mut self`.
+func trimRustReferenceLifetime(s string) string {
+	if !strings.HasPrefix(s, "'") {
+		return s
+	}
+	if _, rest, ok := strings.Cut(s, " "); ok {
+		return strings.TrimSpace(rest)
+	}
+	return s
+}
+
+func isRustIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if r == '_' || unicode.IsLetter(r) || (i > 0 && unicode.IsDigit(r)) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func parseRustReturnType(funcContent string) string {
