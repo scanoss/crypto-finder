@@ -152,9 +152,9 @@ entries naming which argument is related crypto material: the iv of
 relatedCryptoMaterial type (`salt`, `nonce`, `initialization-vector`, `seed`,
 `key`, `secret-key`, ...; never `other` or `unknown`). `index` (0-based, below
 `arity`) matches a positional argument and `name` a keyword argument; give both
-for a Python parameter callers pass either way. The loader validates the field;
-no scan pass reads it yet (the related-material pass that follows a random draw
-into such an argument is a separate change). The field is additive, so
+for a Python parameter callers pass either way. The scan follows a random draw
+into such an argument across application functions and reports the drawn value
+as that material (see "Detection vs reachability"). The field is additive, so
 the schema stays `"2"`. Merge applies the rule 1/2 discipline: the same roles
 are idempotent, different roles for the same method+arity+condition are a HARD
 ERROR naming both libraries.
@@ -192,6 +192,16 @@ extending this tool.
   (`AssignedVar`); supporting calls are the other calls on that var, the fluent-chain
   links (`ChainID`), and the producing constructor. This scales to any library without
   per-call rules.
+
+- **Related material across functions** (a salt, nonce or iv drawn in one function and
+  consumed in another) is also derived from the call graph, not tagged by rules. See
+  `internal/scan/related_material.go` (`MaterializeRelatedMaterial`): a rule reports the
+  draw as a `drbg` algorithm; the engine follows the drawn variable (`AssignedVar`, or a
+  buffer a known random-fill call such as `rand.Read(buf)` writes) through calls into application callees,
+  mapped onto the receiving parameter by name, up to three hops, until a contract
+  `material_roles` entry names the argument. It adds a standard `related-crypto-material`
+  asset at the draw and never emits when the callee does not resolve exactly, the variable
+  may be rebound before the use, or the matching contracts disagree.
 
 - **Reachability MUST NOT depend on `metadata.api`.** `api` is informational CBOM
   metadata only. `matched_operation.kind` is classified from the matched **source text**

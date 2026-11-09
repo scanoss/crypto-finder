@@ -44,6 +44,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [convert-cbom](./convert-cbom.md): `convert` and `scan --format cyclonedx` to a CycloneDX 1.7 CBOM.
 - [cbom-from-sbom](./cbom-from-sbom.md): the `cbom` subcommand building a CBOM for an SBOM's components from API-mined findings (driven against a local stub).
 - [callgraph-export](./callgraph-export.md): `--export-callgraph` (schema 6.18 / 6.14), chain budget, entry-point index, and `--export-graph-fragment`.
+- [related-material](./related-material.md): related crypto material (salt, iv, nonce) reported at a random draw whose value reaches a KDF or cipher in another function.
 
 ## How the map is checked
 

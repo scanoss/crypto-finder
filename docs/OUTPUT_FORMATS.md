@@ -93,6 +93,10 @@ The interim report is the primary findings artifact. It contains finding metadat
 | `terminal_start_col`, `terminal_end_col` | Columns of the call that encloses an asset matched on an argument span, such as `new KeyParameter(key)` inside `cipher.init(...)`. They locate the crypto call for the callgraph export and the `occurrence_key`, so a report read back by another scan finds the same call (v1.7+, omitted on every other asset) |
 | `file_path` | For dependency findings, path relative to the dependency root; use `dependency_info` for artifact identity |
 
+### Related Material Followed From Random Draws
+
+When the scan builds a call graph (`--export-callgraph`, `--export-graph-fragment` or `--scan-dependencies`), an asset whose rule reports a random draw (`algorithmPrimitive: drbg`) can be joined by a `related-crypto-material` asset at the same span, with the same rule, whose metadata holds only `assetType` and `materialType` (a CycloneDX relatedCryptoMaterial type such as `salt`, `nonce` or `initialization-vector`). The scan adds it when the drawn value, the variable the draw's result is bound to or the buffer a random-fill call (`rand.Read`, `nextBytes`, `fill_bytes`, `randomFillSync`, ...) writes, reaches an argument that the contract knowledge base declares as that material, also through up to three application functions it is passed to: `salt = os.urandom(16)` handed to a helper that calls `PBKDF2HMAC(salt=salt)` gives a `salt` asset at the `os.urandom` line. A value that may be rebound or overwritten before it is used, passed through a field, a collection or an interface call, or reaching contracts that disagree, adds nothing. A finding that already reports the same material at the draw is not given a second one. A plain scan without a call graph reports the draw alone.
+
 ### Public Go Contract
 
 Go consumers can import `github.com/scanoss/crypto-finder/pkg/schema` to read or write the interim report without importing implementation packages. `InterimFormatVersion` is currently `"1.7"`.
