@@ -792,7 +792,8 @@ func TestConverter_ConvertPQCProperties(t *testing.T) {
 	}
 }
 
-// A report that already carries a classification keeps it in the CBOM.
+// A report's classification is kept when current and recomputed when an
+// older dataset produced it.
 func TestConverter_ConvertKeepsReportPQC(t *testing.T) {
 	report := loadFixture(t, "all_asset_types.json")
 	asset := &report.Findings[0].CryptographicAssets[0]
@@ -808,6 +809,25 @@ func TestConverter_ConvertKeepsReportPQC(t *testing.T) {
 		}
 		if properties := propertyValues(&component); properties["scanoss:pqcDatasetVersion"] != "9.9.9" {
 			t.Errorf("properties = %v, want the report's classification", properties)
+		}
+	}
+}
+
+func TestConverter_ConvertRecomputesOlderReportPQC(t *testing.T) {
+	report := loadFixture(t, "all_asset_types.json")
+	asset := &report.Findings[0].CryptographicAssets[0]
+	asset.Metadata = map[string]string{"assetType": "algorithm", "algorithmPrimitive": "pke", "algorithmFamily": "RSAES-OAEP"}
+	asset.PQC = &entities.PQCClassification{Status: "unassessed", DatasetVersion: "0.1.0"}
+	bom, err := NewConverter().Convert(preparedReport(t, report))
+	if err != nil {
+		t.Fatalf("Convert() unexpected error: %v", err)
+	}
+	for _, component := range *bom.Components {
+		if component.CryptoProperties.AssetType != cdx.CryptoAssetTypeAlgorithm {
+			continue
+		}
+		if properties := propertyValues(&component); properties["scanoss:pqcStatus"] != "vulnerable" || properties["scanoss:pqcDatasetVersion"] == "0.1.0" {
+			t.Errorf("properties = %v, want a recomputed classification", properties)
 		}
 	}
 }

@@ -74,3 +74,33 @@ func TestProperties(t *testing.T) {
 		t.Error("nil classification produced properties")
 	}
 }
+
+func TestCurrent(t *testing.T) {
+	metadata := map[string]string{"algorithmFamily": "RSAES-OAEP"}
+	for _, version := range []string{"0.9.0", "", "bad"} {
+		asset := &entities.CryptographicAsset{Metadata: metadata, PQC: &entities.PQCClassification{Status: "unassessed", DatasetVersion: version}}
+		if c := Current(asset); c == nil || c.Status != "vulnerable" {
+			t.Errorf("version %q: not recomputed: %+v", version, c)
+		}
+	}
+	newer := &entities.PQCClassification{Status: "kept", DatasetVersion: "99.0.0"}
+	if c := Current(&entities.CryptographicAsset{Metadata: metadata, PQC: newer}); c != newer {
+		t.Errorf("newer classification replaced: %+v", c)
+	}
+	if c := Current(&entities.CryptographicAsset{Metadata: metadata}); c == nil || c.Status != "vulnerable" {
+		t.Errorf("missing classification not computed: %+v", c)
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		{"1.0.0", "1.0.0", 0}, {"1.0.0", "1.1.0", -1}, {"1.10.0", "1.9.0", 1}, {"bad", "1.0.0", -1}, {"1.0.0", "bad", 1},
+	} {
+		if got := compareVersions(c.a, c.b); got != c.want {
+			t.Errorf("compareVersions(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
+		}
+	}
+}

@@ -252,13 +252,10 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 }
 
 // addPQCProperties writes the asset's post-quantum classification as flat
-// properties, classifying a report from before scan format 1.8 that has none.
+// properties: the report's own when it is current, recomputed when an older
+// dataset produced it or the report predates scan format 1.8.
 func addPQCProperties(component *cdx.Component, asset *entities.CryptographicAsset) {
-	classification := asset.PQC
-	if classification == nil {
-		classification = pqc.Classify(asset.Metadata)
-	}
-	for _, p := range pqc.Properties(classification) {
+	for _, p := range pqc.Properties(pqc.Current(asset)) {
 		addCustomProperty(component, p.Name, p.Value)
 	}
 }
