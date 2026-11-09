@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-11-09
+### Added
+- Each finding that names an algorithm now carries a `pqc` field with its post-quantum status,
+  family, cited CNSA 2.0 and NIST IR 8547 deadlines, and dataset version; CBOMs carry it as
+  `scanoss:pqc*` properties. The scan format moves to 1.8; graph fragments are unchanged.
+
 ## [0.51.0] - 2026-11-09
 ### Added
 - Scans that build a call graph (`--export-callgraph`, `--export-graph-fragment`,
