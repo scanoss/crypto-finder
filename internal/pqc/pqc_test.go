@@ -51,6 +51,22 @@ func TestAnnotate(t *testing.T) {
 	}
 }
 
+// The metadata the hybrid KEM rules emit: the post-quantum half as the family.
+func TestAnnotateHybridKEM(t *testing.T) {
+	report := &entities.InterimReport{Findings: []entities.Finding{{CryptographicAssets: []entities.CryptographicAsset{
+		{Metadata: map[string]string{"algorithmFamily": "ML-KEM", "algorithmName": "X25519MLKEM768", "classicalAlgorithm": "X25519"}},
+		{Metadata: map[string]string{"algorithmFamily": "ML-KEM", "algorithmName": "MLKEM768"}},
+	}}}}
+	Annotate((*oid.ResolvedReport)(report))
+	a := report.Findings[0].CryptographicAssets
+	if c := a[0].PQC; c == nil || c.Status != "hybrid" || c.Family != "X25519MLKEM768" {
+		t.Errorf("hybrid group: %+v", c)
+	}
+	if c := a[1].PQC; c == nil || c.Status != "safe" || c.Family != "ML-KEM" {
+		t.Errorf("pure ML-KEM group: %+v", c)
+	}
+}
+
 func TestProperties(t *testing.T) {
 	props := map[string]string{}
 	for _, p := range Properties(Classify(map[string]string{"algorithmFamily": "RSAES-OAEP"})) {
