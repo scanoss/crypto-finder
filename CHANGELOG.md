@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.1] - 2026-11-10
+### Fixed
+- A hybrid KEM such as `X25519MLKEM768` now gets `pqc.status: hybrid` (PQC dataset
+  1.1.0). It was `safe`, because its findings name `ML-KEM` as the family.
+
 ## [0.52.0] - 2026-11-09
 ### Added
 - Each finding that names an algorithm now carries a `pqc` field with its post-quantum status,
