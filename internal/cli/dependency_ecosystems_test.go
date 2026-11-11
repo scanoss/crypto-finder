@@ -22,6 +22,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/language"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/skip"
@@ -520,8 +521,12 @@ func TestDependencyEcosystemOutcomeResolveSecondaryStopsWhenTheScanContextIsDone
 		return nil, "", killed
 	}
 	outcome := dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{primary}}
-	if err := outcome.resolveSecondary(ctx, []string{ecosystemJava}, resolverFor, scan); !errors.Is(err, context.DeadlineExceeded) {
+	err := outcome.resolveSecondary(ctx, []string{ecosystemJava}, resolverFor, scan)
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("resolveSecondary after the deadline = %v, want context.DeadlineExceeded before any ecosystem runs", err)
+	}
+	if typed, ok := failure.As(err); !ok || typed.Code != failure.CodeScannerTimeout || typed.Stage != failure.StageDependency {
+		t.Errorf("resolveSecondary after the deadline = %#v, want scanner_timeout at the dependency stage", err)
 	}
 	if scans != 0 {
 		t.Errorf("scans = %d, want none once the scan context is done", scans)
@@ -534,8 +539,12 @@ func TestDependencyEcosystemOutcomeResolveSecondaryStopsWhenTheScanContextIsDone
 		return nil, "", killed
 	}
 	outcome = dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{primary}}
-	if err := outcome.resolveSecondary(running, []string{ecosystemJava, ecosystemPython}, resolverFor, killDuringScan); !errors.Is(err, killed) {
-		t.Errorf("resolveSecondary when the scan is interrupted mid-ecosystem = %v, want the toolchain's error", err)
+	err = outcome.resolveSecondary(running, []string{ecosystemJava, ecosystemPython}, resolverFor, killDuringScan)
+	if !errors.Is(err, killed) || !errors.Is(err, context.Canceled) || !isScanCanceled(err) {
+		t.Errorf("resolveSecondary when the scan is interrupted mid-ecosystem = %v, want a cancellation carrying the toolchain's error", err)
+	}
+	if typed, ok := failure.As(err); !ok || typed.Code != failure.CodeScannerCancelled || typed.Stage != failure.StageDependency {
+		t.Errorf("resolveSecondary when the scan is interrupted = %#v, want scanner_canceled at the dependency stage", err)
 	}
 	if len(outcome.skipped) != 0 {
 		t.Errorf("skipped = %+v, want an interrupted ecosystem not reported as resolution_failed", outcome.skipped)

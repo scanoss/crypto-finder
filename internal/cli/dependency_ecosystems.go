@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
+	"github.com/scanoss/crypto-finder/internal/failure"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 )
 
@@ -158,8 +160,8 @@ func (o *dependencyEcosystemOutcome) resolveSecondary(
 	scan dependencyEcosystemScan,
 ) error {
 	for _, ecosystem := range ecosystems {
-		if err := ctx.Err(); err != nil {
-			return err
+		if ctx.Err() != nil {
+			return dependencyContextError(ctx, nil)
 		}
 		resolver, err := resolverFor(ecosystem)
 		if err != nil {
@@ -170,7 +172,10 @@ func (o *dependencyEcosystemOutcome) resolveSecondary(
 		last := o.resolved[len(o.resolved)-1]
 		result, skipReason, scanErr := scan(ecosystem, resolver, last.Report)
 		if scanErr != nil {
-			if ctx.Err() != nil || isScanCanceled(scanErr) {
+			if ctx.Err() != nil {
+				return dependencyContextError(ctx, scanErr)
+			}
+			if isScanCanceled(scanErr) {
 				return scanErr
 			}
 			log.Warn().Err(scanErr).Str("ecosystem", ecosystem).
@@ -185,6 +190,25 @@ func (o *dependencyEcosystemOutcome) resolveSecondary(
 		o.resolved = append(o.resolved, result)
 	}
 	return nil
+}
+
+// dependencyContextError classifies a dependency phase stopped by its done
+// scan context, as scanner.InitializationContextError does for scanner
+// start-up: a deadline is scanner_timeout, anything else scanner_canceled,
+// both at the dependency stage, so a JSON error or --progress consumer reads a
+// timed-out or interrupted scan as one rather than as an unknown failure. The
+// cause keeps the context error, and the toolchain's own error when one
+// failed as the context ended.
+func dependencyContextError(ctx context.Context, toolchainErr error) error {
+	cause := ctx.Err()
+	if toolchainErr != nil {
+		cause = errors.Join(toolchainErr, cause)
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return failure.Wrap(cause, failure.CodeScannerTimeout, failure.StageDependency,
+			"dependency scan timed out", failure.WithRetryable(true))
+	}
+	return failure.Wrap(cause, failure.CodeScannerCancelled, failure.StageDependency, "dependency scan canceled")
 }
 
 // progressDetails is the details object of the completed dependencies event:
