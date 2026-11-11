@@ -12,19 +12,19 @@ import (
 // its positional parameters and nothing else in the class writes f: a FIELD
 // with that PARAMETER as its one source, the shape constructorFieldParameter
 // reads.
-func pythonConstructorGetters(body *sitter.Node, src []byte, filePath string) map[string]SourceNode {
-	defs := make(map[string][]*sitter.Node)
-	for i := 0; i < int(body.NamedChildCount()); i++ {
-		child := body.NamedChild(i)
-		if child.Symbol() == pythonSyms.decoratedDefinition {
-			// A decorated method may replace a plain one of the same name.
-			if def := child.ChildByFieldName("definition"); def != nil && def.Symbol() == pythonSyms.functionDefinition {
-				defs[pythonFunctionDefName(def, src)] = append(defs[pythonFunctionDefName(def, src)], nil)
-			}
-			continue
-		}
-		if child.Symbol() == pythonSyms.functionDefinition {
-			defs[pythonFunctionDefName(child, src)] = append(defs[pythonFunctionDefName(child, src)], child)
+//
+// Only the class's own code is read, so a class with a base other than object
+// (whose methods may write f too) or a decorator (which may replace the class)
+// carries none. Neither does a class that hands `self` to other code, which
+// could then write f, or that customizes construction or attribute access.
+func pythonConstructorGetters(class, body *sitter.Node, src []byte, filePath string) map[string]SourceNode {
+	if !pythonPlainClass(class, src) {
+		return nil
+	}
+	defs, classNames := pythonClassMembers(body, src)
+	for _, hook := range []string{"__new__", "__setattr__", "__delattr__", "__getattribute__"} {
+		if len(defs[hook]) > 0 || classNames[hook] {
+			return nil
 		}
 	}
 	inits := defs[pythonInitMethodName]
@@ -38,18 +38,65 @@ func pythonConstructorGetters(body *sitter.Node, src []byte, filePath string) ma
 		if len(nodes) != 1 || nodes[0] == nil {
 			continue
 		}
-		if field, ok := pythonReturnedSelfField(nodes[0], src); ok {
-			if param, set := fields[field]; set {
-				getters[name] = SourceNode{Type: sourceNodeField, Name: field, SourceNodes: []SourceNode{param}}
-			}
+		field, ok := pythonReturnedSelfField(nodes[0], src)
+		if param, set := fields[field]; ok && set && len(defs[field]) == 0 && !classNames[field] {
+			// A class attribute of that name may be a property or descriptor
+			// whose setter stores something else.
+			getters[name] = SourceNode{Type: sourceNodeField, Name: field, SourceNodes: []SourceNode{param}}
 		}
 	}
 	return getters
 }
 
+// pythonClassMembers indexes a class body's methods by name, a decorated one
+// as nil, and the names its plain assignments bind.
+func pythonClassMembers(body *sitter.Node, src []byte) (defs map[string][]*sitter.Node, assigned map[string]bool) {
+	defs = make(map[string][]*sitter.Node)
+	assigned = make(map[string]bool)
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		child := body.NamedChild(i)
+		switch child.Symbol() {
+		case pythonSyms.decoratedDefinition:
+			// A decorated method may replace a plain one of the same name.
+			if def := child.ChildByFieldName("definition"); def != nil && def.Symbol() == pythonSyms.functionDefinition {
+				defs[pythonFunctionDefName(def, src)] = append(defs[pythonFunctionDefName(def, src)], nil)
+			}
+		case pythonSyms.functionDefinition:
+			defs[pythonFunctionDefName(child, src)] = append(defs[pythonFunctionDefName(child, src)], child)
+		case pythonSyms.expressionStatement:
+			if child.NamedChildCount() == 1 && child.NamedChild(0).Symbol() == pythonSyms.assignment {
+				if left := child.NamedChild(0).ChildByFieldName("left"); left != nil && left.Symbol() == pythonSyms.identifier {
+					assigned[left.Content(src)] = true
+				}
+			}
+		}
+	}
+	return defs, assigned
+}
+
+// pythonPlainClass reports a class statement with no decorator, no keyword
+// such as metaclass=, and no base but object.
+func pythonPlainClass(class *sitter.Node, src []byte) bool {
+	if parent := class.Parent(); parent == nil || parent.Symbol() == pythonSyms.decoratedDefinition {
+		return false
+	}
+	bases := class.ChildByFieldName("superclasses")
+	if bases == nil {
+		return true
+	}
+	for i := 0; i < int(bases.NamedChildCount()); i++ {
+		if base := bases.NamedChild(i); base.Symbol() != pythonSyms.identifier || base.Content(src) != "object" {
+			return false
+		}
+	}
+	return true
+}
+
 // pythonCountSelfWrites counts, per attribute name, the statements anywhere in
 // node that assign, augment or delete `self.<name>`. It reports false when the
-// class writes attributes in a way no name spells (setattr, __dict__).
+// class writes attributes in a way no name spells (setattr, __dict__), or uses
+// `self` other than to reach one of its attributes: passed, returned or stored,
+// the object reaches code that may write any attribute.
 func pythonCountSelfWrites(node *sitter.Node, src []byte, writes map[string]int) bool {
 	switch node.Symbol() {
 	case pythonSyms.assignment, pythonSyms.augmentedAssignment:
@@ -57,8 +104,13 @@ func pythonCountSelfWrites(node *sitter.Node, src []byte, writes map[string]int)
 	case pythonSyms.deleteStatement:
 		pythonCountSelfTargets(node.NamedChild(0), src, writes)
 	case pythonSyms.identifier:
-		if name := node.Content(src); name == "setattr" || name == "__dict__" || name == "vars" {
+		switch name := node.Content(src); name {
+		case "setattr", "__dict__", "vars":
 			return false
+		case pythonSelfObjectName:
+			if !pythonSelfAttributeObject(node) {
+				return false
+			}
 		}
 	}
 	for i := 0; i < int(node.NamedChildCount()); i++ {
@@ -83,6 +135,22 @@ func pythonCountSelfTargets(target *sitter.Node, src []byte, writes map[string]i
 	for i := 0; i < int(target.NamedChildCount()); i++ {
 		pythonCountSelfTargets(target.NamedChild(i), src, writes)
 	}
+}
+
+// pythonSelfAttributeObject reports an identifier that is the object of an
+// attribute (`self.f`) or a parameter declaring it.
+func pythonSelfAttributeObject(node *sitter.Node) bool {
+	parent := node.Parent()
+	if parent == nil {
+		return false
+	}
+	switch parent.Symbol() {
+	case pythonSyms.parameters, pythonSyms.typedParameter:
+		return true
+	case pythonSyms.attribute:
+		return pythonIsFieldChild(parent, "object", node)
+	}
+	return false
 }
 
 func pythonSelfAttribute(node *sitter.Node, src []byte) (string, bool) {

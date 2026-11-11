@@ -19,6 +19,9 @@ type JavaParser struct {
 	parser       *sitter.Parser
 	includeTests bool
 	anchors      callAnchors
+	// fieldWrites counts the write sites of each field name in the file
+	// being parsed; see fileFieldWrites.
+	fieldWrites map[string]int
 }
 
 const (
@@ -163,6 +166,7 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	}
 	defer tree.Close()
 	defer p.anchors.reset()
+	defer func() { p.fieldWrites = nil }()
 
 	root := tree.RootNode()
 
@@ -879,13 +883,15 @@ func (p *JavaParser) collectClassFieldAssignments(
 			if !javaHasModifier(child, src, "private") && !javaHasModifier(child, src, "final") {
 				exposed = append(exposed, javaDeclaratorNames(child, src)...)
 			}
-		case javaNodeMethodDeclaration:
-			// A setter or any other writer leaves no single constructor value.
-			written := make(map[string]struct{})
-			collectJavaWrittenFields(child, src, fieldTypes, written)
-			for name := range written {
-				mergeFieldAssignment(assignments, name, fieldAssignment{})
-			}
+		}
+	}
+	// Any write besides the one constructor assignment leaves no single
+	// constructor value: a setter, a nested or anonymous class, a lambda, an
+	// initializer block, or a write through another reference to the object.
+	writes := p.fileFieldWrites(body, src)
+	for name := range fieldTypes {
+		if writes[name] > 1 {
+			mergeFieldAssignment(assignments, name, fieldAssignment{})
 		}
 	}
 	for _, name := range exposed {
@@ -909,16 +915,44 @@ func javaDeclaratorNames(node *sitter.Node, src []byte) []string {
 	return names
 }
 
-func collectJavaWrittenFields(node *sitter.Node, src []byte, fieldTypes map[string]string, written map[string]struct{}) {
-	if node.Type() == javaNodeAssignmentExpression {
-		if left := node.ChildByFieldName("left"); left != nil {
-			if name := assignedFieldName(left, src, fieldTypes); name != "" {
-				written[name] = struct{}{}
+// fileFieldWrites counts, per name, the assignments and increments anywhere in
+// the file whose target is that bare name or a field access of that name
+// through any reference (`this.f`, `Outer.this.f`, `h.f`). It walks the whole
+// file because an enclosing class may write a nested class's private field.
+// Matching by name alone over-counts a local or another class's field of the
+// same name, which only ever drops a fold.
+func (p *JavaParser) fileFieldWrites(node *sitter.Node, src []byte) map[string]int {
+	if p.fieldWrites == nil {
+		root := node
+		for parent := root.Parent(); parent != nil; parent = root.Parent() {
+			root = parent
+		}
+		p.fieldWrites = make(map[string]int)
+		countJavaFieldWrites(root, src, p.fieldWrites)
+	}
+	return p.fieldWrites
+}
+
+func countJavaFieldWrites(node *sitter.Node, src []byte, writes map[string]int) {
+	var target *sitter.Node
+	switch node.Type() {
+	case javaNodeAssignmentExpression:
+		target = node.ChildByFieldName("left")
+	case javaNodeUpdateExpression:
+		target = node.NamedChild(0)
+	}
+	if target != nil {
+		switch target.Type() {
+		case javaNodeIdentifier:
+			writes[target.Content(src)]++
+		case javaNodeFieldAccess:
+			if field := target.ChildByFieldName("field"); field != nil {
+				writes[field.Content(src)]++
 			}
 		}
 	}
-	for i := 0; i < int(node.ChildCount()); i++ {
-		collectJavaWrittenFields(node.Child(i), src, fieldTypes, written)
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		countJavaFieldWrites(node.NamedChild(i), src, writes)
 	}
 }
 

@@ -39,6 +39,10 @@ type pythonLocalSources struct {
 	// all poisons every name in the file-level index: the file rebinds names
 	// dynamically (exec, globals(), setattr on the module).
 	all bool
+	// escaped records the names used other than as the receiver of a direct
+	// method call in the function's own scope. Kept apart from byName, whose
+	// keys are the names the function binds.
+	escaped map[string]bool
 }
 
 func (s *pythonLocalSources) tick() {
@@ -226,6 +230,50 @@ func (s *pythonLocalSources) observe(node *sitter.Node, sym sitter.Symbol, src [
 		pythonSyms.casePattern, pythonSyms.typeAliasStatement:
 		s.poisonIdentifiers(node, src)
 	}
+	s.observeUse(node, sym, src)
+}
+
+// observeUse marks a function local escaped when this identifier uses it in a
+// way that hands the object to other code; see escapes.
+func (s *pythonLocalSources) observeUse(node *sitter.Node, sym sitter.Symbol, src []byte) {
+	if sym != pythonSyms.identifier || s.module || !s.escapes(node) {
+		return
+	}
+	if s.escaped == nil {
+		s.escaped = make(map[string]bool)
+	}
+	s.escaped[node.Content(src)] = true
+}
+
+// escapes reports an identifier that may hand its object to other code. Only
+// three occurrences do not: the name's own binding, an attribute or keyword
+// name that merely spells it, and the receiver of a direct method call
+// `name.m(...)` outside any nested def, class or lambda. Passed, aliased,
+// returned, stored, captured or used as a context manager, the object reaches
+// code that may write its attributes.
+func (s *pythonLocalSources) escapes(node *sitter.Node) bool {
+	parent := node.Parent()
+	if parent == nil {
+		return false
+	}
+	switch parent.Symbol() {
+	case pythonSyms.assignment:
+		return !pythonIsFieldChild(parent, "left", node)
+	case pythonSyms.keywordArgument:
+		return !pythonIsFieldChild(parent, pythonFieldName, node)
+	case pythonSyms.attribute:
+		if !pythonIsFieldChild(parent, "object", node) {
+			return false
+		}
+		call := parent.Parent()
+		return call == nil || call.Symbol() != pythonSyms.call || !pythonIsFieldChild(call, "function", parent) || s.inNestedScope(node)
+	}
+	return true
+}
+
+func pythonIsFieldChild(parent *sitter.Node, field string, child *sitter.Node) bool {
+	node := parent.ChildByFieldName(field)
+	return node != nil && node.Equal(child)
 }
 
 // inNestedScope reports whether node sits under a def, class or lambda nested
@@ -237,7 +285,12 @@ func (s *pythonLocalSources) inNestedScope(node *sitter.Node) bool {
 		switch p.Symbol() {
 		case pythonSyms.functionDefinition:
 			return p.StartByte() != s.root
-		case pythonSyms.classDefinition, pythonSyms.lambda:
+		case pythonSyms.classDefinition:
+			return true
+		}
+		// The grammar has two named "lambda" symbols and pythonSyms keeps only
+		// one of them, so match the node type.
+		if p.Type() == "lambda" {
 			return true
 		}
 	}
@@ -313,14 +366,15 @@ func (s *pythonLocalSources) observeAssignment(node *sitter.Node, src []byte) {
 }
 
 // construction returns the call that constructs the receiver name, when the
-// function binds name exactly once, to that call, and writes none of its
-// attributes. A module-level name is left out: any module may rebind it.
+// function binds name exactly once, to that call, writes none of its
+// attributes, and uses it only to call its methods. A module-level name is
+// left out: any module may rebind it.
 func (s *pythonLocalSources) construction(name string) *sitter.Node {
 	if s == nil || s.all || s.module {
 		return nil
 	}
 	e := s.byName[name]
-	if e == nil || e.bindings != 1 || e.parameter || e.mutated {
+	if e == nil || e.bindings != 1 || e.parameter || e.mutated || s.escaped[name] {
 		return nil
 	}
 	return e.construction

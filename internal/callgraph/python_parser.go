@@ -1883,7 +1883,7 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 	// Walk class body for method definitions.
 	first := len(analysis.Functions)
 	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis, attrs, fw)
-	if getters := pythonConstructorGetters(body, src, filePath); len(getters) > 0 {
+	if getters := pythonConstructorGetters(node, body, src, filePath); len(getters) > 0 {
 		for i := first; i < len(analysis.Functions); i++ {
 			if getter, ok := getters[analysis.Functions[i].ID.Name]; ok && analysis.Functions[i].ID.Type == className {
 				analysis.Functions[i].ReturnSources = []SourceNode{getter}

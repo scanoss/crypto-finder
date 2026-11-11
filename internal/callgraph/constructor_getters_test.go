@@ -87,6 +87,14 @@ func TestJavaConstructorGetter_StaysUnresolved(t *testing.T) {
 		{"receiver local rebound", javaHolderSrc, `Holder h = new Holder("SHA-256"); h = new Holder("MD5"); MessageDigest.getInstance(h.getAlg());`},
 		{"receiver of a subclass that overrides the getter", javaHolderSrc, `Holder h = new Sub("SHA-256"); MessageDigest.getInstance(h.getAlg());`},
 		{"enum constant body overrides the getter", javaHolderSrc, `MessageDigest.getInstance(Algo.LEGACY.getValue());`},
+		{"inner class writes the field", holder(fieldAndCtor + "    class Weak { void apply() { alg = \"MD5\"; } }"), direct},
+		{"static method writes through a parameter", holder(fieldAndCtor + "    static void downgrade(Holder h) { h.alg = \"MD5\"; }"), direct},
+		{"inner class writes through the qualified this", holder(fieldAndCtor + "    class Weak { void apply() { Holder.this.alg = \"MD5\"; } }"), direct},
+		{"lambda in a field initializer writes the field", holder(fieldAndCtor + "    private final Runnable weaken = () -> { this.alg = \"MD5\"; };"), direct},
+		{"anonymous class writes the field", holder(fieldAndCtor + "    private final Runnable weaken = new Runnable() { public void run() { alg = \"MD5\"; } };"), direct},
+		{"instance initializer registers a writer", holder(fieldAndCtor + "    { Hooks.onReset(() -> alg = \"MD5\"); }"), direct},
+		{"static initializer writes through a reference", holder(fieldAndCtor + "    static Holder fallback = new Holder(\"SHA-1\");\n    static { fallback.alg = \"MD5\"; }"), direct},
+		{"compound assignment in another method", holder(fieldAndCtor + "    void weaken() { alg += \"-legacy\"; }"), direct},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -121,12 +129,25 @@ const pythonHolderModule = `class Holder:
 class Sub(Holder):
     def get_alg(self):
         return "md5"
+
+
+class Base:
+    def weaken(self):
+        self.alg = "md5"
+
+
+class Derived(Base):
+    def __init__(self, alg):
+        self.alg = alg
+
+    def get_alg(self):
+        return self.alg
 `
 
 func TestPythonConstructorGetter(t *testing.T) {
 	t.Parallel()
 	main := `import hashlib
-from app.cfg.holder import Holder, Sub
+from app.cfg.holder import Holder, Sub, Derived
 
 def direct():
     return hashlib.new(Holder("sha256").get_alg())
@@ -159,6 +180,53 @@ def subclass():
 
 def splat(args):
     return hashlib.new(Holder(*args).get_alg())
+
+def method_calls_only():
+    h = Holder("sha256")
+    h.get_upper()
+    return hashlib.new(h.get_alg())
+
+def configure(h):
+    h.alg = "md5"
+
+def helper():
+    h = Holder("sha256")
+    configure(h)
+    return hashlib.new(h.get_alg())
+
+def alias():
+    h = Holder("sha256")
+    g = h
+    g.alg = "md5"
+    return hashlib.new(h.get_alg())
+
+def stored(registry):
+    h = Holder("sha256")
+    registry.append(h)
+    return hashlib.new(h.get_alg())
+
+def returned():
+    h = Holder("sha256")
+    hashlib.new(h.get_alg())
+    return h
+
+def captured(hooks):
+    h = Holder("sha256")
+    hooks.append(lambda: h.get_upper())
+    return hashlib.new(h.get_alg())
+
+def bound_method(hooks):
+    h = Holder("sha256")
+    hooks.append(h.get_upper)
+    return hashlib.new(h.get_alg())
+
+def managed():
+    h = Holder("sha256")
+    with h:
+        return hashlib.new(h.get_alg())
+
+def base_writer():
+    return hashlib.new(Derived("sha256").get_alg())
 `
 	graph := parseInlinePythonProject(t, map[string]string{
 		"app/__init__.py":     "",
@@ -166,7 +234,7 @@ def splat(args):
 		"app/cfg/holder.py":   pythonHolderModule,
 		"app/main.py":         main,
 	})
-	for _, function := range []string{"direct", "local", "keyword"} {
+	for _, function := range []string{"direct", "local", "keyword", "method_calls_only"} {
 		t.Run(function, func(t *testing.T) {
 			sources := pythonNewArgument(t, graph, function)
 			if len(sources) != 1 {
@@ -175,7 +243,10 @@ def splat(args):
 			assertFoldedConstant(t, sources[0], sources[0].Name, "holder.py", 4, `"sha256"`)
 		})
 	}
-	for _, function := range []string{"rebound", "mutated", "parameter", "logic", "subclass", "splat"} {
+	for _, function := range []string{
+		"rebound", "mutated", "parameter", "logic", "subclass", "splat",
+		"helper", "alias", "stored", "returned", "captured", "bound_method", "managed", "base_writer",
+	} {
 		t.Run(function, func(t *testing.T) {
 			for _, fn := range graph.Functions {
 				if fn.ID.Name != function {
@@ -198,6 +269,12 @@ func TestPythonConstructorGetter_FieldWrittenElsewhere(t *testing.T) {
 		"other method":     "    def reset(self):\n        self.alg = \"md5\"\n",
 		"second __init__":  "    def __init__(self, other):\n        self.alg = other\n",
 		"dynamic setattr":  "    def load(self, k, v):\n        setattr(self, k, v)\n",
+		"self escapes":     "    def register(self, registry):\n        registry.append(self)\n",
+		"fluent self":      "    def configured(self):\n        return self\n",
+		"property":         "    @property\n    def alg(self):\n        return \"md5\"\n\n    @alg.setter\n    def alg(self, v):\n        self._alg = v\n",
+		"class attribute":  "    alg = Descriptor()\n",
+		"custom setattr":   "    def __setattr__(self, k, v):\n        object.__setattr__(self, k, \"md5\")\n",
+		"custom new":       "    def __new__(cls, alg):\n        return Weak(alg)\n",
 		"rebound argument": "",
 	}
 	for name, extra := range tests {
