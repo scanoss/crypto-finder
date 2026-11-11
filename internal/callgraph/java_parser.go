@@ -19,6 +19,9 @@ type JavaParser struct {
 	parser       *sitter.Parser
 	includeTests bool
 	anchors      callAnchors
+	// fieldWrites counts the write sites of each field name in the file
+	// being parsed; see fileFieldWrites.
+	fieldWrites map[string]int
 }
 
 const (
@@ -163,6 +166,7 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	}
 	defer tree.Close()
 	defer p.anchors.reset()
+	defer func() { p.fieldWrites = nil }()
 
 	root := tree.RootNode()
 
@@ -188,11 +192,12 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// shadowing rule below would apply only to types declared earlier in the
 	// file. Bases are filled in properly as each declaration is processed.
 	p.registerDeclaredJavaTypes(root, src, analysis, "")
-	collectJavaStringConstants(javaChildNodes(root), src, analysis, "")
 	analysis.TypeNamesAtRisk = collectJavaTypeNamesAtRisk(root, src)
 
 	// Extract class declarations with their methods
 	p.extractClasses(root, src, filePath, analysis)
+	// After the declarations: an enum constant's getters read its methods.
+	collectJavaNamedValues(javaChildNodes(root), src, analysis, "")
 	for i := range analysis.Functions {
 		analysis.Functions[i].FileTypeNamesAtRisk = analysis.TypeNamesAtRisk
 	}
@@ -864,6 +869,7 @@ func (p *JavaParser) collectClassFieldAssignments(
 	fieldTypes map[string]string,
 ) map[string]fieldAssignment {
 	assignments := make(map[string]fieldAssignment)
+	var exposed []string
 	for _, child := range javaTypeBodyMembers(body) {
 		switch child.Type() {
 		case javaNodeConstructorDeclaration, javaNodeCompactConstructorDecl:
@@ -874,9 +880,80 @@ func (p *JavaParser) collectClassFieldAssignments(
 			for key, value := range finalFieldInitializers(child, src, filePath) {
 				mergeFieldAssignment(assignments, key, value)
 			}
+			if !javaHasModifier(child, src, "private") && !javaHasModifier(child, src, "final") {
+				exposed = append(exposed, javaDeclaratorNames(child, src)...)
+			}
+		}
+	}
+	// Any write besides the one constructor assignment leaves no single
+	// constructor value: a setter, a nested or anonymous class, a lambda, an
+	// initializer block, or a write through another reference to the object.
+	writes := p.fileFieldWrites(body, src)
+	for name := range fieldTypes {
+		if writes[name] > 1 {
+			mergeFieldAssignment(assignments, name, fieldAssignment{})
+		}
+	}
+	for _, name := range exposed {
+		if assignment, ok := assignments[name]; ok {
+			assignment.exposed = true
+			assignments[name] = assignment
 		}
 	}
 	return assignments
+}
+
+func javaDeclaratorNames(node *sitter.Node, src []byte) []string {
+	var names []string
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if child := node.Child(i); child.Type() == javaNodeVariableDeclarator {
+			if name, _ := parseVariableDeclaratorOrigin(child, src); name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
+}
+
+// fileFieldWrites counts, per name, the assignments and increments anywhere in
+// the file whose target is that bare name or a field access of that name
+// through any reference (`this.f`, `Outer.this.f`, `h.f`). It walks the whole
+// file because an enclosing class may write a nested class's private field.
+// Matching by name alone over-counts a local or another class's field of the
+// same name, which only ever drops a fold.
+func (p *JavaParser) fileFieldWrites(node *sitter.Node, src []byte) map[string]int {
+	if p.fieldWrites == nil {
+		root := node
+		for parent := root.Parent(); parent != nil; parent = root.Parent() {
+			root = parent
+		}
+		p.fieldWrites = make(map[string]int)
+		countJavaFieldWrites(root, src, p.fieldWrites)
+	}
+	return p.fieldWrites
+}
+
+func countJavaFieldWrites(node *sitter.Node, src []byte, writes map[string]int) {
+	var target *sitter.Node
+	switch node.Type() {
+	case javaNodeAssignmentExpression:
+		target = node.ChildByFieldName("left")
+	case javaNodeUpdateExpression:
+		target = node.NamedChild(0)
+	}
+	if target != nil {
+		switch target.Type() {
+		case javaNodeIdentifier:
+			writes[target.Content(src)]++
+		case javaNodeFieldAccess:
+			if field := target.ChildByFieldName("field"); field != nil {
+				writes[field.Content(src)]++
+			}
+		}
+	}
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		countJavaFieldWrites(node.NamedChild(i), src, writes)
+	}
 }
 
 // finalFieldInitializers records the declarator initializers of a `final`
@@ -1074,9 +1151,13 @@ func (p *JavaParser) parseMethodDecl(
 		p.collectParameterTypes(node, src, varTypes)
 		p.collectScopeVarTypes(body, src, varTypes)
 
-		varOrigins := make(map[string]varOrigin)
-		for k, v := range fieldTypes {
-			varOrigins[k] = varOrigin{typeName: v, kind: "field", paramIndex: -1}
+		varOrigins := javaFieldOrigins(fieldTypes, fieldAssignments, filePath)
+		for name, assignment := range fieldAssignments {
+			// A getter's value is the constructor's only while no other class can write the field.
+			if origin, ok := varOrigins[name]; ok && assignment.exposed {
+				origin.constructorParam = nil
+				varOrigins[name] = origin
+			}
 		}
 		p.collectParameterOrigins(node, src, filePath, varOrigins)
 		p.collectScopeVarOrigins(body, src, filePath, varOrigins)
@@ -1451,8 +1532,20 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 	p.collectScopeVarTypes(body, src, varTypes)
 
 	// Build variable origin map for data flow tracing
-	varOrigins := make(map[string]varOrigin)
-	// Add field origins with constructor parameter tracing
+	varOrigins := javaFieldOrigins(fieldTypes, fieldAssignments, filePath)
+	p.collectParameterOrigins(methodNode, src, filePath, varOrigins)
+	p.collectScopeVarOrigins(body, src, filePath, varOrigins)
+	markReassignedOrigins(body, src, varOrigins)
+
+	var calls []FunctionCall
+	p.walkForCalls(body, src, filePath, analysis, currentClass, varTypes, varOrigins, &calls)
+	return calls
+}
+
+// javaFieldOrigins seeds a member's origin map with the class fields, each
+// traced to its one constructor parameter or final initializer when it has one.
+func javaFieldOrigins(fieldTypes map[string]string, fieldAssignments map[string]fieldAssignment, filePath string) map[string]varOrigin {
+	varOrigins := make(map[string]varOrigin, len(fieldTypes))
 	for k, v := range fieldTypes {
 		origin := varOrigin{typeName: v, kind: "field", filePath: filePath, paramIndex: -1}
 		if fa, ok := fieldAssignments[k]; ok && fa.valid {
@@ -1467,13 +1560,7 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 		}
 		varOrigins[k] = origin
 	}
-	p.collectParameterOrigins(methodNode, src, filePath, varOrigins)
-	p.collectScopeVarOrigins(body, src, filePath, varOrigins)
-	markReassignedOrigins(body, src, varOrigins)
-
-	var calls []FunctionCall
-	p.walkForCalls(body, src, filePath, analysis, currentClass, varTypes, varOrigins, &calls)
-	return calls
+	return varOrigins
 }
 
 // fieldAssignment records one writer of a class field: a constructor
@@ -1487,6 +1574,7 @@ type fieldAssignment struct {
 	filePath     string
 	resolvedType string // concrete assigned type, when known
 	valid        bool   // false when the field has multiple candidate assignments
+	exposed      bool   // neither private nor final: code outside the class may write it
 }
 
 // varOrigin tracks where a variable's value comes from.
@@ -1500,6 +1588,7 @@ type varOrigin struct {
 	constructorParam     *fieldAssignment // for fields: which constructor param assigned this field
 	resolvedReceiverType string           // concrete type assigned to a field, when unambiguous
 	reassigned           bool             // a local or parameter written again after its declaration: no single source
+	programArgs          bool             // the String[] parameter of main: the program's arguments
 }
 
 // extractFieldAssignments scans a constructor body for field assignments from
@@ -2034,16 +2123,21 @@ func (p *JavaParser) collectParameterOrigins(node *sitter.Node, src []byte, file
 			continue
 		}
 		paramIdx := 0
-		for _, param := range parseJavaParameterList(child.Content(src)) {
+		params := parseJavaParameterList(child.Content(src))
+		name := node.ChildByFieldName("name")
+		mainMethod := node.Type() == javaNodeMethodDeclaration && name != nil && name.Content(src) == string(RootKindMain) && len(params) == 1
+		for _, param := range params {
 			if param.Name == "" || param.Type == "" {
 				continue
 			}
+			typeName := strings.Join(strings.Fields(param.Type), "")
 			origins[param.Name] = varOrigin{
-				typeName:   param.Type,
-				kind:       javaVarOriginKindParameter,
-				line:       int(child.StartPoint().Row) + 1,
-				filePath:   filePath,
-				paramIndex: paramIdx,
+				typeName:    param.Type,
+				kind:        javaVarOriginKindParameter,
+				line:        int(child.StartPoint().Row) + 1,
+				filePath:    filePath,
+				paramIndex:  paramIdx,
+				programArgs: mainMethod && (typeName == "String[]" || typeName == "String..." || typeName == "java.lang.String[]"),
 			}
 			paramIdx++
 		}
@@ -2164,7 +2258,16 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 		return originNodes
 	}
 	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
-		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr, javaConstant: javaConstantUse(expr, analysis, currentClass, varTypes, origins)}}
+		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr, nameRef: javaNameRefUse(expr, analysis, currentClass, varTypes, origins)}}
+	}
+	if construction, method, ok := splitJavaConstructedCall(expr); ok {
+		typeName, _, _ := parseJavaConstructorExpression(construction)
+		node := SourceNode{Type: sourceNodeCallResult, Value: expr, getter: p.javaConstruction(construction, method, analysis, currentClass, varTypes, origins, depth)}
+		if analysis != nil {
+			target := p.resolveCallee(typeName, javaMethodWithArity(method, 0), analysis, currentClass, nil)
+			node.CallTarget = &target
+		}
+		return []SourceNode{node}
 	}
 	if constructorNodes := p.traceConstructorExpression(expr, analysis, currentClass, varTypes, origins, depth); constructorNodes != nil {
 		return constructorNodes
@@ -2172,11 +2275,11 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 	if methodCallNodes := p.traceMethodCallExpression(expr, analysis, currentClass, varTypes, origins, depth); methodCallNodes != nil {
 		return methodCallNodes
 	}
-	node := SourceNode{Type: "EXPRESSION", Value: expr}
+	node := SourceNode{Type: "EXPRESSION", Value: expr, runtime: javaProgramArgument(expr, origins)}
 	if isSimpleJavaIdentifier(expr) {
 		// A bare name no local, parameter or field claims: a static import or
 		// an enclosing type's constant.
-		node.javaConstant = javaConstantUse(expr, analysis, currentClass, varTypes, origins)
+		node.nameRef = javaNameRefUse(expr, analysis, currentClass, varTypes, origins)
 	}
 	return []SourceNode{node}
 }
@@ -2308,8 +2411,12 @@ func (p *JavaParser) traceMethodCallExpression(
 	closeIdx := strings.LastIndex(expr, ")")
 	if open >= 0 && closeIdx > open {
 		args := parseArgumentsFromDelimitedContent(expr[open : closeIdx+1])
+		runtimeKind, readsRuntime := javaRuntimeRead(object, method, argc, analysis, origins)
 		for i, arg := range args {
 			argumentSources := p.traceExpression(strings.TrimSpace(arg), analysis, currentClass, varTypes, origins, depth+1)
+			if readsRuntime && i == 0 {
+				node.runtime = newRuntimeRef(runtimeKind, argumentSources)
+			}
 			for j := range argumentSources {
 				argumentSources[j].ParameterIndex = i
 				argumentSources[j].Flow = &SourceFlow{CallArgument: true}
@@ -2321,7 +2428,148 @@ func (p *JavaParser) traceMethodCallExpression(
 		target := p.resolveCallee(object, javaMethodWithArity(method, argc), analysis, currentClass, varTypes)
 		node.CallTarget = &target
 	}
+	if info, ok := origins[object]; ok && argc == 0 {
+		node.getter = p.javaLocalConstruction(info, method, analysis, currentClass, varTypes, origins, depth)
+	}
+	if accessor := "." + method + "()"; argc == 0 && strings.Join(strings.Fields(expr), "") == object+accessor {
+		// An enum constant receiver: the fold replaces the whole call,
+		// including the CallTarget read off `Owner.C` as a type.
+		node.nameRef = javaNameRefUse(object, analysis, currentClass, varTypes, origins).withAccessor(expr, accessor)
+	}
 	return []SourceNode{node}
+}
+
+// javaSystemReads are the runtime reads of java.lang.System, and
+// javaPropertiesReads those of a java.util.Properties, by method and arity.
+// Their first argument is the key.
+var (
+	javaSystemReads = map[string]RuntimeSourceKind{
+		"getenv#1":      RuntimeSourceEnv,
+		"getProperty#1": RuntimeSourceProperty,
+		"getProperty#2": RuntimeSourceProperty,
+	}
+	javaPropertiesReads = map[string]RuntimeSourceKind{
+		"getProperty#1": RuntimeSourceProperty,
+		"getProperty#2": RuntimeSourceProperty,
+	}
+)
+
+// javaRuntimeRead reports which runtime input `object.method(..)` with argc
+// arguments reads.
+func javaRuntimeRead(object, method string, argc int, analysis *FileAnalysis, origins map[string]varOrigin) (RuntimeSourceKind, bool) {
+	object = strings.TrimSpace(object)
+	signature := javaMethodWithArity(method, argc)
+	if object == "System" || object == "java.lang.System" {
+		kind, ok := javaSystemReads[signature]
+		return kind, ok && javaNamesSystem(object, analysis, origins)
+	}
+	origin, ok := origins[strings.TrimPrefix(object, "this.")]
+	kind, read := javaPropertiesReads[signature]
+	return kind, ok && read && qualifyJavaSourceType(origin.typeName, analysis) == "java.util.Properties"
+}
+
+// javaNamesSystem reports that System names the JDK's class: no local, field
+// or import takes the name.
+func javaNamesSystem(object string, analysis *FileAnalysis, origins map[string]varOrigin) bool {
+	if _, local := origins[object]; local {
+		return false
+	}
+	if analysis == nil {
+		return true
+	}
+	imported, ok := analysis.Imports[object]
+	return !ok || imported == "java.lang"
+}
+
+// javaProgramArgument marks `args[i]`, an element of main's String[]
+// parameter, as program argument i.
+func javaProgramArgument(expr string, origins map[string]varOrigin) *runtimeRef {
+	name, rest, ok := strings.Cut(expr, "[")
+	index, closed := strings.CutSuffix(strings.TrimSpace(rest), "]")
+	origin, known := origins[strings.TrimSpace(name)]
+	if !ok || !closed || !known || !origin.programArgs || origin.reassigned {
+		return nil
+	}
+	ref := &runtimeRef{kind: RuntimeSourceArgv, key: runtimeKey(RuntimeSourceArgv, index)}
+	if ref.key == "" {
+		return nil
+	}
+	return ref
+}
+
+// javaLocalConstruction is the getter reference for method called on a local
+// variable initialized with a construction and never reassigned.
+func (p *JavaParser) javaLocalConstruction(local varOrigin, method string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) *ctorGetterRef {
+	if local.kind == javaVarOriginKindField || local.kind == javaVarOriginKindParameter || local.reassigned {
+		return nil
+	}
+	return p.javaConstruction(local.initializer, method, analysis, currentClass, varTypes, origins, depth)
+}
+
+// javaConstruction is the getter reference for method called on the object
+// expr constructs, when expr is exactly one `new T(args)`.
+func (p *JavaParser) javaConstruction(expr, method string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) *ctorGetterRef {
+	expr = strings.TrimSpace(expr)
+	open := strings.Index(expr, "(")
+	if analysis == nil || open < 0 || javaMatchingParen(expr, open) != len(expr)-1 {
+		return nil
+	}
+	typeName, argc, ok := parseJavaConstructorExpression(expr)
+	if !ok {
+		return nil
+	}
+	ref := &ctorGetterRef{
+		constructor: p.resolveCallee(typeName, javaMethodWithArity(constructorMethodName, argc), analysis, currentClass, nil),
+		method:      javaMethodWithArity(method, 0),
+	}
+	for _, arg := range parseArgumentsFromDelimitedContent(stripJavaExpressionComments(expr[open:])) {
+		ref.arguments = append(ref.arguments, ctorArgument{sources: p.traceExpression(strings.TrimSpace(arg), analysis, currentClass, varTypes, origins, depth+1)})
+	}
+	return ref
+}
+
+// splitJavaConstructedCall splits `new T(args).m()` into the construction and m.
+func splitJavaConstructedCall(expr string) (construction, method string, ok bool) {
+	open := strings.Index(expr, "(")
+	if !strings.HasPrefix(expr, "new ") || open < 0 {
+		return "", "", false
+	}
+	end := javaMatchingParen(expr, open)
+	if end < 0 {
+		return "", "", false
+	}
+	rest, chained := strings.CutPrefix(strings.TrimSpace(expr[end+1:]), ".")
+	name, args, called := strings.Cut(rest, "(")
+	name = strings.TrimSpace(name)
+	if !chained || !called || !isSimpleJavaIdentifier(name) || strings.TrimSpace(args) != ")" {
+		return "", "", false
+	}
+	return expr[:end+1], name, true
+}
+
+// javaMatchingParen returns the index of the parenthesis closing the one at
+// open, skipping string and char literals, or -1.
+func javaMatchingParen(expr string, open int) int {
+	depth := 0
+	for i := open; i < len(expr); i++ {
+		switch expr[i] {
+		case '"', '\'':
+			quote := expr[i]
+			for i++; i < len(expr) && expr[i] != quote; i++ {
+				if expr[i] == '\\' {
+					i++
+				}
+			}
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 func (p *JavaParser) traceMethodCallReceiverSources(

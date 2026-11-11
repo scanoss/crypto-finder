@@ -526,6 +526,8 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 	fw.moduleSources.module = true
 	fw.moduleSources.work = p.localWork
 	p.pythonWalk(root, src, analysis, isInitPy, fw, fw.moduleScope.locals, nil, nil, nil, true, nil)
+	recordPythonNamedValues(root, src, analysis, fw)
+	recordPythonNamedValueWrites(analysis, fw)
 
 	// Extract function and class declarations, resolving each scope's
 	// pending calls (fw) against its now-complete binding layer.
@@ -549,7 +551,7 @@ func (p *PythonParser) recordPythonReExportsFromStatement(node *sitter.Node, src
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		if node.FieldNameForChild(i) != "name" {
+		if node.FieldNameForChild(i) != pythonFieldName {
 			continue
 		}
 		child := node.Child(i)
@@ -744,6 +746,9 @@ type pythonFileWalk struct {
 	// pythonRecordPartialOrCallable when a pending call resolves to a
 	// locally-declared class's constructor.
 	classesWithDunderCall map[string]bool
+	// importUses collects the uses of imported names that may change a
+	// value of another module (notePythonImportUse).
+	importUses map[pythonImportUse]bool
 }
 
 // pythonWalk performs ONE full-file descent, visiting every node exactly
@@ -820,6 +825,8 @@ func (p *PythonParser) pythonWalkSideEffects(node *sitter.Node, sym sitter.Symbo
 		}
 	case pythonSyms.globalStatement:
 		fw.moduleSources.poisonIdentifiers(node, src)
+	case pythonSyms.identifier:
+		fw.notePythonImportUse(node, src, analysis)
 	}
 	if moduleDirect {
 		fw.moduleSources.observe(node, sym, src)
@@ -1047,7 +1054,11 @@ func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw
 	}
 	var attrs map[string]bool
 	var bases []string
+	positional := pythonPositionalParameterCount(node.ChildByFieldName("parameters"))
 	if activeClassInfo != nil {
+		// A method's self or cls is bound by the receiver, so a declared
+		// index is not the caller's argument position.
+		positional = 0
 		attrs = activeClassInfo.attrs
 		bases = activeClassInfo.bases
 		// row 11: a class declaring its own __call__ method registers its
@@ -1062,9 +1073,7 @@ func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw
 		}
 	}
 	scope := &pythonScope{locals: root, attrs: attrs, bases: bases, varTypes: varTypes}
-	for _, name := range paramNames {
-		scope.sources.poison(name)
-	}
+	scope.sources.bindParameters(paramNames, positional)
 	if decoratorInfo != nil {
 		scope.staticMethod = decoratorInfo.static
 		if decoratorInfo.classMethod && param0 != "" && param0 != pythonClsObjectName {
@@ -1455,7 +1464,7 @@ func (p *PythonParser) processImportFromStatement(node *sitter.Node, src []byte,
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		if node.FieldNameForChild(i) != "name" {
+		if node.FieldNameForChild(i) != pythonFieldName {
 			continue
 		}
 		child := node.Child(i)
@@ -1872,7 +1881,15 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 	}
 
 	// Walk class body for method definitions.
+	first := len(analysis.Functions)
 	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis, attrs, fw)
+	if getters := pythonConstructorGetters(node, body, src, filePath); len(getters) > 0 {
+		for i := first; i < len(analysis.Functions); i++ {
+			if getter, ok := getters[analysis.Functions[i].ID.Name]; ok && analysis.Functions[i].ID.Type == className {
+				analysis.Functions[i].ReturnSources = []SourceNode{getter}
+			}
+		}
+	}
 
 	if clinit := p.buildClassInitDecl(body, src, filePath, packagePath, className, analysis, attrs, direct, fw); clinit != nil {
 		clinit.OwnerBases = bases
@@ -2123,6 +2140,34 @@ func pythonSelfOrClsAttr(object string) (attr string, ok bool) {
 // are skipped. self/cls ARE recorded here (they are still legitimate local
 // names): pythonBindings.receiverIdentity is what refuses to ever return them
 // as a receiver identity, via its self/cls bare-name check.
+// pythonPositionalParameterCount is how many leading parameters a caller can
+// pass by position: those before the first *args, bare * or **kwargs.
+func pythonPositionalParameterCount(params *sitter.Node) int {
+	if params == nil {
+		return 0
+	}
+	n := 0
+	for i := 0; i < int(params.NamedChildCount()); i++ {
+		child := params.NamedChild(i)
+		switch child.Symbol() {
+		case pythonSyms.typedParameter:
+			// `*parts: str` and `**kw: Any` wrap the splat in a typed_parameter.
+			if first := child.NamedChild(0); first != nil &&
+				(first.Type() == pythonNodeListSplatPattern || first.Type() == pythonNodeDictSplatPattern) {
+				return n
+			}
+			n++
+		case pythonSyms.identifier, pythonSyms.defaultParameter, pythonSyms.typedDefaultParameter:
+			n++
+		default:
+			if child.Type() != "positional_separator" {
+				return n
+			}
+		}
+	}
+	return n
+}
+
 func pythonParameterNames(params *sitter.Node, src []byte) []string {
 	if params == nil {
 		return nil
@@ -2849,25 +2894,17 @@ func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte,
 
 	switch argNode.Symbol() {
 	case pythonSyms.call:
-		if depth >= pythonArgProvenanceMaxDepth {
-			return nil
-		}
-		nestedCall := p.parseCallExpr(argNode, src, filePath, analysis, bindings, fw, depth+1)
-		if nestedCall == nil {
-			return nil
-		}
-		sn := SourceNode{
-			Type:       "CALL_RESULT",
-			Value:      strings.TrimSpace(argNode.Content(src)),
-			CallTarget: &nestedCall.Callee,
-			Location:   &SourceLocation{FilePath: filePath, Line: nestedCall.Line},
-		}
-		for _, s := range nestedCall.ArgumentSources {
-			sn.SourceNodes = append(sn.SourceNodes, s...)
-		}
-		return []SourceNode{sn}
+		return p.pythonCallResultSource(argNode, src, filePath, analysis, bindings, fw, depth)
 	case pythonSyms.identifier:
 		name := argNode.Content(src)
+		if index, ok := bindings.locals.parameterSource(name); ok {
+			return []SourceNode{{
+				Type:           "PARAMETER",
+				Name:           name,
+				ParameterIndex: index,
+				Location:       &SourceLocation{FilePath: filePath, Line: int(argNode.StartPoint().Row) + 1},
+			}}
+		}
 		if local, known := bindings.locals.lookup(name); known {
 			return p.pythonLocalArgumentSource(name, local, src, filePath, analysis, bindings, fw, depth)
 		}
@@ -2879,13 +2916,43 @@ func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte,
 			// fabricate provenance for an unrelated local.
 			return nil
 		}
-		module, _ := fw.moduleSources.lookup(name)
-		return p.pythonLocalArgumentSource(name, module, src, filePath, analysis, bindings, fw, depth)
+		if module, _ := fw.moduleSources.lookup(name); module != nil {
+			return p.pythonLocalArgumentSource(name, module, src, filePath, analysis, bindings, fw, depth)
+		}
+		return pythonNamedValueSource(argNode, src, filePath, analysis, bindings, fw)
+	case pythonSyms.attribute:
+		return pythonNamedValueSource(argNode, src, filePath, analysis, bindings, fw)
+	case pythonSyms.subscript:
+		return p.pythonRuntimeSubscript(argNode, src, filePath, analysis, bindings, fw, depth)
 	case pythonSyms.integer, pythonSyms.string:
 		return []SourceNode{{Type: "VALUE", Value: argNode.Content(src)}}
 	default:
 		return nil
 	}
+}
+
+// pythonCallResultSource is a nested call resolved through the same
+// parseCallExpr path as a top-level call, its arguments' sources below it.
+func (p *PythonParser) pythonCallResultSource(argNode *sitter.Node, src []byte, filePath string, analysis *FileAnalysis, bindings pythonBindings, fw *pythonFileWalk, depth int) []SourceNode {
+	if depth >= pythonArgProvenanceMaxDepth {
+		return nil
+	}
+	nestedCall := p.parseCallExpr(argNode, src, filePath, analysis, bindings, fw, depth+1)
+	if nestedCall == nil {
+		return nil
+	}
+	sn := SourceNode{
+		Type:       "CALL_RESULT",
+		Value:      strings.TrimSpace(argNode.Content(src)),
+		CallTarget: &nestedCall.Callee,
+		Location:   &SourceLocation{FilePath: filePath, Line: nestedCall.Line},
+		getter:     p.pythonGetterRef(argNode, src, filePath, analysis, bindings, fw, depth),
+		runtime:    pythonRuntimeCall(argNode, nestedCall),
+	}
+	for _, s := range nestedCall.ArgumentSources {
+		sn.SourceNodes = append(sn.SourceNodes, s...)
+	}
+	return []SourceNode{sn}
 }
 
 // pythonLocalArgumentSource resolves a bare local name through its function's
@@ -2902,7 +2969,7 @@ func (p *PythonParser) pythonLocalArgumentSource(name string, local *pythonLocal
 		}
 	}
 	value := p.pythonArgumentSourceFor(local.value, src, filePath, analysis, bindings, fw, depth)
-	if value == nil {
+	if len(value) == 0 || pythonRuntimeShape(local.value, src) && value[0].runtime == nil {
 		return nil
 	}
 	return []SourceNode{{Type: "VARIABLE", Name: name, SourceNodes: value}}

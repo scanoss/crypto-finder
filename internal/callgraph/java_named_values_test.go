@@ -221,3 +221,121 @@ public class Caller {
 	})
 	assertUnfolded(t, digestArgumentSource(t, graph), "Names.ALG")
 }
+
+const javaAlgoEnumSrc = `package lib.algo;
+public enum AlgoName {
+    EC,
+    RSA {
+        @Override public String toString() { return "rsa"; }
+    },
+    DSA {
+        int bits() { return 2048; }
+    };
+}
+`
+
+const javaLabeledEnumSrc = `package lib.algo;
+public enum Labeled {
+    SHA256("SHA-256");
+    private final String label;
+    Labeled(String label) { this.label = label; }
+    @Override public String toString() { return label; }
+}
+`
+
+func TestJavaEnumConstant_NameFromAnotherPackage(t *testing.T) {
+	t.Parallel()
+	graph := parseInlineJavaFiles(t, map[string]string{
+		"lib/algo/AlgoName.java": javaAlgoEnumSrc,
+		"app/Caller.java":        callerSrc("import lib.algo.AlgoName;", "AlgoName.EC.name()"),
+	})
+	assertFoldedConstant(t, digestArgumentSource(t, graph), "AlgoName.EC.name()", "AlgoName.java", 3, `"EC"`)
+}
+
+func TestJavaEnumConstant_NameIgnoresToStringOverride(t *testing.T) {
+	t.Parallel()
+	graph := parseInlineJavaFiles(t, map[string]string{
+		"lib/algo/Labeled.java": javaLabeledEnumSrc,
+		"app/Caller.java":       callerSrc("import lib.algo.Labeled;", "Labeled.SHA256.name()"),
+	})
+	assertFoldedConstant(t, digestArgumentSource(t, graph), "Labeled.SHA256.name()", "Labeled.java", 3, `"SHA256"`)
+}
+
+func TestJavaEnumConstant_DefaultToString(t *testing.T) {
+	t.Parallel()
+	graph := parseInlineJavaFiles(t, map[string]string{
+		"lib/algo/AlgoName.java": javaAlgoEnumSrc,
+		"app/Caller.java":        callerSrc("import lib.algo.*;", "AlgoName.DSA.toString()"),
+	})
+	assertFoldedConstant(t, digestArgumentSource(t, graph), "AlgoName.DSA.toString()", "AlgoName.java", 7, `"DSA"`)
+}
+
+func TestJavaEnumConstant_StaticImportName(t *testing.T) {
+	t.Parallel()
+	graph := parseInlineJavaFiles(t, map[string]string{
+		"lib/algo/AlgoName.java": javaAlgoEnumSrc,
+		"app/Caller.java":        callerSrc("import static lib.algo.AlgoName.EC;", "EC.name()"),
+	})
+	assertFoldedConstant(t, digestArgumentSource(t, graph), "EC.name()", "AlgoName.java", 3, `"EC"`)
+}
+
+// A toString override that returns the field the constructor sets yields the
+// constant's argument, by the constructor-getter rule.
+func TestJavaEnumConstant_ToStringReturningConstructorField(t *testing.T) {
+	t.Parallel()
+	graph := parseInlineJavaFiles(t, map[string]string{
+		"lib/algo/Labeled.java": javaLabeledEnumSrc,
+		"app/Caller.java":       callerSrc("import lib.algo.*;", "Labeled.SHA256.toString()"),
+	})
+	assertFoldedConstant(t, digestArgumentSource(t, graph), "Labeled.SHA256.toString()", "Labeled.java", 3, `"SHA-256"`)
+}
+
+func TestJavaEnumConstant_OverriddenToStringStaysUnresolved(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct{ file, src, arg string }{
+		"constant body":      {"lib/algo/AlgoName.java", javaAlgoEnumSrc, "AlgoName.RSA.toString()"},
+		"chained call":       {"lib/algo/AlgoName.java", javaAlgoEnumSrc, "AlgoName.EC.name().toLowerCase()"},
+		"not an enum member": {"lib/algo/AlgoName.java", javaAlgoEnumSrc, "AlgoName.XX.name()"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			graph := parseInlineJavaFiles(t, map[string]string{
+				tc.file:           tc.src,
+				"app/Caller.java": callerSrc("import lib.algo.*;", tc.arg),
+			})
+			node := digestArgumentSource(t, graph)
+			if node.Type != "CALL_RESULT" || node.Value != tc.arg {
+				t.Fatalf("argument source = %+v, want unchanged CALL_RESULT %s", node, tc.arg)
+			}
+		})
+	}
+}
+
+func TestJavaEnumConstant_BareConstantStaysText(t *testing.T) {
+	t.Parallel()
+	graph := parseInlineJavaFiles(t, map[string]string{
+		"lib/algo/AlgoName.java": javaAlgoEnumSrc,
+		"app/Caller.java":        callerSrc("import lib.algo.AlgoName;", "AlgoName.EC"),
+	})
+	assertUnfolded(t, digestArgumentSource(t, graph), "AlgoName.EC")
+}
+
+func TestJavaEnumConstant_LocalShadowsEnumType(t *testing.T) {
+	t.Parallel()
+	graph := parseInlineJavaFiles(t, map[string]string{
+		"lib/algo/AlgoName.java": javaAlgoEnumSrc,
+		"app/Caller.java": `package app;
+import lib.algo.AlgoName;
+import java.security.MessageDigest;
+public class Caller {
+    void digest(Holder AlgoName) throws Exception {
+        MessageDigest.getInstance(AlgoName.EC.name());
+    }
+}
+`,
+	})
+	if node := digestArgumentSource(t, graph); node.Type == sourceNodeField {
+		t.Fatalf("argument source = %+v, want no fold through a shadowing parameter", node)
+	}
+}

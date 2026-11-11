@@ -1502,10 +1502,10 @@ def build(password, salt):
 		t.Errorf(`ArgumentSources[3] = %+v, want single VALUE "\"static\""`, arg3)
 	}
 
-	// Arg 4: salt — bare identifier, NOT a module-level constant: no fabrication.
+	// Arg 4: salt — the function's second parameter, filled by its callers.
 	arg4 := call.ArgumentSources[4]
-	if arg4 != nil {
-		t.Errorf("ArgumentSources[4] = %+v, want nil (salt is a parameter, not a module-level constant)", arg4)
+	if len(arg4) != 1 || arg4[0].Type != "PARAMETER" || arg4[0].Name != "salt" || arg4[0].ParameterIndex != 1 || len(arg4[0].SourceNodes) != 0 {
+		t.Errorf("ArgumentSources[4] = %+v, want single PARAMETER salt at index 1", arg4)
 	}
 }
 
@@ -1533,8 +1533,8 @@ def build(KEY_LEN, salt):
 	if len(call.ArgumentSources) != 2 {
 		t.Fatalf("ArgumentSources length = %d, want 2", len(call.ArgumentSources))
 	}
-	if arg0 := call.ArgumentSources[0]; arg0 != nil {
-		t.Errorf("ArgumentSources[0] = %+v, want nil — KEY_LEN is a LOCAL parameter here, shadowing the module constant of the same name", arg0)
+	if arg0 := call.ArgumentSources[0]; len(arg0) != 1 || arg0[0].Type != "PARAMETER" || arg0[0].ParameterIndex != 0 || len(arg0[0].SourceNodes) != 0 {
+		t.Errorf("ArgumentSources[0] = %+v, want the PARAMETER KEY_LEN — it shadows the module constant of the same name", arg0)
 	}
 }
 

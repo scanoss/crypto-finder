@@ -39,6 +39,10 @@ type pythonLocalSources struct {
 	// all poisons every name in the file-level index: the file rebinds names
 	// dynamically (exec, globals(), setattr on the module).
 	all bool
+	// escaped records the names used other than as the receiver of a direct
+	// method call in the function's own scope. Kept apart from byName, whose
+	// keys are the names the function binds.
+	escaped map[string]bool
 }
 
 func (s *pythonLocalSources) tick() {
@@ -56,6 +60,45 @@ type pythonLocalSource struct {
 	// `ec.SECP521R1()`), empty for an integer literal.
 	root     string
 	poisoned bool
+	// parameter marks a parameter of the indexed function that callers can
+	// pass by position, at parameterIndex. rebound records any other binding
+	// of the name, after which the value at a use may differ from the
+	// caller's argument.
+	parameter      bool
+	rebound        bool
+	parameterIndex int
+	// bindings counts the statements that bind the name, and kind is what
+	// the first one binds, so a use can require one import or one class.
+	bindings int
+	kind     pythonBindingKind
+	// construction is the call the first binding assigns, for a receiver
+	// bound exactly once; mutated records an attribute write through the name.
+	construction *sitter.Node
+	mutated      bool
+}
+
+type pythonBindingKind uint8
+
+const (
+	pythonBoundOther pythonBindingKind = iota
+	pythonBoundImport
+	pythonBoundClass
+)
+
+func (e *pythonLocalSource) note(kind pythonBindingKind) {
+	if e.bindings == 0 {
+		e.kind = kind
+	}
+	e.bindings++
+}
+
+// boundOnlyBy reports whether exactly one statement binds name, of kind.
+func (s *pythonLocalSources) boundOnlyBy(name string, kind pythonBindingKind) bool {
+	if s.all {
+		return false
+	}
+	e := s.byName[name]
+	return e != nil && e.bindings == 1 && e.kind == kind
 }
 
 func (s *pythonLocalSources) entry(name string) *pythonLocalSource {
@@ -73,6 +116,8 @@ func (s *pythonLocalSources) entry(name string) *pythonLocalSource {
 
 func (s *pythonLocalSources) bind(name string, value *sitter.Node, text, root string) {
 	e := s.entry(name)
+	e.rebound = e.rebound || e.parameter
+	e.note(pythonBoundOther)
 	switch {
 	case e.poisoned:
 	case e.value == nil && e.text == "":
@@ -83,7 +128,36 @@ func (s *pythonLocalSources) bind(name string, value *sitter.Node, text, root st
 }
 
 func (s *pythonLocalSources) poison(name string) {
-	s.entry(name).poisoned = true
+	e := s.entry(name)
+	e.note(pythonBoundOther)
+	e.poisoned = true
+	e.rebound = e.rebound || e.parameter
+}
+
+// bindParameters records the indexed function's parameters. Every name stays
+// poisoned for lookup, since its value comes from the caller; the first
+// positional ones are kept as parameters a caller fills by position.
+func (s *pythonLocalSources) bindParameters(names []string, positional int) {
+	for i, name := range names {
+		e := s.entry(name)
+		e.poisoned = true
+		if i < positional {
+			e.parameter, e.parameterIndex = true, i
+		}
+	}
+}
+
+// parameterSource returns the parameter index a use of name reads, ok only
+// when the function never rebinds the parameter.
+func (s *pythonLocalSources) parameterSource(name string) (index int, ok bool) {
+	if s == nil || s.all {
+		return 0, false
+	}
+	e := s.byName[name]
+	if e == nil || !e.parameter || e.rebound {
+		return 0, false
+	}
+	return e.parameterIndex, true
 }
 
 func (s *pythonLocalSources) poisonIdentifiers(node *sitter.Node, src []byte) {
@@ -150,11 +224,56 @@ func (s *pythonLocalSources) observe(node *sitter.Node, sym sitter.Symbol, src [
 		}
 	case pythonSyms.wildcardImport:
 		s.poisonExisting()
-	case pythonSyms.importStatement, pythonSyms.importFromStatement,
-		pythonSyms.globalStatement, pythonSyms.nonlocalStatement, pythonSyms.deleteStatement,
+	case pythonSyms.importStatement, pythonSyms.importFromStatement:
+		s.observeImport(node, src)
+	case pythonSyms.globalStatement, pythonSyms.nonlocalStatement, pythonSyms.deleteStatement,
 		pythonSyms.casePattern, pythonSyms.typeAliasStatement:
 		s.poisonIdentifiers(node, src)
 	}
+	s.observeUse(node, sym, src)
+}
+
+// observeUse marks a function local escaped when this identifier uses it in a
+// way that hands the object to other code; see escapes.
+func (s *pythonLocalSources) observeUse(node *sitter.Node, sym sitter.Symbol, src []byte) {
+	if sym != pythonSyms.identifier || s.module || !s.escapes(node) {
+		return
+	}
+	if s.escaped == nil {
+		s.escaped = make(map[string]bool)
+	}
+	s.escaped[node.Content(src)] = true
+}
+
+// escapes reports an identifier that may hand its object to other code. Only
+// three occurrences do not: the name's own binding, an attribute or keyword
+// name that merely spells it, and the receiver of a direct method call
+// `name.m(...)` outside any nested def, class or lambda. Passed, aliased,
+// returned, stored, captured or used as a context manager, the object reaches
+// code that may write its attributes.
+func (s *pythonLocalSources) escapes(node *sitter.Node) bool {
+	parent := node.Parent()
+	if parent == nil {
+		return false
+	}
+	switch parent.Symbol() {
+	case pythonSyms.assignment:
+		return !pythonIsFieldChild(parent, "left", node)
+	case pythonSyms.keywordArgument:
+		return !pythonIsFieldChild(parent, pythonFieldName, node)
+	case pythonSyms.attribute:
+		if !pythonIsFieldChild(parent, "object", node) {
+			return false
+		}
+		call := parent.Parent()
+		return call == nil || call.Symbol() != pythonSyms.call || !pythonIsFieldChild(call, "function", parent) || s.inNestedScope(node)
+	}
+	return true
+}
+
+func pythonIsFieldChild(parent *sitter.Node, field string, child *sitter.Node) bool {
+	node := parent.ChildByFieldName(field)
+	return node != nil && node.Equal(child)
 }
 
 // inNestedScope reports whether node sits under a def, class or lambda nested
@@ -166,7 +285,12 @@ func (s *pythonLocalSources) inNestedScope(node *sitter.Node) bool {
 		switch p.Symbol() {
 		case pythonSyms.functionDefinition:
 			return p.StartByte() != s.root
-		case pythonSyms.classDefinition, pythonSyms.lambda:
+		case pythonSyms.classDefinition:
+			return true
+		}
+		// The grammar has two named "lambda" symbols and pythonSyms keeps only
+		// one of them, so match the node type.
+		if p.Type() == "lambda" {
 			return true
 		}
 	}
@@ -176,7 +300,47 @@ func (s *pythonLocalSources) inNestedScope(node *sitter.Node) bool {
 // observeClassName poisons a class statement's own name; pythonWalkClass
 // returns before observe sees the node.
 func (s *pythonLocalSources) observeClassName(node *sitter.Node, src []byte) {
-	s.poisonIdentifiers(node.ChildByFieldName("name"), src)
+	if name := node.ChildByFieldName(pythonFieldName); name != nil {
+		e := s.entry(name.Content(src))
+		e.poisoned = true
+		e.note(pythonBoundClass)
+	}
+}
+
+// observeImport poisons every name an import statement spells and counts one
+// import binding for each name it binds: `import a.b` binds a, `as x` binds x.
+func (s *pythonLocalSources) observeImport(node *sitter.Node, src []byte) {
+	s.markPoisoned(node, src)
+	from := node.Symbol() == pythonSyms.importFromStatement
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if from && node.FieldNameForChild(i) != pythonFieldName {
+			continue
+		}
+		var bound string
+		switch child := node.Child(i); child.Symbol() {
+		case pythonSyms.dottedName:
+			bound, _, _ = strings.Cut(child.Content(src), ".")
+		case pythonSyms.aliasedImport:
+			if alias := child.ChildByFieldName("alias"); alias != nil {
+				bound = alias.Content(src)
+			}
+		}
+		if bound != "" {
+			s.entry(bound).note(pythonBoundImport)
+		}
+	}
+}
+
+func (s *pythonLocalSources) markPoisoned(node *sitter.Node, src []byte) {
+	if node.Symbol() == pythonSyms.identifier {
+		e := s.entry(node.Content(src))
+		e.poisoned = true
+		e.rebound = e.rebound || e.parameter
+		return
+	}
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		s.markPoisoned(node.NamedChild(i), src)
+	}
 }
 
 func (s *pythonLocalSources) observeAssignment(node *sitter.Node, src []byte) {
@@ -196,6 +360,24 @@ func (s *pythonLocalSources) observeAssignment(node *sitter.Node, src []byte) {
 		}
 	}
 	s.poison(name)
+	if e := s.byName[name]; right != nil && right.Symbol() == pythonSyms.call && e.bindings == 1 && !s.inNestedScope(node) {
+		e.construction = right
+	}
+}
+
+// construction returns the call that constructs the receiver name, when the
+// function binds name exactly once, to that call, writes none of its
+// attributes, and uses it only to call its methods. A module-level name is
+// left out: any module may rebind it.
+func (s *pythonLocalSources) construction(name string) *sitter.Node {
+	if s == nil || s.all || s.module {
+		return nil
+	}
+	e := s.byName[name]
+	if e == nil || e.bindings != 1 || e.parameter || e.mutated || s.escaped[name] {
+		return nil
+	}
+	return e.construction
 }
 
 // poisonTarget poisons every name a binding target introduces. An attribute
@@ -205,20 +387,35 @@ func (s *pythonLocalSources) poisonTarget(target *sitter.Node, src []byte) {
 		return
 	}
 	if sym := target.Symbol(); sym == pythonSyms.attribute || sym == pythonSyms.subscript {
+		if object := target.ChildByFieldName("object"); sym == pythonSyms.attribute && object != nil && object.Symbol() == pythonSyms.identifier {
+			s.entry(object.Content(src)).mutated = true
+		}
 		return
 	}
 	s.poisonIdentifiers(target, src)
 }
 
-// pythonLocalSourceRoot admits the two value shapes a key size can come from:
-// an integer literal (empty root) and a zero-argument call through a dotted
-// name (a curve constructor such as ec.SECP521R1()), whose leading name is
-// returned so the use site can require it to be an import.
+// pythonLocalSourceRoot admits the value shapes a key size or an algorithm name
+// can come from: an integer literal or a plain string literal (empty root),
+// a zero-argument call through a dotted name (a curve constructor such as
+// ec.SECP521R1()), and a read that looks like a runtime input (os.getenv,
+// sys.argv[1]), whose leading name is returned so the use site can require
+// it to be an import.
 func pythonLocalSourceRoot(value *sitter.Node, src []byte) (root string, ok bool) {
 	switch value.Symbol() {
 	case pythonSyms.integer:
 		return "", true
+	case pythonSyms.string:
+		return "", pythonPlainString(value, src)
+	case pythonSyms.subscript:
+		if !pythonRuntimeShape(value, src) {
+			return "", false
+		}
+		return pythonDottedRoot(value.ChildByFieldName("value"), src)
 	case pythonSyms.call:
+		if pythonRuntimeShape(value, src) {
+			return pythonDottedRoot(value.ChildByFieldName("function"), src)
+		}
 		args := value.ChildByFieldName("arguments")
 		if args == nil || args.NamedChildCount() != 0 {
 			return "", false
@@ -231,6 +428,29 @@ func pythonLocalSourceRoot(value *sitter.Node, src []byte) (root string, ok bool
 	default:
 		return "", false
 	}
+}
+
+// pythonPlainString admits a string literal whose source text is its value:
+// one quote character, no prefix (f, b, r, u), no escape sequence, no
+// interpolation.
+func pythonPlainString(value *sitter.Node, src []byte) bool {
+	for i := 0; i < int(value.NamedChildCount()); i++ {
+		child := value.NamedChild(i)
+		switch child.Type() {
+		case "string_start":
+			if start := child.Content(src); start != `"` && start != "'" {
+				return false
+			}
+		case "string_content":
+			if child.NamedChildCount() != 0 {
+				return false
+			}
+		case "string_end":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func pythonDottedRoot(node *sitter.Node, src []byte) (string, bool) {
@@ -255,7 +475,9 @@ func pythonDottedRoot(node *sitter.Node, src []byte) (string, bool) {
 func (s *pythonLocalSources) poisonExisting() {
 	for _, e := range s.byName {
 		s.tick()
+		e.note(pythonBoundOther)
 		e.poisoned = true
+		e.rebound = e.rebound || e.parameter
 	}
 }
 

@@ -83,6 +83,7 @@ The interim report is the primary findings artifact. It contains finding metadat
 | `metadata.algorithmPrimitive` | Cryptographic primitive type |
 | `metadata.algorithmMode` | Mode of operation (for block ciphers) |
 | `metadata.algorithmPadding` | Padding scheme used |
+| `metadata.algorithmSource` | On an asset whose algorithm stayed unresolved, the runtime inputs the algorithm argument is read from: `env:NAME` (an environment variable), `property:KEY` (a Java system or `java.util.Properties` property) or `argv:N` (a program argument, at the index the program reads), sorted and comma-joined, at most 16. Set only when the scan builds a call graph and a rule states a `parameterCondition` for the call; absent when the algorithm resolved or no input key is known. Not carried into the CBOM |
 | `source` | `"direct"` (user code) or `"dependency"` (v1.2+) |
 | `dependency_info` | Attribution for dependency findings: `module`, `version`, and optional `purl` (v1.5+) |
 | `purl` | Optional canonical package URL promoted from direct rule metadata; it stays versionless unless one unambiguous direct dependency version is available (v1.6+) |
@@ -493,7 +494,7 @@ reported as reachable crypto.
 ```json
 {
   "schema_version": "graph-fragment-1.15",
-  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-19", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160, "supporting_call_count": 12, "crypto_entry_point_count": 42 },
+  "scan_metadata": { "ecosystem": "java", "root_module": "org.bouncycastle:bcpkix-jdk18on", "graph_algo_version": "graph-algo-24", "function_count": 4000, "internal_edge_count": 6417, "external_call_count": 9469, "crypto_operation_count": 160, "supporting_call_count": 12, "crypto_entry_point_count": 42 },
   "functions": [
     { "key": "org.bouncycastle.pkcs.(PKCS8EncryptedPrivateKeyInfo).decryptPrivateKeyInfo#1", "file_path": "org/bouncycastle/pkcs/PKCS8EncryptedPrivateKeyInfo.java" }
   ],

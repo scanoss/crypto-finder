@@ -135,7 +135,41 @@ const SchemaVersion = "graph-fragment-1.15"
 // gain the bypass edge Java and Python graphs already had. Rust gains none yet:
 // a Rust method's parameters count self while its call arguments do not, and
 // Rust calls record no argument sources.
-const GraphAlgoVersion = "graph-algo-19"
+//
+// graph-algo-20: a Python call argument that names a positional parameter of
+// a module-level function, a string local or a module string constant carries
+// its PARAMETER or VALUE source. A Python structural graph cached under
+// graph-algo-19 has none for them.
+//
+// graph-algo-21: a Java `Enum.C.name()` (and `toString()` the enum does not
+// override), a Python module string constant read from another module, and a
+// Python Enum member's `.value` / `.name` fold to the string they denote, as a
+// cross-class Java String constant already did. A structural graph cached
+// under graph-algo-20 keeps them unresolved.
+//
+// graph-algo-22: a no-argument getter that returns a field set from a
+// constructor parameter, called on `new T(..)` / `T(..)` or on a local bound
+// once to one, folds to the constructor argument, in Java and Python; a Java
+// enum constant's such getter folds to the constant's argument. Getters now
+// carry that FIELD{PARAMETER} return source. A structural graph cached under
+// graph-algo-21 keeps them unresolved.
+//
+// graph-algo-23: JavaScript and TypeScript calls carry argument provenance:
+// literals, plain parameters, stable locals and module constants, members of
+// TypeScript enums and enum-like objects, and exports of other project
+// modules, folded like the Java and Python ones. A getter of a field the
+// constructor sets carries the FIELD{PARAMETER} return source and folds to
+// the constructor argument. A structural graph cached under graph-algo-22
+// has none for Node.
+//
+// graph-algo-24: a Java, Python and JavaScript argument read from an
+// environment variable, a system or java.util.Properties property, or a
+// program argument (System.getenv, os.environ[..], process.env.X, args[i],
+// sys.argv[i], ...) is no longer a value: its key or default stops resolving
+// as the argument, and Python and Node gain a source node for the read,
+// directly or through a local bound to one. A structural graph cached under
+// graph-algo-23 has none of them.
+const GraphAlgoVersion = "graph-algo-24"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is

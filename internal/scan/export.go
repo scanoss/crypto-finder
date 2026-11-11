@@ -350,6 +350,9 @@ type exportSourceNode struct {
 	guard                    *callgraph.SourceGuard
 	callArgument             bool
 	sourceParameterIndex     int
+	// runtime is the runtime input the node's value is read from. Its
+	// children are the input's key or default, never its value.
+	runtime *callgraph.RuntimeSource
 }
 
 type exportSourceLocation struct {
@@ -3391,10 +3394,18 @@ func resolveIncomingParameterSources(ctx *exportBuildContext, calleeID *callgrap
 		}
 		for i := range caller.Calls {
 			call := &caller.Calls[i]
-			if call.Callee.String() != calleeID.String() || parameterIndex >= len(call.ArgumentSources) {
+			if call.Callee.String() != calleeID.String() {
 				continue
 			}
-			matches = append(matches, resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[parameterIndex], depth+1))
+			slot, ok := argumentSlot(len(call.Arguments), func(i int) string { return call.Arguments[i] }, parameterIndex, parameterName)
+			if !ok {
+				// This call site's value is unknown, so no agreed value exists.
+				return nil
+			}
+			if slot >= len(call.ArgumentSources) {
+				continue
+			}
+			matches = append(matches, resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[slot], depth+1))
 		}
 	}
 	return agreedIncomingSources(matches)
@@ -3538,6 +3549,9 @@ func resolveSimpleCallgraphSourceValue(nodes []callgraph.SourceNode) (string, bo
 	var resolved string
 	for i := range nodes {
 		node := &nodes[i]
+		if _, runtime := node.RuntimeSource(); runtime {
+			return "", false
+		}
 		value := strings.TrimSpace(node.Value)
 		ok := node.Type == sourceNodeTypeValue && value != ""
 		if !ok && len(node.SourceNodes) > 0 {
@@ -3621,6 +3635,7 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 			guard:                sourceNodeGuard(n),
 			callArgument:         n.Flow != nil && n.Flow.CallArgument,
 			sourceParameterIndex: n.ParameterIndex,
+			runtime:              exportRuntimeSource(n),
 		}
 		if n.Type == sourceNodeTypeParameter {
 			idx := n.ParameterIndex
@@ -3694,6 +3709,11 @@ func resolveSimpleExportParameterValue(expr string, sourceNodes []exportSourceNo
 	if value, ok := resolveSimpleExportSourceValue(sourceNodes); ok {
 		return value
 	}
+	if len(exportRuntimeSources(sourceNodes)) > 0 {
+		// process.env.ALG reads like an enum constant, but its value is the
+		// environment's.
+		return ""
+	}
 
 	expr = strings.TrimSpace(expr)
 	switch {
@@ -3766,6 +3786,9 @@ func resolveSimpleExportSourceValue(nodes []exportSourceNode) (string, bool) {
 }
 
 func resolveSimpleExportSourceValueNode(node exportSourceNode) (string, bool) {
+	if node.runtime != nil {
+		return "", false
+	}
 	switch node.Type {
 	case sourceNodeTypeValue:
 		value := strings.TrimSpace(node.Value)
@@ -4693,6 +4716,49 @@ func propagateSourceNodes(
 	return result
 }
 
+// argumentSlot is the position, among a call's n arguments, of the argument
+// that fills the callee parameter declared at index with name: the keyword
+// argument naming it (Python `alg="sha256"`), else the argument at index when
+// every argument up to it is positional. ok is false when no argument provably
+// fills the parameter: a keyword argument, a Python `*args` or a JavaScript
+// `...args` spread sits in the way. A JavaScript `f(a = v)` reads as a keyword
+// argument; the Node parser gives an assignment argument no sources, so the
+// misreading loses that call's value and never borrows another's.
+func argumentSlot(n int, expression func(int) string, index int, name string) (slot int, ok bool) {
+	if name != "" {
+		for i := range n {
+			if keyword := slotKeyword(expression(i)); keyword == name {
+				return i, true
+			}
+		}
+	}
+	if index < 0 || index >= n {
+		return 0, false
+	}
+	for i := 0; i <= index; i++ {
+		expr := strings.TrimSpace(expression(i))
+		if slotKeyword(expr) != "" || strings.HasPrefix(expr, "*") || strings.HasPrefix(expr, "...") {
+			return 0, false
+		}
+	}
+	return index, true
+}
+
+// slotKeyword is the Python keyword an argument names. A JavaScript arrow
+// function such as `x => x.trim()` also matches `name = value`, but no Python
+// keyword value starts with `>`.
+func slotKeyword(expr string) string {
+	keyword, value := splitKeywordArgument(expr, ecosystemPython)
+	if strings.HasPrefix(value, ">") {
+		return ""
+	}
+	return keyword
+}
+
+func parameterArgumentSlot(params []callGraphParameter, index int, name string) (int, bool) {
+	return argumentSlot(len(params), func(i int) string { return params[i].ArgumentExpression }, index, name)
+}
+
 func propagateSourceNodeChildren(
 	nodes []exportSourceNode,
 	upstream []callGraphParameter,
@@ -4708,8 +4774,8 @@ func propagateSourceNodeChildren(
 			if nodes[i].ParameterIndex == nil {
 				continue
 			}
-			upstreamIdx := *nodes[i].ParameterIndex
-			if upstreamIdx >= 0 && upstreamIdx < len(upstream) && len(upstream[upstreamIdx].SourceNodes) > 0 {
+			upstreamIdx, ok := parameterArgumentSlot(upstream, *nodes[i].ParameterIndex, nodes[i].Name)
+			if ok && len(upstream[upstreamIdx].SourceNodes) > 0 {
 				nodes[i].SourceNodes = append(
 					nodes[i].SourceNodes,
 					cloneSourceNodesWithFallback(upstream[upstreamIdx].SourceNodes, defaultFilePath, defaultLine)...,

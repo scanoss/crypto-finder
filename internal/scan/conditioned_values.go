@@ -4,6 +4,8 @@
 package scan
 
 import (
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -55,6 +57,11 @@ type conditionedValueEnumerator struct {
 	// dynamic per parameter.
 	dynamic     bool
 	dynamicMemo map[string]bool
+	// inputs collects the runtime inputs (env:NAME, argv:1, property:KEY)
+	// the routes into the walked parameter read, and inputsMemo keeps them
+	// per (function, parameter) as dynamicMemo does.
+	inputs     map[string]struct{}
+	inputsMemo map[string]map[string]struct{}
 }
 
 // conditionedUpstreamCall is the argument list of one call into a function,
@@ -63,6 +70,8 @@ type conditionedUpstreamCall struct {
 	params   []callGraphParameter
 	filePath string
 	line     int
+	// value is the resolved argument that fills the walked parameter.
+	value string
 }
 
 func newConditionedValueEnumerator(ctx *exportBuildContext) *conditionedValueEnumerator {
@@ -73,27 +82,30 @@ func newConditionedValueEnumerator(ctx *exportBuildContext) *conditionedValueEnu
 		memo:        make(map[string][]conditionedUpstreamCall),
 		onStack:     make(map[string]bool),
 		dynamicMemo: make(map[string]bool),
+		inputsMemo:  make(map[string]map[string]struct{}),
 	}
 }
 
 // terminalVariants returns copies of the terminal call's parameters, one per
 // distinct caller value of each unresolved parameter. truncated reports that
 // the depth cap or the value bound cut an enumeration, so some caller value
-// may be missing from the result. dynamic lists the parameter indices that
-// some route reaches with no resolved value, which no variant stands for.
-func (e *conditionedValueEnumerator) terminalVariants(owner callgraph.FunctionID, params []callGraphParameter) (variants [][]callGraphParameter, truncated bool, dynamic map[int]bool) {
+// may be missing from the result. dynamic holds the parameter indices that
+// some route reaches with no resolved value, which no variant stands for,
+// each with the sorted runtime inputs those routes read, when they name one.
+func (e *conditionedValueEnumerator) terminalVariants(owner callgraph.FunctionID, params []callGraphParameter) (variants [][]callGraphParameter, truncated bool, dynamic map[int][]string) {
 	e.truncated = false
-	dynamic = make(map[int]bool)
+	dynamic = make(map[int][]string)
 	for index := range params {
 		if params[index].ResolvedValue != "" {
 			continue
 		}
 		e.walkMemo = make(map[string][]conditionedUpstreamCall)
 		e.dynamic = false
+		e.inputs = make(map[string]struct{})
 		resolved, _ := e.resolveVariants(owner, params, index, 0)
 		variants = append(variants, resolved...)
-		if e.dynamic {
-			dynamic[index] = true
+		if e.dynamic || len(e.inputs) > 0 {
+			dynamic[index] = slices.Sorted(maps.Keys(e.inputs))
 		}
 	}
 	return variants, e.truncated, dynamic
@@ -112,6 +124,11 @@ func (e *conditionedValueEnumerator) resolveVariants(
 	}
 	complete = true
 	seen := make(map[string]struct{})
+	for _, input := range exportRuntimeSources(params[index].SourceNodes) {
+		if input.Key != "" {
+			e.inputs[string(input.Kind)+":"+input.Key] = struct{}{}
+		}
+	}
 	callerIndices := propagatedParameterIndices(params[index].SourceNodes)
 	if len(callerIndices) == 0 {
 		e.dynamic = true
@@ -144,10 +161,12 @@ func (e *conditionedValueEnumerator) callerArguments(fn callgraph.FunctionID, in
 	key := fn.String() + "\x00" + strconv.Itoa(index)
 	if cached, ok := e.memo[key]; ok {
 		e.dynamic = e.dynamic || e.dynamicMemo[key]
+		maps.Copy(e.inputs, e.inputsMemo[key])
 		return cached, true
 	}
 	if cached, ok := e.walkMemo[key]; ok {
 		e.dynamic = e.dynamic || e.dynamicMemo[key]
+		maps.Copy(e.inputs, e.inputsMemo[key])
 		return cached, false
 	}
 	if e.onStack[key] {
@@ -160,14 +179,16 @@ func (e *conditionedValueEnumerator) callerArguments(fn callgraph.FunctionID, in
 		return nil, false
 	}
 	e.onStack[key] = true
-	outerDynamic := e.dynamic
-	e.dynamic = false
+	outerDynamic, outerInputs := e.dynamic, e.inputs
+	e.dynamic, e.inputs = false, make(map[string]struct{})
 	calls, complete := e.collectCallerArguments(fn, index, depth)
 	delete(e.onStack, key)
 	if e.dynamic {
 		e.dynamicMemo[key] = true
 	}
-	e.dynamic = e.dynamic || outerDynamic
+	e.inputsMemo[key] = e.inputs
+	maps.Copy(outerInputs, e.inputs)
+	e.dynamic, e.inputs = e.dynamic || outerDynamic, outerInputs
 	// A walk a cycle cut short is only partial from this entry; recompute it
 	// from the next one instead of caching the partial set.
 	if complete {
@@ -192,7 +213,7 @@ func (e *conditionedValueEnumerator) collectCallerArguments(fn callgraph.Functio
 			site, siteComplete := e.callSiteArguments(callerFn, call, fn, index, depth)
 			complete = complete && siteComplete
 			for _, upstream := range site {
-				admitted, full := e.admit(seen, upstream.params[index].ResolvedValue)
+				admitted, full := e.admit(seen, upstream.value)
 				if full {
 					e.logValueBound(fn, index)
 					return calls, false
@@ -219,15 +240,26 @@ func (e *conditionedValueEnumerator) callSiteArguments(
 		filePath = callerFn.FilePath
 	}
 	entry := buildEntryCall(e.ctx, e.ctx.graph, callerFn.ID, filePath, call.Line, call.StartCol, call.EndCol, fn)
-	if index >= len(entry.Parameters) {
+	slot, ok := parameterArgumentSlot(entry.Parameters, index, e.parameterName(fn, index))
+	if !ok {
+		// The call passes the parameter by a form no position resolves, or
+		// leaves it to its default: its value is unknown.
+		e.dynamic = true
 		return nil, true
 	}
-	variants, complete := e.resolveVariants(callerFn.ID, entry.Parameters, index, depth+1)
+	variants, complete := e.resolveVariants(callerFn.ID, entry.Parameters, slot, depth+1)
 	calls := make([]conditionedUpstreamCall, len(variants))
 	for i := range variants {
-		calls[i] = conditionedUpstreamCall{params: variants[i], filePath: entry.FilePath, line: entry.Line}
+		calls[i] = conditionedUpstreamCall{params: variants[i], filePath: entry.FilePath, line: entry.Line, value: variants[i][slot].ResolvedValue}
 	}
 	return calls, complete
+}
+
+func (e *conditionedValueEnumerator) parameterName(fn callgraph.FunctionID, index int) string {
+	if decl := e.ctx.graph.Functions[fn.String()]; decl != nil && index < len(decl.Parameters) {
+		return decl.Parameters[index].Name
+	}
+	return ""
 }
 
 // admit records a new resolved value. full reports that the bound was reached
@@ -265,6 +297,9 @@ func propagatedParameterIndices(nodes []exportSourceNode) []int {
 
 func collectPropagatedParameterIndices(nodes []exportSourceNode, set map[int]struct{}) {
 	for i := range nodes {
+		if nodes[i].runtime != nil {
+			continue
+		}
 		switch nodes[i].Type {
 		case sourceNodeTypeCallResult:
 			collectPropagatedParameterIndices(nodes[i].SourceNodes, set)
@@ -274,4 +309,26 @@ func collectPropagatedParameterIndices(nodes []exportSourceNode, set map[int]str
 			}
 		}
 	}
+}
+
+// exportRuntimeSources lists the runtime inputs nodes read their value from,
+// keyless ones included. A runtime node's children are its key, not its
+// value, so the walk stops at it.
+func exportRuntimeSources(nodes []exportSourceNode) []callgraph.RuntimeSource {
+	var sources []callgraph.RuntimeSource
+	for i := range nodes {
+		if nodes[i].runtime != nil {
+			sources = append(sources, *nodes[i].runtime)
+			continue
+		}
+		sources = append(sources, exportRuntimeSources(nodes[i].SourceNodes)...)
+	}
+	return sources
+}
+
+func exportRuntimeSource(node *callgraph.SourceNode) *callgraph.RuntimeSource {
+	if source, ok := node.RuntimeSource(); ok {
+		return &source
+	}
+	return nil
 }
