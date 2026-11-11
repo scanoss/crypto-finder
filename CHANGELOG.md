@@ -125,10 +125,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `manifest_absent`; it now resolves its Python dependencies. The ecosystems
   of the detected languages, dominant first, are tried before the other
   ecosystems whose manifest sits at the target, and the first one whose
-  resolver can read the target or a module root below it is picked. Python,
+  resolver can read the target or a module root below it is the primary one;
+  the others that can be read are resolved beside it (see Changed). Python,
   which reads the interpreter's installed packages rather than a manifest, is
-  picked over the dominant language only when the target has a Python
-  manifest (`pyproject.toml`, `requirements.txt`, `Pipfile` or `setup.py`).
+  resolved beside or ahead of the dominant language only when the target has
+  a Python manifest (`pyproject.toml`, `requirements.txt`, `Pipfile` or
+  `setup.py`).
   When no ecosystem can be resolved the scan skips the phase exactly as
   before. An explicit `--dep-ecosystem` is unchanged.
 - The skipped `dependencies` event of `--progress` now names the ecosystem it
