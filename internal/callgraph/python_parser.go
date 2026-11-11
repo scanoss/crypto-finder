@@ -1047,7 +1047,11 @@ func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw
 	}
 	var attrs map[string]bool
 	var bases []string
+	positional := pythonPositionalParameterCount(node.ChildByFieldName("parameters"))
 	if activeClassInfo != nil {
+		// A method's self or cls is bound by the receiver, so a declared
+		// index is not the caller's argument position.
+		positional = 0
 		attrs = activeClassInfo.attrs
 		bases = activeClassInfo.bases
 		// row 11: a class declaring its own __call__ method registers its
@@ -1062,9 +1066,7 @@ func (p *PythonParser) pythonWalkEnterFunction(node *sitter.Node, src []byte, fw
 		}
 	}
 	scope := &pythonScope{locals: root, attrs: attrs, bases: bases, varTypes: varTypes}
-	for _, name := range paramNames {
-		scope.sources.poison(name)
-	}
+	scope.sources.bindParameters(paramNames, positional)
 	if decoratorInfo != nil {
 		scope.staticMethod = decoratorInfo.static
 		if decoratorInfo.classMethod && param0 != "" && param0 != pythonClsObjectName {
@@ -2123,6 +2125,27 @@ func pythonSelfOrClsAttr(object string) (attr string, ok bool) {
 // are skipped. self/cls ARE recorded here (they are still legitimate local
 // names): pythonBindings.receiverIdentity is what refuses to ever return them
 // as a receiver identity, via its self/cls bare-name check.
+// pythonPositionalParameterCount is how many leading parameters a caller can
+// pass by position: those before the first *args, bare * or **kwargs.
+func pythonPositionalParameterCount(params *sitter.Node) int {
+	if params == nil {
+		return 0
+	}
+	n := 0
+	for i := 0; i < int(params.NamedChildCount()); i++ {
+		child := params.NamedChild(i)
+		switch child.Symbol() {
+		case pythonSyms.identifier, pythonSyms.typedParameter, pythonSyms.defaultParameter, pythonSyms.typedDefaultParameter:
+			n++
+		default:
+			if child.Type() != "positional_separator" {
+				return n
+			}
+		}
+	}
+	return n
+}
+
 func pythonParameterNames(params *sitter.Node, src []byte) []string {
 	if params == nil {
 		return nil
@@ -2868,6 +2891,14 @@ func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte,
 		return []SourceNode{sn}
 	case pythonSyms.identifier:
 		name := argNode.Content(src)
+		if index, ok := bindings.locals.parameterSource(name); ok {
+			return []SourceNode{{
+				Type:           "PARAMETER",
+				Name:           name,
+				ParameterIndex: index,
+				Location:       &SourceLocation{FilePath: filePath, Line: int(argNode.StartPoint().Row) + 1},
+			}}
+		}
 		if local, known := bindings.locals.lookup(name); known {
 			return p.pythonLocalArgumentSource(name, local, src, filePath, analysis, bindings, fw, depth)
 		}

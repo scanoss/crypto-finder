@@ -63,6 +63,8 @@ type conditionedUpstreamCall struct {
 	params   []callGraphParameter
 	filePath string
 	line     int
+	// value is the resolved argument that fills the walked parameter.
+	value string
 }
 
 func newConditionedValueEnumerator(ctx *exportBuildContext) *conditionedValueEnumerator {
@@ -192,7 +194,7 @@ func (e *conditionedValueEnumerator) collectCallerArguments(fn callgraph.Functio
 			site, siteComplete := e.callSiteArguments(callerFn, call, fn, index, depth)
 			complete = complete && siteComplete
 			for _, upstream := range site {
-				admitted, full := e.admit(seen, upstream.params[index].ResolvedValue)
+				admitted, full := e.admit(seen, upstream.value)
 				if full {
 					e.logValueBound(fn, index)
 					return calls, false
@@ -219,15 +221,26 @@ func (e *conditionedValueEnumerator) callSiteArguments(
 		filePath = callerFn.FilePath
 	}
 	entry := buildEntryCall(e.ctx, e.ctx.graph, callerFn.ID, filePath, call.Line, call.StartCol, call.EndCol, fn)
-	if index >= len(entry.Parameters) {
+	slot, ok := parameterArgumentSlot(entry.Parameters, index, e.parameterName(fn, index))
+	if !ok {
+		// The call passes the parameter by a form no position resolves, or
+		// leaves it to its default: its value is unknown.
+		e.dynamic = true
 		return nil, true
 	}
-	variants, complete := e.resolveVariants(callerFn.ID, entry.Parameters, index, depth+1)
+	variants, complete := e.resolveVariants(callerFn.ID, entry.Parameters, slot, depth+1)
 	calls := make([]conditionedUpstreamCall, len(variants))
 	for i := range variants {
-		calls[i] = conditionedUpstreamCall{params: variants[i], filePath: entry.FilePath, line: entry.Line}
+		calls[i] = conditionedUpstreamCall{params: variants[i], filePath: entry.FilePath, line: entry.Line, value: variants[i][slot].ResolvedValue}
 	}
 	return calls, complete
+}
+
+func (e *conditionedValueEnumerator) parameterName(fn callgraph.FunctionID, index int) string {
+	if decl := e.ctx.graph.Functions[fn.String()]; decl != nil && index < len(decl.Parameters) {
+		return decl.Parameters[index].Name
+	}
+	return ""
 }
 
 // admit records a new resolved value. full reports that the bound was reached

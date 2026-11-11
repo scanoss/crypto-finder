@@ -135,7 +135,12 @@ const SchemaVersion = "graph-fragment-1.15"
 // gain the bypass edge Java and Python graphs already had. Rust gains none yet:
 // a Rust method's parameters count self while its call arguments do not, and
 // Rust calls record no argument sources.
-const GraphAlgoVersion = "graph-algo-19"
+//
+// graph-algo-20: a Python call argument that names a positional parameter of
+// a module-level function, a string local or a module string constant carries
+// its PARAMETER or VALUE source. A Python structural graph cached under
+// graph-algo-19 has none for them.
+const GraphAlgoVersion = "graph-algo-20"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is

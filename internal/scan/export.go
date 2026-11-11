@@ -3391,10 +3391,18 @@ func resolveIncomingParameterSources(ctx *exportBuildContext, calleeID *callgrap
 		}
 		for i := range caller.Calls {
 			call := &caller.Calls[i]
-			if call.Callee.String() != calleeID.String() || parameterIndex >= len(call.ArgumentSources) {
+			if call.Callee.String() != calleeID.String() {
 				continue
 			}
-			matches = append(matches, resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[parameterIndex], depth+1))
+			slot, ok := argumentSlot(len(call.Arguments), func(i int) string { return call.Arguments[i] }, parameterIndex, parameterName)
+			if !ok {
+				// This call site's value is unknown, so no agreed value exists.
+				return nil
+			}
+			if slot >= len(call.ArgumentSources) {
+				continue
+			}
+			matches = append(matches, resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[slot], depth+1))
 		}
 	}
 	return agreedIncomingSources(matches)
@@ -4693,6 +4701,37 @@ func propagateSourceNodes(
 	return result
 }
 
+// argumentSlot is the position, among a call's n arguments, of the argument
+// that fills the callee parameter declared at index with name: the keyword
+// argument naming it (Python `alg="sha256"`), else the argument at index when
+// every argument up to it is positional. ok is false when no argument provably
+// fills the parameter: a keyword argument or a `*args` splat sits in the way.
+// Only Java and Python emit PARAMETER provenance, and a Java argument is never
+// keyword-shaped or starred.
+func argumentSlot(n int, expression func(int) string, index int, name string) (slot int, ok bool) {
+	if name != "" {
+		for i := range n {
+			if keyword, _ := splitKeywordArgument(expression(i), ecosystemPython); keyword == name {
+				return i, true
+			}
+		}
+	}
+	if index < 0 || index >= n {
+		return 0, false
+	}
+	for i := 0; i <= index; i++ {
+		expr := strings.TrimSpace(expression(i))
+		if keyword, _ := splitKeywordArgument(expr, ecosystemPython); keyword != "" || strings.HasPrefix(expr, "*") {
+			return 0, false
+		}
+	}
+	return index, true
+}
+
+func parameterArgumentSlot(params []callGraphParameter, index int, name string) (int, bool) {
+	return argumentSlot(len(params), func(i int) string { return params[i].ArgumentExpression }, index, name)
+}
+
 func propagateSourceNodeChildren(
 	nodes []exportSourceNode,
 	upstream []callGraphParameter,
@@ -4708,8 +4747,8 @@ func propagateSourceNodeChildren(
 			if nodes[i].ParameterIndex == nil {
 				continue
 			}
-			upstreamIdx := *nodes[i].ParameterIndex
-			if upstreamIdx >= 0 && upstreamIdx < len(upstream) && len(upstream[upstreamIdx].SourceNodes) > 0 {
+			upstreamIdx, ok := parameterArgumentSlot(upstream, *nodes[i].ParameterIndex, nodes[i].Name)
+			if ok && len(upstream[upstreamIdx].SourceNodes) > 0 {
 				nodes[i].SourceNodes = append(
 					nodes[i].SourceNodes,
 					cloneSourceNodesWithFallback(upstream[upstreamIdx].SourceNodes, defaultFilePath, defaultLine)...,

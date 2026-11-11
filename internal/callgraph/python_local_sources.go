@@ -56,6 +56,13 @@ type pythonLocalSource struct {
 	// `ec.SECP521R1()`), empty for an integer literal.
 	root     string
 	poisoned bool
+	// parameter marks a parameter of the indexed function that callers can
+	// pass by position, at parameterIndex. rebound records any other binding
+	// of the name, after which the value at a use may differ from the
+	// caller's argument.
+	parameter      bool
+	rebound        bool
+	parameterIndex int
 }
 
 func (s *pythonLocalSources) entry(name string) *pythonLocalSource {
@@ -73,6 +80,7 @@ func (s *pythonLocalSources) entry(name string) *pythonLocalSource {
 
 func (s *pythonLocalSources) bind(name string, value *sitter.Node, text, root string) {
 	e := s.entry(name)
+	e.rebound = e.rebound || e.parameter
 	switch {
 	case e.poisoned:
 	case e.value == nil && e.text == "":
@@ -83,7 +91,35 @@ func (s *pythonLocalSources) bind(name string, value *sitter.Node, text, root st
 }
 
 func (s *pythonLocalSources) poison(name string) {
-	s.entry(name).poisoned = true
+	e := s.entry(name)
+	e.poisoned = true
+	e.rebound = e.rebound || e.parameter
+}
+
+// bindParameters records the indexed function's parameters. Every name stays
+// poisoned for lookup, since its value comes from the caller; the first
+// positional ones are kept as parameters a caller fills by position.
+func (s *pythonLocalSources) bindParameters(names []string, positional int) {
+	for i, name := range names {
+		e := s.entry(name)
+		e.poisoned = true
+		if i < positional {
+			e.parameter, e.parameterIndex = true, i
+		}
+	}
+}
+
+// parameterSource returns the parameter index a use of name reads, ok only
+// when the function never rebinds the parameter.
+func (s *pythonLocalSources) parameterSource(name string) (index int, ok bool) {
+	if s == nil || s.all {
+		return 0, false
+	}
+	e := s.byName[name]
+	if e == nil || !e.parameter || e.rebound {
+		return 0, false
+	}
+	return e.parameterIndex, true
 }
 
 func (s *pythonLocalSources) poisonIdentifiers(node *sitter.Node, src []byte) {
@@ -210,14 +246,17 @@ func (s *pythonLocalSources) poisonTarget(target *sitter.Node, src []byte) {
 	s.poisonIdentifiers(target, src)
 }
 
-// pythonLocalSourceRoot admits the two value shapes a key size can come from:
-// an integer literal (empty root) and a zero-argument call through a dotted
-// name (a curve constructor such as ec.SECP521R1()), whose leading name is
-// returned so the use site can require it to be an import.
+// pythonLocalSourceRoot admits the value shapes a key size or an algorithm name
+// can come from: an integer literal or a plain string literal (empty root),
+// and a zero-argument call through a dotted name (a curve constructor such as
+// ec.SECP521R1()), whose leading name is returned so the use site can require
+// it to be an import.
 func pythonLocalSourceRoot(value *sitter.Node, src []byte) (root string, ok bool) {
 	switch value.Symbol() {
 	case pythonSyms.integer:
 		return "", true
+	case pythonSyms.string:
+		return "", pythonPlainString(value, src)
 	case pythonSyms.call:
 		args := value.ChildByFieldName("arguments")
 		if args == nil || args.NamedChildCount() != 0 {
@@ -231,6 +270,29 @@ func pythonLocalSourceRoot(value *sitter.Node, src []byte) (root string, ok bool
 	default:
 		return "", false
 	}
+}
+
+// pythonPlainString admits a string literal whose source text is its value:
+// one quote character, no prefix (f, b, r, u), no escape sequence, no
+// interpolation.
+func pythonPlainString(value *sitter.Node, src []byte) bool {
+	for i := 0; i < int(value.NamedChildCount()); i++ {
+		child := value.NamedChild(i)
+		switch child.Type() {
+		case "string_start":
+			if start := child.Content(src); start != `"` && start != "'" {
+				return false
+			}
+		case "string_content":
+			if child.NamedChildCount() != 0 {
+				return false
+			}
+		case "string_end":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func pythonDottedRoot(node *sitter.Node, src []byte) (string, bool) {
@@ -256,6 +318,7 @@ func (s *pythonLocalSources) poisonExisting() {
 	for _, e := range s.byName {
 		s.tick()
 		e.poisoned = true
+		e.rebound = e.rebound || e.parameter
 	}
 }
 
