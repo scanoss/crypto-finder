@@ -613,3 +613,64 @@ func splitTopLevelArgs(list string) []string {
 	}
 	return args
 }
+
+// ristrettoDHSrc is the curve25519-dalek Diffie-Hellman of the SCANOSS crypto
+// benchmark (suite A, ristretto_dh.rs): the key agreement is the binary `*`,
+// and its peer operand is the program's own `decode` helper.
+const ristrettoDHSrc = `use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+use curve25519_dalek::scalar::Scalar;
+
+fn main() {
+    let alice_secret = Scalar::random(&mut rand_core::OsRng);
+    let bob_secret = Scalar::random(&mut rand_core::OsRng);
+    let bob_public = RistrettoPoint::mul_base(&bob_secret).compress();
+    let alice_shared = alice_secret * decode(&bob_public);
+    let own = Helper;
+    let _ = own.decode(&bob_public).compress();
+}
+
+struct Helper;
+impl Helper {
+    fn decode(&self, point: &CompressedRistretto) -> RistrettoPoint {
+        point.decompress().unwrap()
+    }
+}
+
+fn decode(point: &CompressedRistretto) -> RistrettoPoint {
+    point.decompress().expect("valid ristretto encoding")
+}
+`
+
+const ristrettoDHRule = "rust.curve25519-dalek.algorithm.key-agree.ristretto-dh"
+
+// A binary operator has no call node. When the matched operation is
+// `secret * decode(&peer)`, the only call on the span is the program's own
+// `decode` helper, an operand of the match rather than the operation, so it
+// cannot tell whose API the match is: the asset is kept (CF-RS-005).
+func TestForeignReceiverFilter_KeepsAnOperatorWhoseOperandIsTheProgramsOwnCall(t *testing.T) {
+	t.Parallel()
+	result := buildRustResultForFilter(t, "app", ristrettoDHSrc)
+	line, sc, ec := lineOf(t, ristrettoDHSrc, "alice_secret * decode(&bob_public)")
+	report := reportAt(ristrettoDHRule, line, sc, ec)
+
+	if got := FilterForeignReceiverAssets(report, result); got != 0 {
+		t.Fatalf("dropped = %d, want 0 — the program's decode helper is an operand of the matched `*`, not the operation", got)
+	}
+	if got := assetCount(report); got != 1 {
+		t.Fatalf("assets left = %d, want 1", got)
+	}
+}
+
+// The cost side: a match that starts at the program's own call is that call,
+// so a crate rule claiming it is still dropped, also when the call heads a
+// longer chain.
+func TestForeignReceiverFilter_StillDropsAMatchThatStartsAtTheProgramsOwnCall(t *testing.T) {
+	t.Parallel()
+	result := buildRustResultForFilter(t, "app", ristrettoDHSrc)
+	line, sc, ec := lineOf(t, ristrettoDHSrc, "own.decode(&bob_public)")
+	report := reportAt(ristrettoDHRule, line, sc, ec)
+
+	if got := FilterForeignReceiverAssets(report, result); got != 1 {
+		t.Fatalf("dropped = %d, want 1 — the match is the program's own Helper.decode", got)
+	}
+}
