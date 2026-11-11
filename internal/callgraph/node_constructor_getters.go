@@ -86,8 +86,15 @@ func nodeMethodHasModifier(method *sitter.Node) bool {
 
 // countThisWrites counts, per field, the writes to `this.<field>` anywhere in
 // node, a TypeScript parameter property included. It reports false when a
-// write names no field: `this[k] = v`, Object.assign(this, ..).
+// write names no field (`this[k] = v`, Object.assign(this, ..)), or when
+// `this` is used other than to reach a member: passed, returned or stored,
+// the object reaches code that may write any field.
 func (x *nodeValueIndex) countThisWrites(node *sitter.Node, writes map[string]int) bool {
+	if node.Type() == nodeThisNode {
+		parent := node.Parent()
+		return parent != nil && (parent.Type() == nodeMemberExpression || parent.Type() == nodeSubscriptExpression) &&
+			sameSyntaxNode(parent.ChildByFieldName("object"), node)
+	}
 	ok := true
 	eachNodeWriteLeaf(nodeWriteTarget(node, x.src), func(leaf *sitter.Node) {
 		ok = x.countThisWrite(leaf, writes) && ok
@@ -153,14 +160,16 @@ func (x *nodeValueIndex) constructorParameterFields(ctor *sitter.Node, writes ma
 }
 
 // constructorFieldAssignment reads `this.f = p` where p is a plain parameter
-// of ctor and f is written nowhere else.
+// of ctor and f is written nowhere else in the class or the file.
 func (x *nodeValueIndex) constructorFieldAssignment(n, ctor *sitter.Node, writes map[string]int) (string, SourceNode, bool) {
 	if n.Type() != nodeAssignmentExpression {
 		return "", SourceNode{}, false
 	}
 	right := n.ChildByFieldName("right")
 	field, ok := x.thisField(n.ChildByFieldName("left"))
-	if !ok || writes[field] != 1 || right == nil || right.Type() != goNodeIdentifier {
+	// propertyWrites sees `h.f = ..` through any other reference in the file,
+	// such as a static method's parameter or a local of a static block.
+	if !ok || writes[field] != 1 || x.propertyWrites[field] != 0 || right == nil || right.Type() != goNodeIdentifier {
 		return "", SourceNode{}, false
 	}
 	d := x.resolve(right.Content(x.src), right)

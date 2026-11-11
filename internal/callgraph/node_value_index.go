@@ -4,6 +4,8 @@
 package callgraph
 
 import (
+	"strconv"
+
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
@@ -72,6 +74,10 @@ type nodeDecl struct {
 	writes       int
 	memberWrites bool
 	escapes      int
+	// memberValue marks a member of a binding that holds a construction read
+	// other than as the callee of a direct call in the binding's own
+	// function: `o.m` taken as a value, or `o.m()` inside a closure.
+	memberValue bool
 }
 
 // nodeValueIndex holds, for one file, every binding of every name and every
@@ -86,6 +92,9 @@ type nodeValueIndex struct {
 	argumentsUsers map[uint32]bool
 	// disabled marks a file that binds names dynamically (eval, with).
 	disabled bool
+	// propertyWrites counts, per property name, the writes anywhere in the
+	// file to `o.<name>` or `o["<name>"]` through an object other than this.
+	propertyWrites map[string]int
 }
 
 func newNodeValueIndex(root *sitter.Node, src []byte, filePath, packagePath, modulePath string) *nodeValueIndex {
@@ -93,6 +102,7 @@ func newNodeValueIndex(root *sitter.Node, src []byte, filePath, packagePath, mod
 		src: src, filePath: filePath, packagePath: packagePath, modulePath: modulePath,
 		decls:          make(map[string][]*nodeDecl),
 		argumentsUsers: make(map[uint32]bool),
+		propertyWrites: make(map[string]int),
 	}
 	x.collectDecls(root, root, nil)
 	x.collectUses(root)
@@ -473,11 +483,36 @@ func (x *nodeValueIndex) collectUses(node *sitter.Node) {
 func (x *nodeValueIndex) write(leaf *sitter.Node) {
 	if leaf.Type() == nodeMemberExpression || leaf.Type() == nodeSubscriptExpression {
 		x.markMemberWrite(nodeMemberRoot(leaf))
+		if name, ok := x.writtenProperty(leaf); ok {
+			x.propertyWrites[name]++
+		}
 		return
 	}
 	if d := x.resolve(leaf.Content(x.src), leaf); d != nil {
 		d.writes++
 	}
+}
+
+// writtenProperty names the property a member or subscript write target
+// sets through an object other than this, when its key is spelled: `o.f`,
+// `o.#f`, `o["f"]`.
+func (x *nodeValueIndex) writtenProperty(leaf *sitter.Node) (string, bool) {
+	if object := leaf.ChildByFieldName("object"); object == nil || object.Type() == nodeThisNode {
+		return "", false
+	}
+	if leaf.Type() == nodeMemberExpression {
+		if property := leaf.ChildByFieldName("property"); property != nil {
+			return property.Content(x.src), true
+		}
+		return "", false
+	}
+	if index := leaf.ChildByFieldName("index"); index != nil && index.Type() == nodeStringNode {
+		if quoted, ok := canonicalNodeStringLiteral(index.Content(x.src)); ok {
+			name, err := strconv.Unquote(quoted)
+			return name, err == nil
+		}
+	}
+	return "", false
 }
 
 // nodeMemberRoot is the object a chain of member and subscript accesses
@@ -543,11 +578,34 @@ func (x *nodeValueIndex) identifier(node *sitter.Node) {
 		}
 		return
 	}
-	if parent := node.Parent(); parent == nil || nodeIsNameField(parent, node) {
+	parent := node.Parent()
+	if parent == nil {
+		return
+	}
+	if parent.Type() == nodeMemberExpression && nodeIsNameField(parent, node) {
+		x.memberRead(name, node, parent)
+		return
+	}
+	if nodeIsNameField(parent, node) {
 		return
 	}
 	if d := x.resolve(name, node); d != nil {
 		d.escapes++
+	}
+}
+
+// memberRead marks memberValue on a binding that holds a construction when
+// member, read off node, is not the callee of a direct call in that
+// binding's own function.
+func (x *nodeValueIndex) memberRead(name string, node, member *sitter.Node) {
+	d := x.resolve(name, node)
+	if d == nil || d.memberValue || d.value == nil || unwrapNodeValue(d.value).Type() != nodeNewExpression {
+		return
+	}
+	call := member.Parent()
+	if call == nil || call.Type() != nodeCallExpression || !sameSyntaxNode(call.ChildByFieldName("function"), member) ||
+		!sameOptionalNode(nodeEnclosingFunction(node), d.fn) {
+		d.memberValue = true
 	}
 }
 

@@ -372,11 +372,13 @@ func (p *NodeParser) nodeGetterSource(call *sitter.Node, depth int) []SourceNode
 
 // localConstruction returns the `new C(..)` a function local holds at use:
 // a const or never reassigned let of the function holding use, no member of
-// which is written.
+// which is written, used only as the receiver of direct method calls in that
+// function. Passed, aliased, returned, stored or captured, the object
+// reaches code that may write its fields.
 func (x *nodeValueIndex) localConstruction(name, use *sitter.Node) *sitter.Node {
 	d := x.resolve(name.Content(x.src), name)
 	if d == nil || d.fn == nil || (d.kind != nodeDeclConst && d.kind != nodeDeclLet) ||
-		!x.stable(d, use) || d.memberWrites || !sameOptionalNode(nodeEnclosingFunction(use), d.fn) {
+		!x.stable(d, use) || d.memberWrites || d.escapes > 0 || d.memberValue || !sameOptionalNode(nodeEnclosingFunction(use), d.fn) {
 		return nil
 	}
 	return unwrapNodeValue(d.value)
