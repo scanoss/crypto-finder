@@ -1252,23 +1252,8 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				// too. Each scans on top of the report the previous one
 				// returned, so the findings of all of them accumulate, and
 				// its result joins the primary as an additional ecosystem.
-				for _, extraEcosystem := range auto.secondary() {
-					extraResolver, resolverErr := depRegistry.Get(extraEcosystem)
-					if resolverErr != nil {
-						// planAutoDependencyEcosystems kept only ecosystems with a resolver.
-						outcome.skipped = append(outcome.skipped, dependencyEcosystemSkip{Ecosystem: extraEcosystem, Reason: depSkipResolverUnavailable})
-						continue
-					}
-					extra, extraSkip, extraErr := scanEcosystem(extraEcosystem, extraResolver, depResult.Report)
-					if extraErr != nil {
-						return extraErr
-					}
-					if extraSkip != "" {
-						outcome.skipped = append(outcome.skipped, dependencyEcosystemSkip{Ecosystem: extraEcosystem, Reason: extraSkip})
-						continue
-					}
-					outcome.resolved = append(outcome.resolved, extra)
-					depResult = extra
+				if err := outcome.resolveSecondary(auto.secondary(), depRegistry.Get, scanEcosystem); err != nil {
+					return err
 				}
 				callGraphResult = outcome.primaryWithAdditional()
 				report = callGraphResult.Report

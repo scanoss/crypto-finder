@@ -10,7 +10,10 @@
   `scan_metadata.ecosystems` counts its dependencies' functions and edges.
   The export schema version is unchanged. An ecosystem whose call graph
   cannot be set up is skipped and the others are still resolved; a failed
-  dependency scan of any ecosystem still fails the phase. An explicit
+  resolution or dependency scan fails the scan for the primary ecosystem
+  and for an explicit `--dep-ecosystem`, while for any other ecosystem it is
+  reported in `ecosystems_skipped` as `resolution_failed` and the other
+  ecosystems' results are kept. An explicit
   `--dep-ecosystem` resolves that ecosystem alone, as before. The graph
   fragment (`--export-graph-fragment`) still covers the primary ecosystem
   only.

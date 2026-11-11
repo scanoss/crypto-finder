@@ -7,8 +7,11 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
+	"github.com/scanoss/crypto-finder/internal/entities"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 )
 
@@ -20,6 +23,10 @@ const (
 	depSkipParserUnavailable    = "parser_unavailable"
 	depSkipCallgraphUnavailable = "callgraph_unavailable"
 	depSkipNotRequested         = "not_requested"
+	// depSkipResolutionFailed names a secondary auto-mode ecosystem whose
+	// resolution or dependency scan failed. It is an ecosystems_skipped
+	// reason only: a failure of the primary ecosystem still fails the scan.
+	depSkipResolutionFailed = "resolution_failed"
 
 	// progressStatusCompleted is the status of a phase that finished.
 	progressStatusCompleted = "completed"
@@ -119,6 +126,54 @@ func (o dependencyEcosystemOutcome) primaryWithAdditional() *engine.DepScanResul
 		}
 	}
 	return primary
+}
+
+// dependencyEcosystemScan resolves and scans the dependencies of one
+// ecosystem on top of input. A non-empty skip reason means it did not run.
+type dependencyEcosystemScan func(ecosystem string, resolver dependency.Resolver, input *entities.InterimReport) (*engine.DepScanResult, string, error)
+
+// resolveSecondary resolves every secondary auto-mode ecosystem on top of the
+// report the last resolved one returned, appending each to resolved or, when
+// it cannot run, to skipped.
+//
+// A secondary ecosystem is one auto mode added only because a manifest was
+// there; the user never asked for it. Its failure must not cost the scan the
+// primary ecosystem's results, which it completed with before auto mode
+// resolved more than one: a Node application with a stray pom.xml on a host
+// without mvn, or offline, would otherwise exit with no report. The failure
+// is logged and reported as resolution_failed, and the remaining ecosystems
+// still resolve. Cancellation still stops the scan, as does any failure of
+// the primary or of an explicit --dep-ecosystem, which never reach here.
+func (o *dependencyEcosystemOutcome) resolveSecondary(
+	ecosystems []string,
+	resolverFor func(string) (dependency.Resolver, error),
+	scan dependencyEcosystemScan,
+) error {
+	for _, ecosystem := range ecosystems {
+		resolver, err := resolverFor(ecosystem)
+		if err != nil {
+			// planAutoDependencyEcosystems kept only ecosystems with a resolver.
+			o.skipped = append(o.skipped, dependencyEcosystemSkip{Ecosystem: ecosystem, Reason: depSkipResolverUnavailable})
+			continue
+		}
+		last := o.resolved[len(o.resolved)-1]
+		result, skipReason, scanErr := scan(ecosystem, resolver, last.Report)
+		if scanErr != nil {
+			if isScanCanceled(scanErr) {
+				return scanErr
+			}
+			log.Warn().Err(scanErr).Str("ecosystem", ecosystem).
+				Msg("Dependency resolution failed for an additional ecosystem; its dependencies are not scanned and the other ecosystems' results are kept")
+			o.skipped = append(o.skipped, dependencyEcosystemSkip{Ecosystem: ecosystem, Reason: depSkipResolutionFailed})
+			continue
+		}
+		if skipReason != "" {
+			o.skipped = append(o.skipped, dependencyEcosystemSkip{Ecosystem: ecosystem, Reason: skipReason})
+			continue
+		}
+		o.resolved = append(o.resolved, result)
+	}
+	return nil
 }
 
 // progressDetails is the details object of the completed dependencies event:

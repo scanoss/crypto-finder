@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -440,5 +441,63 @@ func TestRuleGraphPassResultsCoverEveryResolvedGraph(t *testing.T) {
 	}
 	if got := ruleGraphPassResults(nil); got != nil {
 		t.Errorf("ruleGraphPassResults(nil) = %v, want nil", got)
+	}
+}
+
+// A secondary ecosystem auto mode added for its manifest cannot fail the scan:
+// a failure becomes resolution_failed and the others still resolve. Only
+// cancellation stops it.
+func TestDependencyEcosystemOutcomeResolveSecondaryKeepsResultsOnFailure(t *testing.T) {
+	primaryReport := &entities.InterimReport{}
+	primary := &engine.DepScanResult{Ecosystem: ecosystemNode, Report: primaryReport}
+	pythonReport := &entities.InterimReport{}
+	python := &engine.DepScanResult{Ecosystem: ecosystemPython, Report: pythonReport}
+	resolverFor := func(ecosystem string) (dependency.Resolver, error) {
+		if ecosystem == ecosystemCPP {
+			return nil, errors.New("no resolver")
+		}
+		return nil, nil
+	}
+	var inputs []*entities.InterimReport
+	scan := func(ecosystem string, _ dependency.Resolver, input *entities.InterimReport) (*engine.DepScanResult, string, error) {
+		inputs = append(inputs, input)
+		switch ecosystem {
+		case ecosystemJava:
+			return nil, "", errors.New("failed to list Maven dependencies: mvn: not found")
+		case "rust":
+			return nil, depSkipParserUnavailable, nil
+		default:
+			return python, "", nil
+		}
+	}
+
+	outcome := dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{primary}}
+	err := outcome.resolveSecondary([]string{ecosystemJava, ecosystemCPP, "rust", ecosystemPython}, resolverFor, scan)
+	if err != nil {
+		t.Fatalf("resolveSecondary = %v, want the scan to continue past a failed secondary ecosystem", err)
+	}
+	if !reflect.DeepEqual(outcome.resolved, []*engine.DepScanResult{primary, python}) {
+		t.Errorf("resolved = %v, want the primary then python", outcome.resolved)
+	}
+	wantSkipped := []dependencyEcosystemSkip{
+		{Ecosystem: ecosystemJava, Reason: depSkipResolutionFailed},
+		{Ecosystem: ecosystemCPP, Reason: depSkipResolverUnavailable},
+		{Ecosystem: "rust", Reason: depSkipParserUnavailable},
+	}
+	if !reflect.DeepEqual(outcome.skipped, wantSkipped) {
+		t.Errorf("skipped = %+v, want %+v", outcome.skipped, wantSkipped)
+	}
+	for i, input := range inputs {
+		if input != primaryReport {
+			t.Errorf("scan %d got report %p, want the primary's %p: a failed or skipped ecosystem returns no report to build on", i, input, primaryReport)
+		}
+	}
+
+	canceled := dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{primary}}
+	cancelScan := func(string, dependency.Resolver, *entities.InterimReport) (*engine.DepScanResult, string, error) {
+		return nil, "", context.Canceled
+	}
+	if err := canceled.resolveSecondary([]string{ecosystemPython}, resolverFor, cancelScan); !errors.Is(err, context.Canceled) {
+		t.Errorf("resolveSecondary on cancellation = %v, want context.Canceled", err)
 	}
 }
