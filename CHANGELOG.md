@@ -7,6 +7,194 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-11-11
+### Added
+- An unresolved Java, Python, JavaScript or TypeScript finding whose algorithm
+  argument is read at run time now names that input in the new metadata key
+  `algorithmSource`: `env:NAME` for an environment variable
+  (`System.getenv("NAME")`, `os.environ["NAME"]`, `os.environ.get`,
+  `os.getenv`, `process.env.NAME`, `process.env["NAME"]`), `property:KEY` for
+  `System.getProperty("KEY")` or `getProperty("KEY")` on a
+  `java.util.Properties`, and `argv:N` for a program argument (`args[N]` of a
+  Java `main`, `sys.argv[N]`, `process.argv[N]`). The input is followed
+  through a local bound once to the read and through function parameters in
+  any project file; a key held in a constant, also of another file, resolves
+  to its value. Several routes give a sorted, comma-joined list, at most 16.
+  The key is set only on the generic asset the scan keeps when the algorithm
+  stays unresolved, when the scan builds a call graph and a rule states a
+  `parameterCondition` for the call. It is not added to the CBOM, and the
+  report format version is unchanged.
+- The name, key or default of such a read is no longer taken as the algorithm:
+  `Signature.getInstance(System.getenv("SHA256withECDSA"))` or
+  `hashlib.new(os.getenv("sha256"))` stays an unresolved finding instead of
+  matching a rule for that algorithm, and `process.env.HASH_ALG` is no longer
+  exported as the `resolved_value` of the argument. Call-graph exports stamp
+  `graph_algo_version` `graph-algo-24`; cached Python and Node structural
+  graphs from `graph-algo-23` are rebuilt.
+### Changed
+- `--scan-dependencies` with `--dep-ecosystem auto` now resolves the
+  dependencies of every ecosystem the target has a manifest for, not only the
+  first. A repository with a `package.json` and `package-lock.json` beside a
+  `requirements.txt` reports the dependency findings of both Node and Python.
+  The first ecosystem, the dominant language by file count first, stays the
+  primary one that `scan_metadata.ecosystem` of the call-graph export names;
+  each other resolved ecosystem gets a dependency-aware call graph, its
+  dependency findings carry their `dependency` block, chains and reachability
+  in the export as the primary ecosystem's do, and its entry in
+  `scan_metadata.ecosystems` counts its dependencies' functions and edges.
+  The export schema version is unchanged. An ecosystem whose call graph
+  cannot be set up is skipped and the others are still resolved; a failed
+  resolution or dependency scan fails the scan for the primary ecosystem
+  and for an explicit `--dep-ecosystem`, while for any other ecosystem it is
+  reported in `ecosystems_skipped` as `resolution_failed` and the other
+  ecosystems' results are kept. An explicit
+  `--dep-ecosystem` resolves that ecosystem alone, as before. The graph
+  fragment (`--export-graph-fragment`) still covers the primary ecosystem
+  only.
+- The completed `dependencies` event of `--progress` sums its counters and
+  outcome lists over every resolved ecosystem, and carries two new fields:
+  `ecosystems`, the resolved ecosystems with the primary first, and
+  `ecosystems_skipped`, the ecosystems the target has something to resolve
+  for that were not resolved (a language with no manifest is not listed), each as
+  `{"ecosystem": "node", "reason": "lockfile_absent"}`, written `[]` when
+  there are none. The nested `callgraph` events repeat once per resolved
+  ecosystem that has dependencies. The progress schema stays at version `1`.
+- An explicit `--languages` still bounds auto mode: a manifest adds an
+  ecosystem only for a requested language, so `--languages java` on a root
+  that also has a `package.json` and a `requirements.txt` resolves Java alone.
+  The rule graph passes (synthesized entry points, conditioned findings and
+  related material) run on every resolved ecosystem's graph, not only the
+  primary one.
+### Fixed
+- Java and Python scans now resolve an algorithm read through a getter of a
+  field the constructor sets: `Signature.getInstance(new Holder("SHA256withECDSA").getAlg())`
+  and `hashlib.new(Holder("sha256").get_alg())` are reported with the
+  constructor's argument, also when the class is declared in another file or
+  module, when the receiver is a local bound once to the construction, and
+  through a helper's parameter. A Java enum constant's getter or `toString()`
+  that returns such a field gives the constant's argument:
+  `AlgoName.ECDSA.getValue()` for `ECDSA("SHA256withECDSA")`. The getter must
+  have one return statement, returning the field itself; in Python that
+  statement is the whole body, and the class must be imported into the calling
+  module. The value is dropped when anything other than one constructor
+  assignment writes the field: a setter, another method, a second constructor,
+  an initializer block, a nested, inner or anonymous class or a lambda, or a
+  write through another reference such as `h.alg = "MD5"` or
+  `Holder.this.alg = ...` anywhere in the declaring Java file; a Java field
+  that is neither `private` nor `final`; `setattr` in the Python class. A
+  Python class with a base other than `object`, a decorator, a class attribute
+  or property named like the field, its own `__new__`, `__setattr__`,
+  `__delattr__` or `__getattribute__`, or a method that passes, returns or
+  stores `self` gives no value either. A Python receiver local resolves only
+  when every use of it in the function is a direct method call such as
+  `h.get_alg()`: passed to a helper, aliased, returned, stored, captured by a
+  nested function or lambda, or used in `with`, it gives no value. The value is
+  also dropped when the receiver local is rebound, when the constructed class
+  overrides or only inherits the getter, or when the enum constant's body
+  overrides it. A Python `@property` and a direct attribute read such as
+  `h.alg` stay unresolved. Not covered: a class patched from another module
+  (`Holder.get_alg = ...` or a replaced `__init__`), or a field written by
+  reflection (Java `Field.set`, Python `gc` or `ctypes`), still reads as the
+  constructor's argument. Call-graph
+  exports stamp `graph_algo_version` `graph-algo-22`; cached Java and Python
+  structural graphs from `graph-algo-21` are rebuilt.
+- Java scans now resolve an algorithm written as an enum constant's name:
+  `KeyPairGenerator.getInstance(AlgoName.EC.name())` is reported as `EC`, also
+  when the enum is declared in another file or package, and so is
+  `AlgoName.EC.toString()` when neither the enum nor the constant overrides
+  `toString`. A bare `AlgoName.EC` argument is reported as before.
+- Python scans now resolve an algorithm named by a module string constant of
+  another module, through `from app.cfg.settings import ALG` (also with
+  `as`), `import app.cfg.settings as s; s.ALG` or `from app.cfg import
+  settings; settings.ALG`, and by a member of an `Enum` class: `Alg.SHA.value`
+  gives the member's string and `Alg.SHA.name` its name. A bare `Alg.SHA` is
+  resolved only for a `StrEnum` or `(str, Enum)` class. A name the module
+  binds more than once, or a name the calling function rebinds, stays
+  unresolved. So does a constant another module may write at runtime, such
+  as `settings.ALG = os.environ["HASH_ALG"]`, `del settings.ALG` or
+  `setattr(settings, ...)`, or whose module object another module passes,
+  aliases or returns; an `Enum` member stays resolved, since it cannot be
+  reassigned, unless another module rebinds its class. Call-graph exports
+  stamp `graph_algo_version` `graph-algo-21`; cached Java and Python
+  structural graphs from `graph-algo-20` are rebuilt.
+- `--scan-dependencies` with `--dep-ecosystem auto` (the default) now resolves
+  dependencies for an ecosystem that has a manifest, instead of always taking
+  the language with the most files. A Flask application with a
+  `requirements.txt`, whose browser JavaScript outnumbers its Python and that
+  has no `package.json`, used to pick Node and skip the dependency phase with
+  `manifest_absent`; it now resolves its Python dependencies. The ecosystems
+  of the detected languages, dominant first, are tried before the other
+  ecosystems whose manifest sits at the target, and the first one whose
+  resolver can read the target or a module root below it is picked. Python,
+  which reads the interpreter's installed packages rather than a manifest, is
+  picked over the dominant language only when the target has a Python
+  manifest (`pyproject.toml`, `requirements.txt`, `Pipfile` or `setup.py`).
+  When no ecosystem can be resolved the scan skips the phase exactly as
+  before. An explicit `--dep-ecosystem` is unchanged.
+- The skipped `dependencies` event of `--progress` now names the ecosystem it
+  skipped in the new optional `details.ecosystem` (for example
+  `{"reason": "lockfile_absent", "ecosystem": "node"}`). It is absent for
+  `ecosystem_unknown` and `not_requested`. The progress schema stays at
+  version `1`, and `schemas/scan-progress-schema.json` declares the field.
+- JavaScript and TypeScript scans now resolve an algorithm passed as a
+  variable: `crypto.createHash(alg)` is reported with the value when `alg` is a
+  string literal bound by a `const`, a never reassigned `let`, or a `var`
+  declared earlier in the same function; a module constant of the same file;
+  an `export const` of another project module, imported by name (also with
+  `as`), as a namespace (`import * as cfg`; `cfg.ALG`) or through `require`
+  (`const { ALG } = require("./cfg")`, `cfg.ALG`, with `module.exports = {..}`
+  or `exports.ALG = ..` in the declaring module); a member of a TypeScript
+  `enum` initialized with a string, or of a `const` bound to
+  `Object.freeze({..})` or to a plain object literal; and a plain parameter of
+  a function whose callers, in any project module, all pass one of these. A
+  value is dropped when the binding is reassigned, shadowed or exported with
+  `let`; when the parameter has a default value, is destructured or a rest
+  parameter, is reassigned or aliased through `arguments`; when the object is
+  mutated, passed elsewhere, or holds a spread, computed key, method or
+  accessor; when the enum member is numeric; for a package import, a default
+  import, `import()`, a re-export from another module or a template literal
+  with a substitution; and when a caller passes the argument after a spread.
+  An exported value is also dropped when any project module may write it at
+  runtime: `config.hashAlgorithm = process.env.HASH_ALG` through a `require`,
+  a named, namespace or default import, or `require("./config")` itself; a
+  computed-key write, `delete`, `+=`, `Object.assign` or
+  `Object.defineProperty`; or the imported object passed, aliased, returned or
+  re-exported. A member of an `Object.freeze({..})` object stays resolved,
+  since no write can change it.
+  Call-graph exports stamp `graph_algo_version` `graph-algo-23`; cached Node
+  structural graphs from `graph-algo-22` are rebuilt.
+- JavaScript and TypeScript scans now resolve an algorithm read through a
+  getter of a field the constructor sets from a parameter:
+  `crypto.createHash(new Holder("sha256").getAlg())` is reported as `sha256`,
+  also for a `#private` field, when the receiver is a local bound once to the
+  construction, when the class is imported by name from another project
+  module, and through a helper's parameter. The getter's body must be
+  `return this.field`. The value is dropped when the class extends another,
+  when another method, a field initializer or `Object.assign(this, ..)`
+  writes the field, when the file reassigns a member of the class, when a
+  static or accessor member shares the getter's name, and when the receiver
+  local is rebound or has a member written. It is also dropped when any code
+  in the declaring file writes a property of that name through another
+  reference (`h.alg = ..` or `h["alg"] = ..`, a static method's parameter or
+  a static block's local included), and when the class uses `this` other than
+  to reach a member, for example `return this` or `registry.push(this)`. A
+  receiver local resolves only when every use of it in the function is a
+  direct method call such as `h.getAlg()`: passed to a helper, aliased,
+  returned, stored, captured by a closure, or a method taken as a value, it
+  gives no value. A property read such as `h.alg` and a `get` accessor stay
+  unresolved. Not covered: a computed write such as `o[key] = v` on an object
+  reached through a module-level binding, or a class patched from another
+  module, still reads as the constructor's argument.
+- Python scans now resolve an algorithm passed through a function parameter, a
+  string local variable or a module-level string constant. A helper such as
+  `def digest(data, alg): return hashlib.new(alg, data)` is reported with the
+  algorithm each caller passes, also from another module and by keyword
+  (`digest(alg="sha256", data=d)`), and a caller passing a dynamic value keeps
+  the generic finding. Methods (`self`/`cls`) and keyword-only parameters are
+  not resolved yet. Call-graph exports stamp `graph_algo_version`
+  `graph-algo-20`; cached Python structural graphs from `graph-algo-19` are
+  rebuilt.
+
 ## [0.52.1] - 2026-11-10
 ### Fixed
 - A hybrid KEM such as `X25519MLKEM768` now gets `pqc.status: hybrid` (PQC dataset
