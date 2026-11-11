@@ -279,10 +279,20 @@ func TestJavaEnumConstant_StaticImportName(t *testing.T) {
 	assertFoldedConstant(t, digestArgumentSource(t, graph), "EC.name()", "AlgoName.java", 3, `"EC"`)
 }
 
+// A toString override that returns the field the constructor sets yields the
+// constant's argument, by the constructor-getter rule.
+func TestJavaEnumConstant_ToStringReturningConstructorField(t *testing.T) {
+	t.Parallel()
+	graph := parseInlineJavaFiles(t, map[string]string{
+		"lib/algo/Labeled.java": javaLabeledEnumSrc,
+		"app/Caller.java":       callerSrc("import lib.algo.*;", "Labeled.SHA256.toString()"),
+	})
+	assertFoldedConstant(t, digestArgumentSource(t, graph), "Labeled.SHA256.toString()", "Labeled.java", 3, `"SHA-256"`)
+}
+
 func TestJavaEnumConstant_OverriddenToStringStaysUnresolved(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct{ file, src, arg string }{
-		"enum overrides":     {"lib/algo/Labeled.java", javaLabeledEnumSrc, "Labeled.SHA256.toString()"},
 		"constant body":      {"lib/algo/AlgoName.java", javaAlgoEnumSrc, "AlgoName.RSA.toString()"},
 		"chained call":       {"lib/algo/AlgoName.java", javaAlgoEnumSrc, "AlgoName.EC.name().toLowerCase()"},
 		"not an enum member": {"lib/algo/AlgoName.java", javaAlgoEnumSrc, "AlgoName.XX.name()"},

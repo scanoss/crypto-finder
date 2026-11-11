@@ -188,11 +188,12 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// shadowing rule below would apply only to types declared earlier in the
 	// file. Bases are filled in properly as each declaration is processed.
 	p.registerDeclaredJavaTypes(root, src, analysis, "")
-	collectJavaNamedValues(javaChildNodes(root), src, analysis, "")
 	analysis.TypeNamesAtRisk = collectJavaTypeNamesAtRisk(root, src)
 
 	// Extract class declarations with their methods
 	p.extractClasses(root, src, filePath, analysis)
+	// After the declarations: an enum constant's getters read its methods.
+	collectJavaNamedValues(javaChildNodes(root), src, analysis, "")
 	for i := range analysis.Functions {
 		analysis.Functions[i].FileTypeNamesAtRisk = analysis.TypeNamesAtRisk
 	}
@@ -864,6 +865,7 @@ func (p *JavaParser) collectClassFieldAssignments(
 	fieldTypes map[string]string,
 ) map[string]fieldAssignment {
 	assignments := make(map[string]fieldAssignment)
+	var exposed []string
 	for _, child := range javaTypeBodyMembers(body) {
 		switch child.Type() {
 		case javaNodeConstructorDeclaration, javaNodeCompactConstructorDecl:
@@ -874,9 +876,50 @@ func (p *JavaParser) collectClassFieldAssignments(
 			for key, value := range finalFieldInitializers(child, src, filePath) {
 				mergeFieldAssignment(assignments, key, value)
 			}
+			if !javaHasModifier(child, src, "private") && !javaHasModifier(child, src, "final") {
+				exposed = append(exposed, javaDeclaratorNames(child, src)...)
+			}
+		case javaNodeMethodDeclaration:
+			// A setter or any other writer leaves no single constructor value.
+			written := make(map[string]struct{})
+			collectJavaWrittenFields(child, src, fieldTypes, written)
+			for name := range written {
+				mergeFieldAssignment(assignments, name, fieldAssignment{})
+			}
+		}
+	}
+	for _, name := range exposed {
+		if assignment, ok := assignments[name]; ok {
+			assignment.exposed = true
+			assignments[name] = assignment
 		}
 	}
 	return assignments
+}
+
+func javaDeclaratorNames(node *sitter.Node, src []byte) []string {
+	var names []string
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if child := node.Child(i); child.Type() == javaNodeVariableDeclarator {
+			if name, _ := parseVariableDeclaratorOrigin(child, src); name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
+}
+
+func collectJavaWrittenFields(node *sitter.Node, src []byte, fieldTypes map[string]string, written map[string]struct{}) {
+	if node.Type() == javaNodeAssignmentExpression {
+		if left := node.ChildByFieldName("left"); left != nil {
+			if name := assignedFieldName(left, src, fieldTypes); name != "" {
+				written[name] = struct{}{}
+			}
+		}
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		collectJavaWrittenFields(node.Child(i), src, fieldTypes, written)
+	}
 }
 
 // finalFieldInitializers records the declarator initializers of a `final`
@@ -1074,9 +1117,13 @@ func (p *JavaParser) parseMethodDecl(
 		p.collectParameterTypes(node, src, varTypes)
 		p.collectScopeVarTypes(body, src, varTypes)
 
-		varOrigins := make(map[string]varOrigin)
-		for k, v := range fieldTypes {
-			varOrigins[k] = varOrigin{typeName: v, kind: "field", paramIndex: -1}
+		varOrigins := javaFieldOrigins(fieldTypes, fieldAssignments, filePath)
+		for name, assignment := range fieldAssignments {
+			// A getter's value is the constructor's only while no other class can write the field.
+			if origin, ok := varOrigins[name]; ok && assignment.exposed {
+				origin.constructorParam = nil
+				varOrigins[name] = origin
+			}
 		}
 		p.collectParameterOrigins(node, src, filePath, varOrigins)
 		p.collectScopeVarOrigins(body, src, filePath, varOrigins)
@@ -1451,8 +1498,20 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 	p.collectScopeVarTypes(body, src, varTypes)
 
 	// Build variable origin map for data flow tracing
-	varOrigins := make(map[string]varOrigin)
-	// Add field origins with constructor parameter tracing
+	varOrigins := javaFieldOrigins(fieldTypes, fieldAssignments, filePath)
+	p.collectParameterOrigins(methodNode, src, filePath, varOrigins)
+	p.collectScopeVarOrigins(body, src, filePath, varOrigins)
+	markReassignedOrigins(body, src, varOrigins)
+
+	var calls []FunctionCall
+	p.walkForCalls(body, src, filePath, analysis, currentClass, varTypes, varOrigins, &calls)
+	return calls
+}
+
+// javaFieldOrigins seeds a member's origin map with the class fields, each
+// traced to its one constructor parameter or final initializer when it has one.
+func javaFieldOrigins(fieldTypes map[string]string, fieldAssignments map[string]fieldAssignment, filePath string) map[string]varOrigin {
+	varOrigins := make(map[string]varOrigin, len(fieldTypes))
 	for k, v := range fieldTypes {
 		origin := varOrigin{typeName: v, kind: "field", filePath: filePath, paramIndex: -1}
 		if fa, ok := fieldAssignments[k]; ok && fa.valid {
@@ -1467,13 +1526,7 @@ func (p *JavaParser) extractCallsWithFieldTypes(
 		}
 		varOrigins[k] = origin
 	}
-	p.collectParameterOrigins(methodNode, src, filePath, varOrigins)
-	p.collectScopeVarOrigins(body, src, filePath, varOrigins)
-	markReassignedOrigins(body, src, varOrigins)
-
-	var calls []FunctionCall
-	p.walkForCalls(body, src, filePath, analysis, currentClass, varTypes, varOrigins, &calls)
-	return calls
+	return varOrigins
 }
 
 // fieldAssignment records one writer of a class field: a constructor
@@ -1487,6 +1540,7 @@ type fieldAssignment struct {
 	filePath     string
 	resolvedType string // concrete assigned type, when known
 	valid        bool   // false when the field has multiple candidate assignments
+	exposed      bool   // neither private nor final: code outside the class may write it
 }
 
 // varOrigin tracks where a variable's value comes from.
@@ -2166,6 +2220,15 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
 		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr, nameRef: javaNameRefUse(expr, analysis, currentClass, varTypes, origins)}}
 	}
+	if construction, method, ok := splitJavaConstructedCall(expr); ok {
+		typeName, _, _ := parseJavaConstructorExpression(construction)
+		node := SourceNode{Type: sourceNodeCallResult, Value: expr, getter: p.javaConstruction(construction, method, analysis, currentClass, varTypes, origins, depth)}
+		if analysis != nil {
+			target := p.resolveCallee(typeName, javaMethodWithArity(method, 0), analysis, currentClass, nil)
+			node.CallTarget = &target
+		}
+		return []SourceNode{node}
+	}
 	if constructorNodes := p.traceConstructorExpression(expr, analysis, currentClass, varTypes, origins, depth); constructorNodes != nil {
 		return constructorNodes
 	}
@@ -2321,12 +2384,90 @@ func (p *JavaParser) traceMethodCallExpression(
 		target := p.resolveCallee(object, javaMethodWithArity(method, argc), analysis, currentClass, varTypes)
 		node.CallTarget = &target
 	}
-	if accessor := "." + method + "()"; (method == "name" || method == "toString") && strings.Join(strings.Fields(expr), "") == object+accessor {
+	if info, ok := origins[object]; ok && argc == 0 {
+		node.getter = p.javaLocalConstruction(info, method, analysis, currentClass, varTypes, origins, depth)
+	}
+	if accessor := "." + method + "()"; argc == 0 && strings.Join(strings.Fields(expr), "") == object+accessor {
 		// An enum constant receiver: the fold replaces the whole call,
 		// including the CallTarget read off `Owner.C` as a type.
 		node.nameRef = javaNameRefUse(object, analysis, currentClass, varTypes, origins).withAccessor(expr, accessor)
 	}
 	return []SourceNode{node}
+}
+
+// javaLocalConstruction is the getter reference for method called on a local
+// variable initialized with a construction and never reassigned.
+func (p *JavaParser) javaLocalConstruction(local varOrigin, method string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) *ctorGetterRef {
+	if local.kind == javaVarOriginKindField || local.kind == javaVarOriginKindParameter || local.reassigned {
+		return nil
+	}
+	return p.javaConstruction(local.initializer, method, analysis, currentClass, varTypes, origins, depth)
+}
+
+// javaConstruction is the getter reference for method called on the object
+// expr constructs, when expr is exactly one `new T(args)`.
+func (p *JavaParser) javaConstruction(expr, method string, analysis *FileAnalysis, currentClass string, varTypes map[string]string, origins map[string]varOrigin, depth int) *ctorGetterRef {
+	expr = strings.TrimSpace(expr)
+	open := strings.Index(expr, "(")
+	if analysis == nil || open < 0 || javaMatchingParen(expr, open) != len(expr)-1 {
+		return nil
+	}
+	typeName, argc, ok := parseJavaConstructorExpression(expr)
+	if !ok {
+		return nil
+	}
+	ref := &ctorGetterRef{
+		constructor: p.resolveCallee(typeName, javaMethodWithArity(constructorMethodName, argc), analysis, currentClass, nil),
+		method:      javaMethodWithArity(method, 0),
+	}
+	for _, arg := range parseArgumentsFromDelimitedContent(stripJavaExpressionComments(expr[open:])) {
+		ref.arguments = append(ref.arguments, ctorArgument{sources: p.traceExpression(strings.TrimSpace(arg), analysis, currentClass, varTypes, origins, depth+1)})
+	}
+	return ref
+}
+
+// splitJavaConstructedCall splits `new T(args).m()` into the construction and m.
+func splitJavaConstructedCall(expr string) (construction, method string, ok bool) {
+	open := strings.Index(expr, "(")
+	if !strings.HasPrefix(expr, "new ") || open < 0 {
+		return "", "", false
+	}
+	end := javaMatchingParen(expr, open)
+	if end < 0 {
+		return "", "", false
+	}
+	rest, chained := strings.CutPrefix(strings.TrimSpace(expr[end+1:]), ".")
+	name, args, called := strings.Cut(rest, "(")
+	name = strings.TrimSpace(name)
+	if !chained || !called || !isSimpleJavaIdentifier(name) || strings.TrimSpace(args) != ")" {
+		return "", "", false
+	}
+	return expr[:end+1], name, true
+}
+
+// javaMatchingParen returns the index of the parenthesis closing the one at
+// open, skipping string and char literals, or -1.
+func javaMatchingParen(expr string, open int) int {
+	depth := 0
+	for i := open; i < len(expr); i++ {
+		switch expr[i] {
+		case '"', '\'':
+			quote := expr[i]
+			for i++; i < len(expr) && expr[i] != quote; i++ {
+				if expr[i] == '\\' {
+					i++
+				}
+			}
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 func (p *JavaParser) traceMethodCallReceiverSources(

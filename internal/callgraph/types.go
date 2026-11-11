@@ -476,6 +476,9 @@ type SourceNode struct {
 	// nameRef names the NamedValues this node's text may denote, for the
 	// post-parse fold. Never exported.
 	nameRef *nameRef
+	// getter marks a method call on a receiver of known construction, for
+	// the post-parse fold. Never exported.
+	getter *ctorGetterRef
 }
 
 // SourceFlow carries optional branch and call-position semantics.

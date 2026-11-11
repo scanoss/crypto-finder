@@ -146,7 +146,14 @@ const SchemaVersion = "graph-fragment-1.15"
 // Python Enum member's `.value` / `.name` fold to the string they denote, as a
 // cross-class Java String constant already did. A structural graph cached
 // under graph-algo-20 keeps them unresolved.
-const GraphAlgoVersion = "graph-algo-21"
+//
+// graph-algo-22: a no-argument getter that returns a field set from a
+// constructor parameter, called on `new T(..)` / `T(..)` or on a local bound
+// once to one, folds to the constructor argument, in Java and Python; a Java
+// enum constant's such getter folds to the constant's argument. Getters now
+// carry that FIELD{PARAMETER} return source. A structural graph cached under
+// graph-algo-21 keeps them unresolved.
+const GraphAlgoVersion = "graph-algo-22"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is

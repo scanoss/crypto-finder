@@ -344,6 +344,8 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	}
 	// Fold values named across files before inference, so it sees "SHA-1"
 	// where the source wrote MessageDigestAlgorithms.SHA_1.
+	// Getters first: a constructor argument may itself name such a value.
+	perf.Time("callgraph.build.constructor_getters", func() { foldConstructorGetters(graph) })
 	perf.Time("callgraph.build.named_values", func() { foldNamedValues(graph) })
 	inferSpan := perf.Start("callgraph.build.infer_return_types")
 	err = InferReturnTypes(graph, kb)

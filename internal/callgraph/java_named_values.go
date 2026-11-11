@@ -48,12 +48,21 @@ func collectJavaNamedValues(nodes []*sitter.Node, src []byte, analysis *FileAnal
 }
 
 // recordJavaEnumConstants records what `Owner.C.name()` yields for each enum
-// constant, which Enum declares final, and what `Owner.C.toString()` yields
-// when neither the enum nor the constant's own body overrides toString. The
-// bare `Owner.C` is not recorded: an enum constant is not a String.
+// constant, which Enum declares final, and what each other no-argument method
+// yields when it returns a field the constructor sets from a parameter the
+// constant's arguments fill. `Owner.C.toString()` yields the name when neither
+// the enum nor the constant's own body overrides toString. A method the
+// constant's body overrides is not recorded. The bare `Owner.C` is not
+// recorded: an enum constant is not a String.
 func recordJavaEnumConstants(members []*sitter.Node, src []byte, analysis *FileAnalysis, owner string) {
-	overridden := javaDeclaresToString(members, src)
+	overridden := javaDeclaresMethod(members, src, "toString")
 	key := javaQualifiedName(javaAnalysisPackagePath(analysis), owner)
+	methods := make(map[string]*FunctionDecl)
+	for i := range analysis.Functions {
+		if decl := &analysis.Functions[i]; decl.ID.Package == analysis.PackagePath && decl.ID.Type == owner {
+			methods[decl.ID.Name] = decl
+		}
+	}
 	for _, member := range members {
 		if member.Type() != javaNodeEnumConstant {
 			continue
@@ -70,21 +79,67 @@ func recordJavaEnumConstants(members []*sitter.Node, src []byte, analysis *FileA
 			Line:         int(member.StartPoint().Row) + 1,
 		}
 		recordNamedValue(analysis, key+"."+name+".name()", value)
-		if overridden || javaDeclaresToString(javaTypeBodyMembers(member.ChildByFieldName("body")), src) {
-			continue
+		body := javaTypeBodyMembers(member.ChildByFieldName("body"))
+		if !overridden && !javaDeclaresMethod(body, src, "toString") {
+			recordNamedValue(analysis, key+"."+name+".toString()", value)
 		}
-		recordNamedValue(analysis, key+"."+name+".toString()", value)
+		recordJavaEnumGetters(member, body, src, analysis, owner, methods, key+"."+name+".", value)
 	}
 }
 
-func javaDeclaresToString(members []*sitter.Node, src []byte) bool {
+// recordJavaEnumGetters records, under prefix, what each no-argument method
+// yields for the constant member by the constructor-getter rule.
+func recordJavaEnumGetters(member *sitter.Node, body []*sitter.Node, src []byte, analysis *FileAnalysis, owner string, methods map[string]*FunctionDecl, prefix string, at NamedValue) {
+	var args []*sitter.Node
+	if list := member.ChildByFieldName("arguments"); list != nil {
+		for i := 0; i < int(list.NamedChildCount()); i++ {
+			args = append(args, list.NamedChild(i))
+		}
+	}
+	ctor := methods[javaMethodWithArity(constructorMethodName, len(args))]
+	for id, method := range methods {
+		plain, isGetter := strings.CutSuffix(id, "#0")
+		if !isGetter || plain == clinitMethodName || javaDeclaresMethod(body, src, plain) {
+			continue
+		}
+		if _, param, ok := constructorFieldParameter(method, ctor); ok {
+			if value, ok := javaNamedValueOf(args[param.ParameterIndex], src, analysis, owner, at); ok {
+				recordNamedValue(analysis, prefix+plain+"()", value)
+			}
+		}
+	}
+}
+
+// javaNamedValueOf is the value an initializer or argument expression gives:
+// a String literal, or a name that denotes one.
+func javaNamedValueOf(expr *sitter.Node, src []byte, analysis *FileAnalysis, owner string, at NamedValue) (NamedValue, bool) {
+	text := strings.TrimSpace(expr.Content(src))
+	switch expr.Type() {
+	case "string_literal":
+		if strings.HasPrefix(text, `"""`) {
+			return NamedValue{}, false
+		}
+		at.Value = text
+	case javaNodeIdentifier, javaNodeFieldAccess:
+		at.Value = ""
+		at.ref = newJavaNameRef(text, analysis, owner)
+		if at.ref == nil {
+			return NamedValue{}, false
+		}
+	default:
+		return NamedValue{}, false
+	}
+	return at, true
+}
+
+func javaDeclaresMethod(members []*sitter.Node, src []byte, method string) bool {
 	for _, member := range members {
 		if member.Type() != javaNodeMethodDeclaration {
 			continue
 		}
 		name := member.ChildByFieldName(javaFieldName)
 		params := member.ChildByFieldName("parameters")
-		if name != nil && name.Content(src) == "toString" && params != nil && params.NamedChildCount() == 0 {
+		if name != nil && name.Content(src) == method && params != nil && params.NamedChildCount() == 0 {
 			return true
 		}
 	}
@@ -120,24 +175,12 @@ func recordJavaStringConstants(member *sitter.Node, src []byte, analysis *FileAn
 		if nameNode == nil || valueNode == nil {
 			continue
 		}
-		constant := NamedValue{
+		constant, ok := javaNamedValueOf(valueNode, src, analysis, owner, NamedValue{
 			DeclaredType: declaredType,
 			FilePath:     analysis.FilePath,
 			Line:         int(declarator.StartPoint().Row) + 1,
-		}
-		value := strings.TrimSpace(valueNode.Content(src))
-		switch valueNode.Type() {
-		case "string_literal":
-			if strings.HasPrefix(value, `"""`) {
-				continue
-			}
-			constant.Value = value
-		case javaNodeIdentifier, javaNodeFieldAccess:
-			constant.ref = newJavaNameRef(value, analysis, owner)
-			if constant.ref == nil {
-				continue
-			}
-		default:
+		})
+		if !ok {
 			continue
 		}
 		recordNamedValue(analysis, javaQualifiedName(javaAnalysisPackagePath(analysis), owner+"."+nameNode.Content(src)), constant)

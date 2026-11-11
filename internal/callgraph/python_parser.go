@@ -1881,7 +1881,15 @@ func (p *PythonParser) processClass(node *sitter.Node, src []byte, filePath, pac
 	}
 
 	// Walk class body for method definitions.
+	first := len(analysis.Functions)
 	p.extractClassMethods(body, src, filePath, packagePath, className, bases, analysis, attrs, fw)
+	if getters := pythonConstructorGetters(body, src, filePath); len(getters) > 0 {
+		for i := first; i < len(analysis.Functions); i++ {
+			if getter, ok := getters[analysis.Functions[i].ID.Name]; ok && analysis.Functions[i].ID.Type == className {
+				analysis.Functions[i].ReturnSources = []SourceNode{getter}
+			}
+		}
+	}
 
 	if clinit := p.buildClassInitDecl(body, src, filePath, packagePath, className, analysis, attrs, direct, fw); clinit != nil {
 		clinit.OwnerBases = bases
@@ -2898,6 +2906,7 @@ func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte,
 			Value:      strings.TrimSpace(argNode.Content(src)),
 			CallTarget: &nestedCall.Callee,
 			Location:   &SourceLocation{FilePath: filePath, Line: nestedCall.Line},
+			getter:     p.pythonGetterRef(argNode, src, filePath, analysis, bindings, fw, depth),
 		}
 		for _, s := range nestedCall.ArgumentSources {
 			sn.SourceNodes = append(sn.SourceNodes, s...)

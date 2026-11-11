@@ -67,6 +67,10 @@ type pythonLocalSource struct {
 	// the first one binds, so a use can require one import or one class.
 	bindings int
 	kind     pythonBindingKind
+	// construction is the call the first binding assigns, for a receiver
+	// bound exactly once; mutated records an attribute write through the name.
+	construction *sitter.Node
+	mutated      bool
 }
 
 type pythonBindingKind uint8
@@ -303,6 +307,23 @@ func (s *pythonLocalSources) observeAssignment(node *sitter.Node, src []byte) {
 		}
 	}
 	s.poison(name)
+	if e := s.byName[name]; right != nil && right.Symbol() == pythonSyms.call && e.bindings == 1 && !s.inNestedScope(node) {
+		e.construction = right
+	}
+}
+
+// construction returns the call that constructs the receiver name, when the
+// function binds name exactly once, to that call, and writes none of its
+// attributes. A module-level name is left out: any module may rebind it.
+func (s *pythonLocalSources) construction(name string) *sitter.Node {
+	if s == nil || s.all || s.module {
+		return nil
+	}
+	e := s.byName[name]
+	if e == nil || e.bindings != 1 || e.parameter || e.mutated {
+		return nil
+	}
+	return e.construction
 }
 
 // poisonTarget poisons every name a binding target introduces. An attribute
@@ -312,6 +333,9 @@ func (s *pythonLocalSources) poisonTarget(target *sitter.Node, src []byte) {
 		return
 	}
 	if sym := target.Symbol(); sym == pythonSyms.attribute || sym == pythonSyms.subscript {
+		if object := target.ChildByFieldName("object"); sym == pythonSyms.attribute && object != nil && object.Symbol() == pythonSyms.identifier {
+			s.entry(object.Content(src)).mutated = true
+		}
 		return
 	}
 	s.poisonIdentifiers(target, src)
