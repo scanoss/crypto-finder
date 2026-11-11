@@ -20,6 +20,9 @@ const (
 	depSkipParserUnavailable    = "parser_unavailable"
 	depSkipCallgraphUnavailable = "callgraph_unavailable"
 	depSkipNotRequested         = "not_requested"
+
+	// progressStatusCompleted is the status of a phase that finished.
+	progressStatusCompleted = "completed"
 )
 
 // dependencyEcosystemSkip names an ecosystem the dependency phase saw in the

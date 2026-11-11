@@ -1630,7 +1630,7 @@ func newProgressReporter(progress *scanutil.ProgressWriter, callgraphParent stri
 		switch status {
 		case "started":
 			return progress.Start(phase, parent)
-		case "completed":
+		case progressStatusCompleted:
 			return progress.Complete(phase, parent, details)
 		case "failed":
 			if isScanCanceled(cause) {

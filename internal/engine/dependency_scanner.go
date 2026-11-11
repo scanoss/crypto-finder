@@ -1706,8 +1706,8 @@ func ecosystemToLanguages(ecosystem string) []string {
 	switch ecosystem {
 	case "go":
 		return []string{"go"}
-	case "python":
-		return []string{"python"}
+	case ecosystemPython:
+		return []string{ecosystemPython}
 	case "java":
 		return []string{"java"}
 	case "rust":

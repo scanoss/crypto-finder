@@ -902,7 +902,7 @@ func TestScanProgressResolvesEveryEcosystemWithAManifest(t *testing.T) {
 					continue
 				}
 				dependencyEvents++
-				if event["status"] == "completed" {
+				if event["status"] == progressStatusCompleted {
 					completed, _ = event["details"].(map[string]any)
 				}
 			}

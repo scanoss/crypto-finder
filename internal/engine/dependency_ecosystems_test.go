@@ -191,7 +191,7 @@ func TestAggregateProgressDetailsSumsAndSortsAcrossEcosystems(t *testing.T) {
 
 func TestLanguageEcosystem(t *testing.T) {
 	cases := map[string]string{
-		"go": "go", "java": "java", "python": "python", "rust": "rust",
+		"go": "go", "java": "java", ecosystemPython: ecosystemPython, "rust": "rust",
 		"javascript": "node", "typescript": "node", "tsx": "node", "jsx": "node", "node": "node",
 		"c": "c", "cpp": "cpp", "c++": "cpp", "xml": "", "": "",
 	}
