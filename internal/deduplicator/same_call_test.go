@@ -191,3 +191,52 @@ func TestDeduplicate_SameNameWithDifferentKeySizeStaysSeparate(t *testing.T) {
 		t.Fatalf("different key sizes are different assets, got %q", got)
 	}
 }
+
+func TestDeduplicate_UnresolvedCallKeptBesideAssetOfAnotherPrimitive(t *testing.T) {
+	// XMLCipher.doFinal with a private KEK unwraps the content key with RSA
+	// and decrypts the content with the cipher the document names: two
+	// assets on one call. The content cipher names no algorithm, but its
+	// primitive says it is not the RSA key transport.
+	content := callAsset(9, 53, "santuario.ae.decrypt-element", map[string]string{
+		"assetType": "algorithm", "algorithmPrimitive": "ae", "operation": "decrypt",
+	})
+	keyTransport := callAsset(9, 53, "santuario.pke.decrypt-key-transport", map[string]string{
+		"assetType": "algorithm", "algorithmName": "RSA", "algorithmPrimitive": "pke", "operation": "decrypt",
+	})
+	if got := dedupFile(content, keyTransport); len(got) != 2 {
+		t.Fatalf("an ae call is not a pke algorithm, want both assets kept; got %q", got)
+	}
+
+	// new EdDSAEngine(MessageDigest.getInstance(name)): the nested digest is
+	// part of the signer it is built into.
+	nestedDigest := callAsset(30, 54, "jca.hash.dynamic-message-digest", map[string]string{"assetType": "algorithm", "algorithmPrimitive": "hash"})
+	signer := callAsset(9, 55, "i2p-eddsa.signature.eddsa", map[string]string{
+		"assetType": "algorithm", "algorithmName": "Ed25519", "algorithmPrimitive": "signature",
+	})
+	if got := dedupFile(nestedDigest, signer); len(got) != 1 {
+		t.Fatalf("a call nested in the signer's call is part of it, want one asset; got %q", got)
+	}
+
+	for _, primitive := range []string{"", "unknown", "other"} {
+		unstated := callAsset(9, 53, "dynamic", map[string]string{"assetType": "algorithm", "algorithmPrimitive": primitive})
+		if got := dedupFile(unstated, keyTransport); len(got) != 1 {
+			t.Fatalf("primitive %q states nothing, want it absorbed by the named asset; got %q", primitive, got)
+		}
+	}
+
+	for _, pair := range [][2]string{
+		{"block-cipher", "ae"},
+		{"stream-cipher", "ae"},
+		{"block-cipher", "key-wrap"},
+		{"hash", "mac"},
+		{"kdf", "hash"},
+		{"signature", "pke"},
+		{"key-agree", "kem"},
+	} {
+		unresolved := callAsset(9, 53, "dynamic", map[string]string{"assetType": "algorithm", "algorithmPrimitive": pair[0]})
+		named := callAsset(9, 53, "named", map[string]string{"assetType": "algorithm", "algorithmName": "X", "algorithmPrimitive": pair[1]})
+		if got := dedupFile(unresolved, named); len(got) != 1 {
+			t.Fatalf("a %s call can be a %s algorithm, want one asset; got %q", pair[0], pair[1], got)
+		}
+	}
+}
