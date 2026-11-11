@@ -43,7 +43,6 @@ const (
 	// HTTP headers - Request.
 	headerAPIKey    = "x-api-key"
 	headerUserAgent = "user-agent"
-	userAgentValue  = "scanoss-crypto-finder"
 
 	// HTTP headers - Response.
 	headerRulesetName      = "scanoss-ruleset-name"
@@ -161,7 +160,7 @@ func (c *Client) GetRelease(ctx context.Context, name, version string) (*ruleset
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set(headerAPIKey, c.apiKey)
-	req.Header.Set(headerUserAgent, userAgentValue)
+	req.Header.Set(headerUserAgent, UserAgent())
 
 	// #nosec G704 -- URL is constructed from configured API base URL plus a fixed endpoint format.
 	resp, err := c.httpClient.Do(req)
@@ -252,7 +251,7 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 
 	// Add headers
 	req.Header.Set(headerAPIKey, c.apiKey)
-	req.Header.Set(headerUserAgent, userAgentValue)
+	req.Header.Set(headerUserAgent, UserAgent())
 
 	// #nosec G704 -- URL is constructed from configured API base URL plus a fixed endpoint format.
 	resp, err := c.httpClient.Do(req)

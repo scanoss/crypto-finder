@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/version"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -151,7 +152,7 @@ func TestClient_DownloadRuleset_Success(t *testing.T) {
 			t.Error("Missing or incorrect API key header")
 		}
 
-		if r.Header.Get("user-agent") != "scanoss-crypto-finder" {
+		if r.Header.Get("user-agent") != "crypto-finder/"+version.Version {
 			t.Error("Missing or incorrect User-Agent header")
 		}
 
