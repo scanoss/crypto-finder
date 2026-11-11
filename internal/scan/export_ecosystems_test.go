@@ -195,3 +195,63 @@ func TestMultiEcosystemExportMatchesItsSchema(t *testing.T) {
 		}
 	}
 }
+
+// An ecosystem the dependency phase resolved beside the primary one already
+// carries its dependency-aware graph; no source-only graph is built for it.
+func TestMissingAdditionalCallGraphEcosystemsSkipsResolvedOnes(t *testing.T) {
+	t.Parallel()
+
+	report := &entities.InterimReport{Findings: []entities.Finding{
+		{Language: "javascript", CryptographicAssets: []entities.CryptographicAsset{{}}},
+		{Language: "java", CryptographicAssets: []entities.CryptographicAsset{{}}},
+		{Language: "go", CryptographicAssets: []entities.CryptographicAsset{{}}},
+	}}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}}
+	result := &engine.DepScanResult{CallGraph: graph, Ecosystem: ecosystemNode, AdditionalEcosystems: []*engine.DepScanResult{
+		{CallGraph: graph, Ecosystem: ecosystemJava, Dependencies: []dependency.Dependency{{Module: "org.example:lib", Version: "1.0"}}},
+		// An entry without a graph does not count as built.
+		{Ecosystem: ecosystemGo},
+	}}
+	got := MissingAdditionalCallGraphEcosystems(report, result)
+	if len(got) != 1 || got[0] != ecosystemGo {
+		t.Fatalf("MissingAdditionalCallGraphEcosystems = %v, want [go]", got)
+	}
+	if got := MissingAdditionalCallGraphEcosystems(report, nil); len(got) != 3 {
+		t.Fatalf("MissingAdditionalCallGraphEcosystems(nil result) = %v, want every ecosystem", got)
+	}
+}
+
+// An additional ecosystem whose dependencies were resolved gets the full
+// dependency-aware context: its own dependency paths, versions and user
+// packages, whatever the primary resolved.
+func TestExportContextSetGivesResolvedAdditionalEcosystemItsDependencies(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	javaGraph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		"com.acme.App.main#1": {ID: callgraph.FunctionID{Package: "com.acme", Type: "App", Name: "main#1"}, FilePath: root + "/com/acme/App.java"},
+	}}
+	paths := map[string]dependency.Path{"org.example:lib": {Steps: []dependency.PathStep{{Module: "org.example:lib"}}}}
+	extra := &engine.DepScanResult{
+		CallGraph: javaGraph, Ecosystem: ecosystemJava, ProjectRoot: root, RootModule: "com.acme:app",
+		Dependencies:    []dependency.Dependency{{Module: "org.example:lib", Version: "1.0", Dir: t.TempDir()}},
+		DependencyPaths: paths,
+	}
+	primary := &engine.DepScanResult{
+		CallGraph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}}, Ecosystem: ecosystemNode,
+		ProjectRoot: root, AdditionalEcosystems: []*engine.DepScanResult{extra},
+	}
+	ctx := newCallGraphExportContextSet(primary, nil, CallGraphExportOptions{}).additional[ecosystemJava]
+	if ctx == nil {
+		t.Fatal("no java context")
+	}
+	if ctx.dependencyVersions["org.example:lib"] != "1.0" || len(ctx.dependencyPaths) != 1 {
+		t.Errorf("java context dependencies = %v / %v, want the java result's", ctx.dependencyVersions, ctx.dependencyPaths)
+	}
+	if !ctx.userPackages["com.acme"] {
+		t.Errorf("java user packages = %v, want the project's com.acme", ctx.userPackages)
+	}
+	if len(ctx.dependencies) != 1 {
+		t.Errorf("java artifacts = %+v, want the java dependency root", ctx.dependencies)
+	}
+}

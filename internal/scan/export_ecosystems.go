@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/scanoss/crypto-finder/internal/engine"
@@ -37,18 +38,7 @@ const (
 // EcosystemForLanguage maps a finding's detected language to the call graph
 // ecosystem that parses it, or "" when no call graph parser supports it.
 func EcosystemForLanguage(language string) string {
-	switch language {
-	case ecosystemC:
-		return ecosystemC
-	case ecosystemCPP, "c++":
-		return ecosystemCPP
-	case ecosystemGo, ecosystemJava, ecosystemPython, ecosystemRust:
-		return language
-	case ecosystemNode, "javascript", "typescript", "tsx", "jsx":
-		return ecosystemNode
-	default:
-		return ""
-	}
+	return engine.LanguageEcosystem(language)
 }
 
 // sameCallGraphFamily reports whether findings of ecosystem a resolve in a call
@@ -84,6 +74,26 @@ func AdditionalCallGraphEcosystems(report *entities.InterimReport, primary strin
 	return out
 }
 
+// MissingAdditionalCallGraphEcosystems lists the AdditionalCallGraphEcosystems
+// of report that result carries no graph for yet. An ecosystem the dependency
+// phase resolved beside the primary one already has its dependency-aware
+// graph in result.AdditionalEcosystems, and a source-only graph built beside
+// it would be a second, poorer graph for the same findings.
+func MissingAdditionalCallGraphEcosystems(report *entities.InterimReport, result *engine.DepScanResult) []string {
+	if result == nil {
+		return AdditionalCallGraphEcosystems(report, "")
+	}
+	var out []string
+	for _, ecosystem := range AdditionalCallGraphEcosystems(report, result.Ecosystem) {
+		if !slices.ContainsFunc(result.AdditionalEcosystems, func(extra *engine.DepScanResult) bool {
+			return extra != nil && extra.CallGraph != nil && sameCallGraphFamily(extra.Ecosystem, ecosystem)
+		}) {
+			out = append(out, ecosystem)
+		}
+	}
+	return out
+}
+
 func hasFirstPartyAsset(finding *entities.Finding) bool {
 	for i := range finding.CryptographicAssets {
 		info := finding.CryptographicAssets[i].DependencyInfo
@@ -114,10 +124,15 @@ func newCallGraphExportContextSet(result *engine.DepScanResult, findings []entit
 	if len(result.AdditionalEcosystems) == 0 {
 		return set
 	}
-	// An additional ecosystem resolves no dependencies, so its findings are
-	// all first-party. They are classified against its own source packages
-	// whenever the primary ecosystem is: when dependencies were resolved, or
-	// when project reachability was requested.
+	// An additional ecosystem whose dependencies the scan resolved gets the
+	// context the primary one gets: its dependency paths and versions, its
+	// dependency source roots and its own user packages, so its dependency
+	// findings carry their dependency block, chains and reachability.
+	//
+	// Any other additional ecosystem resolves no dependencies, so its
+	// findings are all first-party. They are classified against its own
+	// source packages whenever the primary ecosystem is: when dependencies
+	// were resolved, or when project reachability was requested.
 	projectReach := len(result.Dependencies) > 0 || options.ProjectReachability
 	set.additional = make(map[string]*exportBuildContext, len(result.AdditionalEcosystems))
 	for _, extra := range sortedAdditionalEcosystems(result.AdditionalEcosystems) {
@@ -125,11 +140,16 @@ func newCallGraphExportContextSet(result *engine.DepScanResult, findings []entit
 			continue
 		}
 		routed := findingsInEcosystem(findings, extra.Ecosystem)
-		var userPackages map[string]bool
-		if projectReach {
-			userPackages = projectUserPackages(extra)
+		var ctx *exportBuildContext
+		if len(extra.Dependencies) > 0 {
+			ctx = newCallGraphExportBuildContext(extra, routed, options)
+		} else {
+			var userPackages map[string]bool
+			if projectReach {
+				userPackages = projectUserPackages(extra)
+			}
+			ctx = newExportBuildContextWithUserPackages(extra, routed, options.MaxChains, userPackages)
 		}
-		ctx := newExportBuildContextWithUserPackages(extra, routed, options.MaxChains, userPackages)
 		set.additional[extra.Ecosystem] = ctx
 		set.ordered = append(set.ordered, ctx)
 	}

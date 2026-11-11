@@ -39,9 +39,51 @@ func AssignOccurrenceKeys(result *engine.DepScanResult) {
 	assignOccurrenceKeyGroups(groupOccurrenceKeyCandidates(occurrenceKeyCandidates(result)))
 }
 
+// occurrenceAnchorSource is a graph occurrence keys anchor findings in, with
+// the artifacts that locate their files.
+type occurrenceAnchorSource struct {
+	ctx       *exportBuildContext
+	functions *functionFileIndex
+}
+
+// occurrenceDependencySources indexes, per ecosystem, the additional results
+// whose dependencies the scan resolved. A dependency finding of such an
+// ecosystem lives in that result's dependency sources and graph, which the
+// primary result knows nothing about.
+func occurrenceDependencySources(result *engine.DepScanResult) map[string]occurrenceAnchorSource {
+	var out map[string]occurrenceAnchorSource
+	for _, extra := range sortedAdditionalEcosystems(result.AdditionalEcosystems) {
+		if extra.CallGraph == nil || len(extra.Dependencies) == 0 || extra.Ecosystem == "" {
+			continue
+		}
+		if _, seen := out[extra.Ecosystem]; seen {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]occurrenceAnchorSource)
+		}
+		ctx := newExportPathContext(extra)
+		out[extra.Ecosystem] = occurrenceAnchorSource{ctx: ctx, functions: newFunctionFileIndex(&ctx.exportArtifacts, extra.CallGraph.Functions)}
+	}
+	return out
+}
+
+// occurrenceAnchorSourceFor is where an asset's occurrence key anchors: the
+// additional result that resolved the dependencies of the finding's language
+// for a dependency asset of that language, else the primary result.
+func occurrenceAnchorSourceFor(primary occurrenceAnchorSource, dependencySources map[string]occurrenceAnchorSource, finding *entities.Finding, asset *entities.CryptographicAsset) (*exportBuildContext, *functionFileIndex) {
+	if asset.DependencyInfo != nil && asset.DependencyInfo.Module != "" {
+		if extra, ok := dependencySources[EcosystemForLanguage(finding.Language)]; ok {
+			return extra.ctx, extra.functions
+		}
+	}
+	return primary.ctx, primary.functions
+}
+
 func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandidate {
-	ctx := newExportPathContext(result)
-	functions := newFunctionFileIndex(&ctx.exportArtifacts, occurrenceAnchorFunctions(result))
+	primaryCtx := newExportPathContext(result)
+	primary := occurrenceAnchorSource{ctx: primaryCtx, functions: newFunctionFileIndex(&primaryCtx.exportArtifacts, occurrenceAnchorFunctions(result))}
+	dependencySources := occurrenceDependencySources(result)
 	var candidates []occurrenceKeyCandidate
 
 	for i := range result.Report.Findings {
@@ -49,6 +91,7 @@ func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandid
 		for j := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[j]
 			asset.OccurrenceKey = ""
+			ctx, functions := occurrenceAnchorSourceFor(primary, dependencySources, finding, asset)
 			var containing *callgraph.FunctionDecl
 			if file, ok := ctx.findingFile(finding.FilePath, asset.DependencyInfo); ok {
 				containing = functions.containing(file, asset.StartLine, asset.StartCol)

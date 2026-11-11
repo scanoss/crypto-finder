@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -265,6 +266,32 @@ name = "dev-tooling"
 		dir := t.TempDir()
 		if got := DetectEcosystem(dir); got != "" {
 			t.Fatalf("DetectEcosystem() = %q, want empty", got)
+		}
+	})
+
+	t.Run("every-manifest-in-precedence", func(t *testing.T) {
+		dir := t.TempDir()
+		for _, name := range []string{"package.json", "Cargo.toml", "requirements.txt", "pom.xml", "go.mod"} {
+			writeFile(t, dir, name)
+		}
+		want := []string{"go", "java", "rust", "python", "node"}
+		if got := DetectEcosystems(dir); !slices.Equal(got, want) {
+			t.Fatalf("DetectEcosystems() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("every-manifest-python-package-before-rust", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "Cargo.toml")
+		writeFile(t, dir, "package.json")
+		writePyproject(t, dir, `
+[build-system]
+requires = ["maturin>=1.0"]
+build-backend = "maturin"
+`)
+		want := []string{"python", "rust", "node"}
+		if got := DetectEcosystems(dir); !slices.Equal(got, want) {
+			t.Fatalf("DetectEcosystems() = %v, want %v", got, want)
 		}
 	})
 }
