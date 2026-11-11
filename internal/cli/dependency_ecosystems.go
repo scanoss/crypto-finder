@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"slices"
 	"strings"
 
@@ -144,12 +145,22 @@ type dependencyEcosystemScan func(ecosystem string, resolver dependency.Resolver
 // is logged and reported as resolution_failed, and the remaining ecosystems
 // still resolve. Cancellation still stops the scan, as does any failure of
 // the primary or of an explicit --dep-ecosystem, which never reach here.
+//
+// Cancellation is read from ctx, not only from the error. Ctrl-C, SIGTERM or
+// --timeout kill a running mvn, go list or cargo through exec.CommandContext,
+// and the resolver returns that child's exit error, which says nothing about
+// the context: classified as resolution_failed it would let an interrupted
+// or timed-out scan finish and exit 0.
 func (o *dependencyEcosystemOutcome) resolveSecondary(
+	ctx context.Context,
 	ecosystems []string,
 	resolverFor func(string) (dependency.Resolver, error),
 	scan dependencyEcosystemScan,
 ) error {
 	for _, ecosystem := range ecosystems {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		resolver, err := resolverFor(ecosystem)
 		if err != nil {
 			// planAutoDependencyEcosystems kept only ecosystems with a resolver.
@@ -159,7 +170,7 @@ func (o *dependencyEcosystemOutcome) resolveSecondary(
 		last := o.resolved[len(o.resolved)-1]
 		result, skipReason, scanErr := scan(ecosystem, resolver, last.Report)
 		if scanErr != nil {
-			if isScanCanceled(scanErr) {
+			if ctx.Err() != nil || isScanCanceled(scanErr) {
 				return scanErr
 			}
 			log.Warn().Err(scanErr).Str("ecosystem", ecosystem).

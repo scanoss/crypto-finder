@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/xeipuuv/gojsonschema"
 
@@ -472,7 +473,7 @@ func TestDependencyEcosystemOutcomeResolveSecondaryKeepsResultsOnFailure(t *test
 	}
 
 	outcome := dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{primary}}
-	err := outcome.resolveSecondary([]string{ecosystemJava, ecosystemCPP, "rust", ecosystemPython}, resolverFor, scan)
+	err := outcome.resolveSecondary(context.Background(), []string{ecosystemJava, ecosystemCPP, "rust", ecosystemPython}, resolverFor, scan)
 	if err != nil {
 		t.Fatalf("resolveSecondary = %v, want the scan to continue past a failed secondary ecosystem", err)
 	}
@@ -497,7 +498,46 @@ func TestDependencyEcosystemOutcomeResolveSecondaryKeepsResultsOnFailure(t *test
 	cancelScan := func(string, dependency.Resolver, *entities.InterimReport) (*engine.DepScanResult, string, error) {
 		return nil, "", context.Canceled
 	}
-	if err := canceled.resolveSecondary([]string{ecosystemPython}, resolverFor, cancelScan); !errors.Is(err, context.Canceled) {
+	if err := canceled.resolveSecondary(context.Background(), []string{ecosystemPython}, resolverFor, cancelScan); !errors.Is(err, context.Canceled) {
 		t.Errorf("resolveSecondary on cancellation = %v, want context.Canceled", err)
+	}
+}
+
+// A child killed by Ctrl-C, SIGTERM or --timeout returns its exit error, not
+// the context's: the scan context decides, so the scan stops, and a done
+// context stops it before the next ecosystem starts.
+func TestDependencyEcosystemOutcomeResolveSecondaryStopsWhenTheScanContextIsDone(t *testing.T) {
+	primary := &engine.DepScanResult{Ecosystem: ecosystemNode, Report: &entities.InterimReport{}}
+	resolverFor := func(string) (dependency.Resolver, error) { return nil, nil }
+	killed := errors.New("failed to list Maven dependencies: signal: killed")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+	scans := 0
+	scan := func(string, dependency.Resolver, *entities.InterimReport) (*engine.DepScanResult, string, error) {
+		scans++
+		return nil, "", killed
+	}
+	outcome := dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{primary}}
+	if err := outcome.resolveSecondary(ctx, []string{ecosystemJava}, resolverFor, scan); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("resolveSecondary after the deadline = %v, want context.DeadlineExceeded before any ecosystem runs", err)
+	}
+	if scans != 0 {
+		t.Errorf("scans = %d, want none once the scan context is done", scans)
+	}
+
+	// The context ends while the toolchain runs: its exit error stops the scan.
+	running, stop := context.WithCancel(context.Background())
+	killDuringScan := func(string, dependency.Resolver, *entities.InterimReport) (*engine.DepScanResult, string, error) {
+		stop()
+		return nil, "", killed
+	}
+	outcome = dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{primary}}
+	if err := outcome.resolveSecondary(running, []string{ecosystemJava, ecosystemPython}, resolverFor, killDuringScan); !errors.Is(err, killed) {
+		t.Errorf("resolveSecondary when the scan is interrupted mid-ecosystem = %v, want the toolchain's error", err)
+	}
+	if len(outcome.skipped) != 0 {
+		t.Errorf("skipped = %+v, want an interrupted ecosystem not reported as resolution_failed", outcome.skipped)
 	}
 }

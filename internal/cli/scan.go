@@ -1253,7 +1253,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				// too. Each scans on top of the report the previous one
 				// returned, so the findings of all of them accumulate, and
 				// its result joins the primary as an additional ecosystem.
-				if err := outcome.resolveSecondary(auto.secondary(), depRegistry.Get, scanEcosystem); err != nil {
+				if err := outcome.resolveSecondary(ctx, auto.secondary(), depRegistry.Get, scanEcosystem); err != nil {
 					return err
 				}
 				callGraphResult = outcome.primaryWithAdditional()
