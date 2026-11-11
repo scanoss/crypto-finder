@@ -64,6 +64,7 @@ const (
 	ecosystemJava         = "java"
 	ecosystemNode         = "node"
 	ecosystemCPP          = "cpp"
+	ecosystemRust         = "rust"
 	ecosystemPython       = "python"
 
 	findingsCacheBackendDisk     = "disk"
@@ -300,7 +301,7 @@ func ecosystemFromHints(target string, languageHints []string) string {
 	case ".py":
 		return "python"
 	case ".rs":
-		return "rust"
+		return ecosystemRust
 	case ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts":
 		return ecosystemNode
 	default:
@@ -315,7 +316,7 @@ func ecosystemFromHint(target, hint string) string {
 			return ecosystemCPP
 		}
 		return hint
-	case "go", ecosystemJava, "python", "rust":
+	case "go", ecosystemJava, "python", ecosystemRust:
 		return hint
 	case ecosystemCPP, "c++":
 		return ecosystemCPP
@@ -1761,7 +1762,7 @@ func newDependencyRegistry(includeDevDependencies, installDependencies bool) *de
 		npmOptions = append(npmOptions, dependency.WithNpmDevDependencies())
 	}
 	registry.Register("python", dependency.NewPipResolver(pipOptions...))
-	registry.Register("rust", dependency.NewCargoResolver())
+	registry.Register(ecosystemRust, dependency.NewCargoResolver())
 	registry.Register(ecosystemNode, dependency.NewNpmResolver(npmOptions...))
 	return registry
 }
