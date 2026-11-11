@@ -28,7 +28,8 @@ target source tree
                            Java, bytecode/JDK platform signatures (internal/javaruntime);
                            a target with first-party findings in several supported
                            ecosystems gets one graph per ecosystem, while dependencies
-                           resolve for the primary (dominant) one only
+                           resolve for the primary one only (the first
+                           ecosystem with a resolvable manifest)
    │
    ▼
 4. Reachability           each finding is matched, in the graph of its own language,

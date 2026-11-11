@@ -275,6 +275,9 @@ func TestScanProgressAbsentDependencyManifestSkipsAndKeepsOutput(t *testing.T) {
 				if reason := details["reason"]; reason != "manifest_absent" {
 					t.Fatalf("dependencies:skipped reason = %v, want manifest_absent: %#v", reason, event)
 				}
+				if ecosystem := details["ecosystem"]; ecosystem != "java" {
+					t.Fatalf("dependencies:skipped ecosystem = %v, want java: %#v", ecosystem, event)
+				}
 			}
 
 			raw, err := os.ReadFile(output)

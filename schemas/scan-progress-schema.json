@@ -84,6 +84,11 @@
             "lockfile_absent"
           ]
         },
+        "ecosystem": {
+          "description": "On a skipped dependencies event, the dependency ecosystem the skip reason is about. Absent when no ecosystem was picked (ecosystem_unknown, not_requested).",
+          "type": "string",
+          "minLength": 1
+        },
         "deps_scanned": {
           "type": "integer",
           "minimum": 0
@@ -151,6 +156,7 @@
           "not": {
             "anyOf": [
               {"required": ["reason"]},
+              {"required": ["ecosystem"]},
               {"required": ["files_incomplete"]}
             ]
           }
@@ -160,6 +166,7 @@
           "not": {
             "anyOf": [
               {"required": ["reason"]},
+              {"required": ["ecosystem"]},
               {"required": ["deps_scanned"]},
               {"required": ["deps_skipped"]},
               {"required": ["deps_failed"]},

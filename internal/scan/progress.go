@@ -49,11 +49,23 @@ func (w *ProgressWriter) Cancel(phase, parentPhase string, details map[string]an
 
 // Skip writes a skipped event for phase.
 func (w *ProgressWriter) Skip(phase, parentPhase, reason string) error {
+	return w.SkipWithDetails(phase, parentPhase, reason, nil)
+}
+
+// SkipWithDetails writes a skipped event for phase whose details carry reason
+// and every entry of details. The reason argument wins over a "reason" key in
+// details, and details is not modified.
+func (w *ProgressWriter) SkipWithDetails(phase, parentPhase, reason string, details map[string]any) error {
+	merged := make(map[string]any, len(details)+1)
+	for key, value := range details {
+		merged[key] = value
+	}
+	merged["reason"] = reason
 	return w.write(progressEventRecord{
 		Phase:       phase,
 		Status:      "skipped",
 		ParentPhase: parentPhase,
-		Details:     map[string]any{"reason": reason},
+		Details:     merged,
 	})
 }
 

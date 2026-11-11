@@ -52,32 +52,52 @@ var pythonBuildBackendPrefixes = []string{
 // Polyglot conflicts outside the Python↔Rust pair are not disambiguated here;
 // they keep the existing precedence, with Node used only as the final fallback.
 func DetectEcosystem(target string) string {
+	if ecosystems := DetectEcosystems(target); len(ecosystems) > 0 {
+		return ecosystems[0]
+	}
+	return ""
+}
+
+// DetectEcosystems lists every ecosystem with a manifest in the target
+// directory, in DetectEcosystem's precedence: go, java, python when
+// pyproject.toml declares a Python package, rust, python for any other Python
+// manifest, then node. DetectEcosystem returns the first entry.
+func DetectEcosystems(target string) []string {
+	var out []string
 	// go.mod at root is authoritative for Go.
-	if _, err := os.Stat(filepath.Join(target, "go.mod")); err == nil {
-		return ecosystemGo
+	if fileExists(filepath.Join(target, "go.mod")) {
+		out = append(out, ecosystemGo)
 	}
 	if dependency.HasJavaManifest(target) {
-		return ecosystemJava
+		out = append(out, ecosystemJava)
 	}
 	// Python↔Rust disambiguation: inspect pyproject.toml before letting
 	// Cargo.toml win. A pyproject that declares a Python package takes
 	// precedence over an embedded Rust crate.
-	pyprojectPath := filepath.Join(target, "pyproject.toml")
-	if isPythonPackagePyproject(pyprojectPath) {
-		return ecosystemPython
+	python := isPythonPackagePyproject(filepath.Join(target, "pyproject.toml"))
+	if python {
+		out = append(out, ecosystemPython)
 	}
-	if _, err := os.Stat(filepath.Join(target, "Cargo.toml")); err == nil {
-		return ecosystemRust
+	if fileExists(filepath.Join(target, "Cargo.toml")) {
+		out = append(out, ecosystemRust)
 	}
-	for _, manifest := range []string{"pyproject.toml", "requirements.txt", "Pipfile", "setup.py"} {
-		if _, err := os.Stat(filepath.Join(target, manifest)); err == nil {
-			return ecosystemPython
+	if !python {
+		for _, manifest := range []string{"pyproject.toml", "requirements.txt", "Pipfile", "setup.py"} {
+			if fileExists(filepath.Join(target, manifest)) {
+				out = append(out, ecosystemPython)
+				break
+			}
 		}
 	}
-	if _, err := os.Stat(filepath.Join(target, "package.json")); err == nil {
-		return ecosystemNode
+	if fileExists(filepath.Join(target, "package.json")) {
+		out = append(out, ecosystemNode)
 	}
-	return ""
+	return out
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // isPythonPackagePyproject returns true when the given pyproject.toml declares

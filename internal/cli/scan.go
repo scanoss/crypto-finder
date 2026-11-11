@@ -64,6 +64,7 @@ const (
 	ecosystemJava         = "java"
 	ecosystemNode         = "node"
 	ecosystemCPP          = "cpp"
+	ecosystemPython       = "python"
 
 	findingsCacheBackendDisk     = "disk"
 	findingsCacheBackendNone     = "none"
@@ -1105,11 +1106,12 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 
 	// Dependency scanning phase.
 	dependencyCompleted := false
-	skipDependencies := func(reason string) error {
+	skipDependencies := func(reason, ecosystem string) error {
 		if progress == nil {
 			return nil
 		}
-		if err := progress.Skip("dependencies", "scan", reason); err != nil {
+		details := dependencySkipDetails(reason, ecosystem)
+		if err := progress.SkipWithDetails("dependencies", "scan", reason, details); err != nil {
 			return progressWriteFailure(err)
 		}
 		dependencyCompleted = true
@@ -1136,16 +1138,21 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				runErr = progressWriteFailure(progressErr)
 			}
 		}()
+		depRegistry := newDependencyRegistry(scanIncludeDevDependencies, scanInstallDependencies)
 		ecosystem := scanDepEcosystem
 		if ecosystem == "auto" {
-			ecosystem = ecosystemFromHints(target, scanLanguages)
-			if ecosystem == "" {
-				ecosystem = scanutil.DetectEcosystem(target)
+			auto := planAutoDependencyEcosystems(target, scanLanguages, depRegistry, skipPatterns)
+			ecosystem = auto.primary()
+			if len(auto.resolvable) > 0 {
+				log.Info().
+					Str("ecosystem", ecosystem).
+					Strs("resolvable", auto.resolvable).
+					Str("dominant", auto.fallback).
+					Msg("Selected dependency ecosystem with a manifest")
 			}
 		}
 
 		if ecosystem != "" {
-			depRegistry := newDependencyRegistry(scanIncludeDevDependencies, scanInstallDependencies)
 			var depScannerOptions []engine.DependencyScannerOption
 			if source := newDependencyFindingsSource(cfg.GetAPIURL(), cfg.GetAPIKey(), cfg.GetAllowHTTP(), scanNoDependencyFindingsAPI); source != nil {
 				depScannerOptions = append(depScannerOptions, engine.WithDependencyFindingsSource(source))
@@ -1155,27 +1162,17 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			switch {
 			case resolverErr != nil:
 				log.Warn().Err(resolverErr).Str("ecosystem", ecosystem).Msg("No resolver for ecosystem, skipping dependency scan")
-				if err := skipDependencies("resolver_unavailable"); err != nil {
+				if err := skipDependencies(depSkipResolverUnavailable, ecosystem); err != nil {
 					return err
 				}
-			// Gated on target rather than targetDir because the dependency
-			// scanner hands the resolver opts.ScanOptions.Target. Gating on the
-			// containing directory lets a file target pass and then abort
-			// inside the resolver, which is what this skip prevents.
-			//
-			// A target the resolver cannot read is not necessarily a target
-			// with nothing to resolve. A monorepo carries its manifests in the
-			// module directories below the root, and the dependency scanner
-			// resolves each of those, so the phase only skips when that search
-			// comes back empty too.
-			case !resolver.CanResolve(target) && len(dependency.ResolutionRoots(target, ecosystem, skipPatterns).Roots) == 0:
+			case !dependencyEcosystemResolvable(resolver, target, ecosystem, skipPatterns):
 				reason := dependency.UnresolvableSkipReason(target, ecosystem)
 				if reason == dependency.SkipReasonLockfileAbsent {
 					log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("package.json has no package-lock.json, skipping dependency scan; first-party code is still analyzed")
 				} else {
 					log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("No dependency manifest at or below scan target, skipping dependency scan")
 				}
-				if err := skipDependencies(reason); err != nil {
+				if err := skipDependencies(reason, ecosystem); err != nil {
 					return err
 				}
 			default:
@@ -1192,14 +1189,14 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(scanIncludeTests))
 				if cgParser == nil {
 					log.Warn().Str("ecosystem", ecosystem).Msg("No call graph parser for ecosystem, skipping dependency scan")
-					if err := skipDependencies("parser_unavailable"); err != nil {
+					if err := skipDependencies(depSkipParserUnavailable, ecosystem); err != nil {
 						return err
 					}
 				} else {
 					cgBuilder, builderErr := newCallGraphBuilder(ecosystem, javaRuntime, scanIncludeTests, skipMatcher)
 					if builderErr != nil {
 						log.Warn().Err(builderErr).Str("ecosystem", ecosystem).Msg("Failed to configure call graph builder, skipping dependency scan")
-						if err := skipDependencies("callgraph_unavailable"); err != nil {
+						if err := skipDependencies(depSkipCallgraphUnavailable, ecosystem); err != nil {
 							return err
 						}
 					} else {
@@ -1241,11 +1238,11 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			}
 		} else {
 			log.Warn().Msg("Could not detect dependency ecosystem, skipping dependency scan")
-			if err := skipDependencies("ecosystem_unknown"); err != nil {
+			if err := skipDependencies(depSkipEcosystemUnknown, ""); err != nil {
 				return err
 			}
 		}
-	} else if err := skipDependencies("not_requested"); err != nil {
+	} else if err := skipDependencies(depSkipNotRequested, ""); err != nil {
 		return err
 	}
 
