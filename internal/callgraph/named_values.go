@@ -24,9 +24,10 @@ type NamedValue struct {
 	Line         int
 	// ref is the value an initializer like `A = B` names.
 	ref *nameRef
-	// fixedUnder is the key of the Enum class a Python Enum member belongs to.
-	// A member cannot be reassigned, so only a write that rebinds the class
-	// itself, or something above it, changes the value.
+	// fixedUnder is the key of an object whose members cannot be reassigned:
+	// the class of a Python Enum member, a JavaScript Object.freeze object.
+	// Only a write that rebinds that object itself, or something above it,
+	// changes the value.
 	fixedUnder string
 	// unresolvable marks a key that two source files declare differently, or
 	// that a file may write at runtime.
@@ -140,8 +141,8 @@ func namedValueWritten(key, fixedUnder string, writes map[string]bool) bool {
 		if fixedUnder == "" || len(prefix) < len(fixedUnder) {
 			return true
 		}
-		// A write at or under the class of an Enum member can only rebind
-		// the class itself.
+		// A write at or under a fixed object can only rebind the object
+		// itself.
 		return prefix == fixedUnder && keyWritten
 	}
 	if keyWritten := writes[key]; keyWritten && reaches(key, true) {

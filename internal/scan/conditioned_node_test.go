@@ -101,3 +101,69 @@ export function tsEnum(d) { return hash(Digest.MD, d); }
 		})
 	}
 }
+
+// An exported config value a third module overwrites at runtime, or lets
+// escape, does not specialize the digest that reads it: the generic anchor
+// stays. A third module that only reads it changes nothing.
+func TestMaterializeConditionedFindings_NodeValueWrittenByAnotherModule(t *testing.T) {
+	t.Parallel()
+
+	const cjsHasher = "const crypto = require(\"crypto\");\nconst config = require(\"./config\");\nexports.hash = (d) => crypto.createHash(config.hashAlgorithm).update(d).digest();\n"
+	const esmHasher = "import crypto from \"crypto\";\nimport { Cfg } from \"./config.mjs\";\nexport const hash = (d) => crypto.createHash(Cfg.hashAlgorithm).update(d).digest();\n"
+	tests := []struct {
+		name, config, configFile, bootstrap, hasher, hasherFile, match string
+		wantRules                                                      []string
+		wantAnchor                                                     bool
+	}{
+		{
+			"CommonJS config written by bootstrap", "module.exports = { hashAlgorithm: \"sha256\" };\n", "src/config.js",
+			"const config = require(\"./config\");\nconfig.hashAlgorithm = process.env.HASH_ALG;\n",
+			cjsHasher, "src/hasher.js", "crypto.createHash(config.hashAlgorithm)", nil, true,
+		},
+		{
+			"CommonJS config only read by bootstrap", "module.exports = { hashAlgorithm: \"sha256\" };\n", "src/config.js",
+			"const config = require(\"./config\");\nconsole.log(config.hashAlgorithm);\n",
+			cjsHasher, "src/hasher.js", "crypto.createHash(config.hashAlgorithm)",
+			[]string{"js.hash.sha256"},
+			false,
+		},
+		{
+			"ESM config written by bootstrap", "export const Cfg = { hashAlgorithm: \"sha256\" };\n", "src/config.mjs",
+			"import { Cfg } from \"./config.mjs\";\nCfg.hashAlgorithm = process.env.HASH_ALG;\n",
+			esmHasher, "src/hasher.mjs", "crypto.createHash(Cfg.hashAlgorithm)", nil, true,
+		},
+		{
+			"ESM config escaping from bootstrap", "export const Cfg = { hashAlgorithm: \"sha256\" };\n", "src/config.mjs",
+			"import { Cfg } from \"./config.mjs\";\nimport { loadOverrides } from \"./overrides.mjs\";\nloadOverrides(Cfg);\n",
+			esmHasher, "src/hasher.mjs", "crypto.createHash(Cfg.hashAlgorithm)", nil, true,
+		},
+		{
+			"ESM config only read by bootstrap", "export const Cfg = { hashAlgorithm: \"sha256\" };\n", "src/config.mjs",
+			"import { Cfg } from \"./config.mjs\";\nconsole.log(Cfg.hashAlgorithm);\n",
+			esmHasher, "src/hasher.mjs", "crypto.createHash(Cfg.hashAlgorithm)",
+			[]string{"js.hash.sha256"},
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := writeSourceTree(t, map[string]string{
+				tt.configFile:       tt.config,
+				"src/bootstrap.mjs": tt.bootstrap,
+				tt.hasherFile:       tt.hasher,
+			})
+			graph, err := callgraph.NewBuilderForEcosystem("node", callgraph.NewNodeParser()).
+				BuildFromDirectories([]callgraph.PackageDir{{Dir: dir}}, nil)
+			if err != nil {
+				t.Fatalf("BuildFromDirectories: %v", err)
+			}
+			report := namedValueAnchor(t, dir, tt.hasherFile, tt.match, "js.hash.dynamic", "javascript", "crypto.createHash")
+			MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "node", ProjectRoot: dir}, []string{writeConditionedRules(t, nodeDigestRules)})
+			got, anchor := specializedRules(report, "js.hash.dynamic")
+			if !slices.Equal(got, tt.wantRules) || anchor != tt.wantAnchor {
+				t.Fatalf("specialized rules = %v, generic anchor = %v; want %v, %v", got, anchor, tt.wantRules, tt.wantAnchor)
+			}
+		})
+	}
+}

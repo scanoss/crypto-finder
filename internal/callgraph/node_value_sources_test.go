@@ -340,3 +340,86 @@ func TestNodeValueSources_ClosureParameter(t *testing.T) {
 	}
 	t.Fatal("closure createHash call not found")
 }
+
+// An exported value another module may write at runtime resolves to nothing;
+// a member of a frozen object, which no write can change, still resolves.
+func TestNodeValueSources_WrittenByAnotherModule(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, bootstrap  string
+		cjs, esm, frozen bool
+	}{
+		{"reads only", `const config = require("./config");
+import { Cfg, Frozen } from "./settings.mjs";
+import * as s from "./settings.mjs";
+console.log(config.hashAlgorithm, Cfg.hashAlgorithm, s.Frozen.hashAlgorithm, config["hashAlgorithm"]);
+config.load();
+`, true, true, true},
+		{"CommonJS member write", `const config = require("./config");
+config.hashAlgorithm = process.env.HASH_ALG;
+`, false, true, true},
+		{"CommonJS computed write", `const config = require("./config");
+config[process.env.KEY] = process.env.HASH_ALG;
+`, false, true, true},
+		{"write through require", `require("./config").hashAlgorithm = process.env.HASH_ALG;
+`, false, true, true},
+		{"delete", `const config = require("./config");
+delete config.hashAlgorithm;
+`, false, true, true},
+		{"augmented assignment", `const config = require("./config");
+config.hashAlgorithm += "-x";
+`, false, true, true},
+		{"Object.assign", `const config = require("./config");
+Object.assign(config, overrides);
+`, false, true, true},
+		{"default import write", `import config from "./config";
+config.hashAlgorithm = process.env.HASH_ALG;
+`, false, true, true},
+		{"ESM named import write", `import { Cfg } from "./settings.mjs";
+Cfg.hashAlgorithm = process.env.HASH_ALG;
+`, true, false, true},
+		{"ESM namespace write", `import * as s from "./settings.mjs";
+s.Cfg.hashAlgorithm = process.env.HASH_ALG;
+`, true, false, true},
+		{"Object.defineProperty", `import { Cfg } from "./settings.mjs";
+Object.defineProperty(Cfg, "hashAlgorithm", { value: process.env.HASH_ALG });
+`, true, false, true},
+		{"ESM object escapes", `import { Cfg } from "./settings.mjs";
+configure(Cfg);
+`, true, false, true},
+		{"namespace member aliased", `import * as s from "./settings.mjs";
+const o = s.Cfg;
+o.hashAlgorithm = process.env.HASH_ALG;
+`, true, false, true},
+		{"CommonJS module escapes", `const config = require("./config");
+module.exports = { config };
+`, false, true, true},
+		{"frozen object written and escaping", `import { Frozen } from "./settings.mjs";
+Frozen.hashAlgorithm = process.env.HASH_ALG;
+configure(Frozen);
+`, true, true, true},
+		{"frozen object rebound", `const s = require("./settings.mjs");
+s.Frozen = { hashAlgorithm: process.env.HASH_ALG };
+`, true, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			graph := parseInlineNodeProject(t, map[string]string{
+				"src/config.js":    "module.exports = { hashAlgorithm: \"sha256\" };\n",
+				"src/settings.mjs": "export const Cfg = { hashAlgorithm: \"sha256\" };\nexport const Frozen = Object.freeze({ hashAlgorithm: \"sha256\" });\n",
+				"src/bootstrap.js": tt.bootstrap,
+				"src/hasher.js":    "const crypto = require(\"crypto\");\nconst config = require(\"./config\");\nfunction cjs() { return crypto.createHash(config.hashAlgorithm); }\n",
+				"src/hasher.mjs":   "import crypto from \"crypto\";\nimport { Cfg, Frozen } from \"./settings.mjs\";\nexport function esm() { return crypto.createHash(Cfg.hashAlgorithm); }\nexport function frozen() { return crypto.createHash(Frozen.hashAlgorithm); }\n",
+			})
+			for _, read := range []struct {
+				file, function string
+				want           bool
+			}{{"src/hasher.js", "cjs", tt.cjs}, {"src/hasher.mjs", "esm", tt.esm}, {"src/hasher.mjs", "frozen", tt.frozen}} {
+				if got := nodeResolvedArgument(t, graph, read.file, read.function, "createHash", 0) == `"sha256"`; got != read.want {
+					t.Errorf("%s resolved = %v, want %v", read.function, got, read.want)
+				}
+			}
+		})
+	}
+}

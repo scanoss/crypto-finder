@@ -16,5 +16,12 @@
   accessor; when the enum member is numeric; for a package import, a default
   import, `import()`, a re-export from another module or a template literal
   with a substitution; and when a caller passes the argument after a spread.
+  An exported value is also dropped when any project module may write it at
+  runtime: `config.hashAlgorithm = process.env.HASH_ALG` through a `require`,
+  a named, namespace or default import, or `require("./config")` itself; a
+  computed-key write, `delete`, `+=`, `Object.assign` or
+  `Object.defineProperty`; or the imported object passed, aliased, returned or
+  re-exported. A member of an `Object.freeze({..})` object stays resolved,
+  since no write can change it.
   Call-graph exports stamp `graph_algo_version` `graph-algo-23`; cached Node
   structural graphs from `graph-algo-22` are rebuilt.

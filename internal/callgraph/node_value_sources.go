@@ -234,6 +234,16 @@ func (x *nodeValueIndex) members(d *nodeDecl) map[string]*sitter.Node {
 	return nil
 }
 
+// frozen reports a const bound to `Object.freeze({..})`, whose members no
+// write can change.
+func (x *nodeValueIndex) frozen(d *nodeDecl) bool {
+	if d == nil || d.kind != nodeDeclConst {
+		return false
+	}
+	_, frozen := x.frozenObject(unwrapNodeValue(d.value))
+	return frozen
+}
+
 // frozenObject returns the object literal a value is, and whether it is
 // wrapped in `Object.freeze`.
 func (x *nodeValueIndex) frozenObject(value *sitter.Node) (*sitter.Node, bool) {
@@ -415,7 +425,11 @@ func (x *nodeValueIndex) constructedClass(constructor *sitter.Node) (FunctionID,
 // `exports.a = ..`. A re-export from another module, a default export and an
 // exported let or var are left out.
 func (p *NodeParser) recordNodeNamedValues(root *sitter.Node, analysis *FileAnalysis) {
-	if p.values == nil || p.values.disabled {
+	if p.values == nil {
+		return
+	}
+	p.values.recordExportWrites(analysis)
+	if p.values.disabled {
 		return
 	}
 	for i := 0; i < int(root.NamedChildCount()); i++ {
@@ -482,7 +496,7 @@ func (p *NodeParser) recordNodeExport(analysis *FileAnalysis, name string, d *no
 	switch d.kind {
 	case nodeDeclConst:
 		if x.stable(d, d.name) {
-			p.recordNodeValue(analysis, key, d.value)
+			p.recordNodeValue(analysis, key, d.value, "")
 			p.recordNodeMembers(analysis, key, d)
 		}
 	case nodeDeclEnum:
@@ -499,16 +513,21 @@ func (p *NodeParser) recordNodeMembers(analysis *FileAnalysis, key string, d *no
 	if d == nil {
 		return
 	}
+	fixedUnder := ""
+	if p.values.frozen(d) {
+		fixedUnder = key
+	}
 	for member, value := range p.values.members(d) {
-		p.recordNodeValue(analysis, key+"."+member, value)
+		p.recordNodeValue(analysis, key+"."+member, value, fixedUnder)
 	}
 }
 
 // recordNodeValue records under key the literal value resolves to through
-// this module, or the export of another module it names.
-func (p *NodeParser) recordNodeValue(analysis *FileAnalysis, key string, value *sitter.Node) {
+// this module, or the export of another module it names. fixedUnder names
+// the frozen object value is a member of, if any.
+func (p *NodeParser) recordNodeValue(analysis *FileAnalysis, key string, value *sitter.Node, fixedUnder string) {
 	sources := p.nodeValueSource(value, 0)
-	decl := NamedValue{DeclaredType: nodeValueType(sources), FilePath: p.values.filePath, Line: int(value.StartPoint().Row) + 1}
+	decl := NamedValue{DeclaredType: nodeValueType(sources), FilePath: p.values.filePath, Line: int(value.StartPoint().Row) + 1, fixedUnder: fixedUnder}
 	for len(sources) == 1 {
 		switch node := sources[0]; {
 		case node.Type == sourceNodeValue:
@@ -521,6 +540,22 @@ func (p *NodeParser) recordNodeValue(analysis *FileAnalysis, key string, value *
 			return
 		}
 		sources = sources[0].SourceNodes
+	}
+}
+
+// recordExportWrites records what this file may change in other project
+// modules. A file that binds names dynamically (eval, with) may write through
+// any import, so each of them reaches every member of what it imports.
+func (x *nodeValueIndex) recordExportWrites(analysis *FileAnalysis) {
+	if x.disabled {
+		for _, decls := range x.decls {
+			for _, d := range decls {
+				x.exportEscape(d)
+			}
+		}
+	}
+	for write := range x.exportWrites {
+		recordNamedValueWrite(analysis, write)
 	}
 }
 
@@ -545,15 +580,20 @@ func (p *NodeParser) recordNodeCommonJSExports(root *sitter.Node, analysis *File
 		if !single || len(writes) != 1 {
 			return
 		}
-		for member, memberValue := range x.commonJSObjectMembers(value) {
-			p.recordNodeValue(analysis, x.modulePath+"."+member, memberValue)
+		members, frozen := x.commonJSObjectMembers(value)
+		fixedUnder := ""
+		if frozen {
+			fixedUnder = x.modulePath
+		}
+		for member, memberValue := range members {
+			p.recordNodeValue(analysis, x.modulePath+"."+member, memberValue, fixedUnder)
 			p.recordNodeMembers(analysis, x.modulePath+"."+member, x.identifierDecl(memberValue))
 		}
 		return
 	}
 	for target, list := range writes {
 		if value, single := nodeSingleTopLevelWrite(list); single {
-			p.recordNodeValue(analysis, x.modulePath+"."+target, value)
+			p.recordNodeValue(analysis, x.modulePath+"."+target, value, "")
 			p.recordNodeMembers(analysis, x.modulePath+"."+target, x.identifierDecl(value))
 		}
 	}
@@ -602,16 +642,17 @@ func nodeSingleTopLevelWrite(list []nodeCommonJSWrite) (*sitter.Node, bool) {
 }
 
 // commonJSObjectMembers returns the members `module.exports = value` exports:
-// those of an object literal, frozen or not, or of an enum-like binding.
-func (x *nodeValueIndex) commonJSObjectMembers(value *sitter.Node) map[string]*sitter.Node {
+// those of an object literal, frozen or not, or of an enum-like binding, and
+// whether the object is frozen.
+func (x *nodeValueIndex) commonJSObjectMembers(value *sitter.Node) (map[string]*sitter.Node, bool) {
 	value = unwrapNodeValue(value)
-	if object, _ := x.frozenObject(value); object != nil {
-		return x.objectMembers(object)
+	if object, frozen := x.frozenObject(value); object != nil {
+		return x.objectMembers(object), frozen
 	}
 	if d := x.identifierDecl(value); d != nil {
-		return x.members(d)
+		return x.members(d), x.frozen(d)
 	}
-	return nil
+	return nil, false
 }
 
 func (x *nodeValueIndex) identifierDecl(value *sitter.Node) *nodeDecl {

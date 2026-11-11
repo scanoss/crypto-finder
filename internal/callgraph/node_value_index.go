@@ -5,6 +5,7 @@ package callgraph
 
 import (
 	"strconv"
+	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
 )
@@ -66,6 +67,12 @@ type nodeDecl struct {
 	// binds. module is empty for a package, a default import, or anything
 	// the importer cannot pin to one export.
 	module, member string
+	// exportKey is the NamedValue key of what the binding refers to in another
+	// project module: its export for a named import or a destructured
+	// require, the module itself for a namespace, default or whole require
+	// import. A write through the binding, or its escape, may change values
+	// under it (exportWrite).
+	exportKey string
 	// writes counts the assignments to the binding after its declaration;
 	// memberWrites marks a member of it assigned, deleted or redefined
 	// through Object.assign and the like; escapes counts its uses other than
@@ -95,6 +102,8 @@ type nodeValueIndex struct {
 	// propertyWrites counts, per property name, the writes anywhere in the
 	// file to `o.<name>` or `o["<name>"]` through an object other than this.
 	propertyWrites map[string]int
+	// exportWrites holds what this file may change in other project modules.
+	exportWrites map[NamedValueWrite]bool
 }
 
 func newNodeValueIndex(root *sitter.Node, src []byte, filePath, packagePath, modulePath string) *nodeValueIndex {
@@ -289,6 +298,7 @@ func (x *nodeValueIndex) requireDecl(name *sitter.Node, d nodeDecl, binding node
 	}
 	if name.Type() == goNodeIdentifier {
 		d.module, d.member = module, binding.member
+		d.exportKey = nodeExportKey(module, binding.member)
 		x.add(name, &d)
 		return
 	}
@@ -307,6 +317,7 @@ func (x *nodeValueIndex) requireDecl(name *sitter.Node, d nodeDecl, binding node
 			continue
 		}
 		entry.module, entry.member = module, joinNodeMember(binding.member, member)
+		entry.exportKey = nodeExportKey(module, entry.member)
 		x.add(local, &entry)
 	}
 }
@@ -355,20 +366,21 @@ func (x *nodeValueIndex) importClause(n, root *sitter.Node, module string) {
 			return
 		}
 		d := &nodeDecl{kind: nodeDeclImport, scope: root, module: module, member: unquoteNodeString(name.Content(x.src))}
+		d.exportKey = nodeExportKey(module, d.member)
 		if nodeHasInlineTypeKeyword(n) {
-			d.kind, d.module = nodeDeclOther, ""
+			d.kind, d.module, d.exportKey = nodeDeclOther, "", ""
 		}
 		x.add(local, d)
 	case nodeNamespaceImport:
 		for i := 0; i < int(n.NamedChildCount()); i++ {
 			if id := n.NamedChild(i); id.Type() == goNodeIdentifier {
-				x.add(id, &nodeDecl{kind: nodeDeclImport, scope: root, module: module})
+				x.add(id, &nodeDecl{kind: nodeDeclImport, scope: root, module: module, exportKey: module})
 			}
 		}
 	case goNodeIdentifier:
 		// A default import, or `import q = require(..)`: neither pins one
-		// export by name.
-		x.add(n, &nodeDecl{scope: root})
+		// export by name, but CommonJS exports live under the module key.
+		x.add(n, &nodeDecl{scope: root, exportKey: module})
 	default:
 		for i := 0; i < int(n.NamedChildCount()); i++ {
 			x.importClause(n.NamedChild(i), root, module)
@@ -471,8 +483,12 @@ func (x *nodeValueIndex) collectUses(node *sitter.Node) {
 	case goNodeIdentifier:
 		x.identifier(node)
 	case nodeShorthandProperty:
-		if d := x.resolve(node.Content(x.src), node); d != nil && !nodeIsModuleExportsObject(node.Parent(), x.src) {
-			d.escapes++
+		if d := x.resolve(node.Content(x.src), node); d != nil {
+			// Re-exporting another module's object lets a third one write it.
+			x.exportEscape(d)
+			if !nodeIsModuleExportsObject(node.Parent(), x.src) {
+				d.escapes++
+			}
 		}
 	}
 	for i := 0; i < int(node.NamedChildCount()); i++ {
@@ -482,6 +498,7 @@ func (x *nodeValueIndex) collectUses(node *sitter.Node) {
 
 func (x *nodeValueIndex) write(leaf *sitter.Node) {
 	if leaf.Type() == nodeMemberExpression || leaf.Type() == nodeSubscriptExpression {
+		x.exportWrite(leaf, false)
 		x.markMemberWrite(nodeMemberRoot(leaf))
 		if name, ok := x.writtenProperty(leaf); ok {
 			x.propertyWrites[name]++
@@ -500,6 +517,12 @@ func (x *nodeValueIndex) writtenProperty(leaf *sitter.Node) (string, bool) {
 	if object := leaf.ChildByFieldName("object"); object == nil || object.Type() == nodeThisNode {
 		return "", false
 	}
+	return x.spelledProperty(leaf)
+}
+
+// spelledProperty names the property a member or subscript access reads,
+// when its key is spelled: `o.f`, `o.#f`, `o["f"]`.
+func (x *nodeValueIndex) spelledProperty(leaf *sitter.Node) (string, bool) {
 	if leaf.Type() == nodeMemberExpression {
 		if property := leaf.ChildByFieldName("property"); property != nil {
 			return property.Content(x.src), true
@@ -546,7 +569,10 @@ func (x *nodeValueIndex) call(node *sitter.Node) {
 	if function := node.ChildByFieldName("function"); function != nil && function.Content(x.src) == "eval" {
 		x.disabled = true
 	}
-	x.markMemberWrite(nodeMutatedObject(node, x.src))
+	if object := nodeMutatedObject(node, x.src); object != nil {
+		x.exportWrite(object, true)
+		x.markMemberWrite(object)
+	}
 }
 
 func (x *nodeValueIndex) markMemberWrite(root *sitter.Node) {
@@ -584,6 +610,7 @@ func (x *nodeValueIndex) identifier(node *sitter.Node) {
 	}
 	if parent.Type() == nodeMemberExpression && nodeIsNameField(parent, node) {
 		x.memberRead(name, node, parent)
+		x.exportRead(parent)
 		return
 	}
 	if nodeIsNameField(parent, node) {
@@ -591,7 +618,96 @@ func (x *nodeValueIndex) identifier(node *sitter.Node) {
 	}
 	if d := x.resolve(name, node); d != nil {
 		d.escapes++
+		if parent.Type() == nodeSubscriptExpression && sameSyntaxNode(parent.ChildByFieldName("object"), node) {
+			x.exportRead(parent)
+		} else {
+			x.exportEscape(d)
+		}
 	}
+}
+
+func nodeExportKey(module, member string) string {
+	if module == "" || member == "" {
+		return module
+	}
+	return module + "." + member
+}
+
+func (x *nodeValueIndex) exportEscape(d *nodeDecl) {
+	if d.exportKey != "" {
+		x.addExportWrite(NamedValueWrite{Key: d.exportKey, MembersOnly: true})
+	}
+}
+
+// exportRead records a member chain from a binding of another module taken
+// as a value, `f(cfg.Opts)` or `o = cfg.Opts`, as a members-only write: the
+// object it names may be written where the file cannot see. A string read
+// this way changes nothing, and a callee `cfg.load()` is no value.
+func (x *nodeValueIndex) exportRead(member *sitter.Node) {
+	top := member
+	for parent := top.Parent(); parent != nil; parent = top.Parent() {
+		if t := parent.Type(); t != nodeMemberExpression && t != nodeSubscriptExpression || !sameSyntaxNode(parent.ChildByFieldName("object"), top) {
+			break
+		}
+		top = parent
+	}
+	if parent := top.Parent(); parent != nil && parent.Type() == nodeCallExpression && sameSyntaxNode(parent.ChildByFieldName("function"), top) {
+		return
+	}
+	x.exportWrite(top, true)
+}
+
+// exportWrite records what a write through chain may change in another
+// project module, when chain is a member chain from a binding of one of its
+// exports or from `require("./m")`: the key the chain spells, or every key
+// under the part before a computed step.
+func (x *nodeValueIndex) exportWrite(chain *sitter.Node, membersOnly bool) {
+	var reversed []string
+	root := unwrapNodeValue(chain)
+	for root != nil && (root.Type() == nodeMemberExpression || root.Type() == nodeSubscriptExpression) {
+		if name, ok := x.spelledProperty(root); ok && !strings.Contains(name, ".") {
+			reversed = append(reversed, name)
+		} else {
+			reversed, membersOnly = nil, true
+		}
+		root = unwrapNodeValue(root.ChildByFieldName("object"))
+	}
+	key := x.exportKeyOf(root)
+	if key == "" {
+		return
+	}
+	for i := len(reversed) - 1; i >= 0; i-- {
+		key += "." + reversed[i]
+	}
+	x.addExportWrite(NamedValueWrite{Key: key, MembersOnly: membersOnly})
+}
+
+func (x *nodeValueIndex) exportKeyOf(root *sitter.Node) string {
+	if root == nil {
+		return ""
+	}
+	if root.Type() == goNodeIdentifier {
+		if d := x.resolve(root.Content(x.src), root); d != nil {
+			return d.exportKey
+		}
+		return ""
+	}
+	binding, ok := nodeRequireBinding(root, x.src)
+	if !ok {
+		return ""
+	}
+	module, relative := resolveNodeRelativeModule(x.filePath, x.packagePath, binding.module)
+	if !relative {
+		return ""
+	}
+	return nodeExportKey(module, binding.member)
+}
+
+func (x *nodeValueIndex) addExportWrite(write NamedValueWrite) {
+	if x.exportWrites == nil {
+		x.exportWrites = make(map[NamedValueWrite]bool)
+	}
+	x.exportWrites[write] = true
 }
 
 // memberRead marks memberValue on a binding that holds a construction when
