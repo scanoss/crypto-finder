@@ -96,7 +96,7 @@ func TestLeased_DownloadKeepsCacheEncrypted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !meta.Leased || !meta.ExpiresAt.Equal(issued.Lease.ExpiresAt) || meta.Version != "v1.40.0" || meta.ChecksumSHA256 != issued.Lease.BundleSHA {
+	if !meta.Leased || !meta.ExpiresAt.Equal(issued.Lease.ExpiresAt) || meta.Version != "v1.40.0" || meta.ChecksumSHA256 != issued.Lease.PayloadSHA {
 		t.Fatalf("metadata = %+v", meta)
 	}
 }

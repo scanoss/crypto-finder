@@ -128,7 +128,9 @@ func (m *Manager) storeLeased(name, targetPath string, bundle, leaseJSON []byte,
 	if err := os.MkdirAll(tempPath, 0o750); err != nil {
 		return fmt.Errorf("cache: create %s: %w", tempPath, err)
 	}
-	metadata := NewMetadata(name, l.Version, ruleset.SHA256Hex(bundle), ttlSeconds)
+	// The checksum recorded is the release payload's, the one the report
+	// carries: the same for every tenant, unlike the personalised bundle's.
+	metadata := NewMetadata(name, l.Version, l.PayloadSHA, ttlSeconds)
 	metadata.Leased = true
 	metadata.ExpiresAt = l.ExpiresAt
 	err = os.WriteFile(filepath.Join(tempPath, bundleFileName), sealed, 0o600)
