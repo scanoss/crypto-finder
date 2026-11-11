@@ -78,6 +78,12 @@ def by_bytes_local(data):
 def by_keyword_only(*parts, alg):
     return hashlib.new(alg)
 
+def by_keyword_only_after_typed_splat(*parts: str, alg: str = "sha256"):
+    return hashlib.new(alg)
+
+def by_keyword_only_after_typed_kwargs(data, **kw: str):
+    return hashlib.new(data)
+
 class Hasher:
     def by_method_param(self, alg):
         return hashlib.new(alg)
@@ -103,6 +109,8 @@ func TestPythonParser_AlgorithmArgumentSources(t *testing.T) {
 		{"by_fstring_local", nil},
 		{"by_bytes_local", nil},
 		{"by_keyword_only", nil},
+		{"by_keyword_only_after_typed_splat", nil},
+		{"by_keyword_only_after_typed_kwargs", []SourceNode{{Type: "PARAMETER", Name: "data", ParameterIndex: 0}}},
 		{"by_method_param", nil},
 	}
 	for _, tt := range tests {

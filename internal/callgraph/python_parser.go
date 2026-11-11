@@ -2135,7 +2135,14 @@ func pythonPositionalParameterCount(params *sitter.Node) int {
 	for i := 0; i < int(params.NamedChildCount()); i++ {
 		child := params.NamedChild(i)
 		switch child.Symbol() {
-		case pythonSyms.identifier, pythonSyms.typedParameter, pythonSyms.defaultParameter, pythonSyms.typedDefaultParameter:
+		case pythonSyms.typedParameter:
+			// `*parts: str` and `**kw: Any` wrap the splat in a typed_parameter.
+			if first := child.NamedChild(0); first != nil &&
+				(first.Type() == pythonNodeListSplatPattern || first.Type() == pythonNodeDictSplatPattern) {
+				return n
+			}
+			n++
+		case pythonSyms.identifier, pythonSyms.defaultParameter, pythonSyms.typedDefaultParameter:
 			n++
 		default:
 			if child.Type() != "positional_separator" {
