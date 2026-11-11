@@ -4144,6 +4144,61 @@ func (p *JavaParser) extractReturnSources(
 	bodyAssignments := make(map[string][]*sitter.Node)
 	p.collectMethodBodyAssignmentNodes(body, src, varOrigins, bodyAssignments)
 	p.walkForReturnSources(body, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments, fn)
+	p.walkReturnedObjects(body, src, analysis, currentClass, varTypes, varOrigins, fn)
+}
+
+// walkReturnedObjects records the class each return statement of the method's
+// own body instantiates (see returnedObjects). It descends into neither a
+// lambda nor a class body: an anonymous or local class's methods return for
+// themselves. `new Base() { ... }` builds an anonymous subclass, not a Base,
+// so it counts as some other object.
+func (p *JavaParser) walkReturnedObjects(
+	node *sitter.Node,
+	src []byte,
+	analysis *FileAnalysis,
+	currentClass string,
+	varTypes map[string]string,
+	varOrigins map[string]varOrigin,
+	fn *FunctionDecl,
+) {
+	if node == nil {
+		return
+	}
+	switch node.Type() {
+	case lambdaExpressionNode, "class_body":
+		return
+	case "return_statement":
+		expr := returnStatementExpressionNode(node)
+		if expr == nil || expr.Type() == "null_literal" {
+			return
+		}
+		if expr.Type() != javaNodeObjectCreation || expr.ChildByFieldName("body") != nil || hasChildOfType(expr, "class_body") {
+			fn.constructed.markOther()
+			return
+		}
+		sources := p.traceExpressionNode(expr, src, analysis, currentClass, varTypes, varOrigins, nil)
+		for i := range sources {
+			source := &sources[i]
+			if source.Type == sourceNodeCallResult && source.CallTarget != nil && BaseFunctionName(source.CallTarget.Name) == constructorMethodName {
+				fn.constructed.addClass(source.CallTarget.Package, source.CallTarget.Type)
+				return
+			}
+		}
+		fn.constructed.markOther()
+		return
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		p.walkReturnedObjects(node.Child(i), src, analysis, currentClass, varTypes, varOrigins, fn)
+	}
+}
+
+func hasChildOfType(node *sitter.Node, typ string) bool {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if node.Child(i).Type() == typ {
+			return true
+		}
+	}
+	return false
 }
 
 // walkForReturnSources recursively descends the AST, collecting return_statement
@@ -4169,7 +4224,7 @@ func (p *JavaParser) walkForReturnSources(
 		// In v1, we must NOT attribute lambda return values to the outer function.
 		// Do not descend.
 		return
-	case "return_statement":
+	case goNodeReturnStatement:
 		exprNode := returnStatementExpressionNode(node)
 		if exprNode != nil {
 			nodes := p.traceExpressionNode(exprNode, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments)

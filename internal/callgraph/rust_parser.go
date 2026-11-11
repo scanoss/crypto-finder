@@ -1028,9 +1028,86 @@ func (p *RustParser) parseFunctionItemWithGenerics(node *sitter.Node, src []byte
 		ctx := p.newRustTypeCtx(node, paramsNode, src, analysis, selfType, outerGenerics)
 		decl.Calls = p.extractCalls(body, ctx, filePath)
 		decl.ReturnSources = p.extractReturnSources(body, ctx, filePath)
+		decl.constructed = rustReturnedObjects(body, ctx)
 	}
 
 	return decl
+}
+
+const (
+	// rustNodeReturnExpression is an explicit `return expr`.
+	rustNodeReturnExpression = "return_expression"
+	// rustWrapperConstructor is the associated function that wraps a value
+	// in a Deref wrapper: `Box::new(v)`.
+	rustWrapperConstructor = "new"
+)
+
+// rustReturnedObjects records the type each return of a function's own body
+// builds (see returnedObjects): a struct expression `T { .. }` or a unit
+// struct `T`, possibly handed to a Deref wrapper's constructor, as in
+// `Box::new(T)` behind a `Box<dyn Trait>` return. A nested function or
+// closure returns for itself; a tail `if` or `match` counts as some other
+// value.
+func rustReturnedObjects(body *sitter.Node, ctx *rustTypeCtx) returnedObjects {
+	var objects returnedObjects
+	note := func(expr *sitter.Node, exprCtx *rustTypeCtx) {
+		pkg, typ := rustConstructedType(expr, exprCtx)
+		if typ == "" {
+			objects.markOther()
+			return
+		}
+		objects.addClass(pkg, typ)
+	}
+	ctx.walkRustScoped(body, func(node *sitter.Node, nodeCtx *rustTypeCtx) bool {
+		switch node.Type() {
+		case rustNodeFunctionItem, rustNodeClosureExpression:
+			return false
+		case rustNodeReturnExpression:
+			note(rustReturnExpressionNode(node), nodeCtx)
+			return false
+		}
+		return true
+	})
+	if tail := rustBlockTailExpressionNode(body, ctx.src); tail != nil {
+		note(tail, ctx)
+	}
+	return objects
+}
+
+// rustConstructedType names the package and type a constructing expression
+// builds, or "" for any other expression.
+func rustConstructedType(expr *sitter.Node, ctx *rustTypeCtx) (string, string) {
+	for depth := 0; expr != nil && depth < rustMaxTypeDepth; depth++ {
+		switch expr.Type() {
+		case rustNodeParenthesizedExpression:
+			expr = rustInnerExpression(expr)
+			continue
+		case rustNodeCallExpression:
+			fn := expr.ChildByFieldName("function")
+			if fn == nil || fn.Type() != javaNodeScopedIdentifier || nodeFieldText(fn, "name", ctx.src) != rustWrapperConstructor {
+				return "", ""
+			}
+			path := fn.ChildByFieldName("path")
+			if path == nil || !rustDerefWrappers[rustTypeHead(rustScopedTypeText(path, ctx.src))] {
+				return "", ""
+			}
+			expr = rustFirstArgument(expr)
+			continue
+		case "struct_expression":
+		case goNodeIdentifier:
+			if !rustIsTypeCase(expr.Content(ctx.src)) {
+				return "", ""
+			}
+		default:
+			return "", ""
+		}
+		typeText := ctx.rustExprType(expr, 0)
+		if typeText == "" {
+			return "", ""
+		}
+		return rustQualifyType(ctx.analysis, ctx.analysis.rustFacts, typeText)
+	}
+	return "", ""
 }
 
 func (p *RustParser) extractReturnSources(body *sitter.Node, ctx *rustTypeCtx, filePath string) []SourceNode {

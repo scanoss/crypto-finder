@@ -836,7 +836,68 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 		}
 	}
 	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, owner, imports, locals)
+	if owner != "" || !nodeInsideFunction(node) {
+		// A function declared inside another one is keyed like a module
+		// function, but no other function can call it by that name.
+		decl.constructed = nodeReturnedObjects(body, src, packagePath, imports, locals)
+	}
 	return decl
+}
+
+// nodeInsideFunction reports whether node is nested in a function's body.
+func nodeInsideFunction(node *sitter.Node) bool {
+	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
+		switch parent.Type() {
+		case nodeFunctionDeclaration, nodeGeneratorDeclaration, nodeArrowFunction, nodeFunctionExpression, nodeMethodDefinition:
+			return true
+		}
+	}
+	return false
+}
+
+// nodeReturnedObjects records the class each return of a function's own body
+// instantiates with `new` (see returnedObjects). An arrow function's
+// expression body is its one return.
+func nodeReturnedObjects(body *sitter.Node, src []byte, packagePath string, imports nodeBindings, locals map[string]bool) returnedObjects {
+	var objects returnedObjects
+	note := func(expr *sitter.Node) {
+		for expr != nil && expr.Type() == rustNodeParenthesizedExpression && expr.NamedChildCount() == 1 {
+			expr = expr.NamedChild(0)
+		}
+		switch {
+		case expr == nil || expr.Type() == nodeLiteralNull || expr.Type() == "undefined":
+		case expr.Type() == nodeNewExpression:
+			pkg, typeName, _, ok := nodeConstructorType(expr.ChildByFieldName("constructor"), src, packagePath, imports, locals)
+			if !ok {
+				objects.markOther()
+				return
+			}
+			objects.addClass(pkg, typeName)
+		default:
+			objects.markOther()
+		}
+	}
+	if body.Type() != "statement_block" {
+		note(body)
+		return objects
+	}
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n == nil || isNodeNestedScope(n.Type()) {
+			return
+		}
+		if n.Type() == nodeReturnStatement {
+			if n.NamedChildCount() > 0 {
+				note(n.NamedChild(0))
+			}
+			return
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(body)
+	return objects
 }
 
 func (p *NodeParser) extractReturnSources(body *sitter.Node, src []byte, filePath, packagePath, owner string, imports nodeBindings, locals map[string]bool) []SourceNode {
