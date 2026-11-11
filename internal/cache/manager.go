@@ -151,9 +151,14 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 }
 
 // fallbackAfterDownloadError uses the stale cache when a download failed,
-// unless strict mode is on. An expired lease is reported instead of the
-// download error alone, since it is why no cached copy can be used.
+// unless strict mode is on or the API answered that this client must be
+// upgraded (api.ErrUpgradeRequired), which is final. An expired lease is
+// reported instead of the download error alone, since it is why no cached
+// copy can be used.
 func (m *Manager) fallbackAfterDownloadError(rulesetPath, metadataPath, name, version string, downloadErr error) (string, error) {
+	if errors.Is(downloadErr, api.ErrUpgradeRequired) {
+		return "", fmt.Errorf("failed to download ruleset: %w", downloadErr)
+	}
 	if !m.strictMode {
 		stalePath, staleErr := m.tryStaleCache(rulesetPath, metadataPath, name, version)
 		if staleErr == nil {

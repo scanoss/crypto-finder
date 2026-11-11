@@ -175,7 +175,7 @@ func (c *Client) GetRelease(ctx context.Context, name, version string) (*ruleset
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, c.handleHTTPError(resp, url)
+		return nil, c.rulesetHTTPError(resp, url)
 	}
 	var release ruleset.Release
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
@@ -196,8 +196,10 @@ func (c *Client) downloadWithRetry(ctx context.Context, name, version, url strin
 	// Implement retry logic with exponential backoff
 	var lastErr error
 	delay := c.retryDelay
+	attempts := 0
 
 	for attempt := 0; attempt <= config.DefaultMaxRetries; attempt++ {
+		attempts++
 		if attempt > 0 {
 			log.Debug().
 				Int("attempt", attempt).
@@ -235,7 +237,10 @@ func (c *Client) downloadWithRetry(ctx context.Context, name, version, url strin
 			Msg("Download failed, will retry")
 	}
 
-	return nil, nil, fmt.Errorf("download failed after %d retries: %w", config.DefaultMaxRetries, lastErr)
+	if attempts == 1 {
+		return nil, nil, fmt.Errorf("download failed: %w", lastErr)
+	}
+	return nil, nil, fmt.Errorf("download failed after %d attempts: %w", attempts, lastErr)
 }
 
 // doDownload performs a single download attempt.
@@ -260,7 +265,7 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 
 	// Handle HTTP status codes
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, c.handleHTTPError(resp, url)
+		return nil, nil, c.rulesetHTTPError(resp, url)
 	}
 
 	// Reconstruct manifest from response headers
@@ -341,22 +346,43 @@ func (c *Client) getHeaderValue(headers http.Header, headerName string) string {
 	return headers.Get(grpcHeaderName)
 }
 
-// handleHTTPError converts HTTP status codes to appropriate errors.
+// rulesetHTTPError converts the error answer of a ruleset request. 410 Gone
+// and 426 Upgrade Required mean the API no longer serves this client: they
+// become an *UpgradeRequiredError carrying the server's message. Every other
+// status goes through handleHTTPError.
+func (c *Client) rulesetHTTPError(resp *http.Response, url string) error {
+	if resp.StatusCode != http.StatusGone && resp.StatusCode != http.StatusUpgradeRequired {
+		return c.handleHTTPError(resp, url)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+	if err != nil {
+		log.Debug().Err(err).Str("url", url).Msg("Failed to read the upgrade-required answer")
+	}
+	message := serverMessage(resp.Header, body)
+	if message == "" {
+		message = defaultUpgradeMessage
+	}
+	return &UpgradeRequiredError{StatusCode: resp.StatusCode, Message: message}
+}
+
+// handleHTTPError converts HTTP status codes to appropriate errors. The
+// message is the server's (see serverMessage), or the HTTP status when the
+// answer has none.
 func (c *Client) handleHTTPError(resp *http.Response, url string) error {
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
-	message := string(body)
+	message := serverMessage(resp.Header, body)
 	if message == "" {
 		message = resp.Status
 	}
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("%w: %s", ErrUnauthorized, message)
+		return &RefusedError{StatusCode: resp.StatusCode, Message: message, kind: ErrUnauthorized}
 	case http.StatusForbidden:
-		return fmt.Errorf("%w: %s", ErrForbidden, message)
+		return &RefusedError{StatusCode: resp.StatusCode, Message: message, kind: ErrForbidden}
 	case http.StatusNotFound:
 		return fmt.Errorf("%w: %s", ErrNotFound, message)
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable:

@@ -132,7 +132,7 @@ dca   v1.39.0  legacy  -                     -
   └── [language dirs]/           # Rule files organized by language
 ```
 
-A leased ruleset holds `bundle.enc`, `lease.json` and `.cache-meta.json` (with `leased: true` and `expires_at`) instead.
+A leased ruleset holds `bundle.enc`, `lease.json` and `.cache-meta.json` (with `leased: true`, `expires_at`, and the release payload hash from the lease as `checksum_sha256`, the same value the report carries) instead.
 
 ### Cache Behavior
 
@@ -155,6 +155,7 @@ When the cache expires and the API is unreachable, crypto-finder automatically f
      - If cache age ≤ max stale age (30 days) → **Use stale cache with warning**
      - If cache age > max stale age → **Fail with error**
      - If `--strict` flag enabled → **Fail with error**
+   - ❌ API answers that this crypto-finder must be upgraded (HTTP 410 or 426, see [Upgrade required](#upgrade-required)) → **Fail with the server's message**, never the stale cache
 
 **Why This Matters:**
 - **Resilience**: Transient API issues don't block scans
@@ -191,6 +192,21 @@ If you're in an air-gapped environment and need to use cached rules:
 1. Import an offline bundle with `crypto-finder rules import` (see [Offline bundles](#offline-bundles)) and scan with `--ruleset-version <version>`, or
 2. Run a scan while connected to download and cache rulesets, then transfer the cache directory (`~/.scanoss/crypto-finder/cache/`) to the air-gapped environment. The tool uses the cache within the TTL period (24h for latest, 7d for pinned versions), then falls back to the stale cache (up to 30 days) with a warning. A leased ruleset also needs the same API key there and stops at its lease expiry.
 3. For long-term offline use without a bundle, use `--no-remote-rules --rules-dir` with local rules
+
+### Upgrade required
+
+When the SCANOSS API no longer serves your crypto-finder version, a ruleset download (`/v3/rulesets/...` or the `/v2` fallback) answers HTTP 410 Gone or 426 Upgrade Required. That answer is final: crypto-finder does not retry it, does not ask the other endpoint, and does not fall back to a cached ruleset. The scan fails with the code `upgrade_required` and prints the server's message on its own:
+
+```
+ERROR: crypto-finder must be upgraded to download rulesets.
+Run: go install github.com/scanoss/crypto-finder/cmd/crypto-finder@latest
+```
+
+The message is taken from `error.message` of a JSON error body (`{"status":"error","error":{"code":…,"message":…}}`, with the code in parentheses) or from a `text/plain` body; control characters are removed and it is cut at 10 lines and 1000 characters. A cached ruleset whose TTL has not elapsed is still used until it does, since no request is made then.
+
+**Solution**: upgrade crypto-finder.
+
+A refused API key (HTTP 401 or 403) reads `the SCANOSS API refused the ruleset download (HTTP 403): <server message>`; like an unreachable API, it still falls back to a stale cache when one is available.
 
 ### API Unreachable / Network Timeout
 

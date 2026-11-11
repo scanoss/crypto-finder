@@ -132,15 +132,25 @@ func Execute() {
 		case scanProgress || normalizedErrorOutputFormat() == formatJSON:
 			renderJSONError(os.Stderr, err)
 		case !isTTY:
-			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+			fmt.Fprintf(os.Stderr, "ERROR: %s\n", errorText(err))
 		default:
-			pterm.Error.Printfln("%s", err)
+			pterm.Error.Printfln("%s", errorText(err))
 		}
 		stop()
 		os.Exit(1)
 	}
 
 	stop()
+}
+
+// errorText is the text of a terminal error. An upgrade_required failure
+// shows the API's message alone, without the context the layers above added,
+// so the user reads exactly what the server said.
+func errorText(err error) string {
+	if structured, ok := failure.As(err); ok && structured.Code == failure.CodeUpgradeRequired {
+		return structured.Message
+	}
+	return err.Error()
 }
 
 func validateErrorOutputFormat(format string) error {

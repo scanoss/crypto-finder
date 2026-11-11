@@ -403,12 +403,7 @@ func (ds *DependencyScanner) prepareDependencyScan(
 
 	filteredRulePaths, cleanupRulePaths, err := ds.loadFilteredRules(ds.resolver.Ecosystem(), validator)
 	if err != nil {
-		return resolvedScanRoot{}, nil, "", func() {}, failure.WrapUnknown(
-			err,
-			failure.CodeRulesLoadFailed,
-			failure.StageRules,
-			"failed to load rules for dependency scanning",
-		)
+		return resolvedScanRoot{}, nil, "", func() {}, rulesLoadFailure(err, "failed to load rules for dependency scanning")
 	}
 	log.Info().
 		Int("rules", len(filteredRulePaths)).
