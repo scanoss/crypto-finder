@@ -4727,7 +4727,7 @@ func propagateSourceNodes(
 func argumentSlot(n int, expression func(int) string, index int, name string) (slot int, ok bool) {
 	if name != "" {
 		for i := range n {
-			if keyword, _ := splitKeywordArgument(expression(i), ecosystemPython); keyword == name {
+			if keyword := slotKeyword(expression(i)); keyword == name {
 				return i, true
 			}
 		}
@@ -4737,11 +4737,22 @@ func argumentSlot(n int, expression func(int) string, index int, name string) (s
 	}
 	for i := 0; i <= index; i++ {
 		expr := strings.TrimSpace(expression(i))
-		if keyword, _ := splitKeywordArgument(expr, ecosystemPython); keyword != "" || strings.HasPrefix(expr, "*") || strings.HasPrefix(expr, "...") {
+		if slotKeyword(expr) != "" || strings.HasPrefix(expr, "*") || strings.HasPrefix(expr, "...") {
 			return 0, false
 		}
 	}
 	return index, true
+}
+
+// slotKeyword is the Python keyword an argument names. A JavaScript arrow
+// function such as `x => x.trim()` also matches `name = value`, but no Python
+// keyword value starts with `>`.
+func slotKeyword(expr string) string {
+	keyword, value := splitKeywordArgument(expr, ecosystemPython)
+	if strings.HasPrefix(value, ">") {
+		return ""
+	}
+	return keyword
 }
 
 func parameterArgumentSlot(params []callGraphParameter, index int, name string) (int, bool) {
