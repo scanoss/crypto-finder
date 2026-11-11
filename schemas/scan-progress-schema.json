@@ -84,6 +84,24 @@
             "lockfile_absent"
           ]
         },
+        "ecosystems": {
+          "description": "On a completed dependencies event, the dependency ecosystems the phase resolved, in resolution order, the primary first. With --dep-ecosystem auto every ecosystem whose resolver can read the target is resolved; an explicit --dep-ecosystem lists that ecosystem alone. Absent means not reported.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "ecosystems_skipped": {
+          "description": "On a completed dependencies event, the ecosystems the phase saw in the target but did not resolve, sorted by ecosystem, each with a dependency skip reason (an open set like reason). Empty when none was. Absent means not reported.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ecosystem", "reason"],
+            "properties": {
+              "ecosystem": {"type": "string", "minLength": 1},
+              "reason": {"type": "string", "minLength": 1}
+            }
+          }
+        },
         "ecosystem": {
           "description": "On a skipped dependencies event, the dependency ecosystem the skip reason is about. Absent when no ecosystem was picked (ecosystem_unknown, not_requested).",
           "type": "string",
@@ -141,7 +159,9 @@
               {"required": ["files_incomplete"]},
               {"required": ["deps_skipped_list"]},
               {"required": ["deps_failed_list"]},
-              {"required": ["deps_incomplete_list"]}
+              {"required": ["deps_incomplete_list"]},
+              {"required": ["ecosystems"]},
+              {"required": ["ecosystems_skipped"]}
             ]
           }
         },
@@ -175,7 +195,9 @@
               {"required": ["total_dep_findings"]},
               {"required": ["deps_skipped_list"]},
               {"required": ["deps_failed_list"]},
-              {"required": ["deps_incomplete_list"]}
+              {"required": ["deps_incomplete_list"]},
+              {"required": ["ecosystems"]},
+              {"required": ["ecosystems_skipped"]}
             ]
           }
         }

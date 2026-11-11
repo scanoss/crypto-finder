@@ -255,3 +255,42 @@ func TestFindingDependency_ModuleAtTwoVersions(t *testing.T) {
 		}
 	}
 }
+
+// A scan that resolves a second ecosystem beside the primary one carries that
+// ecosystem's dependency-aware result in AdditionalEcosystems. Its dependency
+// findings export exactly as they would with it as the primary: the same
+// dependency block, reachability and occurrence key.
+func TestExportCallGraph_SecondaryEcosystemDependencyFindingCarriesItsProvenance(t *testing.T) {
+	t.Parallel()
+	asPrimary := exportProvenance(t, newProvenanceFixture(t).result)
+
+	java := newProvenanceFixture(t).result
+	primary := &engine.DepScanResult{
+		Report:               java.Report,
+		CallGraph:            &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Ecosystem:            ecosystemNode,
+		RootModule:           "web",
+		ProjectRoot:          java.ProjectRoot,
+		AdditionalEcosystems: []*engine.DepScanResult{java},
+	}
+	asSecondary := exportProvenance(t, primary)
+
+	for _, id := range []string{"hash", "orphan"} {
+		got, want := asSecondary[id], asPrimary[id]
+		if want.Dependency == nil {
+			t.Fatalf("%s: fixture exports no dependency block as primary", id)
+		}
+		if !reflect.DeepEqual(got.Dependency, want.Dependency) {
+			t.Errorf("%s: dependency = %+v, want %+v as when java is the primary", id, got.Dependency, want.Dependency)
+		}
+		if got.Reachability != want.Reachability || got.UnresolvedReason != want.UnresolvedReason {
+			t.Errorf("%s: reachability %q/%q, want %q/%q", id, got.Reachability, got.UnresolvedReason, want.Reachability, want.UnresolvedReason)
+		}
+		if got.OccurrenceKey == "" || got.OccurrenceKey != want.OccurrenceKey {
+			t.Errorf("%s: occurrence key %q, want %q as when java is the primary", id, got.OccurrenceKey, want.OccurrenceKey)
+		}
+	}
+	if got := asSecondary["hash"].Reachability; got != graphfrag.ReachabilityReachable {
+		t.Errorf("hash reachability = %q, want reachable through the bridge", got)
+	}
+}

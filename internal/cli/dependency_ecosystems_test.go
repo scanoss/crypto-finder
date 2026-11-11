@@ -15,7 +15,10 @@ import (
 
 	"github.com/xeipuuv/gojsonschema"
 
+	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/crypto-finder/internal/engine"
+	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/language"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/skip"
@@ -277,5 +280,72 @@ func validateProgressEvent(t *testing.T, line string) {
 	}
 	if !result.Valid() {
 		t.Fatalf("progress event %s violates the published schema: %v", line, result.Errors())
+	}
+}
+
+func TestDependencyEcosystemOutcomeJoinsResolvedEcosystems(t *testing.T) {
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}}
+	firstReport := &entities.InterimReport{Findings: []entities.Finding{{FilePath: "app.js"}}}
+	finalReport := &entities.InterimReport{Findings: []entities.Finding{{FilePath: "app.js"}, {FilePath: "dep.py"}}}
+	node := &engine.DepScanResult{Ecosystem: ecosystemNode, CallGraph: graph, Report: firstReport}
+	python := &engine.DepScanResult{
+		Ecosystem: ecosystemPython, CallGraph: graph, Report: finalReport,
+		Dependencies: []dependency.Dependency{{Module: "cryptography", Version: "42.0.0"}},
+	}
+	// Rust resolved no dependencies, so it built no graph.
+	rust := &engine.DepScanResult{Ecosystem: "rust", Report: finalReport}
+	outcome := dependencyEcosystemOutcome{
+		resolved: []*engine.DepScanResult{node, python, rust},
+		skipped: []dependencyEcosystemSkip{
+			{Ecosystem: "go", Reason: depSkipParserUnavailable},
+			{Ecosystem: "cpp", Reason: depSkipResolverUnavailable},
+		},
+	}
+
+	primary := outcome.primaryWithAdditional()
+	if primary != node || primary.Report != finalReport {
+		t.Fatalf("primary = %+v, want node carrying the final report", primary)
+	}
+	if len(primary.AdditionalEcosystems) != 1 || primary.AdditionalEcosystems[0] != python || len(python.Dependencies) != 1 {
+		t.Fatalf("additional ecosystems = %v, want python with its dependencies only", primary.AdditionalEcosystems)
+	}
+
+	details := outcome.progressDetails()
+	if got := details["ecosystems"]; !reflect.DeepEqual(got, []string{ecosystemNode, ecosystemPython, "rust"}) {
+		t.Errorf("ecosystems = %v, want resolution order, primary first", got)
+	}
+	wantSkipped := []dependencyEcosystemSkip{{Ecosystem: "cpp", Reason: depSkipResolverUnavailable}, {Ecosystem: "go", Reason: depSkipParserUnavailable}}
+	if got := details["ecosystems_skipped"]; !reflect.DeepEqual(got, wantSkipped) {
+		t.Errorf("ecosystems_skipped = %v, want %v", got, wantSkipped)
+	}
+	for _, key := range []string{"deps_scanned", "deps_skipped", "deps_failed", "deps_incomplete", "deps_with_findings", "total_dep_findings", "deps_skipped_list"} {
+		if _, ok := details[key]; !ok {
+			t.Errorf("details lack %s: %v", key, details)
+		}
+	}
+	line, err := json.Marshal(map[string]any{
+		"event": "scan_progress", "schema_version": "1", "phase": "dependencies", "status": "completed",
+		"parent_phase": "scan", "duration_ms": 1, "details": details,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateProgressEvent(t, string(line))
+}
+
+// An explicit --dep-ecosystem resolves that ecosystem alone.
+func TestDependencyEcosystemOutcomeExplicitEcosystem(t *testing.T) {
+	java := &engine.DepScanResult{Ecosystem: ecosystemJava}
+	details := dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{java}}.progressDetails()
+	if got := details["ecosystems"]; !reflect.DeepEqual(got, []string{ecosystemJava}) {
+		t.Errorf("ecosystems = %v, want [java]", got)
+	}
+	skipped, ok := details["ecosystems_skipped"].([]dependencyEcosystemSkip)
+	if !ok || skipped == nil || len(skipped) != 0 {
+		t.Errorf("ecosystems_skipped = %#v, want an empty list", details["ecosystems_skipped"])
+	}
+	encoded, err := json.Marshal(details["ecosystems_skipped"])
+	if err != nil || string(encoded) != "[]" {
+		t.Errorf("ecosystems_skipped encodes as %s, want []", encoded)
 	}
 }

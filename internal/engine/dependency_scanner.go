@@ -36,6 +36,18 @@ const maxWorkers = 8
 
 const npmEcosystem = "node"
 
+// The C family's ecosystems. Neither has a dependency resolver.
+const (
+	ecosystemC   = "c"
+	ecosystemCPP = "cpp"
+)
+
+// The languages the node ecosystem scans.
+const (
+	languageJavaScript = "javascript"
+	languageTypeScript = "typescript"
+)
+
 // dependencyRuleTimeoutSeconds replaces OpenGrep's 5 s limit per rule and
 // file, which also bounds parsing the file. Parsing a 750 KB bundle takes 2
 // to 3 s on an idle host and took 7 times as long with 8 scans
@@ -105,11 +117,15 @@ type DepScanResult struct {
 	// route crosses a dependency parsed without source. Nil when the resolver
 	// produced no graph.
 	DependencyPaths map[string]dependency.Path
-	// AdditionalEcosystems holds one call graph of the scan target's own
-	// source per other supported ecosystem it contains. The fields above describe
-	// the primary ecosystem, the one dependencies resolve for; a finding
+	// AdditionalEcosystems holds one call graph per other supported
+	// ecosystem the scan target contains. The fields above describe the
+	// primary ecosystem, the first one dependencies resolve for; a finding
 	// written in another language is resolved against the entry for its own
-	// ecosystem. Entries carry no dependencies and no additional ecosystems.
+	// ecosystem. An entry the dependency phase resolved (auto mode resolves
+	// every ecosystem with a manifest) carries its Dependencies,
+	// DependencyPaths and dependency-aware CallGraph; any other entry is a
+	// graph of the target's own source and carries no dependencies. Entries
+	// carry no additional ecosystems of their own.
 	AdditionalEcosystems []*DepScanResult
 	summary              dependencyScanSummary
 }
@@ -134,6 +150,32 @@ func (r *DepScanResult) ProgressDetails() map[string]any {
 		"deps_failed_list":     nonNilOutcomes(summary.failed),
 		"deps_incomplete_list": nonNilOutcomes(summary.incomplete),
 	}
+}
+
+// AggregateProgressDetails returns the ProgressDetails of several results,
+// one per resolved ecosystem, as one: each counter is the sum over the
+// results, and each outcome list is the concatenation, sorted as one list is.
+func AggregateProgressDetails(results []*DepScanResult) map[string]any {
+	total := &DepScanResult{}
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		s := result.summary
+		total.summary.depsScanned += s.depsScanned
+		total.summary.depsSkippedSource += s.depsSkippedSource
+		total.summary.depsFailed += s.depsFailed
+		total.summary.depsIncomplete += s.depsIncomplete
+		total.summary.depsWithFindings += s.depsWithFindings
+		total.summary.totalDepFindings += s.totalDepFindings
+		total.summary.skipped = append(total.summary.skipped, s.skipped...)
+		total.summary.failed = append(total.summary.failed, s.failed...)
+		total.summary.incomplete = append(total.summary.incomplete, s.incomplete...)
+	}
+	sortDependencyOutcomes(total.summary.skipped)
+	sortDependencyOutcomes(total.summary.failed)
+	sortDependencyOutcomes(total.summary.incomplete)
+	return total.ProgressDetails()
 }
 
 // Reasons a dependency outcome carries in structured progress.
@@ -1419,6 +1461,12 @@ func enrichDirectFindingPURLs(report *entities.InterimReport, target string, res
 	}
 	for i := range report.Findings {
 		finding := &report.Findings[i]
+		// A scan that resolves several ecosystems passes every finding so
+		// far through each of them; only this ecosystem's own findings name
+		// its packages.
+		if own := LanguageEcosystem(finding.Language); own != "" && own != ecosystem {
+			continue
+		}
 		parent := owningModule(target, finding.FilePath, resolved)
 		refs := directDependencyRefs(resolved, parent)
 		for j := range finding.CryptographicAssets {
@@ -1636,6 +1684,23 @@ func findingIDPath(finding entities.Finding, asset entities.CryptographicAsset) 
 	return finding.FilePath
 }
 
+// LanguageEcosystem maps a finding's detected language to the call graph
+// ecosystem that parses it, or "" when no call graph parser supports it.
+func LanguageEcosystem(language string) string {
+	switch language {
+	case ecosystemC:
+		return ecosystemC
+	case ecosystemCPP, "c++":
+		return ecosystemCPP
+	case "go", languageJava, ecosystemPython, ecosystemRust:
+		return language
+	case npmEcosystem, languageJavaScript, languageTypeScript, "tsx", "jsx":
+		return npmEcosystem
+	default:
+		return ""
+	}
+}
+
 // ecosystemToLanguages maps an ecosystem name to language hints for the orchestrator.
 func ecosystemToLanguages(ecosystem string) []string {
 	switch ecosystem {
@@ -1650,7 +1715,7 @@ func ecosystemToLanguages(ecosystem string) []string {
 	case "c":
 		return []string{"c"}
 	case npmEcosystem:
-		return []string{"javascript", "typescript"}
+		return []string{languageJavaScript, languageTypeScript}
 	default:
 		return nil
 	}

@@ -829,3 +829,92 @@ func buildProgressCryptoFinder(t *testing.T) string {
 	}
 	return binary
 }
+
+// With --dep-ecosystem auto every ecosystem with a manifest is resolved, not
+// only the first: one dependencies phase names them all, and the ecosystems it
+// saw but could not resolve. Both manifests declare no dependencies, so
+// neither Maven nor npm runs.
+func TestScanProgressResolvesEveryEcosystemWithAManifest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires a compiled CLI and external scanner process")
+	}
+	binary := buildProgressCryptoFinder(t)
+
+	cases := []struct {
+		name          string
+		lockfile      bool
+		wantResolved  []any
+		wantSkipped   []any
+		explicitFlags []string
+	}{
+		{
+			name:         "java and node both resolved",
+			lockfile:     true,
+			wantResolved: []any{"java", "node"},
+			wantSkipped:  []any{},
+		},
+		{
+			name:         "node without a lockfile is reported beside the java it resolved",
+			wantResolved: []any{"java"},
+			wantSkipped:  []any{map[string]any{"ecosystem": "node", "reason": "lockfile_absent"}},
+		},
+		{
+			name:          "an explicit ecosystem is resolved alone",
+			lockfile:      true,
+			explicitFlags: []string{"--dep-ecosystem", "node"},
+			wantResolved:  []any{"node"},
+			wantSkipped:   []any{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			root := filepath.Join(dir, "repo")
+			for _, sub := range []string{"src", "web"} {
+				if err := os.MkdirAll(filepath.Join(root, sub), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeFile(t, filepath.Join(root, "src", "Use.java"), "class Use {}\n")
+			writeFile(t, filepath.Join(root, "web", "app.js"), "export const x = 1;\n")
+			writeFile(t, filepath.Join(root, "pom.xml"), "<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>x</artifactId><version>1.0</version></project>\n")
+			writeFile(t, filepath.Join(root, "package.json"), `{"name":"web","version":"1.0.0"}`+"\n")
+			if tc.lockfile {
+				writeFile(t, filepath.Join(root, "package-lock.json"), `{"name":"web","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"web","version":"1.0.0"}}}`+"\n")
+			}
+			writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
+			writeProgressOpenGrep(t, filepath.Join(dir, "opengrep"))
+
+			args := append([]string{"scan", "--progress", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), "--scan-dependencies"}, tc.explicitFlags...)
+			cmd := exec.CommandContext(t.Context(), binary, append(args, root)...)
+			cmd.Env = progressTestEnv(dir)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("scan exited non-zero: %v\nstderr:\n%s", err, stderr.String())
+			}
+			transitions := progressTransitions(t, stderr.String())
+			var completed map[string]any
+			dependencyEvents := 0
+			for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+				var event map[string]any
+				if err := json.Unmarshal([]byte(line), &event); err != nil || event["event"] != "scan_progress" || event["phase"] != "dependencies" {
+					continue
+				}
+				dependencyEvents++
+				if event["status"] == "completed" {
+					completed, _ = event["details"].(map[string]any)
+				}
+			}
+			if dependencyEvents != 2 || completed == nil {
+				t.Fatalf("dependencies events = %d, completed details %v, want one started/completed pair: %v", dependencyEvents, completed, transitions)
+			}
+			if got := completed["ecosystems"]; !reflect.DeepEqual(got, tc.wantResolved) {
+				t.Errorf("ecosystems = %#v, want %#v", got, tc.wantResolved)
+			}
+			if got := completed["ecosystems_skipped"]; !reflect.DeepEqual(got, tc.wantSkipped) {
+				t.Errorf("ecosystems_skipped = %#v, want %#v", got, tc.wantSkipped)
+			}
+		})
+	}
+}

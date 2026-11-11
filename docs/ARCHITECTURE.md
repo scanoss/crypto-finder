@@ -27,9 +27,9 @@ target source tree
    (internal/callgraph)    the contracts KB (internal/callgraph/contracts) and, for
                            Java, bytecode/JDK platform signatures (internal/javaruntime);
                            a target with first-party findings in several supported
-                           ecosystems gets one graph per ecosystem, while dependencies
-                           resolve for the primary one only (the first
-                           ecosystem with a resolvable manifest)
+                           ecosystems gets one graph per ecosystem; in auto mode
+                           dependencies resolve for every ecosystem with a
+                           resolvable manifest, the first being the primary
    │
    ▼
 4. Reachability           each finding is matched, in the graph of its own language,

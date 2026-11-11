@@ -5,8 +5,10 @@ package cli
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/scanoss/crypto-finder/internal/dependency"
+	"github.com/scanoss/crypto-finder/internal/engine"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 )
 
@@ -50,6 +52,64 @@ func (a autoDependencyEcosystems) primary() string {
 		return a.resolvable[0]
 	}
 	return a.fallback
+}
+
+// secondary lists the resolvable ecosystems after the primary one. Auto mode
+// resolves them too, each beside the primary.
+func (a autoDependencyEcosystems) secondary() []string {
+	if len(a.resolvable) < 2 {
+		return nil
+	}
+	return a.resolvable[1:]
+}
+
+// dependencyEcosystemOutcome is what a completed dependency phase resolved:
+// one result per ecosystem, the primary first, and the ecosystems it saw but
+// did not resolve.
+type dependencyEcosystemOutcome struct {
+	resolved []*engine.DepScanResult
+	skipped  []dependencyEcosystemSkip
+}
+
+// primaryWithAdditional returns the primary result, the first resolved
+// ecosystem, carrying every other resolved ecosystem that built a call graph
+// in AdditionalEcosystems, so each of their findings resolves against the
+// dependency-aware graph of its own language. Each ecosystem scanned on top
+// of the report the one before it returned, so the last report holds the
+// findings of all of them; every result names it.
+//
+// An ecosystem that resolved no dependencies builds no call graph and is left
+// out: the source-only graph an export builds for an additional ecosystem
+// covers its findings, as it did before.
+func (o dependencyEcosystemOutcome) primaryWithAdditional() *engine.DepScanResult {
+	final := o.resolved[len(o.resolved)-1].Report
+	primary := o.resolved[0]
+	for _, result := range o.resolved {
+		result.Report = final
+		if result != primary && result.CallGraph != nil {
+			primary.AdditionalEcosystems = append(primary.AdditionalEcosystems, result)
+		}
+	}
+	return primary
+}
+
+// progressDetails is the details object of the completed dependencies event:
+// the counters and outcome lists summed over every resolved ecosystem, the
+// resolved ecosystems, primary first, and the skipped ones sorted by
+// ecosystem. ecosystems_skipped is always present, empty when none was.
+func (o dependencyEcosystemOutcome) progressDetails() map[string]any {
+	details := engine.AggregateProgressDetails(o.resolved)
+	ecosystems := make([]string, 0, len(o.resolved))
+	for _, result := range o.resolved {
+		ecosystems = append(ecosystems, result.Ecosystem)
+	}
+	skipped := append([]dependencyEcosystemSkip{}, o.skipped...)
+	slices.SortStableFunc(skipped, func(a, b dependencyEcosystemSkip) int {
+		return strings.Compare(a.Ecosystem, b.Ecosystem)
+	})
+	details["ecosystems"] = ecosystems
+	details["ecosystems_skipped"] = skipped
+	return details
 }
 
 // planAutoDependencyEcosystems orders the ecosystems a target may resolve
