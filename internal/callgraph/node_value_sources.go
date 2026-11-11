@@ -84,7 +84,12 @@ func (p *NodeParser) nodeValueSource(node *sitter.Node, depth int) []SourceNode 
 	case goNodeIdentifier, nodeShorthandProperty:
 		return p.nodeIdentifierSource(node, depth)
 	case nodeMemberExpression:
+		if runtime := p.nodeRuntimeSource(node, depth); runtime != nil {
+			return runtime
+		}
 		return p.nodeMemberSource(node, depth)
+	case nodeSubscriptExpression:
+		return p.nodeRuntimeSource(node, depth)
 	case nodeCallExpression:
 		return p.nodeGetterSource(node, depth)
 	}

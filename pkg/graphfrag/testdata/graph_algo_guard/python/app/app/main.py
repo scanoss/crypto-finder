@@ -1,3 +1,5 @@
+import os
+
 from signer import Signer
 from signer.core import digest
 
@@ -14,6 +16,7 @@ class Service:
 def main():
     svc = Service(b"key")
     print(svc.handle(b"data"))
+    print(svc.handle(os.environ["PAYLOAD"]))
 
 
 if __name__ == "__main__":

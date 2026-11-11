@@ -161,7 +161,15 @@ const SchemaVersion = "graph-fragment-1.15"
 // constructor sets carries the FIELD{PARAMETER} return source and folds to
 // the constructor argument. A structural graph cached under graph-algo-22
 // has none for Node.
-const GraphAlgoVersion = "graph-algo-23"
+//
+// graph-algo-24: a Java, Python and JavaScript argument read from an
+// environment variable, a system or java.util.Properties property, or a
+// program argument (System.getenv, os.environ[..], process.env.X, args[i],
+// sys.argv[i], ...) is no longer a value: its key or default stops resolving
+// as the argument, and Python and Node gain a source node for the read,
+// directly or through a local bound to one. A structural graph cached under
+// graph-algo-23 has none of them.
+const GraphAlgoVersion = "graph-algo-24"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is

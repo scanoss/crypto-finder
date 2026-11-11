@@ -187,6 +187,7 @@ func foldNamedValueNodes(nodes []SourceNode, values map[string]NamedValue) []Sou
 	for i := range nodes {
 		node := nodes[i]
 		node.SourceNodes = foldNamedValueNodes(node.SourceNodes, values)
+		node.runtime.resolveKey(values)
 		ref := node.nameRef
 		node.nameRef = nil
 		if ref != nil {

@@ -479,6 +479,8 @@ type SourceNode struct {
 	// getter marks a method call on a receiver of known construction, for
 	// the post-parse fold. Never exported.
 	getter *ctorGetterRef
+	// runtime marks a value read from a runtime input. Never exported.
+	runtime *runtimeRef
 }
 
 // SourceFlow carries optional branch and call-position semantics.

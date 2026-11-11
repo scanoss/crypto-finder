@@ -1588,6 +1588,7 @@ type varOrigin struct {
 	constructorParam     *fieldAssignment // for fields: which constructor param assigned this field
 	resolvedReceiverType string           // concrete type assigned to a field, when unambiguous
 	reassigned           bool             // a local or parameter written again after its declaration: no single source
+	programArgs          bool             // the String[] parameter of main: the program's arguments
 }
 
 // extractFieldAssignments scans a constructor body for field assignments from
@@ -2122,16 +2123,21 @@ func (p *JavaParser) collectParameterOrigins(node *sitter.Node, src []byte, file
 			continue
 		}
 		paramIdx := 0
-		for _, param := range parseJavaParameterList(child.Content(src)) {
+		params := parseJavaParameterList(child.Content(src))
+		name := node.ChildByFieldName("name")
+		mainMethod := node.Type() == javaNodeMethodDeclaration && name != nil && name.Content(src) == string(RootKindMain) && len(params) == 1
+		for _, param := range params {
 			if param.Name == "" || param.Type == "" {
 				continue
 			}
+			typeName := strings.Join(strings.Fields(param.Type), "")
 			origins[param.Name] = varOrigin{
-				typeName:   param.Type,
-				kind:       javaVarOriginKindParameter,
-				line:       int(child.StartPoint().Row) + 1,
-				filePath:   filePath,
-				paramIndex: paramIdx,
+				typeName:    param.Type,
+				kind:        javaVarOriginKindParameter,
+				line:        int(child.StartPoint().Row) + 1,
+				filePath:    filePath,
+				paramIndex:  paramIdx,
+				programArgs: mainMethod && (typeName == "String[]" || typeName == "String..." || typeName == "java.lang.String[]"),
 			}
 			paramIdx++
 		}
@@ -2269,7 +2275,7 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 	if methodCallNodes := p.traceMethodCallExpression(expr, analysis, currentClass, varTypes, origins, depth); methodCallNodes != nil {
 		return methodCallNodes
 	}
-	node := SourceNode{Type: "EXPRESSION", Value: expr}
+	node := SourceNode{Type: "EXPRESSION", Value: expr, runtime: javaProgramArgument(expr, origins)}
 	if isSimpleJavaIdentifier(expr) {
 		// A bare name no local, parameter or field claims: a static import or
 		// an enclosing type's constant.
@@ -2405,8 +2411,12 @@ func (p *JavaParser) traceMethodCallExpression(
 	closeIdx := strings.LastIndex(expr, ")")
 	if open >= 0 && closeIdx > open {
 		args := parseArgumentsFromDelimitedContent(expr[open : closeIdx+1])
+		runtimeKind, readsRuntime := javaRuntimeRead(object, method, argc, analysis, origins)
 		for i, arg := range args {
 			argumentSources := p.traceExpression(strings.TrimSpace(arg), analysis, currentClass, varTypes, origins, depth+1)
+			if readsRuntime && i == 0 {
+				node.runtime = newRuntimeRef(runtimeKind, argumentSources)
+			}
 			for j := range argumentSources {
 				argumentSources[j].ParameterIndex = i
 				argumentSources[j].Flow = &SourceFlow{CallArgument: true}
@@ -2427,6 +2437,64 @@ func (p *JavaParser) traceMethodCallExpression(
 		node.nameRef = javaNameRefUse(object, analysis, currentClass, varTypes, origins).withAccessor(expr, accessor)
 	}
 	return []SourceNode{node}
+}
+
+// javaSystemReads are the runtime reads of java.lang.System, and
+// javaPropertiesReads those of a java.util.Properties, by method and arity.
+// Their first argument is the key.
+var (
+	javaSystemReads = map[string]RuntimeSourceKind{
+		"getenv#1":      RuntimeSourceEnv,
+		"getProperty#1": RuntimeSourceProperty,
+		"getProperty#2": RuntimeSourceProperty,
+	}
+	javaPropertiesReads = map[string]RuntimeSourceKind{
+		"getProperty#1": RuntimeSourceProperty,
+		"getProperty#2": RuntimeSourceProperty,
+	}
+)
+
+// javaRuntimeRead reports which runtime input `object.method(..)` with argc
+// arguments reads.
+func javaRuntimeRead(object, method string, argc int, analysis *FileAnalysis, origins map[string]varOrigin) (RuntimeSourceKind, bool) {
+	object = strings.TrimSpace(object)
+	signature := javaMethodWithArity(method, argc)
+	if object == "System" || object == "java.lang.System" {
+		kind, ok := javaSystemReads[signature]
+		return kind, ok && javaNamesSystem(object, analysis, origins)
+	}
+	origin, ok := origins[strings.TrimPrefix(object, "this.")]
+	kind, read := javaPropertiesReads[signature]
+	return kind, ok && read && qualifyJavaSourceType(origin.typeName, analysis) == "java.util.Properties"
+}
+
+// javaNamesSystem reports that System names the JDK's class: no local, field
+// or import takes the name.
+func javaNamesSystem(object string, analysis *FileAnalysis, origins map[string]varOrigin) bool {
+	if _, local := origins[object]; local {
+		return false
+	}
+	if analysis == nil {
+		return true
+	}
+	imported, ok := analysis.Imports[object]
+	return !ok || imported == "java.lang"
+}
+
+// javaProgramArgument marks `args[i]`, an element of main's String[]
+// parameter, as program argument i.
+func javaProgramArgument(expr string, origins map[string]varOrigin) *runtimeRef {
+	name, rest, ok := strings.Cut(expr, "[")
+	index, closed := strings.CutSuffix(strings.TrimSpace(rest), "]")
+	origin, known := origins[strings.TrimSpace(name)]
+	if !ok || !closed || !known || !origin.programArgs || origin.reassigned {
+		return nil
+	}
+	ref := &runtimeRef{kind: RuntimeSourceArgv, key: runtimeKey(RuntimeSourceArgv, index)}
+	if ref.key == "" {
+		return nil
+	}
+	return ref
 }
 
 // javaLocalConstruction is the getter reference for method called on a local

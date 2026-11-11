@@ -350,6 +350,9 @@ type exportSourceNode struct {
 	guard                    *callgraph.SourceGuard
 	callArgument             bool
 	sourceParameterIndex     int
+	// runtime is the runtime input the node's value is read from. Its
+	// children are the input's key or default, never its value.
+	runtime *callgraph.RuntimeSource
 }
 
 type exportSourceLocation struct {
@@ -3546,6 +3549,9 @@ func resolveSimpleCallgraphSourceValue(nodes []callgraph.SourceNode) (string, bo
 	var resolved string
 	for i := range nodes {
 		node := &nodes[i]
+		if _, runtime := node.RuntimeSource(); runtime {
+			return "", false
+		}
 		value := strings.TrimSpace(node.Value)
 		ok := node.Type == sourceNodeTypeValue && value != ""
 		if !ok && len(node.SourceNodes) > 0 {
@@ -3629,6 +3635,7 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 			guard:                sourceNodeGuard(n),
 			callArgument:         n.Flow != nil && n.Flow.CallArgument,
 			sourceParameterIndex: n.ParameterIndex,
+			runtime:              exportRuntimeSource(n),
 		}
 		if n.Type == sourceNodeTypeParameter {
 			idx := n.ParameterIndex
@@ -3702,6 +3709,11 @@ func resolveSimpleExportParameterValue(expr string, sourceNodes []exportSourceNo
 	if value, ok := resolveSimpleExportSourceValue(sourceNodes); ok {
 		return value
 	}
+	if len(exportRuntimeSources(sourceNodes)) > 0 {
+		// process.env.ALG reads like an enum constant, but its value is the
+		// environment's.
+		return ""
+	}
 
 	expr = strings.TrimSpace(expr)
 	switch {
@@ -3774,6 +3786,9 @@ func resolveSimpleExportSourceValue(nodes []exportSourceNode) (string, bool) {
 }
 
 func resolveSimpleExportSourceValueNode(node exportSourceNode) (string, bool) {
+	if node.runtime != nil {
+		return "", false
+	}
 	switch node.Type {
 	case sourceNodeTypeValue:
 		value := strings.TrimSpace(node.Value)

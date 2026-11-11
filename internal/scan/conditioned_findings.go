@@ -126,24 +126,64 @@ func materializeConditionedAnchor(
 	// every enumerated value resolved and matched a variant, no route is
 	// dynamic, and no caller value was cut off. Another anchor on the call may
 	// have appended those assets first, so this one's own count does not decide.
-	covered := len(candidates) > 0 && !unresolvedRoute && unmatched == 0 && !truncated && !dynamicSelector(rules, terminal.Parameters, dynamic)
+	selectorDynamic, inputs := dynamicSelector(rules, terminal.Parameters, dynamic)
+	covered := len(candidates) > 0 && !unresolvedRoute && unmatched == 0 && !truncated && !selectorDynamic
 	if covered {
 		dropBlankAnchor(finding, anchor)
+	} else {
+		noteAlgorithmSource(finding, anchor, inputs)
 	}
 	return added
 }
 
 // dynamicSelector reports that some route reaches a parameter a rule's
-// condition reads without a resolved value.
-func dynamicSelector(rules []engine.RuleCryptoMetadata, params []callGraphParameter, dynamic map[int]bool) bool {
+// condition reads without a resolved value, with the sorted runtime inputs
+// such routes read.
+func dynamicSelector(rules []engine.RuleCryptoMetadata, params []callGraphParameter, dynamic map[int][]string) (bool, []string) {
+	found := false
+	var inputs []string
 	for i := range rules {
 		for _, condition := range rules[i].ParameterConditions {
-			if dynamic[conditionParameterIndex(condition, params)] {
-				return true
+			if routeInputs, ok := dynamic[conditionParameterIndex(condition, params)]; ok {
+				found = true
+				inputs = append(inputs, routeInputs...)
 			}
 		}
 	}
-	return false
+	slices.Sort(inputs)
+	return found, slices.Compact(inputs)
+}
+
+// algorithmSourceMetadataKey names the runtime inputs a generic anchor's
+// selector argument is read from, such as "env:SIG_ALG,argv:1".
+const algorithmSourceMetadataKey = "algorithmSource"
+
+// maxAlgorithmSources bounds how many inputs one anchor lists.
+const maxAlgorithmSources = 16
+
+// noteAlgorithmSource records inputs on the generic anchor asset of finding
+// that anchor was copied from. An anchor that names an algorithm is resolved,
+// whatever its other routes read, and gets none.
+func noteAlgorithmSource(finding *entities.Finding, anchor entities.CryptographicAsset, inputs []string) {
+	if len(inputs) == 0 || anchor.Metadata["algorithmName"] != "" || anchor.Metadata["algorithmFamily"] != "" {
+		return
+	}
+	if len(inputs) > maxAlgorithmSources {
+		log.Warn().Str("file", finding.FilePath).Int("line", anchor.StartLine).Int("inputs", len(inputs)).Int("max_inputs", maxAlgorithmSources).
+			Msg("Selector argument reads more runtime inputs than an anchor lists; the rest are not reported")
+		inputs = inputs[:maxAlgorithmSources]
+	}
+	for i := range finding.CryptographicAssets {
+		asset := &finding.CryptographicAssets[i]
+		if len(asset.ParameterConditions) > 0 || !sameAssetSpan(*asset, anchor) || !sameRules(asset.Rules, anchor.Rules) {
+			continue
+		}
+		asset.Metadata = maps.Clone(asset.Metadata)
+		if asset.Metadata == nil {
+			asset.Metadata = make(map[string]string, 1)
+		}
+		asset.Metadata[algorithmSourceMetadataKey] = strings.Join(inputs, ",")
+	}
 }
 
 // dropBlankAnchor removes the generic anchor asset once per-value assets stand

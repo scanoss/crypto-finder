@@ -397,8 +397,9 @@ func (s *pythonLocalSources) poisonTarget(target *sitter.Node, src []byte) {
 
 // pythonLocalSourceRoot admits the value shapes a key size or an algorithm name
 // can come from: an integer literal or a plain string literal (empty root),
-// and a zero-argument call through a dotted name (a curve constructor such as
-// ec.SECP521R1()), whose leading name is returned so the use site can require
+// a zero-argument call through a dotted name (a curve constructor such as
+// ec.SECP521R1()), and a read that looks like a runtime input (os.getenv,
+// sys.argv[1]), whose leading name is returned so the use site can require
 // it to be an import.
 func pythonLocalSourceRoot(value *sitter.Node, src []byte) (root string, ok bool) {
 	switch value.Symbol() {
@@ -406,7 +407,15 @@ func pythonLocalSourceRoot(value *sitter.Node, src []byte) (root string, ok bool
 		return "", true
 	case pythonSyms.string:
 		return "", pythonPlainString(value, src)
+	case pythonSyms.subscript:
+		if !pythonRuntimeShape(value, src) {
+			return "", false
+		}
+		return pythonDottedRoot(value.ChildByFieldName("value"), src)
 	case pythonSyms.call:
+		if pythonRuntimeShape(value, src) {
+			return pythonDottedRoot(value.ChildByFieldName("function"), src)
+		}
 		args := value.ChildByFieldName("arguments")
 		if args == nil || args.NamedChildCount() != 0 {
 			return "", false
