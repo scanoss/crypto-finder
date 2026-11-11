@@ -138,7 +138,9 @@ func TestRustBlake3GlobShadowedFreeFunctionIsNotServed(t *testing.T) {
 	t.Parallel()
 
 	result := buildRustResultForFilter(t, "app", blake3GlobShadowSrc)
-	line, sc, ec := lineOf(t, blake3GlobShadowSrc, `fn residual_own_hash() -> usize { hash(b"x") }`)
+	// The match is the call opengrep reports, `hash(b"x")`, not the whole line:
+	// a span that starts before the call makes the call an operand of it.
+	line, sc, ec := lineOf(t, blake3GlobShadowSrc, `hash(b"x")`)
 	report := reportAt(blake3HashRule, line, sc, ec)
 
 	if got := FilterForeignReceiverAssets(report, result); got != 1 {
