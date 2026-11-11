@@ -1030,6 +1030,9 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	// fail callgraph export with "could not determine a supported ecosystem".
 	// The orchestrator will reuse these hints instead of redetecting.
 	detectionStarted := false
+	// An explicit --languages also bounds which dependency ecosystems auto
+	// mode resolves (planAutoDependencyEcosystems).
+	explicitLanguages := len(scanLanguages) > 0
 	//nolint:nestif // Pre-detection reports its lifecycle alongside the detection error.
 	if len(scanLanguages) == 0 {
 		if progress != nil {
@@ -1137,7 +1140,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		ecosystem := scanDepEcosystem
 		var auto autoDependencyEcosystems
 		if ecosystem == "auto" {
-			auto = planAutoDependencyEcosystems(target, scanLanguages, depRegistry, skipPatterns)
+			auto = planAutoDependencyEcosystems(target, scanLanguages, explicitLanguages, depRegistry, skipPatterns)
 			ecosystem = auto.primary()
 			if len(auto.resolvable) > 0 {
 				log.Info().

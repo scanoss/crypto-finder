@@ -155,14 +155,24 @@ func (o dependencyEcosystemOutcome) progressDetails() map[string]any {
 // installed packages of an interpreter, which is found on PATH on most hosts.
 // It is therefore resolvable only with a Python manifest at the target, or
 // when it is the fallback, which it would have resolved before.
-func planAutoDependencyEcosystems(target string, languageHints []string, registry *dependency.Registry, skipPatterns []string) autoDependencyEcosystems {
+//
+// explicitLanguages says languageHints came from --languages rather than
+// detection. The user then chose the languages to scan, so a manifest only
+// adds candidates for those languages' ecosystems: --languages java on a root
+// that also carries a package.json and a requirements.txt resolves Java alone,
+// as it did before auto mode looked at manifests.
+func planAutoDependencyEcosystems(target string, languageHints []string, explicitLanguages bool, registry *dependency.Registry, skipPatterns []string) autoDependencyEcosystems {
 	fallback := ecosystemFromHints(target, languageHints)
 	if fallback == "" {
 		fallback = scanutil.DetectEcosystem(target)
 	}
 	manifests := scanutil.DetectEcosystems(target)
 	plan := autoDependencyEcosystems{fallback: fallback, manifests: manifests}
-	for _, ecosystem := range dependencyEcosystemCandidates(target, languageHints, manifests, fallback) {
+	candidateManifests := manifests
+	if explicitLanguages {
+		candidateManifests = manifestsForLanguages(target, languageHints, manifests)
+	}
+	for _, ecosystem := range dependencyEcosystemCandidates(target, languageHints, candidateManifests, fallback) {
 		reason := dependencyEcosystemSkipReason(target, ecosystem, registry, skipPatterns)
 		if reason == "" && ecosystem == ecosystemPython && ecosystem != fallback && !slices.Contains(manifests, ecosystemPython) {
 			reason = dependency.SkipReasonManifestAbsent
@@ -174,6 +184,21 @@ func planAutoDependencyEcosystems(target string, languageHints []string, registr
 		plan.resolvable = append(plan.resolvable, ecosystem)
 	}
 	return plan
+}
+
+// manifestsForLanguages keeps the manifest ecosystems that one of the
+// explicitly requested languages maps to.
+func manifestsForLanguages(target string, languages, manifests []string) []string {
+	var out []string
+	for _, ecosystem := range manifests {
+		for _, language := range languages {
+			if ecosystemFromHint(target, language) == ecosystem {
+				out = append(out, ecosystem)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // dependencyEcosystemCandidates lists, without repeats, the ecosystems of the

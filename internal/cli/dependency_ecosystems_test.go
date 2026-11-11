@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -185,7 +186,7 @@ func TestPlanAutoDependencyEcosystems(t *testing.T) {
 			if len(hints) == 0 || hints[0] != tc.wantHintFirst {
 				t.Fatalf("detected hints = %v, want %q first", hints, tc.wantHintFirst)
 			}
-			plan := planAutoDependencyEcosystems(dir, hints, testDependencyRegistry(), nil)
+			plan := planAutoDependencyEcosystems(dir, hints, false, testDependencyRegistry(), nil)
 			if got := plan.primary(); got != tc.wantPrimary {
 				t.Errorf("primary = %q, want %q (plan %+v)", got, tc.wantPrimary, plan)
 			}
@@ -205,7 +206,7 @@ func TestPlanAutoDependencyEcosystems(t *testing.T) {
 func TestPlanAutoDependencyEcosystemsNothingDetected(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "notes.txt"), "nothing to scan\n")
-	plan := planAutoDependencyEcosystems(dir, nil, testDependencyRegistry(), nil)
+	plan := planAutoDependencyEcosystems(dir, nil, false, testDependencyRegistry(), nil)
 	if plan.primary() != "" || len(plan.resolvable) != 0 || len(plan.skipped) != 0 {
 		t.Fatalf("plan = %+v, want no ecosystem at all (ecosystem_unknown)", plan)
 	}
@@ -219,7 +220,7 @@ func TestPlanAutoDependencyEcosystemsManifestPrecedence(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "package-lock.json"), `{"name":"app","lockfileVersion":3,"packages":{"":{"name":"app"}}}`)
 	writeFile(t, filepath.Join(dir, "requirements.txt"), "flask\n")
 	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/app\n\ngo 1.22\n")
-	plan := planAutoDependencyEcosystems(dir, nil, testDependencyRegistry(), nil)
+	plan := planAutoDependencyEcosystems(dir, nil, false, testDependencyRegistry(), nil)
 	want := []string{"go", ecosystemPython, ecosystemNode}
 	if !reflect.DeepEqual(plan.resolvable, want) {
 		t.Fatalf("resolvable = %v, want %v", plan.resolvable, want)
@@ -382,11 +383,40 @@ func TestAutoDependencyEcosystemsFlaskWithBrowserJavaScriptReportsNoSkip(t *test
 	writeFile(t, filepath.Join(dir, "requirements.txt"), "flask\n")
 	writeSources(t, dir, "app", ".py", "import os\n", 3)
 	writeSources(t, dir, "ui", ".js", "console.log(1)\n", 6)
-	plan := planAutoDependencyEcosystems(dir, detectedHints(t, dir), testDependencyRegistry(), nil)
+	plan := planAutoDependencyEcosystems(dir, detectedHints(t, dir), false, testDependencyRegistry(), nil)
 	if plan.primary() != ecosystemPython {
 		t.Fatalf("primary = %q, want python (plan %+v)", plan.primary(), plan)
 	}
 	if got := plan.reportedSkips(); len(got) != 0 {
 		t.Errorf("reportedSkips = %+v, want none", got)
+	}
+}
+
+// An explicit --languages bounds dependency resolution: a manifest of another
+// language's ecosystem at the root adds no candidate.
+func TestPlanAutoDependencyEcosystemsExplicitLanguagesBoundTheEcosystems(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "requirements.txt"), "flask\n")
+	writeFile(t, filepath.Join(dir, "package.json"), `{"name":"app"}`)
+	writeFile(t, filepath.Join(dir, "package-lock.json"), `{"name":"app","lockfileVersion":3,"packages":{"":{"name":"app"}}}`)
+	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/app\n\ngo 1.22\n")
+
+	plan := planAutoDependencyEcosystems(dir, []string{"go"}, true, testDependencyRegistry(), nil)
+	if !reflect.DeepEqual(plan.resolvable, []string{"go"}) {
+		t.Errorf("explicit --languages go: resolvable = %v, want [go] only", plan.resolvable)
+	}
+	if len(plan.reportedSkips()) != 0 {
+		t.Errorf("explicit --languages go: reportedSkips = %+v, want none for languages not requested", plan.reportedSkips())
+	}
+
+	plan = planAutoDependencyEcosystems(dir, []string{"go", "javascript"}, true, testDependencyRegistry(), nil)
+	if !reflect.DeepEqual(plan.resolvable, []string{"go", ecosystemNode}) {
+		t.Errorf("explicit --languages go,javascript: resolvable = %v, want [go node]", plan.resolvable)
+	}
+
+	// Detected hints still take every manifest ecosystem.
+	plan = planAutoDependencyEcosystems(dir, []string{"go"}, false, testDependencyRegistry(), nil)
+	if !slices.Contains(plan.resolvable, ecosystemPython) || !slices.Contains(plan.resolvable, ecosystemNode) {
+		t.Errorf("detected hints: resolvable = %v, want go, node and python", plan.resolvable)
 	}
 }
