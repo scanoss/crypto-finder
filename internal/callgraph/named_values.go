@@ -3,6 +3,8 @@
 
 package callgraph
 
+import "strings"
+
 // maxNamedValueDepth bounds how many `A = B` hops a reference is followed
 // before it is left unresolved.
 const maxNamedValueDepth = 8
@@ -22,8 +24,24 @@ type NamedValue struct {
 	Line         int
 	// ref is the value an initializer like `A = B` names.
 	ref *nameRef
-	// ambiguous marks a key that two source files declare differently.
-	ambiguous bool
+	// fixedUnder is the key of the Enum class a Python Enum member belongs to.
+	// A member cannot be reassigned, so only a write that rebinds the class
+	// itself, or something above it, changes the value.
+	fixedUnder string
+	// unresolvable marks a key that two source files declare differently, or
+	// that a file may write at runtime.
+	unresolvable bool
+}
+
+// NamedValueWrite is a NamedValue key a file may change at runtime: through
+// an import of the declaring module, `settings.ALG = env` writes
+// `app.settings.ALG`.
+type NamedValueWrite struct {
+	Key string
+	// MembersOnly reaches only the keys under Key: the object Key names is
+	// passed, aliased or mutated wholesale, so code the scan cannot follow may
+	// set any member of it, while a string Key names cannot change through it.
+	MembersOnly bool
 }
 
 // nameRef is a name in source that may denote a NamedValue, carried with the
@@ -61,6 +79,10 @@ func (r *nameRef) withAccessor(expr, accessor string) *nameRef {
 	return &nameRef{expr: expr, tiers: tiers, placeholder: r.placeholder}
 }
 
+func recordNamedValueWrite(analysis *FileAnalysis, write NamedValueWrite) {
+	analysis.NamedValueWrites = append(analysis.NamedValueWrites, write)
+}
+
 func recordNamedValue(analysis *FileAnalysis, key string, value NamedValue) {
 	if analysis.NamedValues == nil {
 		analysis.NamedValues = make(map[string]NamedValue)
@@ -68,9 +90,16 @@ func recordNamedValue(analysis *FileAnalysis, key string, value NamedValue) {
 	analysis.NamedValues[key] = value
 }
 
-// mergeNamedValues adds one file's values to the graph. A key that another
-// file already declares with a different value becomes ambiguous.
+// mergeNamedValues adds one file's values and writes to the graph. A key
+// that another file already declares with a different value becomes
+// unresolvable.
 func mergeNamedValues(graph *CallGraph, analysis *FileAnalysis) {
+	for _, write := range analysis.NamedValueWrites {
+		if graph.namedValueWrites == nil {
+			graph.namedValueWrites = make(map[string]bool)
+		}
+		graph.namedValueWrites[write.Key] = graph.namedValueWrites[write.Key] || !write.MembersOnly
+	}
 	if len(analysis.NamedValues) == 0 {
 		return
 	}
@@ -86,9 +115,44 @@ func mergeNamedValues(graph *CallGraph, analysis *FileAnalysis) {
 		if existing.ref == nil && value.ref == nil && existing.Value == value.Value {
 			continue
 		}
-		existing.ambiguous = true
+		existing.unresolvable = true
 		graph.NamedValues[key] = existing
 	}
+}
+
+// markWrittenNamedValues makes unresolvable every value a recorded write
+// reaches: a write of a key reaches it and every key under it, and a
+// members-only write every key under it.
+func markWrittenNamedValues(graph *CallGraph) {
+	if len(graph.namedValueWrites) == 0 {
+		return
+	}
+	for key, value := range graph.NamedValues {
+		if !value.unresolvable && namedValueWritten(key, value.fixedUnder, graph.namedValueWrites) {
+			value.unresolvable = true
+			graph.NamedValues[key] = value
+		}
+	}
+}
+
+func namedValueWritten(key, fixedUnder string, writes map[string]bool) bool {
+	reaches := func(prefix string, keyWritten bool) bool {
+		if fixedUnder == "" || len(prefix) < len(fixedUnder) {
+			return true
+		}
+		// A write at or under the class of an Enum member can only rebind
+		// the class itself.
+		return prefix == fixedUnder && keyWritten
+	}
+	if keyWritten := writes[key]; keyWritten && reaches(key, true) {
+		return true
+	}
+	for i := strings.LastIndexByte(key, '.'); i > 0; i = strings.LastIndexByte(key[:i], '.') {
+		if keyWritten, ok := writes[key[:i]]; ok && reaches(key[:i], keyWritten) {
+			return true
+		}
+	}
+	return false
 }
 
 // foldNamedValues rewrites every source node whose name resolves to exactly
@@ -100,6 +164,7 @@ func foldNamedValues(graph *CallGraph) {
 	if graph == nil {
 		return
 	}
+	markWrittenNamedValues(graph)
 	for _, fn := range graph.Functions {
 		fn.ReturnSources = foldNamedValueNodes(fn.ReturnSources, graph.NamedValues)
 		for i := range fn.Calls {
@@ -153,7 +218,7 @@ func resolveNamedValue(values map[string]NamedValue, ref *nameRef, depth int, vi
 		return NamedValue{}, false
 	}
 	value := values[key]
-	if value.ambiguous {
+	if value.unresolvable {
 		return NamedValue{}, false
 	}
 	if value.ref == nil {

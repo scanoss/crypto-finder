@@ -527,6 +527,7 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 	fw.moduleSources.work = p.localWork
 	p.pythonWalk(root, src, analysis, isInitPy, fw, fw.moduleScope.locals, nil, nil, nil, true, nil)
 	recordPythonNamedValues(root, src, analysis, fw)
+	recordPythonNamedValueWrites(analysis, fw)
 
 	// Extract function and class declarations, resolving each scope's
 	// pending calls (fw) against its now-complete binding layer.
@@ -745,6 +746,9 @@ type pythonFileWalk struct {
 	// pythonRecordPartialOrCallable when a pending call resolves to a
 	// locally-declared class's constructor.
 	classesWithDunderCall map[string]bool
+	// importUses collects the uses of imported names that may change a
+	// value of another module (notePythonImportUse).
+	importUses map[pythonImportUse]bool
 }
 
 // pythonWalk performs ONE full-file descent, visiting every node exactly
@@ -821,6 +825,8 @@ func (p *PythonParser) pythonWalkSideEffects(node *sitter.Node, sym sitter.Symbo
 		}
 	case pythonSyms.globalStatement:
 		fw.moduleSources.poisonIdentifiers(node, src)
+	case pythonSyms.identifier:
+		fw.notePythonImportUse(node, src, analysis)
 	}
 	if moduleDirect {
 		fw.moduleSources.observe(node, sym, src)

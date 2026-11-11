@@ -11,5 +11,10 @@
   gives the member's string and `Alg.SHA.name` its name. A bare `Alg.SHA` is
   resolved only for a `StrEnum` or `(str, Enum)` class. A name the module
   binds more than once, or a name the calling function rebinds, stays
-  unresolved. Call-graph exports stamp `graph_algo_version` `graph-algo-21`;
-  cached Java and Python structural graphs from `graph-algo-20` are rebuilt.
+  unresolved. So does a constant another module may write at runtime, such
+  as `settings.ALG = os.environ["HASH_ALG"]`, `del settings.ALG` or
+  `setattr(settings, ...)`, or whose module object another module passes,
+  aliases or returns; an `Enum` member stays resolved, since it cannot be
+  reassigned, unless another module rebinds its class. Call-graph exports
+  stamp `graph_algo_version` `graph-algo-21`; cached Java and Python
+  structural graphs from `graph-algo-20` are rebuilt.

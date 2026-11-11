@@ -532,6 +532,9 @@ type FileAnalysis struct {
 	// NamedValues holds the string values this file declares under the
 	// fully qualified names a use spells (see NamedValue).
 	NamedValues map[string]NamedValue
+	// NamedValueWrites holds the NamedValue keys, of any module, this file
+	// may write at runtime.
+	NamedValueWrites []NamedValueWrite
 	// Supertypes maps each type declared in this file, fully qualified, to the
 	// fully qualified direct supertypes its extends/implements clauses name
 	// (generic arguments excluded), resolved through the file's imports. Where
@@ -647,6 +650,9 @@ type CallGraph struct {
 	PythonPublicPaths map[string]string
 	// NamedValues merges every parsed file's NamedValues.
 	NamedValues map[string]NamedValue
+	// namedValueWrites merges every file's NamedValueWrites by key, true when
+	// a write reaches the key itself and not only the keys under it.
+	namedValueWrites map[string]bool
 	// entryRefs collects FileAnalysis.EntryRefs while files are merged;
 	// resolveEntryRefs consumes it.
 	entryRefs []EntryRef

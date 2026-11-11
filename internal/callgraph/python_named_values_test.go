@@ -222,3 +222,56 @@ def enum_value():
 		}
 	}
 }
+
+// A module constant another module may write at runtime resolves to nothing,
+// while an Enum member, which no write can reassign, still resolves unless
+// its class is rebound.
+func TestPythonNamedValues_WrittenByAnotherModule(t *testing.T) {
+	const settings = "from enum import Enum\n\nALG = \"sha256\"\n\nclass Alg(Enum):\n    SHA = \"sha256\"\n"
+	const main = "import hashlib\nfrom app.cfg.settings import ALG, Alg\n\n" +
+		"def from_import():\n    return hashlib.new(ALG)\n\n" +
+		"def enum_value():\n    return hashlib.new(Alg.SHA.value)\n"
+	tests := []struct {
+		name, settings, bootstrap string
+		constant, member          bool
+	}{
+		{"reads only", "", "import hashlib\nfrom app.cfg import settings\nhashlib.new(settings.ALG)\nprint(settings.Alg.SHA.value, settings.Alg)\n", true, true},
+		{"local rebinding of the imported name", "", "from app.cfg.settings import ALG\nALG = 'md5'\n", true, true},
+		{"module alias attribute", "", "import os\nimport app.cfg.settings as s\ns.ALG = os.environ['X']\n", false, true},
+		{"package from-import attribute", "", "import os\nfrom app.cfg import settings\nsettings.ALG = os.environ['X']\n", false, true},
+		{"dotted module attribute", "", "import app.cfg.settings\n\ndef boot(v):\n    app.cfg.settings.ALG = v\n", false, true},
+		{"augmented assignment", "", "from app.cfg import settings\nsettings.ALG += '-x'\n", false, true},
+		{"tuple target", "", "from app.cfg import settings\nsettings.ALG, other = load()\n", false, true},
+		{"del", "", "from app.cfg import settings\ndel settings.ALG\n", false, true},
+		{"setattr", "", "from app.cfg import settings\nsetattr(settings, 'ALG', load())\n", false, false},
+		{"module passed as an argument", "", "from app.cfg import settings\nconfigure(settings)\n", false, false},
+		{"module aliased", "", "from app.cfg import settings\ncfg = settings\n", false, false},
+		{"module returned", "", "import app.cfg.settings as s\n\ndef get():\n    return s\n", false, false},
+		{"module dict", "", "from app.cfg import settings\nsettings.__dict__['ALG'] = load()\n", false, false},
+		{"module vars", "", "from app.cfg import settings\nvars(settings)['ALG'] = load()\n", false, false},
+		{"enum class rebound", "", "from app.cfg import settings\nsettings.Alg = load()\n", true, false},
+		{"enum member assigned or passed", "", "from app.cfg.settings import Alg\nAlg.SHA = 'md5'\nchoices = list(Alg)\n\ndef check(v: Alg):\n    return isinstance(v, Alg)\n", true, true},
+		{"global in the declaring module", settings + "\ndef reset(v):\n    global ALG\n    ALG = v\n", "", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			declaring := settings
+			if tt.settings != "" {
+				declaring = tt.settings
+			}
+			graph := parseInlinePythonProject(t, map[string]string{
+				"app/__init__.py":     "",
+				"app/cfg/__init__.py": "",
+				"app/cfg/settings.py": declaring,
+				"app/main.py":         main,
+				"app/bootstrap.py":    tt.bootstrap,
+			})
+			if got := len(pythonNewArgument(t, graph, "from_import")) == 1; got != tt.constant {
+				t.Errorf("ALG resolved = %v, want %v", got, tt.constant)
+			}
+			if got := len(pythonNewArgument(t, graph, "enum_value")) == 1; got != tt.member {
+				t.Errorf("Alg.SHA.value resolved = %v, want %v", got, tt.member)
+			}
+		})
+	}
+}

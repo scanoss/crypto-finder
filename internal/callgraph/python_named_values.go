@@ -113,6 +113,7 @@ func recordPythonEnumMembers(class *sitter.Node, src []byte, analysis *FileAnaly
 			canonical[value] = name
 		}
 		decl := NamedValue{Value: literal, DeclaredType: pythonStrType, FilePath: analysis.FilePath, Line: int(assign.StartPoint().Row) + 1}
+		decl.fixedUnder = owner
 		key := owner + "." + name
 		recordNamedValue(analysis, key+".value", decl)
 		if strValued {
@@ -207,16 +208,10 @@ func pythonNamedValueRef(expr string, analysis *FileAnalysis, bindings pythonBin
 	if _, known := bindings.locals.lookup(first); known || pythonNameLocallyShadowed(bindings, fw, first) {
 		return nil
 	}
-	module, imported := analysis.Imports[first]
-	var key string
+	key, imported := pythonImportKey(first, analysis)
 	switch {
 	case imported && fw.moduleSources.boundOnlyBy(first, pythonBoundImport):
-		switch {
-		case analysis.FromImports[first]:
-			key = module + "." + pythonImportedName(analysis, first)
-		case dotted:
-			key = module
-		default:
+		if !dotted && !analysis.FromImports[first] {
 			return nil
 		}
 	case !imported && dotted && fw.moduleSources.boundOnlyBy(first, pythonBoundClass):
@@ -228,6 +223,135 @@ func pythonNamedValueRef(expr string, analysis *FileAnalysis, bindings pythonBin
 		key += "." + rest
 	}
 	return &nameRef{expr: expr, tiers: [][]string{{key}}, placeholder: true}
+}
+
+// pythonImportKey is the key of what an imported name binds: a from-import
+// names `<module>.<original>`, a module import the module.
+func pythonImportKey(name string, analysis *FileAnalysis) (string, bool) {
+	module, imported := analysis.Imports[name]
+	if !imported {
+		return "", false
+	}
+	if analysis.FromImports[name] {
+		return module + "." + pythonImportedName(analysis, name), true
+	}
+	return module, true
+}
+
+// pythonImportUse is a use of an imported name that may change a value of
+// the module it imports: path is the attribute chain after the name.
+type pythonImportUse struct {
+	root, path  string
+	membersOnly bool
+}
+
+// notePythonImportUse records what a use of an imported name may change in
+// another module: the attribute chain it assigns or deletes, or, when the name
+// or a chain from it is taken as a value (passed, aliased, returned, stored),
+// any member of the object that names. A subscript or dunder step (`s[k]`,
+// `s.__dict__`) widens the use to every member before that step. Reading a
+// string this way changes nothing, since a string has no members.
+func (fw *pythonFileWalk) notePythonImportUse(node *sitter.Node, src []byte, analysis *FileAnalysis) {
+	root := node.Content(src)
+	if _, imported := analysis.Imports[root]; !imported || !pythonNameRead(node) {
+		return
+	}
+	var path []string
+	top := node
+	for parent := top.Parent(); parent != nil; parent = top.Parent() {
+		sym := parent.Symbol()
+		if sym == pythonSyms.subscript && sameSyntaxNode(parent.ChildByFieldName("value"), top) {
+			fw.addImportUse(root, path, true)
+			return
+		}
+		if sym != pythonSyms.attribute || !sameSyntaxNode(parent.ChildByFieldName("object"), top) {
+			break
+		}
+		attr := parent.ChildByFieldName("attribute").Content(src)
+		if strings.HasPrefix(attr, "__") {
+			fw.addImportUse(root, path, true)
+			return
+		}
+		path = append(path, attr)
+		top = parent
+	}
+	if parent := top.Parent(); parent != nil && parent.Symbol() == pythonSyms.call && sameSyntaxNode(parent.ChildByFieldName("function"), top) {
+		return
+	}
+	written := pythonWriteTarget(top)
+	if written && len(path) == 0 {
+		return
+	}
+	fw.addImportUse(root, path, !written)
+}
+
+func (fw *pythonFileWalk) addImportUse(root string, path []string, membersOnly bool) {
+	if fw.importUses == nil {
+		fw.importUses = make(map[pythonImportUse]bool)
+	}
+	fw.importUses[pythonImportUse{root: root, path: strings.Join(path, "."), membersOnly: membersOnly}] = true
+}
+
+// pythonNameRead reports an identifier that reads a name, as opposed to an
+// attribute's member name or what a statement binds or declares: an import, a
+// parameter, a keyword argument's name, a def or class name, a global or
+// nonlocal.
+func pythonNameRead(node *sitter.Node) bool {
+	parent := node.Parent()
+	if parent == nil {
+		return false
+	}
+	switch parent.Type() {
+	case pythonNodeAttribute:
+		return sameSyntaxNode(parent.ChildByFieldName("object"), node)
+	case pythonNodeDottedName, pythonNodeAliasedImport, pythonNodeRelativeImport, pythonNodeParameters, "lambda_parameters",
+		pythonNodeTypedParameter, pythonNodeListSplatPattern, pythonNodeDictSplatPattern, "global_statement", "nonlocal_statement", "as_pattern_target":
+		return false
+	case pythonKeywordArgument, pythonNodeDefaultParameter, pythonNodeTypedDefaultParam, pythonNodeFunctionDefinition, pythonNodeClassDefinition:
+		return !sameSyntaxNode(parent.ChildByFieldName(pythonFieldName), node)
+	}
+	return true
+}
+
+// pythonWriteTarget reports an expression a statement assigns, augments or
+// deletes, alone or inside a target tuple or list.
+func pythonWriteTarget(expr *sitter.Node) bool {
+	for {
+		parent := expr.Parent()
+		if parent == nil {
+			return false
+		}
+		switch sym := parent.Symbol(); sym {
+		case pythonSyms.assignment, pythonSyms.augmentedAssignment, pythonSyms.forStatement, pythonSyms.forInClause:
+			return sameSyntaxNode(parent.ChildByFieldName("left"), expr)
+		case pythonSyms.deleteStatement:
+			return true
+		case pythonSyms.patternList, pythonSyms.tuplePattern, pythonSyms.listPattern:
+			expr = parent
+			continue
+		}
+		switch parent.Type() {
+		case "tuple", "list", javaNodeParenthesizedExpr, "expression_list":
+			expr = parent
+			continue
+		}
+		return false
+	}
+}
+
+// recordPythonNamedValueWrites records, under the key the imported name
+// binds, each use notePythonImportUse collected.
+func recordPythonNamedValueWrites(analysis *FileAnalysis, fw *pythonFileWalk) {
+	for use := range fw.importUses {
+		key, ok := pythonImportKey(use.root, analysis)
+		if !ok {
+			continue
+		}
+		if use.path != "" {
+			key += "." + use.path
+		}
+		recordNamedValueWrite(analysis, NamedValueWrite{Key: key, MembersOnly: use.membersOnly})
+	}
 }
 
 func isSimplePythonIdentifier(s string) bool {

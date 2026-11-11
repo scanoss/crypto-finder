@@ -202,3 +202,41 @@ func TestMaterializeConditionedFindings_PythonNamedValueInAnotherModule(t *testi
 		})
 	}
 }
+
+// A module constant a third module overwrites at runtime does not specialize
+// the digest finding that reads it: the generic anchor stays.
+func TestMaterializeConditionedFindings_PythonNamedValueWrittenByAnotherModule(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, bootstrap string
+		wantRules       []string
+		wantAnchor      bool
+	}{
+		{"another module writes it", "import os\nfrom app.cfg import settings\n\nsettings.WEAK = os.environ[\"HASH_ALG\"]\n", nil, true},
+		{"another module only reads it", "from app.cfg import settings\n\nprint(settings.WEAK)\n", []string{"py.hash.md5"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := writeSourceTree(t, map[string]string{
+				"app/__init__.py":     "",
+				"app/cfg/__init__.py": "",
+				"app/cfg/settings.py": "WEAK = \"md5\"\n",
+				"app/bootstrap.py":    tt.bootstrap,
+				"app/hasher.py":       "import hashlib\nfrom app.cfg.settings import WEAK\n\ndef run(data):\n    return hashlib.new(WEAK, data)\n",
+			})
+			graph, err := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser()).
+				BuildFromDirectories([]callgraph.PackageDir{{Dir: dir}}, nil)
+			if err != nil {
+				t.Fatalf("BuildFromDirectories: %v", err)
+			}
+			report := namedValueAnchor(t, dir, "app/hasher.py", "hashlib.new(WEAK, data)", "py.hash.dynamic", "python", "hashlib.new")
+			MaterializeConditionedFindings(report, &engine.DepScanResult{CallGraph: graph, Ecosystem: "python", ProjectRoot: dir}, []string{writeConditionedRules(t, pythonDigestRules)})
+			got, anchor := specializedRules(report, "py.hash.dynamic")
+			if !slices.Equal(got, tt.wantRules) || anchor != tt.wantAnchor {
+				t.Fatalf("specialized rules = %v, generic anchor = %v; want %v, anchor %v", got, anchor, tt.wantRules, tt.wantAnchor)
+			}
+		})
+	}
+}
