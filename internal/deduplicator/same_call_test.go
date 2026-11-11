@@ -225,8 +225,13 @@ func TestDeduplicate_UnresolvedCallKeptBesideAssetOfAnotherPrimitive(t *testing.
 	}
 
 	for _, pair := range [][2]string{
-		{"block-cipher", "ae"}, {"stream-cipher", "ae"}, {"block-cipher", "key-wrap"},
-		{"hash", "mac"}, {"kdf", "hash"}, {"signature", "pke"}, {"key-agree", "kem"},
+		{"block-cipher", "ae"},
+		{"stream-cipher", "ae"},
+		{"block-cipher", "key-wrap"},
+		{"hash", "mac"},
+		{"kdf", "hash"},
+		{"signature", "pke"},
+		{"key-agree", "kem"},
 	} {
 		unresolved := callAsset(9, 53, "dynamic", map[string]string{"assetType": "algorithm", "algorithmPrimitive": pair[0]})
 		named := callAsset(9, 53, "named", map[string]string{"assetType": "algorithm", "algorithmName": "X", "algorithmPrimitive": pair[1]})
