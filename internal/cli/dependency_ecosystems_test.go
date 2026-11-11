@@ -349,3 +349,44 @@ func TestDependencyEcosystemOutcomeExplicitEcosystem(t *testing.T) {
 		t.Errorf("ecosystems_skipped encodes as %s, want []", encoded)
 	}
 }
+
+// ecosystems_skipped reports only what the target carried and the phase left
+// unresolved, never a language hint with nothing to resolve.
+func TestAutoDependencyEcosystemsReportedSkips(t *testing.T) {
+	plan := autoDependencyEcosystems{
+		manifests: []string{ecosystemPython, ecosystemNode},
+		skipped: []dependencyEcosystemSkip{
+			{Ecosystem: ecosystemNode, Reason: dependency.SkipReasonLockfileAbsent},
+			{Ecosystem: ecosystemPython, Reason: dependency.SkipReasonManifestAbsent},
+			{Ecosystem: "go", Reason: dependency.SkipReasonManifestAbsent},
+			{Ecosystem: ecosystemCPP, Reason: depSkipResolverUnavailable},
+			{Ecosystem: "rust", Reason: depSkipParserUnavailable},
+		},
+	}
+	want := []dependencyEcosystemSkip{
+		{Ecosystem: ecosystemNode, Reason: dependency.SkipReasonLockfileAbsent},
+		// A requirements.txt with no interpreter to read is a real gap.
+		{Ecosystem: ecosystemPython, Reason: dependency.SkipReasonManifestAbsent},
+		{Ecosystem: "rust", Reason: depSkipParserUnavailable},
+	}
+	if got := plan.reportedSkips(); !reflect.DeepEqual(got, want) {
+		t.Errorf("reportedSkips = %+v, want %+v", got, want)
+	}
+}
+
+// The reported case: a Flask application whose browser JavaScript outnumbers
+// its Python, with no package.json, resolves Python and reports no skipped
+// Node ecosystem, because it had no Node dependencies to resolve.
+func TestAutoDependencyEcosystemsFlaskWithBrowserJavaScriptReportsNoSkip(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "requirements.txt"), "flask\n")
+	writeSources(t, dir, "app", ".py", "import os\n", 3)
+	writeSources(t, dir, "ui", ".js", "console.log(1)\n", 6)
+	plan := planAutoDependencyEcosystems(dir, detectedHints(t, dir), testDependencyRegistry(), nil)
+	if plan.primary() != ecosystemPython {
+		t.Fatalf("primary = %q, want python (plan %+v)", plan.primary(), plan)
+	}
+	if got := plan.reportedSkips(); len(got) != 0 {
+		t.Errorf("reportedSkips = %+v, want none", got)
+	}
+}

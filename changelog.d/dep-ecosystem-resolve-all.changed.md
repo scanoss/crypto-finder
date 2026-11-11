@@ -17,7 +17,8 @@
 - The completed `dependencies` event of `--progress` sums its counters and
   outcome lists over every resolved ecosystem, and carries two new fields:
   `ecosystems`, the resolved ecosystems with the primary first, and
-  `ecosystems_skipped`, the ecosystems seen but not resolved, each as
+  `ecosystems_skipped`, the ecosystems the target has something to resolve
+  for that were not resolved (a language with no manifest is not listed), each as
   `{"ecosystem": "node", "reason": "lockfile_absent"}`, written `[]` when
   there are none. The nested `callgraph` events repeat once per resolved
   ecosystem that has dependencies. The progress schema stays at version `1`.

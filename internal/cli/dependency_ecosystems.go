@@ -43,6 +43,31 @@ type autoDependencyEcosystems struct {
 	// manifest. It is used, with the skip that follows from it, when no
 	// candidate is resolvable.
 	fallback string
+	// manifests lists the ecosystems a manifest at the target names
+	// (scan.DetectEcosystems).
+	manifests []string
+}
+
+// reportedSkips is the part of skipped a completed dependencies event
+// reports in ecosystems_skipped: the ecosystems the target carries something
+// for that the phase left unresolved. A candidate that only a language hint
+// named, with nothing its resolver could read (manifest_absent) or no
+// resolver at all (resolver_unavailable, C and C++), is not a gap in the
+// dependency coverage: there were no dependencies to resolve. Reporting it
+// read, to a consumer, as if the Node dependencies of a Flask application
+// with some browser JavaScript and no package.json had gone unchecked. The
+// same reasons are reported when a manifest for the ecosystem sits at the
+// target, such as a requirements.txt with no Python interpreter to read.
+func (a autoDependencyEcosystems) reportedSkips() []dependencyEcosystemSkip {
+	out := make([]dependencyEcosystemSkip, 0, len(a.skipped))
+	for _, skip := range a.skipped {
+		nothingToResolve := skip.Reason == dependency.SkipReasonManifestAbsent || skip.Reason == depSkipResolverUnavailable
+		if nothingToResolve && !slices.Contains(a.manifests, skip.Ecosystem) {
+			continue
+		}
+		out = append(out, skip)
+	}
+	return out
 }
 
 // primary is the ecosystem the dependency phase resolves first: the first
@@ -133,7 +158,7 @@ func planAutoDependencyEcosystems(target string, languageHints []string, registr
 		fallback = scanutil.DetectEcosystem(target)
 	}
 	manifests := scanutil.DetectEcosystems(target)
-	plan := autoDependencyEcosystems{fallback: fallback}
+	plan := autoDependencyEcosystems{fallback: fallback, manifests: manifests}
 	for _, ecosystem := range dependencyEcosystemCandidates(target, languageHints, manifests, fallback) {
 		reason := dependencyEcosystemSkipReason(target, ecosystem, registry, skipPatterns)
 		if reason == "" && ecosystem == ecosystemPython && ecosystem != fallback && !slices.Contains(manifests, ecosystemPython) {

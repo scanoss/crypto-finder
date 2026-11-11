@@ -1244,7 +1244,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 					}
 					break
 				}
-				outcome := dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{depResult}, skipped: auto.skipped}
+				outcome := dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{depResult}, skipped: auto.reportedSkips()}
 				// Auto mode resolves every other ecosystem with a manifest
 				// too. Each scans on top of the report the previous one
 				// returned, so the findings of all of them accumulate, and
