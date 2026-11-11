@@ -22,3 +22,9 @@
   `{"ecosystem": "node", "reason": "lockfile_absent"}`, written `[]` when
   there are none. The nested `callgraph` events repeat once per resolved
   ecosystem that has dependencies. The progress schema stays at version `1`.
+- An explicit `--languages` still bounds auto mode: a manifest adds an
+  ecosystem only for a requested language, so `--languages java` on a root
+  that also has a `package.json` and a `requirements.txt` resolves Java alone.
+  The rule graph passes (synthesized entry points, conditioned findings and
+  related material) run on every resolved ecosystem's graph, not only the
+  primary one.

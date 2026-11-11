@@ -1388,9 +1388,10 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		passParent = "export"
 	}
 
-	graphPasses := callGraphResult != nil && callGraphResult.CallGraph != nil
+	passResults := ruleGraphPassResults(callGraphResult)
+	graphPasses := len(passResults) > 0
 	if graphPasses {
-		if err := runRuleGraphPasses(progress, passParent, rulesManager, report, callGraphResult); err != nil {
+		if err := runRuleGraphPasses(progress, passParent, rulesManager, report, passResults); err != nil {
 			return err
 		}
 	}
@@ -1541,21 +1542,49 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 // metadata.crypto (the single source of truth) joined on api↔definition.
 // Gated structurally (method definition present, no in-body finding), so it is
 // a no-op when scanning a consumer of the library or a Type 1 library.
-func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesManager *rules.Manager, report *entities.InterimReport, result *engine.DepScanResult) error {
+// ruleGraphPassResults lists the call graphs the rule graph passes run on:
+// the primary one, and every additional ecosystem auto mode resolved
+// dependencies for. A secondary ecosystem's dependency findings then get the
+// same synthesized entry points, conditioned findings and related material as
+// when that ecosystem is primary, and still get them when the primary
+// resolved no dependencies and so built no graph. The source-only graphs an
+// export attaches later never took these passes and still do not.
+func ruleGraphPassResults(primary *engine.DepScanResult) []*engine.DepScanResult {
+	if primary == nil {
+		return nil
+	}
+	var out []*engine.DepScanResult
+	if primary.CallGraph != nil {
+		out = append(out, primary)
+	}
+	for _, extra := range primary.AdditionalEcosystems {
+		if extra != nil && extra.CallGraph != nil {
+			out = append(out, extra)
+		}
+	}
+	return out
+}
+
+// runRuleGraphPasses runs each pass over every graph in results, reporting
+// each pass once. A pass resolves a finding through the function containing
+// its file in the graph, so a graph only adds to the findings of its own
+// ecosystem, and conditioned findings already present are not added twice.
+func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesManager *rules.Manager, report *entities.InterimReport, results []*engine.DepScanResult) error {
 	rulePaths, loadErr := rulesManager.Load()
 	if loadErr != nil {
 		log.Debug().
 			Err(loadErr).
-			Str("call_graph", fmt.Sprintf("%p", result.CallGraph)).
+			Int("call_graphs", len(results)).
 			Str("report", fmt.Sprintf("%p", report)).
-			Int("function_count", len(result.CallGraph.Functions)).
 			Int("finding_count", len(report.Findings)).
 			Strs("rule_paths", rulePaths).
 			Msg("failed to load rules for synthesis")
 		return nil
 	}
 	if err := runScanPhase(progress, "entry_points", parent, func() error {
-		engine.SynthesizeRuleCryptoEntryPointsForResult(result, rulePaths)
+		for _, result := range results {
+			engine.SynthesizeRuleCryptoEntryPointsForResult(result, rulePaths)
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -1563,8 +1592,10 @@ func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesM
 	// Both passes add assets the call graph derives from rule findings, so they
 	// report as one progress phase.
 	return runScanPhase(progress, "conditioned_findings", parent, func() error {
-		scanutil.MaterializeConditionedFindings(report, result, rulePaths)
-		scanutil.MaterializeRelatedMaterial(report, result)
+		for _, result := range results {
+			scanutil.MaterializeConditionedFindings(report, result, rulePaths)
+			scanutil.MaterializeRelatedMaterial(report, result)
+		}
 		return nil
 	})
 }

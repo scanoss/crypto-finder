@@ -420,3 +420,25 @@ func TestPlanAutoDependencyEcosystemsExplicitLanguagesBoundTheEcosystems(t *test
 		t.Errorf("detected hints: resolvable = %v, want go, node and python", plan.resolvable)
 	}
 }
+
+// The rule graph passes run on the primary graph and on every additional
+// ecosystem auto mode resolved, and still on the additional ones when the
+// primary resolved no dependencies and built no graph.
+func TestRuleGraphPassResultsCoverEveryResolvedGraph(t *testing.T) {
+	graph := &callgraph.CallGraph{}
+	python := &engine.DepScanResult{Ecosystem: ecosystemPython, CallGraph: graph}
+	sourceOnly := &engine.DepScanResult{Ecosystem: "rust"}
+
+	primary := &engine.DepScanResult{Ecosystem: ecosystemNode, CallGraph: graph, AdditionalEcosystems: []*engine.DepScanResult{python, sourceOnly, nil}}
+	if got := ruleGraphPassResults(primary); !reflect.DeepEqual(got, []*engine.DepScanResult{primary, python}) {
+		t.Errorf("ruleGraphPassResults = %v, want the primary then python", got)
+	}
+
+	noGraph := &engine.DepScanResult{Ecosystem: ecosystemNode, AdditionalEcosystems: []*engine.DepScanResult{python}}
+	if got := ruleGraphPassResults(noGraph); !reflect.DeepEqual(got, []*engine.DepScanResult{python}) {
+		t.Errorf("ruleGraphPassResults = %v, want python alone when the primary built no graph", got)
+	}
+	if got := ruleGraphPassResults(nil); got != nil {
+		t.Errorf("ruleGraphPassResults(nil) = %v, want nil", got)
+	}
+}
