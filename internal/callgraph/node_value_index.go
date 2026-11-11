@@ -523,6 +523,13 @@ func (x *nodeValueIndex) markMemberWrite(root *sitter.Node) {
 	}
 }
 
+// memberWritten reports whether a member of the binding name resolves to at
+// node is written anywhere in the file.
+func (x *nodeValueIndex) memberWritten(name string, node *sitter.Node) bool {
+	d := x.resolve(name, node)
+	return d != nil && d.memberWrites
+}
+
 // identifier counts a use of a name that is not a read of one of its members
 // or a declaration of it.
 func (x *nodeValueIndex) identifier(node *sitter.Node) {

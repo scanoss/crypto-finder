@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	// nodeValueMaxDepth bounds how many `const a = b` hops one argument is
-	// followed through.
+	// nodeValueMaxDepth bounds how many `const a = b` hops, and nested
+	// construction arguments, one argument is followed through.
 	nodeValueMaxDepth = 4
 	nodeStringType    = "string"
 	nodeNumberType    = "number"
@@ -66,8 +66,8 @@ func unwrapNodeValue(node *sitter.Node) *sitter.Node {
 // nodeValueSource is the provenance of an expression whose value the file
 // pins: a literal, a parameter of the enclosing function, a stable local or
 // module binding of one, a member of an enum-like object or TypeScript enum,
-// or an export of another project module (left to the post-parse fold).
-// Anything else yields nothing.
+// an export of another project module (left to the post-parse fold), or a
+// getter called on a construction. Anything else yields nothing.
 func (p *NodeParser) nodeValueSource(node *sitter.Node, depth int) []SourceNode {
 	x := p.values
 	node = unwrapNodeValue(node)
@@ -85,6 +85,8 @@ func (p *NodeParser) nodeValueSource(node *sitter.Node, depth int) []SourceNode 
 		return p.nodeIdentifierSource(node, depth)
 	case nodeMemberExpression:
 		return p.nodeMemberSource(node, depth)
+	case nodeCallExpression:
+		return p.nodeGetterSource(node, depth)
 	}
 	return nil
 }
@@ -322,6 +324,86 @@ func (x *nodeValueIndex) enumMembers(body *sitter.Node) map[string]*sitter.Node 
 		}
 	}
 	return members
+}
+
+// nodeGetterSource marks `X.m()` whose receiver is `new C(..)`, written in
+// place or bound once to a function local nothing writes through, with that
+// construction, for foldConstructorGetters. C is a class this module declares
+// once at its top level, or one a named import of a project module binds.
+func (p *NodeParser) nodeGetterSource(call *sitter.Node, depth int) []SourceNode {
+	x := p.values
+	function := call.ChildByFieldName("function")
+	if function == nil || function.Type() != nodeMemberExpression || len(nodeArgumentNodes(call)) != 0 || depth >= nodeValueMaxDepth {
+		return nil
+	}
+	method := function.ChildByFieldName("property")
+	receiver := unwrapNodeValue(function.ChildByFieldName("object"))
+	if method == nil || method.Type() != nodePropertyIdentifier || receiver == nil {
+		return nil
+	}
+	if receiver.Type() == goNodeIdentifier {
+		receiver = x.localConstruction(receiver, call)
+	}
+	if receiver == nil || receiver.Type() != nodeNewExpression {
+		return nil
+	}
+	class, ok := x.constructedClass(receiver.ChildByFieldName("constructor"))
+	if !ok {
+		return nil
+	}
+	args := nodeArgumentNodes(receiver)
+	ref := &ctorGetterRef{
+		constructor: FunctionID{Package: class.Package, Type: class.Type, Name: nodeConstructorKeyword},
+		method:      method.Content(x.src),
+		arguments:   make([]ctorArgument, len(args)),
+	}
+	for i, arg := range args {
+		ref.arguments[i] = ctorArgument{splat: arg.Type() == nodeSpreadElement, sources: p.nodeValueSource(arg, depth+1)}
+	}
+	target := FunctionID{Package: class.Package, Type: class.Type, Name: ref.method}
+	return []SourceNode{{
+		Type:       sourceNodeCallResult,
+		Value:      call.Content(x.src),
+		CallTarget: &target,
+		Location:   x.location(call),
+		getter:     ref,
+	}}
+}
+
+// localConstruction returns the `new C(..)` a function local holds at use:
+// a const or never reassigned let of the function holding use, no member of
+// which is written.
+func (x *nodeValueIndex) localConstruction(name, use *sitter.Node) *sitter.Node {
+	d := x.resolve(name.Content(x.src), name)
+	if d == nil || d.fn == nil || (d.kind != nodeDeclConst && d.kind != nodeDeclLet) ||
+		!x.stable(d, use) || d.memberWrites || !sameOptionalNode(nodeEnclosingFunction(use), d.fn) {
+		return nil
+	}
+	return unwrapNodeValue(d.value)
+}
+
+// constructedClass names the class `new <constructor>` constructs.
+func (x *nodeValueIndex) constructedClass(constructor *sitter.Node) (FunctionID, bool) {
+	if constructor == nil {
+		return FunctionID{}, false
+	}
+	root, rest := nodeMemberChain(constructor, x.src)
+	if root == nil {
+		return FunctionID{}, false
+	}
+	name := root.Content(x.src)
+	d := x.resolve(name, root)
+	if d == nil {
+		return FunctionID{}, false
+	}
+	switch {
+	case d.kind == nodeDeclClass && len(rest) == 0 && d.fn == nil && len(x.decls[name]) == 1 && d.scope.Type() == nodeProgramNode:
+		return FunctionID{Package: x.modulePath, Type: name}, true
+	case d.kind == nodeDeclImport && d.module != "" && (d.member != "" || len(rest) > 0):
+		pkg, last := nodeBinding{module: d.module, member: d.member}.qualify(rest...)
+		return FunctionID{Package: pkg, Type: last}, last != ""
+	}
+	return FunctionID{}, false
 }
 
 // recordNodeNamedValues records what this module exports under

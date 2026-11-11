@@ -737,6 +737,13 @@ func (p *NodeParser) extractClassMethods(node *sitter.Node, src []byte, filePath
 			}
 		}
 	}
+	if getters := p.values.nodeConstructorGetters(node, owner); len(getters) > 0 {
+		for i := first; i < len(analysis.Functions); i++ {
+			if getter, ok := getters[analysis.Functions[i].ID.Name]; ok && analysis.Functions[i].ID.Type == owner {
+				analysis.Functions[i].ReturnSources = []SourceNode{getter}
+			}
+		}
+	}
 	p.appendClassInit(body, fieldInit, src, filePath, packagePath, owner, bindings, analysis)
 	p.recordNodeSupertypes(node, src, packagePath, owner, first, analysis)
 }

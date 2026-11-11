@@ -157,8 +157,10 @@ const SchemaVersion = "graph-fragment-1.15"
 // graph-algo-23: JavaScript and TypeScript calls carry argument provenance:
 // literals, plain parameters, stable locals and module constants, members of
 // TypeScript enums and enum-like objects, and exports of other project
-// modules, folded like the Java and Python ones. A structural graph cached
-// under graph-algo-22 has none for Node.
+// modules, folded like the Java and Python ones. A getter of a field the
+// constructor sets carries the FIELD{PARAMETER} return source and folds to
+// the constructor argument. A structural graph cached under graph-algo-22
+// has none for Node.
 const GraphAlgoVersion = "graph-algo-23"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
