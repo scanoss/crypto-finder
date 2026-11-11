@@ -153,7 +153,13 @@ const SchemaVersion = "graph-fragment-1.15"
 // enum constant's such getter folds to the constant's argument. Getters now
 // carry that FIELD{PARAMETER} return source. A structural graph cached under
 // graph-algo-21 keeps them unresolved.
-const GraphAlgoVersion = "graph-algo-22"
+//
+// graph-algo-23: JavaScript and TypeScript calls carry argument provenance:
+// literals, plain parameters, stable locals and module constants, members of
+// TypeScript enums and enum-like objects, and exports of other project
+// modules, folded like the Java and Python ones. A structural graph cached
+// under graph-algo-22 has none for Node.
+const GraphAlgoVersion = "graph-algo-23"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is

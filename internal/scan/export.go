@@ -4705,9 +4705,10 @@ func propagateSourceNodes(
 // that fills the callee parameter declared at index with name: the keyword
 // argument naming it (Python `alg="sha256"`), else the argument at index when
 // every argument up to it is positional. ok is false when no argument provably
-// fills the parameter: a keyword argument or a `*args` splat sits in the way.
-// Only Java and Python emit PARAMETER provenance, and a Java argument is never
-// keyword-shaped or starred.
+// fills the parameter: a keyword argument, a Python `*args` or a JavaScript
+// `...args` spread sits in the way. A JavaScript `f(a = v)` reads as a keyword
+// argument; the Node parser gives an assignment argument no sources, so the
+// misreading loses that call's value and never borrows another's.
 func argumentSlot(n int, expression func(int) string, index int, name string) (slot int, ok bool) {
 	if name != "" {
 		for i := range n {
@@ -4721,7 +4722,7 @@ func argumentSlot(n int, expression func(int) string, index int, name string) (s
 	}
 	for i := 0; i <= index; i++ {
 		expr := strings.TrimSpace(expression(i))
-		if keyword, _ := splitKeywordArgument(expr, ecosystemPython); keyword != "" || strings.HasPrefix(expr, "*") {
+		if keyword, _ := splitKeywordArgument(expr, ecosystemPython); keyword != "" || strings.HasPrefix(expr, "*") || strings.HasPrefix(expr, "...") {
 			return 0, false
 		}
 	}

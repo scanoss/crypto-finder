@@ -53,6 +53,9 @@ type NodeParser struct {
 	// names caches the names each scope of the file binds while ParseFile
 	// runs.
 	names *nodeScopeNames
+	// values indexes the bindings of the file being parsed, for argument
+	// provenance; see node_value_index.go.
+	values *nodeValueIndex
 }
 
 // NewNodeParser creates a parser for JavaScript, TypeScript, and TSX source files.
@@ -219,6 +222,8 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	// package: see nodeModulePath. analysis.PackagePath keeps the package so the
 	// import map and the package name are unaffected.
 	modulePath := nodeModulePath(packagePath, filePath)
+	p.values = newNodeValueIndex(root, src, filePath, packagePath, modulePath)
+	defer func() { p.values = nil }()
 	p.file = newNodeFileTypes(p, root, src, modulePath, bindings, projectImports)
 	defer func() { p.file, p.scope = nil, nil }()
 	p.file.filePath, p.file.pkgPath = filePath, packagePath
@@ -226,6 +231,7 @@ func (p *NodeParser) ParseFile(filePath, packagePath string) (*FileAnalysis, err
 	analysis.nodeDefaultClass = p.file.defaultClass
 	analysis.nodeAssignedProps = p.file.assignedProps
 	p.extractDeclarations(root, src, filePath, modulePath, bindings, analysis)
+	p.recordNodeNamedValues(root, analysis)
 	if decl := p.moduleInitDecl(root, src, filePath, packagePath, modulePath, bindings); decl != nil {
 		analysis.Functions = append(analysis.Functions, *decl)
 	}
@@ -1092,6 +1098,7 @@ func (p *NodeParser) walkNodeCalls(node *sitter.Node, src []byte, filePath, pack
 		call = parseNodeNew(node, src, filePath, imports, locals)
 	}
 	if call != nil {
+		call.ArgumentSources = p.nodeArgumentSources(node, len(call.Arguments))
 		p.anchors.set(call, node)
 		*calls = append(*calls, *call)
 	}
