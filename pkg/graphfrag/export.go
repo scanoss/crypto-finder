@@ -140,7 +140,13 @@ const SchemaVersion = "graph-fragment-1.15"
 // a module-level function, a string local or a module string constant carries
 // its PARAMETER or VALUE source. A Python structural graph cached under
 // graph-algo-19 has none for them.
-const GraphAlgoVersion = "graph-algo-20"
+//
+// graph-algo-21: a Java `Enum.C.name()` (and `toString()` the enum does not
+// override), a Python module string constant read from another module, and a
+// Python Enum member's `.value` / `.name` fold to the string they denote, as a
+// cross-class Java String constant already did. A structural graph cached
+// under graph-algo-20 keeps them unresolved.
+const GraphAlgoVersion = "graph-algo-21"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is

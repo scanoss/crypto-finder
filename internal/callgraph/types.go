@@ -473,9 +473,9 @@ type SourceNode struct {
 	// Flow carries optional branch/call-position semantics without inflating
 	// every SourceNode in the graph.
 	Flow *SourceFlow
-	// javaConstant names the String constants this node's text may denote,
-	// for the post-parse fold. Never exported.
-	javaConstant *javaConstantRef
+	// nameRef names the NamedValues this node's text may denote, for the
+	// post-parse fold. Never exported.
+	nameRef *nameRef
 }
 
 // SourceFlow carries optional branch and call-position semantics.
@@ -529,9 +529,9 @@ type FileAnalysis struct {
 	// to its extends/implements clause as erased simple names (Java only).
 	// Presence of a key also marks the type as declared in this file.
 	ClassBases map[string][]string
-	// JavaStringConstants holds the String constants this file declares,
-	// keyed by owner FQN + ".NAME" (Java only).
-	JavaStringConstants map[string]JavaStringConstant
+	// NamedValues holds the string values this file declares under the
+	// fully qualified names a use spells (see NamedValue).
+	NamedValues map[string]NamedValue
 	// Supertypes maps each type declared in this file, fully qualified, to the
 	// fully qualified direct supertypes its extends/implements clauses name
 	// (generic arguments excluded), resolved through the file's imports. Where
@@ -645,9 +645,8 @@ type CallGraph struct {
 	// A declaration is keyed by its defining module, while a consumer and a
 	// rule name the public path. Python only.
 	PythonPublicPaths map[string]string
-	// JavaStringConstants merges every parsed file's String constants, keyed
-	// by owner FQN + ".NAME". Java only.
-	JavaStringConstants map[string]JavaStringConstant
+	// NamedValues merges every parsed file's NamedValues.
+	NamedValues map[string]NamedValue
 	// entryRefs collects FileAnalysis.EntryRefs while files are merged;
 	// resolveEntryRefs consumes it.
 	entryRefs []EntryRef

@@ -63,6 +63,34 @@ type pythonLocalSource struct {
 	parameter      bool
 	rebound        bool
 	parameterIndex int
+	// bindings counts the statements that bind the name, and kind is what
+	// the first one binds, so a use can require one import or one class.
+	bindings int
+	kind     pythonBindingKind
+}
+
+type pythonBindingKind uint8
+
+const (
+	pythonBoundOther pythonBindingKind = iota
+	pythonBoundImport
+	pythonBoundClass
+)
+
+func (e *pythonLocalSource) note(kind pythonBindingKind) {
+	if e.bindings == 0 {
+		e.kind = kind
+	}
+	e.bindings++
+}
+
+// boundOnlyBy reports whether exactly one statement binds name, of kind.
+func (s *pythonLocalSources) boundOnlyBy(name string, kind pythonBindingKind) bool {
+	if s.all {
+		return false
+	}
+	e := s.byName[name]
+	return e != nil && e.bindings == 1 && e.kind == kind
 }
 
 func (s *pythonLocalSources) entry(name string) *pythonLocalSource {
@@ -81,6 +109,7 @@ func (s *pythonLocalSources) entry(name string) *pythonLocalSource {
 func (s *pythonLocalSources) bind(name string, value *sitter.Node, text, root string) {
 	e := s.entry(name)
 	e.rebound = e.rebound || e.parameter
+	e.note(pythonBoundOther)
 	switch {
 	case e.poisoned:
 	case e.value == nil && e.text == "":
@@ -92,6 +121,7 @@ func (s *pythonLocalSources) bind(name string, value *sitter.Node, text, root st
 
 func (s *pythonLocalSources) poison(name string) {
 	e := s.entry(name)
+	e.note(pythonBoundOther)
 	e.poisoned = true
 	e.rebound = e.rebound || e.parameter
 }
@@ -186,8 +216,9 @@ func (s *pythonLocalSources) observe(node *sitter.Node, sym sitter.Symbol, src [
 		}
 	case pythonSyms.wildcardImport:
 		s.poisonExisting()
-	case pythonSyms.importStatement, pythonSyms.importFromStatement,
-		pythonSyms.globalStatement, pythonSyms.nonlocalStatement, pythonSyms.deleteStatement,
+	case pythonSyms.importStatement, pythonSyms.importFromStatement:
+		s.observeImport(node, src)
+	case pythonSyms.globalStatement, pythonSyms.nonlocalStatement, pythonSyms.deleteStatement,
 		pythonSyms.casePattern, pythonSyms.typeAliasStatement:
 		s.poisonIdentifiers(node, src)
 	}
@@ -212,7 +243,47 @@ func (s *pythonLocalSources) inNestedScope(node *sitter.Node) bool {
 // observeClassName poisons a class statement's own name; pythonWalkClass
 // returns before observe sees the node.
 func (s *pythonLocalSources) observeClassName(node *sitter.Node, src []byte) {
-	s.poisonIdentifiers(node.ChildByFieldName("name"), src)
+	if name := node.ChildByFieldName(pythonFieldName); name != nil {
+		e := s.entry(name.Content(src))
+		e.poisoned = true
+		e.note(pythonBoundClass)
+	}
+}
+
+// observeImport poisons every name an import statement spells and counts one
+// import binding for each name it binds: `import a.b` binds a, `as x` binds x.
+func (s *pythonLocalSources) observeImport(node *sitter.Node, src []byte) {
+	s.markPoisoned(node, src)
+	from := node.Symbol() == pythonSyms.importFromStatement
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if from && node.FieldNameForChild(i) != pythonFieldName {
+			continue
+		}
+		var bound string
+		switch child := node.Child(i); child.Symbol() {
+		case pythonSyms.dottedName:
+			bound, _, _ = strings.Cut(child.Content(src), ".")
+		case pythonSyms.aliasedImport:
+			if alias := child.ChildByFieldName("alias"); alias != nil {
+				bound = alias.Content(src)
+			}
+		}
+		if bound != "" {
+			s.entry(bound).note(pythonBoundImport)
+		}
+	}
+}
+
+func (s *pythonLocalSources) markPoisoned(node *sitter.Node, src []byte) {
+	if node.Symbol() == pythonSyms.identifier {
+		e := s.entry(node.Content(src))
+		e.poisoned = true
+		e.rebound = e.rebound || e.parameter
+		return
+	}
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		s.markPoisoned(node.NamedChild(i), src)
+	}
 }
 
 func (s *pythonLocalSources) observeAssignment(node *sitter.Node, src []byte) {
@@ -317,6 +388,7 @@ func pythonDottedRoot(node *sitter.Node, src []byte) (string, bool) {
 func (s *pythonLocalSources) poisonExisting() {
 	for _, e := range s.byName {
 		s.tick()
+		e.note(pythonBoundOther)
 		e.poisoned = true
 		e.rebound = e.rebound || e.parameter
 	}

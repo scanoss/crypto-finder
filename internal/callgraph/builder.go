@@ -342,11 +342,9 @@ func (b *Builder) BuildFromDirectories(packages, typeOnlyPackages []PackageDir) 
 	if err != nil {
 		return nil, fmt.Errorf("callgraph: load embedded %s KB: %w", b.ecosystem, err)
 	}
-	// Fold Java String constants named across classes before inference, so
-	// it sees "SHA-1" where the source wrote MessageDigestAlgorithms.SHA_1.
-	if b.ecosystem == ecosystemJava {
-		perf.Time("callgraph.build.java_string_constants", func() { foldJavaStringConstants(graph) })
-	}
+	// Fold values named across files before inference, so it sees "SHA-1"
+	// where the source wrote MessageDigestAlgorithms.SHA_1.
+	perf.Time("callgraph.build.named_values", func() { foldNamedValues(graph) })
 	inferSpan := perf.Start("callgraph.build.infer_return_types")
 	err = InferReturnTypes(graph, kb)
 	inferSpan.End()
@@ -855,7 +853,7 @@ func (b *Builder) addAnalyses(graph *CallGraph, analyses []*FileAnalysis, projec
 		mergeSourceSupertypes(graph, analysis.Supertypes)
 		mergeGoStructFields(graph, analysis.GoStructFields, analysis.PackagePath)
 		b.mergeAnalysisFunctions(graph, analysis)
-		mergeJavaStringConstants(graph, analysis)
+		mergeNamedValues(graph, analysis)
 		graph.entryRefs = append(graph.entryRefs, analysis.EntryRefs...)
 		mergeNodeFileFacts(graph, analysis)
 	}

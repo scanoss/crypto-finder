@@ -526,6 +526,7 @@ func (p *PythonParser) parseFile(filePath, packagePath string) (*FileAnalysis, e
 	fw.moduleSources.module = true
 	fw.moduleSources.work = p.localWork
 	p.pythonWalk(root, src, analysis, isInitPy, fw, fw.moduleScope.locals, nil, nil, nil, true, nil)
+	recordPythonNamedValues(root, src, analysis, fw)
 
 	// Extract function and class declarations, resolving each scope's
 	// pending calls (fw) against its now-complete binding layer.
@@ -549,7 +550,7 @@ func (p *PythonParser) recordPythonReExportsFromStatement(node *sitter.Node, src
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		if node.FieldNameForChild(i) != "name" {
+		if node.FieldNameForChild(i) != pythonFieldName {
 			continue
 		}
 		child := node.Child(i)
@@ -1457,7 +1458,7 @@ func (p *PythonParser) processImportFromStatement(node *sitter.Node, src []byte,
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		if node.FieldNameForChild(i) != "name" {
+		if node.FieldNameForChild(i) != pythonFieldName {
 			continue
 		}
 		child := node.Child(i)
@@ -2917,8 +2918,12 @@ func (p *PythonParser) pythonArgumentSourceFor(argNode *sitter.Node, src []byte,
 			// fabricate provenance for an unrelated local.
 			return nil
 		}
-		module, _ := fw.moduleSources.lookup(name)
-		return p.pythonLocalArgumentSource(name, module, src, filePath, analysis, bindings, fw, depth)
+		if module, _ := fw.moduleSources.lookup(name); module != nil {
+			return p.pythonLocalArgumentSource(name, module, src, filePath, analysis, bindings, fw, depth)
+		}
+		return pythonNamedValueSource(argNode, src, filePath, analysis, bindings, fw)
+	case pythonSyms.attribute:
+		return pythonNamedValueSource(argNode, src, filePath, analysis, bindings, fw)
 	case pythonSyms.integer, pythonSyms.string:
 		return []SourceNode{{Type: "VALUE", Value: argNode.Content(src)}}
 	default:

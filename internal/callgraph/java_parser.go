@@ -188,7 +188,7 @@ func (p *JavaParser) parseFile(filePath, packagePath string) (*FileAnalysis, err
 	// shadowing rule below would apply only to types declared earlier in the
 	// file. Bases are filled in properly as each declaration is processed.
 	p.registerDeclaredJavaTypes(root, src, analysis, "")
-	collectJavaStringConstants(javaChildNodes(root), src, analysis, "")
+	collectJavaNamedValues(javaChildNodes(root), src, analysis, "")
 	analysis.TypeNamesAtRisk = collectJavaTypeNamesAtRisk(root, src)
 
 	// Extract class declarations with their methods
@@ -2164,7 +2164,7 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 		return originNodes
 	}
 	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
-		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr, javaConstant: javaConstantUse(expr, analysis, currentClass, varTypes, origins)}}
+		return []SourceNode{{Type: "VALUE", Name: expr, Value: expr, nameRef: javaNameRefUse(expr, analysis, currentClass, varTypes, origins)}}
 	}
 	if constructorNodes := p.traceConstructorExpression(expr, analysis, currentClass, varTypes, origins, depth); constructorNodes != nil {
 		return constructorNodes
@@ -2176,7 +2176,7 @@ func (p *JavaParser) traceExpression(expr string, analysis *FileAnalysis, curren
 	if isSimpleJavaIdentifier(expr) {
 		// A bare name no local, parameter or field claims: a static import or
 		// an enclosing type's constant.
-		node.javaConstant = javaConstantUse(expr, analysis, currentClass, varTypes, origins)
+		node.nameRef = javaNameRefUse(expr, analysis, currentClass, varTypes, origins)
 	}
 	return []SourceNode{node}
 }
@@ -2320,6 +2320,11 @@ func (p *JavaParser) traceMethodCallExpression(
 	if analysis != nil {
 		target := p.resolveCallee(object, javaMethodWithArity(method, argc), analysis, currentClass, varTypes)
 		node.CallTarget = &target
+	}
+	if accessor := "." + method + "()"; (method == "name" || method == "toString") && strings.Join(strings.Fields(expr), "") == object+accessor {
+		// An enum constant receiver: the fold replaces the whole call,
+		// including the CallTarget read off `Owner.C` as a type.
+		node.nameRef = javaNameRefUse(object, analysis, currentClass, varTypes, origins).withAccessor(expr, accessor)
 	}
 	return []SourceNode{node}
 }
