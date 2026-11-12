@@ -251,10 +251,10 @@ func TestLeased_V3NotFoundIsAnError(t *testing.T) {
 	m := newLeasedManager(t, srv.URL)
 
 	_, err := m.GetRulesetPath(context.Background(), "dca", "latest")
-	if !errors.Is(err, api.ErrNotFound) || !strings.Contains(err.Error(), "ruleset dca@latest not found") || !strings.Contains(err.Error(), "/v3/rulesets") {
-		t.Fatalf("got %v, want a not found error naming /v3/rulesets", err)
+	if !errors.Is(err, api.ErrNotFound) || !strings.Contains(err.Error(), "ruleset dca@latest not found") || !strings.Contains(err.Error(), "/v3/cryptography/rulesets") {
+		t.Fatalf("got %v, want a not found error naming /v3/cryptography/rulesets", err)
 	}
-	if len(paths) != 1 || paths[0] != "/v3/rulesets/dca/latest/download" {
+	if len(paths) != 1 || paths[0] != "/v3/cryptography/rulesets/dca/latest/download" {
 		t.Fatalf("requested %v, want only the v3 download", paths)
 	}
 	if _, err := os.Stat(m.getRulesetCachePath("dca", "latest")); !os.IsNotExist(err) {

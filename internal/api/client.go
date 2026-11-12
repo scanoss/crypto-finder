@@ -35,8 +35,8 @@ import (
 
 const (
 	// API endpoints.
-	rulesetsDownloadFmt = "/v3/rulesets/%s/%s/download"
-	rulesetsReleaseFmt  = "/v3/rulesets/%s/%s"
+	rulesetsDownloadFmt = "/v3/cryptography/rulesets/%s/%s/download"
+	rulesetsReleaseFmt  = "/v3/cryptography/rulesets/%s/%s"
 
 	// HTTP headers - Request.
 	headerAPIKey    = "x-api-key"
@@ -129,16 +129,16 @@ func (c *Client) APIKey() string {
 }
 
 // DownloadRuleset downloads a ruleset bundle and its signed lease
-// (Manifest.Lease) from /v3/rulesets. A 404 means the API has no such
-// ruleset or does not serve /v3/rulesets; an answer without a lease is an
-// error.
+// (Manifest.Lease) from /v3/cryptography/rulesets. A 404 means the API has
+// no such ruleset or does not serve /v3/cryptography/rulesets; an answer
+// without a lease is an error.
 func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]byte, *Manifest, error) {
 	if err := CheckBaseURL(c.baseURL, c.allowHTTP); err != nil {
 		return nil, nil, err
 	}
 	bundle, manifest, err := c.downloadWithRetry(ctx, name, version, c.baseURL+fmt.Sprintf(rulesetsDownloadFmt, name, version))
 	if errors.Is(err, ErrNotFound) {
-		return nil, nil, fmt.Errorf("ruleset %s@%s not found: the SCANOSS API has no such ruleset or does not serve /v3/rulesets (%w)", name, version, err)
+		return nil, nil, fmt.Errorf("ruleset %s@%s not found: the SCANOSS API has no such ruleset or does not serve /v3/cryptography/rulesets (%w)", name, version, err)
 	}
 	return bundle, manifest, err
 }

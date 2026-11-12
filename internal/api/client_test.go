@@ -622,7 +622,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 		defer cancel()
 
-		_, _, err := client.doDownload(ctx, "https://api.example.com/v3/rulesets/dca/latest/download")
+		_, _, err := client.doDownload(ctx, "https://api.example.com/v3/cryptography/rulesets/dca/latest/download")
 		if !errors.Is(err, ErrTimeout) {
 			t.Fatalf("expected ErrTimeout, got %v", err)
 		}
@@ -646,7 +646,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 		}
 		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
 
-		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v3/rulesets/dca/latest/download")
+		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v3/cryptography/rulesets/dca/latest/download")
 		if err == nil || !strings.Contains(err.Error(), "failed to read response body") {
 			t.Fatalf("expected read body failure, got %v", err)
 		}
@@ -673,7 +673,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 		}
 		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
 
-		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v3/rulesets/dca/latest/download")
+		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v3/cryptography/rulesets/dca/latest/download")
 		if err == nil || !strings.Contains(err.Error(), "failed to close response body") {
 			t.Fatalf("expected close body failure, got %v", err)
 		}

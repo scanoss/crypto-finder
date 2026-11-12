@@ -51,7 +51,7 @@ func TestClient_DownloadRuleset_V3ReturnsLease(t *testing.T) {
 	if string(data) != "bundle" || string(manifest.Lease) != `{"format":"x"}` {
 		t.Fatalf("data %q lease %q", data, manifest.Lease)
 	}
-	if len(paths) != 1 || paths[0] != "/v3/rulesets/dca/latest/download" {
+	if len(paths) != 1 || paths[0] != "/v3/cryptography/rulesets/dca/latest/download" {
 		t.Fatalf("paths = %v", paths)
 	}
 }
@@ -66,10 +66,10 @@ func TestClient_DownloadRuleset_NotFound(t *testing.T) {
 	})
 
 	_, _, err := client.DownloadRuleset(context.Background(), "dca", "latest")
-	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "ruleset dca@latest not found") || !strings.Contains(err.Error(), "/v3/rulesets") {
-		t.Fatalf("got %v, want a not found error naming the ruleset and /v3/rulesets", err)
+	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "ruleset dca@latest not found") || !strings.Contains(err.Error(), "/v3/cryptography/rulesets") {
+		t.Fatalf("got %v, want a not found error naming the ruleset and /v3/cryptography/rulesets", err)
 	}
-	if len(paths) != 1 || paths[0] != "/v3/rulesets/dca/latest/download" {
+	if len(paths) != 1 || paths[0] != "/v3/cryptography/rulesets/dca/latest/download" {
 		t.Fatalf("paths = %v", paths)
 	}
 }
@@ -104,7 +104,7 @@ func TestClient_GetRelease(t *testing.T) {
 	t.Parallel()
 
 	client := newTestClient(t, "test-key", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v3/rulesets/dca/latest" || r.Header.Get("x-api-key") != "test-key" {
+		if r.URL.Path != "/v3/cryptography/rulesets/dca/latest" || r.Header.Get("x-api-key") != "test-key" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}

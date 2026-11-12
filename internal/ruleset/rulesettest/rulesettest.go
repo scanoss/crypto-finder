@@ -142,8 +142,8 @@ func NewServer(t testing.TB, issued *Issued) *Server {
 	t.Helper()
 	s := &Server{current: issued}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v3/rulesets/{name}/{version}/download", s.download)
-	mux.HandleFunc("GET /v3/rulesets/{name}/{version}", s.release)
+	mux.HandleFunc("GET /v3/cryptography/rulesets/{name}/{version}/download", s.download)
+	mux.HandleFunc("GET /v3/cryptography/rulesets/{name}/{version}", s.release)
 	s.Server = httptest.NewServer(mux)
 	t.Cleanup(s.Close)
 	return s

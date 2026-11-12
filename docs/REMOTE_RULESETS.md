@@ -77,10 +77,10 @@ crypto-finder scan --max-stale-age 60d /path/to/code  # 60 days
 
 ## Leased rulesets
 
-crypto-finder downloads a ruleset from `GET /v3/rulesets/{name}/{version}/download`, and only from there. Your API key needs access to `/v3/rulesets`; without it there are no remote rules (use `--rules-dir` with `--no-remote-rules`). A 404 means the API has no such ruleset or does not serve `/v3/rulesets`, and fails like any other download error:
+crypto-finder downloads a ruleset from `GET /v3/cryptography/rulesets/{name}/{version}/download`, and only from there. Your API key needs access to `/v3/cryptography/rulesets`; without it there are no remote rules (use `--rules-dir` with `--no-remote-rules`). A 404 means the API has no such ruleset or does not serve `/v3/cryptography/rulesets`, and fails like any other download error:
 
 ```
-ERROR: failed to load rules: failed to load rules from remote:dca@latest: failed to get ruleset 'dca@latest': failed to download ruleset: ruleset dca@latest not found: the SCANOSS API has no such ruleset or does not serve /v3/rulesets (download failed: not found: resource does not exist: 404 Not Found)
+ERROR: failed to load rules: failed to load rules from remote:dca@latest: failed to get ruleset 'dca@latest': failed to download ruleset: ruleset dca@latest not found: the SCANOSS API has no such ruleset or does not serve /v3/cryptography/rulesets (download failed: not found: resource does not exist: 404 Not Found)
 ```
 
 Every download carries a signed **lease** in the `SCANOSS-Ruleset-Lease` header (base64 of the lease envelope JSON); an answer without one is rejected. The lease names the ruleset and version, the hash of the release payload (`payload_sha256`) and of the served bytes (`bundle_sha256`, also sent as `X-Checksum-SHA256`), the key and tenant it was issued to (`key_ref`, `tenant`), its expiry (`expires_at`) and the id of the key that signed it (`signing_key_id`). The served bundle holds only rule files; it can be personalised per tenant, so its bytes differ between tenants for the same release.
@@ -89,7 +89,7 @@ Every download carries a signed **lease** in the `SCANOSS-Ruleset-Lease` header 
 - **In the cache**, it keeps `bundle.enc` (the bundle encrypted with AES-256-GCM under a key derived from your API key) and `lease.json`, never plain rule files. The cache opens only with the API key it was downloaded with; after changing keys, run once with `--no-cache`.
 - **On every scan**, it decrypts the bundle, verifies the lease again (signature, expiry, bundle hash) and extracts the rules into a per-run directory under `~/.scanoss/crypto-finder/cache/rulesets/{name}/.crypto-finder-filtered/{version}/run-*`. The directory is removed when the scan ends, also when it fails; one left by a killed process is removed by a later scan after two hours. With remote rules, OpenGrep core mode writes its rules file to a temporary file instead of keeping it in `~/.scanoss/crypto-finder/cache/opengrep-core-rules/`.
 - **Expiry**: an expired lease is never used, not even as stale cache. The scan fails with an error that names the expiry date; refresh the ruleset by scanning online with a valid API key, or scan with `--rules-dir`.
-- **Freshness**: when the cache TTL of a ruleset elapses, crypto-finder asks `GET /v3/rulesets/{name}/{version}` for the current release and downloads again only when the version or `payload_sha256` differs from the cached lease, or when the cached lease expires within 7 days. Otherwise it records the check and keeps the cache.
+- **Freshness**: when the cache TTL of a ruleset elapses, crypto-finder asks `GET /v3/cryptography/rulesets/{name}/{version}` for the current release and downloads again only when the version or `payload_sha256` differs from the cached lease, or when the cached lease expires within 7 days. Otherwise it records the check and keeps the cache.
 - **Report**: `checksum_sha256` in the report's `rules` block is the lease's `payload_sha256`, the same for every tenant, never the hash of the personalised bundle; the block adds `lease: {expires_at, signing_key_id}`. Neither names the key or the tenant.
 
 ### Trusted signing keys
@@ -187,7 +187,7 @@ A cache downloaded while connected and transferred (`~/.scanoss/crypto-finder/ca
 
 ### Upgrade required
 
-When the SCANOSS API no longer serves your crypto-finder version, a ruleset download from `/v3/rulesets/...` answers HTTP 410 Gone or 426 Upgrade Required. That answer is final: crypto-finder does not retry it and does not fall back to a cached ruleset. The scan fails with the code `upgrade_required` and prints the server's message on its own:
+When the SCANOSS API no longer serves your crypto-finder version, a ruleset download from `/v3/cryptography/rulesets/...` answers HTTP 410 Gone or 426 Upgrade Required. That answer is final: crypto-finder does not retry it and does not fall back to a cached ruleset. The scan fails with the code `upgrade_required` and prints the server's message on its own:
 
 ```
 ERROR: crypto-finder must be upgraded to download rulesets.

@@ -75,8 +75,8 @@ func TestUserAgentOnEveryRequest(t *testing.T) {
 		version.Version = saved
 
 		for _, path := range []string{
-			"/v3/rulesets/dca/latest/download",
-			"/v3/rulesets/dca/latest",
+			"/v3/cryptography/rulesets/dca/latest/download",
+			"/v3/cryptography/rulesets/dca/latest",
 			"/v3/cryptography/reachability/component",
 		} {
 			agent, ok := agents[path]
