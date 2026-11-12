@@ -1,0 +1,115 @@
+name: Sign Windows executable
+description: >
+  Signs one .exe in place with SSL.com eSigner (CodeSignTool), retrying up to
+  three times, and fails unless the file then carries a timestamped
+  Authenticode signature.
+
+inputs:
+  file:
+    description: Absolute path of the .exe to sign in place.
+    required: true
+  username:
+    description: SSL.com eSigner username.
+    required: true
+  password:
+    description: SSL.com eSigner password.
+    required: true
+  credential_id:
+    description: SSL.com eSigner credential ID.
+    required: true
+  totp_secret:
+    description: SSL.com eSigner TOTP secret.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check signing inputs
+      shell: bash
+      env:
+        FILE: ${{ inputs.file }}
+        ES_USERNAME: ${{ inputs.username }}
+        ES_PASSWORD: ${{ inputs.password }}
+        ES_CREDENTIAL_ID: ${{ inputs.credential_id }}
+        ES_TOTP_SECRET: ${{ inputs.totp_secret }}
+      run: |
+        set -euo pipefail
+        for name in ES_USERNAME ES_PASSWORD ES_CREDENTIAL_ID ES_TOTP_SECRET; do
+          if [ -z "${!name}" ]; then
+            echo "::error::Windows signing secret $name is empty"
+            exit 1
+          fi
+        done
+        if [ ! -f "$FILE" ]; then
+          echo "::error::$FILE not found"
+          exit 1
+        fi
+
+    # SSL.com intermittently fails a signing request (NullPointerException in
+    # CodeSignTool's signatureTimestamp, {"error":"server_error"}). A failed
+    # attempt is retried after a pause that also moves the TOTP code to a new
+    # 30 s window.
+    - name: Sign (attempt 1)
+      id: attempt1
+      continue-on-error: true
+      uses: sslcom/esigner-codesign@v1.3.2
+      with:
+        command: sign
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+        credential_id: ${{ inputs.credential_id }}
+        totp_secret: ${{ inputs.totp_secret }}
+        file_path: ${{ inputs.file }}
+        override: true
+        malware_block: true
+        environment_name: PROD
+
+    - name: Wait before retrying
+      if: steps.attempt1.outcome == 'failure'
+      shell: bash
+      run: sleep 60
+
+    - name: Sign (attempt 2)
+      id: attempt2
+      if: steps.attempt1.outcome == 'failure'
+      continue-on-error: true
+      uses: sslcom/esigner-codesign@v1.3.2
+      with:
+        command: sign
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+        credential_id: ${{ inputs.credential_id }}
+        totp_secret: ${{ inputs.totp_secret }}
+        file_path: ${{ inputs.file }}
+        override: true
+        malware_block: true
+        environment_name: PROD
+
+    - name: Wait before retrying
+      if: steps.attempt2.outcome == 'failure'
+      shell: bash
+      run: sleep 120
+
+    - name: Sign (attempt 3)
+      if: steps.attempt2.outcome == 'failure'
+      uses: sslcom/esigner-codesign@v1.3.2
+      with:
+        command: sign
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+        credential_id: ${{ inputs.credential_id }}
+        totp_secret: ${{ inputs.totp_secret }}
+        file_path: ${{ inputs.file }}
+        override: true
+        malware_block: true
+        environment_name: PROD
+
+    - name: Verify the signature
+      shell: bash
+      env:
+        FILE: ${{ inputs.file }}
+      run: |
+        set -euo pipefail
+        sig="$RUNNER_TEMP/authenticode.der"
+        python3 -I "$GITHUB_ACTION_PATH/check_authenticode.py" "$FILE" "$sig"
+        openssl pkcs7 -inform DER -in "$sig" -print_certs -noout | grep '^subject='

@@ -1,0 +1,53 @@
+name: Windows signing check
+
+# Builds a snapshot Windows binary and signs it the way the release does,
+# without creating a release or uploading anything. Each run uses one SSL.com
+# eSigner signing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build a snapshot Windows binary with GoReleaser
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e GOOS=windows \
+            -e GOARCH=amd64 \
+            -v "$PWD:/work" \
+            -w /work \
+            --entrypoint goreleaser \
+            ghcr.io/goreleaser/goreleaser-cross:v1.26.5@sha256:0cf2b7f757b40397d2bef5423adb88d0ac63899e88a9f0c4bbb370d3fb7b2fb5 \
+            build --snapshot --clean --single-target --id crypto-finder
+
+      - name: Find the Windows binary
+        id: windows
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          exes=(dist/crypto-finder_windows_amd64*/crypto-finder.exe)
+          if [ ${#exes[@]} -ne 1 ]; then
+            echo "::error::expected one Windows exe, found: ${exes[*]}"
+            exit 1
+          fi
+          echo "exe=$GITHUB_WORKSPACE/${exes[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Sign the Windows binary
+        uses: ./.github/actions/sign-windows
+        with:
+          file: ${{ steps.windows.outputs.exe }}
+          username: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_USERNAME }}
+          password: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_PASSWORD }}
+          credential_id: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_CREDENTIAL_ID }}
+          totp_secret: ${{ secrets.WINDOWS_CODE_SIGNING_TOOL_ES_TOTP_SECRET }}
