@@ -313,13 +313,15 @@ func TestNodeSingletonOfSameStemModulesResolvesToTheImportedFile(t *testing.T) {
 
 // A call on a value another module's function returns takes that function's
 // declared return class, and an abstract class reaches the overrides of its
-// subclasses.
+// subclasses. make returns a value it did not construct, so its declared
+// class is all that is known of it.
 func TestNodeReturnTypedReceiverFansOutToOverrides(t *testing.T) {
 	t.Parallel()
 	graph := buildNodeFiles(t, map[string]string{
 		"task/Base.ts": `export abstract class Task { abstract run(): string }
-export function make(): Task { return new Impl() }
+export function make(): Task { return registry[0] }
 class Impl extends Task { run() { return 'x' } }
+const registry: Task[] = [new Impl()]
 `,
 		"impl/Sub.ts": `import { Task } from '../task/Base'
 export class Sub extends Task { run() { return 'sub' } }

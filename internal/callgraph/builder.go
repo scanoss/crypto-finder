@@ -413,6 +413,7 @@ func (b *Builder) indexCallers(graph *CallGraph) {
 	resolveGoFieldReceiverCalls(graph, b.ecosystem)
 	resolveNodeTypedReceivers(graph)
 	b.linkNodePackageCalls(graph)
+	resolveConstructedReceivers(graph)
 	b.buildCallerIndex(graph)
 }
 
