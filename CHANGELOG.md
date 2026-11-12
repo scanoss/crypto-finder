@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.1] - 2026-11-12
+### Fixed
+- A finding that names no algorithm is no longer folded into a finding of a
+  different kind of algorithm on the same call. When its rule states a
+  primitive of another class (a symmetric `ae` or `block-cipher` beside a
+  `pke` or `signature`, a `hash` beside a cipher), both findings are reported,
+  so a call such as Apache Santuario `XMLCipher.doFinal` that decrypts the
+  content and unwraps its key with RSA keeps both algorithms. A finding with no
+  stated primitive (`unknown`, `other`) is still merged into the named one, and
+  a call nested inside another finding's call stays part of it.
+- Reachability: a method called on a variable that holds what a factory
+  function returns now reaches the method of the class that factory builds,
+  when every return of the factory builds that one class (`return new
+  Standard()` in Java and JavaScript, `return _Standard()` in Python, `return
+  standard{}` or `&standard{}` in Go, `Box::new(Standard)` behind a
+  `Box<dyn Trait>` in Rust). Go, Python, JavaScript and Rust used to leave such
+  a call on an interface, trait or base-class result unlinked, so crypto behind
+  it read unreachable; Java linked it to every implementation, so a factory
+  that builds a harmless implementation read as reaching a crypto one. The
+  call is now an `exact` edge to that class's method. Call-graph exports stamp
+  `graph_algo_version` `graph-algo-25`; cached structural graphs from
+  `graph-algo-24` are rebuilt.
+- Rust: a crypto operation written as a binary operator is no longer dropped when
+  one of its operands is a call to the scanned program's own function. A
+  curve25519-dalek ristretto255 key agreement such as `secret * decode(&peer)`
+  now reports its key agreement and shared secret: the filter that drops a crate
+  rule's match on the program's own type no longer takes `decode` for the matched
+  operation, because the call starts after the match does.
+
 ## [0.53.0] - 2026-11-11
 ### Added
 - An unresolved Java, Python, JavaScript or TypeScript finding whose algorithm
