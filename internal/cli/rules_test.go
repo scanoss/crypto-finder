@@ -59,7 +59,7 @@ func TestRulesImportThenStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 2 || strings.Join(strings.Fields(lines[1]), " ") != "dca v1.40.0 leased "+expires+" test-key-1" {
+	if len(lines) != 2 || strings.Join(strings.Fields(lines[1]), " ") != "dca v1.40.0 leased "+expires+" test-key-1 java" {
 		t.Fatalf("status output:\n%s", out.String())
 	}
 

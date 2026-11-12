@@ -133,6 +133,7 @@ func (m *Manager) storeLeased(name, targetPath string, bundle, leaseJSON []byte,
 	metadata := NewMetadata(name, l.Version, l.PayloadSHA, ttlSeconds)
 	metadata.Leased = true
 	metadata.ExpiresAt = l.ExpiresAt
+	metadata.Languages = recordLanguages(name, l.Version, func() ([]string, error) { return bundleLanguages(bundle) })
 	err = os.WriteFile(filepath.Join(tempPath, bundleFileName), sealed, 0o600)
 	if err == nil {
 		err = os.WriteFile(filepath.Join(tempPath, leaseFileName), leaseJSON, 0o600)
@@ -308,6 +309,7 @@ type CachedRuleset struct {
 	Leased        bool
 	ExpiresAt     time.Time
 	SigningKeyID  string
+	Languages     []string
 }
 
 // List returns the cached rulesets, by name then version label.
@@ -342,7 +344,7 @@ func (m *Manager) listVersions(name string) []CachedRuleset {
 		if err != nil {
 			continue
 		}
-		entry := CachedRuleset{Name: name, Version: versionEntry.Name(), Leased: IsLeased(rulesetPath), ExpiresAt: metadata.ExpiresAt}
+		entry := CachedRuleset{Name: name, Version: versionEntry.Name(), Leased: IsLeased(rulesetPath), ExpiresAt: metadata.ExpiresAt, Languages: metadata.Languages}
 		if l, err := ReadLease(rulesetPath); entry.Leased && err == nil {
 			entry.SigningKeyID = l.SigningKeyID
 			entry.ExpiresAt = l.ExpiresAt

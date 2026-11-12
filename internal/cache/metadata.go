@@ -43,6 +43,12 @@ type Metadata struct {
 	// still the current one; the TTL then runs from it instead of from
 	// DownloadedAt.
 	CheckedAt time.Time `json:"checked_at,omitzero"`
+
+	// Languages are the languages the ruleset's rules cover, recorded when
+	// it is stored: each rule's languages lowercased and trimmed ("generic"
+	// for a rule that names none), deduplicated and sorted. For a leased
+	// ruleset this is the only way to learn them without decrypting it.
+	Languages []string `json:"languages,omitempty"`
 }
 
 // freshSince is when the cache was last known to be current.

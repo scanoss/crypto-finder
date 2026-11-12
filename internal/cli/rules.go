@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -116,11 +117,14 @@ func runRulesStatus(cmd *cobra.Command, _ []string) error {
 
 func writeRulesStatus(out io.Writer, cached []cache.CachedRuleset) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tVERSION\tMODE\tEXPIRES AT\tKEY ID"); err != nil {
+	if _, err := fmt.Fprintln(w, "NAME\tVERSION\tMODE\tEXPIRES AT\tKEY ID\tLANGUAGES"); err != nil {
 		return err
 	}
 	for _, r := range cached {
-		mode, expires, keyID := "legacy", "-", "-"
+		mode, expires, keyID, languages := "legacy", "-", "-", "-"
+		if len(r.Languages) > 0 {
+			languages = strings.Join(r.Languages, ",")
+		}
 		if r.Leased {
 			mode = "leased"
 			expires = r.ExpiresAt.UTC().Format(time.RFC3339)
@@ -128,7 +132,7 @@ func writeRulesStatus(out io.Writer, cached []cache.CachedRuleset) error {
 				keyID = r.SigningKeyID
 			}
 		}
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Name, r.Version, mode, expires, keyID); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Name, r.Version, mode, expires, keyID, languages); err != nil {
 			return err
 		}
 	}

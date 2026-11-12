@@ -361,6 +361,7 @@ func (m *Manager) writeCacheMetadata(name, version, tempPath string, manifest *a
 	// detectable.
 	ttl := m.getTTL(version)
 	metadata := NewMetadata(name, manifest.Version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
+	metadata.Languages = recordLanguages(name, manifest.Version, func() ([]string, error) { return dirLanguages(tempPath) })
 	tempMetadataPath := filepath.Join(tempPath, metadataFileName)
 	if err := metadata.Save(tempMetadataPath); err != nil {
 		return fmt.Errorf("failed to save metadata: %w", err)

@@ -114,12 +114,12 @@ crypto-finder scan --ruleset-version v1.40.0 /path/to/code
 
 ```bash
 $ crypto-finder rules status
-NAME  VERSION  MODE    EXPIRES AT            KEY ID
-dca   latest   leased  2026-12-04T10:00:00Z  srv-2026-11
-dca   v1.39.0  legacy  -                     -
+NAME  VERSION  MODE    EXPIRES AT            KEY ID       LANGUAGES
+dca   latest   leased  2026-12-04T10:00:00Z  srv-2026-11  c,generic,go,java,python
+dca   v1.39.0  legacy  -                     -            c,generic,go,java,python
 ```
 
-`MODE` is `leased` for an encrypted, lease-bound ruleset and `legacy` for plain rule files from the v2 endpoint.
+`MODE` is `leased` for an encrypted, lease-bound ruleset and `legacy` for plain rule files from the v2 endpoint. `LANGUAGES` is the `languages` list from the cache metadata (`-` for a ruleset cached before crypto-finder recorded it).
 
 ## Cache Management
 
@@ -128,11 +128,19 @@ dca   v1.39.0  legacy  -                     -
 ```
 ~/.scanoss/crypto-finder/cache/rulesets/{name}/{version}/
   ├── manifest.json              # Ruleset metadata
-  ├── .cache-meta.json           # Cache metadata (timestamps, checksum, TTL)
+  ├── .cache-meta.json           # Cache metadata (timestamps, checksum, TTL, languages)
   └── [language dirs]/           # Rule files organized by language
 ```
 
 A leased ruleset holds `bundle.enc`, `lease.json` and `.cache-meta.json` (with `leased: true`, `expires_at`, and the release payload hash from the lease as `checksum_sha256`, the same value the report carries) instead.
+
+`.cache-meta.json` also lists the languages the ruleset's rules cover, so they can be read without the rule files, which a leased cache does not keep in plain form:
+
+```json
+"languages": ["c", "generic", "go", "java", "python"]
+```
+
+The list is computed when the ruleset is stored (for a leased ruleset, from the bundle after it is verified and before it is encrypted): every `.yaml`/`.yml` rule file outside `.crypto-finder-filtered`, each rule's `languages` lowercased and trimmed, `generic` for a rule that names none, without duplicates and sorted. The field is left out when the ruleset has no rules or its rule files cannot be parsed.
 
 ### Cache Behavior
 
