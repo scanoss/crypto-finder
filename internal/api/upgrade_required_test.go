@@ -71,22 +71,16 @@ func TestClient_DownloadRuleset_UpgradeRequiredIsFinal(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		status int
-		v3     bool // answer on v3; otherwise v3 is 404 and v2 answers
 		body   string
 		want   string
 	}{
-		{"v3 410 json", http.StatusGone, true, `{"status":"error","error":{"code":"CLIENT_GONE","message":"This crypto-finder is too old. Upgrade it."}}`, "This crypto-finder is too old. Upgrade it. (CLIENT_GONE)"},
-		{"v3 426 text", http.StatusUpgradeRequired, true, "Upgrade crypto-finder to 0.60 or later.", "Upgrade crypto-finder to 0.60 or later."},
-		{"v2 410 after v3 404", http.StatusGone, false, "Upgrade crypto-finder.", "Upgrade crypto-finder."},
-		{"v2 426 without a body", http.StatusUpgradeRequired, false, "", defaultUpgradeMessage},
+		{"410 json", http.StatusGone, `{"status":"error","error":{"code":"CLIENT_GONE","message":"This crypto-finder is too old. Upgrade it."}}`, "This crypto-finder is too old. Upgrade it. (CLIENT_GONE)"},
+		{"426 text", http.StatusUpgradeRequired, "Upgrade crypto-finder to 0.60 or later.", "Upgrade crypto-finder to 0.60 or later."},
+		{"426 without a body", http.StatusUpgradeRequired, "", defaultUpgradeMessage},
 	} {
 		var paths []string
 		client := newTestClient(t, "test-key", func(w http.ResponseWriter, r *http.Request) {
 			paths = append(paths, r.URL.Path)
-			if !tc.v3 && strings.HasPrefix(r.URL.Path, "/v3/") {
-				http.NotFound(w, r)
-				return
-			}
 			if strings.HasPrefix(tc.body, "{") {
 				w.Header().Set("Content-Type", "application/json")
 			} else {
@@ -104,12 +98,8 @@ func TestClient_DownloadRuleset_UpgradeRequiredIsFinal(t *testing.T) {
 		if upgrade.StatusCode != tc.status || upgrade.Message != tc.want {
 			t.Fatalf("%s: got %d %q, want %d %q", tc.name, upgrade.StatusCode, upgrade.Message, tc.status, tc.want)
 		}
-		wantRequests := 1
-		if !tc.v3 {
-			wantRequests = 2
-		}
-		if len(paths) != wantRequests {
-			t.Fatalf("%s: requests %v, want %d (no retry, no other endpoint)", tc.name, paths, wantRequests)
+		if len(paths) != 1 {
+			t.Fatalf("%s: requests %v, want 1 (no retry)", tc.name, paths)
 		}
 	}
 }

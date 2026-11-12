@@ -40,8 +40,8 @@ type RemoteRuleSource struct {
 	// before Load() completes.
 	loadedPath string
 
-	// runDir is where a leased ruleset was decrypted for this run, and
-	// cleanup removes it. Load() opens a leased ruleset once per run.
+	// runDir is where the ruleset was decrypted for this run, and cleanup
+	// removes it. Load() opens the ruleset once per run.
 	runDir  string
 	cleanup func()
 }
@@ -72,9 +72,8 @@ func NewRemoteRuleSource(
 
 // Load retrieves the path to the cached ruleset directory.
 // If the ruleset is not cached or has expired, it will be downloaded.
-// The returned path points to a directory containing the ruleset's .yaml files.
-// A leased ruleset is decrypted into a per-run directory, once per run, and
-// that directory is returned; Close removes it.
+// The ruleset is decrypted into a per-run directory, once per run, and that
+// directory, holding the ruleset's .yaml files, is returned; Close removes it.
 //
 // Returns:
 //   - []string: Slice containing the absolute path to the cached ruleset directory
@@ -93,9 +92,6 @@ func (r *RemoteRuleSource) Load() ([]string, error) {
 	}
 
 	r.loadedPath = rulesetPath
-	if !cache.IsLeased(rulesetPath) {
-		return []string{rulesetPath}, nil
-	}
 	runDir, cleanup, err := r.cacheManager.OpenLeased(r.rulesetName, r.version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open ruleset '%s@%s': %w", r.rulesetName, r.version, err)
@@ -104,12 +100,7 @@ func (r *RemoteRuleSource) Load() ([]string, error) {
 	return []string{runDir}, nil
 }
 
-// Leased reports whether Load() opened a leased ruleset.
-func (r *RemoteRuleSource) Leased() bool {
-	return r.runDir != ""
-}
-
-// Close removes the per-run directory of a leased ruleset. It is safe to
+// Close removes the per-run directory of the ruleset. It is safe to
 // call more than once and when Load() was not called.
 func (r *RemoteRuleSource) Close() {
 	if r.cleanup != nil {
@@ -145,20 +136,16 @@ func (r *RemoteRuleSource) Info() entities.RulesInfo {
 		return entities.RulesInfo{Source: "remote", Name: r.rulesetName, Version: r.version}
 	}
 	info := entities.RulesInfo{
-		Source:         "remote",
-		Name:           meta.RulesetName,
-		Version:        meta.Version,
-		ChecksumSHA256: meta.ChecksumSHA256,
+		Source:  "remote",
+		Name:    meta.RulesetName,
+		Version: meta.Version,
 	}
-	if meta.Leased {
-		// A leased bundle is personalised per tenant, so its own hash would
-		// tell copies apart. Report the release payload's hash, the same for
-		// every tenant, and nothing that names the key or tenant.
-		info.ChecksumSHA256 = ""
-		if l, err := cache.ReadLease(r.loadedPath); err == nil {
-			info.ChecksumSHA256 = l.PayloadSHA
-			info.Lease = &entities.RulesLease{ExpiresAt: l.ExpiresAt, SigningKeyID: l.SigningKeyID}
-		}
+	// The bundle is personalised per tenant, so its own hash would tell
+	// copies apart. Report the release payload's hash, the same for every
+	// tenant, and nothing that names the key or tenant.
+	if l, err := cache.ReadLease(r.loadedPath); err == nil {
+		info.ChecksumSHA256 = l.PayloadSHA
+		info.Lease = &entities.RulesLease{ExpiresAt: l.ExpiresAt, SigningKeyID: l.SigningKeyID}
 	}
 	return info
 }

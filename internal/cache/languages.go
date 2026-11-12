@@ -22,9 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -80,35 +78,6 @@ func isRuleFile(name string) bool {
 		return true
 	}
 	return false
-}
-
-// dirLanguages returns the languages of the rule files under dir, skipping
-// the filtered rule copies.
-func dirLanguages(dir string) ([]string, error) {
-	set := languageSet{}
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if d.Name() == config.FilteredRulesDirName {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !isRuleFile(path) {
-			return nil
-		}
-		data, err := os.ReadFile(path) // #nosec G304 -- path is under the ruleset directory being walked.
-		if err != nil {
-			return err
-		}
-		return set.addRuleFile(path, data)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return set.sorted(), nil
 }
 
 // bundleLanguages returns the languages of the rule files in a .tar.gz

@@ -67,10 +67,6 @@ func TestUserAgentOnEveryRequest(t *testing.T) {
 		agents := map[string]string{}
 		client := newTestClient(t, "test-key", func(w http.ResponseWriter, r *http.Request) {
 			agents[r.URL.Path] = r.Header.Get("User-Agent")
-			if strings.HasPrefix(r.URL.Path, "/v3/rulesets/") && strings.HasSuffix(r.URL.Path, "/download") {
-				http.NotFound(w, r) // so the v2 fallback is asked too
-				return
-			}
 			w.WriteHeader(http.StatusServiceUnavailable)
 		})
 		_, _, _ = client.DownloadRuleset(context.Background(), "dca", "latest")
@@ -80,7 +76,6 @@ func TestUserAgentOnEveryRequest(t *testing.T) {
 
 		for _, path := range []string{
 			"/v3/rulesets/dca/latest/download",
-			"/v2/cryptography/rulesets/dca/latest/download",
 			"/v3/rulesets/dca/latest",
 			"/v3/cryptography/reachability/component",
 		} {

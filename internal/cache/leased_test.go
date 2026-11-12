@@ -79,8 +79,8 @@ func TestLeased_DownloadKeepsCacheEncrypted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !IsLeased(path) {
-		t.Fatalf("%s is not a leased cache", path)
+	if err := leasedCacheUsable(path); err != nil {
+		t.Fatal(err)
 	}
 	if got := yamlFilesUnder(t, m.cacheDir); len(got) != 0 {
 		t.Fatalf("plaintext rule files in the cache: %v", got)
@@ -96,7 +96,7 @@ func TestLeased_DownloadKeepsCacheEncrypted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !meta.Leased || !meta.ExpiresAt.Equal(issued.Lease.ExpiresAt) || meta.Version != "v1.40.0" || meta.ChecksumSHA256 != issued.Lease.PayloadSHA {
+	if !meta.ExpiresAt.Equal(issued.Lease.ExpiresAt) || meta.Version != "v1.40.0" || meta.ChecksumSHA256 != issued.Lease.PayloadSHA {
 		t.Fatalf("metadata = %+v", meta)
 	}
 }
@@ -201,9 +201,6 @@ func TestLeased_TamperedLeaseRejected(t *testing.T) {
 	if _, err := os.Stat(m.getRulesetCachePath("dca", "latest")); !os.IsNotExist(err) {
 		t.Fatalf("a bundle with a tampered lease was cached: %v", err)
 	}
-	if _, err := m.ImportBundle(tampered.Bundle, tampered.LeaseJSON); !errors.Is(err, ruleset.ErrBadSignature) {
-		t.Fatalf("import: got %v, want a bad signature", err)
-	}
 
 	// A lease altered in the cache after download is refused when opened.
 	srv.Set(issued)
@@ -243,79 +240,104 @@ func TestLeased_ExpiredLeaseIsNotUsedAsStaleCache(t *testing.T) {
 	}
 }
 
-func TestLeased_V3NotFoundFallsBackToLegacyV2(t *testing.T) {
+func TestLeased_V3NotFoundIsAnError(t *testing.T) {
 	rulesettest.NewSigner(t, "test-key-1", true)
-	legacy := createTarball(t, writeLegacyRules)
+	var paths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/cryptography/rulesets/dca/latest/download" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("scanoss-ruleset-name", "dca")
-		w.Header().Set("scanoss-ruleset-version", "v1.39.0")
-		w.Header().Set("x-checksum-sha256", CalculateSHA256(legacy))
-		w.Header().Set("scanoss-ruleset-created-at", time.Now().Format(time.RFC3339))
-		_, _ = w.Write(legacy)
+		paths = append(paths, r.URL.Path)
+		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 	m := newLeasedManager(t, srv.URL)
 
-	path, err := m.GetRulesetPath(context.Background(), "dca", "latest")
-	if err != nil {
-		t.Fatal(err)
+	_, err := m.GetRulesetPath(context.Background(), "dca", "latest")
+	if !errors.Is(err, api.ErrNotFound) || !strings.Contains(err.Error(), "ruleset dca@latest not found") || !strings.Contains(err.Error(), "/v3/rulesets") {
+		t.Fatalf("got %v, want a not found error naming /v3/rulesets", err)
 	}
-	if IsLeased(path) {
-		t.Fatal("a v2 download was stored as leased")
+	if len(paths) != 1 || paths[0] != "/v3/rulesets/dca/latest/download" {
+		t.Fatalf("requested %v, want only the v3 download", paths)
 	}
-	if _, err := os.Stat(filepath.Join(path, "ruleset", "example.yaml")); err != nil {
-		t.Fatalf("legacy rules not extracted: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(path, manifestFileName)); err != nil {
-		t.Fatalf("legacy manifest missing: %v", err)
+	if _, err := os.Stat(m.getRulesetCachePath("dca", "latest")); !os.IsNotExist(err) {
+		t.Fatalf("something was cached: %v", err)
 	}
 }
 
-func TestLeased_ImportAndList(t *testing.T) {
+// writeOlderPlaintextCache writes a ruleset as older crypto-finder versions
+// cached it: extracted rule files, manifest.json and fresh cache metadata.
+func writeOlderPlaintextCache(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(path, "rules", "java"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		"rules/java/aes.yaml": rulesettest.RuleYAML,
+		"manifest.json":       `{"name":"dca","version":"v1.39.0"}`,
+	} {
+		if err := os.WriteFile(filepath.Join(path, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := NewMetadata("dca", "v1.39.0", "abc", int64(time.Hour.Seconds())).Save(filepath.Join(path, metadataFileName)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A successful download replaces an older plaintext cache.
+func TestLeased_OlderPlaintextCacheIsReplaced(t *testing.T) {
 	signer := rulesettest.NewSigner(t, "test-key-1", true)
-	issued := rulesettest.Issue(t, signer, "dca", "v1.40.0", testRules, time.Now().Add(400*24*time.Hour))
-	m := newLeasedManager(t, "http://127.0.0.1:1")
+	srv := rulesettest.NewServer(t, rulesettest.Issue(t, signer, "dca", "v1.40.0", testRules, time.Now().Add(30*24*time.Hour)))
+	m := newLeasedManager(t, srv.URL)
+	path := m.getRulesetCachePath("dca", "latest")
+	writeOlderPlaintextCache(t, path)
+	if !olderCacheFormat(path) {
+		t.Fatal("older plaintext cache not recognized")
+	}
+
+	got, err := m.GetRulesetPath(context.Background(), "dca", "latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if downloads, _ := srv.Counts(); got != path || downloads != 1 {
+		t.Fatalf("path %s downloads %d; want %s downloaded once", got, downloads, path)
+	}
+	if err := leasedCacheUsable(path); err != nil {
+		t.Fatal(err)
+	}
+	if olderCacheFormat(path) {
+		t.Fatal("older cache still recognized after the download")
+	}
+	if yaml := yamlFilesUnder(t, m.cacheDir); len(yaml) != 0 {
+		t.Fatalf("plaintext rule files left in the cache: %v", yaml)
+	}
+	if _, err := os.Stat(filepath.Join(path, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("manifest.json left in the cache: %v", err)
+	}
+}
+
+// An older plaintext cache is never used, and a failed download does not
+// touch it.
+func TestLeased_OlderPlaintextCacheIsNeverUsed(t *testing.T) {
+	rulesettest.NewSigner(t, "test-key-1", true)
+	m := newLeasedManager(t, "http://127.0.0.1:1") // unreachable API
 	m.apiClient = api.NewClientWithHTTPClient("http://127.0.0.1:1", testAPIKey, &http.Client{Timeout: time.Second}).WithRetryDelay(time.Millisecond)
+	path := m.getRulesetCachePath("dca", "latest")
+	writeOlderPlaintextCache(t, path)
 
-	l, err := m.ImportBundle(issued.Bundle, issued.LeaseJSON)
-	if err != nil {
-		t.Fatal(err)
+	// Neither as a fresh cache nor as the stale fallback.
+	if _, err := m.GetRulesetPath(context.Background(), "dca", "latest"); err == nil || !strings.Contains(err.Error(), "failed to download ruleset") {
+		t.Fatalf("got %v, want the download error", err)
 	}
-	if l.Name != "dca" || l.Version != "v1.40.0" {
-		t.Fatalf("lease = %+v", l)
+	if _, _, err := m.OpenLeased("dca", "latest"); err == nil {
+		t.Fatal("an older plaintext cache was opened")
 	}
-
-	// The imported bundle is current until its lease expires: no API call.
-	path, err := m.GetRulesetPath(context.Background(), "dca", "v1.40.0")
-	if err != nil {
-		t.Fatal(err)
+	// A failed download leaves the older cache as it was.
+	for _, name := range []string{"rules/java/aes.yaml", "manifest.json", metadataFileName} {
+		if _, err := os.Stat(filepath.Join(path, name)); err != nil {
+			t.Fatalf("older cache changed by a failed download: %v", err)
+		}
 	}
-	if !IsLeased(path) {
-		t.Fatal("imported bundle is not leased")
-	}
-	dir, cleanup, err := m.OpenLeased("dca", "v1.40.0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cleanup()
-	if _, err := os.Stat(filepath.Join(dir, "rules", "java", "aes.yaml")); err != nil {
-		t.Fatal(err)
-	}
-
-	listed, err := m.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(listed) != 1 || !listed[0].Leased || listed[0].Version != "v1.40.0" || listed[0].SigningKeyID != "test-key-1" || !listed[0].ExpiresAt.Equal(issued.Lease.ExpiresAt) {
-		t.Fatalf("List() = %+v", listed)
-	}
-
-	if _, err := m.ImportBundle(createTarball(t, writeLegacyRules), issued.LeaseJSON); !errors.Is(err, ruleset.ErrHashMismatch) {
-		t.Fatalf("import of other bytes: got %v, want a hash mismatch", err)
+	if meta, err := LoadMetadata(filepath.Join(path, metadataFileName)); err != nil || meta.Version != "v1.39.0" {
+		t.Fatalf("older cache metadata = %+v, %v", meta, err)
 	}
 }
 
@@ -384,7 +406,7 @@ func TestLeased_FreshnessCheckDownloadsOnlyOnChange(t *testing.T) {
 	}
 }
 
-func writeLegacyRules(tw *tar.Writer) {
+func writeOtherRules(tw *tar.Writer) {
 	content := []byte("rules: []\n")
 	_ = tw.WriteHeader(&tar.Header{Name: "ruleset/example.yaml", Mode: 0o600, Size: int64(len(content))})
 	_, _ = tw.Write(content)

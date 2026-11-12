@@ -111,25 +111,13 @@ func opengrepCoreRulesCacheDir() string {
 	return filepath.Join(cacheDir, opengrepCoreRulesCacheDirName)
 }
 
-// registerOpengrep registers the OpenGrep scanner with the on-disk probe and
-// core rules caches. When the remote ruleset turns out to be leased, the core
-// rules cache is left out, so no plaintext copy of the rules outlives the
-// run. The registry builds a scanner after the rules are loaded, which is
-// when remote.Leased() is known.
+// registerOpengrep registers the OpenGrep scanner with the on-disk probe
+// cache. The core rules cache is used only without remote rules, so no
+// plaintext copy of a remote ruleset outlives the run.
 func registerOpengrep(registry *scanner.Registry, remote *rules.RemoteRuleSource) {
-	cached := opengrep.NewScannerFactory(
-		opengrep.WithProbeCacheDir(opengrepProbeCacheDir()),
-		opengrep.WithCoreRulesCacheDir(opengrepCoreRulesCacheDir()),
-	)
+	opts := []opengrep.FactoryOption{opengrep.WithProbeCacheDir(opengrepProbeCacheDir())}
 	if remote == nil {
-		registry.RegisterFactory(opengrep.ScannerName, cached)
-		return
+		opts = append(opts, opengrep.WithCoreRulesCacheDir(opengrepCoreRulesCacheDir()))
 	}
-	uncached := opengrep.NewScannerFactory(opengrep.WithProbeCacheDir(opengrepProbeCacheDir()))
-	registry.RegisterFactory(opengrep.ScannerName, func() scanner.Scanner {
-		if remote.Leased() {
-			return uncached()
-		}
-		return cached()
-	})
+	registry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(opts...))
 }

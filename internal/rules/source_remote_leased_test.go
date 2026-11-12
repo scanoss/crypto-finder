@@ -45,8 +45,8 @@ func TestRemoteRuleSource_LeasedRulesetLivesOnlyForTheRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) != 1 || !source.Leased() {
-		t.Fatalf("Load() = %v, leased=%v", paths, source.Leased())
+	if len(paths) != 1 {
+		t.Fatalf("Load() = %v", paths)
 	}
 	runDir := paths[0]
 	if _, err := os.Stat(filepath.Join(runDir, "rules", "java", "aes.yaml")); err != nil {

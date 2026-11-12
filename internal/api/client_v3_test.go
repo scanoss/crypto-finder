@@ -21,9 +21,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 )
 
+// setRulesetHeaders sets the headers of a ruleset download, without the lease.
 func setRulesetHeaders(w http.ResponseWriter) {
 	w.Header().Set("scanoss-ruleset-name", "dca")
 	w.Header().Set("scanoss-ruleset-version", "v1.40.0")
@@ -54,53 +56,34 @@ func TestClient_DownloadRuleset_V3ReturnsLease(t *testing.T) {
 	}
 }
 
-func TestClient_DownloadRuleset_FallsBackToV2OnNotFound(t *testing.T) {
+func TestClient_DownloadRuleset_NotFound(t *testing.T) {
 	t.Parallel()
 
 	var paths []string
 	client := newTestClient(t, "test-key", func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
-		if r.URL.Path == "/v3/rulesets/dca/latest/download" {
-			http.NotFound(w, r)
-			return
-		}
-		setRulesetHeaders(w)
-		_, _ = w.Write([]byte("legacy"))
+		http.NotFound(w, r)
 	})
 
-	data, manifest, err := client.DownloadRuleset(context.Background(), "dca", "latest")
-	if err != nil {
-		t.Fatal(err)
+	_, _, err := client.DownloadRuleset(context.Background(), "dca", "latest")
+	if !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "ruleset dca@latest not found") || !strings.Contains(err.Error(), "/v3/rulesets") {
+		t.Fatalf("got %v, want a not found error naming the ruleset and /v3/rulesets", err)
 	}
-	if string(data) != "legacy" || manifest.Lease != nil {
-		t.Fatalf("data %q lease %q", data, manifest.Lease)
-	}
-	if len(paths) != 2 || paths[1] != "/v2/cryptography/rulesets/dca/latest/download" {
+	if len(paths) != 1 || paths[0] != "/v3/rulesets/dca/latest/download" {
 		t.Fatalf("paths = %v", paths)
 	}
 }
 
-func TestClient_DownloadRuleset_V3RefusalIsNotRetriedOnV2(t *testing.T) {
+func TestClient_DownloadRuleset_MissingLeaseHeader(t *testing.T) {
 	t.Parallel()
 
-	for _, status := range []int{http.StatusForbidden, http.StatusUnauthorized, http.StatusBadRequest} {
-		var paths []string
-		client := newTestClient(t, "test-key", func(w http.ResponseWriter, r *http.Request) {
-			paths = append(paths, r.URL.Path)
-			if r.URL.Path == "/v3/rulesets/dca/latest/download" {
-				w.WriteHeader(status)
-				return
-			}
-			setRulesetHeaders(w)
-			_, _ = w.Write([]byte("legacy"))
-		})
-
-		if _, _, err := client.DownloadRuleset(context.Background(), "dca", "latest"); err == nil {
-			t.Fatalf("status %d: expected an error", status)
-		}
-		if len(paths) != 1 {
-			t.Fatalf("status %d: paths = %v", status, paths)
-		}
+	client := newTestClient(t, "test-key", func(w http.ResponseWriter, _ *http.Request) {
+		setRulesetHeaders(w)
+		_, _ = w.Write([]byte("bundle"))
+	})
+	_, _, err := client.DownloadRuleset(context.Background(), "dca", "latest")
+	if err == nil || !strings.Contains(err.Error(), "without a signed lease") {
+		t.Fatalf("got %v, want the missing lease error", err)
 	}
 }
 

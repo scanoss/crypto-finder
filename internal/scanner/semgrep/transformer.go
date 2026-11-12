@@ -196,29 +196,25 @@ func cachedRulesetVersion(rulesetsDir, rel string) string {
 		}
 		parts = []string{parts[0], parts[2]}
 	}
-	// A plain cached ruleset holds the API's manifest.json; a leased one only
-	// the cache metadata, which records the same version.
-	rulesetRoot := filepath.Join(rulesetsDir, parts[0], parts[1])
-	if version := readRulesetManifestVersion(filepath.Join(rulesetRoot, "manifest.json")); version != "" {
-		return version
-	}
-	return readRulesetManifestVersion(filepath.Join(rulesetRoot, ".cache-meta.json"))
+	return readCachedVersion(filepath.Join(rulesetsDir, parts[0], parts[1], ".cache-meta.json"))
 }
 
-func readRulesetManifestVersion(manifestPath string) string {
-	data, err := os.ReadFile(manifestPath)
+// readCachedVersion returns the version recorded in a cached ruleset's
+// .cache-meta.json, or "" when it cannot be read.
+func readCachedVersion(metadataPath string) string {
+	data, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return ""
 	}
 
-	var manifest struct {
+	var metadata struct {
 		Version string `json:"version"`
 	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	if err := json.Unmarshal(data, &metadata); err != nil {
 		return ""
 	}
 
-	return manifest.Version
+	return metadata.Version
 }
 
 func cleanRuleID(ruleID string, rulePaths []string) string {

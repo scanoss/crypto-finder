@@ -33,7 +33,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
-// A leased ruleset is cached as the encrypted bundle and its lease; its rule
+// A remote ruleset is cached as the encrypted bundle and its lease; its rule
 // files exist only in a per-run directory (OpenLeased) while a scan runs.
 const (
 	bundleFileName = "bundle.enc"
@@ -45,12 +45,6 @@ const (
 
 	latestVersion = "latest"
 )
-
-// IsLeased reports whether the cached ruleset at rulesetPath is a leased one.
-func IsLeased(rulesetPath string) bool {
-	_, err := os.Stat(filepath.Join(rulesetPath, bundleFileName))
-	return err == nil
-}
 
 // ReadLease returns the lease stored beside a leased ruleset, without
 // verifying it.
@@ -73,7 +67,7 @@ type ExpiredLeaseError struct {
 }
 
 func (e *ExpiredLeaseError) Error() string {
-	return fmt.Sprintf("cache: the lease of ruleset %s@%s expired on %s; refresh it by running online with a valid API key (or importing a new bundle), or scan with --rules-dir",
+	return fmt.Sprintf("cache: the lease of ruleset %s@%s expired on %s; refresh it by running online with a valid API key, or scan with --rules-dir",
 		e.Name, e.Version, e.ExpiresAt.UTC().Format(time.RFC3339))
 }
 
@@ -131,7 +125,6 @@ func (m *Manager) storeLeased(name, targetPath string, bundle, leaseJSON []byte,
 	// The checksum recorded is the release payload's, the one the report
 	// carries: the same for every tenant, unlike the personalised bundle's.
 	metadata := NewMetadata(name, l.Version, l.PayloadSHA, ttlSeconds)
-	metadata.Leased = true
 	metadata.ExpiresAt = l.ExpiresAt
 	metadata.Languages = recordLanguages(name, l.Version, func() ([]string, error) { return bundleLanguages(bundle) })
 	err = os.WriteFile(filepath.Join(tempPath, bundleFileName), sealed, 0o600)
@@ -158,36 +151,40 @@ func (m *Manager) apiKey() string {
 	return m.apiClient.APIKey()
 }
 
-// leasedCacheUsable reports whether a leased cache directory holds its files.
+// leasedCacheUsable reports whether a cache directory holds a ruleset's
+// files: bundle.enc, lease.json and .cache-meta.json.
 func leasedCacheUsable(rulesetPath string) error {
-	for _, name := range []string{bundleFileName, leaseFileName} {
+	for _, name := range []string{bundleFileName, leaseFileName, metadataFileName} {
 		if _, err := os.Stat(filepath.Join(rulesetPath, name)); err != nil {
-			return fmt.Errorf("cache: leased ruleset is missing %s: %w", name, err)
+			return fmt.Errorf("cache: ruleset is missing %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
-// validateCachedRuleset checks that a cached ruleset holds its content: the
-// rule files of a legacy ruleset, the bundle and lease of a leased one.
-func validateCachedRuleset(rulesetPath string) error {
-	if IsLeased(rulesetPath) {
-		return leasedCacheUsable(rulesetPath)
+// olderCacheFormat reports whether rulesetPath holds a ruleset cached by an
+// older crypto-finder: plain rule files with cache metadata and no
+// encrypted bundle. Such a cache is never used; the next download replaces
+// it.
+func olderCacheFormat(rulesetPath string) bool {
+	if _, err := os.Stat(filepath.Join(rulesetPath, metadataFileName)); err != nil {
+		return false
 	}
-	return utils.ValidateRuleDirNotEmpty(rulesetPath)
+	_, err := os.Stat(filepath.Join(rulesetPath, bundleFileName))
+	return errors.Is(err, os.ErrNotExist)
 }
 
-// confirmCurrentRelease handles an expired TTL of a leased cache without a
+// confirmCurrentRelease handles an expired TTL of a cached ruleset without a
 // download: when the API reports the same release as the cached lease and
 // the lease does not expire within leaseRefreshWindow, it records the check
 // and returns true. Any other outcome (an API error included) returns false
 // so the caller downloads.
 func (m *Manager) confirmCurrentRelease(ctx context.Context, name, version, rulesetPath, metadataPath string) bool {
-	if m.apiClient == nil || !IsLeased(rulesetPath) || leasedCacheUsable(rulesetPath) != nil {
+	if m.apiClient == nil || leasedCacheUsable(rulesetPath) != nil {
 		return false
 	}
 	metadata, err := LoadMetadata(metadataPath)
-	if err != nil || !metadata.Leased || time.Until(metadata.ExpiresAt) < leaseRefreshWindow {
+	if err != nil || time.Until(metadata.ExpiresAt) < leaseRefreshWindow {
 		return false
 	}
 	l, err := ReadLease(rulesetPath)
@@ -212,7 +209,7 @@ func (m *Manager) confirmCurrentRelease(ctx context.Context, name, version, rule
 	return true
 }
 
-// OpenLeased decrypts the cached leased ruleset name@version, verifies its
+// OpenLeased decrypts the cached ruleset name@version, verifies its
 // lease again and extracts it into a new per-run directory beside the
 // filtered rule copies. It returns that directory and a func that removes
 // it; the caller must call it when the run ends. Run directories left by a
@@ -261,101 +258,8 @@ func (m *Manager) OpenLeased(name, version string) (string, func(), error) {
 	return runDir, cleanup, nil
 }
 
-// ImportBundle verifies an offline bundle against its lease (the signed lease
-// JSON issued with it) and stores it encrypted under the name and version
-// the lease names. The imported ruleset counts as current until its lease
-// expires.
-func (m *Manager) ImportBundle(bundle, leaseJSON []byte) (ruleset.Lease, error) {
-	unverified, err := ruleset.DecodeUnverified(leaseJSON)
-	if err != nil {
-		return ruleset.Lease{}, fmt.Errorf("cache: %w", err)
-	}
-	name, version := unverified.Name, unverified.Version
-	if err := validateRulesetSegment(name); err != nil {
-		return ruleset.Lease{}, err
-	}
-	if err := validateRulesetSegment(version); err != nil {
-		return ruleset.Lease{}, err
-	}
-	l, err := verifyLease(name, version, leaseJSON, bundle)
-	if err != nil {
-		return ruleset.Lease{}, err
-	}
-	targetPath := m.getRulesetCachePath(name, version)
-	lock, err := m.acquireLock(targetPath)
-	if err != nil {
-		return ruleset.Lease{}, fmt.Errorf("cache: %w", err)
-	}
-	defer m.releaseLock(lock)
-	ttl := int64(time.Until(l.ExpiresAt).Seconds())
-	if err := m.storeLeased(name, targetPath, bundle, leaseJSON, l, ttl); err != nil {
-		return ruleset.Lease{}, err
-	}
-	return l, nil
-}
-
-// validateRulesetSegment refuses a name or version that would leave the
-// cache directory.
-func validateRulesetSegment(segment string) error {
-	if segment == "" || segment == "." || segment == ".." || strings.ContainsAny(segment, `/\`) {
-		return fmt.Errorf("cache: invalid ruleset name or version %q in lease", segment)
-	}
-	return nil
-}
-
-// CachedRuleset describes one cached ruleset version for `rules status`.
-type CachedRuleset struct {
-	Name, Version string
-	Leased        bool
-	ExpiresAt     time.Time
-	SigningKeyID  string
-	Languages     []string
-}
-
-// List returns the cached rulesets, by name then version label.
-func (m *Manager) List() ([]CachedRuleset, error) {
-	names, err := os.ReadDir(m.cacheDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("cache: list %s: %w", m.cacheDir, err)
-	}
-	var out []CachedRuleset
-	for _, nameEntry := range names {
-		if nameEntry.IsDir() {
-			out = append(out, m.listVersions(nameEntry.Name())...)
-		}
-	}
-	return out, nil
-}
-
-// listVersions returns the cached versions of ruleset name: the directories
-// that hold cache metadata.
-func (m *Manager) listVersions(name string) []CachedRuleset {
-	versions, err := os.ReadDir(filepath.Join(m.cacheDir, name))
-	if err != nil {
-		return nil
-	}
-	var out []CachedRuleset
-	for _, versionEntry := range versions {
-		rulesetPath := filepath.Join(m.cacheDir, name, versionEntry.Name())
-		metadata, err := LoadMetadata(filepath.Join(rulesetPath, metadataFileName))
-		if err != nil {
-			continue
-		}
-		entry := CachedRuleset{Name: name, Version: versionEntry.Name(), Leased: IsLeased(rulesetPath), ExpiresAt: metadata.ExpiresAt, Languages: metadata.Languages}
-		if l, err := ReadLease(rulesetPath); entry.Leased && err == nil {
-			entry.SigningKeyID = l.SigningKeyID
-			entry.ExpiresAt = l.ExpiresAt
-		}
-		out = append(out, entry)
-	}
-	return out
-}
-
 // RunsDir is the parent of the per-run directories of ruleset name@version:
-// the decrypted copies of a leased ruleset and the language-filtered copies.
+// the decrypted copies of the ruleset and the language-filtered copies.
 func RunsDir(rulesetsDir, name, version string) string {
 	return filepath.Join(rulesetsDir, name, config.FilteredRulesDirName, version)
 }

@@ -34,11 +34,9 @@ import (
 )
 
 const (
-	// API endpoints. DownloadRuleset tries v3 first and falls back to v2 when
-	// the server does not offer v3.
-	rulesetsEndpointFmt   = "/v2/cryptography/rulesets/%s/%s/download"
-	rulesetsV3DownloadFmt = "/v3/rulesets/%s/%s/download"
-	rulesetsV3ReleaseFmt  = "/v3/rulesets/%s/%s"
+	// API endpoints.
+	rulesetsDownloadFmt = "/v3/rulesets/%s/%s/download"
+	rulesetsReleaseFmt  = "/v3/rulesets/%s/%s"
 
 	// HTTP headers - Request.
 	headerAPIKey    = "x-api-key"
@@ -52,16 +50,16 @@ const (
 	headerRulesetLease     = "scanoss-ruleset-lease"
 )
 
-// Manifest represents the manifest.json file reconstructed from HTTP headers.
+// Manifest describes a downloaded ruleset bundle, read from the response
+// headers.
 type Manifest struct {
-	Name           string    `json:"name"`
-	Version        string    `json:"version"`
-	ChecksumSHA256 string    `json:"checksum_sha256"`
-	CreatedAt      time.Time `json:"created_at"`
+	Name           string
+	Version        string
+	ChecksumSHA256 string
+	CreatedAt      time.Time
 
-	// Lease is the signed lease JSON the server sent with the bundle, or nil
-	// for an unsigned (legacy) ruleset.
-	Lease []byte `json:"-"`
+	// Lease is the signed lease JSON the server sent with the bundle.
+	Lease []byte
 }
 
 // Client is an HTTP client for the SCANOSS REST API.
@@ -130,22 +128,19 @@ func (c *Client) APIKey() string {
 	return c.apiKey
 }
 
-// DownloadRuleset downloads a ruleset tarball from the API
-// Returns the tarball bytes and the parsed manifest. It asks the v3 endpoint
-// first, which serves the bundle with its signed lease (Manifest.Lease). When
-// v3 answers 404 (a server or gateway that does not route it yet), it
-// downloads from the v2 endpoint, which serves no lease. Any other v3 error,
-// a 403 included, is returned as is: a refusal on v3 is not retried on v2.
+// DownloadRuleset downloads a ruleset bundle and its signed lease
+// (Manifest.Lease) from /v3/rulesets. A 404 means the API has no such
+// ruleset or does not serve /v3/rulesets; an answer without a lease is an
+// error.
 func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]byte, *Manifest, error) {
 	if err := CheckBaseURL(c.baseURL, c.allowHTTP); err != nil {
 		return nil, nil, err
 	}
-	tarball, manifest, err := c.downloadWithRetry(ctx, name, version, c.baseURL+fmt.Sprintf(rulesetsV3DownloadFmt, name, version))
-	if !errors.Is(err, ErrNotFound) {
-		return tarball, manifest, err
+	bundle, manifest, err := c.downloadWithRetry(ctx, name, version, c.baseURL+fmt.Sprintf(rulesetsDownloadFmt, name, version))
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil, fmt.Errorf("ruleset %s@%s not found: the SCANOSS API has no such ruleset or does not serve /v3/rulesets (%w)", name, version, err)
 	}
-	log.Debug().Err(err).Str("ruleset", name).Str("version", version).Msg("v3 ruleset download not found, using v2")
-	return c.downloadWithRetry(ctx, name, version, c.baseURL+fmt.Sprintf(rulesetsEndpointFmt, name, version))
+	return bundle, manifest, err
 }
 
 // GetRelease returns the release description of a ruleset version from the
@@ -154,7 +149,7 @@ func (c *Client) GetRelease(ctx context.Context, name, version string) (*ruleset
 	if err := CheckBaseURL(c.baseURL, c.allowHTTP); err != nil {
 		return nil, err
 	}
-	url := c.baseURL + fmt.Sprintf(rulesetsV3ReleaseFmt, name, version)
+	url := c.baseURL + fmt.Sprintf(rulesetsReleaseFmt, name, version)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -272,12 +267,13 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to reconstruct manifest from headers: %w", err)
 	}
-	if encoded := c.getHeaderValue(resp.Header, headerRulesetLease); encoded != "" {
-		lease, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid %s header (expected base64): %w", headerRulesetLease, err)
-		}
-		manifest.Lease = lease
+	encoded := c.getHeaderValue(resp.Header, headerRulesetLease)
+	if encoded == "" {
+		return nil, nil, fmt.Errorf("the API sent ruleset %s@%s without a signed lease (missing header: %s)", manifest.Name, manifest.Version, headerRulesetLease)
+	}
+	manifest.Lease, err = base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid %s header (expected base64): %w", headerRulesetLease, err)
 	}
 
 	// Read response body

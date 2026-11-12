@@ -34,9 +34,7 @@ type Metadata struct {
 	ChecksumSHA256 string    `json:"checksum_sha256"`
 	TTLSeconds     int64     `json:"ttl_seconds"`
 
-	// Leased marks a signed ruleset kept encrypted (bundle.enc + lease.json)
-	// rather than as plain rule files. ExpiresAt is its lease expiry.
-	Leased    bool      `json:"leased,omitempty"`
+	// ExpiresAt is the expiry of the lease stored beside the ruleset.
 	ExpiresAt time.Time `json:"expires_at,omitzero"`
 
 	// CheckedAt is when the API last confirmed that the cached release is
@@ -46,8 +44,9 @@ type Metadata struct {
 
 	// Languages are the languages the ruleset's rules cover, recorded when
 	// it is stored: each rule's languages lowercased and trimmed ("generic"
-	// for a rule that names none), deduplicated and sorted. For a leased
-	// ruleset this is the only way to learn them without decrypting it.
+	// for a rule that names none), deduplicated and sorted. The ruleset is
+	// stored encrypted, so this is the only way to learn them without
+	// decrypting it.
 	Languages []string `json:"languages,omitempty"`
 }
 
@@ -65,9 +64,9 @@ func (m *Metadata) IsExpired() bool {
 	return time.Now().After(expiryTime)
 }
 
-// LeaseExpired reports whether a leased ruleset's lease has expired.
+// LeaseExpired reports whether the ruleset's lease has expired.
 func (m *Metadata) LeaseExpired() bool {
-	return m.Leased && !time.Now().Before(m.ExpiresAt)
+	return !time.Now().Before(m.ExpiresAt)
 }
 
 // Age returns the age of the cache (time since download, or since the API

@@ -21,7 +21,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -39,7 +38,6 @@ import (
 
 const (
 	metadataFileName = ".cache-meta.json"
-	manifestFileName = "manifest.json"
 	tempSuffix       = ".tmp"
 	lockSuffix       = ".lock"
 )
@@ -89,48 +87,29 @@ func (m *Manager) SetMaxStaleCacheAge(maxAge time.Duration) {
 	m.maxStaleCacheAge = maxAge
 }
 
-// GetRulesetPath returns the path to a cached ruleset
+// GetRulesetPath returns the path to a cached ruleset (bundle.enc,
+// lease.json and .cache-meta.json; OpenLeased decrypts it for a run).
 // If the ruleset is not cached or expired, it downloads it first.
 // If noCache is enabled, it always downloads a fresh copy and updates the cache.
 func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (string, error) {
 	rulesetPath := m.getRulesetCachePath(name, version)
 	metadataPath := filepath.Join(rulesetPath, metadataFileName)
 
-	// Skip cache check if noCache is enabled
-	//nolint:nestif // Cache validation and fallback logic requires nested conditionals for proper error handling
-	if !m.noCache {
-		// Check if cache exists and is valid
-		if m.isCacheValid(rulesetPath, metadataPath) {
-			log.Debug().
-				Str("ruleset", name).
-				Str("version", version).
-				Str("path", rulesetPath).
-				Msg("Using cached ruleset")
+	if olderCacheFormat(rulesetPath) {
+		log.Warn().
+			Str("ruleset", name).
+			Str("version", version).
+			Str("path", rulesetPath).
+			Msg("Ignoring a ruleset cached by an older crypto-finder; downloading it again")
+	}
 
-			// Update last accessed time
-			if err := m.updateLastAccessed(metadataPath); err != nil {
-				log.Warn().Err(err).Msg("Failed to update last accessed time")
-			}
-
-			// Validate that cached ruleset contains rule files
-			if err := validateCachedRuleset(rulesetPath); err != nil {
-				log.Warn().
-					Err(err).
-					Str("ruleset", name).
-					Str("version", version).
-					Msg("Cached ruleset is invalid, will re-download")
-				// Cache is corrupted, proceed to download
-			} else {
-				return rulesetPath, nil
-			}
-		} else if m.confirmCurrentRelease(ctx, name, version, rulesetPath, metadataPath) {
-			return rulesetPath, nil
-		}
-	} else {
+	if m.noCache {
 		log.Info().
 			Str("ruleset", name).
 			Str("version", version).
 			Msg("Cache bypass enabled, forcing fresh download")
+	} else if m.useCached(ctx, name, version, rulesetPath, metadataPath) {
+		return rulesetPath, nil
 	}
 
 	// Cache is invalid, doesn't exist, or noCache is enabled - download and cache the ruleset
@@ -143,11 +122,24 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 		return m.fallbackAfterDownloadError(rulesetPath, metadataPath, name, version, err)
 	}
 
-	if err := validateCachedRuleset(rulesetPath); err != nil {
-		return "", fmt.Errorf("downloaded ruleset validation failed: %w", err)
-	}
-
 	return rulesetPath, nil
+}
+
+// useCached reports whether the cached ruleset can be used without a
+// download: it is valid, or the API confirms it is the current release.
+func (m *Manager) useCached(ctx context.Context, name, version, rulesetPath, metadataPath string) bool {
+	if !m.isCacheValid(rulesetPath, metadataPath) {
+		return m.confirmCurrentRelease(ctx, name, version, rulesetPath, metadataPath)
+	}
+	log.Debug().
+		Str("ruleset", name).
+		Str("version", version).
+		Str("path", rulesetPath).
+		Msg("Using cached ruleset")
+	if err := m.updateLastAccessed(metadataPath); err != nil {
+		log.Warn().Err(err).Msg("Failed to update last accessed time")
+	}
+	return true
 }
 
 // fallbackAfterDownloadError uses the stale cache when a download failed,
@@ -210,10 +202,11 @@ func (m *Manager) releaseLock(lock *flock.Flock) {
 	}
 }
 
-// isCacheValid checks if the cached ruleset is valid (exists, not expired, checksum matches).
+// isCacheValid checks if the cached ruleset is valid: its files exist, and
+// neither its lease nor its TTL has expired.
 func (m *Manager) isCacheValid(rulesetPath, metadataPath string) bool {
-	// Check if ruleset directory exists
-	if _, err := os.Stat(rulesetPath); os.IsNotExist(err) {
+	if err := leasedCacheUsable(rulesetPath); err != nil {
+		log.Debug().Err(err).Msg("No usable cached ruleset")
 		return false
 	}
 
@@ -268,9 +261,10 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 	defer m.releaseLock(lockFile)
 
 	// Re-check if cache is valid after acquiring lock - another process may have
-	// updated it while we were waiting for the lock
+	// updated it while we were waiting for the lock. --no-cache always
+	// downloads.
 	metadataPath := filepath.Join(targetPath, metadataFileName)
-	if m.hasUsableCache(targetPath, metadataPath) {
+	if !m.noCache && m.isCacheValid(targetPath, metadataPath) {
 		log.Debug().
 			Str("ruleset", name).
 			Str("version", version).
@@ -300,12 +294,7 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 		Str("checksum", manifest.ChecksumSHA256).
 		Msg("Checksum verified successfully")
 
-	if manifest.Lease != nil {
-		err = m.persistLeasedRuleset(name, version, targetPath, tarball, manifest)
-	} else {
-		err = m.persistDownloadedRuleset(name, version, targetPath, tarball, manifest)
-	}
-	if err != nil {
+	if err := m.persistLeasedRuleset(name, version, targetPath, tarball, manifest); err != nil {
 		return err
 	}
 
@@ -315,57 +304,6 @@ func (m *Manager) downloadAndCache(ctx context.Context, name, version, targetPat
 		Str("path", targetPath).
 		Msg("Ruleset cached successfully")
 
-	return nil
-}
-
-func (m *Manager) hasUsableCache(rulesetPath, metadataPath string) bool {
-	if !m.isCacheValid(rulesetPath, metadataPath) {
-		return false
-	}
-	return validateCachedRuleset(rulesetPath) == nil
-}
-
-func (m *Manager) persistDownloadedRuleset(name, version, targetPath string, tarball []byte, manifest *api.Manifest) error {
-	tempPath := targetPath + tempSuffix
-	if err := m.extractTarball(tarball, tempPath); err != nil {
-		m.cleanupTempPath(tempPath, name, version)
-		return fmt.Errorf("failed to extract tarball: %w", err)
-	}
-
-	if err := m.writeCacheMetadata(name, version, tempPath, manifest); err != nil {
-		m.cleanupTempPath(tempPath, name, version)
-		return err
-	}
-
-	manifestPath := filepath.Join(tempPath, manifestFileName)
-	if err := m.saveManifest(manifest, manifestPath); err != nil {
-		m.cleanupTempPath(tempPath, name, version)
-		return fmt.Errorf("failed to save manifest: %w", err)
-	}
-
-	if err := m.replaceCachedRuleset(targetPath, tempPath); err != nil {
-		m.cleanupTempPath(tempPath, name, version)
-		return err
-	}
-
-	return nil
-}
-
-func (m *Manager) writeCacheMetadata(name, version, tempPath string, manifest *api.Manifest) error {
-	// Create cache metadata. The version we record is the *manifest* version
-	// returned by the SCANOSS API (concrete, e.g. "v1.0.4"), NOT the operator's
-	// request label (which can be "latest" — opaque, indistinguishable across
-	// upstream rule pack updates). Using the manifest version makes the
-	// metadata file a faithful audit trail of what was actually downloaded;
-	// downstream consumers can stamp it on scan results so a rules update is
-	// detectable.
-	ttl := m.getTTL(version)
-	metadata := NewMetadata(name, manifest.Version, manifest.ChecksumSHA256, int64(ttl.Seconds()))
-	metadata.Languages = recordLanguages(name, manifest.Version, func() ([]string, error) { return dirLanguages(tempPath) })
-	tempMetadataPath := filepath.Join(tempPath, metadataFileName)
-	if err := metadata.Save(tempMetadataPath); err != nil {
-		return fmt.Errorf("failed to save metadata: %w", err)
-	}
 	return nil
 }
 
@@ -496,26 +434,6 @@ func (m *Manager) extractTarball(tarball []byte, targetDir string) error {
 	return nil
 }
 
-// saveManifest saves the manifest to a JSON file.
-func (m *Manager) saveManifest(manifest *api.Manifest, path string) error {
-	// Marshal to JSON with indentation for readability
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal manifest: %w", err)
-	}
-
-	// Write to file
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("failed to write manifest file: %w", err)
-	}
-
-	log.Debug().
-		Str("path", path).
-		Msg("Manifest saved successfully")
-
-	return nil
-}
-
 // getTTL returns the appropriate TTL for a version
 // "latest" gets 24 hours, pinned versions get 7 days.
 func (m *Manager) getTTL(version string) time.Duration {
@@ -529,9 +447,8 @@ func (m *Manager) getTTL(version string) time.Duration {
 // Returns the cached ruleset path if valid stale cache exists and is within max age limit.
 // Returns an error if no stale cache exists, cache is too old, or validation fails.
 func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string) (string, error) {
-	// Check if ruleset directory exists
-	if _, err := os.Stat(rulesetPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("no cached ruleset found")
+	if err := leasedCacheUsable(rulesetPath); err != nil {
+		return "", fmt.Errorf("no usable cached ruleset: %w", err)
 	}
 
 	// Load metadata
@@ -551,11 +468,6 @@ func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string)
 		return "", fmt.Errorf("cached ruleset is too old (age: %s, max: %s)",
 			cacheAge.Round(time.Hour),
 			m.maxStaleCacheAge.Round(time.Hour))
-	}
-
-	// Validate that cached ruleset contains rule files
-	if err := validateCachedRuleset(rulesetPath); err != nil {
-		return "", fmt.Errorf("cached ruleset is invalid: %w", err)
 	}
 
 	// Cache is usable, log warning and return

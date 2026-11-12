@@ -24,9 +24,9 @@ import (
 	"github.com/scanoss/crypto-finder/internal/config"
 )
 
-// The rules of a leased ruleset are read from a per-run directory under
-// <name>/.crypto-finder-filtered/<version>/, and the cached ruleset beside
-// it holds .cache-meta.json instead of manifest.json.
+// The rules of a remote ruleset are read from a per-run directory under
+// <name>/.crypto-finder-filtered/<version>/; the version comes from the
+// .cache-meta.json of the cached ruleset beside it.
 func TestDetectRuleVersion_LeasedRunDir(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	rulesetsDir, err := config.GetRulesetsDir()
@@ -40,7 +40,7 @@ func TestDetectRuleVersion_LeasedRunDir(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(cached, ".cache-meta.json"), []byte(`{"ruleset_name":"dca","version":"v1.40.0","leased":true}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(cached, ".cache-meta.json"), []byte(`{"ruleset_name":"dca","version":"v1.40.0"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	rule := filepath.Join(runDir, "rules", "aes.yaml")

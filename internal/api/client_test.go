@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -65,6 +66,9 @@ func (r *errReadCloser) Read(p []byte) (int, error) {
 func (r *errReadCloser) Close() error {
 	return r.closeErr
 }
+
+// testLeaseHeader is a base64 lease header; the client does not verify it.
+var testLeaseHeader = base64.StdEncoding.EncodeToString([]byte(`{"format":"x"}`))
 
 func newTestClient(t *testing.T, apiKey string, handler func(http.ResponseWriter, *http.Request)) *Client {
 	t.Helper()
@@ -161,6 +165,7 @@ func TestClient_DownloadRuleset_Success(t *testing.T) {
 		w.Header().Set("scanoss-ruleset-version", "v1.0.0")
 		w.Header().Set("x-checksum-sha256", "abc123")
 		w.Header().Set("scanoss-ruleset-created-at", "2024-01-01T00:00:00Z")
+		w.Header().Set("scanoss-ruleset-lease", testLeaseHeader)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarballData)
 	})
@@ -319,6 +324,7 @@ func TestClient_DownloadRuleset_RetrySuccess(t *testing.T) {
 		w.Header().Set("scanoss-ruleset-version", "latest")
 		w.Header().Set("x-checksum-sha256", "abc123")
 		w.Header().Set("scanoss-ruleset-created-at", time.Now().Format(time.RFC3339))
+		w.Header().Set("scanoss-ruleset-lease", testLeaseHeader)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarballData)
 	})
@@ -473,6 +479,7 @@ func TestManifest_TimezoneParsing(t *testing.T) {
 		w.Header().Set("scanoss-ruleset-version", "v1.0.0")
 		w.Header().Set("x-checksum-sha256", "abc123")
 		w.Header().Set("scanoss-ruleset-created-at", "2024-12-25T10:30:00Z")
+		w.Header().Set("scanoss-ruleset-lease", testLeaseHeader)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(buf.Bytes())
 	})
@@ -615,7 +622,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 		defer cancel()
 
-		_, _, err := client.doDownload(ctx, "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
+		_, _, err := client.doDownload(ctx, "https://api.example.com/v3/rulesets/dca/latest/download")
 		if !errors.Is(err, ErrTimeout) {
 			t.Fatalf("expected ErrTimeout, got %v", err)
 		}
@@ -629,6 +636,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 				headers.Set("scanoss-ruleset-version", "v1.0.0")
 				headers.Set("x-checksum-sha256", "abc123")
 				headers.Set("scanoss-ruleset-created-at", "2024-01-01T00:00:00Z")
+				headers.Set("scanoss-ruleset-lease", testLeaseHeader)
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Header:     headers,
@@ -638,7 +646,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 		}
 		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
 
-		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
+		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v3/rulesets/dca/latest/download")
 		if err == nil || !strings.Contains(err.Error(), "failed to read response body") {
 			t.Fatalf("expected read body failure, got %v", err)
 		}
@@ -652,6 +660,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 				headers.Set("scanoss-ruleset-version", "v1.0.0")
 				headers.Set("x-checksum-sha256", "abc123")
 				headers.Set("scanoss-ruleset-created-at", "2024-01-01T00:00:00Z")
+				headers.Set("scanoss-ruleset-lease", testLeaseHeader)
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Header:     headers,
@@ -664,7 +673,7 @@ func TestClient_doDownload_TimeoutReadAndCloseErrors(t *testing.T) {
 		}
 		client := NewClientWithHTTPClient("https://api.example.com", "test-key", httpClient)
 
-		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v2/cryptography/rulesets/dca/latest/download")
+		_, _, err := client.doDownload(context.Background(), "https://api.example.com/v3/rulesets/dca/latest/download")
 		if err == nil || !strings.Contains(err.Error(), "failed to close response body") {
 			t.Fatalf("expected close body failure, got %v", err)
 		}

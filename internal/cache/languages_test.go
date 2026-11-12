@@ -22,7 +22,6 @@ import (
 	"compress/gzip"
 	"context"
 	"maps"
-	"net/http"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -82,26 +81,13 @@ func tarGzFiles(t *testing.T, files map[string]string) []byte {
 	return buf.Bytes()
 }
 
-func TestBundleLanguages_MatchesExtractedDir(t *testing.T) {
-	tarball := tarGzFiles(t, languageRules)
-	got, err := bundleLanguages(tarball)
+func TestBundleLanguages(t *testing.T) {
+	got, err := bundleLanguages(tarGzFiles(t, languageRules))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(got, wantLanguages) {
 		t.Fatalf("bundleLanguages = %v, want %v", got, wantLanguages)
-	}
-
-	dir := t.TempDir()
-	if err := (&Manager{}).extractTarball(tarball, dir); err != nil {
-		t.Fatal(err)
-	}
-	got, err = dirLanguages(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(got, wantLanguages) {
-		t.Fatalf("dirLanguages = %v, want %v", got, wantLanguages)
 	}
 }
 
@@ -129,49 +115,10 @@ func TestLeased_MetadataRecordsLanguages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !meta.Leased || !slices.Equal(meta.Languages, wantLanguages) {
-		t.Fatalf("leased metadata languages = %v (leased %v), want %v", meta.Languages, meta.Leased, wantLanguages)
+	if !slices.Equal(meta.Languages, wantLanguages) {
+		t.Fatalf("metadata languages = %v, want %v", meta.Languages, wantLanguages)
 	}
 	if got := yamlFilesUnder(t, m.cacheDir); len(got) != 0 {
 		t.Fatalf("plaintext rule files in the cache: %v", got)
-	}
-
-	listed, err := m.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(listed) != 1 || !slices.Equal(listed[0].Languages, wantLanguages) {
-		t.Fatalf("List() = %+v", listed)
-	}
-}
-
-func TestPlaintext_MetadataRecordsLanguages(t *testing.T) {
-	tarball := tarGzFiles(t, languageRules)
-	client := newMockAPIClient(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/cryptography/rulesets/dca/latest/download" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		w.Header().Set("scanoss-ruleset-name", "dca")
-		w.Header().Set("scanoss-ruleset-version", "v1.39.0")
-		w.Header().Set("x-checksum-sha256", CalculateSHA256(tarball))
-		w.Header().Set("scanoss-ruleset-created-at", time.Now().Format(time.RFC3339))
-		_, _ = w.Write(tarball)
-	})
-	m := &Manager{apiClient: client, cacheDir: t.TempDir()}
-
-	path, err := m.GetRulesetPath(context.Background(), "dca", "latest")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if IsLeased(path) {
-		t.Fatal("v2 download is cached as leased")
-	}
-	meta, err := LoadMetadata(filepath.Join(path, metadataFileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(meta.Languages, wantLanguages) {
-		t.Fatalf("plaintext metadata languages = %v, want %v", meta.Languages, wantLanguages)
 	}
 }
