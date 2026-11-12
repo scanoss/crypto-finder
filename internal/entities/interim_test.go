@@ -24,11 +24,11 @@ import (
 	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
-func TestInterimFormatVersion_Is1_8(t *testing.T) {
+func TestInterimFormatVersion_Is1_9(t *testing.T) {
 	t.Parallel()
 
-	if InterimFormatVersion != "1.8" {
-		t.Errorf("InterimFormatVersion = %q, want %q", InterimFormatVersion, "1.8")
+	if InterimFormatVersion != "1.9" {
+		t.Errorf("InterimFormatVersion = %q, want %q", InterimFormatVersion, "1.9")
 	}
 }
 

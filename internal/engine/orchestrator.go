@@ -357,7 +357,7 @@ func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths
 	} else {
 		loadedRulePaths, loadErr := o.rulesManager.Load()
 		if loadErr != nil {
-			return failure.WrapUnknown(loadErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to load rules")
+			return rulesLoadFailure(loadErr, "failed to load rules")
 		}
 		*rulePaths = loadedRulePaths
 		log.Info().Int("count", len(*rulePaths)).Msg("Loaded rules")

@@ -24,7 +24,9 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
+	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 )
 
 const (
@@ -107,4 +109,15 @@ func opengrepCoreRulesCacheDir() string {
 		return ""
 	}
 	return filepath.Join(cacheDir, opengrepCoreRulesCacheDirName)
+}
+
+// registerOpengrep registers the OpenGrep scanner with the on-disk probe
+// cache. The core rules cache is used only without remote rules, so no
+// plaintext copy of a remote ruleset outlives the run.
+func registerOpengrep(registry *scanner.Registry, remote *rules.RemoteRuleSource) {
+	opts := []opengrep.FactoryOption{opengrep.WithProbeCacheDir(opengrepProbeCacheDir())}
+	if remote == nil {
+		opts = append(opts, opengrep.WithCoreRulesCacheDir(opengrepCoreRulesCacheDir()))
+	}
+	registry.RegisterFactory(opengrep.ScannerName, opengrep.NewScannerFactory(opts...))
 }

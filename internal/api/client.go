@@ -19,6 +19,9 @@ package apiclient
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,30 +30,36 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/ruleset"
 )
 
 const (
 	// API endpoints.
-	rulesetsEndpointFmt = "/v2/cryptography/rulesets/%s/%s/download"
+	rulesetsDownloadFmt = "/v3/cryptography/rulesets/%s/%s/download"
+	rulesetsReleaseFmt  = "/v3/cryptography/rulesets/%s/%s"
 
 	// HTTP headers - Request.
 	headerAPIKey    = "x-api-key"
 	headerUserAgent = "user-agent"
-	userAgentValue  = "scanoss-crypto-finder"
 
 	// HTTP headers - Response.
 	headerRulesetName      = "scanoss-ruleset-name"
 	headerRulesetVersion   = "scanoss-ruleset-version"
 	headerChecksumSHA256   = "x-checksum-sha256"
 	headerRulesetCreatedAt = "scanoss-ruleset-created-at"
+	headerRulesetLease     = "scanoss-ruleset-lease"
 )
 
-// Manifest represents the manifest.json file reconstructed from HTTP headers.
+// Manifest describes a downloaded ruleset bundle, read from the response
+// headers.
 type Manifest struct {
-	Name           string    `json:"name"`
-	Version        string    `json:"version"`
-	ChecksumSHA256 string    `json:"checksum_sha256"`
-	CreatedAt      time.Time `json:"created_at"`
+	Name           string
+	Version        string
+	ChecksumSHA256 string
+	CreatedAt      time.Time
+
+	// Lease is the signed lease JSON the server sent with the bundle.
+	Lease []byte
 }
 
 // Client is an HTTP client for the SCANOSS REST API.
@@ -114,15 +123,64 @@ func (c *Client) WithRetryDelay(delay time.Duration) *Client {
 	return c
 }
 
-// DownloadRuleset downloads a ruleset tarball from the API
-// Returns the tarball bytes and the parsed manifest.
+// APIKey returns the API key the client sends.
+func (c *Client) APIKey() string {
+	return c.apiKey
+}
+
+// DownloadRuleset downloads a ruleset bundle and its signed lease
+// (Manifest.Lease) from /v3/cryptography/rulesets. A 404 means the API has
+// no such ruleset or does not serve /v3/cryptography/rulesets; an answer
+// without a lease is an error.
 func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]byte, *Manifest, error) {
 	if err := CheckBaseURL(c.baseURL, c.allowHTTP); err != nil {
 		return nil, nil, err
 	}
-	endpoint := fmt.Sprintf(rulesetsEndpointFmt, name, version)
-	url := c.baseURL + endpoint
+	bundle, manifest, err := c.downloadWithRetry(ctx, name, version, c.baseURL+fmt.Sprintf(rulesetsDownloadFmt, name, version))
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil, fmt.Errorf("ruleset %s@%s not found: the SCANOSS API has no such ruleset or does not serve /v3/cryptography/rulesets (%w)", name, version, err)
+	}
+	return bundle, manifest, err
+}
 
+// GetRelease returns the release description of a ruleset version from the
+// v3 API ("latest" resolves to the current release). It does not retry.
+func (c *Client) GetRelease(ctx context.Context, name, version string) (*ruleset.Release, error) {
+	if err := CheckBaseURL(c.baseURL, c.allowHTTP); err != nil {
+		return nil, err
+	}
+	url := c.baseURL + fmt.Sprintf(rulesetsReleaseFmt, name, version)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set(headerAPIKey, c.apiKey)
+	req.Header.Set(headerUserAgent, UserAgent())
+
+	// #nosec G704 -- URL is constructed from configured API base URL plus a fixed endpoint format.
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Debug().Err(err).Msg("Failed to close ruleset release response body")
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.rulesetHTTPError(resp, url)
+	}
+	var release ruleset.Release
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&release); err != nil {
+		return nil, fmt.Errorf("failed to decode ruleset release: %w", err)
+	}
+	return &release, nil
+}
+
+// downloadWithRetry downloads url, retrying retryable failures with
+// exponential backoff.
+func (c *Client) downloadWithRetry(ctx context.Context, name, version, url string) ([]byte, *Manifest, error) {
 	log.Debug().
 		Str("ruleset", name).
 		Str("version", version).
@@ -132,8 +190,10 @@ func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]b
 	// Implement retry logic with exponential backoff
 	var lastErr error
 	delay := c.retryDelay
+	attempts := 0
 
 	for attempt := 0; attempt <= config.DefaultMaxRetries; attempt++ {
+		attempts++
 		if attempt > 0 {
 			log.Debug().
 				Int("attempt", attempt).
@@ -171,7 +231,10 @@ func (c *Client) DownloadRuleset(ctx context.Context, name, version string) ([]b
 			Msg("Download failed, will retry")
 	}
 
-	return nil, nil, fmt.Errorf("download failed after %d retries: %w", config.DefaultMaxRetries, lastErr)
+	if attempts == 1 {
+		return nil, nil, fmt.Errorf("download failed: %w", lastErr)
+	}
+	return nil, nil, fmt.Errorf("download failed after %d attempts: %w", attempts, lastErr)
 }
 
 // doDownload performs a single download attempt.
@@ -183,7 +246,7 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 
 	// Add headers
 	req.Header.Set(headerAPIKey, c.apiKey)
-	req.Header.Set(headerUserAgent, userAgentValue)
+	req.Header.Set(headerUserAgent, UserAgent())
 
 	// #nosec G704 -- URL is constructed from configured API base URL plus a fixed endpoint format.
 	resp, err := c.httpClient.Do(req)
@@ -196,13 +259,21 @@ func (c *Client) doDownload(ctx context.Context, url string) ([]byte, *Manifest,
 
 	// Handle HTTP status codes
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, c.handleHTTPError(resp, url)
+		return nil, nil, c.rulesetHTTPError(resp, url)
 	}
 
 	// Reconstruct manifest from response headers
 	manifest, err := c.manifestFromHeaders(resp.Header)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to reconstruct manifest from headers: %w", err)
+	}
+	encoded := c.getHeaderValue(resp.Header, headerRulesetLease)
+	if encoded == "" {
+		return nil, nil, fmt.Errorf("the API sent ruleset %s@%s without a signed lease (missing header: %s)", manifest.Name, manifest.Version, headerRulesetLease)
+	}
+	manifest.Lease, err = base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid %s header (expected base64): %w", headerRulesetLease, err)
 	}
 
 	// Read response body
@@ -270,22 +341,43 @@ func (c *Client) getHeaderValue(headers http.Header, headerName string) string {
 	return headers.Get(grpcHeaderName)
 }
 
-// handleHTTPError converts HTTP status codes to appropriate errors.
+// rulesetHTTPError converts the error answer of a ruleset request. 410 Gone
+// and 426 Upgrade Required mean the API no longer serves this client: they
+// become an *UpgradeRequiredError carrying the server's message. Every other
+// status goes through handleHTTPError.
+func (c *Client) rulesetHTTPError(resp *http.Response, url string) error {
+	if resp.StatusCode != http.StatusGone && resp.StatusCode != http.StatusUpgradeRequired {
+		return c.handleHTTPError(resp, url)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+	if err != nil {
+		log.Debug().Err(err).Str("url", url).Msg("Failed to read the upgrade-required answer")
+	}
+	message := serverMessage(resp.Header, body)
+	if message == "" {
+		message = defaultUpgradeMessage
+	}
+	return &UpgradeRequiredError{StatusCode: resp.StatusCode, Message: message}
+}
+
+// handleHTTPError converts HTTP status codes to appropriate errors. The
+// message is the server's (see serverMessage), or the HTTP status when the
+// answer has none.
 func (c *Client) handleHTTPError(resp *http.Response, url string) error {
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
-	message := string(body)
+	message := serverMessage(resp.Header, body)
 	if message == "" {
 		message = resp.Status
 	}
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("%w: %s", ErrUnauthorized, message)
+		return &RefusedError{StatusCode: resp.StatusCode, Message: message, kind: ErrUnauthorized}
 	case http.StatusForbidden:
-		return fmt.Errorf("%w: %s", ErrForbidden, message)
+		return &RefusedError{StatusCode: resp.StatusCode, Message: message, kind: ErrForbidden}
 	case http.StatusNotFound:
 		return fmt.Errorf("%w: %s", ErrNotFound, message)
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable:

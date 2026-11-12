@@ -162,13 +162,7 @@ func detectRuleVersion(rulePaths []string) string {
 			continue
 		}
 
-		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if len(parts) < 2 {
-			continue
-		}
-
-		rulesetRoot := filepath.Join(rulesetsDir, parts[0], parts[1])
-		candidate := readRulesetManifestVersion(filepath.Join(rulesetRoot, "manifest.json"))
+		candidate := cachedRulesetVersion(rulesetsDir, rel)
 		if candidate == "" {
 			continue
 		}
@@ -186,20 +180,41 @@ func detectRuleVersion(rulePaths []string) string {
 	return version
 }
 
-func readRulesetManifestVersion(manifestPath string) string {
-	data, err := os.ReadFile(manifestPath)
+// cachedRulesetVersion returns the version of the cached ruleset that holds
+// rel (a path relative to the rulesets dir), or "" when it cannot tell.
+func cachedRulesetVersion(rulesetsDir, rel string) string {
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	// A per-run copy (a leased ruleset decrypted for this run, or a filtered
+	// copy) lives in <name>/.crypto-finder-filtered/<version>/run-* and
+	// belongs to the cached ruleset <name>/<version>.
+	if parts[1] == config.FilteredRulesDirName {
+		if len(parts) < 3 {
+			return ""
+		}
+		parts = []string{parts[0], parts[2]}
+	}
+	return readCachedVersion(filepath.Join(rulesetsDir, parts[0], parts[1], ".cache-meta.json"))
+}
+
+// readCachedVersion returns the version recorded in a cached ruleset's
+// .cache-meta.json, or "" when it cannot be read.
+func readCachedVersion(metadataPath string) string {
+	data, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return ""
 	}
 
-	var manifest struct {
+	var metadata struct {
 		Version string `json:"version"`
 	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	if err := json.Unmarshal(data, &metadata); err != nil {
 		return ""
 	}
 
-	return manifest.Version
+	return metadata.Version
 }
 
 func cleanRuleID(ruleID string, rulePaths []string) string {

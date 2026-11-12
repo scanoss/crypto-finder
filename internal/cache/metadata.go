@@ -33,17 +33,46 @@ type Metadata struct {
 	LastAccessed   time.Time `json:"last_accessed"`
 	ChecksumSHA256 string    `json:"checksum_sha256"`
 	TTLSeconds     int64     `json:"ttl_seconds"`
+
+	// ExpiresAt is the expiry of the lease stored beside the ruleset.
+	ExpiresAt time.Time `json:"expires_at,omitzero"`
+
+	// CheckedAt is when the API last confirmed that the cached release is
+	// still the current one; the TTL then runs from it instead of from
+	// DownloadedAt.
+	CheckedAt time.Time `json:"checked_at,omitzero"`
+
+	// Languages are the languages the ruleset's rules cover, recorded when
+	// it is stored: each rule's languages lowercased and trimmed ("generic"
+	// for a rule that names none), deduplicated and sorted. The ruleset is
+	// stored encrypted, so this is the only way to learn them without
+	// decrypting it.
+	Languages []string `json:"languages,omitempty"`
+}
+
+// freshSince is when the cache was last known to be current.
+func (m *Metadata) freshSince() time.Time {
+	if m.CheckedAt.After(m.DownloadedAt) {
+		return m.CheckedAt
+	}
+	return m.DownloadedAt
 }
 
 // IsExpired checks if the cache has expired based on TTL.
 func (m *Metadata) IsExpired() bool {
-	expiryTime := m.DownloadedAt.Add(time.Duration(m.TTLSeconds) * time.Second)
+	expiryTime := m.freshSince().Add(time.Duration(m.TTLSeconds) * time.Second)
 	return time.Now().After(expiryTime)
 }
 
-// Age returns the age of the cache (time since download).
+// LeaseExpired reports whether the ruleset's lease has expired.
+func (m *Metadata) LeaseExpired() bool {
+	return !time.Now().Before(m.ExpiresAt)
+}
+
+// Age returns the age of the cache (time since download, or since the API
+// last confirmed it is current).
 func (m *Metadata) Age() time.Duration {
-	return time.Since(m.DownloadedAt)
+	return time.Since(m.freshSince())
 }
 
 // IsTooStale checks if the cache is older than the specified maximum age.

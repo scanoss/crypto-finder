@@ -134,7 +134,7 @@ func (c *Client) LookupComponent(ctx context.Context, purl, requirement string) 
 		return nil, fmt.Errorf("apiclient: create component request: %w", err)
 	}
 	req.Header.Set(headerAPIKey, c.apiKey)
-	req.Header.Set(headerUserAgent, userAgentValue)
+	req.Header.Set(headerUserAgent, UserAgent())
 	req.Header.Set("Content-Type", "application/json")
 
 	// #nosec G704 -- URL is the configured API base URL plus a fixed endpoint.

@@ -44,6 +44,7 @@ const (
 	CodeOutputWriteFailed           = publicfailure.CodeOutputWriteFailed
 	CodeFindingsDetected            = publicfailure.CodeFindingsDetected
 	CodeComponentLookupFailed       = publicfailure.CodeComponentLookupFailed
+	CodeUpgradeRequired             = publicfailure.CodeUpgradeRequired
 
 	StageUnknown    = publicfailure.StageUnknown
 	StageInput      = publicfailure.StageInput

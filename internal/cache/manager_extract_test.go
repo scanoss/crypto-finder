@@ -21,15 +21,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
-
-	api "github.com/scanoss/crypto-finder/internal/api"
 )
 
 func createTarball(t *testing.T, entries func(tw *tar.Writer)) []byte {
@@ -161,19 +159,20 @@ func TestManager_tryStaleCache_MetadataError(t *testing.T) {
 	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
 		t.Fatalf("Failed to create ruleset dir: %v", err)
 	}
-	metadataPath := filepath.Join(rulesetPath, metadataFileName)
-	if err := os.WriteFile(metadataPath, []byte("broken"), 0o600); err != nil {
-		t.Fatalf("Failed to write broken metadata: %v", err)
+	for name, content := range map[string]string{bundleFileName: "x", leaseFileName: "{}", metadataFileName: "broken"} {
+		if err := os.WriteFile(filepath.Join(rulesetPath, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	manager := &Manager{maxStaleCacheAge: 30 * 24 * time.Hour}
-	_, err := manager.tryStaleCache(rulesetPath, metadataPath, "dca", "latest")
+	_, err := manager.tryStaleCache(rulesetPath, filepath.Join(rulesetPath, metadataFileName), "dca", "latest")
 	if err == nil {
 		t.Fatal("Expected error for invalid metadata")
 	}
 }
 
-func TestManager_tryStaleCache_InvalidRuleset(t *testing.T) {
+func TestManager_tryStaleCache_MissingBundle(t *testing.T) {
 	tempDir := t.TempDir()
 	rulesetPath := filepath.Join(tempDir, "dca", "latest")
 	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
@@ -189,29 +188,24 @@ func TestManager_tryStaleCache_InvalidRuleset(t *testing.T) {
 	manager := &Manager{maxStaleCacheAge: 30 * 24 * time.Hour}
 	_, err := manager.tryStaleCache(rulesetPath, metadataPath, "dca", "latest")
 	if err == nil {
-		t.Fatal("Expected error for invalid ruleset")
+		t.Fatal("Expected error for a cache without its bundle")
 	}
 }
 
 func TestManager_tryStaleCache_UpdatesLastAccessed(t *testing.T) {
-	tempDir := t.TempDir()
-	rulesetPath := filepath.Join(tempDir, "dca", "latest")
-	if err := os.MkdirAll(rulesetPath, 0o755); err != nil {
-		t.Fatalf("Failed to create ruleset dir: %v", err)
-	}
-	writeRuleFile(t, filepath.Join(rulesetPath, "semgrep-rules", "rule.yml"))
-
+	manager := &Manager{apiClient: failingAPIClient(), cacheDir: t.TempDir(), maxStaleCacheAge: 30 * 24 * time.Hour}
+	rulesetPath := seedCache(t, manager, time.Hour)
 	metadataPath := filepath.Join(rulesetPath, metadataFileName)
-	metadata := NewMetadata("dca", "latest", "checksum", 1)
-	metadata.DownloadedAt = time.Now().Add(-1 * time.Hour)
+	metadata, err := LoadMetadata(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	metadata.LastAccessed = time.Now().Add(-2 * time.Hour)
 	if err := metadata.Save(metadataPath); err != nil {
 		t.Fatalf("Failed to write metadata: %v", err)
 	}
 
-	manager := &Manager{maxStaleCacheAge: 30 * 24 * time.Hour}
-	_, err := manager.tryStaleCache(rulesetPath, metadataPath, "dca", "latest")
-	if err != nil {
+	if _, err := manager.tryStaleCache(rulesetPath, metadataPath, "dca", "latest"); err != nil {
 		t.Fatalf("Expected stale cache to be used: %v", err)
 	}
 
@@ -224,92 +218,26 @@ func TestManager_tryStaleCache_UpdatesLastAccessed(t *testing.T) {
 	}
 }
 
-func TestManager_downloadAndCache_ManifestSaveError(t *testing.T) {
-	manifest := &api.Manifest{
-		Name:           "dca",
-		Version:        "latest",
-		ChecksumSHA256: "checksum",
-		CreatedAt:      time.Now(),
-	}
-
-	tarball := createTarball(t, func(tw *tar.Writer) {
-		data := []byte("rules: []\n")
-		if err := tw.WriteHeader(&tar.Header{
-			Name: "rules/example.yml",
-			Mode: 0o600,
-			Size: int64(len(data)),
-		}); err != nil {
-			t.Fatalf("Failed to write file header: %v", err)
-		}
-		if _, err := tw.Write(data); err != nil {
-			t.Fatalf("Failed to write file data: %v", err)
-		}
-	})
-
-	tempDir := t.TempDir()
+// An answer without a signed lease is refused: nothing is cached.
+func TestManager_downloadAndCache_RequiresLease(t *testing.T) {
+	tarball := createTarball(t, writeOtherRules)
 	apiClient := newMockAPIClient(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("scanoss-ruleset-name", manifest.Name)
-		w.Header().Set("scanoss-ruleset-version", manifest.Version)
+		w.Header().Set("scanoss-ruleset-name", "dca")
+		w.Header().Set("scanoss-ruleset-version", "v1.40.0")
 		w.Header().Set("x-checksum-sha256", CalculateSHA256(tarball))
-		w.Header().Set("scanoss-ruleset-created-at", manifest.CreatedAt.Format(time.RFC3339))
+		w.Header().Set("scanoss-ruleset-created-at", time.Now().Format(time.RFC3339))
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(tarball)
 	})
-	manager := &Manager{apiClient: apiClient, cacheDir: tempDir}
-
-	targetPath := filepath.Join(tempDir, "dca", "latest")
-	manifestPath := filepath.Join(targetPath+tempSuffix, manifestFileName)
-	// Create the manifest path as a directory (not a file) to trigger a save error
-	if err := os.MkdirAll(manifestPath, 0o755); err != nil {
-		t.Fatalf("Failed to create manifest directory: %v", err)
-	}
-
-	if err := manager.downloadAndCache(context.Background(), "dca", "latest", targetPath); err == nil {
-		t.Fatal("Expected error from manifest save failure")
-	}
-}
-
-func TestManager_saveManifest_InvalidJSON(t *testing.T) {
-	manager := &Manager{}
-	tempDir := t.TempDir()
-
-	manifest := &api.Manifest{
-		Name:           "dca",
-		Version:        "latest",
-		ChecksumSHA256: "checksum",
-		CreatedAt:      time.Time{},
-	}
-
-	manifestPath := filepath.Join(tempDir, "manifest.json")
-	if err := manager.saveManifest(manifest, manifestPath); err != nil {
-		t.Fatalf("Expected saveManifest to succeed: %v", err)
-	}
-
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatalf("Failed to read manifest: %v", err)
-	}
-
-	var parsed api.Manifest
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Failed to parse manifest JSON: %v", err)
-	}
-}
-
-func TestManager_downloadAndCache_ExtractError(t *testing.T) {
-	invalidTarball := []byte("not-gzip")
-	apiClient := newMockAPIClient(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("scanoss-ruleset-name", "dca")
-		w.Header().Set("scanoss-ruleset-version", "latest")
-		w.Header().Set("x-checksum-sha256", CalculateSHA256(invalidTarball))
-		w.Header().Set("scanoss-ruleset-created-at", time.Now().Format(time.RFC3339))
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(invalidTarball)
-	})
 	manager := &Manager{apiClient: apiClient, cacheDir: t.TempDir()}
+	targetPath := filepath.Join(manager.cacheDir, "dca", "latest")
 
-	if err := manager.downloadAndCache(context.Background(), "dca", "latest", filepath.Join(manager.cacheDir, "dca", "latest")); err == nil {
-		t.Fatal("Expected error from invalid tarball")
+	err := manager.downloadAndCache(context.Background(), "dca", "latest", targetPath)
+	if err == nil || !strings.Contains(err.Error(), "without a signed lease") {
+		t.Fatalf("got %v, want the missing lease error", err)
+	}
+	if _, statErr := os.Stat(targetPath); !os.IsNotExist(statErr) {
+		t.Fatalf("an answer without a lease was cached: %v", statErr)
 	}
 }
 

@@ -11,10 +11,11 @@
   ],
   "properties": {
     "version": {
-      "const": "1.8",
+      "const": "1.9",
       "type": "string",
-      "description": "Version of the interim report schema (e.g., \"1.8\")",
+      "description": "Version of the interim report schema (e.g., \"1.9\")",
       "examples": [
+        "1.9",
         "1.8",
         "1.7",
         "1.6",
@@ -379,6 +380,24 @@
         },
         "checksum_sha256": {
           "type": "string"
+        },
+        "lease": {
+          "type": "object",
+          "description": "Signed lease of a remote ruleset served as a leased bundle (v1.9+); absent otherwise. It names neither the key nor the tenant the ruleset was issued to.",
+          "properties": {
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "signing_key_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "expires_at",
+            "signing_key_id"
+          ],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

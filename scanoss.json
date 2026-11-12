@@ -51,6 +51,10 @@
       {
         "path": "internal/dependency/registry.go",
         "purl": "pkg:golang/github.com/bianoble/agent-sync"
+      },
+      {
+        "path": "internal/ruleset/cache.go",
+        "purl": "pkg:golang/github.com/e6qu/sockerless-cloud/simulator-azure"
       }
     ]
   }

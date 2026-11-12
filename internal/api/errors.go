@@ -39,7 +39,40 @@ var (
 
 	// ErrInvalidChecksum indicates the downloaded content checksum doesn't match.
 	ErrInvalidChecksum = errors.New("checksum verification failed")
+
+	// ErrUpgradeRequired matches an *UpgradeRequiredError.
+	ErrUpgradeRequired = errors.New("upgrade required")
 )
+
+// defaultUpgradeMessage is shown when a 410 or 426 answer carries no message.
+const defaultUpgradeMessage = "the SCANOSS API no longer serves this version of crypto-finder; upgrade crypto-finder"
+
+// UpgradeRequiredError is the API refusing this client version: HTTP 410
+// Gone or 426 Upgrade Required on a ruleset download. It is final: the
+// download is not retried, not answered from another endpoint and not
+// replaced by a cached ruleset. Message is the server's, sanitized.
+type UpgradeRequiredError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *UpgradeRequiredError) Error() string { return e.Message }
+
+// Is lets errors.Is match ErrUpgradeRequired.
+func (e *UpgradeRequiredError) Is(target error) bool { return target == ErrUpgradeRequired }
+
+// RefusedError is a 401 or 403 answer: errors.Is matches ErrUnauthorized or
+// ErrForbidden, and Message is the server's message (or the HTTP status).
+type RefusedError struct {
+	StatusCode int
+	Message    string
+	kind       error
+}
+
+func (e *RefusedError) Error() string { return e.kind.Error() + ": " + e.Message }
+
+// Unwrap returns ErrUnauthorized or ErrForbidden.
+func (e *RefusedError) Unwrap() error { return e.kind }
 
 // HTTPError wraps HTTP-specific errors with status code and message.
 type HTTPError struct {
