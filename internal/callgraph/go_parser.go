@@ -790,6 +790,7 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, "", "", varTypes)
 		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, "", "", varTypes)
 		decl.constructed = goReturnedObjects(body, src, decl.ID.Package, analysis)
+		decl.localBindings = countLocalBindings(body, src, goLocalBinders)
 	}
 
 	return decl
@@ -850,6 +851,7 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, receiver, receiverVar, varTypes)
 		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, receiver, receiverVar, varTypes)
 		decl.constructed = goReturnedObjects(body, src, decl.ID.Package, analysis)
+		decl.localBindings = countLocalBindings(body, src, goLocalBinders)
 	}
 
 	return decl

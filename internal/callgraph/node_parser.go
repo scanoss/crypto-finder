@@ -836,6 +836,7 @@ func (p *NodeParser) parseNodeFunction(node *sitter.Node, src []byte, filePath, 
 		}
 	}
 	decl.ReturnSources = p.extractReturnSources(body, src, filePath, packagePath, owner, imports, locals)
+	decl.localBindings = countLocalBindings(body, src, nodeLocalBinders)
 	if owner != "" || !nodeInsideFunction(node) {
 		// A function declared inside another one is keyed like a module
 		// function, but no other function can call it by that name.

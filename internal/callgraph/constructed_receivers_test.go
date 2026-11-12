@@ -211,6 +211,16 @@ public final class Main {
         Hasher h = Hashers.anonymous();
         return h.sum(new byte[0]);
     }
+
+    private Hasher configured;
+
+    byte[] useRebound(boolean fips) {
+        Hasher h = Hashers.plain();
+        if (fips) {
+            h = this.configured;
+        }
+        return h.sum(new byte[0]);
+    }
 }
 `,
 	})
@@ -218,9 +228,13 @@ public final class Main {
 	plain := "org.example.liba.(Hashers.Plain).sum#1"
 	assertOnlyCallee(t, g, "org.example.app.(Main).useStandard#0", standard, plain)
 	assertOnlyCallee(t, g, "org.example.app.(Main).usePlain#0", plain, standard)
-	anonymous := "org.example.app.(Main).useAnonymous#0"
-	if !hasCaller(g, standard, anonymous) || !hasCaller(g, plain, anonymous) {
-		t.Errorf("useAnonymous must keep the interface fan-out; callers of Standard.sum %v, of Plain.sum %v", g.Callers[standard], g.Callers[plain])
+	// An anonymous class is not the interface, and a local that something
+	// other than the factory also assigns may hold another object: both keep
+	// the interface fan-out.
+	for _, caller := range []string{"org.example.app.(Main).useAnonymous#0", "org.example.app.(Main).useRebound#1"} {
+		if !hasCaller(g, standard, caller) || !hasCaller(g, plain, caller) {
+			t.Errorf("%s must keep the interface fan-out; callers of Standard.sum %v, of Plain.sum %v", caller, g.Callers[standard], g.Callers[plain])
+		}
 	}
 }
 

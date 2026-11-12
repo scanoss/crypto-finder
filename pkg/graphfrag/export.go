@@ -169,7 +169,14 @@ const SchemaVersion = "graph-fragment-1.15"
 // as the argument, and Python and Node gain a source node for the read,
 // directly or through a local bound to one. A structural graph cached under
 // graph-algo-23 has none of them.
-const GraphAlgoVersion = "graph-algo-24"
+//
+// graph-algo-25: a method called on a local bound once, by a call, to a
+// function whose every return constructs one class links exactly to that
+// class's method (Go T{}/&T{}/new(T), Java and JavaScript new T(), Python
+// T(), Rust T or T {..}, also inside Box/Arc/Rc::new) instead of the
+// declared interface, trait or base-class method. A structural graph cached
+// under graph-algo-24 keeps the declared-return dispatch.
+const GraphAlgoVersion = "graph-algo-25"
 
 // GraphFragmentExport is the on-the-wire JSON shape emitted by
 // `crypto-finder scan --export-graph-fragment` for a single component. It is

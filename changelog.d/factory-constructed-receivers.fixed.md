@@ -7,4 +7,6 @@
   a call on an interface, trait or base-class result unlinked, so crypto behind
   it read unreachable; Java linked it to every implementation, so a factory
   that builds a harmless implementation read as reaching a crypto one. The
-  call is now an `exact` edge to that class's method.
+  call is now an `exact` edge to that class's method. Call-graph exports stamp
+  `graph_algo_version` `graph-algo-25`; cached structural graphs from
+  `graph-algo-24` are rebuilt.

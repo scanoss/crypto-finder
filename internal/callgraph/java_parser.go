@@ -4145,6 +4145,7 @@ func (p *JavaParser) extractReturnSources(
 	p.collectMethodBodyAssignmentNodes(body, src, varOrigins, bodyAssignments)
 	p.walkForReturnSources(body, src, analysis, currentClass, varTypes, varOrigins, bodyAssignments, fn)
 	p.walkReturnedObjects(body, src, analysis, currentClass, varTypes, varOrigins, fn)
+	fn.localBindings = countLocalBindings(body, src, javaLocalBinders)
 }
 
 // walkReturnedObjects records the class each return statement of the method's

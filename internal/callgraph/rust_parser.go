@@ -1029,6 +1029,7 @@ func (p *RustParser) parseFunctionItemWithGenerics(node *sitter.Node, src []byte
 		decl.Calls = p.extractCalls(body, ctx, filePath)
 		decl.ReturnSources = p.extractReturnSources(body, ctx, filePath)
 		decl.constructed = rustReturnedObjects(body, ctx)
+		decl.localBindings = countLocalBindings(body, ctx.src, rustLocalBinders)
 	}
 
 	return decl

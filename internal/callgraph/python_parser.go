@@ -1838,6 +1838,7 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 	if body != nil {
 		decl.Calls = p.resolvePythonPendingCalls(scope, attrs, src, filePath, analysis, fw)
 		decl.constructed = pythonReturnedObjects(body)
+		decl.localBindings = countLocalBindings(body, src, pythonLocalBinders)
 	}
 
 	return decl

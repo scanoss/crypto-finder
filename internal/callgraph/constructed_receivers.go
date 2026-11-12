@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	sitter "github.com/smacker/go-tree-sitter"
 )
 
 // returnedObjects is what a function's own return statements yield as
@@ -62,6 +63,78 @@ func (r *returnedObjects) addClass(pkg, typ string) {
 
 func (r *returnedObjects) markOther() {
 	r.other = true
+}
+
+// localBinders names, per language, the syntax nodes that bind a local name,
+// and the field that holds what they bind. Every name such a node binds is
+// counted, whatever the bound value is, so a local assigned once from a
+// factory and again from a field reads as bound twice.
+var (
+	goLocalBinders = map[string][]string{
+		"short_var_declaration": {"left"}, "assignment_statement": {"left"},
+		"var_spec": {"name"}, "range_clause": {"left"},
+	}
+	javaLocalBinders = map[string][]string{
+		"variable_declarator": {"name"}, "assignment_expression": {"left"},
+		"enhanced_for_statement": {"name"}, "catch_formal_parameter": {"name"},
+	}
+	nodeLocalBinders = map[string][]string{
+		"variable_declarator": {"name"}, "assignment_expression": {"left"},
+		"augmented_assignment_expression": {"left"}, "for_in_statement": {"left"},
+	}
+	pythonLocalBinders = map[string][]string{
+		"assignment": {"left"}, "augmented_assignment": {"left"},
+		"for_statement": {"left"}, "for_in_clause": {"left"},
+		"named_expression": {"name"}, "as_pattern": {"alias"},
+	}
+	rustLocalBinders = map[string][]string{
+		"let_declaration": {"pattern"}, "assignment_expression": {"left"},
+		"compound_assignment_expr": {"left"}, "for_expression": {"pattern"},
+	}
+)
+
+// countLocalBindings counts, over a whole function body, nested functions
+// included, how many times each plain name is bound by a node binders lists.
+// A name reached only through a field, member, attribute or index target
+// (`this.h = x`, `self.h = x`, `h[0] = x`) is not a local binding.
+func countLocalBindings(body *sitter.Node, src []byte, binders map[string][]string) map[string]int {
+	counts := make(map[string]int)
+	var names func(n *sitter.Node)
+	names = func(n *sitter.Node) {
+		if n == nil {
+			return
+		}
+		switch n.Type() {
+		case goNodeIdentifier:
+			counts[n.Content(src)]++
+			return
+		case "field_expression", javaNodeFieldAccess, "member_expression", "attribute",
+			"subscript", "subscript_expression", "index_expression", "selector_expression",
+			"array_access", goNodeTypeIdentifier, goNodeGenericType, "type_annotation":
+			return
+		}
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			names(n.NamedChild(i))
+		}
+	}
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n == nil {
+			return
+		}
+		for _, field := range binders[n.Type()] {
+			for i := 0; i < int(n.ChildCount()); i++ {
+				if n.FieldNameForChild(i) == field {
+					names(n.Child(i))
+				}
+			}
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(body)
+	return counts
 }
 
 // typeMethods indexes every method the graph declares by its owning type,
@@ -162,29 +235,32 @@ func instantiatedClass(decl *FunctionDecl, site returnedCallSite) (FunctionID, b
 	return FunctionID{}, false
 }
 
-// receiverProducers maps each local variable of fn that a call's result is
-// bound to, onto that call's callee key. A variable bound by two different
-// callees, and a parameter (whose value may come from the caller instead),
-// map to nothing.
+// receiverProducers maps each local variable of fn that is bound exactly
+// once in its body, by a call's result, onto that call's callee key. A name
+// bound anywhere else too, by any value, in a nested block or a closure (the
+// parser's localBindings), and a parameter, whose value may come from the
+// caller, map to nothing: the object the call is made on may then be another.
 func receiverProducers(fn *FunctionDecl) map[string]string {
 	producers := make(map[string]string)
-	conflicted := make(map[string]bool)
+	params := make(map[string]bool, len(fn.Parameters))
 	for _, param := range fn.Parameters {
-		conflicted[param.Name] = true
+		params[param.Name] = true
 	}
+	seen := make(map[string]bool)
 	for i := range fn.Calls {
 		call := &fn.Calls[i]
 		v := call.AssignedVar
-		if v == "" || conflicted[v] {
+		if v == "" || params[v] || fn.localBindings[v] != 1 {
 			continue
 		}
-		key := call.Callee.String()
-		if prev, seen := producers[v]; seen && prev != key {
+		if seen[v] {
+			// Two calls claim the one binding (a chain records its root's
+			// variable on more than one link): which one binds it is unclear.
 			delete(producers, v)
-			conflicted[v] = true
 			continue
 		}
-		producers[v] = key
+		seen[v] = true
+		producers[v] = call.Callee.String()
 	}
 	return producers
 }
