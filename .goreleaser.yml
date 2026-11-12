@@ -265,7 +265,8 @@ release:
     owner: scanoss
     name: crypto-finder
 
-  draft: false
+  # The release workflow publishes the draft once the Windows binary is signed.
+  draft: true
   prerelease: auto
 
   name_template: "v{{.Version}}"
