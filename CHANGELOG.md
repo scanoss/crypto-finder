@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-11-12
+### Added
+- The cache metadata (`.cache-meta.json`) of a downloaded ruleset
+  carries `languages`: the languages its rules cover (each rule's
+  `languages` lowercased and trimmed, `generic` for a rule that names none,
+  deduplicated and sorted), so integrations can read them without the rule
+  files the cache keeps encrypted.
+- Remote rulesets are downloaded only from
+  `/v3/cryptography/rulesets/{name}/{version}/download`, with a signed lease
+  (`SCANOSS-Ruleset-Lease`). An API key without access to
+  `/v3/cryptography/rulesets` gets no remote rules: the scan fails with the
+  API's 403, or, when the API does not serve `/v3/cryptography/rulesets`,
+  with `ruleset dca@latest not found: the SCANOSS API has no such ruleset or
+  does not serve /v3/cryptography/rulesets`; scan with
+  `--no-remote-rules --rules-dir` instead. An answer without a lease is
+  rejected. The lease's signature, expiry and bundle hash are checked on
+  download and on every scan, the cache keeps the ruleset encrypted with the
+  API key (`bundle.enc` and `lease.json`, no plain rule files), and each
+  scan extracts it into a per-run directory that is removed when the scan
+  ends. An expired lease is never used, not even as stale cache; the error
+  names the expiry date and asks to download the ruleset again. When the TTL
+  of a cached `latest` elapses, the ruleset is downloaded again only if
+  `GET /v3/cryptography/rulesets/{name}/{version}` reports a new release or
+  the lease expires within 7 days. The production signing key
+  `srv-2026-11` is built in; `SCANOSS_RULESET_PUBKEYS` (`id:base64pub,...`)
+  adds trusted signing keys.
+- Interim report format 1.9: for a remote ruleset, `rules.checksum_sha256`
+  is the release payload hash from the lease (`payload_sha256`), the same for
+  every tenant, and `rules` carries an optional `lease` object (`expires_at`,
+  `signing_key_id`). The report never names the key or tenant the ruleset was
+  issued to. `pkg/graphfrag.FindingsSchemaVersion` follows to 1.9.
+- A ruleset download answered with HTTP 410 Gone or 426 Upgrade Required
+  fails the scan with the new failure code `upgrade_required` and prints
+  the server's message as
+  `ERROR: <message>`, taken from `error.message` of the API's JSON error body
+  or from a plain-text body, without control characters and capped at 10
+  lines and 1000 characters. That answer is not retried and never replaced
+  by a stale cached ruleset.
+- A refused API key (HTTP 401/403) on a ruleset download now reads
+  `the SCANOSS API refused the ruleset download (HTTP 403): <server message>`
+  instead of the raw response body, and an error from a download that was
+  not retried no longer says it failed "after 3 retries".
+### Changed
+- Every request to the SCANOSS API (ruleset downloads from
+  `/v3/cryptography/rulesets`, the release check, and the
+  `/v3/cryptography/reachability/component` lookups of `scan` and `cbom`)
+  sends `User-Agent: crypto-finder/<version>` instead of
+  `scanoss-crypto-finder`, so the API gateway reports the client as
+  `crypto-finder` with its version.
+- Rulesets cached as plain rule files by earlier crypto-finder versions are
+  never loaded as rules, not even as stale cache. On the first run
+  crypto-finder warns `Ignoring a ruleset cached by an older crypto-finder;
+  downloading it again`, downloads the ruleset from
+  `/v3/cryptography/rulesets` and, only once that download succeeds,
+  replaces the old cache directory. When the download fails, the old
+  directory is left as it is, unused, and the scan fails with the download
+  error. Only the remote ruleset cache
+  (`~/.scanoss/crypto-finder/cache/rulesets`) is affected; `--rules-dir`
+  directories are never touched. The `/v2/cryptography/rulesets` endpoint is
+  no longer used.
+
 ## [0.53.1] - 2026-11-12
 ### Fixed
 - A finding that names no algorithm is no longer folded into a finding of a
