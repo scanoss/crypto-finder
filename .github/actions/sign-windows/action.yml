@@ -1,8 +1,8 @@
 name: Sign Windows executable
 description: >
-  Signs one .exe in place with SSL.com eSigner (CodeSignTool), retrying up to
-  three times, and fails unless the file then carries a timestamped
-  Authenticode signature.
+  Signs one .exe in place with SSL.com eSigner CodeSignTool, trying the next
+  timestamp server when one attempt fails, and fails unless the file then
+  carries a timestamped Authenticode signature.
 
 inputs:
   file:
@@ -24,7 +24,20 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Check signing inputs
+    # The Java and CodeSignTool versions sslcom/esigner-codesign@v1.3.2 uses.
+    - name: Set up Java for CodeSignTool
+      uses: actions/setup-java@v6
+      with:
+        distribution: corretto
+        java-version: "11"
+
+    # CodeSignTool is run directly rather than through sslcom/esigner-codesign
+    # because the action hard-codes TSA_URL=http://ts.ssl.com, which rejects a
+    # large share of timestamp requests (PKIStatus rejection, systemFailure);
+    # CodeSignTool then throws a NullPointerException in signatureTimestamp.
+    # Each attempt uses the next timestamp server. An attempt counts as signed
+    # only when check_authenticode.py finds a timestamped signature in the file.
+    - name: Sign with CodeSignTool
       shell: bash
       env:
         FILE: ${{ inputs.file }}
@@ -32,6 +45,9 @@ runs:
         ES_PASSWORD: ${{ inputs.password }}
         ES_CREDENTIAL_ID: ${{ inputs.credential_id }}
         ES_TOTP_SECRET: ${{ inputs.totp_secret }}
+        CODESIGNTOOL_URL: https://github.com/SSLcom/CodeSignTool/releases/download/v1.3.0/CodeSignTool-v1.3.0.zip
+        CODESIGNTOOL_SHA256: 359782cee5c709b172610e2abd8cb49445bfadd26f44073ca18600c585b91b8d
+        TSA_URLS: http://ts.ssl.com http://timestamp.digicert.com http://timestamp.sectigo.com
       run: |
         set -euo pipefail
         for name in ES_USERNAME ES_PASSWORD ES_CREDENTIAL_ID ES_TOTP_SECRET; do
@@ -45,66 +61,49 @@ runs:
           exit 1
         fi
 
-    # SSL.com intermittently fails a signing request (NullPointerException in
-    # CodeSignTool's signatureTimestamp, {"error":"server_error"}). A failed
-    # attempt is retried after a pause that also moves the TOTP code to a new
-    # 30 s window.
-    - name: Sign (attempt 1)
-      id: attempt1
-      continue-on-error: true
-      uses: sslcom/esigner-codesign@v1.3.2
-      with:
-        command: sign
-        username: ${{ inputs.username }}
-        password: ${{ inputs.password }}
-        credential_id: ${{ inputs.credential_id }}
-        totp_secret: ${{ inputs.totp_secret }}
-        file_path: ${{ inputs.file }}
-        override: true
-        malware_block: true
-        environment_name: PROD
+        tool="$RUNNER_TEMP/codesigntool"
+        rm -rf "$tool"
+        mkdir -p "$tool"
+        curl -fsSL --retry 3 -o "$tool.zip" "$CODESIGNTOOL_URL"
+        echo "$CODESIGNTOOL_SHA256  $tool.zip" | sha256sum -c -
+        unzip -q "$tool.zip" -d "$tool"
+        export CODE_SIGN_TOOL_PATH="$tool"
+        check="$GITHUB_ACTION_PATH/check_authenticode.py"
 
-    - name: Wait before retrying
-      if: steps.attempt1.outcome == 'failure'
-      shell: bash
-      run: sleep 60
+        attempt=0
+        for tsa in $TSA_URLS; do
+          attempt=$((attempt + 1))
+          if [ "$attempt" -gt 1 ]; then
+            # Let the TOTP code move to a new 30 s window.
+            sleep 35
+          fi
+          echo "::group::Attempt $attempt, timestamp server $tsa"
+          printf '%s\n' \
+            "CLIENT_ID=kaXTRACNijSWsFdRKg_KAfD3fqrBlzMbWs6TwWHwAn8" \
+            "OAUTH2_ENDPOINT=https://login.ssl.com/oauth2/token" \
+            "CSC_API_ENDPOINT=https://cs.ssl.com" \
+            "TSA_URL=$tsa" \
+            "TSA_LEGACY_URL=http://ts.ssl.com/legacy" \
+            > "$tool/conf/code_sign_tool.properties"
+          (cd "$tool" && java -Xmx1024M -jar jar/code_sign_tool-1.3.0.jar sign \
+            -username="$ES_USERNAME" \
+            -password="$ES_PASSWORD" \
+            -credential_id="$ES_CREDENTIAL_ID" \
+            -totp_secret="$ES_TOTP_SECRET" \
+            -input_file_path="$FILE" \
+            -override=true \
+            -malware_block=true) || true
+          echo "::endgroup::"
+          if result=$(python3 -I "$check" "$FILE"); then
+            echo "$result"
+            exit 0
+          fi
+          echo "::warning::Attempt $attempt with $tsa: ${result#::error::}"
+        done
+        echo "::error::$FILE is not signed after $attempt attempts"
+        exit 1
 
-    - name: Sign (attempt 2)
-      id: attempt2
-      if: steps.attempt1.outcome == 'failure'
-      continue-on-error: true
-      uses: sslcom/esigner-codesign@v1.3.2
-      with:
-        command: sign
-        username: ${{ inputs.username }}
-        password: ${{ inputs.password }}
-        credential_id: ${{ inputs.credential_id }}
-        totp_secret: ${{ inputs.totp_secret }}
-        file_path: ${{ inputs.file }}
-        override: true
-        malware_block: true
-        environment_name: PROD
-
-    - name: Wait before retrying
-      if: steps.attempt2.outcome == 'failure'
-      shell: bash
-      run: sleep 120
-
-    - name: Sign (attempt 3)
-      if: steps.attempt2.outcome == 'failure'
-      uses: sslcom/esigner-codesign@v1.3.2
-      with:
-        command: sign
-        username: ${{ inputs.username }}
-        password: ${{ inputs.password }}
-        credential_id: ${{ inputs.credential_id }}
-        totp_secret: ${{ inputs.totp_secret }}
-        file_path: ${{ inputs.file }}
-        override: true
-        malware_block: true
-        environment_name: PROD
-
-    - name: Verify the signature
+    - name: Show the signer
       shell: bash
       env:
         FILE: ${{ inputs.file }}
