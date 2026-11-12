@@ -269,6 +269,12 @@ type FunctionDecl struct {
 	// nodeReturnClass is the class a Node function declares as its return
 	// type, `function make(): Base`, when that is a plain class of the project.
 	nodeReturnClass FunctionID
+	// constructed is what the function's own return statements yield as
+	// objects (see returnedObjects), for resolveConstructedReceivers.
+	constructed returnedObjects
+	// localBindings counts how many times the body binds each local name
+	// (see countLocalBindings), for resolveConstructedReceivers.
+	localBindings map[string]int
 	// ReturnSources traces where return values originate when the parser supports it.
 	ReturnSources []SourceNode
 	// InferredReturn is the result of the post-build inference pass; nil when no inference fires.

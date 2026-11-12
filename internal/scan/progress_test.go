@@ -58,6 +58,29 @@ func TestProgressWriterWritesJSONLTerminalDurations(t *testing.T) {
 	}
 }
 
+func TestProgressWriterSkipWithDetails(t *testing.T) {
+	var output bytes.Buffer
+	writer := NewProgressWriter(&output)
+	details := map[string]any{"ecosystem": "node", "reason": "overridden"}
+	if err := writer.SkipWithDetails("dependencies", "scan", "lockfile_absent", details); err != nil {
+		t.Fatalf("skip dependencies: %v", err)
+	}
+	var event map[string]any
+	if err := json.Unmarshal(output.Bytes(), &event); err != nil {
+		t.Fatalf("decode event %q: %v", output.String(), err)
+	}
+	got, _ := event["details"].(map[string]any)
+	if got["reason"] != "lockfile_absent" || got["ecosystem"] != "node" || len(got) != 2 {
+		t.Fatalf("details = %#v, want reason lockfile_absent and ecosystem node", got)
+	}
+	if _, timed := event["duration_ms"]; timed || event["status"] != "skipped" {
+		t.Fatalf("event = %#v, want an untimed skipped event", event)
+	}
+	if details["reason"] != "overridden" {
+		t.Fatalf("SkipWithDetails modified the caller's details: %#v", details)
+	}
+}
+
 func TestProgressWriterWrapsEncodingErrors(t *testing.T) {
 	wantErr := errors.New("write failed")
 	writer := NewProgressWriter(errorWriter{err: wantErr})

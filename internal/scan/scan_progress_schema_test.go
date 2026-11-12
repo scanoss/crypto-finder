@@ -400,6 +400,125 @@ func TestScanProgressSchema(t *testing.T) {
 			}`,
 			wantValid: false,
 		},
+		{
+			name: "skipped-dependencies-with-ecosystem",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "skipped",
+				"parent_phase": "scan",
+				"details": {"reason": "lockfile_absent", "ecosystem": "node"}
+			}`,
+			wantValid: true,
+		},
+		{
+			name: "ecosystem-on-completed-dependencies",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1,
+				"details": {
+					"deps_scanned": 0,
+					"deps_skipped": 0,
+					"deps_failed": 0,
+					"deps_with_findings": 0,
+					"total_dep_findings": 0,
+					"ecosystem": "node"
+				}
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "completed-dependencies-with-ecosystems",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1,
+				"details": {
+					"deps_scanned": 3,
+					"deps_skipped": 0,
+					"deps_failed": 0,
+					"deps_with_findings": 1,
+					"total_dep_findings": 2,
+					"ecosystems": ["python", "node"],
+					"ecosystems_skipped": [{"ecosystem": "rust", "reason": "lockfile_absent"}]
+				}
+			}`,
+			wantValid: true,
+		},
+		{
+			name: "completed-dependencies-with-no-skipped-ecosystem",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1,
+				"details": {
+					"deps_scanned": 3,
+					"deps_skipped": 0,
+					"deps_failed": 0,
+					"deps_with_findings": 1,
+					"total_dep_findings": 2,
+					"ecosystems": ["python", "node"],
+					"ecosystems_skipped": []
+				}
+			}`,
+			wantValid: true,
+		},
+		{
+			name: "skipped-ecosystem-entry-without-reason",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1,
+				"details": {
+					"deps_scanned": 3,
+					"deps_skipped": 0,
+					"deps_failed": 0,
+					"deps_with_findings": 1,
+					"total_dep_findings": 2,
+					"ecosystems": ["python", "node"],
+					"ecosystems_skipped": [{"ecosystem": "node"}]
+				}
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "ecosystems-on-skipped-dependencies",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "skipped",
+				"parent_phase": "scan",
+				"details": {"reason": "manifest_absent", "ecosystems": ["node"]}
+			}`,
+			wantValid: false,
+		},
+		{
+			name: "empty-ecosystem-on-skip",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "skipped",
+				"parent_phase": "scan",
+				"details": {"reason": "manifest_absent", "ecosystem": ""}
+			}`,
+			wantValid: false,
+		},
 	}
 
 	for _, tc := range tests {

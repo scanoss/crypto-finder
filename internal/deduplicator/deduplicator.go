@@ -135,9 +135,13 @@ func splitByCall(assets []entities.CryptographicAsset) [][]entities.Cryptographi
 // absorbUnresolvedAssets drops an asset whose rule matched only the call,
 // such as KeyPairGenerator.getInstance(name), when another asset on the same
 // span resolves what the call creates. That asset may be of another type: a
-// named ML-DSA algorithm resolves an unnamed key pair generator call. Only
-// the dropped asset's rule ids are kept, so its metadata cannot leak into an
-// asset of another type.
+// named ML-DSA algorithm resolves an unnamed key pair generator call. On one
+// span the two primitives must be compatible: an unnamed ae decryption is a
+// second operation of the call, not the RSA key transport on the same span.
+// A call nested inside the other asset's span, such as the
+// MessageDigest.getInstance(name) an EdDSAEngine is built on, is part of
+// that asset whatever its primitive. Only the dropped asset's rule ids are
+// kept, so its metadata cannot leak into an asset of another type.
 func absorbUnresolvedAssets(assets []entities.CryptographicAsset) []entities.CryptographicAsset {
 	kept := make([]entities.CryptographicAsset, 0, len(assets))
 	absorbed := make([]bool, len(assets))
@@ -147,7 +151,8 @@ func absorbUnresolvedAssets(assets []entities.CryptographicAsset) []entities.Cry
 			continue
 		}
 		j := slices.IndexFunc(assets, func(other entities.CryptographicAsset) bool {
-			return resolvesCall(other) && sameCall(*asset, other)
+			return resolvesCall(other) && sameCall(*asset, other) &&
+				(nestedIn(*asset, other) || compatiblePrimitives(*asset, other))
 		})
 		if j < 0 {
 			continue
@@ -165,6 +170,39 @@ func absorbUnresolvedAssets(assets []entities.CryptographicAsset) []entities.Cry
 		}
 	}
 	return kept
+}
+
+// primitiveClass groups the CycloneDX primitives one call can resolve to: a
+// cipher call may turn out to be AES-GCM (block-cipher, ae) and a hash call
+// HMAC (hash, mac), but a symmetric cipher is never RSA. A primitive that is
+// not listed (unknown, other, combiner) states nothing.
+var primitiveClass = map[string]string{
+	"block-cipher": "symmetric", "stream-cipher": "symmetric", "ae": "symmetric", "key-wrap": "symmetric",
+	"pke": "asymmetric", "signature": "asymmetric", "key-agree": "asymmetric", "kem": "asymmetric",
+	"hash": "digest", "mac": "digest", "kdf": "digest", "xof": "digest",
+	"drbg": "random",
+}
+
+// compatiblePrimitives reports whether two assets may describe one algorithm:
+// either does not state its primitive, or both state primitives of one class.
+func compatiblePrimitives(a, b entities.CryptographicAsset) bool {
+	classA, okA := primitiveClass[a.Metadata["algorithmPrimitive"]]
+	classB, okB := primitiveClass[b.Metadata["algorithmPrimitive"]]
+	return !okA || !okB || classA == classB
+}
+
+// nestedIn reports whether inner's span lies inside outer's and is not the
+// same span: an argument or a call nested in outer's call.
+func nestedIn(inner, outer entities.CryptographicAsset) bool {
+	if inner.StartCol == 0 || inner.EndCol == 0 || outer.StartCol == 0 || outer.EndCol == 0 {
+		return false
+	}
+	start := func(x entities.CryptographicAsset) position { return position{x.StartLine, x.StartCol} }
+	end := func(x entities.CryptographicAsset) position { return position{x.EndLine, x.EndCol} }
+	if start(inner) == start(outer) && end(inner) == end(outer) {
+		return false
+	}
+	return !start(inner).before(start(outer)) && !end(outer).before(end(inner))
 }
 
 // resolvesCall reports whether the asset names the algorithm a call creates.

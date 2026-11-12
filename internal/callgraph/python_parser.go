@@ -53,6 +53,7 @@ const (
 	pythonNodeAttribute          = "attribute"
 	pythonNodeAssignment         = "assignment"
 	pythonNodeCall               = "call"
+	pythonNodeLambda             = "lambda"
 	pythonNodeArgumentList       = "argument_list"
 	pythonNodeAliasedImport      = "aliased_import"
 	pythonNodeClassDefinition    = "class_definition"
@@ -1836,9 +1837,48 @@ func (p *PythonParser) parseFunctionDef(node *sitter.Node, src []byte, filePath,
 
 	if body != nil {
 		decl.Calls = p.resolvePythonPendingCalls(scope, attrs, src, filePath, analysis, fw)
+		decl.constructed = pythonReturnedObjects(body)
+		decl.localBindings = countLocalBindings(body, src, pythonLocalBinders)
 	}
 
 	return decl
+}
+
+// pythonReturnedObjects records the position of each call a return statement
+// of the function's own body returns, for the builder to read as a class
+// instantiation (see returnedObjects). A nested function, lambda or class
+// returns for itself.
+func pythonReturnedObjects(body *sitter.Node) returnedObjects {
+	var objects returnedObjects
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		switch n.Type() {
+		case pythonNodeFunctionDefinition, pythonNodeClassDefinition, pythonNodeLambda:
+			return
+		case goNodeReturnStatement:
+			expr := n.NamedChild(0)
+			for expr != nil && expr.Type() == goNodeParenExpr && expr.NamedChildCount() == 1 {
+				expr = expr.NamedChild(0)
+			}
+			switch {
+			case expr == nil || expr.Type() == "none":
+			case expr.Type() == pythonNodeCall:
+				objects.sites = append(objects.sites, returnedCallSite{
+					line:     int(expr.StartPoint().Row) + 1,
+					startCol: int(expr.StartPoint().Column) + 1,
+					endCol:   int(expr.EndPoint().Column) + 1,
+				})
+			default:
+				objects.markOther()
+			}
+			return
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(body)
+	return objects
 }
 
 // processClass processes a class_definition node and extracts its methods.

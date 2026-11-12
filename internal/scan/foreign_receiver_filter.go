@@ -373,7 +373,7 @@ func foreignSourceReceiver(
 		return "", false
 	}
 	candidates := matchPositionCalls(containingFn, asset)
-	if len(candidates) == 0 {
+	if len(candidates) == 0 || everyCallIsAnOperand(candidates, asset) {
 		return "", false
 	}
 	foreign := ""
@@ -520,6 +520,40 @@ func matchPositionCalls(
 		return lineCandidates
 	}
 	return cryptoCallColumnCandidates(lineCandidates, asset)
+}
+
+// everyCallIsAnOperand reports whether every call at the match's position
+// starts after the match does, so none of them is the matched operation.
+//
+// A call node starts where its expression starts: a method call or a chain at
+// its receiver, a path call at its path. So the call a match IS starts at the
+// match's first column. A call that starts later is a sub-expression of
+// something the graph has no node for. curve25519-dalek writes ristretto255
+// Diffie-Hellman as `secret * decode(&peer)`: the binary `*` dispatches to the
+// crate's `Mul`, and `decode` is the program's own helper passed as the peer
+// operand. Judging that helper as the matched call dropped both assets of each
+// key agreement in the SCANOSS crypto benchmark (CF-RS-005). The match is not
+// resolved to a call node, so condition 2 fails and the asset is kept.
+//
+// Without columns on either side nothing can be told apart, and the calls are
+// judged as before.
+func everyCallIsAnOperand(candidates []*callgraph.FunctionCall, asset entities.CryptographicAsset) bool {
+	startCol := asset.StartCol
+	if asset.TerminalStartCol > 0 && asset.TerminalEndCol > 0 {
+		startCol = asset.TerminalStartCol
+	}
+	if startCol <= 0 {
+		return false
+	}
+	for _, call := range candidates {
+		if call.StartCol <= 0 {
+			return false
+		}
+		if call.Line < asset.StartLine || (call.Line == asset.StartLine && call.StartCol <= startCol) {
+			return false
+		}
+	}
+	return true
 }
 
 // rulesNotClaimingForeignCrate keeps the rules that do NOT name a crate other

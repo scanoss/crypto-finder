@@ -30,6 +30,7 @@ type GoParser struct {
 const (
 	goNodeIdentifier      = "identifier"
 	goBuiltinNew          = "new"
+	goLiteralNil          = "nil"
 	goNodeBlock           = "block"
 	goNodeFieldIdentifier = "field_identifier"
 	goNodeTypeIdentifier  = "type_identifier"
@@ -788,6 +789,8 @@ func (p *GoParser) parseFunctionDecl(node *sitter.Node, src []byte, filePath, pa
 		varTypes := p.collectGoVarTypes(params, src, node)
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, "", "", varTypes)
 		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, "", "", varTypes)
+		decl.constructed = goReturnedObjects(body, src, decl.ID.Package, analysis)
+		decl.localBindings = countLocalBindings(body, src, goLocalBinders)
 	}
 
 	return decl
@@ -847,6 +850,8 @@ func (p *GoParser) parseMethodDecl(node *sitter.Node, src []byte, filePath, pack
 		varTypes := p.collectGoVarTypes(params, src, node)
 		decl.Calls = p.extractCalls(body, src, filePath, analysis, receiver, receiverVar, varTypes)
 		decl.ReturnSources = p.extractReturnSources(body, src, filePath, analysis, receiver, receiverVar, varTypes)
+		decl.constructed = goReturnedObjects(body, src, decl.ID.Package, analysis)
+		decl.localBindings = countLocalBindings(body, src, goLocalBinders)
 	}
 
 	return decl
@@ -864,6 +869,105 @@ func (p *GoParser) extractReturnSources(
 	var sources []SourceNode
 	p.walkGoReturnSources(body, src, filePath, analysis, currentReceiverType, currentReceiverVar, varTypes, &sources)
 	return sources
+}
+
+// goReturnedObjects records the type each return statement of a function's own
+// body builds as its first result (see returnedObjects): a composite literal
+// `T{...}`, its address `&T{...}`, or `new(T)`, of a type named in the
+// package or through an import. A function literal returns for itself.
+func goReturnedObjects(body *sitter.Node, src []byte, pkg string, analysis *FileAnalysis) returnedObjects {
+	var objects returnedObjects
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n.Type() == goNodeFuncLiteral {
+			return
+		}
+		if n.Type() == goNodeReturnStatement {
+			var first *sitter.Node
+			if list := goChildOfType(n, goNodeExpressionList); list != nil {
+				first = list.NamedChild(0)
+			}
+			if first != nil && first.Type() == goLiteralNil {
+				return
+			}
+			typePkg, typ := goConstructedType(first, src, pkg, analysis)
+			if typ == "" {
+				objects.markOther()
+				return
+			}
+			objects.addClass(typePkg, typ)
+			return
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(body)
+	return objects
+}
+
+func goChildOfType(n *sitter.Node, typ string) *sitter.Node {
+	for i := 0; i < int(n.ChildCount()); i++ {
+		if n.Child(i).Type() == typ {
+			return n.Child(i)
+		}
+	}
+	return nil
+}
+
+// goConstructedType names the package and type a value expression builds, or
+// "" when it is not a construction.
+func goConstructedType(expr *sitter.Node, src []byte, pkg string, analysis *FileAnalysis) (string, string) {
+	for expr != nil && expr.Type() == goNodeParenExpr && expr.NamedChildCount() == 1 {
+		expr = expr.NamedChild(0)
+	}
+	if expr == nil {
+		return "", ""
+	}
+	var typeNode *sitter.Node
+	switch expr.Type() {
+	case "composite_literal":
+		typeNode = expr.ChildByFieldName(goFieldType)
+	case "unary_expression":
+		if op := expr.ChildByFieldName("operator"); op != nil && op.Content(src) == "&" {
+			return goConstructedType(expr.ChildByFieldName("operand"), src, pkg, analysis)
+		}
+	case goNodeCallExpression:
+		fn := expr.ChildByFieldName("function")
+		args := expr.ChildByFieldName("arguments")
+		if fn != nil && fn.Type() == goNodeIdentifier && fn.Content(src) == goBuiltinNew && args != nil && args.NamedChildCount() == 1 {
+			typeNode = args.NamedChild(0)
+		}
+	}
+	return goNamedType(typeNode, src, pkg, analysis)
+}
+
+// goNamedType names the package and type a type node spells: a type of pkg,
+// or one an import qualifies. Type arguments are erased.
+func goNamedType(typeNode *sitter.Node, src []byte, pkg string, analysis *FileAnalysis) (string, string) {
+	if typeNode == nil {
+		return "", ""
+	}
+	if typeNode.Type() == goNodeGenericType {
+		typeNode = typeNode.ChildByFieldName(goFieldType)
+		if typeNode == nil {
+			return "", ""
+		}
+	}
+	switch typeNode.Type() {
+	case goNodeTypeIdentifier:
+		return pkg, typeNode.Content(src)
+	case goNodeQualifiedType:
+		alias := typeNode.ChildByFieldName("package")
+		name := typeNode.ChildByFieldName("name")
+		if alias == nil || name == nil || analysis == nil {
+			return "", ""
+		}
+		if path, ok := analysis.Imports[alias.Content(src)]; ok {
+			return path, name.Content(src)
+		}
+	}
+	return "", ""
 }
 
 func (p *GoParser) walkGoReturnSources(

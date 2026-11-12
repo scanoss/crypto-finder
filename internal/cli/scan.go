@@ -64,6 +64,8 @@ const (
 	ecosystemJava         = "java"
 	ecosystemNode         = "node"
 	ecosystemCPP          = "cpp"
+	ecosystemRust         = "rust"
+	ecosystemPython       = "python"
 
 	findingsCacheBackendDisk     = "disk"
 	findingsCacheBackendNone     = "none"
@@ -299,7 +301,7 @@ func ecosystemFromHints(target string, languageHints []string) string {
 	case ".py":
 		return "python"
 	case ".rs":
-		return "rust"
+		return ecosystemRust
 	case ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts":
 		return ecosystemNode
 	default:
@@ -314,7 +316,7 @@ func ecosystemFromHint(target, hint string) string {
 			return ecosystemCPP
 		}
 		return hint
-	case "go", ecosystemJava, "python", "rust":
+	case "go", ecosystemJava, "python", ecosystemRust:
 		return hint
 	case ecosystemCPP, "c++":
 		return ecosystemCPP
@@ -583,13 +585,15 @@ func buildStandaloneCallGraphResultForEcosystem(target string, report *entities.
 // attachAdditionalEcosystemGraphs builds a call graph for every other
 // supported ecosystem the report has first-party findings in, so each of those
 // findings resolves against the graph of its own language instead of the
-// primary one. A graph that fails to build is left out with a warning: its
-// findings are then exported as not analyzed, and the scan still completes.
+// primary one. An ecosystem the dependency phase already resolved keeps the
+// dependency-aware graph it built and gets no second, source-only one. A
+// graph that fails to build is left out with a warning: its findings are then
+// exported as not analyzed, and the scan still completes.
 func attachAdditionalEcosystemGraphs(target string, report *entities.InterimReport, result *engine.DepScanResult, javaRuntime javaruntime.Config, includeTests bool, skipMatcher skip.SkipMatcher) {
 	if result == nil || result.CallGraph == nil {
 		return
 	}
-	for _, ecosystem := range scanutil.AdditionalCallGraphEcosystems(report, result.Ecosystem) {
+	for _, ecosystem := range scanutil.MissingAdditionalCallGraphEcosystems(report, result) {
 		extra, err := buildStandaloneCallGraphResultForEcosystem(target, report, ecosystem, javaRuntime, includeTests, "", skipMatcher, true)
 		if err != nil {
 			log.Warn().Err(err).Str("ecosystem", ecosystem).Msg("Failed to build call graph for additional ecosystem; its findings are exported as not analyzed")
@@ -601,13 +605,6 @@ func attachAdditionalEcosystemGraphs(target string, report *entities.InterimRepo
 			Msg("Built call graph for additional ecosystem")
 		result.AdditionalEcosystems = append(result.AdditionalEcosystems, extra)
 	}
-}
-
-func primaryCallGraphEcosystem(result *engine.DepScanResult) string {
-	if result == nil {
-		return ""
-	}
-	return result.Ecosystem
 }
 
 // prepareScanOIDProjection returns the only report used by OID projections.
@@ -1038,6 +1035,9 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	// fail callgraph export with "could not determine a supported ecosystem".
 	// The orchestrator will reuse these hints instead of redetecting.
 	detectionStarted := false
+	// An explicit --languages also bounds which dependency ecosystems auto
+	// mode resolves (planAutoDependencyEcosystems).
+	explicitLanguages := len(scanLanguages) > 0
 	//nolint:nestif // Pre-detection reports its lifecycle alongside the detection error.
 	if len(scanLanguages) == 0 {
 		if progress != nil {
@@ -1106,11 +1106,12 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 
 	// Dependency scanning phase.
 	dependencyCompleted := false
-	skipDependencies := func(reason string) error {
+	skipDependencies := func(reason, ecosystem string) error {
 		if progress == nil {
 			return nil
 		}
-		if err := progress.Skip("dependencies", "scan", reason); err != nil {
+		details := dependencySkipDetails(reason, ecosystem)
+		if err := progress.SkipWithDetails("dependencies", "scan", reason, details); err != nil {
 			return progressWriteFailure(err)
 		}
 		dependencyCompleted = true
@@ -1137,116 +1138,141 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 				runErr = progressWriteFailure(progressErr)
 			}
 		}()
+		depRegistry := newDependencyRegistry(scanIncludeDevDependencies, scanInstallDependencies)
 		ecosystem := scanDepEcosystem
+		var auto autoDependencyEcosystems
 		if ecosystem == "auto" {
-			ecosystem = ecosystemFromHints(target, scanLanguages)
-			if ecosystem == "" {
-				ecosystem = scanutil.DetectEcosystem(target)
+			auto = planAutoDependencyEcosystems(target, scanLanguages, explicitLanguages, depRegistry, skipPatterns)
+			ecosystem = auto.primary()
+			if len(auto.resolvable) > 0 {
+				log.Info().
+					Str("ecosystem", ecosystem).
+					Strs("resolvable", auto.resolvable).
+					Str("dominant", auto.fallback).
+					Msg("Selected dependency ecosystem with a manifest")
 			}
 		}
 
-		if ecosystem != "" {
-			depRegistry := newDependencyRegistry(scanIncludeDevDependencies, scanInstallDependencies)
-			var depScannerOptions []engine.DependencyScannerOption
-			if source := newDependencyFindingsSource(cfg.GetAPIURL(), cfg.GetAPIKey(), cfg.GetAllowHTTP(), scanNoDependencyFindingsAPI); source != nil {
-				depScannerOptions = append(depScannerOptions, engine.WithDependencyFindingsSource(source))
+		var depScannerOptions []engine.DependencyScannerOption
+		if source := newDependencyFindingsSource(cfg.GetAPIURL(), cfg.GetAPIKey(), cfg.GetAllowHTTP(), scanNoDependencyFindingsAPI); source != nil {
+			depScannerOptions = append(depScannerOptions, engine.WithDependencyFindingsSource(source))
+		}
+		// The findings cache is opened once, for the first ecosystem that
+		// scans, and shared by every ecosystem of the phase.
+		var findingsCache engine.FindingsCache
+		findingsCacheOpen := false
+		closeFindingsCache := func() {}
+		// The closure reads closeFindingsCache when the scan returns, after
+		// scanEcosystem replaced it; `defer closeFindingsCache()` would bind
+		// the no-op.
+		defer func() { closeFindingsCache() }() //nolint:gocritic // see above
+		// scanEcosystem resolves and scans the dependencies of one ecosystem
+		// whose resolver can read the target, on top of input. It returns a
+		// skip reason instead of a result when the ecosystem has no call
+		// graph parser or builder. A failed dependency scan fails the phase.
+		scanEcosystem := func(ecosystem string, resolver dependency.Resolver, input *entities.InterimReport) (*engine.DepScanResult, string, error) {
+			if ecosystem == ecosystemJava {
+				if err := ensureJavaRuntime(); err != nil {
+					return nil, "", err
+				}
+				scanOpts.JavaRuntime = javaRuntime
+				scanOpts.JavaRuntimeCacheToken = javaRuntime.CacheKeyToken()
+			}
+			if javaResolver, ok := resolver.(dependency.JavaRuntimeConfigurer); ok {
+				javaResolver.SetJavaRuntime(javaRuntime)
+			}
+			if callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(scanIncludeTests)) == nil {
+				log.Warn().Str("ecosystem", ecosystem).Msg("No call graph parser for ecosystem, skipping dependency scan")
+				return nil, depSkipParserUnavailable, nil
+			}
+			cgBuilder, builderErr := newCallGraphBuilder(ecosystem, javaRuntime, scanIncludeTests, skipMatcher)
+			if builderErr != nil {
+				log.Warn().Err(builderErr).Str("ecosystem", ecosystem).Msg("Failed to configure call graph builder, skipping dependency scan")
+				return nil, depSkipCallgraphUnavailable, nil
+			}
+			if !findingsCacheOpen {
+				cache, closeCache, cacheErr := newFindingsCache(ctx, cfg)
+				if cacheErr != nil {
+					return nil, "", cacheErr
+				}
+				findingsCache, findingsCacheOpen, closeFindingsCache = cache, true, closeCache
 			}
 
+			depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache, depScannerOptions...)
+			depOptions := engine.DepScanOptions{
+				Workers:     scanDepWorkers,
+				ScanOptions: scanOpts,
+			}
+			if progress != nil {
+				depOptions.ScanOptions.Progress = newProgressReporter(progress, "dependencies")
+			}
+			depSpan := perf.Start("dependencies")
+			depResult, depErr := depScanner.ScanWithDependencies(ctx, input, depOptions)
+			depSpan.End()
+			if depErr != nil {
+				return nil, "", failure.WrapUnknown(
+					depErr,
+					failure.CodeDependencyResolutionFailed,
+					failure.StageDependency,
+					"dependency scan failed",
+				)
+			}
+			return depResult, "", nil
+		}
+
+		if ecosystem != "" {
 			resolver, resolverErr := depRegistry.Get(ecosystem)
 			switch {
 			case resolverErr != nil:
 				log.Warn().Err(resolverErr).Str("ecosystem", ecosystem).Msg("No resolver for ecosystem, skipping dependency scan")
-				if err := skipDependencies("resolver_unavailable"); err != nil {
+				if err := skipDependencies(depSkipResolverUnavailable, ecosystem); err != nil {
 					return err
 				}
-			// Gated on target rather than targetDir because the dependency
-			// scanner hands the resolver opts.ScanOptions.Target. Gating on the
-			// containing directory lets a file target pass and then abort
-			// inside the resolver, which is what this skip prevents.
-			//
-			// A target the resolver cannot read is not necessarily a target
-			// with nothing to resolve. A monorepo carries its manifests in the
-			// module directories below the root, and the dependency scanner
-			// resolves each of those, so the phase only skips when that search
-			// comes back empty too.
-			case !resolver.CanResolve(target) && len(dependency.ResolutionRoots(target, ecosystem, skipPatterns).Roots) == 0:
+			case !dependencyEcosystemResolvable(resolver, target, ecosystem, skipPatterns):
 				reason := dependency.UnresolvableSkipReason(target, ecosystem)
 				if reason == dependency.SkipReasonLockfileAbsent {
 					log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("package.json has no package-lock.json, skipping dependency scan; first-party code is still analyzed")
 				} else {
 					log.Warn().Str("ecosystem", ecosystem).Str("target", target).Msg("No dependency manifest at or below scan target, skipping dependency scan")
 				}
-				if err := skipDependencies(reason); err != nil {
+				if err := skipDependencies(reason, ecosystem); err != nil {
 					return err
 				}
 			default:
-				if ecosystem == "java" {
-					if err := ensureJavaRuntime(); err != nil {
+				depResult, skipReason, scanErr := scanEcosystem(ecosystem, resolver, report)
+				if scanErr != nil {
+					return scanErr
+				}
+				if skipReason != "" {
+					if err := skipDependencies(skipReason, ecosystem); err != nil {
 						return err
 					}
-					scanOpts.JavaRuntime = javaRuntime
-					scanOpts.JavaRuntimeCacheToken = javaRuntime.CacheKeyToken()
+					break
 				}
-				if javaResolver, ok := resolver.(dependency.JavaRuntimeConfigurer); ok {
-					javaResolver.SetJavaRuntime(javaRuntime)
+				outcome := dependencyEcosystemOutcome{resolved: []*engine.DepScanResult{depResult}, skipped: auto.reportedSkips()}
+				// Auto mode resolves every other ecosystem with a manifest
+				// too. Each scans on top of the report the previous one
+				// returned, so the findings of all of them accumulate, and
+				// its result joins the primary as an additional ecosystem.
+				if err := outcome.resolveSecondary(ctx, auto.secondary(), depRegistry.Get, scanEcosystem); err != nil {
+					return err
 				}
-				cgParser := callgraph.NewParserForEcosystem(ecosystem, callgraph.WithIncludeTests(scanIncludeTests))
-				if cgParser == nil {
-					log.Warn().Str("ecosystem", ecosystem).Msg("No call graph parser for ecosystem, skipping dependency scan")
-					if err := skipDependencies("parser_unavailable"); err != nil {
-						return err
+				callGraphResult = outcome.primaryWithAdditional()
+				report = callGraphResult.Report
+				if progress != nil {
+					if err := progress.Complete("dependencies", "scan", outcome.progressDetails()); err != nil {
+						return progressWriteFailure(err)
 					}
-				} else {
-					cgBuilder, builderErr := newCallGraphBuilder(ecosystem, javaRuntime, scanIncludeTests, skipMatcher)
-					if builderErr != nil {
-						log.Warn().Err(builderErr).Str("ecosystem", ecosystem).Msg("Failed to configure call graph builder, skipping dependency scan")
-						if err := skipDependencies("callgraph_unavailable"); err != nil {
-							return err
-						}
-					} else {
-						findingsCache, closeCache, cacheErr := newFindingsCache(ctx, cfg)
-						if cacheErr != nil {
-							return cacheErr
-						}
-						defer closeCache()
-
-						depScanner := engine.NewDependencyScanner(orchestrator, resolver, cgBuilder, findingsCache, depScannerOptions...)
-						depOptions := engine.DepScanOptions{
-							Workers:     scanDepWorkers,
-							ScanOptions: scanOpts,
-						}
-						if progress != nil {
-							depOptions.ScanOptions.Progress = newProgressReporter(progress, "dependencies")
-						}
-						depSpan := perf.Start("dependencies")
-						depResult, depErr := depScanner.ScanWithDependencies(ctx, report, depOptions)
-						depSpan.End()
-						if depErr != nil {
-							return failure.WrapUnknown(
-								depErr,
-								failure.CodeDependencyResolutionFailed,
-								failure.StageDependency,
-								"dependency scan failed",
-							)
-						}
-						report = depResult.Report
-						callGraphResult = depResult
-						if progress != nil {
-							if err := progress.Complete("dependencies", "scan", depResult.ProgressDetails()); err != nil {
-								return progressWriteFailure(err)
-							}
-							dependencyCompleted = true
-						}
-					}
+					dependencyCompleted = true
 				}
 			}
 		} else {
 			log.Warn().Msg("Could not detect dependency ecosystem, skipping dependency scan")
-			if err := skipDependencies("ecosystem_unknown"); err != nil {
+			if err := skipDependencies(depSkipEcosystemUnknown, ""); err != nil {
 				return err
 			}
 		}
-	} else if err := skipDependencies("not_requested"); err != nil {
+	} else if err := skipDependencies(depSkipNotRequested, ""); err != nil {
 		return err
 	}
 
@@ -1285,7 +1311,18 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		if err := startExport(); err != nil {
 			return err
 		}
-		if ecosystemFromHints(target, scanLanguages) == "java" {
+		// A primary ecosystem that resolved no dependencies has no graph,
+		// while another ecosystem the dependency phase resolved may carry
+		// one. The export then builds the primary's own source graph, for
+		// that same ecosystem, and keeps the others beside it; with no
+		// other ecosystem it builds the dominant language's graph as before.
+		var resolvedBeside []*engine.DepScanResult
+		standaloneEcosystem := ecosystemFromHints(target, scanLanguages)
+		if callGraphResult != nil && len(callGraphResult.AdditionalEcosystems) > 0 {
+			resolvedBeside = callGraphResult.AdditionalEcosystems
+			standaloneEcosystem = callGraphResult.Ecosystem
+		}
+		if standaloneEcosystem == ecosystemJava {
 			if err := ensureJavaRuntime(); err != nil {
 				return err
 			}
@@ -1296,7 +1333,14 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 			}
 		}
 		standaloneSpan := perf.Start("callgraph.standalone")
-		callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, skipMatcher, true)
+		if resolvedBeside != nil {
+			callGraphResult, err = buildStandaloneCallGraphResultForEcosystem(target, report, standaloneEcosystem, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, skipMatcher, true)
+			if err == nil {
+				callGraphResult.AdditionalEcosystems = resolvedBeside
+			}
+		} else {
+			callGraphResult, err = buildStandaloneCallGraphResult(target, report, scanLanguages, javaRuntime, scanIncludeTests, scanJavaCompiledArtifact, skipMatcher, true)
+		}
 		standaloneSpan.End()
 		if err != nil {
 			if progress != nil {
@@ -1331,9 +1375,10 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		passParent = "export"
 	}
 
-	graphPasses := callGraphResult != nil && callGraphResult.CallGraph != nil
+	passResults := ruleGraphPassResults(callGraphResult)
+	graphPasses := len(passResults) > 0
 	if graphPasses {
-		if err := runRuleGraphPasses(progress, passParent, rulesManager, report, callGraphResult); err != nil {
+		if err := runRuleGraphPasses(progress, passParent, rulesManager, report, passResults); err != nil {
 			return err
 		}
 	}
@@ -1375,7 +1420,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	}
 
 	if scanExportCallgraph != "" {
-		if slices.Contains(scanutil.AdditionalCallGraphEcosystems(report, primaryCallGraphEcosystem(callGraphResult)), ecosystemJava) {
+		if slices.Contains(scanutil.MissingAdditionalCallGraphEcosystems(report, callGraphResult), ecosystemJava) {
 			if err := ensureJavaRuntime(); err != nil {
 				return err
 			}
@@ -1484,21 +1529,49 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 // metadata.crypto (the single source of truth) joined on api↔definition.
 // Gated structurally (method definition present, no in-body finding), so it is
 // a no-op when scanning a consumer of the library or a Type 1 library.
-func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesManager *rules.Manager, report *entities.InterimReport, result *engine.DepScanResult) error {
+// ruleGraphPassResults lists the call graphs the rule graph passes run on:
+// the primary one, and every additional ecosystem auto mode resolved
+// dependencies for. A secondary ecosystem's dependency findings then get the
+// same synthesized entry points, conditioned findings and related material as
+// when that ecosystem is primary, and still get them when the primary
+// resolved no dependencies and so built no graph. The source-only graphs an
+// export attaches later never took these passes and still do not.
+func ruleGraphPassResults(primary *engine.DepScanResult) []*engine.DepScanResult {
+	if primary == nil {
+		return nil
+	}
+	var out []*engine.DepScanResult
+	if primary.CallGraph != nil {
+		out = append(out, primary)
+	}
+	for _, extra := range primary.AdditionalEcosystems {
+		if extra != nil && extra.CallGraph != nil {
+			out = append(out, extra)
+		}
+	}
+	return out
+}
+
+// runRuleGraphPasses runs each pass over every graph in results, reporting
+// each pass once. A pass resolves a finding through the function containing
+// its file in the graph, so a graph only adds to the findings of its own
+// ecosystem, and conditioned findings already present are not added twice.
+func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesManager *rules.Manager, report *entities.InterimReport, results []*engine.DepScanResult) error {
 	rulePaths, loadErr := rulesManager.Load()
 	if loadErr != nil {
 		log.Debug().
 			Err(loadErr).
-			Str("call_graph", fmt.Sprintf("%p", result.CallGraph)).
+			Int("call_graphs", len(results)).
 			Str("report", fmt.Sprintf("%p", report)).
-			Int("function_count", len(result.CallGraph.Functions)).
 			Int("finding_count", len(report.Findings)).
 			Strs("rule_paths", rulePaths).
 			Msg("failed to load rules for synthesis")
 		return nil
 	}
 	if err := runScanPhase(progress, "entry_points", parent, func() error {
-		engine.SynthesizeRuleCryptoEntryPointsForResult(result, rulePaths)
+		for _, result := range results {
+			engine.SynthesizeRuleCryptoEntryPointsForResult(result, rulePaths)
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -1506,8 +1579,10 @@ func runRuleGraphPasses(progress *scanutil.ProgressWriter, parent string, rulesM
 	// Both passes add assets the call graph derives from rule findings, so they
 	// report as one progress phase.
 	return runScanPhase(progress, "conditioned_findings", parent, func() error {
-		scanutil.MaterializeConditionedFindings(report, result, rulePaths)
-		scanutil.MaterializeRelatedMaterial(report, result)
+		for _, result := range results {
+			scanutil.MaterializeConditionedFindings(report, result, rulePaths)
+			scanutil.MaterializeRelatedMaterial(report, result)
+		}
 		return nil
 	})
 }
@@ -1576,7 +1651,7 @@ func newProgressReporter(progress *scanutil.ProgressWriter, callgraphParent stri
 		switch status {
 		case "started":
 			return progress.Start(phase, parent)
-		case "completed":
+		case progressStatusCompleted:
 			return progress.Complete(phase, parent, details)
 		case "failed":
 			if isScanCanceled(cause) {
@@ -1688,7 +1763,7 @@ func newDependencyRegistry(includeDevDependencies, installDependencies bool) *de
 		npmOptions = append(npmOptions, dependency.WithNpmDevDependencies())
 	}
 	registry.Register("python", dependency.NewPipResolver(pipOptions...))
-	registry.Register("rust", dependency.NewCargoResolver())
+	registry.Register(ecosystemRust, dependency.NewCargoResolver())
 	registry.Register(ecosystemNode, dependency.NewNpmResolver(npmOptions...))
 	return registry
 }
