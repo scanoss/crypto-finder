@@ -32,6 +32,7 @@ const (
 	rustMutableBorrowPrefix     = "&mut "
 	rustSharedBorrowPrefix      = "&"
 	rustSomeWrapperPrefix       = "Some("
+	rustIntoConversion          = ".into()"
 	materialArgumentKeywordSign = "="
 )
 
@@ -117,7 +118,7 @@ func (t *materialTracer) drawnMaterials(finding *entities.Finding, draw entities
 	found := map[string]bool{}
 	visited := map[string]bool{}
 	after := codePosition{line: call.Line, col: call.EndCol}
-	for _, name := range drawnNames(call, t.ecosystem) {
+	for _, name := range drawnNames(call, t.ecosystem, filledLink(fn, call, draw)) {
 		t.trace(fn, name, after, 0, found, visited)
 	}
 	t.traceNestedDraw(fn, call, found, visited)
@@ -155,19 +156,39 @@ var randomFillBuffer = map[string]int{
 // result is bound to, and the buffer a filling draw (randomFillBuffer) writes.
 // A bound name that is not the drawn value (the `err` of Go's rand.Read, a
 // generator `new SecureRandom(seed)` returns) reaches no material role.
-func drawnNames(call *callgraph.FunctionCall, ecosystem string) []string {
+//
+// filler is the call that fills the buffer; it differs from call when the
+// draw is the first link of a chain the statement continues, as in Rust
+// `getrandom::fill(&mut nonce).unwrap()`, whose terminal is `unwrap`.
+func drawnNames(call *callgraph.FunctionCall, ecosystem string, filler *callgraph.FunctionCall) []string {
 	var names []string
 	if isSimpleIdentifier(call.AssignedVar) {
 		names = append(names, call.AssignedVar)
 	}
-	index, fills := randomFillBuffer[callgraph.BaseFunctionName(call.Callee.Name)]
-	if !fills || index >= len(call.Arguments) {
+	index, fills := randomFillBuffer[callgraph.BaseFunctionName(filler.Callee.Name)]
+	if !fills || index >= len(filler.Arguments) {
 		return names
 	}
-	if name := bareArgument(call.Arguments[index], ecosystem); isSimpleIdentifier(name) && !slices.Contains(names, name) {
+	if name := bareArgument(filler.Arguments[index], ecosystem); isSimpleIdentifier(name) && !slices.Contains(names, name) {
 		names = append(names, name)
 	}
 	return names
+}
+
+// filledLink is the call the draw's rule matched: the tightest call on the
+// draw's line whose span holds the draw's, or call itself when the spans
+// cannot tell. A link of call's own chain only, so a draw nested in another
+// call's argument stays with traceNestedDraw.
+func filledLink(fn *callgraph.FunctionDecl, call *callgraph.FunctionCall, draw entities.CryptographicAsset) *callgraph.FunctionCall {
+	if call.ChainID == "" {
+		return call
+	}
+	candidates := cryptoCallLineCandidates(fn, draw.StartLine, draw.EndLine)
+	i := tightestContainingIndexAmong(callCandidateViews(candidates), draw.StartCol, draw.EndCol)
+	if i < 0 || candidates[i].ChainID != call.ChainID {
+		return call
+	}
+	return candidates[i]
 }
 
 // codePosition is a point in a file: a call at it or after it is a use.
@@ -341,9 +362,11 @@ func splitKeywordArgument(arg, ecosystem string) (keyword, value string) {
 	return "", arg
 }
 
-// bareArgument strips the borrow and Option wrapping a Rust argument passes a
-// variable with (`&mut nonce`, `&iv`, `Some(&salt)`), so the variable itself
-// is compared.
+// bareArgument strips the borrow, Option wrapping and `.into()` conversion a
+// Rust argument passes a variable with (`&mut nonce`, `&iv`, `Some(&salt)`,
+// `(&nonce).into()`), so the variable itself is compared. `.into()` changes
+// the type the bytes are held in, as a nonce array into a GenericArray, not
+// the bytes.
 func bareArgument(arg, ecosystem string) string {
 	arg = strings.TrimSpace(arg)
 	if ecosystem != ecosystemRust {
@@ -351,6 +374,10 @@ func bareArgument(arg, ecosystem string) string {
 	}
 	if strings.HasPrefix(arg, rustSomeWrapperPrefix) && strings.HasSuffix(arg, ")") {
 		arg = strings.TrimSpace(arg[len(rustSomeWrapperPrefix) : len(arg)-1])
+	}
+	arg = strings.TrimSuffix(arg, rustIntoConversion)
+	if strings.HasPrefix(arg, "(") && strings.HasSuffix(arg, ")") {
+		arg = strings.TrimSpace(arg[1 : len(arg)-1])
 	}
 	arg = strings.TrimPrefix(arg, rustMutableBorrowPrefix)
 	return strings.TrimSpace(strings.TrimPrefix(arg, rustSharedBorrowPrefix))
