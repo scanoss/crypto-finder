@@ -6,6 +6,7 @@ package scan
 import (
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/scanoss/crypto-finder/internal/callgraph"
@@ -149,7 +150,11 @@ func (l *literalTracer) source(fn *callgraph.FunctionDecl, call *callgraph.Funct
 // parameter name at position.
 func (l *literalTracer) followCallers(fn *callgraph.FunctionDecl, position int, name, material string, consumer *literalConsumer, hops int) {
 	id := fn.ID.String()
-	for _, callerID := range l.ctx.graph.Callers[id] {
+	// Sorted, so the assets (and the findings added for them) come out in
+	// one order on every run.
+	callers := slices.Clone(l.ctx.graph.Callers[id])
+	slices.Sort(callers)
+	for _, callerID := range slices.Compact(callers) {
 		caller := l.ctx.graph.Functions[callerID]
 		if caller == nil {
 			continue
