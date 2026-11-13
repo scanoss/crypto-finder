@@ -98,7 +98,7 @@ func (l *literalTracer) fromAsset(findingPath, language string, asset entities.C
 		return
 	}
 	consumer := &literalConsumer{asset: asset, language: language}
-	for _, c := range []*callgraph.FunctionCall{call, matchedLink(fn, call, asset)} {
+	for _, c := range []*callgraph.FunctionCall{call, filledLink(fn, call, asset)} {
 		if l.seen[c] {
 			continue
 		}
@@ -331,20 +331,4 @@ func (l *literalTracer) findingFor(fn *callgraph.FunctionDecl, language string) 
 	}
 	l.report.Findings = append(l.report.Findings, entities.Finding{FilePath: filepath.ToSlash(rel), Language: language})
 	return &l.report.Findings[len(l.report.Findings)-1]
-}
-
-// matchedLink is the call the asset's rule matched: the tightest call on its
-// line whose span holds the asset's, when it is a link of call's own chain,
-// as `createHash('sha256')` in `createHash('sha256').update(x).digest()`.
-// Otherwise call itself.
-func matchedLink(fn *callgraph.FunctionDecl, call *callgraph.FunctionCall, asset entities.CryptographicAsset) *callgraph.FunctionCall {
-	if call.ChainID == "" {
-		return call
-	}
-	candidates := cryptoCallLineCandidates(fn, asset.StartLine, asset.EndLine)
-	i := tightestContainingIndexAmong(callCandidateViews(candidates), asset.StartCol, asset.EndCol)
-	if i < 0 || candidates[i].ChainID != call.ChainID {
-		return call
-	}
-	return candidates[i]
 }

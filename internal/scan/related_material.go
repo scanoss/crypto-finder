@@ -180,9 +180,9 @@ func drawnNames(call *callgraph.FunctionCall, ecosystem string, filler *callgrap
 	return names
 }
 
-// filledLink is the call the draw's rule matched: the tightest call on the
-// draw's line whose span holds the draw's, or call itself when the spans
-// cannot tell. A link of call's own chain only, so a draw nested in another
+// filledLink is the call the rule of draw (any reported asset) matched: the
+// tightest call on its line whose span holds its span, or call itself when
+// the spans cannot tell. A link of call's own chain only, so a draw nested in another
 // call's argument stays with traceNestedDraw.
 func filledLink(fn *callgraph.FunctionDecl, call *callgraph.FunctionCall, draw entities.CryptographicAsset) *callgraph.FunctionCall {
 	if call.ChainID == "" {
