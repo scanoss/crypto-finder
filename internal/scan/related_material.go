@@ -53,6 +53,10 @@ const (
 // that match the call disagree. A material the finding already reports at the
 // draw is not added again.
 //
+// It then reports the material a constant becomes (materializeLiterals): a
+// salt, iv or nonce argument of a reported crypto call written as a literal,
+// or reaching it as a parameter's default or a caller's literal argument.
+//
 // result supplies the call graph and its ecosystem; report is the report the
 // assets are added to. It returns the number of assets added.
 func MaterializeRelatedMaterial(report *entities.InterimReport, result *engine.DepScanResult) int {
@@ -72,6 +76,7 @@ func MaterializeRelatedMaterial(report *entities.InterimReport, result *engine.D
 	for i := range report.Findings {
 		added += tracer.materializeFinding(&report.Findings[i])
 	}
+	added += tracer.materializeLiterals(report)
 	if added > 0 {
 		log.Info().Int("count", added).Str("ecosystem", result.Ecosystem).Msg("Reported related crypto material followed from random draws")
 	}

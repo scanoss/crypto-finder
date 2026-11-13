@@ -192,6 +192,8 @@ contracts:
   # it; parameter_types is still declared for consistency.
   - method: hashlib.pbkdf2_hmac
     arity: 5
+    material_roles:
+      - { index: 2, name: salt, material: salt }
     return:
       type: builtins.bytes
       confidence: high
@@ -212,6 +214,8 @@ contracts:
 
   - method: hashlib.scrypt
     arity: 7
+    material_roles:
+      - { index: 1, name: salt, material: salt }
     return:
       type: builtins.bytes
       confidence: high
