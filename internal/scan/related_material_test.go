@@ -272,6 +272,21 @@ def main(password, helper):
 			fx:   materialFixture{ecosystem: ecosystemRust, file: "src/lib.rs", importPath: "app", draw: "OsRng.fill_bytes(&mut salt)", src: rustMaterialSource},
 			want: []string{"salt"},
 		},
+		"rust nonce filled by getrandom::fill into an AEAD through into()": {
+			fx:   materialFixture{ecosystem: ecosystemRust, file: "src/lib.rs", importPath: "app", draw: "getrandom::fill(&mut nonce)", src: rustAeadSource},
+			want: []string{"nonce"},
+		},
+		"rust nonce filled by getrandom::fill into an AEAD through Nonce::from_slice": {
+			fx:   materialFixture{ecosystem: ecosystemRust, file: "src/lib.rs", importPath: "app", draw: "getrandom::fill(&mut sliced)", src: rustAeadSource},
+			want: []string{"nonce"},
+		},
+		"rust nonce filled by OsRng into an AEAD through a bare into()": {
+			fx:   materialFixture{ecosystem: ecosystemRust, file: "src/lib.rs", importPath: "app", draw: "OsRng.fill_bytes(&mut owned)", src: rustAeadSource},
+			want: []string{"nonce"},
+		},
+		"rust buffer converted to another value is not followed": {
+			fx: materialFixture{ecosystem: ecosystemRust, file: "src/lib.rs", importPath: "app", draw: "getrandom::fill(&mut seed)", src: rustAeadSource},
+		},
 		"node iv and salt through helpers": {
 			fx:   materialFixture{ecosystem: ecosystemNode, file: "a.js", importPath: "app", draw: "crypto.randomBytes(16)", src: nodeMaterialSource},
 			want: []string{"initialization-vector"},
@@ -471,4 +486,43 @@ function runLogged(key, data) {
 const IV_LENGTH = 16;
 
 module.exports = { run, runLogged };
+`
+
+const rustAeadSource = `use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
+use rand::rngs::OsRng;
+use rand::RngCore;
+
+pub fn seal(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let cipher = Aes256Gcm::new_from_slice(key).unwrap();
+    let mut nonce = [0u8; 12];
+    getrandom::fill(&mut nonce).unwrap();
+    cipher.encrypt((&nonce).into(), data).unwrap()
+}
+
+pub fn seal_sliced(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let cipher = Aes256Gcm::new_from_slice(key).unwrap();
+    let mut sliced = [0u8; 12];
+    getrandom::fill(&mut sliced).unwrap();
+    let n = Nonce::from_slice(&sliced);
+    cipher.encrypt(n, data).unwrap()
+}
+
+pub fn seal_owned(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let cipher = Aes256Gcm::new_from_slice(key).unwrap();
+    let mut owned = [0u8; 12];
+    OsRng.fill_bytes(&mut owned);
+    cipher.encrypt(owned.into(), data).unwrap()
+}
+
+pub fn seal_derived(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let cipher = Aes256Gcm::new_from_slice(key).unwrap();
+    let mut seed = [0u8; 12];
+    getrandom::fill(&mut seed).unwrap();
+    cipher.encrypt(mix(seed).into(), data).unwrap()
+}
+
+fn mix(seed: [u8; 12]) -> [u8; 12] {
+    seed
+}
 `
