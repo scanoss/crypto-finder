@@ -779,7 +779,7 @@ func TestTransformSemgrepCompatibleOutputToInterimFormat(t *testing.T) {
 	semgrepOutput := &entities.SemgrepOutput{
 		Results: []entities.SemgrepResult{
 			{
-				CheckID: "go.crypto.tls.load-key-pair",
+				CheckID: "fixture.go.tls-key-pair",
 				Path:    "/test/main.go",
 				Start:   entities.SemgrepLocation{Line: 10, Col: 5},
 				Extra: entities.SemgrepExtra{
