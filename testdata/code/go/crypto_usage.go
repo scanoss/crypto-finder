@@ -22,12 +22,12 @@ import (
 )
 
 func main() {
-	// Should trigger go.crypto.tls.load-key-pair
+	// Should trigger fixture.go.tls-key-pair
 	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
 	_ = cert
 	_ = err
 
-	// Should trigger go.crypto.des.key-generation
+	// Should trigger fixture.go.des-cipher
 	keyStr := "12345678"
 	block, _ := des.NewCipher([]byte(keyStr))
 	_ = block

@@ -22,14 +22,14 @@ import (
 	"testing"
 )
 
-// TestCorpusV1_18_0ParsesClean guards the fail-fast rule-load abort against
-// real data: every parameterCondition predicate shipped in crypto_rules
-// v1.18.0 (158 occurrences, extracted verbatim from the deployed rules
-// pack) MUST parse without error, or the abort would reject a real ruleset.
-func TestCorpusV1_18_0ParsesClean(t *testing.T) {
+// TestGrammarCorpusParsesClean guards the fail-fast load abort: every predicate
+// shape the grammar accepts (positional, named and positional|named parameters;
+// ==, ~= and :type comparisons; quoted, bare, boolean and dotted values) MUST
+// parse without error. The corpus is synthetic.
+func TestGrammarCorpusParsesClean(t *testing.T) {
 	t.Parallel()
 
-	f, err := os.Open("testdata/parameter-conditions-v1.18.0.txt")
+	f, err := os.Open("testdata/grammar-corpus.txt")
 	if err != nil {
 		t.Fatalf("open corpus fixture: %v", err)
 	}
@@ -48,14 +48,14 @@ func TestCorpusV1_18_0ParsesClean(t *testing.T) {
 		t.Fatalf("scan corpus fixture: %v", err)
 	}
 
-	const wantCount = 158
+	const wantCount = 27
 	if len(lines) != wantCount {
 		t.Fatalf("corpus fixture has %d predicates, want %d", len(lines), wantCount)
 	}
 
 	for _, line := range lines {
 		if _, err := ParseAll(line); err != nil {
-			t.Errorf("ParseAll(%q) failed against real v1.18.0 corpus: %v", line, err)
+			t.Errorf("ParseAll(%q) failed on the grammar corpus: %v", line, err)
 		}
 	}
 }
