@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -84,7 +85,7 @@ func (s *Scanner) coreBinary(ctx context.Context) (string, error) {
 	}
 	for _, candidate := range coreCandidates(s.executablePath, s.version) {
 		info, err := os.Stat(candidate)
-		if err != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {
+		if err != nil || !isExecutableFile(info, runtime.GOOS) {
 			continue
 		}
 		output, err := coreCommandOutput(ctx, candidate)
@@ -109,7 +110,8 @@ func coreCandidates(cliPath, version string) []string {
 	if explicit := os.Getenv(CoreBinaryEnv); explicit != "" {
 		return []string{explicit}
 	}
-	versionDir := filepath.Join("opengrep", "v"+version, "semgrep", "bin", "opengrep-core")
+	name := coreExecutableName(runtime.GOOS)
+	versionDir := filepath.Join("opengrep", "v"+version, "semgrep", "bin", name)
 	if dir := os.Getenv("XDG_CACHE_HOME"); dir != "" {
 		candidates = append(candidates, filepath.Join(dir, versionDir))
 	}
@@ -120,9 +122,27 @@ func coreCandidates(cliPath, version string) []string {
 		candidates = append(candidates, filepath.Join(dir, versionDir))
 	}
 	if resolved, err := filepath.EvalSymlinks(cliPath); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(resolved), "opengrep-core"))
+		candidates = append(candidates, filepath.Join(filepath.Dir(resolved), name))
 	}
 	return slices.Compact(candidates)
+}
+
+// coreExecutableName is the opengrep-core file name on goos: Windows
+// executables carry the .exe extension.
+func coreExecutableName(goos string) string {
+	if goos == "windows" {
+		return "opengrep-core.exe"
+	}
+	return "opengrep-core"
+}
+
+// isExecutableFile reports whether info is a regular file that goos can run.
+// Windows reports no execute permission bits, so any regular file counts.
+func isExecutableFile(info os.FileInfo, goos string) bool {
+	if info.IsDir() {
+		return false
+	}
+	return goos == "windows" || info.Mode().Perm()&0o111 != 0
 }
 
 // coreSupported reports why the scan cannot run in core mode, or "" when it
@@ -213,9 +233,11 @@ func (s *Scanner) runCore(ctx context.Context, binary string, rules []*coreRule,
 	if plan.dir != "" {
 		cmd.Dir = plan.dir
 	}
-	if len(s.env) > 0 {
-		cmd.Env = append(cmd.Environ(), mapToEnvSlice(s.env)...)
+	cleanupTemp, err := s.setCommandEnv(cmd)
+	if err != nil {
+		return nil, err
 	}
+	defer cleanupTemp()
 	stderr := &strings.Builder{}
 	cmd.Stderr = stderr
 	started := time.Now()
