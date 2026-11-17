@@ -25,6 +25,7 @@ import (
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
+	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // Classify classifies an asset from its metadata. It returns nil when the
@@ -53,7 +54,10 @@ func Current(asset *entities.CryptographicAsset) *entities.PQCClassification {
 	if asset.PQC != nil && compareVersions(asset.PQC.DatasetVersion, pqcdataset.Version()) >= 0 {
 		return asset.PQC
 	}
-	return Classify(asset.Metadata)
+	if c := Classify(asset.Metadata); c != nil {
+		return c
+	}
+	return classifyFromDefaultGroups(asset)
 }
 
 // compareVersions compares two MAJOR.MINOR.PATCH versions; an unparsable one
@@ -96,6 +100,85 @@ func parseVersion(v string) ([]int, bool) {
 	return out, true
 }
 
+// classifyFromDefaultGroups classifies a TLS protocol finding that names no
+// algorithm from its library's default key-exchange groups: a project that
+// never configures groups offers whatever its library's version offers, and
+// that is a fact the dataset records per version (tls_default_groups,
+// scanoss/crypto-pqc-dataset#24). The finding must name a library AND a
+// resolved version — the project's own standard library names no version and
+// stays unclassified, as roadmap#72 specifies.
+//
+// The verdict is the WORST status among the offered groups: the server, not
+// the client, picks the group, so one classical group in the list is enough
+// for a harvest-now-decrypt-later session — a hybrid-first list is still
+// vulnerable until the classical groups leave the defaults. The stamped
+// family is the first group carrying that worst status, in the library's own
+// preference order.
+func classifyFromDefaultGroups(asset *entities.CryptographicAsset) *entities.PQCClassification {
+	if asset.Metadata["assetType"] != "protocol" || asset.Metadata["protocolType"] != "tls" {
+		return nil
+	}
+	id, version := libraryVersion(asset)
+	if id == "" || version == "" {
+		return nil
+	}
+	groups, ok := pqcdataset.DefaultLibraries().DefaultTLSGroups(id, version)
+	if !ok {
+		return nil
+	}
+	// Worst first: a classical group beats an unresolved one, which beats a
+	// hybrid; safe and not_applicable rank lowest, so a list that reached
+	// them only has nothing worse to report.
+	rank := map[pqcdataset.Status]int{
+		pqcdataset.Vulnerable:    4,
+		pqcdataset.Unassessed:    3,
+		pqcdataset.Hybrid:        2,
+		pqcdataset.Safe:          1,
+		pqcdataset.NotApplicable: 0,
+	}
+	var worst pqcdataset.Family
+	worstRank := -1
+	for _, g := range groups {
+		f, resolved := pqcdataset.ResolveTLSGroup(g)
+		if !resolved {
+			continue // a spelling the dataset cannot name contributes nothing
+		}
+		if r := rank[f.PQCStatus]; r > worstRank {
+			worst, worstRank = f, r
+		}
+	}
+	if worstRank < 0 {
+		return nil
+	}
+	c := &entities.PQCClassification{
+		Status: string(worst.PQCStatus), Family: worst.Name, DatasetVersion: pqcdataset.Version(),
+	}
+	c.Deadline, _ = worst.EarliestDeadline()
+	for _, d := range worst.Deadlines {
+		c.Deadlines = append(c.Deadlines, entities.PQCDeadline(d))
+	}
+	return c
+}
+
+// libraryVersion names the library an asset's API belongs to and the version
+// the scan resolved for it. A finding in the project's own code carries its
+// rule's PURL, which the dependency phase enriches with the version of the
+// direct dependency it resolves to (enrichDirectFindingPURLs); a finding found
+// inside a dependency's own source carries that dependency instead. Either way
+// the version is the scan's, never a guess.
+func libraryVersion(asset *entities.CryptographicAsset) (id, version string) {
+	if base, v, ok := purl.Split(asset.PURL); ok && v != "" {
+		return base, v
+	}
+	if dep := asset.DependencyInfo; dep != nil && dep.Version != "" {
+		if dep.PURL != "" {
+			return dep.PURL, dep.Version
+		}
+		return dep.Module, dep.Version
+	}
+	return "", ""
+}
+
 // Annotate sets the classification of every asset that names an algorithm.
 func Annotate(report *oid.ResolvedReport) {
 	if report == nil {
@@ -105,6 +188,9 @@ func Annotate(report *oid.ResolvedReport) {
 		assets := report.Findings[i].CryptographicAssets
 		for j := range assets {
 			assets[j].PQC = Classify(assets[j].Metadata)
+			if assets[j].PQC == nil {
+				assets[j].PQC = classifyFromDefaultGroups(&assets[j])
+			}
 		}
 	}
 }

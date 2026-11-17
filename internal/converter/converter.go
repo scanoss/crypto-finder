@@ -240,7 +240,8 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 
 	baseComponent.Name = componentName
 	baseComponent.Evidence = c.buildEvidence(aggregated)
-	if aggregated.AssetType == AssetTypeAlgorithm || aggregated.AssetType == AssetTypeRelatedCryptoMaterial {
+	if aggregated.AssetType == AssetTypeAlgorithm || aggregated.AssetType == AssetTypeRelatedCryptoMaterial ||
+		aggregated.AssetType == AssetTypeProtocol {
 		addPQCProperties(baseComponent, aggregated.ReferenceAsset)
 	}
 
@@ -254,6 +255,12 @@ func (c *Converter) convertAggregatedAsset(aggregated *AggregatedAsset) (*cdx.Co
 // addPQCProperties writes the asset's post-quantum classification as flat
 // properties: the report's own when it is current, recomputed when an older
 // dataset produced it or the report predates scan format 1.8.
+//
+// A protocol component carries them too (roadmap#72): a TLS finding whose
+// project configures no groups is classified from its library's defaults, and
+// that verdict is what the CBOM is being asked for. A protocol the dataset
+// cannot speak for classifies to nothing and writes no properties, exactly as
+// before.
 func addPQCProperties(component *cdx.Component, asset *entities.CryptographicAsset) {
 	for _, p := range pqc.Properties(pqc.Current(asset)) {
 		addCustomProperty(component, p.Name, p.Value)

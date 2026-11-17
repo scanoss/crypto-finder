@@ -190,6 +190,8 @@ github.com/sagikazarmark/locafero v0.11.0 h1:1iurJgmM9G3PA/I+wWYIOw/5SyBtxapeHDc
 github.com/sagikazarmark/locafero v0.11.0/go.mod h1:nVIGvgyzw595SUSUE6tvCp3YYTeHs15MvlmU87WwIik=
 github.com/scanoss/crypto-pqc-dataset v1.1.0 h1:v71AoEthwlQ3NbukDeaVgnnJCPoGURt13Vb45Vx4Xic=
 github.com/scanoss/crypto-pqc-dataset v1.1.0/go.mod h1:GEIZna0Uh+F2myoR99kFbKwRlmMV9sQUvkVlXbxtxJo=
+github.com/scanoss/crypto-pqc-dataset v1.4.0 h1:e3N9ibre1lC3qRD8SDcrIn4/9mAGdo9ztGAz1iOZuHY=
+github.com/scanoss/crypto-pqc-dataset v1.4.0/go.mod h1:QkPcncfWnmxBmC0mJ/QeXPgsPHLsQqfhqQ2kLJxx0pI=
 github.com/scanoss/scanoss.go v0.12.1-0.20261020065749-c1c6ba0935d6 h1:fsru5O7wvzRS1LkE+PRo6JOjZqc1riQuV4L5/VuwhsQ=
 github.com/scanoss/scanoss.go v0.12.1-0.20261020065749-c1c6ba0935d6/go.mod h1:zYblFKbV+2fpubZCLauFgOeJLKF8TflxlhevPdoe/GE=
 github.com/sergi/go-diff v1.2.0 h1:XU+rvMAioB0UC3q1MFrIQy4Vo5/4VsRDQQXHsEya6xQ=
@@ -276,6 +278,8 @@ golang.org/x/exp v0.0.0-20220909182711-5c715a9e8561 h1:MDc5xs78ZrZr3HMQugiXOAkSZ
 golang.org/x/exp v0.0.0-20220909182711-5c715a9e8561/go.mod h1:cyybsKvd6eL0RnXn6p/Grxp8F5bW7iYuBgsNCOHpMYE=
 golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4/go.mod h1:jJ57K6gSWd91VN4djpZkiMVwK6gcyfeH4XE8wZrZaV4=
 golang.org/x/mod v0.8.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
+golang.org/x/mod v0.41.0 h1:qJmnOUb4YB+FsEuM3HcWucdZASCPGhsX6uljO6pog0c=
+golang.org/x/mod v0.41.0/go.mod h1:Ek9pY8RKWXwsWvd3rQiHYtMqkjSUV+s1Rj7j4H5Ur6o=
 golang.org/x/net v0.0.0-20190620200207-3b0461eec859/go.mod h1:z5CRVTTTmAJ677TzLLGU+0bjPO0LkuOLi4/5GtJWs/s=
 golang.org/x/net v0.0.0-20210226172049-e18ecbb05110/go.mod h1:m0MpNAwzfU5UDzcl9v0D8zg8gWTRqZa9RBIspLL5mdg=
 golang.org/x/net v0.0.0-20220722155237-a158d28d115b/go.mod h1:XRhObCWvk6IyKnWLug+ECip1KBveYUHfp+8e9klMJ9c=
