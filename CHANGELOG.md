@@ -6,24 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Added
-- A TLS protocol finding whose project never configures key-exchange groups
-  is classified from the library's defaults: the version the dependency
-  phase resolved for the finding's library answers `tls_default_groups` in
-  the PQC dataset, and the verdict is the worst status among the groups that
-  version offers, because the server picks the group. rustls 0.23.25 offers
-  `x25519, secp256r1, secp384r1, X25519MLKEM768`, so a project that only
-  builds a `ServerConfig` is now `vulnerable` (ECDH, deadline 2030) where it
-  carried no classification at all. A protocol component in the CBOM carries
-  those PQC properties too; the property names are the ones algorithm
-  components already use, and a protocol the dataset cannot speak for — SSH,
-  or TLS whose library version the scan did not resolve — writes none, as
-  before.
-
-### Changed
-- The PQC dataset moves to v1.4.0. Every existing verdict is unchanged
-  (families and aliases are identical between v1.1.0 and v1.4.0); findings
-  now carry `pqcDatasetVersion: 1.4.0`.
 
 ## [0.54.0] - 2026-11-12
 ### Added
