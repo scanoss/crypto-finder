@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-11-17
+### Added
+- Scans that build a call graph (`--export-callgraph`, `--export-graph-fragment`,
+  `--scan-dependencies`) now report a salt, nonce or iv written as a constant in the source.
+  When an argument the knowledge base marks as related crypto material is a constant, such as
+  `createCipheriv("aes-128-cbc", key, Buffer.alloc(16))`, or a parameter whose caller passes a
+  constant, such as `derive(password, salt=b'saltysalt')` into a helper that calls
+  `hashlib.pbkdf2_hmac`, or whose default value is a constant, a `related-crypto-material`
+  asset with that `materialType` is added at the constant, with the crypto call's rule. Callers
+  are followed up to three calls deep; a parameter the function may rebind before the call is
+  not followed. Constants recognized: Python bytes literals (also repeated, as `b' ' * 16`),
+  `'text'.encode()`, `bytes(n)`, `bytearray(n)` and `bytes.fromhex(...)`; JavaScript and
+  TypeScript string literals, `Buffer.alloc(n)`, `Buffer.from('...')` and `new Uint8Array(n)`.
+- The Python `hashlib.pbkdf2_hmac` and `hashlib.scrypt` contracts mark their `salt` argument as
+  salt material, so a random draw that reaches it is reported as a salt too.
+- crypto-finder shows a notice the SCANOSS API sends in the `X-SCANOSS-Notice` response
+  header, such as the date a version stops working, without failing the request. The first
+  notice of a run is shown once, however many API requests carry it: in a box on a terminal,
+  as one `NOTICE: <text>` line on stderr otherwise, and not at all while stderr carries JSON
+  (`--error-format json` or `--progress`).
+- A TLS protocol finding whose project never configures key-exchange groups is classified
+  from the library's defaults: the version the dependency phase resolved for the finding's
+  library answers `tls_default_groups` in the PQC dataset, and the verdict is the worst
+  status among the groups that version offers, because the server picks the group. rustls
+  0.23.44 offers `X25519MLKEM768` first and then `x25519`, `secp256r1` and `secp384r1`, so a
+  project that only builds a `ServerConfig` is now `vulnerable` (ECDH, deadline 2030) where
+  it carried no classification at all: offering the hybrid first does not help when the
+  classical groups are still on the table and the server is the one choosing. A library version the scan does not resolve — the Go toolchain, a
+  system OpenSSL — is still classified from nothing, and so is SSH.
+- Protocol components in a CBOM carry the `scanoss:pqc*` properties algorithm components
+  already carry, so a classified TLS finding reaches the CBOM. A protocol the dataset cannot
+  speak for writes none, as before.
+### Changed
+- The PQC dataset moves to v1.4.0. Every existing verdict is unchanged — the family and
+  alias tables are identical to v1.1.0's — and findings carry `dataset_version: 1.4.0`.
+### Fixed
+- Scans that build a call graph now report the `nonce` of a Rust AEAD whose buffer a random
+  fill writes in place and the statement then unwraps or `?`s, as in
+  `getrandom::fill(&mut nonce).unwrap()` or `getrandom::fill(&mut nonce)?`, and whose buffer
+  reaches the cipher converted with `.into()`, as in `cipher.encrypt((&nonce).into(), data)`.
+  Before, the draw stayed a `drbg` finding alone: the fill was looked up on the chain's last
+  call (`unwrap`), and an argument written `(&nonce).into()` was not taken as the buffer.
+- On Windows, scans run OpenGrep's core mode again: `opengrep-core.exe` is found
+  in the OpenGrep cache. Before, every Windows scan fell back to the OpenGrep CLI
+  and logged "no opengrep-core 1.22.0 found".
+- OpenGrep runs with a temporary directory of its own that is removed when the
+  scan ends. On Windows the OpenGrep CLI used to leave copies of the decrypted
+  rules (`semgrep-*.rules`, `tmp*.json`) in `%TEMP%` after every scan.
+- The "Using stale cache" warning shows the cache age in days and hours and the
+  download time as a date, instead of milliseconds and a Unix timestamp.
+- The Windows release archive (`crypto-finder_<version>_windows_amd64.zip`) now
+  holds an Authenticode-signed, timestamped `crypto-finder.exe`. Earlier
+  releases shipped the exe unsigned. A release whose Windows binary cannot be
+  signed stays a draft instead of being published.
+
 ## [0.54.0] - 2026-11-12
 ### Added
 - The cache metadata (`.cache-meta.json`) of a downloaded ruleset
