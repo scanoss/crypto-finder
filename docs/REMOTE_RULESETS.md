@@ -200,6 +200,17 @@ The message is taken from `error.message` of a JSON error body (`{"status":"erro
 
 A refused API key (HTTP 401 or 403) reads `the SCANOSS API refused the ruleset download (HTTP 403): <server message>`; like an unreachable API, it still falls back to a stale cache when one is available.
 
+### Notices from the SCANOSS API
+
+Any answer of the SCANOSS API (ruleset downloads and dependency findings alike) may carry an `X-SCANOSS-Notice` header, for example to announce that a crypto-finder version stops working on a given date. The request is not affected. crypto-finder shows the first notice of a run once, however many requests carry it: in a box on a terminal, and as one `NOTICE: <text>` line on stderr otherwise. Nothing is shown while stderr carries JSON (`--error-format json` or `--progress`). The text is cleaned like an upgrade-required message.
+
+```
+┌─ SCANOSS ───────────────────────────────────────────────┐
+| crypto-finder 0.54 stops working on 2026-12-15. Update: |
+| https://github.com/scanoss/crypto-finder/releases       |
+└─────────────────────────────────────────────────────────┘
+```
+
 ### API Unreachable / Network Timeout
 
 When the API is unreachable and expired cache exists, crypto-finder will automatically fall back to stale cache with a warning:

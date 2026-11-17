@@ -33,6 +33,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/failure"
 	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/utils"
@@ -125,6 +126,13 @@ func Execute() {
 	if !isTTY {
 		pterm.DisableColor()
 	}
+
+	notices := &noticePrinter{
+		out:  os.Stderr,
+		tty:  isTTY,
+		json: func() bool { return scanProgress || normalizedErrorOutputFormat() == formatJSON },
+	}
+	api.SetNoticeHandler(notices.show)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		switch {
