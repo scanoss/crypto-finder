@@ -528,7 +528,9 @@ func (s *Scanner) requireForceExclude(ctx context.Context) error {
 func (s *Scanner) setCommandEnv(cmd *exec.Cmd) (func(), error) {
 	dir, err := os.MkdirTemp("", "crypto-finder-opengrep-")
 	if err != nil {
-		return nil, fmt.Errorf("opengrep: create a temporary directory: %w", err)
+		return nil, failure.Wrap(err, failure.CodeScannerInitializationFailed, failure.StageScan,
+			"failed to create a temporary directory for opengrep",
+			failure.WithDetail("scanner", ScannerName))
 	}
 	env := append(cmd.Environ(), mapToEnvSlice(s.env)...)
 	env = append(env, "TMPDIR="+dir, "TMP="+dir, "TEMP="+dir)
