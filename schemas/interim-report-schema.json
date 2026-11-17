@@ -213,7 +213,7 @@
         },
         "pqc": {
           "$ref": "#/definitions/PQCClassification",
-          "description": "Post-quantum classification of an asset that names an algorithm, from the shared PQC dataset (v1.8+). Absent when the asset names no algorithm."
+          "description": "Post-quantum classification of an asset, from the shared PQC dataset (v1.8+). Present on an asset that names an algorithm, and on a TLS protocol asset classified from the default key-exchange groups of the library version the scan resolved, whose family is that of the worst group those defaults offer and not an algorithm the asset names. Absent on every other asset."
         }
       },
       "oneOf": [
