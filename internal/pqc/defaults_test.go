@@ -33,10 +33,20 @@ func TestClassifyFromDefaultGroups(t *testing.T) {
 
 	// A finding inside a dependency's own source names it through
 	// DependencyInfo instead, and reaches the same entry.
+	// The scanner builds this PURL with purl.Dependency(ecosystem, module,
+	// version), so it arrives versioned: the id must be the base, never the
+	// versioned spelling.
 	if c := classifyFromDefaultGroups(depAsset(&entities.DependencyInfo{
-		Module: "rustls", Version: "0.23.25", PURL: "pkg:cargo/rustls",
+		Module: "rustls", Version: "0.23.25", PURL: "pkg:cargo/rustls@0.23.25",
 	})); c == nil || c.Status != "vulnerable" {
 		t.Fatalf("dependency-sourced finding = %+v; want vulnerable", c)
+	}
+
+	// An ecosystem whose resolver writes no PURL reaches the entry by module.
+	if c := classifyFromDefaultGroups(depAsset(&entities.DependencyInfo{
+		Module: "rust/rustls", Version: "0.23.25",
+	})); c == nil || c.Status != "vulnerable" {
+		t.Fatalf("module-only finding = %+v; want vulnerable", c)
 	}
 
 	// A rule PURL the dependency phase could not enrich names no version, so

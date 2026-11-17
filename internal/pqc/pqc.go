@@ -171,6 +171,9 @@ func libraryVersion(asset *entities.CryptographicAsset) (id, version string) {
 		return base, v
 	}
 	if dep := asset.DependencyInfo; dep != nil && dep.Version != "" {
+		if base, _, ok := purl.Split(dep.PURL); ok {
+			return base, dep.Version // the scanner writes this PURL versioned
+		}
 		if dep.PURL != "" {
 			return dep.PURL, dep.Version
 		}
