@@ -35,6 +35,8 @@ crypto-finder scan --export-callgraph callgraph.json --output findings.json /pat
     pip install semgrep==1.145.0
     ```
 
+    On Windows, OpenGrep needs the [Microsoft Visual C++ Redistributable 2015-2022 (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe); without it OpenGrep exits at start with status `0xC0000135`.
+
 ### Setup
 
 **Option 1: Build from source**

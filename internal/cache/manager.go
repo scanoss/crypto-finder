@@ -475,8 +475,8 @@ func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string)
 	log.Warn().
 		Str("ruleset", name).
 		Str("version", version).
-		Dur("age", cacheAge.Round(time.Hour)).
-		Time("cached_at", metadata.DownloadedAt).
+		Str("age", humanAge(cacheAge)).
+		Str("cached_at", metadata.DownloadedAt.UTC().Format(time.RFC3339)).
 		Msg("Failed to download remote rules. Using stale cache")
 
 	// Update last accessed time
@@ -485,6 +485,16 @@ func (m *Manager) tryStaleCache(rulesetPath, metadataPath, name, version string)
 	}
 
 	return rulesetPath, nil
+}
+
+// humanAge renders a cache age in whole days and hours ("2d 3h", "5h"),
+// rounded to the hour, for log lines read by people.
+func humanAge(d time.Duration) string {
+	hours := int(d.Round(time.Hour) / time.Hour)
+	if hours < 24 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%dd %dh", hours/24, hours%24)
 }
 
 // newBytesReader creates an io.Reader from a byte slice.

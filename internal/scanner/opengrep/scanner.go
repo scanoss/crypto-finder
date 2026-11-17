@@ -520,14 +520,36 @@ func (s *Scanner) requireForceExclude(ctx context.Context) error {
 	)
 }
 
+// setCommandEnv gives cmd the scanner's environment and a private temporary
+// directory (TMPDIR, TMP and TEMP), removed by the returned cleanup. OpenGrep
+// writes the rules it was given into its temporary directory (semgrep-*.rules
+// and tmp*.json) and does not remove them on every platform; the rules may
+// come from an encrypted cache and must not stay on disk after the scan.
+func (s *Scanner) setCommandEnv(cmd *exec.Cmd) (func(), error) {
+	dir, err := os.MkdirTemp("", "crypto-finder-opengrep-")
+	if err != nil {
+		return nil, fmt.Errorf("opengrep: create a temporary directory: %w", err)
+	}
+	env := append(cmd.Environ(), mapToEnvSlice(s.env)...)
+	env = append(env, "TMPDIR="+dir, "TMP="+dir, "TEMP="+dir)
+	cmd.Env = env
+	return func() {
+		if err := os.RemoveAll(dir); err != nil {
+			log.Warn().Err(err).Str("dir", dir).Msg("opengrep: could not remove its temporary directory")
+		}
+	}, nil
+}
+
 // execute runs the opengrep command in dir and captures stdout/stderr.
 func (s *Scanner) execute(ctx context.Context, dir string, args []string, outcome *scanner.Outcome) (stdout []byte, stderr string, err error) {
 	cmd := scanner.CommandContext(ctx, s.executablePath, args...)
 	cmd.Dir = dir
 
-	if len(s.env) > 0 {
-		cmd.Env = append(cmd.Environ(), mapToEnvSlice(s.env)...)
+	cleanupTemp, err := s.setCommandEnv(cmd)
+	if err != nil {
+		return nil, "", err
 	}
+	defer cleanupTemp()
 
 	startTime := time.Now()
 
