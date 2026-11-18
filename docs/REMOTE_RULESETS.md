@@ -202,7 +202,7 @@ A refused API key (HTTP 401 or 403) reads `the SCANOSS API refused the ruleset d
 
 ### Notices from the SCANOSS API
 
-Any answer of the SCANOSS API (ruleset downloads and dependency findings alike) may carry an `X-SCANOSS-Notice` header, for example to announce that a crypto-finder version stops working on a given date. The request is not affected. crypto-finder shows the first notice of a run once, however many requests carry it: in a box on a terminal, and as one `NOTICE: <text>` line on stderr otherwise. Nothing is shown while stderr carries JSON (`--error-format json` or `--progress`). The text is cleaned like an upgrade-required message.
+Any answer of the SCANOSS API (ruleset downloads and dependency findings alike) may carry a `SCANOSS-Notice` header, for example to announce that a crypto-finder version stops working on a given date. The request is not affected. crypto-finder shows the first notice of a run once, however many requests carry it: in a box on a terminal, and as one `NOTICE: <text>` line on stderr otherwise. Nothing is shown while stderr carries JSON (`--error-format json` or `--progress`). The text is cleaned like an upgrade-required message. crypto-finder 0.55.0 reads the header as `X-SCANOSS-Notice`; later versions read `SCANOSS-Notice`.
 
 ```
 ┌─ SCANOSS ───────────────────────────────────────────────┐

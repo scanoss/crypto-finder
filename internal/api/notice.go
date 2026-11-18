@@ -23,13 +23,13 @@ import (
 
 // headerNotice is the response header the SCANOSS API uses to tell the user
 // something without failing the request, such as a coming end of support.
-const headerNotice = "X-SCANOSS-Notice"
+const headerNotice = "SCANOSS-Notice"
 
-// noticeHandler receives the text of every X-SCANOSS-Notice header.
+// noticeHandler receives the text of every SCANOSS-Notice header.
 var noticeHandler atomic.Pointer[func(string)]
 
 // SetNoticeHandler sets the function that receives the sanitized text of
-// every X-SCANOSS-Notice header an API response carries, on any request of
+// every SCANOSS-Notice header an API response carries, on any request of
 // any Client. Nil, the default, ignores notices. The handler may be called
 // many times and from several goroutines; showing the notice once is its
 // job.
@@ -41,7 +41,7 @@ func SetNoticeHandler(handler func(string)) {
 	noticeHandler.Store(&handler)
 }
 
-// noticeTransport passes X-SCANOSS-Notice headers to the notice handler.
+// noticeTransport passes SCANOSS-Notice headers to the notice handler.
 type noticeTransport struct {
 	base http.RoundTripper
 }
