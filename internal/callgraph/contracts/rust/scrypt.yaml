@@ -8,7 +8,7 @@ library:
   description: "RustCrypto scrypt password-based key derivation"
 
 # Inventory sources: the scrypt 0.12.0 crate source (src/params.rs, src/lib.rs)
-# and the APIs selected by the scanoss/crypto_rules scrypt rules. Params::default
+# and the APIs selected by the scrypt detection rules. Params::default
 # delegates to Params::RECOMMENDED, whose OWASP-aligned values are log_n 17,
 # r 8, p 1.
 #

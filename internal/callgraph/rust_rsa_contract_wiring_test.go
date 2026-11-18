@@ -12,7 +12,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
 )
 
-// Every call the crypto_rules rust/rsa rules name in metadata.crypto.api, and the
+// Every call the rust/rsa detection rules name in metadata.crypto.api, and the
 // key operations those padding and key objects feed, written the way a consumer
 // writes them, must resolve to exactly one rsa contract with the expected role.
 // The source mixes eras on purpose: the parser does not compile, and the KB

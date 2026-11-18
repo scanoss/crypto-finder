@@ -8,9 +8,9 @@ library:
   description: "Go supplementary cryptography libraries"
 
 # Inventory sources: golang.org/x/crypto v0.48.0 source and the 85 x/crypto
-# detection rules at scanoss/crypto_rules b6730e8721570f2ffaa8b841ddf2e845eca8e277,
+# detection rules,
 # extended with the NaCl box/sign/auth, salsa20, elgamal, clearsign, knownhosts
-# and NewSignerWithAlgorithms rules of crypto_rules #419. Every contract below
+# and NewSignerWithAlgorithms detection rules. Every contract below
 # has the same arity in every release from v0.1.0 to v0.53.0 in which it
 # exists; only ssh.MarshalPrivateKey, MarshalPrivateKeyWithPassphrase and
 # NewSignerWithAlgorithms are absent before v0.14.0.

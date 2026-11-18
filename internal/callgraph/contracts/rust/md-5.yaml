@@ -8,7 +8,7 @@ library:
   description: "RustCrypto MD5 hash"
 
 # Inventory sources: the md-5 crate's own source at 0.4.0, 0.10.6 and 0.11.0,
-# and the APIs selected by the scanoss/crypto_rules md-5 rules.
+# and the APIs selected by the md-5 detection rules.
 #
 # THE METHOD KEYS USE THE LIB NAME `md5`, NOT THE CRATE NAME `md-5`
 # (Cargo.toml `[lib] name = "md5"`, read at 0.10.6 and 0.11.0). The callgraph

@@ -8,7 +8,7 @@ library:
   description: "emmansun GM/T library: SM2, SM3, SM4 with cipher modes, and SM9"
 
 # Inventory source: github.com/emmansun/gmsm v0.45.2 module source from the Go module proxy,
-# packages sm2, sm3, sm4, sm9, cipher. Detection rules: scanoss/crypto_rules go/emmansun-gmsm.
+# packages sm2, sm3, sm4, sm9, cipher. Detection rules: go/emmansun-gmsm.
 # needs-follow-up (no rule yet): ecdh (SM2 ECDH, SM2MQV, SM2SharedKey), cbcmac, kdf.Kdf, zuc (EEA/EIA).
 contracts:
   - method: github.com/emmansun/gmsm/cipher.(*gxm).Open

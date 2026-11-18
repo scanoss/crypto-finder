@@ -21,7 +21,7 @@ library:
 #
 # Scope per issue AC: Blake3 is a Type-2 stateful/fluent API exposing THREE
 # independent modes from one engine — plain hash/XOF, keyed hash (MAC/PRF),
-# and key derivation (KDF) — each anchored by its own crypto_rules#164 rule
+# and key derivation (KDF) — each anchored by its own detection rule
 # (PR #167: semgrep-rules/java/commons-codec/algorithm/{hash,mac,kdf}/blake3/
 # rules.yaml). The rule `api:` metadata anchors on the mode-selecting factory
 # (initHash / initKeyedHash / initKeyDerivationFunction) even though the
@@ -41,7 +41,7 @@ library:
 # Disposition legend: contracted | covered-existing | skipped-non-crypto |
 # skipped-informative-return | skipped-unsupported | needs-follow-up.
 #
-#   initHash()                          contracted (factory, arity 0) — rules api anchor (crypto_rules#164/PR167: hash rule api=Blake3.initHash)
+#   initHash()                          contracted (factory, arity 0) — rules api anchor (detection rules: hash rule api=Blake3.initHash)
 #   initKeyedHash(byte[])                contracted (factory, arity 1) — rules api anchor (mac rule api=Blake3.initKeyedHash); param 0 (key) contributes "keySize" (argument_bit_length), matching the mac rule's fixed algorithmParameterSetIdentifier="256"
 #   initKeyDerivationFunction(byte[])    contracted (factory, arity 1) — rules api anchor (kdf rule api=Blake3.initKeyDerivationFunction)
 #   hash(byte[])                        contracted (factory, arity 1) — rules pattern-either anchor (hash rule also matches `Blake3.hash(...)`); one-shot inline of initHash().update(data).doFinalize(OUT_LEN)
@@ -51,7 +51,7 @@ library:
 #   doFinalize(byte[])                   contracted (operation, arity 1) — self-returning finalize step; see arity-collision note below
 #   doFinalize(byte[],int,int)           contracted (operation, arity 3) — self-returning finalize step, offset/length variant
 #   doFinalize(int)                      skipped-unsupported (arity 1) — see arity-collision note below
-#   reset()                              contracted (config, arity 0) — self-returning re-init of engine state; not a crypto_rules#164 anchor, included for exhaustive-inventory completeness of the class's public lifecycle surface
+#   reset()                              contracted (config, arity 0) — self-returning re-init of engine state; not a detection rules anchor, included for exhaustive-inventory completeness of the class's public lifecycle surface
 #
 # Arity-collision note (doFinalize#1): Blake3 declares TWO public overloads
 # that both resolve to method+arity key "...Blake3.doFinalize#1":
@@ -62,7 +62,7 @@ library:
 # it cannot disambiguate a same-arity overload pair by signature alone. Per
 # the crypto-kb-author skill's guidance ("pick the more accurate single
 # contract"), doFinalize(byte[]) is the one contracted at arity 1: every
-# crypto_rules#164/PR167 test fixture and the issue #187 AC's "self-
+# detection rules test fixture and the issue #187 AC's "self-
 # referencing fluent chain" requirement exercise ONLY the byte[]-out form
 # (`hasher.doFinalize(out)`, `kdf.doFinalize(derivedKey)`) — doFinalize(int)
 # never appears in any anchored call site. doFinalize(int) is recorded here

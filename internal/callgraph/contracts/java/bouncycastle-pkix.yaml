@@ -26,8 +26,8 @@ library:
 # lifecycle contract needed for Bouncy Castle bcpkix joins" -- the builder-
 # heavy factory/config/operation/output surfaces of org.bouncycastle.{cert,
 # cms,operator,pkcs} plus the OCSPReqBuilder request lifecycle named in the
-# task brief, grounded in the two existing scanoss/crypto_rules anchors this
-# ticket must join (crypto-rules/semgrep-rules/java/bouncycastle/protocol/cms/
+# task brief, grounded in the two existing detection rules anchors this
+# ticket must join (java/bouncycastle/protocol/cms/
 # rules.yaml: org.bouncycastle.cms.CMSEnvelopedDataGenerator.<init> and
 # org.bouncycastle.cms.CMSSignedDataGenerator.<init>) and extended to the
 # builder classes that construct the ContentSigner/OutputEncryptor/
@@ -89,7 +89,7 @@ library:
 #   getCertificate(X509CertificateHolder)                                      contracted (operation, arity 1) -- high-leverage: converts the BC-native holder into the JCA java.security.cert.X509Certificate the rest of the JDK trusts
 #
 # org.bouncycastle.operator.jcajce.JcaContentSignerBuilder (rule anchor:
-# crypto_rules protocol/cms/rules.yaml pattern-sink `new
+# detection rules protocol/cms/rules.yaml pattern-sink `new
 # JcaContentSignerBuilder($ALGO)`, tagged under the CMSSignedDataGenerator
 # api; also the ContentSigner factory X509v3CertificateBuilder.build and
 # PKCS10CertificationRequestBuilder.build consume)
@@ -100,10 +100,10 @@ library:
 #   <init>(String,AlgorithmParameterSpec,AlgorithmIdentifier)                  contracted (factory, arity 3)
 #   setProvider(Provider)/setProvider(String)                                 contracted (config, arity 1) -- collapsed
 #   setSecureRandom(SecureRandom)                                              contracted (config, arity 1)
-#   build(PrivateKey)                                                          contracted (factory, arity 1) -- terminal, produces org.bouncycastle.operator.ContentSigner; algorithmName param (index 0 of the constructor) is the rule-anchor's own metadata-selection argument, already owned by crypto_rules -- no `parameters:` derivation duplicated here per the "condition and provider ownership" rule
+#   build(PrivateKey)                                                          contracted (factory, arity 1) -- terminal, produces org.bouncycastle.operator.ContentSigner; algorithmName param (index 0 of the constructor) is the rule-anchor's own metadata-selection argument, already owned by detection rules -- no `parameters:` derivation duplicated here per the "condition and provider ownership" rule
 #
 # org.bouncycastle.operator.bc.BcContentSignerBuilder (abstract; rule anchor:
-# crypto_rules pattern-sink text `new BcContentSignerBuilder($ALGO)`, which
+# detection rules pattern-sink text `new BcContentSignerBuilder($ALGO)`, which
 # does not match this class's real arity-2 constructor since the class is
 # abstract and not directly instantiable -- the rule's own precision gap is
 # out of this KB's scope. build()'s shared declaration is authored on the
@@ -144,7 +144,7 @@ library:
 #   build()                                                                    contracted (factory, arity 0) -- terminal, produces org.bouncycastle.operator.DigestCalculatorProvider
 #
 # org.bouncycastle.cms.CMSSignedDataGenerator (rule anchor:
-# crypto_rules#cms.signature api = org.bouncycastle.cms.CMSSignedDataGenerator.<init>)
+# detection rule cms.signature api = org.bouncycastle.cms.CMSSignedDataGenerator.<init>)
 #   <init>()                                                                   contracted (factory, arity 0)
 #   <init>(DigestAlgorithmIdentifierFinder)                                    contracted (factory, arity 1)
 #   setDefiniteLengthEncoding(boolean)                                        contracted (config, arity 1)
@@ -169,7 +169,7 @@ library:
 #   getGeneratedDigests()                                                      skipped-informative-return -- returns a plain Map snapshot, not part of the builder lifecycle
 #
 # org.bouncycastle.cms.CMSEnvelopedDataGenerator (rule anchor:
-# crypto_rules#cms.encryption api = org.bouncycastle.cms.CMSEnvelopedDataGenerator.<init>)
+# detection rule cms.encryption api = org.bouncycastle.cms.CMSEnvelopedDataGenerator.<init>)
 #   <init>()                                                                   contracted (factory, arity 0)
 #   generate(CMSTypedData,OutputEncryptor)                                     contracted (operation, arity 2) -- terminal; encrypts the content, produces CMSEnvelopedData
 #
@@ -282,7 +282,7 @@ library:
 # algorithm/OID/provider argument a caller passes (e.g. JcaContentSignerBuilder
 # always returns ContentSigner, JceCMSContentEncryptorBuilder always returns
 # OutputEncryptor) -- unlike Cipher.unwrap, where the mode argument selects
-# the Java return type. Algorithm-name/OID selection stays in crypto_rules
+# the Java return type. Algorithm-name/OID selection stays in detection rules
 # metadata (parameterCondition), never in this KB, per the crypto-kb-author
 # skill's "Condition and provider ownership" rule.
 # ─────────────────────────────────────────────────────────────────────────────

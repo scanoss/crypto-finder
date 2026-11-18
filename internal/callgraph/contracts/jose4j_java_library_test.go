@@ -14,10 +14,10 @@ import (
 // AES key wrap, AES-GCM key wrap, PBES2, direct), the hand-rolled
 // AesCbcHmacSha2ContentEncryptionAlgorithm encrypt-then-MAC composite, the
 // hand-rolled ConcatKDF/PBKDF2 KDFs, and the JWK generators — including the
-// return types, lifecycle roles, and the scanoss/crypto_rules#175 rule-anchor
+// return types, lifecycle roles, and the detection rule anchor
 // api FQNs they must resolve through. The P1 verification-side surface
 // (JwtConsumerBuilder/JsonWebSignature/JsonWebEncryption/JWKS resolvers) is
-// deliberately absent, matching crypto_rules#174's P1 deferral.
+// deliberately absent, matching the detection rules' P1 deferral.
 func TestLoadEmbeddedJava_Jose4jLifecycle(t *testing.T) {
 	t.Parallel()
 

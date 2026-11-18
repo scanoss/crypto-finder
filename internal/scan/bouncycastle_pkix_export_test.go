@@ -28,12 +28,12 @@ import (
 //     actually holds, not just an assertion in the YAML audit comment.
 //  2. The ContentSigner factory JcaContentSignerBuilder.build(PrivateKey)
 //     feeds cert issuance's build(ContentSigner) call.
-//  3. The two scanoss/crypto_rules protocol/cms/rules.yaml api anchors --
+//  3. The two detection rules protocol/cms/rules.yaml api anchors --
 //     org.bouncycastle.cms.CMSSignedDataGenerator.<init> and
 //     org.bouncycastle.cms.CMSEnvelopedDataGenerator.<init> -- each resolve
 //     their full lifecycle (constructor factory, addSignerInfoGenerator/
 //     addRecipientInfoGenerator config, generate() operation terminal
-//     producing CMSSignedData/CMSEnvelopedData) so a real crypto_rules
+//     producing CMSSignedData/CMSEnvelopedData) so a real detection rules
 //     finding on either constructor joins a complete supporting-call chain,
 //     not just the bare constructor.
 func TestBuildGraphFragmentExport_Issue185BouncyCastlePkixLifecycle(t *testing.T) {
@@ -61,14 +61,14 @@ func TestBuildGraphFragmentExport_Issue185BouncyCastlePkixLifecycle(t *testing.T
 	signerCtorID := callgraph.FunctionID{Package: pkgOperatorJca, Type: "JcaContentSignerBuilder", Name: "<init>#1"}
 	signerBuildID := callgraph.FunctionID{Package: pkgOperatorJca, Type: "JcaContentSignerBuilder", Name: "build#1"}
 
-	// 3a. CMSSignedDataGenerator: the crypto_rules cms.signature rule anchor.
+	// 3a. CMSSignedDataGenerator: the cms.signature detection rule anchor.
 	// addSignerInfoGenerator is declared on the shared CMSSignedGenerator base
 	// (not overridden), same inherited-declaration reasoning as (1).
 	cmsSignedCtorID := callgraph.FunctionID{Package: pkgCms, Type: "CMSSignedDataGenerator", Name: "<init>#0"}
 	cmsAddSignerID := callgraph.FunctionID{Package: pkgCms, Type: "CMSSignedGenerator", Name: "addSignerInfoGenerator#1"}
 	cmsSignedGenID := callgraph.FunctionID{Package: pkgCms, Type: "CMSSignedDataGenerator", Name: "generate#1"}
 
-	// 3b. CMSEnvelopedDataGenerator: the crypto_rules cms.encryption rule
+	// 3b. CMSEnvelopedDataGenerator: the cms.encryption detection rule
 	// anchor. addRecipientInfoGenerator is declared on the shared
 	// CMSEnvelopedGenerator base (not overridden).
 	cmsEnvCtorID := callgraph.FunctionID{Package: pkgCms, Type: "CMSEnvelopedDataGenerator", Name: "<init>#0"}

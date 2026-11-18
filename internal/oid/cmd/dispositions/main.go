@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 // Command dispositions snapshots the resolved algorithm TEST-METADATA
-// vocabulary from the pinned crypto_rules fixture corpus.
+// vocabulary from the pinned detection rules fixture corpus.
 package main
 
 import (
@@ -50,7 +50,7 @@ type sourceRow struct {
 func main() {
 	refresh := flag.Bool("refresh", false, "write the current pinned fixture snapshot")
 	check := flag.Bool("check", false, "compare the pinned fixture corpus with the committed snapshot")
-	rulesDir := flag.String("rules-dir", "", "path to crypto_rules checkout")
+	rulesDir := flag.String("rules-dir", "", "path to detection rules checkout")
 	snapshot := flag.String("snapshot", "internal/oid/testdata/fixture-dispositions.json", "snapshot path")
 	flag.Parse()
 	if *refresh == *check || *rulesDir == "" {

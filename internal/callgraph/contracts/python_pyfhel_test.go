@@ -374,7 +374,7 @@ func TestLoadEmbeddedPython_Pyfhel_EveryKeyIsRootedAtTheDistribution(t *testing.
 // `keyGen()` takes no parameters in any of the 32 archived releases (3.5.0
 // Pyfhel/Pyfhel.pyx:290, 2.0.0a2 :128), and `contextGen`'s `sec=` is a security
 // level in AES-equivalent bits (3.5.0 :246 "Security level equivalent in AES"),
-// which maps to `algorithmClassicalSecurityLevel` -- a field the crypto_rules
+// which maps to `algorithmClassicalSecurityLevel` -- a field the detection rules
 // metadata contract FORBIDS outright. This test pins the contract side: no
 // Pyfhel entry may contribute a key-size property.
 //

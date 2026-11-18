@@ -9,7 +9,7 @@ library:
 
 # Inventory sources: Crypto++ 8.9.0 public headers sha.h and cryptlib.h at tag
 # commit 041cf66ed64f28d89cc50b762cde0353cf85657c, and the SHA-256 APIs selected
-# by scanoss/crypto_rules cpp.cryptopp.algorithm.hash.sha-2.sha256. Scope is the
+# by detection rules cpp.cryptopp.algorithm.hash.sha-2.sha256. Scope is the
 # SHA-256 hash lifecycle; the PR body carries the full disposition table.
 #
 # skipped-non-crypto: AlgorithmName, StaticAlgorithmName, AlgorithmProvider,

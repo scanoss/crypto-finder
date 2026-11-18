@@ -156,7 +156,7 @@ func TestDefaultSkipPatternsKeepExamplePaths(t *testing.T) {
 		{path: "example", isDir: true},
 		{path: "examples", isDir: true},
 		{path: "src/com/example", isDir: true},
-		{path: "src/com/example/earnie/JcaUsage.java", isDir: false},
+		{path: "src/com/example/app/JcaUsage.java", isDir: false},
 		{path: "src/main/java/com/example/crypto/Aes.java", isDir: false},
 		{path: "examples/sdk/demo.go", isDir: false},
 		{path: "src/examples/reference.rs", isDir: false},

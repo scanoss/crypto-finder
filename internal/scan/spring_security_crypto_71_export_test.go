@@ -28,7 +28,7 @@ import (
 //     audit comment.
 //  2. The hand-rolled BCrypt static terminal: hashpw(raw, gensalt()) mirrors
 //     the real call shape from spring-security-crypto's own
-//     BCryptPasswordEncoder.encode() (and the crypto_rules#162 fixture) --
+//     BCryptPasswordEncoder.encode() (and the detection rules fixture) --
 //     gensalt() is a supporting call (role: factory) feeding hashpw() (role:
 //     operation), and checkpw() is a separate operation call.
 //  3. Encryptors.delux(...) (factory) returns a TextEncryptor whose

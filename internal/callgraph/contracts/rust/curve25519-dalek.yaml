@@ -30,7 +30,7 @@ library:
 # sampling (private-key generation), and the compression/decompression that
 # types a consumer's point variables. Bare point addition, subtraction, doubling
 # and negation are deliberately absent — they are operator impls, and the
-# scanoss/crypto_rules raw-arithmetic-negative fixture pins that they carry no
+# detection rules raw-arithmetic-negative fixture pins that they carry no
 # finding either.
 #
 # skipped-non-crypto: Add/Sub/Mul/Neg operator impls, ConstantTimeEq, Zeroize,

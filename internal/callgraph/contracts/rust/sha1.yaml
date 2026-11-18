@@ -8,7 +8,7 @@ library:
   description: "SHA-1 hash, both upstream lineages published under the sha1 crate name"
 
 # Inventory sources: the sha1 crate's own source at 0.0.1, 0.6.0, 0.6.1, 0.10.6
-# and 0.11.0, and the APIs selected by the scanoss/crypto_rules sha1 rules.
+# and 0.11.0, and the APIs selected by the sha1 detection rules.
 #
 # THE CRATE NAME SPANS TWO UNRELATED UPSTREAM PROJECTS and this KB covers both,
 # because a consumer writes the same `sha1::Sha1` path either way:

@@ -8,7 +8,7 @@ library:
   description: "RustCrypto HMAC over a generic hash function"
 
 # Inventory sources: the hmac crate's own source at 0.11.0, 0.12.1 and 0.13.0,
-# and the APIs selected by the scanoss/crypto_rules hmac rules.
+# and the APIs selected by the hmac detection rules.
 #
 # The crate's own surface is the `Hmac`, `SimpleHmac` (0.12+) and `HmacReset`
 # (0.13+) types; every callable below comes from the shared `KeyInit` and `Mac`

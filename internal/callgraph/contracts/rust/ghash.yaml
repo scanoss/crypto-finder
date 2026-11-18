@@ -8,7 +8,7 @@ library:
   description: "RustCrypto GHASH universal hash over GF(2^128)"
 
 # Inventory sources: ghash 0.6.0 crate documentation and the APIs selected by the
-# scanoss/crypto_rules ghash rule. The crate exposes one type implementing the
+# ghash detection rule. The crate exposes one type implementing the
 # universal_hash trait, so the surface is its construction plus that lifecycle.
 #
 # skipped-non-crypto: the Block, Key and Tag type aliases and their conversions.

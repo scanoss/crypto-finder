@@ -8,7 +8,7 @@ library:
   description: "RustCrypto SHA-2 hashes, plus the vendored rust-crypto module path of the 0.1 line"
 
 # Inventory sources: the sha2 crate's own source at 0.1.0, 0.2.0, 0.9.9, 0.10.9
-# and 0.11.0, and the APIs selected by the scanoss/crypto_rules sha2 rules.
+# and 0.11.0, and the APIs selected by the sha2 detection rules.
 #
 # THE TRUNCATED PAIR WAS RENAMED INSIDE THE RANGE. `Sha512Trunc224` and
 # `Sha512Trunc256` are the 0.2.0-0.9.9 spelling (0.9.9 src/lib.rs:76);

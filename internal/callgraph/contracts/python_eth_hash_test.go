@@ -243,7 +243,7 @@ func TestLoadEmbeddedPython_EthHash_LibraryBlock(t *testing.T) {
 
 // TestLoadEmbeddedPython_EthHash_NoBackendLibraryKey is the contract-side half
 // of the wrong-package assertion the rules carry in
-// crypto_rules tests/test_eth_hash_false_positives.py.
+// detection rules tests/test_eth_hash_false_positives.py.
 //
 // eth-hash is a DISPATCHER: the cryptography happens in pycryptodome or in
 // pysha3, both of which are separate merged families with their own contracts.

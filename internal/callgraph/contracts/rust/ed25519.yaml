@@ -8,7 +8,7 @@ library:
   description: "RustCrypto Ed25519 signature type and traits"
 
 # Inventory sources: ed25519 3.0.0 crate documentation and the APIs selected by the
-# scanoss/crypto_rules ed25519 rule. The crate carries no implementation: it
+# ed25519 detection rule. The crate carries no implementation: it
 # provides the Signature type other crates sign and verify with, so the surface
 # is construction and decoding rather than a crypto lifecycle.
 #

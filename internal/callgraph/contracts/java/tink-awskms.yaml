@@ -10,7 +10,7 @@ library:
 
 # Inventory sources: tink-awskms 1.11.0 public class
 # com.google.crypto.tink.integration.awskms.AwsKmsClient, paired with
-# scanoss/crypto_rules java.tink-kms.related-crypto-material.key.aws.
+# detection rules java.tink-kms.related-crypto-material.key.aws.
 #
 # contracted: constructors, register, withCredentials, withDefaultCredentials, getAead.
 # skipped-non-crypto: doesSupport.

@@ -22,7 +22,7 @@ library:
 # and sends it. These contracts type the client surface. They say nothing about
 # which algorithm ran, because the call site does not know — that lives in the
 # EncryptionAlgorithm or SignatureAlgorithm variant the consumer wrote, which the
-# scanoss/crypto_rules rules match directly.
+# detection rules match directly.
 contracts:
   - method: azure_security_keyvault_keys::KeyClient.encrypt
     arity: 3

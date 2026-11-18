@@ -276,7 +276,7 @@ func TestLoadEmbeddedJava_NimbusAndSpringLifecycleCoverage(t *testing.T) {
 // methods (sslProvider, protocols, ciphers, keyManager, trustManager, and the
 // remaining builder methods), and the build() terminal that produces the
 // SslContext engine object — including the return types, lifecycle roles,
-// and the rules-anchor api FQNs (scanoss/crypto_rules#168) they must resolve
+// and the rules-anchor api FQNs (detection rules) they must resolve
 // through.
 func TestLoadEmbeddedJava_NettyTLSBuilderLifecycle(t *testing.T) {
 	t.Parallel()
@@ -381,9 +381,9 @@ func TestLoadEmbeddedJava_NettyTLSBuilderLifecycle(t *testing.T) {
 // cert-issuance chain (factory constructors, fluent addExtension/
 // replaceExtension config, and the build() terminal producing
 // X509CertificateHolder), the JcaContentSignerBuilder/BcContentSignerBuilder
-// ContentSigner factories the crypto_rules CMS rules anchor on, the
+// ContentSigner factories the CMS detection rules anchor on, the
 // CMSSignedDataGenerator/CMSEnvelopedDataGenerator generators the
-// crypto_rules protocol/cms rules anchor on directly, the SignerInfoGenerator
+// protocol/cms detection rules anchor on directly, the SignerInfoGenerator
 // builders that feed them, the PKCS#10 certification-request builder, and
 // the OCSPReqBuilder request lifecycle -- including return types, lifecycle
 // roles, the collapsed-overload arities, and the abstract-builder hierarchy
@@ -441,7 +441,7 @@ func TestLoadEmbeddedJava_BouncyCastlePkixLifecycle(t *testing.T) {
 		{jcaSignerBuilder + ".build", 1, contentSigner, "factory"},
 		{bcSignerBuilder + ".build", 1, contentSigner, "factory"},
 		{bcRSASigner + ".<init>", 2, bcRSASigner, "factory"},
-		// CMS generators (the crypto_rules protocol/cms rule anchors).
+		// CMS generators (the protocol/cms detection rule anchors).
 		{cmsSignedGen + ".<init>", 0, cmsSignedGen, "factory"},
 		{cmsSignedGen + ".generate", 1, "org.bouncycastle.cms.CMSSignedData", "operation"},
 		{cmsEnvelopedGen + ".<init>", 0, cmsEnvelopedGen, "factory"},
@@ -515,7 +515,7 @@ func TestLoadEmbeddedJava_BouncyCastlePkixLifecycle(t *testing.T) {
 // factory->update->doFinalize chain (hash/keyedHash), the self-returning
 // update (operation/absorb) and doFinalize (operation) steps, and reset —
 // including the return types, lifecycle roles, and the rules-anchor api
-// FQNs (scanoss/crypto_rules#164, PR #167) they must resolve through.
+// FQNs (detection rules) they must resolve through.
 func TestLoadEmbeddedJava_CommonsCodecBlake3Lifecycle(t *testing.T) {
 	t.Parallel()
 

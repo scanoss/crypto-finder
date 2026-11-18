@@ -92,7 +92,7 @@ library:
 # `identity`, `generator`, `write_raw`/`read_raw` and the serde impls. They are
 # curve arithmetic or representation moves and carry no crypto asset, which is
 # what progress.json's family note means by "exclude generic scalar arithmetic
-# from findings". The scanoss/crypto_rules raw-arithmetic-negative fixture pins
+# from findings". The detection rules raw-arithmetic-negative fixture pins
 # that they produce no finding either.
 #
 # ALSO ABSENT, AND THIS ONE IS A GAP RATHER THAN A JUDGEMENT: the aggregate

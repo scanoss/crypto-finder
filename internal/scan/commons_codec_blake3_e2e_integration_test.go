@@ -4,7 +4,7 @@
 // commons_codec_blake3_e2e_integration_test.go — scanoss/crypto-finder#187 scan-layer proof.
 //
 // Proves that entry-point synthesis (engine.SynthesizeRuleCryptoEntryPoints)
-// JOINS the scanoss/crypto_rules#164 (PR #167) Commons Codec Blake3 rule api
+// JOINS the Commons Codec Blake3 detection rule api
 // anchors (org.apache.commons.codec.digest.Blake3.{initHash,initKeyedHash,
 // initKeyDerivationFunction} — one per mode) against a Blake3-shaped source
 // file mined with the real Java parser + callgraph builder — the same path
@@ -76,7 +76,7 @@ public final class Blake3 {
 }
 `
 
-// blake3RulesYAML mirrors the scanoss/crypto_rules#164 (PR #167) rule shapes
+// blake3RulesYAML mirrors the detection rule shapes
 // anchored on Blake3: one rule per mode, each anchoring on its
 // mode-selecting factory api (matching what the real hash/mac/kdf
 // rules.yaml files declare in their metadata.crypto.api field, even though
@@ -116,7 +116,7 @@ const blake3RulesYAML = `rules:
 
 // TestCommonsCodecBlake3_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors
 // proves that mining commons-codec's own Blake3 source produces a
-// synthesized crypto entry point for every scanoss/crypto_rules#164 mode
+// synthesized crypto entry point for every detection rules mode
 // anchor: initHash (hash mode), initKeyedHash (keyed-MAC mode), and
 // initKeyDerivationFunction (KDF mode) — the three independent modes the
 // issue #187 AC requires to be preserved so entry-point synthesis joins the

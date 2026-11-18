@@ -8,7 +8,7 @@ library:
   description: "sodiumoxide safe Rust bindings for libsodium"
 
 # Inventory sources: sodiumoxide 0.2.7 crate documentation and the APIs selected
-# by the scanoss/crypto_rules sodiumoxide rules. Each module re-exports one
+# by the sodiumoxide detection rules. Each module re-exports one
 # concrete primitive: secretbox is xsalsa20poly1305, auth is hmacsha512256, sign
 # is ed25519, pwhash is scryptsalsa208sha256. Scope is those four plus the two
 # hash submodules, matching the rules that exist.

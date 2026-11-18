@@ -18,7 +18,7 @@ library:
 # crypto_struct.h from the upstream tags mbedtls-2.22.0, mbedtls-2.28.10,
 # v3.0.0 and v3.6.6, and TF-PSA-Crypto 76920edd (pinned by v4.0.0) and 29160dd8
 # (pinned by v4.1.0). Every contracted function keeps the same arity in every
-# tag that declares it. The anchors come from crypto_rules#501: psa-crypto,
+# tag that declares it. The anchors come from detection rules: psa-crypto,
 # psa-sign, psa-key-generation, psa-mac and psa-aead in mbedtls.yaml name calls
 # directly, and every algorithm rule matches a PSA_ALG_* identifier inside any
 # psa_*(...) call, so each psa_* function taking a psa_algorithm_t is anchored.

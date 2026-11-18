@@ -8,7 +8,7 @@ library:
   description: "RustCrypto PBKDF2 password-based key derivation"
 
 # Inventory sources: pbkdf2 0.13.0 crate documentation and the APIs selected by
-# the scanoss/crypto_rules pbkdf2 rules. Params::default delegates to
+# the pbkdf2 detection rules. Params::default delegates to
 # Params::RECOMMENDED, whose OWASP-aligned values are 600000 rounds and a
 # 32-byte output. The four derivation functions take the PRF as a type
 # parameter; the turbofish is stripped from the callee identity by the parser,

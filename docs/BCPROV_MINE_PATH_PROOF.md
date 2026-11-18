@@ -1,6 +1,6 @@
 # BouncyCastle mine-path wall-clock proof
 
-Proves the full mining CLI path stays under the crypto-mining-service job budget
+Proves the full mining CLI path stays under the server-side mining job budget
 on the pathological provider corpus that previously timed out at 30 minutes.
 
 | Item | Value |

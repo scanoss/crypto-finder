@@ -39,7 +39,7 @@ library:
 # and is declared as one: the bytes inside are no crypto object a caller
 # chains on, and unwrapping them would key a following `.expect()` on `Vec`.
 #
-# The factories are the calls the scanoss/crypto_rules rust/rsa rules name in
+# The factories are the calls the rust/rsa detection rules name in
 # metadata.crypto.api, keyed as the Rust parser emits them (`rsa.Oaep.new`
 # normalizes to `rsa::Oaep.new`). Returns are the semantic type: a
 # `Result<Self>` constructor returns the key it builds.

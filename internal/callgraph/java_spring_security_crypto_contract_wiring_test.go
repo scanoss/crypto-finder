@@ -8,7 +8,7 @@ import (
 )
 
 // springSecurityCryptoConsumer calls every Spring Security Crypto rule API the
-// base, 3.1, 5.5 and 6.3 contract files add, in the shapes the crypto_rules
+// base, 3.1, 5.5 and 6.3 contract files add, in the shapes the detection rules
 // fixtures use: receivers typed as the concrete class and fluent new X().m().
 const springSecurityCryptoConsumer = `
 package app;

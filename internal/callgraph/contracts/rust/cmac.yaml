@@ -8,7 +8,7 @@ library:
   description: "RustCrypto CMAC (OMAC1) over a generic block cipher"
 
 # Inventory sources: the cmac crate's own source at 0.6.0, 0.7.2 and 0.8.0, and
-# the APIs selected by the scanoss/crypto_rules cmac rules.
+# the APIs selected by the cmac detection rules.
 #
 # `Cmac<C>` is the only type a consumer constructs; every callable below comes
 # from the `KeyInit` and `Mac` traits the crate re-exports, so the surface

@@ -46,7 +46,7 @@ const (
 	bcprovMineProofGroup    = "org.bouncycastle"
 	bcprovMineProofArtifact = "bcprov-jdk18on"
 	bcprovMineProofVersion  = "1.84"
-	// Comfortably under crypto-mining-service JOB_TIMEOUT=30m; target is single-digit minutes.
+	// Comfortably under the mining job timeout (30m); target is single-digit minutes.
 	bcprovMineProofMaxWall = 10 * time.Minute
 	// Floor checks — lock that we produced a real dense-library export, not an empty success.
 	bcprovMineProofMinFunctions   = 20000

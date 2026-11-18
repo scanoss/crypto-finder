@@ -9,13 +9,13 @@ library:
   version_range: ">=2.0.0,<5.0.0"
   description: "Mbed TLS legacy mbedtls_* cryptographic, X.509 and TLS APIs"
 
-# Inventory sources: Mbed TLS 3.6.7 public headers, crypto_rules mbedtls.yaml
+# Inventory sources: Mbed TLS 3.6.7 public headers, detection rules mbedtls.yaml
 # blob 077e379cb77b02ce182623b54660796aa24efb8f, and mbedtls_rsa_gen_key from
-# the key-generation rule added by crypto_rules#206. All 29 mbedtls_* symbols
+# the key-generation rule added by detection rules. All 29 mbedtls_* symbols
 # selected by those rules are contracted. Protocol and certificate lifecycle
 # calls are included where rules exist.
 #
-# Extended for crypto_rules#501 (semgrep-rules/c/mbedtls/{algorithm,
+# Extended for detection rules (semgrep-rules/c/mbedtls/{algorithm,
 # related-crypto-material,protocol}) from the public headers of the upstream
 # tags mbedtls-2.0.0, mbedtls-2.16.12, mbedtls-2.28.10, v3.0.0, v3.6.6, v4.0.0
 # and v4.1.0 (with the TF-PSA-Crypto commits those two pin). ARMmbed/mbedtls is

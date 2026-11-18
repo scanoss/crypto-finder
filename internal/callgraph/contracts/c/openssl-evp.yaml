@@ -6,9 +6,8 @@ library:
     - openssl:libcrypto
   description: "OpenSSL EVP high-level cryptographic APIs and the low-level RSA/DSA key-generation entry points"
 
-# Inventory sources: OpenSSL 3.6.2 public headers, crypto_rules commit
-# 39597ad26c0a968aa927592ca8ac29698018dea1, and the key-generation rules added
-# by crypto_rules#206, plus the SM4, Camellia, ARIA and SEED cipher constructors
+# Inventory sources: OpenSSL 3.6.2 public headers, the detection rules of the time, and the
+# key-generation detection rules added later, plus the SM4, Camellia, ARIA and SEED cipher constructors
 # of OpenSSL 3.5 evp.h. The list is limited to callable libcrypto APIs selected
 # by those detection rules: the EVP high-level surface plus the deprecated
 # low-level RSA/DSA key-generation entry points the rules still match.

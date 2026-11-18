@@ -13,8 +13,8 @@ name: Post-merge QA
 # (default `haiku`), QA_MAX_FEATURES caps the features one run drives (default
 # 5) and QA_MAX_TURNS caps the agent's turns (default 80).
 #
-# The agent is the Claude Code CLI, installed with npm at the version Earnie
-# pins, on the subscription seat (no API key, no per-run bill). Not
+# The agent is the Claude Code CLI, installed with npm at a pinned version
+# on the subscription seat (no API key, no per-run bill). Not
 # anthropics/claude-code-action: it pulls oven-sh/setup-bun, which an
 # organization allowing only its own and GitHub's actions refuses.
 #

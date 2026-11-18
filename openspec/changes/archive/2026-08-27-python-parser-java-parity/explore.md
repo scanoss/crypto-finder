@@ -56,7 +56,7 @@ Severity: Critical = breaks reachability/supporting-call correctness for common 
 
 `internal/dependency/pip_resolver.go` resolves distributions via `importlib.metadata.packages_distributions()` with a `dist-info`/`RECORD` fallback, against `VIRTUAL_ENV` → project `.venv`/`venv` → ambient interpreter. Resolved packages are real `.py` source and get full syntactic parsing via the same `PythonParser`; there is no separate vendoring concept. The Java-only type-only fast path does not apply, so Python does more parsing work per dependency but suffers no coverage loss (performance-only asymmetry, row 14). Rows 1–4, 12, 15 reproduce at dependency scale: crypto objects built in a package's `__init__.py` and consumed via `self.attr` or a helper parameter lose reachability precision exactly as in user code.
 
-### Mining (crypto-mining-service consumer)
+### Mining (mining service consumer)
 
 Exported surface: `pkg/graphfrag` (`CallgraphSchemaVersion = "6.13"`, fragment `graph-fragment-1.13`), `internal/scan/export.go`, `internal/scan/fragment_export.go`. The exporter is generic over `FunctionDecl`/`FunctionCall` fields (`ReceiverVar`, `AssignedVar`, `ChainID`, columns, `OwnerBases`, `crypto_entry_points[]`, `supporting_calls[]`, `occurrence_key`). Every row is parser-internal: fixes change output volume/precision for Python findings, not schema shape. The only thing that would require a schema decision — a Python analogue of Java's `resolved_key_length` (6.12→6.13) for `dklen=`/`kdf.derive` — is explicitly NOT proposed here.
 

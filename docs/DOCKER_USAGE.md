@@ -172,7 +172,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             ghcr.io/scanoss/crypto-finder:latest \
             scan --no-remote-rules \
-            --rules-dir /workspace/.crypto-rules \
+            --rules-dir /workspace/rules \
             --output /workspace/results.json \
             /workspace/src
 

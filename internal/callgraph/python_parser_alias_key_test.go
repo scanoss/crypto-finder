@@ -22,7 +22,7 @@ import "testing"
 // This is not a corner case. eth-utils 1.9.5 crypto.py:3 writes
 // `from eth_hash.auto import keccak as keccak_256`, and eth-utils is how web3
 // and most of the Ethereum Python stack reach eth-hash. Measured over
-// crypto_rules' own 170-file python fixture corpus with the merged rule set,
+// the detection rules' own 170-file python fixture corpus with the merged rule set,
 // the fix moves 33 resolution sites across FOUR already-merged families --
 // coincurve (`PrivateKey as DeepPrivateKey`), eth-account
 // (`Account as EthAccount`), python-jose (`jwt as jose_jwt`) and authlib

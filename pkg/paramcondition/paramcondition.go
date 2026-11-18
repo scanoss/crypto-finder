@@ -14,7 +14,7 @@
 // along with this program; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
-// Package paramcondition parses the crypto-rules parameterCondition grammar
+// Package paramcondition parses the rule parameterCondition grammar
 // (`param[<selector>]<op><value>`) into a structured, JSON-serializable form.
 //
 // This package is dependency-free (stdlib only) by design: it is the single

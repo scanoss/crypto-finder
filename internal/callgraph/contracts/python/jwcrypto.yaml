@@ -101,7 +101,7 @@ library:
 # contracted method's return type is stable regardless of the "alg"/"enc"
 # algorithm selected by the caller (unlike e.g. Cipher.unwrap, where the mode
 # argument selects the Java return type) — algorithm-family selection stays in
-# crypto_rules metadata.crypto.parameterCondition, not in this KB.
+# detection rules metadata.crypto.parameterCondition, not in this KB.
 # ─────────────────────────────────────────────────────────────────────────────
 
 contracts:
