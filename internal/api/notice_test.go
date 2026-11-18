@@ -46,7 +46,7 @@ func noticeServer(t *testing.T, status int, notice string) *Client {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if notice != "" {
-			w.Header().Set("X-SCANOSS-Notice", notice)
+			w.Header().Set("SCANOSS-Notice", notice)
 		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(readyComponentResponse))
@@ -121,7 +121,7 @@ func TestNoNoticeWithoutHeaderOrHandler(t *testing.T) {
 func TestNoticeKeepsCustomTransport(t *testing.T) {
 	notices := collectNotices(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-SCANOSS-Notice", "hello")
+		w.Header().Set("SCANOSS-Notice", "hello")
 		_, _ = w.Write([]byte(readyComponentResponse))
 	}))
 	t.Cleanup(server.Close)
@@ -140,5 +140,22 @@ func TestNoticeKeepsCustomTransport(t *testing.T) {
 	}
 	if len(notices()) != 1 {
 		t.Errorf("notices = %q", notices())
+	}
+}
+
+func TestNoticeIgnoresXPrefixedHeader(t *testing.T) {
+	notices := collectNotices(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-SCANOSS-Notice", "old name")
+		_, _ = w.Write([]byte(readyComponentResponse))
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient(server.URL, "test-key")
+	if _, _, err := client.ComponentFindings(t.Context(), "pkg:npm/a", "1.0.0"); err != nil {
+		t.Fatalf("ComponentFindings: %v", err)
+	}
+	if got := notices(); len(got) != 0 {
+		t.Errorf("notices from X-SCANOSS-Notice = %q, want none", got)
 	}
 }

@@ -29,7 +29,7 @@ import (
 // noticeWidth is the line width a notice is wrapped to inside its box.
 const noticeWidth = 72
 
-// noticePrinter shows the first X-SCANOSS-Notice of a run, once: in a box on
+// noticePrinter shows the first SCANOSS-Notice of a run, once: in a box on
 // a terminal, as one "NOTICE:" line otherwise. Nothing is shown while stderr
 // carries JSON (--error-format json or --progress).
 type noticePrinter struct {

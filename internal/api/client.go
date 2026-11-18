@@ -95,7 +95,7 @@ func NewClient(baseURL, apiKey string, opts ...Option) *Client {
 
 // NewClientWithHTTPClient creates a new API client with an optional custom
 // HTTP client. The client is copied, never modified, to add the redirect
-// policy and the X-SCANOSS-Notice check (see SetNoticeHandler).
+// policy and the SCANOSS-Notice check (see SetNoticeHandler).
 func NewClientWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, opts ...Option) *Client {
 	var o options
 	for _, opt := range opts {
