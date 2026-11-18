@@ -9,7 +9,7 @@ library:
 
 # Inventory sources: the sha3 crate's own source at 0.10.9 (src/lib.rs:142-209,
 # src/macros.rs), 0.11.0 (src/lib.rs:51-65) and 0.12.0 (src/lib.rs:145-165,
-# README.md:15), and the APIs selected by the scanoss/crypto_rules sha3 rules.
+# README.md:15), and the APIs selected by the sha3 detection rules.
 #
 # The range starts at 0.1.0 rather than the matrix's 0.0.0: that release is a
 # name reservation with an empty src/lib.rs.

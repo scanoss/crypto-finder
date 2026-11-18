@@ -4,7 +4,7 @@
 // jose4j_e2e_integration_test.go — scanoss/crypto-finder#188 scan-layer proof.
 //
 // Proves that entry-point synthesis (engine.SynthesizeRuleCryptoEntryPoints)
-// JOINS the scanoss/crypto_rules#175 jose4j rule "api" anchors against a
+// JOINS the jose4j detection rule "api" anchors against a
 // jose4j-shaped source tree mined with the real Java parser + callgraph
 // builder — the same path `crypto-finder scan --export-callgraph` uses when
 // mining jose4j itself. This is the public-export proof that the
@@ -30,7 +30,7 @@ import (
 // the RsaKeyManagementAlgorithm/AesKeyWrapManagementAlgorithm/
 // AesGcmKeyEncryptionAlgorithm/Pbes2HmacShaWithAesKeyWrapAlgorithm nested-class
 // constructor shapes and the AesCbcHmacSha2ContentEncryptionAlgorithm
-// encrypt/decrypt method shapes the crypto_rules#175 rules anchor on, at the
+// encrypt/decrypt method shapes the detection rules anchor on, at the
 // same arities the jose4j.yaml contract keys on. It is a stub (not a full
 // compilable copy) because the tree-sitter-based Java parser extracts
 // declarations syntactically and does not require the real supporting types
@@ -205,7 +205,7 @@ public class OctetKeyPairUtil {
 }
 `
 
-// jose4jRulesYAML mirrors the scanoss/crypto_rules#175 rule "api" anchors for
+// jose4jRulesYAML mirrors the detection rule "api" anchors for
 // the P2/P3/hand-rolled jose4j scope: the three RSA key-management variants,
 // AES key wrap, AES-GCM key wrap, PBES2, the hand-rolled ConcatKDF/PBKDF2
 // constructor + operation pairs, the AES-CBC-HMAC encrypt/decrypt pair, the
@@ -410,7 +410,7 @@ var jose4jRuleAPIs = []string{
 
 // TestJose4j_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors proves
 // that mining jose4j-shaped source across its jwe/jwe.kdf/jwk/keys packages
-// produces a synthesized crypto entry point for every scanoss/crypto_rules#175
+// produces a synthesized crypto entry point for every detection rules
 // "api" anchor in the P2/P3/hand-rolled scope: the RSA key-management
 // variants, AES/AES-GCM key wrap, PBES2, the hand-rolled ConcatKDF/PBKDF2
 // constructor+operation pairs, the AES-CBC-HMAC encrypt/decrypt pair, the JWK

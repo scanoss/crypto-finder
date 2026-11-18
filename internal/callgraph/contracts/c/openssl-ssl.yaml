@@ -10,7 +10,7 @@ library:
 # Inventory source: OpenSSL master include/openssl/ssl.h.in (4.2-dev) checked
 # against the SSL_CTX_set1_curves(3), SSL_CTX_set1_sigalgs(3) and
 # SSL_get_peer_signature_nid(3) histories, and the hybrid-ml-kem rule in
-# crypto_rules (c/openssl/algorithm/kem/hybrid-ml-kem), whose sinks are
+# detection rules (c/openssl/algorithm/kem/hybrid-ml-kem), whose sinks are
 # SSL_CTX_set1_groups_list and SSL_set1_groups_list.
 #
 # Scope: the TLS key-exchange group list a consumer configures, the signature

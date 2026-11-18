@@ -9,7 +9,7 @@ library:
 
 # Inventory sources: the blake2 crate's own source at 0.9.2 (src/lib.rs:5-47),
 # 0.10.6 (src/lib.rs:8-12,41-57,131) and 0.11.0-rc.6 (src/lib.rs:64,83-94,
-# 112,131-138), and the APIs selected by the scanoss/crypto_rules blake2 rules.
+# 112,131-138), and the APIs selected by the blake2 detection rules.
 #
 # THE CONCRETE AND GENERIC MEANINGS OF `Blake2b`/`Blake2s` SWAP AT 0.10.0, and
 # both are declared because both are in the matrix range:
@@ -26,7 +26,7 @@ library:
 # callee identity, exactly as it does for the block-modes families' inner
 # cipher. The KB therefore gives that key the hasher's method surface and lets
 # the RULE decide what output size, if any, to report — which is why the
-# crypto_rules generic rules report no size while the concrete ones do.
+# generic detection rules report no size while the concrete ones do.
 #
 # THE VARIABLE-OUTPUT CONSTRUCTORS TAKE THEIR LENGTH IN BYTES.
 # `Blake2bVar::new(10)` is an 80-bit digest (0.10.6 src/lib.rs:41-48), so the

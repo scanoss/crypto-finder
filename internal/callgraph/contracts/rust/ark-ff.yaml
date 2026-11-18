@@ -26,7 +26,7 @@ library:
 # `sqrt`, `legendre` and the BigInteger surface are ordinary arithmetic and are
 # deliberately absent: contracting them would type every consumer that does
 # field maths into the crypto call graph, which is exactly what this family's
-# plan asks the ruleset NOT to do, and the scanoss/crypto_rules
+# plan asks the ruleset NOT to do, and the detection rules
 # raw-arithmetic-negative fixture pins that they carry no finding either.
 #
 # What IS contracted: hash-to-field, which is the message-to-field-element step

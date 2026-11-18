@@ -8,8 +8,8 @@ library:
   description: "wolfSSL wolfCrypt public cryptographic APIs"
 
 # Inventory sources: wolfSSL v5.9.2-stable public headers at tag commit
-# ac01707f552c611fbd135cc723b2682b3e7f80f2 and crypto_rules PR #148 merge
-# commit b6730e8721570f2ffaa8b841ddf2e845eca8e277. All 257 exact public
+# ac01707f552c611fbd135cc723b2682b3e7f80f2 and the detection rules
+# of the time. All 257 exact public
 # wc_* symbols selected by the current C detection rules are contracted, plus
 # the 364 stateful initialization, configuration, update, and key import/export
 # calls that support those terminal operations. Free/teardown and unrelated

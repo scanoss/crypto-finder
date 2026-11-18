@@ -35,7 +35,7 @@ library:
 #
 # This crate instantiates a curve; it is not a protocol. Point addition,
 # doubling, negation and the operator impls are deliberately absent — they carry
-# no crypto asset, and the scanoss/crypto_rules raw-arithmetic-negative fixture
+# no crypto asset, and the raw-arithmetic-negative detection fixture
 # pins that they produce no finding either.
 #
 # skipped-non-crypto: Add/Sub/Mul/Neg operator impls, CanonicalSerialize and

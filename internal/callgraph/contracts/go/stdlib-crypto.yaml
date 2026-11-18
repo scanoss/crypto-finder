@@ -8,7 +8,7 @@ library:
   description: "Go standard-library cryptography APIs"
 
 # Inventory sources: Go 1.25.3 package documentation/source and the 102 Go
-# stdlib crypto rules on scanoss/crypto_rules main as of 2026-07-22. Constants,
+# stdlib crypto detection rules as of 2026-07-22. Constants,
 # type literals, and configuration fields are rule assets but not callable
 # contract identities, so they are intentionally absent here.
 contracts:

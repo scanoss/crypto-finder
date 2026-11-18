@@ -219,7 +219,7 @@ Dependency scanning (`--scan-dependencies`) resolves and scans third-party packa
 
 ## Detection Rules
 
-Detection rules are **not in this repository** — they live in [scanoss/crypto_rules](https://github.com/scanoss/crypto_rules) and are served as the remote `dca` ruleset via the SCANOSS API (cached locally with TTL + stale fallback; see [Remote Rulesets](docs/REMOTE_RULESETS.md)).
+Detection rules are **not in this repository** — they are served as the remote `dca` ruleset via the SCANOSS API (cached locally with TTL + stale fallback; see [Remote Rulesets](docs/REMOTE_RULESETS.md)).
 
 A scan loads only the rules its sources can match: the import prefilter skips, for the project and each dependency batch, the rules for libraries the unit never imports (`--rule-prefilter off` runs every rule). Rules declaring `metadata.imports: ["*"]`, and rules whose import requirement cannot be read, are always kept; when the rules or the targets cannot be read ahead of the scanner, every rule of the unit's languages runs.
 
@@ -227,7 +227,7 @@ Local rules development loop:
 
 ```bash
 # Iterate on rules without touching the remote ruleset
-crypto-finder scan --no-remote-rules --rules-dir /path/to/crypto_rules/checkout /path/to/testcode
+crypto-finder scan --no-remote-rules --rules-dir /path/to/my-rules /path/to/testcode
 
 # Combine remote rules with local additions
 crypto-finder scan --rules-dir ./custom-rules /path/to/code
@@ -306,7 +306,6 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 
 - [SCANOSS Website](https://www.scanoss.com)
 - [SCANOSS Documentation](https://scanoss.readthedocs.io)
-- [Detection Rules Repository](https://github.com/scanoss/crypto_rules)
 - [Issue Tracker](https://github.com/scanoss/crypto-finder/issues)
 
 ## Support

@@ -15,7 +15,7 @@ library:
 # Inventory sources: CPython 3.13 Lib/hashlib.py, Lib/hmac.py, Lib/ssl.py,
 # Lib/secrets.py, Lib/random.py and the _hashlib/_blake2/_ssl built-ins
 # (inspect.signature on 3.13.5), the docs.python.org 3.13 library reference,
-# and the Python stdlib rules on scanoss/crypto_rules main
+# and the Python stdlib detection rules
 # (semgrep-rules/python/{hashlib,hmac,ssl,secrets,os,random}).
 #
 # SPELLINGS. Module functions emit `module.func` under either import form.

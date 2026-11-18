@@ -18,7 +18,7 @@ library:
 # Exhaustive API audit (scanoss/crypto-finder#183)
 #
 # Scope per issue AC: SslContextBuilder is a Type-2 fluent/builder API whose
-# crypto meaning lives on the API boundary (see the crypto_rules#168 api
+# crypto meaning lives on the API boundary (see the detection rules api
 # anchors below), not in a detectable primitive call inside its own body.
 # Every public method on io.netty.handler.ssl.SslContextBuilder (4.2.15.Final)
 # was inventoried against the primary source
@@ -40,19 +40,19 @@ library:
 # Disposition legend: contracted | covered-existing | skipped-non-crypto |
 # skipped-informative-return | skipped-unsupported | needs-follow-up.
 #
-#   forClient()                                       contracted (factory, arity 0) — rules api anchor (crypto_rules#168: SslContextBuilder.forClient)
+#   forClient()                                       contracted (factory, arity 0) — rules api anchor (detection rules: SslContextBuilder.forClient)
 #   forServer(KeyManagerFactory)                       contracted (factory, arity 1)
 #   forServer(KeyManager)                              contracted (factory, arity 1) — collapsed into the arity-1 entry above (identical return)
-#   forServer(File,File)                               contracted (factory, arity 2) — rules api anchor (crypto_rules#168: SslContextBuilder.forServer + server-pem-key-material)
+#   forServer(File,File)                               contracted (factory, arity 2) — rules api anchor (detection rules: SslContextBuilder.forServer + server-pem-key-material)
 #   forServer(InputStream,InputStream)                 contracted (factory, arity 2) — collapsed into the arity-2 entry above
 #   forServer(PrivateKey,X509Certificate...)           contracted (factory, arity 2) — collapsed into the arity-2 entry above
 #   forServer(PrivateKey,Iterable)                     contracted (factory, arity 2) — collapsed into the arity-2 entry above
-#   forServer(File,File,String)                        contracted (factory, arity 3) — rules api anchor (crypto_rules#168: server-pem-key-material)
+#   forServer(File,File,String)                        contracted (factory, arity 3) — rules api anchor (detection rules: server-pem-key-material)
 #   forServer(InputStream,InputStream,String)          contracted (factory, arity 3) — collapsed into the arity-3 entry above
 #   forServer(PrivateKey,String,X509Certificate...)    contracted (factory, arity 3) — collapsed into the arity-3 entry above
 #   forServer(PrivateKey,String,Iterable)              contracted (factory, arity 3) — collapsed into the arity-3 entry above
 #   option(SslContextOption,T)                         contracted (config, arity 2) — generic per-context option bag, no algorithm-specific value
-#   sslProvider(SslProvider)                           contracted (config, arity 1) — rules api anchor (crypto_rules#168: SslContextBuilder.sslProvider); param 0 contributes "provider" (argument_value)
+#   sslProvider(SslProvider)                           contracted (config, arity 1) — rules api anchor (detection rules: SslContextBuilder.sslProvider); param 0 contributes "provider" (argument_value)
 #   keyStoreType(String)                               contracted (config, arity 1)
 #   sslContextProvider(Provider)                       contracted (config, arity 1) — JCA java.security.Provider selection for the JDK path, distinct from SslProvider above
 #   trustManager(File)                                 contracted (config, arity 1)
@@ -74,13 +74,13 @@ library:
 #   addCredential(OpenSslCredential)                    contracted (config, arity 1) — BoringSSL-only multi-cert credential
 #   addCredentials(OpenSslCredential...)                contracted (config, arity 1) — collapsed with its own Iterable overload (same arity/return)
 #   addCredentials(Iterable)                            contracted (config, arity 1) — collapsed into the arity-1 addCredentials entry above
-#   ciphers(Iterable)                                   contracted (config, arity 1) — rules api anchor (crypto_rules#168: SslContextBuilder.ciphers)
+#   ciphers(Iterable)                                   contracted (config, arity 1) — rules api anchor (detection rules: SslContextBuilder.ciphers)
 #   ciphers(Iterable,CipherSuiteFilter)                 contracted (config, arity 2)
 #   applicationProtocolConfig(ApplicationProtocolConfig) contracted (config, arity 1) — ALPN negotiation config; not itself a crypto primitive (per audit report) but a required link in the fluent chain
 #   sessionCacheSize(long)                               contracted (config, arity 1)
 #   sessionTimeout(long)                                 contracted (config, arity 1)
 #   clientAuth(ClientAuth)                               contracted (config, arity 1)
-#   protocols(String...)                                 contracted (config, arity 1) — rules api anchor (crypto_rules#168: SslContextBuilder.protocols); param 0 contributes "protocolVersion" (argument_value)
+#   protocols(String...)                                 contracted (config, arity 1) — rules api anchor (detection rules: SslContextBuilder.protocols); param 0 contributes "protocolVersion" (argument_value)
 #   protocols(Iterable)                                  contracted (config, arity 1) — collapsed into the arity-1 protocols entry above
 #   startTls(boolean)                                    contracted (config, arity 1)
 #   enableOcsp(boolean)                                  contracted (config, arity 1)
@@ -93,7 +93,7 @@ library:
 #   io.netty.handler.ssl.SslContext.newEngine(...)/.newHandler(...) — the
 #   SSLEngine/SslHandler "engine-producing" step that consumes an already-built
 #   SslContext — needs-follow-up. Issue #183's AC and the joined
-#   crypto_rules#168 rules anchor only on SslContextBuilder.{forClient,
+#   detection rules anchor only on SslContextBuilder.{forClient,
 #   forServer, sslProvider, protocols, ciphers} plus the server key-material
 #   rule; SslContext's own instance methods are a distinct class outside this
 #   builder-lifecycle ticket's narrow scope.
@@ -106,7 +106,7 @@ library:
 # protocols) only carry METADATA (which literal was selected), never a
 # return-type selection, and duplicate no parameterCondition grammar: the
 # actual condition matching (param[0]==SslProvider.JDK, etc.) stays owned by
-# crypto_rules#168's rule metadata, per the crypto-kb-author skill's
+# detection rule metadata, per the crypto-kb-author skill's
 # "Condition and provider ownership" rule.
 # ─────────────────────────────────────────────────────────────────────────────
 

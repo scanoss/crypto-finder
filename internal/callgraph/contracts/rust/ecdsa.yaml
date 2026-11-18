@@ -8,7 +8,7 @@ library:
   description: "RustCrypto ECDSA signatures, generic over prime-order curves"
 
 # Inventory sources: ecdsa 0.16 crate documentation and the APIs selected by the
-# scanoss/crypto_rules ecdsa rule. The curve is a type parameter supplied by the
+# ecdsa detection rule. The curve is a type parameter supplied by the
 # concrete curve crate, so it is not resolvable here and no curve metadata is
 # claimed.
 #

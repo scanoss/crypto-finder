@@ -8,7 +8,7 @@ library:
   description: "tjfoc GM/T library: SM2 signature, encryption and key exchange, SM3, SM4 and its mode helpers"
 
 # Inventory source: github.com/tjfoc/gmsm v1.4.1 module source from the Go module proxy,
-# packages sm2, sm3, sm4. Detection rules: scanoss/crypto_rules go/tjfoc-gmsm.
+# packages sm2, sm3, sm4. Detection rules: go/tjfoc-gmsm.
 # Covered by stdlib-crypto (sm3.New and sm4.NewCipher return the interfaces):
 # sm3.(*SM3).Sum/Write -> hash.(Hash); sm4.(*Sm4Cipher).Encrypt/Decrypt -> crypto/cipher.(Block).
 contracts:

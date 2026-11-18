@@ -10,7 +10,7 @@ library:
 
 # Inventory sources: tink-gcpkms 1.10.0 public class
 # com.google.crypto.tink.integration.gcpkms.GcpKmsClient, paired with
-# scanoss/crypto_rules java.tink-kms.related-crypto-material.key.gcp.
+# detection rules java.tink-kms.related-crypto-material.key.gcp.
 #
 # contracted: constructors, register, withCredentials, withDefaultCredentials, getAead.
 # skipped-non-crypto: doesSupport.

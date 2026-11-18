@@ -8,7 +8,7 @@ import (
 )
 
 // azureKeyVaultKeyOptionsAndCertificatesConsumer walks the key options and the
-// certificate lifecycle the crypto_rules fixtures exercise: typed option
+// certificate lifecycle the detection rules fixtures exercise: typed option
 // setters, the certificate client builder, a policy, creation through the
 // poller and import.
 const azureKeyVaultKeyOptionsAndCertificatesConsumer = `

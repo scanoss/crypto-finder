@@ -31,16 +31,16 @@ import (
 // Issue #372: a Gradle project without `group` exports RootModule as the
 // settings.gradle project name. That string is not a Java package prefix, so
 // treating it as the only user-code identity drops every chain that actually
-// starts in com.acme.earnie.
+// starts in com.acme.app.
 func TestExportUserPackages_IncludesJavaPackagesFromProjectSources(t *testing.T) {
 	t.Parallel()
 
 	project := t.TempDir()
 	depDir := t.TempDir()
-	userFile := filepath.Join(project, "src", "main", "java", "com", "acme", "earnie", "App.java")
+	userFile := filepath.Join(project, "src", "main", "java", "com", "acme", "app", "App.java")
 	libFile := filepath.Join(depDir, "org", "bouncycastle", "Crypto.java")
 
-	userID := callgraph.FunctionID{Package: "com.acme.earnie", Type: "App", Name: "run#0"}
+	userID := callgraph.FunctionID{Package: "com.acme.app", Type: "App", Name: "run#0"}
 	libID := callgraph.FunctionID{Package: "org.bouncycastle", Type: "Crypto", Name: "hash#0"}
 
 	result := &engine.DepScanResult{
@@ -64,7 +64,7 @@ func TestExportUserPackages_IncludesJavaPackagesFromProjectSources(t *testing.T)
 	if _, ok := got["crypto-finder-fixture"]; ok {
 		t.Fatalf("user packages = %#v, want the Gradle project name left out once sources name the packages", got)
 	}
-	if !got["com.acme.earnie"] {
+	if !got["com.acme.app"] {
 		t.Fatalf("user packages = %#v, want Java package from project sources", got)
 	}
 	if got["org.bouncycastle"] {
@@ -103,7 +103,7 @@ func TestExportUserPackages_RelativeScanTargetHarvestsJavaPackages(t *testing.T)
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	userRel := filepath.Join("app", "src", "main", "java", "com", "acme", "earnie", "App.java")
+	userRel := filepath.Join("app", "src", "main", "java", "com", "acme", "app", "App.java")
 	depRel := filepath.Join("cache", "bcprov")
 	libRel := filepath.Join(depRel, "org", "bouncycastle", "Crypto.java")
 	if err := os.MkdirAll(filepath.Dir(userRel), 0o755); err != nil {
@@ -113,7 +113,7 @@ func TestExportUserPackages_RelativeScanTargetHarvestsJavaPackages(t *testing.T)
 		t.Fatalf("mkdir dep sources: %v", err)
 	}
 
-	userID := callgraph.FunctionID{Package: "com.acme.earnie", Type: "App", Name: "run#0"}
+	userID := callgraph.FunctionID{Package: "com.acme.app", Type: "App", Name: "run#0"}
 	libID := callgraph.FunctionID{Package: "org.bouncycastle", Type: "Crypto", Name: "hash#0"}
 	result := &engine.DepScanResult{
 		RootModule:  "crypto-finder-fixture",
@@ -132,7 +132,7 @@ func TestExportUserPackages_RelativeScanTargetHarvestsJavaPackages(t *testing.T)
 	}
 
 	got := exportUserPackages(result)
-	if !got["com.acme.earnie"] {
+	if !got["com.acme.app"] {
 		t.Fatalf("user packages = %#v, want Java package from a relative scan target", got)
 	}
 	if got["org.bouncycastle"] {
@@ -180,10 +180,10 @@ func TestBuildFindingGraph_GradleProjectNameRootModuleIsReachable(t *testing.T) 
 
 	project := t.TempDir()
 	depDir := t.TempDir()
-	userFile := filepath.Join(project, "src", "main", "java", "com", "acme", "earnie", "App.java")
+	userFile := filepath.Join(project, "src", "main", "java", "com", "acme", "app", "App.java")
 	libFile := filepath.Join(depDir, "org", "bouncycastle", "Crypto.java")
 
-	userID := callgraph.FunctionID{Package: "com.acme.earnie", Type: "App", Name: "run#0"}
+	userID := callgraph.FunctionID{Package: "com.acme.app", Type: "App", Name: "run#0"}
 	libID := callgraph.FunctionID{Package: "org.bouncycastle", Type: "Crypto", Name: "hash#0"}
 
 	graph := &callgraph.CallGraph{

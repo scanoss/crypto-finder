@@ -12,7 +12,7 @@ library:
 # block/block_cipher.h, stream/stream_cipher.h, kdf/kdf.h, pbkdf/pbkdf.h,
 # pbkdf/pwdhash.h, pbkdf/argon2/argon2.h, passhash/argon2fmt/argon2fmt.h,
 # passhash/bcrypt/bcrypt.h and pubkey/pubkey.h from the upstream tag archives
-# 2.19.5 and 3.12.0. The scope is the APIs the scanoss/crypto_rules Botan rules
+# 2.19.5 and 3.12.0. The scope is the APIs the Botan detection rules
 # (semgrep-rules/cpp/botan) anchor on. A method with defaulted parameters is
 # contracted at every arity a call site can use; an overload present in only
 # one major (the 3.x std::span forms, set_associated_data_n at 2 vs 3

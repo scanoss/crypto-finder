@@ -552,7 +552,7 @@ def decode(jwt_token, key, algorithms=None, options=None, audience=None, issuer=
 // TestPythonE2E_Jwcrypto_JWK_Generate_Synthesis proves that mining jwcrypto's own
 // jwk.py for JWK.generate produces a synthesized crypto entry point carrying the
 // contract-KB factory role (scanoss/crypto-finder#181, rules anchor
-// scanoss/crypto_rules#169: api=jwcrypto.jwk.JWK.generate).
+// detection rules: api=jwcrypto.jwk.JWK.generate).
 //
 // The jwcrypto.yaml KB declares `jwcrypto.jwk.JWK.generate` -> jwcrypto.jwk.JWK
 // (role: factory). When mining jwcrypto's own source, the Python parser emits a
@@ -613,7 +613,7 @@ class JWK:
 
 // TestPythonE2E_Jwcrypto_JWS_AddSignature_Synthesis mirrors the JWK.generate proof
 // above for the JWS signing operation (rules anchor
-// scanoss/crypto_rules#169: api=jwcrypto.jws.JWS.add_signature). The jwcrypto.yaml
+// detection rules: api=jwcrypto.jws.JWS.add_signature). The jwcrypto.yaml
 // KB tags this contract role: operation.
 func TestPythonE2E_Jwcrypto_JWS_AddSignature_Synthesis(t *testing.T) {
 	t.Parallel()
@@ -669,7 +669,7 @@ class JWS:
 }
 
 // TestPythonE2E_Jwcrypto_JWE_AddRecipient_Synthesis mirrors the same proof for JWE
-// encryption (rules anchor scanoss/crypto_rules#169: api=jwcrypto.jwe.JWE.add_recipient).
+// encryption (rules anchor detection rules: api=jwcrypto.jwe.JWE.add_recipient).
 func TestPythonE2E_Jwcrypto_JWE_AddRecipient_Synthesis(t *testing.T) {
 	t.Parallel()
 

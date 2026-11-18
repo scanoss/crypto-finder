@@ -8,7 +8,7 @@ library:
   description: "RustCrypto Whirlpool hash"
 
 # Inventory sources: the whirlpool crate's own source at 0.1.0, 0.10.4 and
-# 0.11.0, and the APIs selected by the scanoss/crypto_rules whirlpool rules.
+# 0.11.0, and the APIs selected by the whirlpool detection rules.
 #
 # One hasher, fixed 512-bit output, unchanged constructor across the range.
 # `input`/`result` are the pre-digest-0.9 spelling of `update`/`finalize`.

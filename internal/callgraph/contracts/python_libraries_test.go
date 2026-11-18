@@ -255,7 +255,7 @@ func TestLoadEmbedded_Python_Paramiko(t *testing.T) {
 }
 
 // TestLoadEmbedded_Python_PyOTP verifies the PyOTP constructor aliases used by
-// scanoss/crypto_rules#99 and the output helpers they return.
+// detection rules and the output helpers they return.
 func TestLoadEmbedded_Python_PyOTP(t *testing.T) {
 	t.Parallel()
 
@@ -675,7 +675,7 @@ func TestLoadEmbedded_Python_Jwcrypto(t *testing.T) {
 		}
 	}
 
-	// The rules-referenced anchors (scanoss/crypto_rules#169) must resolve
+	// The rules-referenced anchors (detection rules) must resolve
 	// via the arity-tolerant Python lookup at their real call-site arities
 	// (e.g. JWK.generate(kty="RSA", size=2048) is arity 2, JWE.add_recipient
 	// is sometimes called with a header kwarg, etc.) even though the

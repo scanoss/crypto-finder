@@ -32,9 +32,9 @@ import (
 // fixture code. They need opengrep and opengrep-core at a version in
 // coreVerifiedVersions, and are skipped unless both paths are set:
 //
-//	CRYPTO_FINDER_PARITY_RULES     a Semgrep rules directory (crypto_rules/semgrep-rules)
+//	CRYPTO_FINDER_PARITY_RULES     a Semgrep rules directory (<rules>)
 //	CRYPTO_FINDER_PARITY_FIXTURES  a directory of per-language fixture directories
-//	                               (crypto_rules/tests/integration/fixtures)
+//	                               (<rule fixtures>)
 //
 // CRYPTO_FINDER_PARITY_LANGUAGES optionally limits the fixture directories
 // (comma-separated names).

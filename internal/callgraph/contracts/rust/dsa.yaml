@@ -8,7 +8,7 @@ library:
   description: "RustCrypto DSA signatures per FIPS 186-4"
 
 # Inventory sources: dsa 0.6 crate documentation and the APIs selected by the
-# scanoss/crypto_rules dsa rule. Signing and verification reach the crate through
+# dsa detection rule. Signing and verification reach the crate through
 # the shared signature::Signer and Verifier traits, so the stable identities here
 # are the key constructors.
 #

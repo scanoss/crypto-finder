@@ -4,7 +4,7 @@
 // netty_tls_e2e_integration_test.go — scanoss/crypto-finder#183 scan-layer proof.
 //
 // Proves that entry-point synthesis (engine.SynthesizeRuleCryptoEntryPoints)
-// JOINS the scanoss/crypto_rules#168 Netty TLS rule api anchors
+// JOINS the Netty TLS detection rule api anchors
 // (io.netty.handler.ssl.SslContextBuilder.{forClient,forServer,sslProvider,
 // protocols,ciphers} plus the server PEM key-material rule, which shares the
 // forServer anchor) against a netty-shaped source file mined with the real
@@ -67,7 +67,7 @@ public final class SslContextBuilder {
 }
 `
 
-// nettyTLSRulesYAML mirrors the scanoss/crypto_rules#168 rule shapes anchored
+// nettyTLSRulesYAML mirrors the detection rule shapes anchored
 // on SslContextBuilder: the client/server factory split, the two
 // value-variant sslProvider selection rules (OpenSSL vs JDK, sharing one api
 // per the crypto-kb-author skill's literal-argument convention), the
@@ -134,7 +134,7 @@ const nettyTLSRulesYAML = `rules:
 
 // TestNettyTLS_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors proves
 // that mining netty-handler's own SslContextBuilder source produces a
-// synthesized crypto entry point for every scanoss/crypto_rules#168 api
+// synthesized crypto entry point for every detection rules api
 // anchor: forClient, forServer (shared by two independent rules), sslProvider
 // (shared by two value-variant rules), protocols, and ciphers.
 func TestNettyTLS_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors(t *testing.T) {
@@ -217,7 +217,7 @@ func TestNettyTLS_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors(t *tes
 
 	// forServer must carry BOTH the factory rule and the PEM key-material rule
 	// at the same definition site -- proving two independently-authored
-	// crypto_rules#168 rules sharing one api both resolve, not just the first.
+	// detection rules sharing one api both resolve, not just the first.
 	forServerRuleIDs := map[string]bool{}
 	forClientRuleIDs := map[string]bool{}
 	sslProviderValues := map[string]bool{}

@@ -51,7 +51,7 @@ func TestLoadEmbeddedGoIncludesGolangFIPSOpenSSLV2Contracts(t *testing.T) {
 	}
 }
 
-// The crypto_rules golang-fips-openssl rules report these released-tag
+// The golang-fips-openssl detection rules report these released-tag
 // functions as their api. Each needs a contract under its v2.0.3 spelling,
 // including the NewPrivateKeyEd25119 / NewPublicKeyEd25119 typo every tag ships.
 func TestLoadEmbeddedGoCoversGolangFIPSOpenSSLV2RuleAPIs(t *testing.T) {

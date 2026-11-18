@@ -10,7 +10,7 @@ A `scan` run executes these stages in order:
 target source tree
    │
    ▼
-1. Rules loading          remote "dca" ruleset (scanoss/crypto_rules via SCANOSS API,
+1. Rules loading          remote "dca" ruleset (served by the SCANOSS API,
    (internal/rules,        cached with TTL + stale fallback) merged with any local
     internal/cache,        --rules / --rules-dir sources
     internal/api)
@@ -104,7 +104,7 @@ Errors become terminal only at the CLI boundary, with a stable machine-readable 
 |---------|----------------|
 | `graphfrag` | The graph-fragment model and wire schema (`graph-fragment-1.15`), fragment decode/encode, the tiered fail-closed **stitcher** that composes per-component fragments into transitive reachability, and the renderers (`ToCallgraphExport` — stamps callgraph schema `6.14` — and `ToFindingsEnvelope`). |
 | `graphfrag/equiv` | Semantic diff asserting a stitched callgraph equals a live one (the equivalence guarantee the renderers rely on). |
-| `paramcondition` | Parser for the crypto-rules `parameterCondition` grammar (`param[<selector>]<op><value>`) into structured predicates. |
+| `paramcondition` | Parser for the rule `parameterCondition` grammar (`param[<selector>]<op><value>`) into structured predicates. |
 | `schema` | Interim report JSON contract (format version `1.7`) and compatibility unmarshalling. |
 | `failure` | Structured terminal error contract: stable `Code` and `Stage` enums plus JSON `Payload`. |
 
@@ -136,7 +136,7 @@ KB YAML schema version is `"2"` (internal to the loader). It is **independent** 
 
 ### 3. Detection vs reachability
 
-Detection rules (in [scanoss/crypto_rules](https://github.com/scanoss/crypto_rules)) detect **terminal crypto operations only** and carry standard CycloneDX metadata. They carry no crypto-finder routing concerns — there is no `supporting-call` assetType and no `supportingCall` sentinel; do not reintroduce them.
+Detection rules detect **terminal crypto operations only** and carry standard CycloneDX metadata. They carry no crypto-finder routing concerns — there is no `supporting-call` assetType and no `supportingCall` sentinel; do not reintroduce them.
 
 ### 4. Structural supporting-call derivation
 

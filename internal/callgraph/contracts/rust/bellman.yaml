@@ -45,7 +45,7 @@ library:
 # skipped-non-crypto: ConstraintSystem::alloc, alloc_input, enforce, namespace,
 #   LinearCombination and Namespace. That is how any circuit is expressed,
 #   cryptographic or not, and contracting it would pull every consumer that
-#   builds a circuit into the crypto call graph. The scanoss/crypto_rules
+#   builds a circuit into the crypto call graph. The detection rules
 #   constraint-bookkeeping-negative fixture pins that it carries no finding.
 #
 # KEY SHAPE: THESE ARE FREE FUNCTIONS, NOT METHODS. The call-site FQN the parser

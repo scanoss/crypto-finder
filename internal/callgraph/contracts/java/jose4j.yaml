@@ -20,13 +20,13 @@ library:
 # ─────────────────────────────────────────────────────────────────────────────
 # Exhaustive API audit (scanoss/crypto-finder#188)
 #
-# Scope per issue AC and the paired scanoss/crypto_rules#174/#175 rules PR:
+# Scope per issue AC and the paired detection rules:
 # the P2 (JWE key-mgmt parameter detail) + P3 (keygen/JWK material) + hand-rolled
 # (ConcatKDF/PBKDF2/AES-CBC-HMAC) gaps identified by the jose4j-0.9.6 recall
 # audit (report-jose4j-0.9.6.md). The P1 verification/consumption surface
 # (JwtConsumerBuilder security-posture config, AlgorithmConstraints.NO_CONSTRAINTS,
 # alg:none, JsonWebSignature/JsonWebEncryption fluent setters, JWKS resolvers)
-# is EXPLICITLY OUT OF SCOPE — crypto_rules#174 defers it pending a metadata-shape
+# is EXPLICITLY OUT OF SCOPE — detection rules defers it pending a metadata-shape
 # decision (see semgrep-rules/java/jose4j/algorithm/signature/rules.yaml's P1
 # comment block). Needs-follow-up once #174's P1 schema decision lands; do not
 # contract JwtConsumerBuilder/JsonWebSignature/JsonWebEncryption/JWKS-resolver
@@ -67,7 +67,7 @@ library:
 #   getContentEncryptionKeyDescriptor  contracted (output, arity 0)
 #   encrypt                        contracted (operation, arity 6) — shared
 #                                  interface entry; AesCbcHmacSha2ContentEncryptionAlgorithm's
-#                                  own public 6-arg encrypt (the crypto_rules#174
+#                                  own public 6-arg encrypt (the detection rules
 #                                  rule-anchored method) has an IDENTICAL
 #                                  signature/return, so per the "operation"
 #                                  authoring rule it is covered-existing via
@@ -80,7 +80,7 @@ library:
 # org.jose4j.jwe.RsaKeyManagementAlgorithm extends WrappingKeyManagementAlgorithm
 #   <init>(String,String)          contracted (factory, arity 2)
 #   RsaOaep.<init>()                contracted (factory, arity 0) — rule anchor
-#                                  (crypto_rules#175: pke.rsa-oaep-sha1-transformation,
+#                                  (detection rules: pke.rsa-oaep-sha1-transformation,
 #                                  api RsaKeyManagementAlgorithm.RsaOaep.<init>)
 #   RsaOaep256.<init>()             contracted (factory, arity 0) — rule anchor
 #                                  (pke.rsa-oaep-sha256-transformation)
@@ -104,7 +104,7 @@ library:
 #
 # org.jose4j.jwe.AesKeyWrapManagementAlgorithm extends WrappingKeyManagementAlgorithm
 #   <init>(String,int)              contracted (factory, arity 2) — rule anchor
-#                                  (crypto_rules#175: key-wrap.aes-kw, api
+#                                  (detection rules: key-wrap.aes-kw, api
 #                                  AesKeyWrapManagementAlgorithm.<init>)
 #   Aes128/Aes192/Aes256.<init>()   contracted (factory, arity 0 each)
 #   getKeyByteLength/setUseGeneralProviderContext
@@ -116,7 +116,7 @@ library:
 # org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm extends AlgorithmInfo implements
 # KeyManagementAlgorithm
 #   <init>(String,int)              contracted (factory, arity 2) — rule anchor
-#                                  (crypto_rules#175: key-wrap.aes-gcm-kw, api
+#                                  (detection rules: key-wrap.aes-gcm-kw, api
 #                                  AesGcmKeyEncryptionAlgorithm.<init>)
 #   Aes128Gcm/Aes192Gcm/Aes256Gcm.<init>()
 #                                contracted (factory, arity 0 each)
@@ -130,7 +130,7 @@ library:
 # implements KeyManagementAlgorithm
 #   <init>(String,String,AesKeyWrapManagementAlgorithm)
 #                                contracted (factory, arity 3) — rule anchor
-#                                (crypto_rules#175: kdf.pbes2, api
+#                                (detection rules: kdf.pbes2, api
 #                                Pbes2HmacShaWithAesKeyWrapAlgorithm.<init>)
 #   HmacSha256Aes128/HmacSha384Aes192/HmacSha512Aes256.<init>()
 #                                contracted (factory, arity 0 each)
@@ -157,7 +157,7 @@ library:
 # org.jose4j.jwe.DirectKeyManagementAlgorithm extends AlgorithmInfo implements
 # KeyManagementAlgorithm
 #   <init>()                     contracted (factory, arity 0) — the paired
-#                                rule (crypto_rules#175: ae.direct) anchors on
+#                                rule (detection rules: ae.direct) anchors on
 #                                the KeyManagementAlgorithmIdentifiers.DIRECT
 #                                FIELD reference, not this constructor (fields
 #                                aren't KB-contractable, see below), but the
@@ -183,7 +183,7 @@ library:
 #   Aes128CbcHmacSha256/Aes192CbcHmacSha384/Aes256CbcHmacSha512.<init>()
 #                                contracted (factory, arity 0 each)
 #   encrypt(6-arg public)           covered-existing via ContentEncryptionAlgorithm.encrypt
-#                                (crypto_rules#175 rule anchor: aes-cbc-hmac-encrypt,
+#                                (detection rule anchor: aes-cbc-hmac-encrypt,
 #                                api AesCbcHmacSha2ContentEncryptionAlgorithm.encrypt —
 #                                identical signature/return to the interface
 #                                entry above, so the shared contract resolves
@@ -192,7 +192,7 @@ library:
 #                                skipped-non-crypto — package-private, not
 #                                public API.
 #   decrypt(5-arg public)           covered-existing via ContentEncryptionAlgorithm.decrypt
-#                                (crypto_rules#175 rule anchor: aes-cbc-hmac-decrypt).
+#                                (detection rule anchor: aes-cbc-hmac-decrypt).
 #   getHmacJavaAlgorithm/getTagTruncationLength
 #                                skipped-informative-return — String/int
 #                                getters, no generic/conditional return.
@@ -208,13 +208,13 @@ library:
 #                                no single detectable JCA primitive call), this
 #                                class's crypto signal is a plain Cipher/GCMParameterSpec
 #                                sequence already covered by the generic JCA
-#                                ruleset; not part of crypto_rules#174/#175's
+#                                ruleset; not part of the detection rules'
 #                                new gap scope.
 #
 # org.jose4j.jwe.kdf.ConcatKeyDerivationFunction implements
 # ConcatenationKeyDerivationFunctionWithSha256
 #   <init>(String)                  contracted (factory, arity 1) — rule anchor
-#                                  (crypto_rules#175: kdf.concat-kdf)
+#                                  (detection rules: kdf.concat-kdf)
 #   <init>(String,String)           contracted (factory, arity 2)
 #   kdf(byte[],int,byte[])          contracted (operation, arity 3) — rule
 #                                  anchor (kdf.concat-kdf-derive); param 1
@@ -232,7 +232,7 @@ library:
 #
 # org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2 (no interface)
 #   <init>(String)                  contracted (factory, arity 1) — rule anchor
-#                                  (crypto_rules#175: kdf.pbkdf2-handrolled)
+#                                  (detection rules: kdf.pbkdf2-handrolled)
 #   derive(byte[],byte[],int,int)   contracted (operation, arity 4); param 2
 #                                  (iterationCount) contributes "iterations".
 #   derive(byte[],byte[],int,int,String)
@@ -243,7 +243,7 @@ library:
 #
 # org.jose4j.jwk.RsaJwkGenerator / EcJwkGenerator / OctJwkGenerator / OkpJwkGenerator
 #   generateJwk (all overloads)     contracted (factory) — rule anchors
-#                                  (crypto_rules#175 related-crypto-material.key.*-jwk-keygen).
+#                                  (detection rules related-crypto-material.key.*-jwk-keygen).
 #                                  Declared returns (RsaJsonWebKey/
 #                                  EllipticCurveJsonWebKey/OctetSequenceJsonWebKey/
 #                                  OctetKeyPairJsonWebKey) are already
@@ -256,7 +256,7 @@ library:
 #
 # org.jose4j.keys.RsaKeyUtil / EcKeyUtil / OctetKeyPairUtil (extend KeyPairUtil)
 #   generateKeyPair                 contracted (factory) — rule anchors
-#                                  (crypto_rules#175 related-crypto-material.key.*-keyutil-keygen).
+#                                  (detection rules related-crypto-material.key.*-keyutil-keygen).
 #                                  Declared return java.security.KeyPair is a
 #                                  standard JDK type (already informative), but
 #                                  contracted for role tagging + curve/keySize
@@ -281,7 +281,7 @@ library:
 #   point-compression and X25519/X448 u-coordinate coding)
 #                                needs-follow-up — audit report hand-rolled
 #                                gaps #5/#6 (EdDsaKeyUtil.java, XDHKeyUtil.java);
-#                                NOT part of crypto_rules#174/#175's rule scope
+#                                NOT part of detection rule scope
 #                                (no rules.yaml entries reference them), so out
 #                                of this ticket per the issue's paired-rules
 #                                requirement.
@@ -291,7 +291,7 @@ library:
 #                                  overloads collapse to one entry, identical
 #                                  return type per the crypto-kb-author
 #                                  overload-collapsing convention) — the Map
-#                                  overload is the crypto_rules#175
+#                                  overload is the detection rules
 #                                  octet-sequence-aes-labeling rule's
 #                                  pattern-inside anchor class.
 #
@@ -300,7 +300,7 @@ library:
 #                                needs-follow-up — valid Type-2 dispatch
 #                                factories used internally by every *JwkGenerator
 #                                above, but not named in this issue's AC or
-#                                crypto_rules#174/#175's rule set; candidate
+#                                detection rule set; candidate
 #                                follow-up ticket if JWK parse/import lifecycle
 #                                (as opposed to generation) needs its own
 #                                contracts.
@@ -312,7 +312,7 @@ library:
 #                                the ECDH_ES/ECDH_ES_A*KW algorithm identifiers
 #                                themselves already have pre-existing baseline
 #                                coverage (java.jose4j.algorithm.key-agree.ecdh,
-#                                predates crypto_rules#174/#175) and neither
+#                                predates detection rules) and neither
 #                                class's own constructor/manageForEncrypt
 #                                override is referenced by any #175 rule "api"
 #                                anchor, so contracting their lifecycle is out
@@ -770,7 +770,7 @@ contracts:
 
   # ── org.jose4j.keys.*KeyUtil.generateKeyPair — KeyPairGenerator wrappers ────
   # backing the *JwkGenerator classes above; rule-anchored by
-  # crypto_rules#175's related-crypto-material.key.*-keyutil-keygen rules.
+  # detection rules related-crypto-material.key.*-keyutil-keygen rules.
 
   - method: org.jose4j.keys.RsaKeyUtil.generateKeyPair
     arity: 1
@@ -818,7 +818,7 @@ contracts:
   # both <init>(Key) and <init>(Map) overloads collapse into this single
   # arity-1 entry (identical return type, per the overload-collapsing
   # convention established in netty-tls.yaml). The Map overload is the
-  # crypto_rules#175 octet-sequence-aes-labeling rule's pattern-inside anchor.
+  # octet-sequence-aes-labeling detection rule's pattern-inside anchor.
 
   - method: org.jose4j.jwk.OctetSequenceJsonWebKey.<init>
     arity: 1

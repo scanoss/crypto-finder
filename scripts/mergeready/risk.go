@@ -112,8 +112,7 @@ type riskCategory struct {
 	values map[string]int
 }
 
-// riskCategories come from Warp's merge-risk skill (credited to Matt Pocock),
-// as scanoss/earnie scores them.
+// riskCategories come from Warp's merge-risk skill (credited to Matt Pocock).
 var riskCategories = []riskCategory{
 	{"alignment", "Alignment", 1, map[string]int{"poor": 3, "decent": 2, "good": 1}},
 	{"impact", "Impact", 2, map[string]int{"large": 3, "medium": 2, "small": 1}},

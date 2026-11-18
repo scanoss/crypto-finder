@@ -27,7 +27,7 @@ library:
 # PasswordEncoder wrappers new in 7.0/7.1, (2) the PasswordEncoderFactories
 # default-encoder factory, (3) the hand-rolled BCrypt static terminal, and
 # (4) AesBytesEncryptor/Encryptors, which the 6.3.4 KB left uncontracted.
-# This is deliberately narrower than the joined crypto_rules#170/#162 rules
+# This is deliberately narrower than the joined detection rules
 # PR, which also adds rule coverage for the legacy digest-based encoders
 # (Md4PasswordEncoder, MessageDigestPasswordEncoder, LdapShaPasswordEncoder,
 # StandardPasswordEncoder) and RsaRawEncryptor -- those are pre-existing
@@ -42,7 +42,7 @@ library:
 #
 # org.springframework.security.crypto.bcrypt.BCrypt (hand-rolled, public;
 # structural fork of org.mindrot.jbcrypt.BCrypt, own package -- see
-# crypto_rules#162 review note)
+# detection rules review note)
 #   hashpw(String,String)              contracted (operation, arity 2)
 #   hashpw(byte[],String)              contracted (operation, arity 2) -- collapsed, identical return
 #   checkpw(String,String)             contracted (operation, arity 2)
@@ -107,7 +107,7 @@ library:
 #                                                          the KB only keys on arity/return, per
 #                                                          the netty-tls.yaml collapsing precedent
 #                                                          -- the RULE-side algorithm-selection
-#                                                          ambiguity crypto_rules#162 leaves
+#                                                          ambiguity detection rules leaves
 #                                                          unmatched for this arity is a distinct,
 #                                                          out-of-scope concern).
 #   <init>(String,CharSequence,BytesKeyGenerator,CipherAlgorithm) contracted (factory, arity 4)
@@ -118,7 +118,7 @@ library:
 #                                        BytesEncryptor hierarchy edge below.
 #   CipherAlgorithm (enum)             skipped-non-crypto -- enum constant, not a
 #                                        method; algorithm-mode selection is
-#                                        crypto_rules#162 rule metadata
+#                                        detection rule metadata
 #                                        (parameterCondition), not KB grammar.
 #
 # org.springframework.security.crypto.encrypt.Encryptors (public final factory
@@ -130,7 +130,7 @@ library:
 #   noOpText()                        skipped-non-crypto -- literal no-op passthrough
 #                                        encryptor, not a cryptographic factory.
 #
-# Deferred (belongs to the joined crypto_rules#162/#170 rules PR's broader
+# Deferred (belongs to the joined detection rules' broader
 # scope, not this KB ticket's narrow AC):
 #   password.Md4PasswordEncoder, password.MessageDigestPasswordEncoder,
 #   password.LdapShaPasswordEncoder, password.StandardPasswordEncoder
@@ -146,7 +146,7 @@ library:
 # Every contracted method's return type here is fixed regardless of the
 # BCryptVersion/strength/Function argument a caller passes in (unlike e.g.
 # Cipher.unwrap, where the mode argument selects the Java return type) --
-# algorithm-family/parameter selection stays in crypto_rules metadata
+# algorithm-family/parameter selection stays in detection rules metadata
 # (parameterCondition), never in this KB, per the crypto-kb-author skill's
 # "Condition and provider ownership" rule.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -154,7 +154,7 @@ library:
 contracts:
   # ── Hand-rolled BCrypt terminal (org.springframework.security.crypto.bcrypt.BCrypt) ──
   # A structural fork of org.mindrot.jbcrypt.BCrypt (own package, own class --
-  # confirmed via source; see crypto_rules#162 review note), reached directly
+  # confirmed via source; see detection rules review note), reached directly
   # by BCryptPasswordEncoder internally and by any caller importing it
   # directly. hashpw(String,String) and hashpw(byte[],String) share arity 2
   # and an identical String return -- collapsed into one contract, matching
@@ -285,7 +285,7 @@ contracts:
   # ((String,CharSequence,BytesKeyGenerator) and
   # (SecretKey,BytesKeyGenerator,CipherAlgorithm)) -- both return
   # AesBytesEncryptor, so the collapse is safe for KB return-type purposes
-  # even though crypto_rules#162 leaves that specific arity's RULE coverage
+  # even though detection rules leaves that specific arity's RULE coverage
   # unmatched (a rule-side algorithm-selection ambiguity between the two
   # overloads' differing parameter TYPES, not a return-type ambiguity; stays
   # out of scope for this KB per the "Condition and provider ownership"

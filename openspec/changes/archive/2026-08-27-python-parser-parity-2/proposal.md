@@ -7,7 +7,7 @@ binding-resolution rows but left two debts: **parse throughput** (~14–20% over
 merge-base `c6ee180`, design target was ≤10%, hard cap 20% — measured noisy, and the
 guard benchmark cannot run in CI because its corpus is not committed) and **10 deferred
 capability rows** from the exploration matrix. Mining throughput is now a first-class
-requirement: crypto-mining-service scans large pip dependency trees where a constant
+requirement: the mining service scans large pip dependency trees where a constant
 per-file factor multiplies across every distribution. This change pays both debts in one
 branch and adds `resolved_key_length` evidence for Python KDFs, leaving Python at or
 above Java's level on every row that has a Java analogue.
