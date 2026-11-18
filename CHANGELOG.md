@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.1] - 2026-11-18
+### Changed
+- The API notice header is now `SCANOSS-Notice`, without the deprecated `X-` prefix
+  (RFC 6648). crypto-finder 0.55.0 read `X-SCANOSS-Notice`; this version ignores that name.
+
 ## [0.55.0] - 2026-11-17
 ### Added
 - Scans that build a call graph (`--export-callgraph`, `--export-graph-fragment`,
