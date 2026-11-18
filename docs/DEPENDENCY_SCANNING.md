@@ -62,7 +62,7 @@ The `RootModule` (e.g. `github.com/myorg/app` for Go, `com.myorg` for Java) is t
 
 Rules are pre-loaded once and filtered to the ecosystem's language(s). For a Go project, only `go` rules are kept; for Java, only `java` rules. This avoids running irrelevant rules against source code, significantly reducing scanner overhead.
 
-The kept rules are then written to one merged file, which every dependency scan reuses. OpenGrep loads each config file separately on every run, so one file loads faster than hundreds. The merged file is named `merged-rules.yaml` but holds JSON text, one rule per line: JSON is valid YAML, and OpenGrep parses it about seven times faster. Each merged rule ID carries its source file's directory, the prefix OpenGrep derived from the file location before, so finding rule IDs do not change. Files the merge cannot represent exactly are passed to the scanner unchanged. These are invalid YAML, `*.test.yaml` fixtures, hidden paths, and YAML with no JSON form of the same meaning, such as a number written `0x10` or an alias.
+The kept rules are then written to one merged file, which every dependency scan reuses. OpenGrep loads each config file separately on every run, so one file loads faster than hundreds. The merged file is named `merged-rules.yaml` but holds JSON text, one rule per line: JSON is valid YAML, and OpenGrep parses it faster than YAML. Each merged rule ID carries its source file's directory, the prefix OpenGrep derived from the file location before, so finding rule IDs do not change. Files the merge cannot represent exactly are passed to the scanner unchanged. These are invalid YAML, `*.test.yaml` fixtures, hidden paths, and YAML with no JSON form of the same meaning, such as a number written `0x10` or an alias.
 
 ### Step 3: Scan Dependencies in Parallel
 
@@ -78,9 +78,9 @@ flowchart TB
     Pool --> W2["Worker 2: one scanner process<br/>over roots D, E"] --> R2["Reports D, E"]
 ```
 
-Dependencies are deduplicated by `module@version` and processed in a stable order (`module`, `version`, `dir`) so repeated scans produce deterministic report and call graph inputs. The findings cache is consulted per dependency; the misses are then grouped into batches and each worker runs **one scanner process per batch**, over every root in it, instead of one process per dependency. OpenGrep loads the rules once per process, and that load is the dominant cost of scanning a small dependency (about 20 s for the JavaScript and TypeScript rules), so a 50-package npm project pays it a handful of times instead of 50. Each process gets `--jobs` sized to its share of the cores (see the `scannerJobs` log field).
+Dependencies are deduplicated by `module@version` and processed in a stable order (`module`, `version`, `dir`) so repeated scans produce deterministic report and call graph inputs. The findings cache is consulted per dependency; the misses are then grouped into batches and each worker runs **one scanner process per batch**, over every root in it, instead of one process per dependency. OpenGrep loads the rules once per process, and that load is the dominant cost of scanning a small dependency, so a 50-package npm project pays it a handful of times instead of 50. Each process gets `--jobs` sized to its share of the cores (see the `scannerJobs` log field).
 
-**With an API key, published findings stand in for a dependency's detection.** The SCANOSS mining service scans each package version once and publishes its findings. When an API key is configured, a dependency the findings cache does not hold is looked up by versionless purl and version (`POST /v3/cryptography/reachability/component`, purl and requirement only). The published findings are taken as they are, including the closest mined patch the API serves for that version and the rules version it was mined with, and are kept to the dependency's own files. The dependency is then not scanned. A dependency the API has not mined, a lookup error, a refused key, or an API that does not offer the endpoint (HTTP 404) scans the dependency locally; a refused key or a missing endpoint stops further lookups for that scan, with one warning. Published findings are not written to the findings cache. The call graph, conditioned findings and reachability are always built from the local sources, so findings derived from calls between dependencies are kept. Each lookup sends the package's purl and version to the API. `--no-dependency-findings-api` scans every dependency locally (`internal/engine/dependency_findings_source.go`).
+**With an API key, published findings stand in for a dependency's detection.** When an API key is configured, findings SCANOSS has already published for a dependency version are used instead of scanning that dependency locally; each lookup sends the package's purl and version. A miss, a lookup error or a refused key scans the dependency locally, and `--no-dependency-findings-api` turns the lookup off (`internal/engine/dependency_findings_source.go`).
 
 Each root's report is what a scan of that root alone produces. The OpenGrep adapter (`ScanRoots`, `internal/scanner/opengrep/batch.go`) attributes every result and error to the root holding its file (longest prefix) and runs the same transformation per root, with that root as the target, so paths, deduplication, rule IDs and finding IDs are unchanged. An error without a file, such as a memory limit reported for the whole process, marks every root in the batch incomplete.
 
@@ -162,10 +162,13 @@ flowchart TB
     Fluent --> CG["CallGraph"]
 ```
 
-> **Performance optimization**: Only dependencies with crypto findings get full source parsing.
-> Dependencies without findings contribute only their bytecode type signatures (class names,
-> method signatures, return types, interface hierarchy). This preserves 100% type resolution
-> accuracy for fluent chains while skipping expensive source parsing for ~80% of dependencies.
+> **Two-phase build**: Only dependencies with crypto findings (and user code) get full source
+> parsing. Dependencies without findings contribute only their bytecode type signatures (class
+> names, method signatures, return types, interface hierarchy). Both phases are needed because
+> Java fluent APIs (e.g., `Jwts.builder().signWith(key)`) need return types from one dependency
+> to resolve calls in another: a dependency without findings may define the type that bridges a
+> call chain from user code to a finding, so its type information is kept while its source is
+> not parsed.
 
 A dependency's `Files` becomes the `IncludeFiles` of its `PackageDir`. For Go, the builder parses only the files the host build compiles in the imported packages (the Go parser skips an unlisted file before reading it, so modernc.org/libc's seven other `ccgo_linux_<arch>.go` files cost nothing) and still walks through their parent directories so every package keeps the import path a whole-module walk gives it. This loses no reachability. A Go function can call only functions of packages its own package imports, which are in the closure too, and an interface value can only hold a type of a package the program contains, so the module's other packages hold no call edge and no dispatch target of the program. Likewise a file that build constraints exclude is not part of the program the host builds.
 
@@ -989,7 +992,7 @@ Example:
 
 ## Findings Cache
 
-Dependency scanning is dominated by opengrep execution time (~93% of pipeline time). Since `module@version` produces identical scan results with the same ruleset, caching eliminates redundant work entirely. On a second scan with the same dependencies and rules, the dependency scanning phase drops from minutes to near-zero.
+OpenGrep execution is the main cost of dependency scanning. Since `module@version` produces identical scan results with the same ruleset, caching avoids rescanning a dependency whose inputs have not changed.
 
 ### How It Works
 
@@ -1009,7 +1012,7 @@ flowchart LR
 The key (`dependency-findings-v2:<sha256>`, `internal/engine/dependency_cache_identity.go`) hashes everything that affects a dependency's scan output: `module@version`, the rules hash (first 16 hex chars of SHA-256 over sorted rule file **contents**, computed once per scan), the Java runtime token, the scanner's name, version and engine content digest, the effective scanner configuration (job count zeroed), the language hint, the scope, the audited environment allowlist, and:
 
 - **Where the source lies, as its place in the package store** (`cacheRoot`): `sources:<group-artifact>/<version>`, `gomodcache:<module>@<version>`, `cargo-registry:<index>/<crate>-<version>`, `cargo-git:...`, or the path from the first `node_modules`/`site-packages`/`dist-packages` component. Because OpenGrep scans the dependency through that same place (see above), the cached findings are what a scan on any host finds, so entries carry over to other homes, hosts and checkouts. A dependency outside every store (a Go `replace` naming a local directory, a path dependency) and any scanner that does not scan through relative paths keep the absolute directory: another directory can hold other code for the same version. Exclude patterns anchored at the dependency (npm's own `node_modules/`) are keyed relative to it.
-- **The source content, when the store does not verify it** (`sourceDigest`, `storeVerifiesContent`): the SHA-256 over the sorted (relative path, content SHA-256) pairs of the files the scan reads, `Files` when the resolver lists them, else every regular file below the directory except what the scan's own anchored excludes skip (npm's nested `node_modules/`), never following a symlink out of the dependency. The Go module cache (go.sum), Cargo's registry (the index checksum) and Cargo's git checkouts (the commit in the directory name) verify what they hold at a place, so their entries stay keyed by module@version alone. `node_modules`, `site-packages`, `dist-packages` and crypto-finder's source cache hold whatever was installed under a version's name, a git fork or `patch-package` edit at a registry version, a pip install from a path, a Maven SNAPSHOT, so two installs that differ never share an entry, and a shared cache (Postgres) never serves one project's fork to another. The digest is computed once per dependency, only when caching is on, and costs about 80 ms warm (400 ms cold) for a 2,000-file, 47 MB package. A dependency whose source cannot be read is scanned and not cached (`no_identity`), never keyed on a partial digest.
+- **The source content, when the store does not verify it** (`sourceDigest`, `storeVerifiesContent`): the SHA-256 over the sorted (relative path, content SHA-256) pairs of the files the scan reads, `Files` when the resolver lists them, else every regular file below the directory except what the scan's own anchored excludes skip (npm's nested `node_modules/`), never following a symlink out of the dependency. The Go module cache (go.sum), Cargo's registry (the index checksum) and Cargo's git checkouts (the commit in the directory name) verify what they hold at a place, so their entries stay keyed by module@version alone. `node_modules`, `site-packages`, `dist-packages` and crypto-finder's source cache hold whatever was installed under a version's name, a git fork or `patch-package` edit at a registry version, a pip install from a path, a Maven SNAPSHOT, so two installs that differ never share an entry, and a shared cache (Postgres) never serves one project's fork to another. The digest is computed once per dependency, only when caching is on. A dependency whose source cannot be read is scanned and not cached (`no_identity`), never keyed on a partial digest.
 - **The working directory, only when rule files lie below it** (`cacheCWD`): it then prefixes the rule ids the CLI reports. A report naming a file by absolute path or outside the root is never stored under a key without the directory (`not_stored_unportable`).
 
 ### Storage Layout
@@ -1032,20 +1035,7 @@ type FindingsCache interface {
 }
 ```
 
-The interface accepts `context.Context` on both methods to support network-backed implementations with timeouts and cancellation. The pipeline doesn't know or care which backend is behind the interface.
-
-### Distributed Extensibility
-
-The `FindingsCache` interface is the extension point for multi-node scanning:
-
-| Backend | Implementation | Use Case |
-|---------|---------------|----------|
-| **Disk** | `DiskFindingsCache` | Single-node, dev workflow |
-| **Redis** | `RedisFindingsCache` | Multi-node cluster, shared LAN |
-| **S3/GCS** | `S3FindingsCache` | Global fleet, persist across deploys |
-| **Two-tier** | `TieredCache{L1: memory, L2: redis}` | Hot + warm layers |
-
-Each just implements `Get`/`Put`. The scanning pipeline is completely agnostic about the storage backend.
+The interface accepts `context.Context` on both methods to support network-backed implementations with timeouts and cancellation. The pipeline doesn't know or care which backend is behind the interface: besides `DiskFindingsCache` there is a Postgres-backed `PostgresFindingsCache` (`internal/engine/findings_cache_postgres.go`), and other backends only need to implement `Get`/`Put`.
 
 ---
 
@@ -1123,7 +1113,7 @@ Before its first resolution command the resolver asks Maven for its local reposi
 - This is expensive (requires compilation) but is the only way to resolve inter-module transitive dependencies
 
 After dependency listing, the resolver also runs:
-- **`mvn dependency:sources`** — downloads `-sources.jar` files to the local repository (best-effort; ~65% of Java libraries publish source JARs)
+- **`mvn dependency:sources`** — downloads `-sources.jar` files to the local repository (best-effort; not every Java library publishes a source JAR)
 - **`mvn dependency:tree --fail-never -DappendOutput=true`** — builds the dependency graph adjacency list (best-effort)
 
 Dependencies without source JARs are included in the resolution results but without a source directory. They are skipped for source scanning and logged explicitly; if the compiled artifact is present in the local repository, Java bytecode indexing can still use it as a type-only dependency.
@@ -1234,72 +1224,6 @@ To add support for a new ecosystem:
 5. **Add manifest detection** in `detectEcosystem()` — add one `if` checking for the manifest file
 
 No changes needed to: `builder.go`, `tracer.go`, `dependency_scanner.go`, entities, or schemas.
-
-## Performance
-
-### Two-Phase Call Graph Build
-
-The call graph build is the most expensive step in the dependency scanning pipeline. To minimize cost while preserving 100% type resolution accuracy, the builder uses a **two-phase approach**:
-
-**Phase 1 — Source parsing (targeted):** Only dependencies with crypto findings + user code modules get full source parsing via `Parser.ParseDirectory()`. This builds `FunctionDecl` entries with call sites, parameters, and return types.
-
-**Phase 2 — Bytecode type indexing (comprehensive):** ALL dependencies (including those without findings) are indexed via `JavaBytecodeTypeResolver`. This reads `.class` files from Maven JARs to extract class names, method signatures, return types, and interface hierarchy. The type index is used to resolve fluent chains and enrich parameter types across dependency boundaries.
-
-**Why both phases are needed:** Java fluent APIs (e.g., `Jwts.builder().signWith(key)`) require knowing return types from one dependency to resolve calls in another. A dependency without crypto findings may define the return type that bridges a call chain from user code to a crypto finding. Skipping its type information would break backward tracing.
-
-#### Benchmarks (eladmin — 160 deps, 27 with findings, 269 crypto assets)
-
-Current warm-run numbers with findings cache + Java bytecode cache enabled:
-
-| Metric | Current |
-|--------|---------|
-| Packages source-parsed | 32 |
-| Functions in graph | 168,386 |
-| Caller index entries | 190,688 |
-| Bytecode type packages | 165 |
-| JARs indexed | 160 |
-| Bytecode cache hits | 157 |
-| Bytecode resolution duration | ~1.27s |
-| Full dependency pipeline | ~33.0s |
-| Wall time | ~44.0s |
-| Findings | 269 |
-| Exported call graph edges | 498,271 |
-
-The largest recent improvements came from three changes:
-
-- **Two-phase call graph build**: only findings-bearing dependencies get full source parsing
-- **Parallel Java JAR indexing**: exact-version JARs are indexed concurrently
-- **Per-artifact bytecode cache**: repeated scans avoid reparsing unchanged JARs
-
-### Current Bottlenecks
-
-The pipeline has three main time consumers:
-
-1. **Source parsing for graph packages** (~23s on warm `eladmin`): Parses `.java` files from 32 packages (user code + 27 deps with findings) to build 168K function declarations with call sites.
-
-2. **Dependency scanning with opengrep**: Still dominates cold scans. On warm scans most dependencies hit the findings cache; on first scans the cost depends on dependency source size and worker count (`--dep-workers`). Batching removed the per-dependency rule load, so the remaining cost is the analysis itself.
-
-3. **Call graph post-processing** (~2-3s): Caller index construction, bytecode merge/rewrite, and fluent-chain resolution are no longer dominant but still scale with graph size.
-
-### Future Optimization Opportunities
-
-#### Source parsing and graph size reduction
-
-The bytecode resolution bottleneck has largely been removed. Remaining performance opportunities are now upstream:
-
-- **Reduce graph packages further**: Keep shrinking the set of dependencies that require full source parsing without breaking attribution accuracy.
-- **Smarter pre-scan eligibility**: Skip dependencies that have source directories but no scannable files before invoking opengrep.
-- **Containing-function lookup index**: `Tracer.FindContainingFunction()` still scans functions linearly; indexing by file could cut repeated lookups on large reports.
-- **Selective bytecode indexing**: Only index JARs whose types appear in unresolved calls from graph packages. More complex, but now one of the few remaining bytecode-side wins.
-
-#### Opengrep scanning
-
-- **Result caching**: The existing `DiskFindingsCache` caches dependency scan results by `module@version:rulesHash`. On repeated scans of the same project, most dependencies hit the cache.
-- **Cold-scan throughput**: First-scan performance still depends heavily on opengrep throughput over large dependency sources. Scanning only the directories a Go module actually imports, rather than the whole module, is the next lever there.
-
-#### Call graph export
-
-- **Export is fast** (~10-15s for 269 findings) and not currently a bottleneck. The finding-centric export only traces paths reachable from findings, producing a compact JSON (~9.5K lines for eladmin) regardless of full graph size.
 
 ## Limitations
 
