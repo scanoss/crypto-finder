@@ -135,6 +135,14 @@ RUN mkdir -p /tmp/jre-stub/DEBIAN \
     && rm -rf /var/lib/apt/lists/*
 ENV JAVA_HOME=/opt/jdks/jdk21
 ENV SCANOSS_JAVA_JDK_HOMES=8=/opt/jdks/jdk8,11=/opt/jdks/jdk11,17=/opt/jdks/jdk17,21=/opt/jdks/jdk21
+# Java4Shell (CVE-2026-114938): the AVX-512 Base64 decode intrinsic in JDK
+# 17.0.6+ corrupts the heap on crafted input, and Maven and Gradle decode
+# Base64 from the projects we scan. Temurin has not shipped 17.0.21.1 /
+# 21.0.13.1 yet, so turn the intrinsic off. JDK_JAVA_OPTIONS reaches every
+# `java` launcher from JDK 9 on and JDK 8 ignores it; JDK 8 has no such
+# intrinsic. IgnoreUnrecognizedVMOptions keeps a JVM starting on a build that
+# lacks the flag. Drop this once the pinned JDK 17 and 21 carry the fix.
+ENV JDK_JAVA_OPTIONS="-XX:+IgnoreUnrecognizedVMOptions -XX:-UseBASE64Intrinsics"
 
 # ── Rust/Cargo (for dependency resolution only, not compilation) ──
 # Install pinned rustup-init from the versioned archive. This avoids the live
