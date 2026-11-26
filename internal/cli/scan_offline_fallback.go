@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/scanoss/reach/perf"
@@ -83,6 +84,23 @@ func onlineReachability(ctx context.Context, client *api.Client, request *api.Ap
 	return answer, fillWithoutDataOffline(ctx, answer, local), nil
 }
 
+// fallbackReserveMax caps the time fallbackContext keeps back for the rest of
+// the scan: the next plans' API requests, the merge and the report.
+const fallbackReserveMax = 2 * time.Minute
+
+// fallbackContext bounds the offline fallback so it ends before the scan's
+// own --timeout deadline, keeping a fifth of the time left (at most
+// fallbackReserveMax) for the rest of the scan. A fallback that runs out of
+// time then fails alone, and the scan still reports.
+func fallbackContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return context.WithCancel(ctx)
+	}
+	remaining := time.Until(deadline)
+	return context.WithTimeout(ctx, remaining-min(remaining/5, fallbackReserveMax))
+}
+
 // fillWithoutDataOffline answers with local the dependencies answer holds
 // without data and puts each local answer that has data in place of the
 // API's. A dependency the local path cannot answer either keeps the API's
@@ -92,7 +110,7 @@ func fillWithoutDataOffline(ctx context.Context, answer *api.ApplicationReachabi
 	var purls []string
 	without := map[string]int{}
 	for i, dep := range answer.Dependencies {
-		if dep.InfoCode == "READY" {
+		if dep.InfoCode == string(pr.InfoReady) {
 			continue
 		}
 		purls = append(purls, dep.Purl)
@@ -104,7 +122,9 @@ func fillWithoutDataOffline(ctx context.Context, answer *api.ApplicationReachabi
 	report.ran = true
 	log.Info().Int("dependencies", len(purls)).Msg("The SCANOSS API holds no reachability data for some dependencies; answering them offline")
 	span := perf.Start("dependencies.offline_fallback")
-	localAnswer, err := local(ctx, purls)
+	fctx, cancel := fallbackContext(ctx)
+	localAnswer, err := local(fctx, purls)
+	cancel()
 	span.End()
 	if err != nil {
 		why := fmt.Sprintf("offline fallback failed: %v", err)
@@ -140,7 +160,7 @@ func takeLocalAnswers(answer, localAnswer *api.ApplicationReachability, without 
 		switch {
 		case !ok:
 			continue
-		case dep.InfoCode != "READY":
+		case dep.InfoCode != string(pr.InfoReady):
 			if dep.InfoMessage != "" {
 				failed[key] = dep.InfoMessage
 			}

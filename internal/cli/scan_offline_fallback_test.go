@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	gf "github.com/scanoss/reach/graphfrag"
 
@@ -127,6 +128,25 @@ func TestOfflineFallbackFailureKeepsTheAPIAnswer(t *testing.T) {
 				t.Fatalf("timeout failure does not name --timeout: %q", report.failed[fallbackKey(fallbackPurlB, "2.0")])
 			}
 		})
+	}
+}
+
+// A fallback that mines until the deadline must stop short of the scan's own
+// deadline: the scan still has to send the next plans' requests and write its
+// report, so the scan's context is alive when the fallback gives up.
+func TestOfflineFallbackLeavesTheScanTimeToFinish(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	answer := apiAnswer()
+	report := fillWithoutDataOffline(ctx, answer, func(fctx context.Context, _ []string) (*api.ApplicationReachability, error) {
+		<-fctx.Done()
+		return nil, fctx.Err()
+	})
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("the scan's context ended with the fallback: %v", err)
+	}
+	if len(report.failed) != 2 || !strings.Contains(report.failed[fallbackKey(fallbackPurlB, "2.0")], "--timeout") {
+		t.Fatalf("report = %+v, want b and c failed on the deadline", report.failed)
 	}
 }
 

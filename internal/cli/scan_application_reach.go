@@ -39,6 +39,7 @@ import (
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner/cards"
 	"github.com/scanoss/crypto-finder/internal/utils"
+	pr "github.com/scanoss/crypto-finder/pkg/appreach"
 )
 
 const (
@@ -477,7 +478,7 @@ func applicationReachability(
 			return nil, nil, err
 		}
 	}
-	if answer.InfoCode != "READY" && len(answer.Dependencies) == 0 {
+	if answer.InfoCode != string(pr.InfoReady) && len(answer.Dependencies) == 0 {
 		return nil, nil, failure.New(failure.CodeDependencyResolutionFailed, failure.StageDependency,
 			fmt.Sprintf("the SCANOSS API answered %s to the application reachability request: %s", answer.InfoCode, answer.InfoMessage),
 			failure.WithDetail("info_code", answer.InfoCode))
