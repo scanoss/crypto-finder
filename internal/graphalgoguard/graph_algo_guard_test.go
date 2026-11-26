@@ -50,6 +50,7 @@ var graphAlgoCorpus = []struct {
 }{
 	{ecosystem: "c", appImport: "app", depImport: "dep", dependencyVersion: "1.0.0", typeResolver: true},
 	{ecosystem: "cpp", appImport: "app", depImport: "dep", dependencyVersion: "1.0.0", typeResolver: true},
+	{ecosystem: "csharp", appImport: "App", depImport: "Acme.Crypto.Engines", dependencyVersion: "1.0.0", typeResolver: true},
 	{ecosystem: "go", appImport: "example.com/app", depImport: "example.com/dep", dependencyVersion: "v1.0.0", typeResolver: true},
 	{ecosystem: "java", appImport: "com.acme.app", depImport: "com.acme.dep", dependencyVersion: "1.0.0"},
 	{ecosystem: "node", appImport: "app", depImport: "dep", dependencyVersion: "1.0.0", typeResolver: true},

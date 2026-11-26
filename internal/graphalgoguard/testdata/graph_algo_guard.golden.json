@@ -14,6 +14,13 @@
       "internal_edges": 3,
       "external_calls": 9
     },
+    "csharp": {
+      "graph_algo_version": "graph-algo-cs-3",
+      "sha256": "4b5af9d0a22631ff12fd761e103912ebe0e4785063e674cae2611394729aa86a",
+      "functions": 6,
+      "internal_edges": 4,
+      "external_calls": 6
+    },
     "go": {
       "graph_algo_version": "graph-algo-go-15",
       "sha256": "3d7d4ab522d0425023dddbb84b48839034eb72165876402349558187024de5b2",

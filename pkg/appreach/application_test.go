@@ -122,6 +122,9 @@ func TestPurlToModule(t *testing.T) {
 		"pkg:pypi/":                             "pkg:pypi/",
 		"pkg:golang/filippo.io/age@v1.3.2":      "filippo.io/age",
 		"pkg:npm/left-pad":                      "pkg:npm/left-pad",
+		"pkg:nuget/Acme.Crypto":                 "Acme.Crypto",
+		"pkg:nuget/Acme.Mail@5.0.0":             "Acme.Mail",
+		"pkg:nuget/":                            "pkg:nuget/",
 	} {
 		if got := PurlToModule(purl); got != want {
 			t.Errorf("PurlToModule(%q) = %q, want %q", purl, got, want)
