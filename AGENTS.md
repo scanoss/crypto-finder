@@ -57,8 +57,9 @@ adds or changes. It fails on:
   `# leakguard: invented-rules`, which its author adds and its reviewer
   checks.
 
-The title and body of a PR a bot opened (Dependabot quoting upstream release
-notes) are not scanned; its diff and commits are. Findings name the place and
+The title and body of a PR Dependabot opened (they quote upstream release
+notes) are not scanned; its diff and commits are. Other apps, agents among
+them, are scanned like people. Findings name the place and
 the category, never the matched text. The denylist,
 `scripts/internal/leakguard/denylist.txt`, holds only SHA-256 hashes, so it
 does not reveal the names. To add a name, type it on stdin so it is never

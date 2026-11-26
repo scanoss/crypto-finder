@@ -109,6 +109,13 @@ func TestPRFromEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, bot, err := prMeta("", bp); err != nil || !bot {
-		t.Errorf("prMeta of a bot PR: bot=%v, %v", bot, err)
+		t.Errorf("prMeta of a Dependabot PR: skip=%v, %v", bot, err)
+	}
+	ap := filepath.Join(dir, "app.json")
+	if err := os.WriteFile(ap, []byte(`{"pull_request":{"title":"fix: x","user":{"login":"some-agent[bot]","type":"Bot"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, bot, err := prMeta("", ap); err != nil || bot {
+		t.Errorf("prMeta of an app-opened agent PR: skip=%v, %v; want its title and body scanned", bot, err)
 	}
 }

@@ -80,7 +80,8 @@ func checkLeaks(root, base, head, title, body string, g *leakguard.Guard) ([]str
 
 // prMeta returns the PR title, from titleFile when given, else from the pull
 // request in the GitHub Actions event payload at eventPath, else ""; and
-// whether a bot opened the PR, per the payload.
+// whether Dependabot opened the PR, per the payload. Only Dependabot: other
+// apps, agents among them, write their own titles and bodies.
 func prMeta(titleFile, eventPath string) (title string, bot bool, err error) {
 	if eventPath != "" {
 		b, err := os.ReadFile(eventPath) // #nosec G304 -- GITHUB_EVENT_PATH, set by the Actions runner
@@ -91,14 +92,14 @@ func prMeta(titleFile, eventPath string) (title string, bot bool, err error) {
 			PullRequest struct {
 				Title string `json:"title"`
 				User  struct {
-					Type string `json:"type"`
+					Login string `json:"login"`
 				} `json:"user"`
 			} `json:"pull_request"`
 		}
 		if err := json.Unmarshal(b, &ev); err != nil {
 			return "", false, fmt.Errorf("parse event: %w", err)
 		}
-		title, bot = ev.PullRequest.Title, ev.PullRequest.User.Type == "Bot"
+		title, bot = ev.PullRequest.Title, ev.PullRequest.User.Login == "dependabot[bot]"
 	}
 	if titleFile != "" {
 		b, err := os.ReadFile(titleFile) // #nosec G304 -- a path the caller passed on the command line

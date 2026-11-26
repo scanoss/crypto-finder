@@ -43,7 +43,7 @@
 // it adds or changes, and fails on an internal name, an absolute home path or
 // ruleset-shaped YAML without the invented-rules marker. The title comes from
 // --title-file, else from the pull request in $GITHUB_EVENT_PATH, else it is
-// not checked. The title and body of a PR a bot opened are not scanned.
+// not checked. The title and body of a PR Dependabot opened are not scanned.
 //
 // replay runs the check-pr matching over each of the last n first-parent
 // commits of rev against its parent, with an empty body, and prints how many
@@ -267,9 +267,9 @@ func runCheckPR(root, base, head, bodyFile, titleFile string, stdout *printer) e
 	}
 	leakTitle, leakBody := title, string(body)
 	if bot {
-		// A bot's title and body quote upstream release notes, not us; its
-		// diff and commits are still scanned.
-		stdout.println("leakguard: a bot opened this PR; its title and body are not scanned")
+		// Dependabot's title and body quote upstream release notes, not us;
+		// its diff and commits are still scanned.
+		stdout.println("leakguard: Dependabot opened this PR; its title and body are not scanned")
 		leakTitle, leakBody = "", ""
 	}
 	if err := runCheckLeaks(root, base, head, leakTitle, leakBody, stdout); err != nil {
