@@ -12,7 +12,7 @@ entry point, supporting call, call chain), see [CONTEXT.md](../CONTEXT.md).
 | Layer | Lives in | Owns |
 |---|---|---|
 | Engine | `github.com/scanoss/reach` (MIT) | Parsers, call graph, type resolution, contracts loader, entry points, graph fragments, stitcher, callgraph renderer |
-| Domain | `internal/cryptokb`, `internal/cardmatch`, `internal/scanner/cards`, `internal/scan`, `internal/oid`, `internal/pqc`, `pkg/appreach`, `pkg/conditioned`, `pkg/pqc` | Crypto KB, detection, supporting calls, OIDs, PQC, the application reachability answer |
+| Domain | `internal/cryptokb`, `internal/scanner/cards`, `internal/scan`, `internal/oid`, `internal/pqc`, `pkg/appreach`, `pkg/conditioned`, `pkg/pqc` | Crypto KB, detection, supporting calls, OIDs, PQC, the application reachability answer |
 | Client | `internal/cli`, `internal/config`, `internal/api`, `internal/cache`, `internal/rules`, `internal/ruleset`, `internal/dependency`, `internal/offline`, `internal/output`, `internal/converter` | Commands, configuration, API calls, ruleset cache, dependency resolution, offline mining, report writing |
 
 What runs locally and what the API serves: [CLIENT_SERVER.md](CLIENT_SERVER.md).
@@ -34,7 +34,7 @@ target source tree
    │              (internal/cryptokb), JDK platform signatures and, with
    │              --scan-dependencies, the closure's JARs (type-only)
    ▼
-3. Detection      the cards engine (internal/cardmatch) matches the ruleset
+3. Detection      the cards engine (reach's cardmatch) matches the ruleset
    │              against the graph's call sites → dedup → findings
    ▼
 4. Reachability   each finding is matched to its call-graph node by position;

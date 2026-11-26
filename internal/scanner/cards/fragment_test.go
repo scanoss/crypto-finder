@@ -8,9 +8,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/scanoss/reach/cardmatch"
 	"github.com/scanoss/reach/graphfrag"
-
-	"github.com/scanoss/crypto-finder/internal/cardmatch"
 )
 
 // The in-memory conversion gives the matcher every external call field a

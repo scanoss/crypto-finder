@@ -1,5 +1,0 @@
-use acme::keys::ed::{self, Key};
-
-fn f(pair: Key) {
-    pair.sign(1);
-}

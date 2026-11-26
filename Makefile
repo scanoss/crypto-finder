@@ -105,7 +105,7 @@ test-guards: ## Run the guard tests (import boundary, graph/algo version, equiva
 		./internal/boundary/ \
 		./internal/graphalgoguard/ \
 		./internal/rules/ \
-		./internal/cardmatch/ \
+		github.com/scanoss/reach/cardmatch/... \
 		./internal/scanner/cards/ \
 		./scripts/...
 	@GORACE=atexit_sleep_ms=0 go test -race -count=1 -timeout 30m -run 'Equivalence|Golden' ./internal/scan/

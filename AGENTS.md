@@ -299,7 +299,7 @@ see `parseMethodInvocation` / `parseObjectCreation`):
 | `ReceiverVar` | The variable a method is invoked on (`x` in `x.foo()`); empty for static/class receivers |
 | `AssignedVar` | The variable a call's result binds to; for fluent chains, set only on the chain **root** (outermost call) |
 | `ChainID` | A stable id shared by all links of one fluent chain |
-| `StartCol` / `EndCol` | **1-based, start inclusive, end exclusive** (OpenGrep's convention, which the cards engine reproduces; tree-sitter columns are 0-based, so `+1`). Pin it against recorded OpenGrep matches, not a hand-built fixture (`TestCardsMatchAsOpenGrep` in `internal/cardmatch`) |
+| `StartCol` / `EndCol` | **1-based, start inclusive, end exclusive** (OpenGrep's convention, which the cards engine reproduces; tree-sitter columns are 0-based, so `+1`). Pin it against recorded OpenGrep matches, not a hand-built fixture (`TestCardsMatchAsOpenGrep` in reach's `cardmatch`) |
 
 Omitting any of these is safe — the system **degrades gracefully** to line-only
 matching and a chain-root/best-resolved heuristic — but precision on multi-call lines

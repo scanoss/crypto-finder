@@ -33,7 +33,6 @@ This feature has no drive in this version. The 0.54.0 drive (OpenGrep, non-Java 
 - `internal/cli/scan.go`
 - `internal/cli/scan_profile.go`
 - `internal/cli/scan_cards.go`
-- `internal/cardmatch/**`
 - `internal/engine/orchestrator.go`
 - `internal/engine/processor.go`
 - `internal/engine/rule_filter.go`

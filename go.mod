@@ -5,7 +5,6 @@ go 1.26.0
 require (
 	github.com/CycloneDX/cyclonedx-go v0.12.0
 	github.com/Masterminds/semver/v3 v3.5.0
-	github.com/dlclark/regexp2 v1.11.5
 	github.com/go-enry/go-enry/v2 v2.9.2
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
@@ -14,7 +13,7 @@ require (
 	github.com/pterm/pterm v0.12.82
 	github.com/rs/zerolog v1.34.0
 	github.com/scanoss/crypto-pqc-dataset v1.4.0
-	github.com/scanoss/reach v0.36.0
+	github.com/scanoss/reach v0.37.0
 	github.com/scanoss/scanoss.go v0.12.1-0.20261020065749-c1c6ba0935d6
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -31,6 +30,7 @@ require (
 	atomicgo.dev/schedule v0.1.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/containerd/console v1.0.5 // indirect
+	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-enry/go-oniguruma v1.2.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect

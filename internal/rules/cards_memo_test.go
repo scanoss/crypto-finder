@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scanoss/crypto-finder/internal/parsememo"
+	"github.com/scanoss/reach/parsememo"
 )
 
 const memoCardFile = `format: scanoss-cards/3

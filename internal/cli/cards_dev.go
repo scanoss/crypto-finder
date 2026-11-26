@@ -27,9 +27,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/scanoss/reach/cardmatch"
 	"github.com/spf13/cobra"
 
-	"github.com/scanoss/crypto-finder/internal/cardmatch"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/failure"
 	cardsscanner "github.com/scanoss/crypto-finder/internal/scanner/cards"
