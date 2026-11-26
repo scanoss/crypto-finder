@@ -38,11 +38,11 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/cardmatch"
 	"github.com/scanoss/reach/graphfrag"
 	"github.com/scanoss/reach/perf"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/scanoss/crypto-finder/internal/cardmatch"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"

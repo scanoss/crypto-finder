@@ -19,7 +19,8 @@ package cards
 import (
 	"os"
 
-	"github.com/scanoss/crypto-finder/internal/cardmatch"
+	"github.com/scanoss/reach/cardmatch"
+
 	"github.com/scanoss/crypto-finder/internal/config"
 )
 

@@ -17,9 +17,8 @@
 package cards
 
 import (
+	"github.com/scanoss/reach/cardmatch"
 	"github.com/scanoss/reach/graphfrag"
-
-	"github.com/scanoss/crypto-finder/internal/cardmatch"
 )
 
 // toMatcherFragment hands the matcher the in-memory fragment in the shape

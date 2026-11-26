@@ -19,7 +19,7 @@ package rules
 import (
 	"errors"
 
-	"github.com/scanoss/crypto-finder/internal/parsememo"
+	"github.com/scanoss/reach/parsememo"
 )
 
 // cardsMemo holds, across processes, what ReadCardsRules returned for each

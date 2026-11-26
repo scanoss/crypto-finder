@@ -6,7 +6,7 @@ package cards
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/cardmatch"
+	"github.com/scanoss/reach/cardmatch"
 )
 
 // The matcher keeps reading its two debugging environment variables, now

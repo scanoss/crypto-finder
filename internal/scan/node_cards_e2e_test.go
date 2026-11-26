@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/cardmatch"
 
-	"github.com/scanoss/crypto-finder/internal/cardmatch"
 	"github.com/scanoss/crypto-finder/internal/engine"
 )
 

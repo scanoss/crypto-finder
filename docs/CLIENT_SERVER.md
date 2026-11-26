@@ -25,7 +25,7 @@ service at all.
 | Language detection, skip patterns | `reach/language`, `reach/skip` | |
 | Ruleset loading | `internal/rules`, `internal/cache` | Downloads and verifies the leased bundle, keeps it encrypted in the cache ([REMOTE_RULESETS.md](REMOTE_RULESETS.md)) |
 | Call graph build and type resolution | `reach/callgraph` with `internal/cryptokb` | JDK and dependency JARs are read locally |
-| Detection | `internal/scanner/cards`, `internal/cardmatch` | Matches the ruleset against the call graph's call sites |
+| Detection | `internal/scanner/cards`, reach `cardmatch` | Matches the ruleset against the call graph's call sites |
 | First-party reachability | `internal/scan` | Chains from the project's entry points to its own findings |
 | Dependency resolution | `internal/dependency` | Runs `mvn` or `gradle` in the project; reads Python locks and environments as files |
 | Offline mining and stitch | `internal/offline`, `pkg/appreach` | Only with `--offline` ([OFFLINE.md](OFFLINE.md)) |
