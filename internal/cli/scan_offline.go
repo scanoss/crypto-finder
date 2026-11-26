@@ -61,7 +61,7 @@ var (
 
 func init() {
 	scanCmd.Flags().BoolVar(&scanOffline, "offline", false,
-		"With --scan-dependencies: decide dependency reachability locally instead of asking the SCANOSS API. Each dependency is mined from its Maven sources JAR and cached; the verdicts come from the code the API runs")
+		"With --scan-dependencies: decide dependency reachability locally instead of asking the SCANOSS API. Each dependency is mined from its published sources and cached; the verdicts come from the code the API runs")
 	scanCmd.Flags().StringVar(&scanOfflineCacheDir, "offline-cache-dir", "",
 		"With --offline or the online offline fallback: directory of the mined-dependency cache (default ~/.scanoss/crypto-finder/cache/mined)")
 	scanCmd.Flags().StringVar(&scanOfflinePythonPackages, "offline-python-packages", "",

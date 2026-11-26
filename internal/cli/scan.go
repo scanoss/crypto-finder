@@ -129,7 +129,8 @@ var scanCmd = &cobra.Command{
 
 	The scan command builds the target's typed call graph and matches the
 	ruleset's cards against its call sites. This version detects cryptography
-	in Java; a target in another language is reported as not supported. By
+	in Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++ and C#; a
+	target in another language is reported as not supported. By
 	default, it outputs findings to stdout in JSON format. Use --output to
 	write to a file instead.
 
@@ -183,9 +184,10 @@ func init() {
 		"Remote ruleset version to fetch: latest or a release version such as v1.39.0 (pin it to reproduce a scan with identical rules)")
 	scanCmd.Flags().BoolVar(&scanNoDedup, "no-dedup", false, "Disable per-line deduplication of findings")
 	scanCmd.Flags().BoolVar(&scanDependencies, "scan-dependencies", false,
-		"Report the cryptography of the project's dependencies (Java: Maven, Gradle) and whether the project reaches it: resolve the pinned "+
-			"dependency closure to compiled JARs, type the project's one call graph with them, and ask the SCANOSS API in one request "+
-			"(/v3/cryptography/reachability/application) for every dependency finding and its verdict. No dependency source is fetched or scanned")
+		"Report the cryptography of the project's dependencies (Java, Python, Go, JavaScript/TypeScript, Rust, Ruby, C#) and whether "+
+			"the project reaches it: resolve the pinned dependency closure and ask the SCANOSS API in one request "+
+			"(/v3/cryptography/reachability/application) for every dependency finding and its verdict. Dependencies the API has no data "+
+			"for are mined locally (see --no-offline-fallback); --offline mines every dependency locally")
 	scanCmd.Flags().BoolVar(&scanIncludeTests, "include-tests", false, "Include test sources in findings")
 	scanCmd.Flags().BoolVar(&scanNoDefaultExclusions, "no-default-exclusions", false,
 		"Disable the built-in default exclusions (docs, vendor, node_modules, shaded, generated protobuf stubs, ...). "+

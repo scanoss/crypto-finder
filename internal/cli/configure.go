@@ -46,7 +46,7 @@ var configureCmd = &cobra.Command{
 	  crypto-finder configure --api-key YOUR_API_KEY --api-url https://api.scanoss.com
 
 	  # Configure an on-premises API that only serves plain HTTP
-	  crypto-finder configure --api-url http://scanoss.internal:5443 --allow-http`,
+	  crypto-finder configure --api-url http://api.example.internal:5443 --allow-http`,
 	RunE: runConfigure,
 }
 
