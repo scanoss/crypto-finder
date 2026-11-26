@@ -150,7 +150,8 @@ func ComputeFindingID(path string, startLine int, ruleID string) string {
 // for Maven, the PEP 503 normalised distribution name for PyPI (what the
 // Python dependency resolver names a dependency; not the import name, which
 // a distribution may not share and a namespace package shares with others).
-// The module path for Go. Other purls pass through unchanged.
+// The module path for Go and the package id for NuGet. Other purls pass
+// through unchanged.
 func PurlToModule(purl string) string {
 	if rest, ok := strings.CutPrefix(purl, "pkg:golang/"); ok {
 		if i := strings.IndexAny(rest, "@?#"); i >= 0 {
@@ -169,6 +170,15 @@ func PurlToModule(purl string) string {
 			return purl
 		}
 		return pkgpurl.PyPIName(rest)
+	}
+	if rest, ok := strings.CutPrefix(purl, "pkg:nuget/"); ok {
+		if i := strings.IndexAny(rest, "@?#"); i >= 0 {
+			rest = rest[:i]
+		}
+		if rest != "" {
+			return rest
+		}
+		return purl
 	}
 	const prefix = "pkg:maven/"
 	if !strings.HasPrefix(purl, prefix) {

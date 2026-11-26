@@ -1008,6 +1008,13 @@ func buildFragmentExternalCall( //nolint:gocognit,gocyclo // complexity predates
 	}
 	if call != nil {
 		external.CandidateModules = call.CandidateModules
+		if ctx != nil && ctx.ecosystem == ecosystemCSharp {
+			// A C# call into a dependency is keyed on the caller's own
+			// namespace: the stitch needs the usings to find the owner the
+			// dependency declares. Java fills the same field for its own
+			// in-build reanchoring, and must not carry it.
+			external.CandidateOwners = call.OwnerAlternatives
+		}
 	}
 	// A Java or Go call whose receiver type the parser could not name (a
 	// fluent chain on a dependency's return value, a method on an untyped

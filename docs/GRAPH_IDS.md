@@ -37,8 +37,8 @@ enforces both directions.
 | Graph algorithm, Node | `GraphAlgoVersionNode` | `graph-algo-node-13` | JavaScript and TypeScript graphs |
 | Graph algorithm, Go | `GraphAlgoVersionGo` | `graph-algo-go-15` | Go graphs |
 | Graph algorithm, Ruby | `GraphAlgoVersionRuby` | `graph-algo-rb-10` | Ruby graphs |
-| Graph algorithm, C# | `GraphAlgoVersionCSharp` | `graph-algo-cs-2` | C# graphs |
-| Graph-fragment schema | `SchemaVersion` | `graph-fragment-1.39` | The fragment wire format |
+| Graph algorithm, C# | `GraphAlgoVersionCSharp` | `graph-algo-cs-3` | C# graphs |
+| Graph-fragment schema | `SchemaVersion` | `graph-fragment-1.40` | The fragment wire format |
 | Callgraph schema | `CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | `6.14` / `6.18` | The `--export-callgraph` contract (inlined / interned frames) |
 | Interim report format | `schema.InterimFormatVersion` (crypto-finder `pkg/schema`) | `1.9` | The findings report |
 

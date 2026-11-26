@@ -239,7 +239,7 @@ ERROR naming both libraries.
 Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
 INTERNAL to the loader; the partner-facing export schemas are independent of it
 (callgraph `6.18` for default CLI exports and `6.14` for zero-value SDK/stitch,
-graph fragment `graph-fragment-1.39`; the constants in `reach/graphfrag` and
+graph fragment `graph-fragment-1.40`; the constants in `reach/graphfrag` and
 [docs/GRAPH_IDS.md](docs/GRAPH_IDS.md) are the source of truth).
 
 To add a library:
