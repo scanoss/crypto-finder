@@ -44,8 +44,9 @@ every PR) also runs the leak guard (`scripts/internal/leakguard`) over the PR
 title, body and commit messages, the lines the diff adds and the YAML files it
 adds or changes. It fails on:
 
-- a denied internal name, matched whatever the case or separator (`a-b`,
-  `a_b`, `a.b`, `a/b`, `a b`, `AB`), or only in its exact spelling for a name
+- a denied internal name, matched whatever the case or separator (`foo-bar`,
+  `foo_bar`, `foo.bar`, `foo/bar`, `foo bar`, `FooBar`, also inside a longer
+  CamelCase identifier such as `newFooBarClient`), or only in its exact spelling for a name
   whose words also occur legitimately in public text;
 - an absolute home path, except the synthetic users tests and docs use and
   the stock users of common images (`/home/u/`, `/home/crypto/`,

@@ -78,6 +78,9 @@ func TestScanDiff(t *testing.T) {
 		{"three-token name", diffOf("b.yml", "url: teal_kite-relay.internal"), []string{"b.yml:11: internal name (service)"}},
 		{"exact entry matches its spelling", diffOf("c.md", "the violet-dune port"), []string{"c.md:11: internal name (project)"}},
 		{"exact entry ignores other spellings", diffOf("c.md", "violet dune", "VioletDune", "violet_dune"), nil},
+		{"inside a CamelCase identifier", diffOf("g.go", "c := newZq9hostClient()", "u := PlumOrchardURL", "x := fetchFromTealKiteRelay"), []string{
+			"g.go:11: internal name (host)", "g.go:12: internal name (repository)", "g.go:13: internal name (service)",
+		}},
 		{"no partial token", diffOf("d.go", "zq9hosted plum orchards"), nil},
 		{"home path", diffOf("e.sh", "cd "+realHome+"alice/src", "open "+realUsers+"bob/x"), []string{
 			"e.sh:11: absolute home path", "e.sh:12: absolute home path",
@@ -148,6 +151,9 @@ func TestCheckRuleset(t *testing.T) {
 		{"knowledge base yaml", "internal/cryptokb/go/x.yaml", "schema_version: \"2\"\ncontracts:\n  - method: a\n", false},
 		{"not yaml", "x.go", rulesetYAML, false},
 		{"broken yaml", "x.yaml", "rules: [", false},
+		{"unparseable ruleset", "x.yaml", rulesetYAML + "  - id: [unclosed\n", true},
+		{"one malformed rule hides none", "x.yaml", "rules:\n  - id: bad\n    metadata: scalar\n" + strings.TrimPrefix(rulesetYAML, "rules:\n"), true},
+		{"rules in a later document", "x.yaml", "kind: header\n---\n" + rulesetYAML, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

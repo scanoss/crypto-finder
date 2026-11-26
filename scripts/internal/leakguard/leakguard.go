@@ -18,12 +18,13 @@
 // ruleset content out of this public repository and its pull requests.
 //
 // The denylist (denylist.txt) holds only SHA-256 hashes, so it does not reveal
-// the names it denies. A text is lowercased and split into tokens on every
-// character that is not an ASCII letter or digit. A "loose" entry is the hash
+// the names it denies. A text is split into tokens on every character that is
+// not an ASCII letter or digit, and where a lowercase letter meets an uppercase
+// one, then lowercased. A "loose" entry is the hash
 // of a name's tokens joined with nothing between them, and matches any run of
-// up to MaxTokens adjacent tokens on one line that joins to it: "a-b", "a_b",
-// "a.b", "a/b", "a b" and "AB" all match the entry of "a-b". An "exact" entry
-// is the hash of the lowercased name as written, and matches only that
+// up to MaxTokens adjacent tokens on one line that joins to it: "foo-bar",
+// "foo_bar", "foo.bar", "foo/bar", "foo bar", "FooBar" and "newFooBarClient"
+// all match the entry of "foo-bar". An "exact" entry is the hash of the lowercased name as written, and matches only that
 // spelling (still case-insensitive): it scopes a name whose words also occur
 // legitimately in public prose or code.
 //
@@ -38,6 +39,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"regexp"
 	"strconv"
@@ -93,7 +95,7 @@ func ParseDenylist(text string) (*Denylist, error) {
 // Hash returns the denylist hash of name: loose (separator-insensitive) or
 // exact (the lowercased spelling).
 func Hash(name string, exact bool) (string, error) {
-	lower := strings.ToLower(strings.TrimSpace(name))
+	lower := asciiLower(strings.TrimSpace(name))
 	toks := tokens(lower)
 	if len(toks) == 0 {
 		return "", errors.New("leakguard: the name has no letters or digits")
@@ -118,14 +120,19 @@ func sum(s string) string {
 
 type span struct{ start, end int }
 
-// tokens returns the runs of ASCII letters and digits of an already
-// lowercased s.
+// tokens returns the runs of ASCII letters and digits of s, also split where
+// a lowercase letter meets an uppercase one, so "newFooBar" gives new, Foo,
+// Bar. Offsets index s and asciiLower(s) alike.
 func tokens(s string) []span {
 	var out []span
 	start := -1
 	for i := 0; i <= len(s); i++ {
-		alnum := i < len(s) && (s[i] >= 'a' && s[i] <= 'z' || s[i] >= '0' && s[i] <= '9')
+		alnum := i < len(s) && isAlnum(s[i])
+		camel := alnum && start >= 0 && isUpper(s[i]) && isLower(s[i-1])
 		switch {
+		case camel:
+			out = append(out, span{start, i})
+			start = i
 		case alnum && start < 0:
 			start = i
 		case !alnum && start >= 0:
@@ -134,6 +141,21 @@ func tokens(s string) []span {
 		}
 	}
 	return out
+}
+
+func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
+func isLower(c byte) bool { return c >= 'a' && c <= 'z' }
+func isAlnum(c byte) bool { return isUpper(c) || isLower(c) || c >= '0' && c <= '9' }
+
+// asciiLower lowercases ASCII letters only, so byte offsets do not move.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if isUpper(c) {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
 }
 
 // Finding is one place that must not land.
@@ -170,7 +192,7 @@ var syntheticUsers = map[string]bool{
 // scanLine returns the findings of one line, at most one per category.
 func (g *Guard) scanLine(where string, n int, line string) []Finding {
 	var out []Finding
-	if cat, ok := g.nameIn(strings.ToLower(line)); ok {
+	if cat, ok := g.nameIn(line); ok {
 		out = append(out, Finding{where, n, "internal name (" + cat + ")"})
 	}
 	for _, m := range homePath.FindAllStringSubmatch(line, -1) {
@@ -182,9 +204,9 @@ func (g *Guard) scanLine(where string, n int, line string) []Finding {
 	return out
 }
 
-// nameIn reports the category of the first denied name in a lowercased line.
-func (g *Guard) nameIn(lower string) (string, bool) {
-	toks := tokens(lower)
+// nameIn reports the category of the first denied name in a line.
+func (g *Guard) nameIn(line string) (string, bool) {
+	toks, lower := tokens(line), asciiLower(line)
 	var joined strings.Builder
 	for i := range toks {
 		joined.Reset()
@@ -297,22 +319,65 @@ func CheckRuleset(name string, content []byte) *Finding {
 	if bytes.Contains(content, []byte(OverrideMarker)) {
 		return nil
 	}
-	var doc struct {
-		Rules []struct {
-			Metadata struct {
-				Crypto map[string]any `yaml:"crypto"`
-			} `yaml:"metadata"`
-		} `yaml:"rules"`
+	dec := yaml.NewDecoder(bytes.NewReader(content))
+	for {
+		var doc any
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			// A guard does not let what it cannot read through: an unparseable
+			// file that names rules and a CycloneDX field is flagged.
+			if bytes.Contains(content, []byte("rules:")) && anyField(content) {
+				return rulesetFinding(name)
+			}
+			return nil
+		}
+		if hasCryptoRule(doc) {
+			return rulesetFinding(name)
+		}
 	}
-	if yaml.Unmarshal(content, &doc) != nil {
-		return nil
+}
+
+func rulesetFinding(name string) *Finding {
+	return &Finding{Where: name, What: "looks like private ruleset content (rules with crypto metadata)"}
+}
+
+func anyField(content []byte) bool {
+	for _, f := range cdxFields {
+		if bytes.Contains(content, []byte(f)) {
+			return true
+		}
 	}
-	for _, r := range doc.Rules {
+	return false
+}
+
+// hasCryptoRule reports whether a decoded YAML document has a top-level rules
+// list with an entry whose metadata.crypto holds a CycloneDX field. Entries of
+// another shape are skipped, so one malformed rule hides none of the others.
+func hasCryptoRule(doc any) bool {
+	rules, ok := asMap(doc)["rules"].([]any)
+	if !ok {
+		return false
+	}
+	for _, r := range rules {
+		crypto := asMap(asMap(asMap(r)["metadata"])["crypto"])
 		for _, f := range cdxFields {
-			if _, ok := r.Metadata.Crypto[f]; ok {
-				return &Finding{Where: name, What: "looks like private ruleset content (rules with crypto metadata)"}
+			if _, ok := crypto[f]; ok {
+				return true
 			}
 		}
 	}
-	return nil
+	return false
+}
+
+// asMap returns v as a mapping, or nil (which reads as empty) for any other
+// shape.
+func asMap(v any) map[string]any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return m
 }
