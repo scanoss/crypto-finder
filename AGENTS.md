@@ -14,6 +14,7 @@ guard in [docs/GRAPH_IDS.md](docs/GRAPH_IDS.md).
 | Requirement | Check before pushing |
 |---|---|
 | No ruleset content in this repository | `git diff` holds no rules, cards, conditions, fixtures or data derived from the private ruleset ([below](#ruleset-content-hard-requirement)) |
+| No internal names or home paths in code, PR titles, bodies or commits | `go run ./scripts/featuremap check-pr ...` ([below](#leak-guard)) |
 | Changelog fragment for every user-facing change | A new `changelog.d/<slug>.<section>.md` ([below](#changelog-hard-requirement)) |
 | User guide follows user-facing changes | `docs/user-guide/user-guide.html` updated in the same PR |
 | Errors: plain `%w` in deep code, `failure.Wrap` at the boundary | [Error handling](#error-handling) |
@@ -30,6 +31,49 @@ derived from them, in code, tests, testdata or docs. Naming that the private
 ruleset exists and how the CLI loads it (`--rules-dir`, `--cards-index`,
 `--cards-dir`, leased bundles) is fine. Tests that need rules build small,
 invented ones inline.
+
+## Leak guard
+
+PR titles, bodies, comments and commit messages are public too. Never write
+internal names in them or in the code: private repositories, internal
+services, hosts, internal projects or benchmarks, or a person's home path
+(`/home/<user>/`, `/Users/<user>/`).
+
+`go run ./scripts/featuremap check-pr` (run by the `PR hygiene` workflow on
+every PR) also runs the leak guard (`scripts/internal/leakguard`) over the PR
+title, body and commit messages, the lines the diff adds and the YAML files it
+adds or changes. It fails on:
+
+- a denied internal name, matched whatever the case or separator (`foo-bar`,
+  `foo_bar`, `foo.bar`, `foo/bar`, `foo bar`, `FooBar`, also inside a longer
+  CamelCase identifier such as `newFooBarClient`), or only in its exact spelling for a name
+  whose words also occur legitimately in public text;
+- an absolute home path, except the synthetic users tests and docs use and
+  the stock users of common images (`/home/u/`, `/home/crypto/`,
+  `/home/nonroot/`, ...; `syntheticUsers` in the package);
+- an added or changed YAML file shaped like a detection ruleset (`rules:`
+  entries whose `metadata.crypto` holds CycloneDX fields), in `testdata/` too.
+  A file of invented rules (a test fixture) carries the comment
+  `# leakguard: invented-rules`, which its author adds and its reviewer
+  checks.
+
+The title and body of a PR Dependabot opened (they quote upstream release
+notes) are not scanned; its diff and commits are. Other apps, agents among
+them, are scanned like people. Findings name the place and
+the category, never the matched text. The denylist,
+`scripts/internal/leakguard/denylist.txt`, holds only SHA-256 hashes, so it
+does not reveal the names. To add a name, type it on stdin so it is never
+written down:
+
+```bash
+go run ./scripts/leakguard hash --category host -        # or --exact for exact spelling only
+# append the printed line to scripts/internal/leakguard/denylist.txt, then
+go run ./scripts/leakguard scan-tree                     # must stay clean
+```
+
+`scan-tree --rulesets` also lists ruleset-shaped files without the marker. A
+name `scan-tree` finds in today's tree must be scoped with `--exact` or left
+out. Never name a denied name in the PR that adds its hash.
 
 ## Changelog (HARD REQUIREMENT)
 
