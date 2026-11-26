@@ -1,1 +1,0 @@
-- `scan` now detects cryptography in C, C++ and C# (the cards engine), with no environment variable. `CRYPTO_FINDER_CARDS_C` and `CRYPTO_FINDER_CARDS_CSHARP` are no longer needed and still accepted.
