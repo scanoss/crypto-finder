@@ -93,8 +93,8 @@ or install.
 
 | Target contains | Result |
 |---|---|
-| Java and/or Python | Scanned, each language against its own rules and call graph |
-| Java or Python plus other languages | Java and Python scanned; a warning and the `detection` progress event (`unsupported_languages`) name the others |
+| A supported language (Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++, C#) | Scanned, each language against its own rules and call graph |
+| A supported language plus other languages | The supported ones scanned; a warning and the `detection` progress event (`unsupported_languages`) name the others |
 | Only other languages | Fails with `language_not_supported` ([ERROR_CODES.md](ERROR_CODES.md)) |
 
 Language detection uses [go-enry](https://github.com/go-enry/go-enry).

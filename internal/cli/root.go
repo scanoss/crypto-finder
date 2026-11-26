@@ -50,7 +50,7 @@ var rootCmd = &cobra.Command{
 	Short: "SCANOSS Crypto-Finder scans source code for cryptographic algorithm usage",
 	Long: `SCANOSS Crypto-Finder is a CLI tool that scans source code repositories to detect
 	cryptographic operations and extract relevant values. It matches the ruleset's cards
-	against the call sites of the target's typed call graph (Java, Python, Go, JavaScript, TypeScript, Rust and Ruby in this version) and
+	against the call sites of the target's typed call graph (Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++ and C# in this version) and
 	outputs results in a standardized interim JSON format.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,

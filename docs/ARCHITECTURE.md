@@ -28,7 +28,7 @@ target source tree
 1. Rules          remote "crypto-cards" ruleset (leased bundle from the SCANOSS API,
    │              cached encrypted) merged with --rules / --rules-dir
    ▼
-2. Graph          reach/language detects languages (Java, Python; others fail
+2. Graph          reach/language detects languages (every cards language; others fail
    │              with language_not_supported); reach/callgraph builds one typed
    │              graph per scanned ecosystem, typed by the crypto KB
    │              (internal/cryptokb), JDK platform signatures and, with

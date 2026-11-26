@@ -45,9 +45,9 @@ func TestUnsupportedLanguages(t *testing.T) {
 	}
 }
 
-// Java, Python, Go, JavaScript/TypeScript, Rust and Ruby are scanned, all of
-// them when a target holds several, in the order detection names them; the
-// other crypto languages are unsupported.
+// Java, Python, Go, JavaScript/TypeScript, Rust, Ruby, C, C++ and C# are
+// scanned, all of them when a target holds several, in the order detection
+// names them.
 func TestScannedEcosystems(t *testing.T) {
 	for _, tc := range []struct {
 		languages   []string
@@ -55,12 +55,12 @@ func TestScannedEcosystems(t *testing.T) {
 		unsupported []string
 	}{
 		{languages: []string{"python"}, ecosystems: []string{"python"}, unsupported: []string{}},
-		{languages: []string{"Python", "c#", "javascript", "yaml"}, ecosystems: []string{"python", "node"}, unsupported: []string{"csharp"}},
+		{languages: []string{"Python", "c#", "javascript", "yaml"}, ecosystems: []string{"python", "csharp", "node"}, unsupported: []string{}},
 		{languages: []string{"java", "python"}, ecosystems: []string{"java", "python"}, unsupported: []string{}},
 		{languages: []string{"python", "xml", "Java", "go"}, ecosystems: []string{"python", "java", "go"}, unsupported: []string{}},
 		{languages: []string{"go"}, ecosystems: []string{"go"}, unsupported: []string{}},
-		{languages: []string{"go", "c#"}, ecosystems: []string{"go"}, unsupported: []string{"csharp"}},
-		{languages: []string{"c#"}, unsupported: []string{"csharp"}},
+		{languages: []string{"go", "c#"}, ecosystems: []string{"go", "csharp"}, unsupported: []string{}},
+		{languages: []string{"c#"}, ecosystems: []string{"csharp"}, unsupported: []string{}},
 		{languages: []string{"ruby", "java"}, ecosystems: []string{"ruby", "java"}, unsupported: []string{}},
 		{languages: []string{"rust", "java", "go"}, ecosystems: []string{"rust", "java", "go"}, unsupported: []string{}},
 		{languages: nil},
@@ -72,17 +72,16 @@ func TestScannedEcosystems(t *testing.T) {
 	}
 }
 
-// C and C++ are out of a production scan and let through by CRYPTO_FINDER_CARDS_C=1.
-func TestScannedEcosystemsCSwitch(t *testing.T) {
+// C and C++ are scanned without a switch; CRYPTO_FINDER_CARDS_C is accepted and
+// changes nothing.
+func TestScannedEcosystemsC(t *testing.T) {
 	languages := []string{"c", "java", "c++"}
-	ecosystems, unsupported := scannedEcosystems(languages)
-	if !reflect.DeepEqual(ecosystems, []string{"java"}) || !reflect.DeepEqual(unsupported, []string{"c", "cpp"}) {
-		t.Errorf("without the switch: %v, %v", ecosystems, unsupported)
-	}
-	t.Setenv("CRYPTO_FINDER_CARDS_C", "1")
-	ecosystems, unsupported = scannedEcosystems(languages)
-	if !reflect.DeepEqual(ecosystems, []string{"c", "java", "cpp"}) || len(unsupported) != 0 {
-		t.Errorf("with the switch: %v, %v", ecosystems, unsupported)
+	for _, env := range []string{"", "1"} {
+		t.Setenv("CRYPTO_FINDER_CARDS_C", env)
+		ecosystems, unsupported := scannedEcosystems(languages)
+		if !reflect.DeepEqual(ecosystems, []string{"c", "java", "cpp"}) || len(unsupported) != 0 {
+			t.Errorf("CRYPTO_FINDER_CARDS_C=%q: %v, %v", env, ecosystems, unsupported)
+		}
 	}
 }
 
@@ -103,9 +102,9 @@ func TestScannedLanguageHints(t *testing.T) {
 	}
 }
 
-// A target with no source in a scanned language fails: an empty report would
-// read as "no cryptography".
-func TestScanOfAnUnsupportedLanguageFails(t *testing.T) {
+// A C# target is scanned, with no environment variable: it never fails with
+// language_not_supported.
+func TestScanOfACSharpTargetIsScanned(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires a compiled CLI")
 	}
@@ -114,47 +113,27 @@ func TestScanOfAnUnsupportedLanguageFails(t *testing.T) {
 	writeCardsRule(t, dir, progressRuleID, progressMatched)
 	writeFile(t, filepath.Join(dir, "Main.cs"), "using System.Security.Cryptography;\n\nclass Main { void F() { SHA256.Create(); } }\n")
 	for name, args := range map[string][]string{
-		"detected":         {filepath.Join(dir, "Main.cs")},
-		"--languages":      {"--languages", "csharp", dir},
-		"progress stream":  {"--progress", filepath.Join(dir, "Main.cs")},
-		"dependency phase": {"--scan-dependencies", filepath.Join(dir, "Main.cs")},
+		"detected":    {filepath.Join(dir, "Main.cs")},
+		"--languages": {"--languages", "csharp", dir},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), binary, append([]string{"--error-format", "json", "scan", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml")}, args...)...)
 			cmd.Env = progressTestEnv(dir)
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr
-			if err := cmd.Run(); err == nil {
-				t.Fatalf("scan of a C# target succeeded:\n%s", stdout.String())
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("scan of a C# target failed: %v\n%s", err, stderr.String())
 			}
-			lines := strings.Split(strings.TrimSpace(stderr.String()), "\n")
-			var payload map[string]any
-			if err := json.Unmarshal([]byte(lines[len(lines)-1]), &payload); err != nil {
-				t.Fatalf("last stderr line is not the structured error: %q", stderr.String())
-			}
-			if payload["code"] != "language_not_supported" || payload["stage"] != "scan" {
-				t.Fatalf("failure payload = %#v, want language_not_supported at stage scan", payload)
-			}
-			if !strings.Contains(payload["message"].(string), "not supported by this version") {
-				t.Errorf("message %q does not say the language is not supported by this version", payload["message"])
-			}
-			if stdout.Len() != 0 {
-				t.Errorf("a failed scan wrote a report: %s", stdout.String())
-			}
-			if name == "progress stream" {
-				transitions := progressTransitions(t, strings.Join(lines[:len(lines)-1], "\n"))
-				if tail := strings.Join(transitions[len(transitions)-2:], "\n"); tail != "scan/detection:failed\n/scan:failed" {
-					t.Errorf("progress ends with\n%s\nwant detection and scan failed", tail)
-				}
+			if strings.Contains(stderr.String(), "language_not_supported") {
+				t.Errorf("a C# target is reported as not supported: %s", stderr.String())
 			}
 		})
 	}
 }
 
-// A Java target with sources in other crypto languages is scanned for its
-// scanned languages and names the unsupported ones on the detection progress
-// event.
-func TestScanOfAMixedTargetReportsTheUnsupportedLanguages(t *testing.T) {
+// A Java target with Python and C# sources is scanned for all of them: the
+// detection progress event names no unsupported language.
+func TestScanOfAMixedTargetHasNoUnsupportedLanguages(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires a compiled CLI")
 	}
@@ -185,8 +164,8 @@ func TestScanOfAMixedTargetReportsTheUnsupportedLanguages(t *testing.T) {
 			detection, _ = event["details"].(map[string]any)
 		}
 	}
-	if got := detection["unsupported_languages"]; !reflect.DeepEqual(got, []any{"csharp"}) {
-		t.Errorf("detection details = %v, want unsupported_languages [csharp]", detection)
+	if got, present := detection["unsupported_languages"]; present {
+		t.Errorf("detection details = %v, want no unsupported_languages (got %v)", detection, got)
 	}
 	progressTransitions(t, stderr.String())
 }
@@ -194,12 +173,12 @@ func TestScanOfAMixedTargetReportsTheUnsupportedLanguages(t *testing.T) {
 // An ecosystem with no scanned cards language fails; it is never matched with
 // the Java cards.
 func TestCardsLanguageOf(t *testing.T) {
-	for ecosystem, want := range map[string]string{ecosystemJava: "java", ecosystemPython: "python", ecosystemGo: "go", ecosystemNode: "javascript", ecosystemRust: "rust", ecosystemRuby: "ruby"} {
+	for ecosystem, want := range map[string]string{ecosystemJava: "java", ecosystemPython: "python", ecosystemGo: "go", ecosystemNode: "javascript", ecosystemRust: "rust", ecosystemRuby: "ruby", "c": "c", "cpp": "cpp", "csharp": "csharp"} {
 		if got, err := cardsLanguageOf(ecosystem); err != nil || got != want {
 			t.Errorf("cardsLanguageOf(%q) = %q, %v; want %q", ecosystem, got, err, want)
 		}
 	}
-	for _, ecosystem := range []string{"", "csharp"} {
+	for _, ecosystem := range []string{"", "cobol"} {
 		if got, err := cardsLanguageOf(ecosystem); err == nil {
 			t.Errorf("cardsLanguageOf(%q) = %q, want an error", ecosystem, got)
 		}

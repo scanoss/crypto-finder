@@ -87,7 +87,7 @@ The stage column shows the typical stage; the stage is assigned where the error 
 | `output_write_failed` | `output` | Report write failed | Output path not writable, disk full |
 | `component_lookup_failed` | `dependency` | The SCANOSS API refused the component findings lookups of `cbom` | Missing or invalid API key, key without cryptography access |
 | `upgrade_required` | `rules` | The SCANOSS API no longer serves this crypto-finder version (HTTP 410 or 426 on a ruleset download). The message is the server's; no cached ruleset is used and nothing is retried | An outdated crypto-finder; upgrade it |
-| `language_not_supported` | `scan` | The target holds source only in languages this version does not detect cryptography in. `details.languages` names them | A C, C++ or C# target: this version detects Java, Python, Go, JavaScript, TypeScript, Rust and Ruby only (a target with source in one of those and in these languages is scanned for the supported ones and only warns) |
+| `language_not_supported` | `scan` | The target holds source only in languages this version does not detect cryptography in. `details.languages` names them | This version detects Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++ and C# only (a target with source in one of those and in other languages is scanned for the supported ones and only warns) |
 | `findings_detected` | `policy` | Findings found with `--fail-on-findings` | Expected CI gate behavior, not an error in the tool |
 
 ## Adding a new failure mode

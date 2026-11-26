@@ -1159,7 +1159,7 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 		return languageNotSupported(unsupported)
 	}
 	if len(unsupported) > 0 {
-		log.Warn().Strs("languages", unsupported).Msg("This version detects cryptography in Java, Python, Go, JavaScript, TypeScript, Rust and Ruby; the target's sources in these languages are not scanned")
+		log.Warn().Strs("languages", unsupported).Msg("This version detects cryptography in Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++ and C#; the target's sources in these languages are not scanned")
 	}
 	if len(ecosystems) == 0 {
 		ecosystems = []string{ecosystemJava}

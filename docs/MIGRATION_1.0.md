@@ -11,7 +11,7 @@ are gone, the `-slim` images are gone, and the engine's Go packages moved to
 
 - [ ] Drop the removed flags from your invocations (table below). An unknown flag now fails the command.
 - [ ] Replace `latest-slim` with `latest` (and `<version>-slim` with `<version>`).
-- [ ] If you scan C, C++ or C# only, stay on 0.54.0 for now: 1.0 fails those targets with `language_not_supported`.
+- [ ] C, C++ and C# are scanned by 1.0 without `CRYPTO_FINDER_CARDS_C` or `CRYPTO_FINDER_CARDS_CSHARP`; remove them if you set them (they are still accepted).
 - [ ] If you scan Rust and want its test code reported, pass `--include-tests`: 1.0 skips `tests/`, `tests.rs`, `*_test.rs` and inline `#[cfg(test)]` modules by default.
 - [ ] If you import crypto-finder's Go packages, change the import paths (table below).
 - [ ] Remote scans fetch the `crypto-cards` ruleset instead of `dca`; drop any `--ruleset-version` pinned to a `dca` release, or pin a `crypto-cards` release ([Ruleset](#ruleset)).
@@ -50,7 +50,7 @@ Details: [DOCKER_USAGE.md](DOCKER_USAGE.md).
 | Area | 0.54.0 | 1.0 |
 |---|---|---|
 | Detector | OpenGrep or the cards engine (`--scanner`) | The cards engine only, in process; nothing to install |
-| Languages | Java, Python and the OpenGrep languages | Java, Python, Go, JavaScript, TypeScript, Rust and Ruby; a target only in other languages fails with `language_not_supported` |
+| Languages | Java, Python and the OpenGrep languages | Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++ and C#; a target only in other languages fails with `language_not_supported` |
 | `--scan-dependencies` ecosystems | Java, Python, Go, Rust, Node (local pipeline) | Java (Maven, Gradle), Python, Go, JavaScript/TypeScript (npm, yarn, pnpm locks) and Rust (`Cargo.lock` through `cargo metadata --locked`); Rust dev-dependencies and build-dependencies are no longer included |
 | Dependency findings | Local pipeline or the API | One request to `POST /v3/cryptography/reachability/application`, or `--offline` ([OFFLINE.md](OFFLINE.md)) |
 | Python dependency verdicts | — | On: reachable, unreachable or `unknown` with a reason ([KNOWN_LIMITS.md](KNOWN_LIMITS.md)) |

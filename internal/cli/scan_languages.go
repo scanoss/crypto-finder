@@ -104,7 +104,7 @@ func languageNotSupported(unsupported []string) error {
 	return failure.New(
 		failure.CodeLanguageNotSupported,
 		failure.StageScan,
-		fmt.Sprintf("crypto-finder %s detects cryptography in Java, Python, Go, JavaScript, TypeScript, Rust and Ruby only; %s %s not supported by this version",
+		fmt.Sprintf("crypto-finder %s detects cryptography in Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++ and C# only; %s %s not supported by this version",
 			version.Version, strings.Join(unsupported, ", "), pluralIs(len(unsupported))),
 		failure.WithDetail("languages", strings.Join(unsupported, ",")),
 	)
