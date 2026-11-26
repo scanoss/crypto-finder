@@ -85,22 +85,30 @@ func TestCheckLeaks(t *testing.T) {
 	}
 }
 
-func TestPRTitleFromEvent(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "event.json")
-	if err := os.WriteFile(p, []byte(`{"pull_request":{"title":"feat: x","body":"b"}}`), 0o600); err != nil {
+func TestPRFromEvent(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "event.json")
+	if err := os.WriteFile(p, []byte(`{"pull_request":{"title":"feat: x","body":"b","user":{"type":"User"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := prTitle("", p); err != nil || got != "feat: x" {
-		t.Errorf("prTitle from event = %q, %v", got, err)
+	if got, bot, err := prMeta("", p); err != nil || got != "feat: x" || bot {
+		t.Errorf("prMeta from event = %q, %v, %v", got, bot, err)
 	}
-	if got, err := prTitle("", ""); err != nil || got != "" {
-		t.Errorf("prTitle without event = %q, %v", got, err)
+	if got, bot, err := prMeta("", ""); err != nil || got != "" || bot {
+		t.Errorf("prMeta without event = %q, %v, %v", got, bot, err)
 	}
-	tf := filepath.Join(t.TempDir(), "title")
+	tf := filepath.Join(dir, "title")
 	if err := os.WriteFile(tf, []byte("chore: y\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := prTitle(tf, p); err != nil || got != "chore: y" {
-		t.Errorf("prTitle from --title-file = %q, %v", got, err)
+	if got, _, err := prMeta(tf, p); err != nil || got != "chore: y" {
+		t.Errorf("prMeta from --title-file = %q, %v", got, err)
+	}
+	bp := filepath.Join(dir, "bot.json")
+	if err := os.WriteFile(bp, []byte(`{"pull_request":{"title":"build(deps): bump","user":{"login":"dependabot[bot]","type":"Bot"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, bot, err := prMeta("", bp); err != nil || !bot {
+		t.Errorf("prMeta of a bot PR: bot=%v, %v", bot, err)
 	}
 }

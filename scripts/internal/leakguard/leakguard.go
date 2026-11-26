@@ -159,10 +159,12 @@ func New(d *Denylist) *Guard { return &Guard{names: d} }
 // homePath matches an absolute home directory and captures the user name.
 var homePath = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.~$-])/(?:home|Users)/([A-Za-z0-9_][A-Za-z0-9._-]*)(?:[^A-Za-z0-9._-]|$)`)
 
-// syntheticUsers are the invented home directories that tests, docs and
-// container images already use; none of them is a person.
+// syntheticUsers are the invented home directories that tests and docs use
+// and the stock users of common images and CI runners; none of them is a person.
 var syntheticUsers = map[string]bool{
-	"u": true, "user": true, "crypto": true, "dev": true, "tester": true, "runner": true, "example": true,
+	"u": true, "user": true, "crypto": true, "dev": true, "tester": true, "example": true,
+	"runner": true, "nonroot": true, "node": true, "vscode": true, "ubuntu": true, "debian": true,
+	"ec2-user": true, "app": true, "linuxbrew": true,
 }
 
 // scanLine returns the findings of one line, at most one per category.
@@ -239,13 +241,15 @@ var hunk = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 func (g *Guard) ScanDiff(diff string) []Finding {
 	var out []Finding
 	file, n := "", 0
+	header := false // between "diff --git" and the file's first hunk
 	for _, line := range strings.Split(diff, "\n") {
 		switch {
 		case strings.HasPrefix(line, "diff --git "):
-			file = ""
-		case strings.HasPrefix(line, "+++ "):
+			file, header = "", true
+		case header && strings.HasPrefix(line, "+++ "):
 			file = newPath(strings.TrimPrefix(line, "+++ "))
 		case strings.HasPrefix(line, "@@ "):
+			header = false
 			if m := hunk.FindStringSubmatch(line); m != nil {
 				if start, err := strconv.Atoi(m[1]); err == nil {
 					n = start

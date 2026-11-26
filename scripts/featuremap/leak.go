@@ -78,32 +78,36 @@ func checkLeaks(root, base, head, title, body string, g *leakguard.Guard) ([]str
 	return out, nil
 }
 
-// prTitle returns the title in titleFile when given, else the pull request
-// title of the GitHub Actions event payload at eventPath, else "".
-func prTitle(titleFile, eventPath string) (string, error) {
+// prMeta returns the PR title, from titleFile when given, else from the pull
+// request in the GitHub Actions event payload at eventPath, else ""; and
+// whether a bot opened the PR, per the payload.
+func prMeta(titleFile, eventPath string) (title string, bot bool, err error) {
+	if eventPath != "" {
+		b, err := os.ReadFile(eventPath) // #nosec G304 -- GITHUB_EVENT_PATH, set by the Actions runner
+		if err != nil {
+			return "", false, fmt.Errorf("read event: %w", err)
+		}
+		var ev struct {
+			PullRequest struct {
+				Title string `json:"title"`
+				User  struct {
+					Type string `json:"type"`
+				} `json:"user"`
+			} `json:"pull_request"`
+		}
+		if err := json.Unmarshal(b, &ev); err != nil {
+			return "", false, fmt.Errorf("parse event: %w", err)
+		}
+		title, bot = ev.PullRequest.Title, ev.PullRequest.User.Type == "Bot"
+	}
 	if titleFile != "" {
 		b, err := os.ReadFile(titleFile) // #nosec G304 -- a path the caller passed on the command line
 		if err != nil {
-			return "", fmt.Errorf("read title: %w", err)
+			return "", false, fmt.Errorf("read title: %w", err)
 		}
-		return strings.TrimSpace(string(b)), nil
+		title = strings.TrimSpace(string(b))
 	}
-	if eventPath == "" {
-		return "", nil
-	}
-	b, err := os.ReadFile(eventPath) // #nosec G304 -- GITHUB_EVENT_PATH, set by the Actions runner
-	if err != nil {
-		return "", fmt.Errorf("read event: %w", err)
-	}
-	var ev struct {
-		PullRequest struct {
-			Title string `json:"title"`
-		} `json:"pull_request"`
-	}
-	if err := json.Unmarshal(b, &ev); err != nil {
-		return "", fmt.Errorf("parse event: %w", err)
-	}
-	return ev.PullRequest.Title, nil
+	return title, bot, nil
 }
 
 // runCheckLeaks prints the guard's findings and returns errFailed when there

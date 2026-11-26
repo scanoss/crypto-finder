@@ -41,8 +41,9 @@
 // check-pr also runs the leak guard (scripts/internal/leakguard) over the PR
 // title, body and commit messages, the lines the diff adds and the YAML files
 // it adds or changes, and fails on an internal name, an absolute home path or
-// ruleset-shaped YAML outside testdata. The title comes from --title-file, else
-// from the pull request in $GITHUB_EVENT_PATH, else it is not checked.
+// ruleset-shaped YAML without the invented-rules marker. The title comes from
+// --title-file, else from the pull request in $GITHUB_EVENT_PATH, else it is
+// not checked. The title and body of a PR a bot opened are not scanned.
 //
 // replay runs the check-pr matching over each of the last n first-parent
 // commits of rev against its parent, with an empty body, and prints how many
@@ -256,7 +257,7 @@ func runCheckPR(root, base, head, bodyFile, titleFile string, stdout *printer) e
 	if err != nil {
 		return fmt.Errorf("read body: %w", err)
 	}
-	title, err := prTitle(titleFile, os.Getenv("GITHUB_EVENT_PATH"))
+	title, bot, err := prMeta(titleFile, os.Getenv("GITHUB_EVENT_PATH"))
 	if err != nil {
 		return err
 	}
@@ -264,7 +265,14 @@ func runCheckPR(root, base, head, bodyFile, titleFile string, stdout *printer) e
 	if evidenceErr != nil && !errors.Is(evidenceErr, errFailed) {
 		return evidenceErr
 	}
-	if err := runCheckLeaks(root, base, head, title, string(body), stdout); err != nil {
+	leakTitle, leakBody := title, string(body)
+	if bot {
+		// A bot's title and body quote upstream release notes, not us; its
+		// diff and commits are still scanned.
+		stdout.println("leakguard: a bot opened this PR; its title and body are not scanned")
+		leakTitle, leakBody = "", ""
+	}
+	if err := runCheckLeaks(root, base, head, leakTitle, leakBody, stdout); err != nil {
 		return err
 	}
 	return evidenceErr

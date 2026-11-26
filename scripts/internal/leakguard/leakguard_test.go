@@ -86,6 +86,10 @@ func TestScanDiff(t *testing.T) {
 			"f.sh:11: absolute home path", "f.sh:12: absolute home path",
 		}},
 		{"synthetic home path", diffOf("internal/x/testdata/f.json", `"/home/u/app"`, "/home/crypto/.cache", "/Users/tester/y", "/home/.local/z", "HOME=/home/u"), nil},
+		{"added line that looks like a header", diffOf("a.md", "++ zq9host", "zq9host"), []string{
+			"a.md:11: internal name (host)", "a.md:12: internal name (host)",
+		}},
+		{"image users", diffOf("Dockerfile", "WORKDIR /home/nonroot/app", "COPY x /home/node/", "/home/vscode/.cache", "/home/ubuntu/"), nil},
 		{"removed lines are ignored", "diff --git a/g b/g\n--- a/g\n+++ b/g\n@@ -1 +0,0 @@\n-zq9host\n", nil},
 		{"go.sum is skipped", diffOf("go.sum", "h1:zq9host/x="), nil},
 		{"deleted file", "diff --git a/h b/h\n--- a/h\n+++ /dev/null\n@@ -1 +0,0 @@\n-zq9host\n", nil},

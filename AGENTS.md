@@ -47,15 +47,18 @@ adds or changes. It fails on:
 - a denied internal name, matched whatever the case or separator (`a-b`,
   `a_b`, `a.b`, `a/b`, `a b`, `AB`), or only in its exact spelling for a name
   whose words also occur legitimately in public text;
-- an absolute home path, except the synthetic users tests, docs and images
-  already use (`/home/u/`, `/home/crypto/`, `/Users/tester/`, ...);
+- an absolute home path, except the synthetic users tests and docs use and
+  the stock users of common images (`/home/u/`, `/home/crypto/`,
+  `/home/nonroot/`, ...; `syntheticUsers` in the package);
 - an added or changed YAML file shaped like a detection ruleset (`rules:`
   entries whose `metadata.crypto` holds CycloneDX fields), in `testdata/` too.
   A file of invented rules (a test fixture) carries the comment
   `# leakguard: invented-rules`, which its author adds and its reviewer
   checks.
 
-Findings name the place and the category, never the matched text. The denylist,
+The title and body of a PR a bot opened (Dependabot quoting upstream release
+notes) are not scanned; its diff and commits are. Findings name the place and
+the category, never the matched text. The denylist,
 `scripts/internal/leakguard/denylist.txt`, holds only SHA-256 hashes, so it
 does not reveal the names. To add a name, type it on stdin so it is never
 written down:
