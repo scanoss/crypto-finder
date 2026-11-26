@@ -60,7 +60,7 @@ Priority, highest first:
 | `~/.scanoss/crypto-finder/cache/bytecode/` | Java JAR type indexes |
 | `~/.scanoss/crypto-finder/cache/python-signatures/` | Python package type indexes |
 | `~/.scanoss/crypto-finder/cache/sources/` | Extracted dependency sources |
-| `~/.scanoss/crypto-finder/cache/mined/` | `--offline` mined dependencies (`--offline-cache-dir`; [OFFLINE.md](OFFLINE.md)) |
+| `~/.scanoss/crypto-finder/cache/mined/` | Dependencies mined by `--offline` and by the online offline fallback (`--offline-cache-dir`; [OFFLINE.md](OFFLINE.md)) |
 
 Deleting any cache directory is safe; it is rebuilt on the next scan that
 needs it.

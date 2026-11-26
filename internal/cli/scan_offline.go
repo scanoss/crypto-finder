@@ -63,11 +63,11 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanOffline, "offline", false,
 		"With --scan-dependencies: decide dependency reachability locally instead of asking the SCANOSS API. Each dependency is mined from its Maven sources JAR and cached; the verdicts come from the code the API runs")
 	scanCmd.Flags().StringVar(&scanOfflineCacheDir, "offline-cache-dir", "",
-		"With --offline: directory of the mined-dependency cache (default ~/.scanoss/crypto-finder/cache/mined)")
+		"With --offline or the online offline fallback: directory of the mined-dependency cache (default ~/.scanoss/crypto-finder/cache/mined)")
 	scanCmd.Flags().StringVar(&scanOfflinePythonPackages, "offline-python-packages", "",
-		"With --offline on a Python target: installed Python packages to mine the dependencies from (OS path-list separated: virtual environments, site-packages directories, unpacked wheels), after the project's .venv, venv and VIRTUAL_ENV. Nothing is installed, downloaded or run")
+		"With --offline or the online offline fallback, on a Python target: installed Python packages to mine the dependencies from (OS path-list separated: virtual environments, site-packages directories, unpacked wheels), after the project's .venv, venv and VIRTUAL_ENV. Nothing is installed, downloaded or run")
 	scanCmd.Flags().IntVar(&scanOfflineMemoryMB, "offline-memory-mb", defaultOfflineMemoryMB,
-		"With --offline: memory budget in MiB. The scan's soft memory limit (unless GOMEMLIMIT is set); half of it bounds the dependencies mined at once, estimated from their sources")
+		"With --offline or the online offline fallback: memory budget in MiB. The scan's soft memory limit (unless GOMEMLIMIT is set); half of it bounds the dependencies mined at once, estimated from their sources")
 }
 
 // defaultOfflineMemoryMB is the default --offline-memory-mb: the closure of an
@@ -103,8 +103,12 @@ func openOfflineCache() (*offline.Cache, string, error) {
 	return cache, cacheDir, nil
 }
 
-// offlineReachability answers request locally.
-func offlineReachability(ctx context.Context, plan *applicationReachabilityPlan, request *api.ApplicationReachabilityRequest, rulesManager *rules.Manager, javaRuntime javaruntime.Config) (*api.ApplicationReachability, error) {
+// offlineReachability answers request locally. With only set (the offline
+// fallback of an online scan), it mines the dependencies pinned under only
+// and those leading to them (fallbackMineKeys); the others are served
+// without data and spliced out of the stitch. With only nil it mines every
+// dependency.
+func offlineReachability(ctx context.Context, plan *applicationReachabilityPlan, request *api.ApplicationReachabilityRequest, rulesManager *rules.Manager, javaRuntime javaruntime.Config, only []string) (*api.ApplicationReachability, error) {
 	req := pr.Request{
 		SchemaVersion:       request.SchemaVersion,
 		CallSites:           request.CallSites,
@@ -121,6 +125,11 @@ func offlineReachability(ctx context.Context, plan *applicationReachabilityPlan,
 	stitchPlan, rejected := pr.NewPlan(req, limits)
 	if rejected != nil {
 		return answerOf(*rejected)
+	}
+
+	mineKeys := stitchPlan.Keys
+	if only != nil {
+		mineKeys = fallbackMineKeys(stitchPlan, only)
 	}
 
 	cache, cacheDir, err := openOfflineCache()
@@ -154,7 +163,7 @@ func offlineReachability(ctx context.Context, plan *applicationReachabilityPlan,
 			return nil, err
 		}
 		defer func() { utils.Discard(os.RemoveAll(work)) }()
-		deps = offlinePythonDependencies(plan, stitchPlan.Keys, work)
+		deps = offlinePythonDependencies(plan, mineKeys, work)
 	case ecosystemGo, ecosystemRust, ecosystemRuby, ecosystemCSharp:
 		// A gem's sources sit in a directory of the local installation, as a
 		// Go module's and a crate's do, so they are read the same way. A gem
@@ -162,11 +171,11 @@ func offlineReachability(ctx context.Context, plan *applicationReachabilityPlan,
 		// mode downloads nothing. A NuGet package ships assemblies rather
 		// than source, so a C# dependency is mined only where its package
 		// carries source files.
-		deps = offlineSourceDirDependencies(plan, stitchPlan.Keys)
+		deps = offlineSourceDirDependencies(plan, mineKeys)
 	case ecosystemNode:
-		deps = offlineNodeDependencies(plan, stitchPlan.Keys)
+		deps = offlineNodeDependencies(plan, mineKeys)
 	default:
-		deps = offlineDependencies(plan, stitchPlan.Keys)
+		deps = offlineDependencies(plan, mineKeys)
 	}
 	// Every dependency mined here indexes the Java platform once. The
 	// project's graph, built before, does not share it: a scan that mines
@@ -188,13 +197,9 @@ func offlineReachability(ctx context.Context, plan *applicationReachabilityPlan,
 	if err != nil {
 		return nil, fmt.Errorf("offline mining (%d mined, %d from the cache before it stopped): %w", stats.Mined, stats.Cached, err)
 	}
-	for _, key := range stitchPlan.Keys {
-		if _, ok := loaded[key]; !ok {
-			loaded[key] = pr.Component{Code: pr.InfoNoInfo, Message: "offline: the resolver named no artifact for this dependency"}
-		}
-	}
+	serveUnloaded(loaded, stitchPlan.Keys, mineKeys)
 	log.Info().
-		Int("dependencies", len(stitchPlan.Keys)).
+		Int("dependencies", len(mineKeys)).
 		Int("cached", stats.Cached).
 		Int("reannotated", stats.Reannotated).
 		Int("mined", stats.Mined).
@@ -211,6 +216,26 @@ func offlineReachability(ctx context.Context, plan *applicationReachabilityPlan,
 		return nil, fmt.Errorf("offline application reachability: %w", err)
 	}
 	return answerOf(resp)
+}
+
+// serveUnloaded serves without data each key Prepare loaded nothing for:
+// a mined key whose resolver named no artifact, and a key left unmined
+// because the API answered it (the offline fallback).
+func serveUnloaded(loaded map[pr.ComponentKey]pr.Component, keys, mineKeys []pr.ComponentKey) {
+	mined := make(map[pr.ComponentKey]bool, len(mineKeys))
+	for _, key := range mineKeys {
+		mined[key] = true
+	}
+	for _, key := range keys {
+		if _, ok := loaded[key]; ok {
+			continue
+		}
+		msg := "offline: the resolver named no artifact for this dependency"
+		if !mined[key] {
+			msg = "offline fallback: answered by the SCANOSS API, not mined"
+		}
+		loaded[key] = pr.Component{Code: pr.InfoNoInfo, Message: msg}
+	}
 }
 
 // answerOf reads a appreach response as the API client reads the API's.

@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/http"
 	"slices"
 	"time"
 
@@ -40,6 +39,7 @@ import (
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner/cards"
 	"github.com/scanoss/crypto-finder/internal/utils"
+	pr "github.com/scanoss/crypto-finder/pkg/appreach"
 )
 
 const (
@@ -377,6 +377,9 @@ func mergeDependencyPhaseDetails(into, more map[string]any) map[string]any {
 		case []engine.DependencyWithout:
 			have := utils.AsOr[[]engine.DependencyWithout](into[key])
 			into[key] = append(have, v...)
+		case []dependencyAnsweredOffline:
+			have := utils.AsOr[[]dependencyAnsweredOffline](into[key])
+			into[key] = append(have, v...)
 		default:
 			if _, ok := into[key]; !ok {
 				into[key] = v
@@ -456,21 +459,26 @@ func applicationReachability(
 
 	start := time.Now()
 	var answer *api.ApplicationReachability
+	var fallback *offlineFallbackReport
 	if scanOffline {
-		answer, err = offlineReachability(ctx, plan, request, rulesManager, javaRuntime)
+		answer, err = offlineReachability(ctx, plan, request, rulesManager, javaRuntime, nil)
 		if err != nil {
 			return nil, nil, offlineReachabilityFailure(err)
 		}
 	} else {
-		client := api.NewClientWithHTTPClient(cfg.GetAPIURL(), cfg.GetAPIKey(), &http.Client{Timeout: applicationReachabilityTimeout}, api.WithAllowHTTP(cfg.GetAllowHTTP()))
-		requestSpan := perf.Start("dependencies.reachability_request")
-		answer, err = client.ApplicationReachability(ctx, request)
-		requestSpan.End()
+		var local offlineAnswerer
+		if !scanNoOfflineFallback {
+			local = func(ctx context.Context, purls []string) (*api.ApplicationReachability, error) {
+				defer limitOfflineMemory()()
+				return offlineReachability(ctx, plan, request, rulesManager, javaRuntime, purls)
+			}
+		}
+		answer, fallback, err = onlineReachability(ctx, newOnlineClient(cfg.GetAPIURL(), cfg.GetAPIKey(), cfg.GetAllowHTTP()), request, local)
 		if err != nil {
-			return nil, nil, failure.WrapUnknown(err, failure.CodeDependencyResolutionFailed, failure.StageDependency, "application reachability request failed")
+			return nil, nil, err
 		}
 	}
-	if answer.InfoCode != "READY" && len(answer.Dependencies) == 0 {
+	if answer.InfoCode != string(pr.InfoReady) && len(answer.Dependencies) == 0 {
 		return nil, nil, failure.New(failure.CodeDependencyResolutionFailed, failure.StageDependency,
 			fmt.Sprintf("the SCANOSS API answered %s to the application reachability request: %s", answer.InfoCode, answer.InfoMessage),
 			failure.WithDetail("info_code", answer.InfoCode))
@@ -480,6 +488,7 @@ func applicationReachability(
 	project.Report = report
 	result, outcome := engine.MergeApplicationReachability(report, project, closure, answer)
 	engine.AddUnpinned(&outcome, closure)
+	markOfflineFallbackFailures(&outcome, fallback)
 	mergeSpan.End()
 	for _, without := range outcome.DependenciesWithout {
 		if without.Reason == engine.DependencyWithoutUnpinned {
@@ -505,6 +514,7 @@ func applicationReachability(
 		Int("unreachable", outcome.Unreachable).
 		Msg("Application reachability")
 	details := dependencyPhaseDetails(closure.Ecosystem, outcome)
+	addOfflineFallbackDetails(details, fallback)
 	details["request_bytes"] = answer.RequestBytes
 	details["response_bytes"] = answer.ResponseBytes
 	details["request_call_site_count"] = len(request.CallSites.ExternalCalls)

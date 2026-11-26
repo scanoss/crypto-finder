@@ -44,6 +44,48 @@ dependencies are mined, the scan fails at once with `scanner_timeout`
 instead of mining on; each dependency mined by then is cached, so the next
 run mines only the rest.
 
+## Online scans: the offline fallback
+
+An online scan (`--scan-dependencies` without `--offline`) asks the SCANOSS
+API first. For each dependency the API answers without data (reason
+`no_reachability_data`: a version SCANOSS has not mined), it then runs this
+offline path and serves the local answer in place of the API's, the same
+findings and verdicts `--offline` gives for that dependency.
+
+- **What is mined.** Only the dependencies without data, plus every
+  dependency that leads to one of them in the resolved tree, so a route from
+  the project through an API-answered dependency into a locally mined one is
+  in the stitch. The stitch runs over the whole request; the other
+  dependencies are served without a graph and spliced out, as the API
+  splices a dependency it has no data for. Their findings and verdicts stay
+  the API's.
+- **What is not mined.** Dependencies without data for another reason keep
+  today's reporting: `unpinned`, `other_version_requested`,
+  `under_other_version`.
+- **Flags.** `--offline-cache-dir`, `--offline-memory-mb` and
+  `--offline-python-packages` apply. `--timeout` bounds the scan, fallback
+  included. `--no-offline-fallback` turns the fallback off: the API's answer
+  is served as it is.
+- **Failures.** A dependency the fallback cannot answer (no sources, mining
+  failed, the scan's time ran out) stays in `deps_skipped_list` with reason
+  `no_reachability_data` and an `offline_fallback` field saying why, with a
+  warning. The scan does not fail for it.
+- **Reporting.** The completed `dependencies` progress event adds
+  `deps_answered_online`, `deps_answered_offline` and
+  `deps_answered_offline_list` (`purl`, `version` of each dependency the
+  fallback answered).
+- **No API key, API unreachable.** Unchanged: the request fails the scan as
+  before (`dependency_resolution_failed`); the fallback only fills in an
+  answer the API gave.
+
+Known limit: a route into a fallback dependency that does not pass through
+its ancestors in the resolved tree (a Python import the lock does not
+declare, a closure resolved without a tree) crosses dependencies served
+without a graph, and is judged as the API judges a route through a
+dependency without data. An API-answered dependency the API judged
+`unknown` with reason `dependency_without_graph`, because its only routes
+cross a dependency now answered locally, keeps that verdict.
+
 ## What it does
 
 1. **Resolves** the pinned closure, as online (Maven or Gradle for Java;
