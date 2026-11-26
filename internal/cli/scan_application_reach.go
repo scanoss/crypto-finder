@@ -48,7 +48,7 @@ const (
 	applicationReachabilityTimeout = 10 * time.Minute
 	// depSkipEcosystemNotSupported: the target declares dependencies only in
 	// an ecosystem this version does not resolve (any but Java, Python, Go,
-	// JavaScript/TypeScript and Rust).
+	// JavaScript/TypeScript, Rust, Ruby and C#).
 	depSkipEcosystemNotSupported = "ecosystem_not_supported"
 )
 

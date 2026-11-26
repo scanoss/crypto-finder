@@ -90,17 +90,16 @@ func TestScannedRust(t *testing.T) {
 	}
 }
 
-// C# is out of a production scan and admitted by CSharpEnv=1 for the
-// ruleset's port tooling, as Ruby and C are.
-func TestScannedGatesCSharp(t *testing.T) {
+// C# is scanned by default; CSharpEnv is still accepted and changes nothing.
+func TestScannedCSharp(t *testing.T) {
 	l, ok := ForEcosystem("csharp")
 	if !ok || l.Name != "csharp" {
 		t.Fatalf("csharp = %+v, %v, want the csharp language", l, ok)
 	}
 	for _, env := range []string{"", "0", "1"} {
-		t.Setenv(CSharpEnv, env)
-		if got := l.IsScanned(); got != (env == "1") {
-			t.Errorf("%s=%q: scanned = %v", CSharpEnv, env, got)
+		t.Setenv("CRYPTO_FINDER_CARDS_CSHARP", env)
+		if !l.IsScanned() {
+			t.Errorf("CRYPTO_FINDER_CARDS_CSHARP=%q: csharp is not scanned", env)
 		}
 	}
 }
@@ -120,26 +119,15 @@ func TestScannedNode(t *testing.T) {
 	}
 }
 
-// C and C++ are out of a production scan and admitted by CEnv=1 (fidelity
-// runs).
-func TestScannedGatesC(t *testing.T) {
-	for _, tc := range []struct {
-		env       string
-		ecosystem string
-		want      bool
-	}{
-		{"", "c", false},
-		{"", "cpp", false},
-		{"0", "c", false},
-		{"1", "c", true},
-		{"1", "cpp", true},
-		{"1", "rust", true},
-		{"1", "java", true},
-	} {
-		t.Setenv(CEnv, tc.env)
-		l, ok := ForEcosystem(tc.ecosystem)
-		if got := ok && l.IsScanned(); got != tc.want {
-			t.Errorf("%s scanned with %s=%q = %v, want %v", tc.ecosystem, CEnv, tc.env, got, tc.want)
+// C and C++ are scanned by default; CRYPTO_FINDER_CARDS_C is still accepted
+// and changes nothing.
+func TestScannedC(t *testing.T) {
+	for _, env := range []string{"", "0", "1"} {
+		t.Setenv("CRYPTO_FINDER_CARDS_C", env)
+		for _, ecosystem := range []string{"c", "cpp"} {
+			if l, ok := ForEcosystem(ecosystem); !ok || !l.IsScanned() {
+				t.Errorf("%s with CRYPTO_FINDER_CARDS_C=%q: scanned = false", ecosystem, env)
+			}
 		}
 	}
 }

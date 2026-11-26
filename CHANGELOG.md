@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-26
+### Changed
+- `scan` now detects cryptography in C, C++ and C# (the cards engine), with no environment variable. `CRYPTO_FINDER_CARDS_C` and `CRYPTO_FINDER_CARDS_CSHARP` are no longer needed and still accepted.
+
 ## [1.0.0] - 2026-11-26
 ### Added
 - `annotate --scanner cards` re-detects a stored graph fragment

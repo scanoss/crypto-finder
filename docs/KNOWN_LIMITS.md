@@ -8,7 +8,7 @@ cryptography" or an `unknown` verdict as an error.
 
 | Limit | Shows up as | Workaround |
 |---|---|---|
-| Java, Python, Go, JavaScript, TypeScript, Rust and Ruby only | `language_not_supported` (exit 1) for a target only in other languages | crypto-finder 0.54.0 for those languages |
+| Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++ and C# only | `language_not_supported` (exit 1) for a target only in other languages | — |
 | Python verdicts often `unknown` | 138 of 221 labelled Python cases `unknown` (`unresolved_dispatch`, `ambiguous_dispatch`) | Treat `unknown` as possibly reachable |
 | Dependency ecosystems: Java (Maven, Gradle), Python, Go, JavaScript/TypeScript (npm, yarn, pnpm locks), Rust (`Cargo.lock`, needs `cargo`) | Dependency phase `skipped`, reason `ecosystem_not_supported` or `manifest_absent` | — |
 | npm package locked at several versions | Only the version the project loads (top-level `node_modules`, else declared directly, else most depended on, else highest semver; across a monorepo's locks, an installed version, else the highest semver) is requested; the others are in `deps_skipped_list`, reason `other_version_requested`, and a package only those require with reason `under_other_version` | A multi-version request in the API |

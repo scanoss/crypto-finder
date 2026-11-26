@@ -314,7 +314,6 @@ func TestMatcherFragmentCarriesNodeObjectLiterals(t *testing.T) {
 // [c, cpp] rule on C++ files: a C rule of languages [c] does not apply, and
 // a rule both rule sets match at one place is reported once.
 func TestScanCPPAlsoMatchesTheCRules(t *testing.T) {
-	t.Setenv(CEnv, "1")
 	release := t.TempDir()
 	rule := func(id, langs, pattern string) string {
 		return "- id: " + id + "\n  languages: " + langs + "\n  message: m\n  severity: INFO\n  pattern: " + pattern +

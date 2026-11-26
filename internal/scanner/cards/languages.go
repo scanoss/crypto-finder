@@ -18,21 +18,12 @@ package cards
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 )
 
 // ecosystemCPP is the C++ language and reach ecosystem.
 const ecosystemCPP = "cpp"
-
-// CEnv names the variable that, set to 1, lets a C or C++ target through the
-// scan's language gate for fidelity runs: neither is scanned in production.
-const CEnv = "CRYPTO_FINDER_CARDS_C"
-
-// CSharpEnv names the variable that, set to 1, lets a C# target through the
-// scan's language gate for fidelity runs: C# is not scanned in production.
-const CSharpEnv = "CRYPTO_FINDER_CARDS_CSHARP"
 
 // Language is one language the cards engine knows.
 type Language struct {
@@ -50,9 +41,6 @@ type Language struct {
 	Spellings []string
 	// Scanned is whether the scan gate admits the language: its matcher exists.
 	Scanned bool
-	// ScannedEnv, when set, names a variable that, set to 1, admits a language
-	// that is not Scanned (a fidelity run).
-	ScannedEnv string
 	// Compiled is whether the rule compiler reads its rules: the cards dev
 	// commands (cards-export, cards verify) accept it.
 	Compiled bool
@@ -64,10 +52,11 @@ type Language struct {
 	Shares []string
 }
 
-// IsScanned is whether the scan gate admits the language now: Scanned, or
-// its ScannedEnv set to 1.
+// IsScanned is whether the scan gate admits the language. The former
+// CRYPTO_FINDER_CARDS_C and CRYPTO_FINDER_CARDS_CSHARP switches are no longer
+// read: C, C++ and C# are scanned, and setting them changes nothing.
 func (l Language) IsScanned() bool {
-	return l.Scanned || l.ScannedEnv != "" && os.Getenv(l.ScannedEnv) == "1"
+	return l.Scanned
 }
 
 // languages is the only list of the cards engine's languages. The scan gate,
@@ -79,10 +68,10 @@ var languages = []Language{
 	{Name: "go", Ecosystem: "go", Spellings: []string{"golang"}, Scanned: true, Compiled: true},
 	{Name: "rust", Ecosystem: "rust", Spellings: []string{"rs"}, Scanned: true, Compiled: true},
 	{Name: "javascript", Ecosystem: "node", Aliases: []string{"typescript"}, Spellings: []string{"js", "jsx", "mjs", "cjs", "ts", "tsx"}, Scanned: true, Compiled: true},
-	{Name: "c", Ecosystem: "c", Spellings: []string{"h"}, ScannedEnv: CEnv, Compiled: true},
-	{Name: ecosystemCPP, Ecosystem: ecosystemCPP, Spellings: []string{"c++", "cxx", "cc", "hpp"}, ScannedEnv: CEnv, Compiled: true, Shares: []string{"c"}},
+	{Name: "c", Ecosystem: "c", Spellings: []string{"h"}, Scanned: true, Compiled: true},
+	{Name: ecosystemCPP, Ecosystem: ecosystemCPP, Spellings: []string{"c++", "cxx", "cc", "hpp"}, Scanned: true, Compiled: true, Shares: []string{"c"}},
 	{Name: "ruby", Ecosystem: "ruby", Spellings: []string{"rb"}, Scanned: true, Compiled: true},
-	{Name: "csharp", Ecosystem: "csharp", Aliases: []string{"c#"}, Spellings: []string{"cs"}, ScannedEnv: CSharpEnv, Compiled: true},
+	{Name: "csharp", Ecosystem: "csharp", Aliases: []string{"c#"}, Spellings: []string{"cs"}, Scanned: true, Compiled: true},
 }
 
 // Canonical is the one name of a language every comparison of languages

@@ -8,7 +8,7 @@ Crypto Finder is a CLI that finds the cryptography a codebase uses and tells you
 
 | | |
 |---|---|
-| Languages | **Java** and **Python**. Other languages fail with `language_not_supported` ([Language Coverage](#language-coverage)); 0.54.0 still scans them. |
+| Languages | Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++ and C#. Other languages fail with `language_not_supported` ([Language Coverage](#language-coverage)). |
 | Dependencies | Java (Maven, Gradle) and Python, from the SCANOSS API or `--offline` |
 | Runs locally | Everything that reads your code. The API serves the ruleset and dependency findings ([what runs where](docs/CLIENT_SERVER.md)). |
 | Upgrading from 0.5x | [docs/MIGRATION_1.0.md](docs/MIGRATION_1.0.md) |
@@ -190,13 +190,14 @@ Detection runs on the cards engine, which this version supports for **Java** (JD
 
 **Go** (the standard library's crypto packages, golang.org/x/crypto and the rest of the ruleset's Go rules) is scanned too, with calls into the standard library of the installed Go toolchain and into the `go.mod` modules the module cache holds typed from their declarations. On Go, `--scan-dependencies` resolves the pinned closure from `go.mod` without downloading anything (requirements at their versions, direct unless `// indirect`, after `replace`); `--offline` mines each dependency from the module cache.
 
-The other languages crypto-finder releases up to 0.54.0 scanned with OpenGrep (C, C++, C#, JavaScript/TypeScript, Ruby, Rust) come to the cards engine in later versions. Until then:
+**C**, **C++** and **C#** are scanned too, with no environment variable; `CRYPTO_FINDER_CARDS_C` and `CRYPTO_FINDER_CARDS_CSHARP` are no longer needed and are still accepted.
 
-- a target whose sources are only in those languages fails with `language_not_supported` (exit code 1, `details.languages` names them), so no empty report reads as "no cryptography";
-- a Java, Python or Go target with sources in those languages is scanned for its Java, Python and Go; a warning and the completed `detection` progress event (`unsupported_languages`) name the others;
+For any other language:
+
+- a target whose sources are only in other languages fails with `language_not_supported` (exit code 1, `details.languages` names them), so no empty report reads as "no cryptography";
+- a target with sources in other languages beside scanned ones is scanned for the scanned ones; a warning and the completed `detection` progress event (`unsupported_languages`) name the others;
 - `--scan-dependencies` skips the dependency phase when no scanned ecosystem has anything to resolve: a Java target without a Java build (`ecosystem_not_supported` or `manifest_absent`), a Python target without a Python manifest, lock or environment at or below it, a Go target without a `go.mod` (`manifest_absent`), a JavaScript or TypeScript target without an npm, yarn or pnpm lock file (`manifest_absent`), a Rust target without a `Cargo.toml` or `Cargo.lock` (`manifest_absent`).
 
-The call graph parsers for C, C++, Go, JavaScript/TypeScript, Python and Rust stay in the code base: they are the building blocks those cards engines will use.
 
 ## Detection Rules
 
