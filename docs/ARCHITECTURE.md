@@ -40,8 +40,9 @@ target source tree
 4. Reachability   each finding is matched to its call-graph node by position;
    │              chains from entry points to it are computed. With
    │              --scan-dependencies, one request to
-   │              /v3/cryptography/reachability/application (or --offline, in
-   │              process) answers every dependency finding
+   │              /v3/cryptography/reachability/application answers every
+   │              dependency finding; versions without data, or all of them
+   │              with --offline, are mined and stitched in process
    ▼
 5. Supporting     lifecycle and configuration calls around each finding's
    calls          object, derived from the graph (see invariants)
@@ -76,15 +77,16 @@ stage ([ERROR_CODES.md](ERROR_CODES.md)).
 | `cryptokb` | The crypto KB: contract YAML per ecosystem, embedded and installed into reach on import |
 | `deadcode` | Drops findings inside C/C++ `#if 0` blocks |
 | `deduplicator` | Per-line deduplication of assets |
-| `dependency` | Java (Maven, Gradle) and Python closure resolution; module-root discovery |
+| `dependency` | Closure resolution per ecosystem (Java, Python, Go, npm, Rust, Ruby, C#); module-root discovery |
 | `engine` | Scan orchestration; the application reachability closure, request and merge; finding ids |
 | `enricher` | OID enrichment after materialization |
 | `entities` | Scanner input structures; aliases of the public report contract |
 | `failure` | Aliases of the public error contract |
 | `graphalgoguard` | Test-only: the graph algorithm guard ([GRAPH_IDS.md](GRAPH_IDS.md)) |
-| `offline` | `--offline`: mines dependencies in process and caches them ([OFFLINE.md](OFFLINE.md)) |
+| `offline` | `--offline` and the online fallback: mines dependencies in process and caches them ([OFFLINE.md](OFFLINE.md)) |
 | `oid` | Exact, registered OIDs only |
 | `output` | Writers: interim JSON, CycloneDX; stdout or file |
+| `parsememo` | Memo of parsed local card files across runs, keyed by content and binary |
 | `pqc` | Writes the PQC dataset's classification onto output |
 | `rules` | Rule sources: remote, local files and directories, merge |
 | `ruleset` | Leased ruleset bundle format and lease verification |
@@ -110,7 +112,7 @@ reach since 1.0 ([MIGRATION_1.0.md](MIGRATION_1.0.md#go-library-users)).
 
 | Rule | Enforced by |
 |---|---|
-| Engine changes land in reach, are tagged, then required in `go.mod` here (v0.14.0 today); no `replace` on a release | Review; `go.mod` |
+| Engine changes land in reach, are tagged, then required in `go.mod` here; no `replace` on a release | Review; `go.mod` |
 | No engine package reappears in crypto-finder | `go test ./internal/boundary` |
 | reach imports nothing from crypto-finder | reach's `internal/importguard` |
 | Crypto knowledge is data, injected: `internal/cryptokb` calls `contracts.SetSource` and `contracts.SetHints` on import | Review |

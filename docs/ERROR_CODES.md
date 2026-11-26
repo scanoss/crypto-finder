@@ -62,20 +62,20 @@ The stage column shows the typical stage; the stage is assigned where the error 
 | Code | Typical stage | Meaning | Typical cause |
 |------|---------------|---------|---------------|
 | `unknown_error` | `unknown` | Unclassified failure | A plain error escaped without boundary wrapping |
-| `invalid_arguments` | `input` | Flag/argument validation failed | Bad flag value, missing required flag, unknown backend/format; an input file that `convert` or `cbom` cannot read or parse |
+| `invalid_arguments` | `input` | Flag/argument validation failed | Bad flag value, missing required flag, unknown format, a plain-HTTP `--api-url` without `--allow-http`; an input file that `convert` or `cbom` cannot read or parse |
 | `invalid_timeout` | `input` | Unparseable duration | `--timeout` / `--max-stale-age` not in `10m` / `1h` / `30d` / `2w` form |
 | `config_initialization_failed` | `config` | Configuration could not be initialized | Unreadable/invalid config file or environment |
 | `java_runtime_config_invalid` | `config` | Java runtime selection invalid | Bad `--java-jdk-major` / malformed `--java-jdk-home <major>=<path>` |
 | `cache_initialization_failed` | `config` | Rules cache setup failed | Cache dir not writable |
 | `rules_load_failed` | `rules` | No usable rule source | `--no-remote-rules` without `--rules`/`--rules-dir`; remote ruleset fetch failed with no cache; the API refused the key (HTTP 401/403, `details.http_status`), which never falls back to the cache |
 | `scanner_unavailable` | `scan` | Requested scanner not found | Not emitted since the cards engine became the only detector; kept as a stable code |
-| `scanner_initialization_failed` | `scan` | Scanner setup failed | Scanner present but could not be prepared for the run |
-| `scanner_execution_failed` | `scan` | Scanner process failed | Non-zero scanner exit, crash, or invalid rule files |
+| `scanner_initialization_failed` | `scan` | Detector setup failed | The cards engine could not be prepared for the run, for example from unreadable card files |
+| `scanner_execution_failed` | `scan` | Detection failed | Invalid rule or card files, or a detector error while matching or processing results |
 | `scanner_timeout` | `scan` | Scan exceeded `--timeout` | Target too large for the configured timeout; with `--scan-dependencies --offline`, a first run whose dependency mining outlasts it (stage `dependency`; what it mined stays cached) |
 | `scanner_canceled` | `scan` | Scan canceled | Context canceled (e.g. SIGINT) |
-| `scanner_output_parse_failed` | `scan` | Scanner output unreadable | Scanner emitted output the parser could not decode |
+| `scanner_output_parse_failed` | `scan` | Scanner output unreadable | Not emitted since detection runs in process; kept as a stable code |
 | `language_detection_failed` | `scan` | Language detection failed | Unreadable target tree |
-| `dependency_resolution_failed` | `dependency` | Dependency resolution or the application reachability request failed | Missing `mvn`/`gradle`, unresolvable manifest, the SCANOSS API unreachable or answering without dependencies |
+| `dependency_resolution_failed` | `dependency` | Dependency resolution or the application reachability request failed | Missing `mvn`, `gradle` or `cargo`; an unresolvable manifest; the SCANOSS API unreachable or answering without dependencies |
 | `java_build_tool_unknown` | `dependency` | Java build tool not detected | No `pom.xml` / Gradle build files found at the scan root or in any module directory discovered below it. The Java build tool is detected per directory, and no search is made above the scan root. `scan` checks for a manifest before the resolver runs and reports that case as the `manifest_absent` dependency skip instead; the code remains for other callers of `DetectJavaBuildTool` |
 | `java_build_tool_ambiguous` | `dependency` | Multiple Java build tools detected | Both Maven and Gradle present without a clear winner |
 | `gradle_tool_missing` | `dependency` | Gradle unavailable | No usable `gradle` / wrapper for dependency export |

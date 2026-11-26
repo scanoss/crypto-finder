@@ -51,7 +51,7 @@ make coverage-check
 make lint-install
 
 # Install the coverage threshold checker
-go install github.com/vladopajic/go-test-coverage/v2@latest
+go install github.com/vladopajic/go-test-coverage/v2@v2.19.0
 ```
 
 ### What's excluded from coverage
@@ -71,7 +71,7 @@ Coverage excludes `cmd/` and `internal/cli/` (CLI boilerplate) and generated fil
 The project follows a hexagonal (clean) architecture. Dependencies flow inward:
 
 ```
-cli/  -->  engine/  -->  scanner/, rules/, dependency/, language/  -->  entities/
+cli/  -->  engine/  -->  scanner/, rules/, dependency/, offline/  -->  entities/  -->  pkg/schema
  |                            |
  |                       cache/, api/, output/ (infrastructure)
  v
@@ -82,40 +82,40 @@ cmd/crypto-finder/main.go  (calls only cli.Execute())
 
 - [ ] Your code respects layer boundaries — no upward imports (e.g., `scanner/` must never import `engine/` or `cli/`).
 - [ ] Adapter implementations (`scanner/cards/`, `dependency/`) depend on their interface package, not on concrete siblings.
-- [ ] `entities/` has **zero** internal imports — it is the innermost layer. Adding an import here breaks the architecture.
+- [ ] `entities/` imports no `internal/` package (it aliases the public contract in `pkg/schema`) — it is the innermost layer. Adding an internal import here breaks the architecture.
 - [ ] New scanning logic goes through `engine.Orchestrator`, not directly in `cli/` commands.
 - [ ] `cli/` commands only: validate input, wire dependencies, call `engine/` or `scan/`, handle output. No business logic in Cobra command functions.
-- [ ] All packages remain under `internal/` — this project exposes no public Go API.
+- [ ] Public Go API lives only in `pkg/` (`appreach`, `conditioned`, `failure`, `pqc`, `sbomcbom`, `schema`), and a change to it is a contract change. Everything else stays under `internal/`.
+- [ ] Engine code (call graph, parsers, contracts loader, stitcher) goes to [scanoss/reach](https://github.com/scanoss/reach); `go test ./internal/boundary` fails if an engine package reappears here.
 - [ ] New packages include a package-level doc comment explaining their responsibility.
 
 ---
 
 ## Interface Design
 
-Reference implementations: `scanner.Scanner` (`internal/scanner/interface.go`), `rules.RuleSource` (`internal/rules/source.go`), `dependency.Resolver` (`internal/dependency/resolver.go`), `language.Detector` (`reach/language/detector.go`).
+Reference implementations: `scanner.Scanner` (`internal/scanner/interface.go`), `rules.RuleSource` (`internal/rules/source.go`), `dependency.Resolver` (`internal/dependency/resolver.go`).
 
 ### Before committing, verify
 
 - [ ] Interfaces are defined at the **consumer** package, not the provider. The `scanner.Scanner` interface lives in `scanner/`, not in `scanner/cards/`.
 - [ ] Your interface has **2-4 methods**. More than 5 is a design smell — consider splitting.
-- [ ] New implementations register with the appropriate registry (`scanner.Registry`, `dependency.Registry`).
+- [ ] New detectors register with `scanner.Registry`.
 - [ ] You did not create an interface for a single concrete implementation unless testing requires it. Prefer inline struct mocks.
-- [ ] Optional configuration uses the **functional options** pattern (see `callgraph.ParserOption` on `parserConfig`). Avoid builder chains or config structs with many boolean fields.
+- [ ] Optional configuration uses the **functional options** pattern (see `api.Option` in `internal/api/client.go`). Avoid builder chains or config structs with many boolean fields.
 
 ---
 
 ## Error Handling
 
-Reference: `internal/errors/formatter.go` for CLI-facing error utilities.
+This project has a two-layer error model; [AGENTS.md](AGENTS.md#error-handling) is the canonical description. In short: deep packages return `fmt.Errorf("<prefix>: ...: %w", err)` and never import `internal/failure`; boundary packages (`internal/cli`, `internal/engine`, `internal/scanner`, `internal/dependency`) wrap with `failure.Wrap` / `failure.WrapUnknown` and assign a stable code and stage ([docs/ERROR_CODES.md](docs/ERROR_CODES.md)).
 
 ### Rules
 
-- **Always wrap with context**: `fmt.Errorf("failed to <verb> <noun>: %w", err)`. Describe WHAT failed.
-- **Use `%w`** (not `%v` or `%s`) to preserve the error chain.
+- **Always wrap with context** and **use `%w`** (not `%v` or `%s`) to preserve the error chain.
 - **Use `errors.Is()` / `errors.As()`** instead of direct `==` comparison (`errorlint` enforces this).
-- **CLI-facing errors** use utilities from `internal/errors/`: `FormatError`, `FormatScannerError`, `FormatValidationError`, `WrapWithSuggestion`, `FormatMultiError`.
 - **Non-critical failures** (cache misses, graph enrichment, optional API calls) log warnings via zerolog and continue. Only return errors that should stop the pipeline.
 - **Type assertions** must use the `ok` pattern (`errcheck` has `check-type-assertions: true`).
+- **Never rename a shipped failure code.**
 
 ### What NOT to do
 
@@ -142,14 +142,14 @@ if errors.Is(err, os.ErrNotExist) { ... }
 - [ ] All errors are wrapped with `%w` and descriptive context.
 - [ ] `errors.Is()` / `errors.As()` used instead of `==` comparison.
 - [ ] Type assertions use the `ok` pattern.
-- [ ] CLI-facing errors use `internal/errors/` utilities.
+- [ ] Terminal errors are wrapped with a `failure.Code` at the boundary, never in deep code.
 - [ ] Non-critical failures log warnings but don't fail the pipeline.
 
 ---
 
 ## Testing Standards
 
-Reference: `internal/engine/orchestrator_test.go`, `internal/converter/primitives_test.go`, `internal/cache/manager_test.go`.
+Reference: `internal/engine/orchestrator_test.go`, `internal/converter/converter_test.go`, `internal/cache/manager_test.go`.
 
 ### Rules
 
@@ -178,13 +178,13 @@ Reference: `internal/engine/orchestrator_test.go`, `internal/converter/primitive
 
 ## Concurrency Patterns
 
-Reference: `internal/engine/dependency_scanner.go` (worker pool), `internal/config/config.go` (singleton with `sync.Once`), `internal/scanner/registry.go` (thread-safe registry).
+Reference: `internal/deadcode/filter.go` (bounded workers), `internal/config/config.go` (singleton with `sync.Once`), `internal/scanner/registry.go` (thread-safe registry).
 
 ### Rules
 
 - **`context.Context` as first parameter** on all blocking or long-running operations. The `noctx` linter catches HTTP requests missing context.
 - **`sync.RWMutex`**: Use `RLock()` for read-only operations, `Lock()` for mutations. Do not use `Lock()` for everything.
-- **Worker pool pattern**: Buffered channels sized to `len(items)`, `sync.WaitGroup` for tracking, capped at `maxWorkers = 8`. See `scanDependenciesParallel` for the canonical implementation.
+- **Bounded parallelism**: cap concurrent work (`maxWorkers`, at most 8 in `internal/deadcode/filter.go`) with a semaphore or a sized worker pool, and track it with `sync.WaitGroup`. Never one goroutine per item.
 - **All goroutines tracked** via `sync.WaitGroup` or equivalent. No fire-and-forget goroutines.
 - **`exec.CommandContext`** for external process execution — ensures cancellation kills the process.
 
@@ -220,8 +220,8 @@ go func() { process(item) }() // leaked goroutine
 
 - **File permissions**: `0o600` for sensitive files (config, API keys), `0o750` for directories. Never `0o777` or `0o666`.
 - **API key handling**: Keys come from `config.GetAPIKey()` or `SCANOSS_API_KEY`. Never log API keys. Never include them in error messages. Reference: `x-api-key` header in `internal/api/`.
-- **Command execution**: Scanner adapters run external tools. Use `exec.CommandContext` with timeout. Verify command arguments are not constructed from untrusted user input without validation.
-- **Atomic file writes**: For crash-safe operations, follow the pattern in `DiskFindingsCache.Put`: write to temp file, sync, close, rename.
+- **Command execution**: Dependency resolvers run external tools (`mvn`, `gradle`, `cargo`). Use `exec.CommandContext` with timeout. Verify command arguments are not constructed from untrusted user input without validation.
+- **Atomic file writes**: For crash-safe operations, follow the pattern in `internal/offline/cache.go`: write to a temp file, sync, close, rename.
 - **gosec exclusions**: G204 (command execution) and G304 (file path taint) are excluded from automated linting. You must self-review these patterns manually before committing.
 - **GPL-2.0-only headers**: Every new `.go` file must include the full copyright header. See `CONTRIBUTING.md` for the exact format.
 
@@ -243,9 +243,9 @@ go func() { process(item) }() // leaked goroutine
 
 - **Slice pre-allocation**: Use `make([]T, 0, expectedLen)` when capacity is known. The `prealloc` linter catches simple cases, range loops, and for loops.
 - **HTTP response body close**: `bodyclose` linter is enabled. Always `defer resp.Body.Close()` immediately after the error check.
-- **Cache-first**: Expensive operations (dependency resolution, bytecode analysis, rule fetching) must check cache before computing. Reference: `FindingsCache` and `cache.Manager`.
+- **Cache-first**: Expensive operations (dependency mining, bytecode analysis, rule fetching) must check the cache before computing. Reference: `cache.Manager` and `internal/offline`.
 - **Large structs by pointer**: `gocritic` flags structs over 256 bytes. Pass them by pointer, use pointer receivers.
-- **Rule filtering**: The orchestrator filters rules by detected language BEFORE passing them to the scanner. New scanner workflows must include this optimization.
+- **Rule filtering**: The orchestrator filters rules by detected language before detection (`internal/engine/rule_filter.go`). New detection paths must keep this.
 - **No unnecessary type conversions**: The `unconvert` linter catches these.
 
 ### Before committing, verify
@@ -355,7 +355,7 @@ Self-check for these codebase-specific issues before committing:
 
 4. **Logging to stdout.** All logging goes to stderr via zerolog. Stdout is reserved for program output (JSON reports, CycloneDX). Mixing these breaks piping.
 
-5. **Ignoring context cancellation.** Scanner adapters execute external processes. If `ctx` is cancelled, the process must be killed. Always use `exec.CommandContext`.
+5. **Ignoring context cancellation.** Resolvers execute external processes. If `ctx` is cancelled, the process must be killed. Always use `exec.CommandContext`.
 
 6. **Creating new singletons.** The project has ONE singleton (`config.Config`). New singletons are an anti-pattern. Use dependency injection.
 
@@ -365,7 +365,7 @@ Self-check for these codebase-specific issues before committing:
 
 9. **Hardcoding file paths.** Use `config.GetCacheDir()`, `t.TempDir()`, or `os.UserHomeDir()`. Never hardcode `/home/`, `/tmp/`, or absolute paths.
 
-10. **Unbounded goroutine creation.** Parallel work must respect the `maxWorkers` cap. Spawning unbounded goroutines will overwhelm the system with scanner subprocesses.
+10. **Unbounded goroutine creation.** Parallel work must respect the `maxWorkers` cap. Spawning unbounded goroutines exhausts memory on large dependency graphs.
 
 ---
 
@@ -395,4 +395,4 @@ make coverage-check  # 80% coverage threshold met
 - [ ] GPL-2.0-only header on all new `.go` files.
 - [ ] No secrets in logs or error messages.
 - [ ] `exec.CommandContext` for external processes.
-- [ ] Changelog fragment added under `changelog.d/` (or an entry under "Unreleased" in CHANGELOG.md).
+- [ ] Changelog fragment added under `changelog.d/` for a user-facing change (never a direct `CHANGELOG.md` edit).

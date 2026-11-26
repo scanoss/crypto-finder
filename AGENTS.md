@@ -157,7 +157,7 @@ crypto-finder: `go test ./internal/boundary` fails when a package reappears at a
 moved from (`internal/boundary.MovedEnginePackages`). Crypto knowledge (KB YAML, crypto tables)
 goes in `internal/cryptokb` and is injected (`contracts.SetSource` / `contracts.SetHints`),
 never hard-coded in the engine; client concerns (config, paths) are passed in by the caller.
-`go.mod` requires a tagged reach version (v0.14.0 today). For engine work, develop in a reach
+`go.mod` requires a tagged reach version. For engine work, develop in a reach
 checkout, add a temporary `replace github.com/scanoss/reach => ../reach`, and drop it before
 merging: crypto-finder only ships against a tagged reach.
 `make test-reach` runs reach's tests against the crypto KB (`REACH_TEST_CONTRACTS`).
@@ -176,25 +176,13 @@ github.com/scanoss/reach/callgraph/contracts/
 └── contracts.go           # loader, types, validation (engine; no YAML)
 internal/cryptokb/
 ├── cryptokb.go            # go:embed of the YAML below, installs it as the source
-├── c/                     # openssl-evp, libsodium, mbedtls, wolfssl-wolfcrypt
-├── cpp/                   # cryptopp, tink
-├── go/                    # stdlib-crypto, golang-x-crypto, golang-fips-openssl-v2
-├── java/                  # jdk-crypto, bouncycastle (+ openpgp), tink-1.13.0, tink-awskms,
-│                          #   tink-gcpkms, jjwt,
-│                          #   nimbus-jose-jwt, apache-santuario-xmlsec, apache-sshd,
-│                          #   password4j, spring-security-crypto
-├── node/                  # bootstrap placeholder (no library KBs yet)
-├── python/                # pyca-cryptography, pycryptodome(x), paramiko, passlib,
-│                          #   bcrypt, argon2-cffi, pynacl, pyopenssl, m2crypto,
-│                          #   pyjwt, flask-jwt-extended, pyotp, werkzeug, boto3,
-│                          #   azure-keyvault-keys, azure-keyvault-secrets,
-│                          #   aws-encryption-sdk, aws-cryptographic-material-providers,
-│                          #   pykmip, truststore
-└── rust/                  # aes, blowfish, des, cbc, cfb-mode, ctr, aes-gcm, aes-gcm-siv,
-                           #   ccm, chacha20poly1305, argon2, pbkdf2, scrypt, dsa, ecdsa,
-                           #   ed25519, ghash, poly1305, ring, openssl, rsa, sodiumoxide,
-                           #   crypto-common, digest, aead, elliptic-curve,
-                           #   der, pkcs1, pkcs8, sec1, spki (+ bootstrap)
+├── c/                     # one YAML per library version, e.g. openssl-evp, libsodium, mbedtls
+├── cpp/                   # cryptopp, botan, tink, ...
+├── go/                    # stdlib-crypto, golang-x-crypto, ...
+├── java/                  # jdk-crypto, bouncycastle, tink, jjwt, nimbus-jose-jwt, ...
+├── node/                  # node crypto, argon2, aws-sdk clients, ...
+├── python/                # pyca-cryptography, pycryptodome, pyjwt, ...
+└── rust/                  # RustCrypto crates, ring, openssl, ...
 ```
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code
