@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -307,7 +308,6 @@ func (r *MavenResolver) listDependencyTree(ctx context.Context, targetDir string
 		return "", fmt.Errorf("close temp file: %w", err)
 	}
 
-	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
 	args := []string{
 		"dependency:tree",
 		"-DoutputFile=" + tmpPath,
@@ -317,8 +317,7 @@ func (r *MavenResolver) listDependencyTree(ctx context.Context, targetDir string
 	if verbose {
 		args = append(args, "-Dverbose")
 	}
-	cmd := exec.CommandContext(ctx, "mvn", args...)
-	cmd.Dir = targetDir
+	cmd := newMavenCommand(ctx, targetDir, args...)
 	if err := r.configureMavenCommand(ctx, cmd); err != nil {
 		return "", err
 	}
@@ -426,7 +425,7 @@ func nilIfEmpty(edges map[string][]Ref) map[string][]Ref {
 // "" for a dependency printed in place. A child omitted as a cycle is skipped.
 func walkVerboseMavenTree(verbose string, visit func(parent *mavenTreeEntry, entry mavenTreeEntry, omittedFor string)) {
 	var stack []mavenTreeEntry
-	for _, line := range strings.Split(verbose, "\n") {
+	for _, line := range strings.Split(stripANSI(verbose), "\n") {
 		if line == "" {
 			continue
 		}
@@ -527,9 +526,7 @@ func (r *MavenResolver) runMavenCommand(ctx context.Context, opts mavenCommandOp
 		log.Info().Strs("args", opts.args).Msg(opts.startMessage)
 	}
 
-	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
-	cmd := exec.CommandContext(ctx, "mvn", opts.args...)
-	cmd.Dir = opts.dir
+	cmd := newMavenCommand(ctx, opts.dir, opts.args...)
 	if err := r.configureMavenCommand(ctx, cmd); err != nil {
 		return nil, err
 	}
@@ -569,6 +566,35 @@ func (r *MavenResolver) runMavenCommand(ctx context.Context, opts mavenCommandOp
 // Maven invocation. The repository is passed explicitly so that commands run
 // outside the project, such as the isolated source fallback, write where
 // Crypto Finder reads.
+// mavenBatchArgs run Maven in batch mode with color off. Maven 3.9 writes
+// ANSI color into the -DoutputFile of dependency:list and dependency:tree
+// (around the " -- module <name>" suffix) whenever color is on, which an
+// interactive terminal turns on by default; the parsers strip it as well
+// (stripANSI), for a MAVEN_ARGS or settings that force color back on.
+var mavenBatchArgs = []string{"-B", "-Dstyle.color=never"}
+
+// newMavenCommand is the one place an mvn process is built: every Maven
+// invocation runs with mavenBatchArgs, in dir.
+func newMavenCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	// #nosec G204 G702 -- exec.CommandContext is used without a shell; mvn is fixed and the arguments are built by this package.
+	cmd := exec.CommandContext(ctx, "mvn", slices.Concat(args, mavenBatchArgs)...)
+	cmd.Dir = dir
+	return cmd
+}
+
+// ansiEscape matches an ANSI CSI escape sequence, such as the color codes
+// Maven prints ("\x1b[36m", "\x1b[0;1m", "\x1b[m").
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[\x20-\x2f]*[\x40-\x7e]`)
+
+// stripANSI removes ANSI escape sequences from Maven output before it is
+// parsed.
+func stripANSI(s string) string {
+	if !strings.Contains(s, "\x1b") {
+		return s
+	}
+	return ansiEscape.ReplaceAllString(s, "")
+}
+
 func (r *MavenResolver) configureMavenCommand(ctx context.Context, cmd *exec.Cmd) error {
 	if m2Repo := r.localRepository(ctx, cmd.Dir); m2Repo != "" {
 		cmd.Args = append(cmd.Args, "-Dmaven.repo.local="+m2Repo)
@@ -714,14 +740,12 @@ func (r *MavenResolver) listDependencies(ctx context.Context, targetDir string) 
 	// pass, so parseDependencyList keeps them (mavenClasspathScopes).
 	// --fail-never continues past module failures in multi-module builds.
 	// -DappendOutput=true appends each module's output instead of overwriting.
-	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
-	cmd := exec.CommandContext(ctx, "mvn", "dependency:list",
+	cmd := newMavenCommand(ctx, targetDir, "dependency:list",
 		"-DoutputFile="+tmpPath,
 		"-DoutputAbsoluteArtifactFilename=false",
 		"-DappendOutput=true",
 		"--fail-never",
 	)
-	cmd.Dir = targetDir
 	if err := r.configureMavenCommand(ctx, cmd); err != nil {
 		return nil, err
 	}
@@ -769,7 +793,7 @@ func (r *MavenResolver) listDependencies(ctx context.Context, targetDir string) 
 // "groupId:artifactId:type:classifier:version:scope". Entries of a scope
 // outside mavenClasspathScopes (test) are left out.
 func (r *MavenResolver) parseDependencyList(output string) []Dependency {
-	lines := strings.Split(output, "\n")
+	lines := strings.Split(stripANSI(output), "\n")
 	deps := make([]Dependency, 0, len(lines))
 	seen := make(map[string]bool)
 
@@ -965,14 +989,12 @@ func (r *MavenResolver) localRepository(ctx context.Context, projectDir string) 
 // projectDir. It passes no -Dmaven.repo.local of its own, which Maven would
 // only echo back.
 func (r *MavenResolver) runHelpEvaluateLocalRepository(ctx context.Context, projectDir string) (string, error) {
-	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
-	cmd := exec.CommandContext(ctx, "mvn",
+	cmd := newMavenCommand(ctx, projectDir,
 		fmt.Sprintf("org.apache.maven.plugins:maven-help-plugin:%s:evaluate", mavenHelpPluginVersion),
 		"-Dexpression=settings.localRepository",
 		"-DforceStdout",
-		"-q", "-B", "-N",
+		"-q", "-N",
 	)
-	cmd.Dir = projectDir
 	if err := r.configureJavaRuntime(cmd); err != nil {
 		return "", err
 	}
@@ -1168,7 +1190,7 @@ func parseMavenTree(output string) (graph map[string][]Ref, underTest []mavenTre
 	graph = make(map[string][]Ref)
 	var stack []mavenTreeEntry // the dependency at each depth
 
-	for _, line := range strings.Split(output, "\n") {
+	for _, line := range strings.Split(stripANSI(output), "\n") {
 		node, depth, ok := parseMavenTreeLine(line)
 		if !ok {
 			continue
@@ -1281,13 +1303,11 @@ func (r *MavenResolver) resolveModuleDependencies(ctx context.Context, targetDir
 		return nil, false, fmt.Errorf("close temp file: %w", err)
 	}
 
-	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
-	cmd := exec.CommandContext(ctx, "mvn", "dependency:list",
+	cmd := newMavenCommand(ctx, targetDir, "dependency:list",
 		"-pl", module,
 		"-DoutputFile="+tmpPath,
 		"-DoutputAbsoluteArtifactFilename=false",
 	)
-	cmd.Dir = targetDir
 	if err := r.configureMavenCommand(ctx, cmd); err != nil {
 		return nil, false, err
 	}
@@ -1409,6 +1429,7 @@ func isInterModuleFailure(stderr, projectGroupID string, moduleArtifactIDs []str
 
 	// Look for "Could not resolve dependencies" or "Could not find artifact"
 	// where the missing artifact matches the project's own groupId + a known module.
+	stderr = stripANSI(stderr)
 	lowerStderr := strings.ToLower(stderr)
 	hasResolutionError := strings.Contains(lowerStderr, "could not resolve dependencies") ||
 		strings.Contains(lowerStderr, "could not find artifact") ||
