@@ -40,7 +40,7 @@ func compileYAMLMode(t *testing.T, src string, poc bool) (entries, rules []strin
 	if err := os.WriteFile(filepath.Join(dir, "rules.yaml"), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := compileRulesDirMode(dir, poc)
+	c, err := defaults.compileRulesDirMode(dir, poc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestCompileImportClause(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "r.yml"), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ix, err := CompileIndex(dir)
+	ix, err := CompileIndex(dir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestCompileParity(t *testing.T) {
 	if rulesDir == "" || ref == "" {
 		t.Skip("CARDMATCH_PARITY_RULES / CARDMATCH_PARITY_INDEX not set")
 	}
-	c, err := compileRulesDirMode(rulesDir, true)
+	c, err := defaults.compileRulesDirMode(rulesDir, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,11 +313,11 @@ func TestCompiledIndexFindings(t *testing.T) {
 	if rulesDir == "" || index == "" || cardsDir == "" || glob == "" {
 		t.Skip("CARDMATCH_E2E_RULES / _INDEX / _CARDS / _FRAGMENTS not set")
 	}
-	fromFile, err := Load(index, cardsDir, rulesDir)
+	fromFile, err := Load(index, cardsDir, rulesDir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	compiled, err := Load("", cardsDir, rulesDir)
+	compiled, err := Load("", cardsDir, rulesDir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func TestCompileDump(t *testing.T) {
 	if rulesDir == "" || out == "" {
 		t.Skip("CARDMATCH_COMPILE_RULES / CARDMATCH_COMPILE_OUT not set")
 	}
-	c, err := compileRulesDir(rulesDir)
+	c, err := defaults.compileRulesDir(rulesDir)
 	if err != nil {
 		t.Fatal(err)
 	}

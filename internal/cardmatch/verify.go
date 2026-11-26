@@ -28,29 +28,30 @@ type V3Report struct {
 //     reads from the YAML (the matcher's view of A4);
 //   - a rule is pending exactly when the compiler skips it and it has no
 //     hand card.
-func VerifyV3(rulesDir, cardsDir string) (*V3Report, error) { //nolint:funlen,gocognit,gocyclo // mirrors the reference matcher's control flow branch for branch; the equivalence suites pin it, so a split is a separate change
-	compiled, err := compileRulesDir(rulesDir)
+func VerifyV3(rulesDir, cardsDir string, opts Options) (*V3Report, error) { //nolint:funlen,gocognit,gocyclo // mirrors the reference matcher's control flow branch for branch; the equivalence suites pin it, so a split is a separate change
+	s := opts.settings()
+	compiled, err := s.compileRulesDir(rulesDir)
 	if err != nil {
 		return nil, err
 	}
-	table, err := ruleTable(rulesDir)
+	table, err := s.ruleTable(rulesDir)
 	if err != nil {
 		return nil, err
 	}
-	files, v3, err := readCardFiles(cardsDir)
+	files, v3, err := s.readCardFiles(cardsDir)
 	if err != nil {
 		return nil, err
 	}
 	if !v3 {
 		return nil, fmt.Errorf("%s holds no v3 card files", cardsDir)
 	}
-	index, cards, err := loadV3(files)
+	index, cards, err := s.loadV3(files)
 	if err != nil {
 		return nil, err
 	}
 	// Loading rewrites keyword indices in place: the site cards as written
 	// come from a second read.
-	if files, _, err = readCardFiles(cardsDir); err != nil {
+	if files, _, err = s.readCardFiles(cardsDir); err != nil {
 		return nil, err
 	}
 	rep := &V3Report{}
@@ -67,7 +68,7 @@ func VerifyV3(rulesDir, cardsDir string) (*V3Report, error) { //nolint:funlen,go
 				id := pyStr(k)
 				r := as[*OMap](rm.Vals[i])
 				meta := &OMap{}
-				if cr := r.GetOr("crypto"); pyTruthy(cr) {
+				if cr := r.GetOr(s.metaKey); pyTruthy(cr) {
 					meta = as[*OMap](cr)
 				}
 				v3Meta[id] = meta

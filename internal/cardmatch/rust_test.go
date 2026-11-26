@@ -39,7 +39,7 @@ func writeRules(t *testing.T, src string) string {
 // A fragment of a Rust target reaches the Rust dispatch and yields no
 // findings, whatever rules the index holds.
 func TestRustFragmentDispatchFindsNothing(t *testing.T) {
-	assets, err := Load("", "", writeRules(t, rustRulesSrc))
+	assets, err := Load("", "", writeRules(t, rustRulesSrc), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestRustFragmentDispatchFindsNothing(t *testing.T) {
 // A Rust entry never matches a Java or Python fragment, even when its method
 // bucket and arity fit a site there.
 func TestRustEntriesStayOutOfOtherLanguages(t *testing.T) {
-	assets, err := Load("", "", writeRules(t, rustRuleYAML(map[string]string{"acme.derive": "pattern: $X.derive($OUT)"})))
+	assets, err := Load("", "", writeRules(t, rustRuleYAML(map[string]string{"acme.derive": "pattern: $X.derive($OUT)"})), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -61,7 +61,7 @@ func rustSrcFrag(src []string, calls ...rustSrcCall) *FragmentJSON {
 
 func rustMatchRules(t *testing.T, rules map[string]string, frag *FragmentJSON) ([]*Finding, RustMatchStats) {
 	t.Helper()
-	assets, err := Load("", "", writeRules(t, rustRuleYAML(rules)))
+	assets, err := Load("", "", writeRules(t, rustRuleYAML(rules)), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestRustEntryHolds(t *testing.T) {
 		"bodyuse": "patterns:\n- pattern-inside: |\n    fn $F(...) { ... use $M::x::$N; ... }\n- pattern: Kdf::new(...)",
 		"alias":   "pattern: type $A = acme_kdf::Mode<$C>;",
 		"letmut":  "pattern: let mut $N = $V;",
-	})))
+	})), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,8 +296,8 @@ func TestRustMethodChain(t *testing.T) {
 		t.Fatalf("found %v, want %v", got, want)
 	}
 	for _, f := range found {
-		if f.RuleID == "recv" && f.MetadataMap()["algorithmName"] != "Kdf::new(1, 2)" {
-			t.Errorf("$X = %v", f.MetadataMap()["algorithmName"])
+		if f.RuleID == "recv" && f.MetadataFields()["algorithmName"] != "Kdf::new(1, 2)" {
+			t.Errorf("$X = %v", f.MetadataFields()["algorithmName"])
 		}
 	}
 }

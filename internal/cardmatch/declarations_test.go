@@ -161,7 +161,7 @@ func TestLoadDeclarationCards(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(cards, "rules.cards"), []byte("cards:\n- rule: usage\n  "+body+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		set, err := loadCards(cards, rules)
+		set, err := defaults.loadCards(cards, rules)
 		if (err != nil) != wantErr {
 			t.Errorf("%q: error %v, want error %v", body, err, wantErr)
 		}

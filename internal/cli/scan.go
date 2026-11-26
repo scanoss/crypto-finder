@@ -1060,7 +1060,9 @@ func runScan(cmd *cobra.Command, args []string) (runErr error) {
 	// Parsed card files are kept for the next scan only when every rule is a
 	// local file; a leased ruleset must not outlive its run in clear.
 	if remoteSource == nil {
-		parsememo.Enable()
+		if cacheDir, err := config.GetCacheDir(); err == nil {
+			parsememo.Enable(cacheDir)
+		}
 	}
 
 	// Create rules manager with all sources

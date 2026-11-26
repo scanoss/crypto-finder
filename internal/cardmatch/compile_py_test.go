@@ -168,7 +168,7 @@ func TestCompiledPythonIndexMatches(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cards, "rules.cards"), []byte("cards:\n- rule: carded\n  match: {call: hashlib.sha1}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	assets, err := Load("", cards, dir)
+	assets, err := Load("", cards, dir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

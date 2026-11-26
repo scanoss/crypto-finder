@@ -39,7 +39,7 @@ func TestCTaintMatchesAsOpenGrep(t *testing.T) {
 	got := make([]string, 0, len(found))
 	exp := make([]string, 0, len(want["value"]))
 	for _, f := range found {
-		got = append(got, f.File+":"+itoa(f.Line)+":"+itoa(f.Col)+"-"+itoa(f.EndCol)+" "+f.MetadataMap()["algorithmName"].(string))
+		got = append(got, f.File+":"+itoa(f.Line)+":"+itoa(f.Col)+"-"+itoa(f.EndCol)+" "+f.MetadataFields()["algorithmName"].(string))
 	}
 	for _, h := range want["value"] {
 		exp = append(exp, strings.TrimPrefix(h.File, "src/")+":"+itoa(h.Line)+":"+itoa(h.Col)+"-"+itoa(h.EndCol)+" AES-"+h.Metavar["$bits"])

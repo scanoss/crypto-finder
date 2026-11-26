@@ -53,7 +53,7 @@ func writeCards(t *testing.T, files map[string]string) string {
 // cards the hand cards, and no rules directory is read.
 func TestLoadV3(t *testing.T) {
 	dir := writeCards(t, map[string]string{"lib/rules.cards": v3Synthetic})
-	a, err := Load("", dir, filepath.Join(dir, "no-such-rules"))
+	a, err := Load("", dir, filepath.Join(dir, "no-such-rules"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestLoadV3(t *testing.T) {
 	if len(a.cards.Cards) != 1 || a.cards.Cards[0].Rule != "example.hand" || jsonValue(a.cards.Cards[0].Metadata) != `{"assetType": "algorithm", "algorithmName": "X"}` {
 		t.Errorf("hand cards = %+v", a.cards.Cards)
 	}
-	if _, err := Load(filepath.Join(dir, "index.json"), dir, ""); err == nil {
+	if _, err := Load(filepath.Join(dir, "index.json"), dir, "", Options{}); err == nil {
 		t.Error("a compiled index with v3 cards loaded")
 	}
 }
@@ -85,7 +85,7 @@ func TestLoadV3Refuses(t *testing.T) {
 		"unknown file key":   {"a/rules.cards": strings.Replace(v3Synthetic, "cards:\n", "extra: 1\ncards:\n", 1)},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := Load("", writeCards(t, files), ""); err == nil {
+			if _, err := Load("", writeCards(t, files), "", Options{}); err == nil {
 				t.Error("loaded")
 			}
 		})
@@ -102,7 +102,7 @@ func TestV3CardOfAnotherLanguage(t *testing.T) {
 		"cards/python/b.cards": "format: scanoss-cards/3\nrules:\n  acme.py.rule:\n    severity: INFO\n    message: m\n    crypto: {assetType: algorithm}\n" +
 			"cards:\n- rule: acme.go.rule\n  match: {call: acme.Make}\n",
 	})
-	_, err := Load("", filepath.Join(dir, "cards"), "")
+	_, err := Load("", filepath.Join(dir, "cards"), "", Options{})
 	if err == nil || !strings.Contains(err.Error(), "the rule is a go rule, the card is under cards/python") {
 		t.Fatalf("err = %v, want the cross-language card rejected", err)
 	}
@@ -110,14 +110,14 @@ func TestV3CardOfAnotherLanguage(t *testing.T) {
 		"cards/go/a.cards":     "format: scanoss-cards/3\nrules:\n  acme.go.rule:\n    severity: INFO\n    message: m\n    crypto: {assetType: algorithm}\ncards: []\n",
 		"cards/python/b.cards": "format: scanoss-cards/3\ncards:\n- rule: acme.go.rule\n  site: {receiver: \"any\", type: null, method: \"make\", min_arity: 0, max_arity: null, args: [], taint: false}\n",
 	})
-	if _, err := Load("", filepath.Join(site, "cards"), ""); err == nil || !strings.Contains(err.Error(), "the rule is a go rule, the card is under cards/python") {
+	if _, err := Load("", filepath.Join(site, "cards"), "", Options{}); err == nil || !strings.Contains(err.Error(), "the rule is a go rule, the card is under cards/python") {
 		t.Fatalf("site card: err = %v, want the cross-language card rejected", err)
 	}
 	ok := writeCards(t, map[string]string{
 		"cards/go/a.cards": "format: scanoss-cards/3\nrules:\n  acme.go.rule:\n    severity: INFO\n    message: m\n    crypto: {assetType: algorithm}\ncards: []\n",
 		"cards/go/b.cards": "format: scanoss-cards/3\ncards:\n- rule: acme.go.rule\n  match: {call: acme.Make}\n",
 	})
-	if _, err := Load("", filepath.Join(ok, "cards"), ""); err != nil {
+	if _, err := Load("", filepath.Join(ok, "cards"), "", Options{}); err != nil {
 		t.Fatalf("a card in its rule's language: %v", err)
 	}
 }

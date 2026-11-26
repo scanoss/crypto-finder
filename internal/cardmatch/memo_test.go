@@ -24,7 +24,7 @@ cards:
 func TestParseMemoServesTheNextProcess(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	parsememo.Enable()
+	parsememo.Enable(home)
 	path := filepath.Join(home, "rules", "cards", "python", "example.cards")
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		t.Fatal(err)
@@ -40,18 +40,18 @@ func TestParseMemoServesTheNextProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadYAML(path); err != nil {
+	if _, err := defaults.loadYAML(path); err != nil {
 		t.Fatal(err)
 	}
 	if err := SaveMemo(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".scanoss", "crypto-finder", "cache", "cards-match-python.memo")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, "cards-match-python.memo")); err != nil {
 		t.Fatalf("the python cards memo: %v", err)
 	}
 
 	newProcess()
-	stored, ok := parseMemoFor(path).Get(sha256Of(memoDoc))
+	stored, ok := parseMemoFor(defaults.languageOf(path)).Get(sha256Of(memoDoc))
 	if !ok {
 		t.Fatal("the next process finds no memo entry")
 	}
@@ -59,11 +59,11 @@ func TestParseMemoServesTheNextProcess(t *testing.T) {
 	if got := decodeYAMLValue(r); !r.Done() || !reflect.DeepEqual(got, want) {
 		t.Fatalf("decoded %s (done %v)\nparsed  %s", jsonValue(got), r.Done(), jsonValue(want))
 	}
-	served, err := loadYAML(path)
+	served, err := defaults.loadYAML(path)
 	if err != nil || !reflect.DeepEqual(served, want) {
 		t.Fatalf("loadYAML = %s, %v", jsonValue(served), err)
 	}
-	if again, _ := loadYAML(path); again.(*OMap) == served.(*OMap) {
+	if again, _ := defaults.loadYAML(path); again.(*OMap) == served.(*OMap) {
 		t.Error("the memo served one value twice; a parse builds a new one each time")
 	}
 }

@@ -30,7 +30,7 @@ func TestGoCallSourceMatchesAsOpenGrep(t *testing.T) {
 			others[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = true
 			continue
 		}
-		md := f.MetadataMap()
+		md := f.MetadataFields()
 		got[rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = md["algorithmName"].(string) + " " + md["curve"].(string)
 	}
 	exp := map[rustPinKey]string{}

@@ -28,7 +28,7 @@ func TestGoValueRules(t *testing.T) {
   - {id: store, message: m, severity: INFO, languages: [go], pattern: '$C.MinVersion = $V', metadata: {crypto: {version: $V}}}
   - {id: store-typed, message: m, severity: INFO, languages: [go], pattern: '($C : *tls.Config).CipherSuites = $V'}
 `
-	assets, err := Load("", "", writeRules(t, rules))
+	assets, err := Load("", "", writeRules(t, rules), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestGoStoreInImportingFile(t *testing.T) {
           ...
       - pattern: $CONFIG.MinVersion = $V
 `
-	assets, err := Load("", "", writeRules(t, rule))
+	assets, err := Load("", "", writeRules(t, rule), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestGoValueRulesInImportClause(t *testing.T) {
 			t.Errorf("%v: rule %s, want %s", k, got[k], id)
 		}
 	}
-	rules, err := ExportRules(dir)
+	rules, err := ExportRules(dir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

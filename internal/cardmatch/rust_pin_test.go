@@ -50,7 +50,7 @@ func rustFixture(t *testing.T) (*Assets, *FragmentJSON, map[string][]opengrepHit
 // rustFixtureAt loads the rules, fragment.json and expected.json of dir.
 func rustFixtureAt(t *testing.T, dir string) (*Assets, *FragmentJSON, map[string][]opengrepHit) {
 	t.Helper()
-	assets, err := Load("", "", dir)
+	assets, err := Load("", "", dir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestRustMatchesAsOpenGrep(t *testing.T) {
 		if got[f.RuleID] == nil {
 			got[f.RuleID] = map[rustPinKey]string{}
 		}
-		got[f.RuleID][k] = rustTokens(f.MetadataMap()["algorithmName"].(string))
+		got[f.RuleID][k] = rustTokens(f.MetadataFields()["algorithmName"].(string))
 	}
 	for _, id := range slices.Sorted(maps.Keys(rulesOf(assets))) {
 		exp := map[rustPinKey][]string{}
@@ -242,7 +242,7 @@ func TestRustFocusAndGroupsAsOpenGrep(t *testing.T) {
 		if got[f.RuleID] == nil {
 			got[f.RuleID] = map[rustPinKey]string{}
 		}
-		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = rustTokens(f.MetadataMap()["algorithmName"].(string))
+		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = rustTokens(f.MetadataFields()["algorithmName"].(string))
 	}
 	for _, id := range slices.Sorted(maps.Keys(rulesOf(assets))) {
 		exp := map[rustPinKey][]string{}
@@ -293,7 +293,7 @@ func TestRustGapsAsOpenGrep(t *testing.T) {
 		if got[f.RuleID] == nil {
 			got[f.RuleID] = map[rustPinKey]map[string]any{}
 		}
-		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = f.MetadataMap()
+		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = f.MetadataFields()
 	}
 	for _, id := range slices.Sorted(maps.Keys(ids)) {
 		exp := map[rustPinKey][]map[string]any{}
@@ -563,7 +563,7 @@ func rustAssertAsOpenGrep(t *testing.T, assets *Assets, found []*Finding, want m
 		if got[f.RuleID] == nil {
 			got[f.RuleID] = map[rustPinKey]map[string]any{}
 		}
-		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = f.MetadataMap()
+		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = f.MetadataFields()
 	}
 	for _, id := range slices.Sorted(maps.Keys(rulesOf(assets))) {
 		exp := map[rustPinKey][]map[string]any{}

@@ -114,7 +114,7 @@ export const e = other.cipher.encrypt(data, { alg: "AES" });
 	if err := os.WriteFile(filepath.Join(rulesDir, "rules.yaml"), []byte(acmeNodeRules), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	assets, err := cardmatch.Load("", "", rulesDir)
+	assets, err := cardmatch.Load("", "", rulesDir, cardmatch.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ export const e = other.cipher.encrypt(data, { alg: "AES" });
 	}
 	got := make([]string, 0, len(found))
 	for _, f := range found {
-		got = append(got, fmt.Sprintf("%s %s:%d %v", f.RuleID, f.File, f.Line, f.MetadataMap()))
+		got = append(got, fmt.Sprintf("%s %s:%d %v", f.RuleID, f.File, f.Line, f.MetadataFields()))
 	}
 	want := []string{
 		"acme-cipher src/cjs.js:2 map[algorithmName:AES assetType:algorithm]",

@@ -20,8 +20,6 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/scanoss/crypto-finder/internal/config"
 )
 
 // Env maps `$VAR` to a local variable name and plain names to metadata values. Immutable: every
@@ -1201,7 +1199,7 @@ func fillCard(tmpl *OMap, env Env) *OMap {
 		v := tmpl.Vals[i]
 		str, ok := v.(string)
 		if !ok {
-			out.Set(k, cfStr(v))
+			out.Set(k, metadataStr(v))
 			continue
 		}
 		complete := true
@@ -1259,8 +1257,8 @@ type ruleInfo struct {
 // language's rules only. A card for another language's rule would replace
 // that rule: its entries drop out of its own language's scans, and the card
 // runs on these.
-func (info ruleInfo) sameLanguage(path, rule string) error {
-	if lang := config.CardsLanguage(path); info.Lang != "" && lang != "" && lang != info.Lang {
+func (info ruleInfo) sameLanguage(path, lang, rule string) error {
+	if info.Lang != "" && lang != "" && lang != info.Lang {
 		return fmt.Errorf("%s: card %s: the rule is a %s rule, the card is under cards/%s", path, rule, info.Lang, lang)
 	}
 	return nil
@@ -1268,7 +1266,7 @@ func (info ruleInfo) sameLanguage(path, rule string) error {
 
 // ruleTable is match2.rule_table: rule id -> (metadata.crypto, is taint,
 // is Rust: its languages name rust).
-func ruleTable(rulesDir string) (map[string]ruleInfo, error) {
+func (s *settings) ruleTable(rulesDir string) (map[string]ruleInfo, error) {
 	paths, err := pyGlob(rulesDir, func(n string) bool {
 		ok := lenient(filepath.Match("*.y*ml", n))
 		return ok
@@ -1278,7 +1276,7 @@ func ruleTable(rulesDir string) (map[string]ruleInfo, error) {
 	}
 	table := map[string]ruleInfo{}
 	for _, path := range paths {
-		doc, err := loadYAML(path)
+		doc, err := s.loadYAML(path)
 		if err != nil {
 			return nil, err
 		}
@@ -1289,7 +1287,7 @@ func ruleTable(rulesDir string) (map[string]ruleInfo, error) {
 			rm := mustMap(r, path)
 			meta := &OMap{}
 			if md := rm.GetOr("metadata"); pyTruthy(md) {
-				if cr := mustMap(md, path).GetOr("crypto"); pyTruthy(cr) {
+				if cr := mustMap(md, path).GetOr(s.metaKey); pyTruthy(cr) {
 					meta = mustMap(cr, path)
 				}
 			}
@@ -1309,12 +1307,12 @@ type CardSet struct {
 }
 
 // loadCards is match2.load_cards.
-func loadCards(cardsDir, rulesDir string) (*CardSet, error) {
+func (s *settings) loadCards(cardsDir, rulesDir string) (*CardSet, error) {
 	set := &CardSet{RuleIDs: map[string]bool{}}
 	if cardsDir == "" {
 		return set, nil
 	}
-	table, err := ruleTable(rulesDir)
+	table, err := s.ruleTable(rulesDir)
 	if err != nil {
 		return nil, err
 	}
@@ -1328,7 +1326,7 @@ func loadCards(cardsDir, rulesDir string) (*CardSet, error) {
 		return nil, err
 	}
 	for _, path := range paths {
-		doc, err := loadYAML(path)
+		doc, err := s.loadYAML(path)
 		if err != nil {
 			return nil, err
 		}
@@ -1337,7 +1335,7 @@ func loadCards(cardsDir, rulesDir string) (*CardSet, error) {
 		}
 		rel := lenient(filepath.Rel(cardsDir, path))
 		for _, cAny := range listOf(mustMap(doc, path).GetOr("cards")) {
-			if err := set.add(mustMap(cAny, path), path, rel, table); err != nil {
+			if err := set.add(mustMap(cAny, path), path, s.languageOf(path), rel, table); err != nil {
 				return nil, err
 			}
 		}
@@ -1347,7 +1345,7 @@ func loadCards(cardsDir, rulesDir string) (*CardSet, error) {
 
 // add loads card c of the card file at path (rel under the cards directory),
 // whose rule table is table.
-func (set *CardSet) add(c *OMap, path, rel string, table map[string]ruleInfo) error { //nolint:gocognit,gocyclo // mirrors the reference matcher's control flow branch for branch; the equivalence suites pin it, so a split is a separate change
+func (set *CardSet) add(c *OMap, path, lang, rel string, table map[string]ruleInfo) error { //nolint:gocognit,gocyclo // mirrors the reference matcher's control flow branch for branch; the equivalence suites pin it, so a split is a separate change
 	rule := asOr[string](c.GetOr("rule"))
 	info, known := table[rule]
 	kinds := 0
@@ -1359,7 +1357,7 @@ func (set *CardSet) add(c *OMap, path, rel string, table map[string]ruleInfo) er
 	if unk := unknownKeys(c, cardKeys); len(unk) > 0 || !known || kinds != 1 {
 		return fmt.Errorf("%s: bad card %s %v", path, rule, unk)
 	}
-	if err := info.sameLanguage(path, rule); err != nil {
+	if err := info.sameLanguage(path, lang, rule); err != nil {
 		return err
 	}
 	if f, ok := c.Get(keyRustCard); ok {

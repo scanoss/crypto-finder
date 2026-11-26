@@ -24,7 +24,7 @@ func compileNode(t *testing.T, src string) (sites map[string][]string, records m
 	if err := os.WriteFile(filepath.Join(dir, "rules.yaml"), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := compileRulesDir(dir)
+	c, err := defaults.compileRulesDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

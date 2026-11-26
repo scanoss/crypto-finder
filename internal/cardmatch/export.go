@@ -25,8 +25,8 @@ type ExportedRule struct {
 
 // ExportRules compiles the rules under rulesDir and returns each rule's
 // record with its index entries in site form, in compile order.
-func ExportRules(rulesDir string) ([]ExportedRule, error) {
-	c, err := compileRulesDir(rulesDir)
+func ExportRules(rulesDir string, opts Options) ([]ExportedRule, error) {
+	c, err := opts.settings().compileRulesDir(rulesDir)
 	if err != nil {
 		return nil, err
 	}

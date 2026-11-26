@@ -43,11 +43,11 @@ cards:
 `
 
 // startProcess gives the test a new process: no card file parsed yet, the
-// memo not loaded, and HOME at home.
+// memo not loaded, and its files under home.
 func startProcess(t *testing.T, home string) {
 	t.Helper()
 	t.Setenv("HOME", home)
-	parsememo.Enable()
+	parsememo.Enable(home)
 	cardsParsed = sync.Map{}
 	cardsFilesRead = sync.Map{}
 	cardsMemo = parsememo.New("cards-rules")

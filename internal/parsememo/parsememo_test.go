@@ -10,13 +10,8 @@ import (
 	"testing"
 )
 
-func TestMain(m *testing.M) {
-	Enable()
-	os.Exit(m.Run())
-}
-
 func TestMemoServesTheNextProcess(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	Enable(t.TempDir())
 	first, second := sha256.Sum256([]byte("first")), sha256.Sum256([]byte("second"))
 
 	m := New("test")
@@ -46,7 +41,7 @@ func TestMemoServesTheNextProcess(t *testing.T) {
 }
 
 func TestMemoKeepsWhatOtherScansSaved(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	Enable(t.TempDir())
 	python, rust := sha256.Sum256([]byte("python cards")), sha256.Sum256([]byte("rust cards"))
 	for key, value := range map[Key]string{python: "py", rust: "rs"} {
 		m := New("test")
@@ -64,7 +59,7 @@ func TestMemoKeepsWhatOtherScansSaved(t *testing.T) {
 }
 
 func TestMemoPastItsBoundKeepsOnlyWhatTheLastScanUsed(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	Enable(t.TempDir())
 	defer func(bound int) { maxBytes = bound }(maxBytes)
 	maxBytes = 200
 	old, current := sha256.Sum256([]byte("old ruleset")), sha256.Sum256([]byte("new ruleset"))
@@ -88,15 +83,15 @@ func TestMemoPastItsBoundKeepsOnlyWhatTheLastScanUsed(t *testing.T) {
 }
 
 func TestMemoIgnoresAnotherBuildOrACorruptFile(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	dir := t.TempDir()
+	Enable(dir)
 	key := sha256.Sum256([]byte("content"))
 	m := New("test")
 	m.Put(key, []byte("value"))
 	if err := m.Save(); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(home, ".scanoss", "crypto-finder", "cache", "test.memo")
+	path := filepath.Join(dir, "test.memo")
 	saved, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

@@ -45,7 +45,7 @@ func cRuleYAML(rules map[string]string) string {
 
 func exportC(t *testing.T, rules map[string]string) map[string]ExportedRule {
 	t.Helper()
-	out, err := ExportRules(writeRules(t, cRuleYAML(rules)))
+	out, err := ExportRules(writeRules(t, cRuleYAML(rules)), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestExportCCountsAndStrictness(t *testing.T) {
 		"d": "patterns:\n- pattern: acme_f(...)\n- pattern: acme_g(...)",
 		"e": "patterns:\n- pattern: acme_seal($K, ...)\n- pattern-not: acme_seal(NULL, ...)",
 	}
-	out, err := ExportRules(writeRules(t, cRuleYAML(rules)))
+	out, err := ExportRules(writeRules(t, cRuleYAML(rules)), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,11 +313,11 @@ func TestCSiteCardRoundTrip(t *testing.T) {
 	}
 	cards := "format: scanoss-cards/3\nrules:\n  acme.seal: {severity: INFO, message: m, crypto: {assetType: algorithm}}\ncards:\n- rule: acme.seal\n  site: " + string(r.Sites[0]) + "\n"
 	dir := writeCards(t, map[string]string{"acme/rules.cards": cards})
-	a, err := Load("", dir, filepath.Join(dir, "no-rules"))
+	a, err := Load("", dir, filepath.Join(dir, "no-rules"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	compiled, err := CompileIndex(writeRules(t, cRuleYAML(map[string]string{"acme.seal": rule})))
+	compiled, err := CompileIndex(writeRules(t, cRuleYAML(map[string]string{"acme.seal": rule})), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

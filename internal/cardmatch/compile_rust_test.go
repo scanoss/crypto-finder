@@ -31,7 +31,7 @@ func rustRuleYAML(rules map[string]string) string {
 
 func exportRust(t *testing.T, rules map[string]string) map[string]ExportedRule {
 	t.Helper()
-	out, err := ExportRules(writeRules(t, rustRuleYAML(rules)))
+	out, err := ExportRules(writeRules(t, rustRuleYAML(rules)), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +295,7 @@ func TestExportRustCountsAndStrictness(t *testing.T) {
 		"d": "patterns:\n- pattern: acme::f(...)\n- pattern: acme::g(...)",
 		"e": "patterns:\n- pattern: $X.seal(...)\n- pattern-not: $X.seal(acme::ZERO)",
 	}
-	out, err := ExportRules(writeRules(t, rustRuleYAML(rules)))
+	out, err := ExportRules(writeRules(t, rustRuleYAML(rules)), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,11 +340,11 @@ func TestRustSiteCardRoundTrip(t *testing.T) {
 	}
 	cards := "format: scanoss-cards/3\nrules:\n  acme.kdf: {severity: INFO, message: m, crypto: {assetType: algorithm}}\ncards:\n- rule: acme.kdf\n  site: " + string(r.Sites[0]) + "\n"
 	dir := writeCards(t, map[string]string{"acme/rules.cards": cards})
-	a, err := Load("", dir, filepath.Join(dir, "no-rules"))
+	a, err := Load("", dir, filepath.Join(dir, "no-rules"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	compiled, err := CompileIndex(writeRules(t, rustRuleYAML(map[string]string{"acme.kdf": rule})))
+	compiled, err := CompileIndex(writeRules(t, rustRuleYAML(map[string]string{"acme.kdf": rule})), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

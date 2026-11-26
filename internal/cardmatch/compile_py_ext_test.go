@@ -21,7 +21,7 @@ func pyRulesMatch(t *testing.T, src string, frag *FragmentJSON) []string {
 	if err := os.WriteFile(filepath.Join(dir, "rules.yaml"), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	assets, err := Load("", "", dir)
+	assets, err := Load("", "", dir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

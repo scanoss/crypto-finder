@@ -67,7 +67,7 @@ const (
 func (a *Assets) Explain(frag *FragmentJSON, rule, file string, line int) (*Explanation, error) {
 	matching.Lock()
 	defer matching.Unlock()
-	fr, err := indexPassFrag(frag)
+	fr, err := a.indexPassFrag(frag)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (a *Assets) indexPassEntries(rule string) []*Entry {
 
 // indexPassFrag reads the fragment as Match reads one it gives the index
 // pass; an error for a fragment another matcher decides.
-func indexPassFrag(frag *FragmentJSON) (*Frag, error) {
+func (a *Assets) indexPassFrag(frag *FragmentJSON) (*Frag, error) {
 	if frag.c() || frag.rust() {
 		return nil, fmt.Errorf("cardmatch: explain runs the index pass; a %s fragment is matched by its own matcher", frag.ScanMetadata.Ecosystem)
 	}
@@ -123,12 +123,7 @@ func indexPassFrag(frag *FragmentJSON) (*Frag, error) {
 		return nil, fmt.Errorf("cardmatch: explain runs the index pass; a node fragment is matched by its own matcher")
 	}
 	fr.ResolveParams = true
-	if constantComparisons != "" {
-		fr.Comparisons = constantComparisons
-	}
-	if pyMembership != "" {
-		fr.Membership = pyMembership
-	}
+	a.opts.applyPolicies(fr)
 	return fr, nil
 }
 
