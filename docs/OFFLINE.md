@@ -48,7 +48,7 @@ run mines only the rest.
 
 An online scan (`--scan-dependencies` without `--offline`) asks the SCANOSS
 API first. For each dependency the API answers without data (reason
-`no_reachability_data`: a version SCANOSS has not mined), it then runs this
+`no_reachability_data`: a version SCANOSS has not analysed), it then runs this
 offline path and serves the local answer in place of the API's, the same
 findings and verdicts `--offline` gives for that dependency.
 
@@ -90,11 +90,13 @@ cross a dependency now answered locally, keeps that verdict.
 
 1. **Resolves** the pinned closure, as online (Maven or Gradle for Java;
    locks, pinned requirements or the environment for Python; `go.mod` for Go;
-   the npm, yarn or pnpm lock for JavaScript and TypeScript).
+   the npm, yarn or pnpm lock for JavaScript and TypeScript; `Cargo.lock` for
+   Rust; `Gemfile.lock` for Ruby; the NuGet lock or assets file for C#).
 2. **Builds** the project's call graph once, typed by the closure's JARs.
-3. **Mines** each dependency the way the SCANOSS miner does: a scan of its
-   sources with the loaded ruleset, typed by its own subtree of the resolved
-   tree, exporting its graph fragment and findings. Several dependencies run
+3. **Mines** each dependency: a scan of its sources with the loaded ruleset,
+   typed by its own subtree of the resolved tree, exporting its graph fragment
+   and findings. This is the same analysis SCANOSS runs on the versions the
+   API answers for. Several dependencies run
    at once, largest first, within the memory budget.
 4. **Caches** each mined dependency.
 5. **Stitches** the closure in process with `pkg/appreach` and merges the
@@ -108,9 +110,12 @@ Where the sources come from:
 | Python | The files its installed distribution's `RECORD` lists (`.py`, `.pyi`), found by name and version | Same as Java |
 | Go | Its directory in the Go module cache | Same as Java |
 | JavaScript/TypeScript | Its package directory under the project's `node_modules` (npm, yarn, or the pnpm virtual store), found by the name and version its `package.json` states | Same as Java |
+| Rust | Its source directory in the Cargo registry cache (`$CARGO_HOME/registry/src`, `~/.cargo` by default) or the project's `vendor/`. `cargo metadata` runs with `--offline`: run `cargo fetch` or `cargo vendor` first | Same as Java |
+| Ruby | Its installed gem, `$GEM_HOME/gems/<name>-<version>` | Same as Java |
+| C# | Its package in the local NuGet cache (`NUGET_PACKAGES`, else `~/.nuget/packages`). Packages ship assemblies, so most have no source to analyse | Same as Java |
 
-Nothing is downloaded from the SCANOSS API, and for Python and npm nothing is
-installed, downloaded or run.
+Nothing is downloaded from the SCANOSS API, and for Python, Go and npm nothing
+is installed, downloaded or run.
 
 ## Cache
 
@@ -130,7 +135,7 @@ installed, downloaded or run.
 | Change | Effect on the next run |
 |---|---|
 | Nothing | Reads the cache; about as fast as online |
-| New ruleset | Re-detects each cached graph without its sources (the `annotate` path; an npm package's installed source is read for its API entry points, as the SCANOSS miner does); no re-mining |
+| New ruleset | Re-detects each cached graph without its sources (the `annotate` path; an npm package's installed source is read again for its API entry points); no re-mining |
 | New graph algorithm id (a crypto-finder release that changes graph construction) | Re-mines that ecosystem's dependencies ([GRAPH_IDS.md](GRAPH_IDS.md)) |
 | New dependency version | Mines only that dependency |
 
@@ -141,16 +146,6 @@ Other caches under `~/.scanoss/crypto-finder/cache/` serve online and offline
 scans alike: `rulesets/` (the encrypted ruleset), `bytecode/` (JAR type
 indexes), `python-signatures/` (Python package indexes), `sources/` (extracted
 dependency sources).
-
-## Measured cost
-
-From the 1.0 validation (Python targets, wall clock):
-
-| Run | synapse |
-|---|---|
-| Online | 13-15 s |
-| Offline, first run (fills the cache) | 68 s |
-| Offline, later run | 13 s |
 
 ## Limits
 
@@ -165,5 +160,5 @@ From the 1.0 validation (Python targets, wall clock):
 | Python verdicts | Served as online ([KNOWN_LIMITS.md](KNOWN_LIMITS.md)) |
 
 See also [CLIENT_SERVER.md](CLIENT_SERVER.md) for what each mode sends, and
-[DEPENDENCY_SCANNING.md](DEPENDENCY_SCANNING.md#offline-mode) for the full
+[DEPENDENCY_SCANNING.md](DEPENDENCY_SCANNING.md#how-it-works) for the full
 dependency pipeline.

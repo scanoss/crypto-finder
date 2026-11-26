@@ -23,11 +23,10 @@ Expected: `output/results.json` holds the interim report.
 | Tag | Contents | Runs as | Use for |
 |---|---|---|---|
 | `latest`, `<version>` | The binary and CA certificates (Debian slim base) | `root` | Scanning source; detection runs in the binary |
-| `latest-deps`, `<version>-deps` | The binary plus JDKs 8, 11, 17, 21 (`JAVA_HOME` = 21), Maven, Gradle, a Python virtualenv at `/opt/target-venv`, and Go and Rust toolchains | `crypto` (home `/home/crypto`) | `--scan-dependencies` on Java, Python and Go projects |
+| `latest-deps`, `<version>-deps` | The binary plus JDKs 8, 11, 17, 21 (`JAVA_HOME` = 21), Maven, Gradle, a Python virtualenv at `/opt/target-venv`, and Go and Rust toolchains | `crypto` (home `/home/crypto`) | `--scan-dependencies` |
 
 Both images are multi-arch (amd64, arm64) and start with `crypto-finder` as
-the entrypoint. Since 1.0 there are no `-slim` tags (use `latest` where you
-used `latest-slim`) and neither image ships OpenGrep or Semgrep. See
+the entrypoint. Coming from the 0.5x `-slim` tags:
 [MIGRATION_1.0.md](MIGRATION_1.0.md#docker-images).
 
 The standard image has no JDK. For Java type resolution with JDK platform
@@ -90,9 +89,9 @@ docker run --rm \
 
 ## Dependency scanning
 
-`--scan-dependencies` resolves Java (Maven, Gradle), Python, Go (`go.mod`),
-JavaScript/TypeScript (npm, yarn or pnpm lock file) and Rust (`Cargo.lock`,
-through `cargo metadata --locked`, which the deps image carries) closures.
+Use `latest-deps` for `--scan-dependencies`: it carries the JDKs, Maven,
+Gradle, `cargo` and the Go toolchain that resolution and type resolution use.
+Per-ecosystem details: [DEPENDENCY_SCANNING.md](DEPENDENCY_SCANNING.md).
 
 ### Java (Maven or Gradle)
 
@@ -136,9 +135,6 @@ docker run --rm \
    VIRTUAL_ENV=/opt/target-venv crypto-finder scan --scan-dependencies --offline \
      --offline-python-packages /opt/target-venv /workspace/code"
 ```
-
-Python dependency findings are reported with verdict `unknown` in 1.0
-([KNOWN_LIMITS.md](KNOWN_LIMITS.md)).
 
 ## CI/CD (GitHub Actions)
 

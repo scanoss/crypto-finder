@@ -27,8 +27,8 @@ service at all.
 | Call graph build and type resolution | `reach/callgraph` with `internal/cryptokb` | JDK and dependency JARs are read locally |
 | Detection | `internal/scanner/cards`, `internal/cardmatch` | Matches the ruleset against the call graph's call sites |
 | First-party reachability | `internal/scan` | Chains from the project's entry points to its own findings |
-| Dependency resolution | `internal/dependency` | Runs `mvn` or `gradle` in the project; reads Python locks and environments as files |
-| Offline mining and stitch | `internal/offline`, `pkg/appreach` | Only with `--offline` ([OFFLINE.md](OFFLINE.md)) |
+| Dependency resolution | `internal/dependency` | Runs `mvn`, `gradle` or `cargo metadata` in the project; reads the other ecosystems' lock files and environments as files |
+| Offline analysis and stitch | `internal/offline`, `pkg/appreach` | With `--offline`, and for the dependencies the API has no data for ([OFFLINE.md](OFFLINE.md)) |
 | Reports | `internal/output`, `internal/converter` | Interim JSON, CycloneDX, callgraph and graph-fragment exports |
 
 ## What the SCANOSS API serves
@@ -38,7 +38,7 @@ service at all.
 | `GET /v3/cryptography/rulesets/{name}/{version}/download` | `scan`, `annotate` | The ruleset bundle with its signed lease |
 | `GET /v3/cryptography/rulesets/{name}/{version}` | `scan`, `annotate` | Release check when the cached ruleset's TTL has elapsed |
 | `POST /v3/cryptography/reachability/application` | `scan --scan-dependencies` | Every finding of the pinned dependencies, and whether the project reaches it |
-| `POST /v3/cryptography/reachability/component` | `cbom` | The findings SCANOSS mined for one component version |
+| `POST /v3/cryptography/reachability/component` | `cbom` | The findings SCANOSS published for one component version |
 
 A ruleset answer of HTTP 401 or 403 (a refused key) on either ruleset
 endpoint fails the scan with `rules_load_failed`, and the cached ruleset is
@@ -75,7 +75,7 @@ Response, merged into the report:
 | Each dependency finding with its asset | A report finding with `source: dependency` and `dependency_info` |
 | `reachability`, `reachability_reason` | `finding_graphs[].reachability` and `unresolved_reason` in `--export-callgraph` |
 | `call_chains`, `analysis` | The finding's chains and analysis in `--export-callgraph` |
-| Dependencies without mined data | Answered locally by the offline fallback ([OFFLINE.md](OFFLINE.md#online-scans-the-offline-fallback)), listed in `deps_answered_offline_list`; those it cannot answer, or all of them with `--no-offline-fallback`, in `deps_skipped_list` (reason `no_reachability_data`) |
+| Dependencies without data | Answered locally by the offline fallback ([OFFLINE.md](OFFLINE.md#online-scans-the-offline-fallback)), listed in `deps_answered_offline_list`; those it cannot answer, or all of them with `--no-offline-fallback`, in `deps_skipped_list` (reason `no_reachability_data`) |
 
 Field-by-field formats: [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md) and
 [DEPENDENCY_SCANNING.md](DEPENDENCY_SCANNING.md).
@@ -84,12 +84,12 @@ Field-by-field formats: [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md) and
 
 | | Online (default) | `--offline` |
 |---|---|---|
-| Who mined the dependencies | SCANOSS, ahead of time | The client, on first use; then cached |
+| Who analysed the dependencies | SCANOSS, ahead of time | The client, on first use; then cached |
 | Where the stitch runs | SCANOSS API | In process, same code (`pkg/appreach`) |
-| Dependency coverage | Versions SCANOSS has mined | Java: versions with a `-sources.jar`; Python: installed distributions |
-| Network | SCANOSS API | Maven repositories for missing sources JARs; the ruleset download unless `--no-remote-rules` |
-| Versions SCANOSS has not mined | Mined locally by the offline fallback (off with `--no-offline-fallback`) | Mined like the others |
-| First run | Fast | Slow: mines every dependency |
+| Dependency coverage | Versions SCANOSS has analysed | Versions whose sources are on this machine ([OFFLINE.md](OFFLINE.md#what-it-does)) |
+| Network | SCANOSS API | The ruleset download unless `--no-remote-rules`; Maven repositories for missing sources JARs |
+| Versions SCANOSS has not analysed | Analysed locally by the offline fallback (off with `--no-offline-fallback`) | Analysed like the others |
+| First run | Fast | Slow: analyses every dependency |
 | Later runs | Fast | About as fast as online |
 
 Details: [OFFLINE.md](OFFLINE.md).

@@ -51,8 +51,8 @@ Details: [DOCKER_USAGE.md](DOCKER_USAGE.md).
 |---|---|---|
 | Detector | OpenGrep or the cards engine (`--scanner`) | The cards engine only, in process; nothing to install |
 | Languages | Java, Python and the OpenGrep languages | Java, Python, Go, JavaScript, TypeScript, Rust, Ruby, C, C++ and C#; a target only in other languages fails with `language_not_supported` |
-| `--scan-dependencies` ecosystems | Java, Python, Go, Rust, Node (local pipeline) | Java (Maven, Gradle), Python, Go, JavaScript/TypeScript (npm, yarn, pnpm locks) and Rust (`Cargo.lock` through `cargo metadata --locked`); Rust dev-dependencies and build-dependencies are no longer included |
-| Dependency findings | Local pipeline or the API | One request to `POST /v3/cryptography/reachability/application`, or `--offline` ([OFFLINE.md](OFFLINE.md)) |
+| `--scan-dependencies` ecosystems | Java, Python, Go, Rust, Node (local pipeline) | Java (Maven, Gradle), Python, Go, JavaScript/TypeScript (npm, yarn, pnpm locks), Rust (`Cargo.lock` through `cargo metadata --locked`), Ruby (`Gemfile.lock`) and C# (NuGet); Rust dev-dependencies and build-dependencies are no longer included |
+| Dependency findings | Local pipeline or the API | One request to `POST /v3/cryptography/reachability/application`; versions the API has no data for are analysed locally; `--offline` does everything locally ([OFFLINE.md](OFFLINE.md)) |
 | Python dependency verdicts | — | On: reachable, unreachable or `unknown` with a reason ([KNOWN_LIMITS.md](KNOWN_LIMITS.md)) |
 
 ## Ruleset
@@ -83,7 +83,7 @@ the same identifiers. Change the import path; the code stays the same.
 | `pkg/graphfrag`: `ToFindingsEnvelope`, `FindingsEnvelope`, `FindingFile`, `FindingAsset`, `FindingsSchemaVersion` | `github.com/scanoss/crypto-finder/pkg/appreach` |
 
 ```bash
-go get github.com/scanoss/reach@v0.14.0
+go get github.com/scanoss/reach@latest
 # then, for example:
 gofmt -w -r '"github.com/scanoss/crypto-finder/pkg/graphwalk" -> "github.com/scanoss/reach/graphwalk"' .
 ```
@@ -108,7 +108,5 @@ Packages that stay in crypto-finder: `pkg/appreach`, `pkg/schema`,
    same commit. 1.0 detects with `crypto-cards`, not `dca`, so finding
    counts can differ; to compare like with like, pin a `crypto-cards`
    release with `--ruleset-version`.
-3. For Java dependency scans, measured on two Java projects in the 1.0
-   validation, the outputs were unchanged.
 
 Every change is listed in [CHANGELOG.md](../CHANGELOG.md).

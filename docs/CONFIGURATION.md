@@ -28,7 +28,7 @@ crypto-finder scan /path/to/code | jq '.rules'
 | Allow plain HTTP to a remote API | `--allow-http` | `SCANOSS_ALLOW_HTTP` | `allow_http` | off |
 | Java JDK major | `--java-jdk-major` | `SCANOSS_JAVA_JDK_MAJOR` | `java_jdk_major` | `auto` (ambient `JAVA_HOME`) |
 | Java JDK homes | `--java-jdk-home <major>=<path>` (repeatable) | `SCANOSS_JAVA_JDK_HOMES` (`17=/opt/jdk17,21=/opt/jdk21`) | `java_jdk_homes` | — |
-| Extra trusted ruleset signing keys | — | `SCANOSS_RULESET_PUBKEYS` | — | Built-in key only ([REMOTE_RULESETS.md](REMOTE_RULESETS.md#trusted-signing-keys)) |
+| Extra trusted ruleset signing keys | — | `SCANOSS_RULESET_PUBKEYS` | — | Built-in key only ([REMOTE_RULESETS.md](REMOTE_RULESETS.md#on-premises-apis)) |
 
 Priority, highest first:
 
@@ -56,7 +56,7 @@ Priority, highest first:
 | Path | Holds |
 |---|---|
 | `~/.scanoss/crypto-finder/config.json` | Saved settings |
-| `~/.scanoss/crypto-finder/cache/rulesets/` | Remote rulesets, encrypted ([REMOTE_RULESETS.md](REMOTE_RULESETS.md#cache-management)) |
+| `~/.scanoss/crypto-finder/cache/rulesets/` | Remote rulesets, encrypted ([REMOTE_RULESETS.md](REMOTE_RULESETS.md#cache)) |
 | `~/.scanoss/crypto-finder/cache/bytecode/` | Java JAR type indexes |
 | `~/.scanoss/crypto-finder/cache/python-signatures/` | Python package type indexes |
 | `~/.scanoss/crypto-finder/cache/sources/` | Extracted dependency sources |
@@ -101,20 +101,11 @@ Language detection uses [go-enry](https://github.com/go-enry/go-enry).
 Override it with `--languages`:
 
 ```bash
-crypto-finder scan --languages java /path/to/code
 crypto-finder scan --languages java,python /path/to/code
 ```
 
-Ruleset sources:
-
-```bash
-# Local ruleset only
-crypto-finder scan --no-remote-rules --rules-dir ./ruleset /path/to/code
-
-# Local ruleset with a precompiled card index and a cards directory
-crypto-finder scan --no-remote-rules --rules-dir ./ruleset \
-  --cards-index index.json --cards-dir ./cards /path/to/code
-```
+Where the rules come from (remote ruleset, local rules, pinning):
+[REMOTE_RULESETS.md](REMOTE_RULESETS.md).
 
 ## Skipping files
 
@@ -149,8 +140,17 @@ Default: `10m`. Set it with `--timeout` (`90s`, `30m`, `2h`).
 | Machine-readable failures | `--error-format json` |
 | Lifecycle events on stderr (JSONL) | `--progress` |
 
+## Diagnostics
+
+| Environment variable | Effect |
+|---|---|
+| `SCANOSS_PHASE_TIMINGS=1` | Print one line per scan phase on stderr: wall time, CPU time, memory allocated. Set it to a file path to append there instead |
+| `SCANOSS_CPUPROFILE`, `SCANOSS_MEMPROFILE`, `SCANOSS_TRACE` | Write a Go CPU profile, heap profile or execution trace of the scan to the named file |
+
+None of them changes the findings.
+
 ## Related
 
-- [README](../README.md): commands and full flag reference
+- [CLI_REFERENCE.md](CLI_REFERENCE.md): every command and flag
 - [REMOTE_RULESETS.md](REMOTE_RULESETS.md): API key, ruleset cache, leases
 - [DOCKER_USAGE.md](DOCKER_USAGE.md): container configuration
