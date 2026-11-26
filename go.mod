@@ -13,7 +13,7 @@ require (
 	github.com/pterm/pterm v0.12.82
 	github.com/rs/zerolog v1.34.0
 	github.com/scanoss/crypto-pqc-dataset v1.4.0
-	github.com/scanoss/reach v0.38.1-0.20261126202756-d6f8b30c915c
+	github.com/scanoss/reach v0.39.0
 	github.com/scanoss/scanoss.go v0.12.1-0.20261020065749-c1c6ba0935d6
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
