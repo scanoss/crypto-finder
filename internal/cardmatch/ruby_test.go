@@ -42,7 +42,7 @@ const rubyRulesSrc = `rules:
 // language in the same directory: the constant path is the receiver and the
 // `::` segments are read as one qualified name.
 func TestRubyRulesCompile(t *testing.T) {
-	rules, err := ExportRules(writeRules(t, rubyRulesSrc))
+	rules, err := ExportRules(writeRules(t, rubyRulesSrc), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ const rubyMatchSrc = `rules:
 `
 
 func TestRubyTypeMetavariableShapes(t *testing.T) {
-	assets, err := Load("", "", writeRules(t, rubyMatchSrc))
+	assets, err := Load("", "", writeRules(t, rubyMatchSrc), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ const rubyLooseReceiverSrc = `rules:
 `
 
 func TestRubyMetavariableReceiver(t *testing.T) {
-	rules, err := ExportRules(writeRules(t, rubyLooseReceiverSrc))
+	rules, err := ExportRules(writeRules(t, rubyLooseReceiverSrc), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestRubyKeywordArityCountsTheKeyword(t *testing.T) {
   languages: [ruby]
   pattern: "Acme::KDF.derive(length: $L)"
   metadata: {crypto: {algorithmName: ACME}}
-`))
+`), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

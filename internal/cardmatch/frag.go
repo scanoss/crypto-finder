@@ -544,7 +544,7 @@ type Frag struct {
 	// ComparisonsResolved (a 1.19 fragment) only when the compared value can
 	// be the constant (comparedValueCanBe), ComparisonsAll (an older fragment,
 	// which has no operands) every one, ComparisonsOff none.
-	Comparisons comparisonPolicy
+	Comparisons ComparisonPolicy
 	// HasDecls: the fragment records declarations and casts
 	// (graph-fragment-1.18). Decls are its declarations as sites of kind
 	// "declaration", DeclsByCaller them by function; CastsAt its casts as
@@ -573,7 +573,7 @@ type Frag struct {
 	Lines map[string]map[int]string
 	// Membership is how a Python constant reference read as an `in` operand
 	// or element is reported (comparisonRef).
-	Membership comparisonPolicy
+	Membership ComparisonPolicy
 	// Stores are a Python fragment's attribute stores as sites of kind
 	// "store": receiver in ReceiverVar, attribute in Method, operator in
 	// RefContext, value in Operand.
@@ -705,14 +705,16 @@ func comparisonContext(context string) bool {
 	return context == "compare" || context == "equals" || context == "case"
 }
 
-type comparisonPolicy string
+// ComparisonPolicy is how constant references read in comparisons are
+// reported (Options.ConstantComparisons, Options.PyMembership).
+type ComparisonPolicy string
 
 // The comparison policies: report a comparison only when the compared value
 // can be the constant, every comparison, or none.
 const (
-	ComparisonsResolved comparisonPolicy = "resolved"
-	ComparisonsAll      comparisonPolicy = "all"
-	ComparisonsOff      comparisonPolicy = "off"
+	ComparisonsResolved ComparisonPolicy = "resolved"
+	ComparisonsAll      ComparisonPolicy = "all"
+	ComparisonsOff      ComparisonPolicy = "off"
 )
 
 // reportComparison: the constant reference ref, read in a comparison, is
@@ -785,7 +787,7 @@ func withoutFieldParameters(nodes []SourceNode) []SourceNode {
 
 // comparisonsFor is the policy a fragment allows: only a 1.19 fragment
 // carries the compared operands.
-func comparisonsFor(frag *FragmentJSON) comparisonPolicy {
+func comparisonsFor(frag *FragmentJSON) ComparisonPolicy {
 	if frag.schemaMinor() >= 19 {
 		return ComparisonsResolved
 	}

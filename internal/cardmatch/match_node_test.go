@@ -554,7 +554,7 @@ func TestNodeCompiledRule(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "rules.yaml"), []byte(rules), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	a, err := Load("", "", dir)
+	a, err := Load("", "", dir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

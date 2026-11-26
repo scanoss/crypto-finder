@@ -61,7 +61,7 @@ func TestRustOpsAsOpenGrep(t *testing.T) {
 		if got[f.RuleID] == nil {
 			got[f.RuleID] = map[rustPinKey]map[string]any{}
 		}
-		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = f.MetadataMap()
+		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = f.MetadataFields()
 	}
 	for _, id := range slices.Sorted(maps.Keys(rulesOf(assets))) {
 		exp := map[rustPinKey][]map[string]any{}

@@ -100,7 +100,7 @@ var cardsExportCmd = &cobra.Command{
 // exportCards compiles the rules under rulesDir and adds each conditioned
 // rule's catalog fields.
 func exportCards(rulesDir, language string) (*cardsExport, error) {
-	compiled, err := cardmatch.ExportRules(rulesDir)
+	compiled, err := cardmatch.ExportRules(rulesDir, cardsscanner.MatcherOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ var cardsVerifyCmd = &cobra.Command{
 // (cards/<lang>) against the rules under rulesDir (semgrep-rules/<lang>),
 // writes a report and returns the number of differences.
 func verifyCards(w io.Writer, rulesDir, cardsDir, language string) (int, error) {
-	matcher, err := cardmatch.VerifyV3(rulesDir, cardsDir)
+	matcher, err := cardmatch.VerifyV3(rulesDir, cardsDir, cardsscanner.MatcherOptions())
 	if err != nil {
 		return 0, err
 	}
@@ -272,7 +272,7 @@ A rule with a hand card is flagged: in a scan the card replaces its entries.`,
 		if !ok || err != nil || file == "" {
 			return fmt.Errorf("--at %q: want <file>:<line>, the file as the fragment names it", cardsExplainAt)
 		}
-		assets, err := cardmatch.Load("", cardsExplainCards, cardsExplainRules)
+		assets, err := cardmatch.Load("", cardsExplainCards, cardsExplainRules, cardsscanner.MatcherOptions())
 		if err != nil {
 			return err
 		}

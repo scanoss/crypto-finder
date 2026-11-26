@@ -12,8 +12,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-
-	"github.com/scanoss/crypto-finder/internal/config"
 )
 
 // CardsFormatV3 is the format key of a v3 card file.
@@ -21,7 +19,6 @@ const CardsFormatV3 = "scanoss-cards/3"
 
 var (
 	v3FileKeys = setOf("format", "rules", "cards")
-	v3RuleKeys = setOf("severity", "message", "purl", "crypto", "conditioned", "pending")
 	siteKeys   = setOf("rule", "site", "lossy", "note")
 )
 
@@ -33,7 +30,7 @@ type cardFile struct {
 
 // readCardFiles parses the card files under cardsDir and reports whether
 // they are v3. A directory mixing v3 and earlier card files is an error.
-func readCardFiles(cardsDir string) ([]cardFile, bool, error) {
+func (s *settings) readCardFiles(cardsDir string) ([]cardFile, bool, error) {
 	paths, err := pyGlob(cardsDir, func(n string) bool {
 		return strings.HasSuffix(n, ".cards") || strings.HasSuffix(n, ".yaml")
 	})
@@ -43,7 +40,7 @@ func readCardFiles(cardsDir string) ([]cardFile, bool, error) {
 	var files []cardFile
 	v3, older := 0, 0
 	for _, path := range paths {
-		doc, err := loadYAML(path)
+		doc, err := s.loadYAML(path)
 		if err != nil {
 			return nil, false, err
 		}
@@ -71,7 +68,7 @@ func readCardFiles(cardsDir string) ([]cardFile, bool, error) {
 // loadV3 builds the index (from site cards) and the hand cards of v3 card
 // files. Rules keep the order of their files, and site entries the order of
 // their cards, which is the compiler's order of the rules they replace.
-func loadV3(files []cardFile) (*Index, *CardSet, error) { //nolint:gocognit,gocyclo // mirrors the reference matcher's control flow branch for branch; the equivalence suites pin it, so a split is a separate change
+func (s *settings) loadV3(files []cardFile) (*Index, *CardSet, error) { //nolint:gocognit,gocyclo // mirrors the reference matcher's control flow branch for branch; the equivalence suites pin it, so a split is a separate change
 	table := map[string]ruleInfo{}
 	pending := map[string]bool{}
 	for _, f := range files {
@@ -94,17 +91,17 @@ func loadV3(files []cardFile) (*Index, *CardSet, error) { //nolint:gocognit,gocy
 				return nil, nil, fmt.Errorf("%s: rule %s is defined twice", f.path, id)
 			}
 			r := mustMap(rules.Vals[i], f.path+": rule "+id)
-			if unk := unknownKeys(r, v3RuleKeys); len(unk) > 0 {
+			if unk := unknownKeys(r, s.ruleKeys); len(unk) > 0 {
 				return nil, nil, fmt.Errorf("%s: rule %s: unknown keys %v", f.path, id, unk)
 			}
 			meta := &OMap{}
-			if cr := r.GetOr("crypto"); pyTruthy(cr) {
+			if cr := r.GetOr(s.metaKey); pyTruthy(cr) {
 				meta = mustMap(cr, f.path)
 			}
 			// A v3 rules entry names no language; the card file's place
 			// does, as rulesets ship them (cards/<language>/...): a rule
 			// is Rust when its file is under cards/rust/.
-			lang := config.CardsLanguage(f.path)
+			lang := s.languageOf(f.path)
 			table[id] = ruleInfo{Meta: meta, Rust: lang == ecosystemRust, Lang: lang}
 			if pyTruthy(r.GetOr("pending")) {
 				pending[id] = true
@@ -122,7 +119,7 @@ func loadV3(files []cardFile) (*Index, *CardSet, error) { //nolint:gocognit,gocy
 			}
 			site, isSite := c.Get("site")
 			if !isSite {
-				if err := set.add(c, f.path, f.rel, table); err != nil {
+				if err := set.add(c, f.path, s.languageOf(f.path), f.rel, table); err != nil {
 					return nil, nil, err
 				}
 				continue
@@ -131,7 +128,7 @@ func loadV3(files []cardFile) (*Index, *CardSet, error) { //nolint:gocognit,gocy
 			if unk := unknownKeys(c, siteKeys); len(unk) > 0 || !known {
 				return nil, nil, fmt.Errorf("%s: bad site card %s %v", f.path, rule, unk)
 			}
-			if err := info.sameLanguage(f.path, rule); err != nil {
+			if err := info.sameLanguage(f.path, s.languageOf(f.path), rule); err != nil {
 				return nil, nil, err
 			}
 			entries = append(entries, siteIndexEntry(mustMap(site, f.path), rule, info.Meta, listOf(c.GetOr("lossy"))))

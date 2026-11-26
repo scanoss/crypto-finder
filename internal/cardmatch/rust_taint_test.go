@@ -50,7 +50,7 @@ func TestRustTaintMatchesAsOpenGrep(t *testing.T) {
 		if got[f.RuleID] == nil {
 			got[f.RuleID] = map[rustPinKey]string{}
 		}
-		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = rustTokens(f.MetadataMap()["algorithmName"].(string))
+		got[f.RuleID][rustPinKey{f.File, f.Line, f.Col, f.EndCol}] = rustTokens(f.MetadataFields()["algorithmName"].(string))
 	}
 	for _, id := range []string{"value", "object"} {
 		exp := map[rustPinKey][]string{}
@@ -105,7 +105,7 @@ func TestRustTaintValueHow(t *testing.T) {
 
 // A taint rule with a sanitizer is skipped with its reason; the others compile.
 func TestRustTaintCompiles(t *testing.T) {
-	rules, err := ExportRules(rustTaintDir)
+	rules, err := ExportRules(rustTaintDir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

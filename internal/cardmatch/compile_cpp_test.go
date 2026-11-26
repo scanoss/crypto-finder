@@ -67,7 +67,7 @@ func TestCompileCPPShapes(t *testing.T) {
 	for id, s := range skipped {
 		rules[id] = s.rule
 	}
-	out, err := ExportRules(writeRules(t, cppRuleYAML(rules)))
+	out, err := ExportRules(writeRules(t, cppRuleYAML(rules)), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

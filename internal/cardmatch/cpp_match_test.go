@@ -88,7 +88,7 @@ func cppRuleYAML(rules map[string]string) string {
 
 func checkCPPFound(t *testing.T, rules map[string]string, frag *FragmentJSON, want ...string) {
 	t.Helper()
-	assets, err := Load("", "", writeRules(t, cppRuleYAML(rules)))
+	assets, err := Load("", "", writeRules(t, cppRuleYAML(rules)), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestCPPMatchLineRegexes(t *testing.T) {
 		"hash": "patterns:\n- pattern-inside: |\n    #include \"$H\"\n    ...\n- pattern-inside: QCryptographicHash::hash(...)\n" +
 			"- pattern-regex: '\\bQCryptographicHash::Sha(?<bits>\\d+)\\b'",
 		"keygen": "patterns:\n- pattern: $CC.KeyGen()\n- pattern-not-regex: ->\\s*KeyGen",
-	})))
+	})), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +398,7 @@ func TestCPPSiteRegexMatchesDropped(t *testing.T) {
 		"first":  "pattern-regex: 'ML-DSA-\\d+'",
 		"second": "pattern-regex: 'ML-DSA-\\d+'",
 		"other":  "patterns:\n- pattern: sign(...)\n- pattern-not-regex: 'RSA'",
-	})))
+	})), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestCPPSiteRegexMatchesDroppedWhenLastUserSkipped(t *testing.T) {
 	assets, err := Load("", "", writeRules(t, cppRuleYAML(map[string]string{
 		"first":  "pattern-regex: 'ML-DSA-\\d+'",
 		"second": "pattern-regex: 'ML-DSA-\\d+'",
-	})))
+	})), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

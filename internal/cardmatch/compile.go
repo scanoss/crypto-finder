@@ -1031,14 +1031,14 @@ func ruleFiles(rulesDir string) ([]string, error) {
 	return files, err
 }
 
-func compileRulesDir(rulesDir string) (*compiledRules, error) {
-	return compileRulesDirMode(rulesDir, false)
+func (s *settings) compileRulesDir(rulesDir string) (*compiledRules, error) {
+	return s.compileRulesDirMode(rulesDir, false)
 }
 
 // compileRulesDirMode compiles the rules under rulesDir; poc leaves out the
 // compiler's Python extensions (compile_py_ext.go), which gives
 // compile_rules_py.py's output.
-func compileRulesDirMode(rulesDir string, poc bool) (*compiledRules, error) {
+func (s *settings) compileRulesDirMode(rulesDir string, poc bool) (*compiledRules, error) {
 	if _, err := os.Stat(rulesDir); err != nil {
 		return nil, err
 	}
@@ -1048,7 +1048,7 @@ func compileRulesDirMode(rulesDir string, poc bool) (*compiledRules, error) {
 	}
 	out := &compiledRules{}
 	for _, path := range files {
-		doc, err := loadYAML(path)
+		doc, err := s.loadYAML(path)
 		if err != nil {
 			return nil, err
 		}
@@ -1072,7 +1072,7 @@ func compileRulesDirMode(rulesDir string, poc bool) (*compiledRules, error) {
 			return nil, err
 		}
 		for _, rv := range rl {
-			if err := compileOne(rv, filepath.ToSlash(rel), out, poc); err != nil {
+			if err := compileOne(rv, filepath.ToSlash(rel), out, poc, s.metaKey); err != nil {
 				return nil, fmt.Errorf("%s: %w", path, err)
 			}
 		}
@@ -1081,7 +1081,7 @@ func compileRulesDirMode(rulesDir string, poc bool) (*compiledRules, error) {
 }
 
 // compileOne compiles one rule, appending its entries and its record.
-func compileOne(rv any, file string, out *compiledRules, poc bool) error {
+func compileOne(rv any, file string, out *compiledRules, poc bool, metaKey string) error {
 	r, err := asMap(rv, "rule")
 	if err != nil {
 		return err
@@ -1098,7 +1098,7 @@ func compileOne(rv any, file string, out *compiledRules, poc bool) error {
 		if err != nil {
 			return err
 		}
-		if c := mm.GetOr("crypto"); pyTruthy(c) {
+		if c := mm.GetOr(metaKey); pyTruthy(c) {
 			meta = c
 		}
 	}
@@ -1158,8 +1158,12 @@ func (c *compiledRules) entriesJSON() []byte {
 
 // CompileIndex compiles the rules under rulesDir into the symbol index. It returns what loadIndex
 // returns for compile_rules.py's index.json of the same rules.
-func CompileIndex(rulesDir string) (*Index, error) {
-	c, err := compileRulesDir(rulesDir)
+func CompileIndex(rulesDir string, opts Options) (*Index, error) {
+	return opts.settings().compileIndex(rulesDir)
+}
+
+func (s *settings) compileIndex(rulesDir string) (*Index, error) {
+	c, err := s.compileRulesDir(rulesDir)
 	if err != nil {
 		return nil, fmt.Errorf("compile index: %w", err)
 	}

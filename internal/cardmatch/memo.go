@@ -12,7 +12,6 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/parsememo"
 )
 
@@ -23,9 +22,9 @@ var parseMemos = struct {
 	byName map[string]*parsememo.Memo
 }{byName: map[string]*parsememo.Memo{}}
 
-func parseMemoFor(path string) *parsememo.Memo {
+func parseMemoFor(language string) *parsememo.Memo {
 	name := "cards-match"
-	if language := config.CardsLanguage(path); language != "" {
+	if language != "" {
 		name += "-" + language
 	}
 	parseMemos.Lock()

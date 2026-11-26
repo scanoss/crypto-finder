@@ -13,31 +13,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
 )
-
-// constantComparisons overrides how constant references a comparison, an
-// equals call or a case label reads are reported (Frag.Comparisons), for
-// debugging: CRYPTO_FINDER_CARDS_CONSTANT_COMPARISONS=all reports every one,
-// as OpenGrep does, and =off none. Unset, one is reported only when the value
-// compared with it can be that constant.
-var constantComparisons = comparisonPolicy(os.Getenv("CRYPTO_FINDER_CARDS_CONSTANT_COMPARISONS"))
-
-// pyMembership is how a Python constant reference in an `in` test is
-// reported (Frag.Membership): unset, as a comparison (only when the compared
-// value can be the constant); CRYPTO_FINDER_CARDS_PY_MEMBERSHIP=all reports
-// every one, for debugging (OpenGrep's Python rules exclude them). Dict,
-// list, tuple and set entries are table entries, always reported.
-var pyMembership = comparisonPolicy(os.Getenv("CRYPTO_FINDER_CARDS_PY_MEMBERSHIP"))
 
 // Assets is what the matcher loads once: the compiled index and the hand cards.
 type Assets struct {
 	index *Index
 	cards *CardSet
 	node  *nodeIndex // the node entries indexed, built by the first node match
+	opts  *settings
 }
 
 // matching serializes the matcher: it memoises regex results and per-pattern
@@ -52,11 +38,12 @@ var matching sync.Mutex
 //
 // When cardsDir holds v3 card files (CardsFormatV3), they are the whole ruleset: their site
 // cards are the index and their rules entries the metadata; rulesDir is not read.
-func Load(indexPath, cardsDir, rulesDir string) (*Assets, error) {
+func Load(indexPath, cardsDir, rulesDir string, opts Options) (*Assets, error) {
 	matching.Lock()
 	defer matching.Unlock()
+	s := opts.settings()
 	if cardsDir != "" { //nolint:nestif // mirrors the reference matcher's control flow branch for branch; the equivalence suites pin it, so a split is a separate change
-		files, v3, err := readCardFiles(cardsDir)
+		files, v3, err := s.readCardFiles(cardsDir)
 		if err != nil {
 			return nil, err
 		}
@@ -64,28 +51,28 @@ func Load(indexPath, cardsDir, rulesDir string) (*Assets, error) {
 			if indexPath != "" {
 				return nil, fmt.Errorf("a compiled index does not apply to v3 card files (%s)", cardsDir)
 			}
-			index, cards, err := loadV3(files)
+			index, cards, err := s.loadV3(files)
 			if err != nil {
 				return nil, err
 			}
-			return &Assets{index: index, cards: cards}, nil
+			return &Assets{index: index, cards: cards, opts: s}, nil
 		}
 	}
 	var index *Index
 	var err error
 	if indexPath == "" {
-		index, err = CompileIndex(rulesDir)
+		index, err = s.compileIndex(rulesDir)
 	} else {
 		index, err = loadIndex(indexPath)
 	}
 	if err != nil {
 		return nil, err
 	}
-	cards, err := loadCards(cardsDir, rulesDir)
+	cards, err := s.loadCards(cardsDir, rulesDir)
 	if err != nil {
 		return nil, err
 	}
-	return &Assets{index: index, cards: cards}, nil
+	return &Assets{index: index, cards: cards, opts: s}, nil
 }
 
 // Match is gomatch's run: the findings of the compiled index (minus the rules that have a hand
@@ -124,12 +111,7 @@ func (a *Assets) match(frag *FragmentJSON) ([]*Finding, int) {
 		return a.matchNode(fr), len(fr.Sites)
 	}
 	fr.ResolveParams = true
-	if constantComparisons != "" {
-		fr.Comparisons = constantComparisons
-	}
-	if pyMembership != "" {
-		fr.Membership = pyMembership
-	}
+	a.opts.applyPolicies(fr)
 	if frag.c() {
 		return matchC(a, fr), len(fr.Sites)
 	}
@@ -188,8 +170,8 @@ func dropRepeats(found []*Finding) []*Finding {
 	return out
 }
 
-// MetadataMap returns a finding's filled metadata.crypto as the map a scanner result carries.
-func (f *Finding) MetadataMap() map[string]any {
+// MetadataFields returns a finding's filled rule metadata (Options.MetadataKey) as a map.
+func (f *Finding) MetadataFields() map[string]any {
 	out := make(map[string]any, len(f.Metadata.Keys))
 	for i, k := range f.Metadata.Keys {
 		name, ok := k.(string)
@@ -201,9 +183,9 @@ func (f *Finding) MetadataMap() map[string]any {
 	return out
 }
 
-// cfStr is the string crypto-finder's transformer gives a non-string metadata value: booleans
+// metadataStr is the string a filled metadata value takes when it is not a string: booleans
 // in lower case, numbers as written.
-func cfStr(v any) string {
+func metadataStr(v any) string {
 	if b, ok := v.(bool); ok {
 		return strconv.FormatBool(b)
 	}

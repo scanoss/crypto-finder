@@ -73,7 +73,7 @@ func cSrcFrag(src []string, calls ...cSrcCall) *FragmentJSON {
 
 func cMatchRules(t *testing.T, rules map[string]string, frag *FragmentJSON) ([]*Finding, CMatchStats) {
 	t.Helper()
-	assets, err := Load("", "", writeRules(t, cRuleYAML(rules)))
+	assets, err := Load("", "", writeRules(t, cRuleYAML(rules)), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -54,7 +54,7 @@ func pyConstantsFrag() *FragmentJSON {
 	return frag
 }
 
-func pyConstantFindings(t *testing.T, membership comparisonPolicy) []string {
+func pyConstantFindings(t *testing.T, membership ComparisonPolicy) []string {
 	t.Helper()
 	cards := cardsFrom(t, `
 - rule: tlsv1
@@ -227,7 +227,7 @@ func TestLoadStoreCards(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(cards, "rules.cards"), []byte("cards:\n- rule: store\n  "+body+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		set, err := loadCards(cards, rules)
+		set, err := defaults.loadCards(cards, rules)
 		if (err != nil) != wantErr {
 			t.Errorf("%q: error %v, want error %v", body, err, wantErr)
 		}
@@ -237,17 +237,15 @@ func TestLoadStoreCards(t *testing.T) {
 	}
 }
 
-// Assets.Match applies CRYPTO_FINDER_CARDS_PY_MEMBERSHIP (pyMembership).
+// Assets.Match applies Options.PyMembership.
 func TestMatchMembershipSwitch(t *testing.T) {
 	cards := cardsFrom(t, `
 - rule: hash
   constant: {const: cryptography.hazmat.primitives.hashes, member: '^(?<name>SHA384)$'}
 `)
 	assets := &Assets{index: &Index{}, cards: &CardSet{Cards: cards, RuleIDs: map[string]bool{"hash": true}}}
-	run := func(policy comparisonPolicy) int {
-		saved := pyMembership
-		defer func() { pyMembership = saved }()
-		pyMembership = policy
+	run := func(policy ComparisonPolicy) int {
+		assets.opts = Options{PyMembership: policy}.settings()
 		found, _ := assets.mustMatch(t, pyConstantsFrag())
 		return len(found)
 	}
@@ -305,7 +303,7 @@ func TestConstantCardKeys(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(cards, "rules.cards"), []byte("cards:\n- rule: c\n  constant: "+body+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := loadCards(cards, rules); (err != nil) != wantErr {
+		if _, err := defaults.loadCards(cards, rules); (err != nil) != wantErr {
 			t.Errorf("%s: error %v, want error %v", body, err, wantErr)
 		}
 	}

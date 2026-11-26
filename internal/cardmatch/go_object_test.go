@@ -58,7 +58,7 @@ func TestGoObjectFlowMatchesAsOpenGrep(t *testing.T) {
 
 // The propagators are recorded as a dropped clause; a sanitizer still skips.
 func TestGoObjectFlowCompiles(t *testing.T) {
-	rules, err := ExportRules(goObjectDir)
+	rules, err := ExportRules(goObjectDir, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

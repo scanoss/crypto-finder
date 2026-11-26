@@ -29,7 +29,7 @@ const cRulesSrc = `rules:
 // languages [cpp]), and a rule of another language in the same directory
 // compiles as before.
 func TestCRulesCompileWithTheCShapes(t *testing.T) {
-	rules, err := ExportRules(writeRules(t, cRulesSrc))
+	rules, err := ExportRules(writeRules(t, cRulesSrc), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestCRulesCompileWithTheCShapes(t *testing.T) {
 // source line for is not read, so it finds nothing (c_match_test.go matches
 // calls with their source).
 func TestCFragmentDispatchWithoutSource(t *testing.T) {
-	assets, err := Load("", "", writeRules(t, cRulesSrc))
+	assets, err := Load("", "", writeRules(t, cRulesSrc), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

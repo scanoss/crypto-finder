@@ -209,12 +209,12 @@ func constructFloat(s string) any {
 }
 
 // loadYAML is yaml.safe_load(open(path)): nil for an empty document.
-func loadYAML(path string) (any, error) {
+func (s *settings) loadYAML(path string) (any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	v, err := memoYAML(parseMemoFor(path), data)
+	v, err := memoYAML(parseMemoFor(s.languageOf(path)), data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}

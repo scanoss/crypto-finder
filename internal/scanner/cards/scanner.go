@@ -273,7 +273,7 @@ func loadCatalog(opts Options, root string) (*catalog, error) {
 	if opts.CardsDir != "" {
 		cardsDir = opts.CardsDir
 	}
-	assets, err := cardmatch.Load(opts.IndexPath, cardsDir, rulesDir)
+	assets, err := cardmatch.Load(opts.IndexPath, cardsDir, rulesDir, MatcherOptions())
 	if err != nil {
 		return nil, fmt.Errorf("load cards: %w", err)
 	}
@@ -526,7 +526,7 @@ func (s *Scanner) match(target, root string, opts Options, ruleInfo map[string]r
 			severity: info.Severity,
 			lines:    lines.span(finding.File, startLine, endLine),
 			purl:     info.Metadata.PURL,
-			crypto:   finding.MetadataMap(),
+			crypto:   finding.MetadataFields(),
 			// A Go receiver focus reports part of the call: the call's own
 			// columns still select the crypto call.
 			terminalCol: finding.TerminalCol, terminalEndCol: finding.TerminalEndCol,

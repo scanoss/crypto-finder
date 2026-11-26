@@ -20,7 +20,7 @@
 // run starts one process per component. A memo is bound to the binary that
 // wrote it, so a build whose parser differs never reads another's entries.
 //
-// The memo is off until Enable: it writes what it parses in clear, so only a
+// The memo is off until Enable names the directory its files go in: it writes what it parses in clear, so only a
 // caller whose files are already on disk in clear turns it on (a local
 // ruleset, never a leased one, which stays encrypted outside a scan).
 //
@@ -42,23 +42,24 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-
-	"github.com/scanoss/crypto-finder/internal/config"
-	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 // format changes whenever the file layout does.
 const format = "crypto-finder parse memo 1\n"
 
-var enabled atomic.Bool
+// dir is the directory of the memo files, nil while the memo is off.
+var dir atomic.Pointer[string]
 
-// Enable turns every memo of this process on.
-func Enable() { enabled.Store(true) }
+// Enable turns every memo of this process on, with its files in directory
+// (which must exist). A memo reads the directory when it is first used.
+func Enable(directory string) { dir.Store(&directory) }
+
+func enabled() bool { return dir.Load() != nil }
 
 // Key is the sha256 of a file's content.
 type Key = [sha256.Size]byte
 
-// Memo is one memo file, ~/.scanoss/crypto-finder/cache/<name>.memo.
+// Memo is one memo file, <name>.memo in the directory Enable names.
 type Memo struct {
 	name string
 
@@ -95,7 +96,7 @@ func (m *Memo) load() {
 
 // Get returns what Put stored under key, in this process or an earlier one.
 func (m *Memo) Get(key Key) ([]byte, bool) {
-	if !enabled.Load() {
+	if !enabled() {
 		return nil, false
 	}
 	m.load()
@@ -110,7 +111,7 @@ func (m *Memo) Get(key Key) ([]byte, bool) {
 
 // Put stores value under key for the processes after this one.
 func (m *Memo) Put(key Key, value []byte) {
-	if !enabled.Load() {
+	if !enabled() {
 		return
 	}
 	m.load()
@@ -136,7 +137,7 @@ var maxBytes = 32 << 20
 // scans wrote (the cards of another language). It writes nothing when no
 // entry was stored, nor when this binary cannot be identified.
 func (m *Memo) Save() error {
-	if !enabled.Load() {
+	if !enabled() {
 		return nil
 	}
 	m.load()
@@ -180,8 +181,8 @@ func location(name string) (path string, header []byte) {
 	if err != nil {
 		return "", nil
 	}
-	cacheDir, err := config.GetCacheDir()
-	if err != nil {
+	cacheDir := dir.Load()
+	if cacheDir == nil {
 		return "", nil
 	}
 	identity := format + name + " " + strconv.FormatInt(info.Size(), 10) + " " + strconv.FormatInt(info.ModTime().UnixNano(), 10)
@@ -194,7 +195,7 @@ func location(name string) (path string, header []byte) {
 		}
 	}
 	sum := sha256.Sum256([]byte(identity))
-	return filepath.Join(cacheDir, name+".memo"), append([]byte(format), sum[:]...)
+	return filepath.Join(*cacheDir, name+".memo"), append([]byte(format), sum[:]...)
 }
 
 func decodeEntries(data []byte) (map[Key][]byte, error) {
@@ -228,11 +229,15 @@ func writeFileAtomic(path string, data []byte) error {
 		err = os.Rename(tmp.Name(), path)
 	}
 	if err != nil {
-		utils.Discard(os.Remove(tmp.Name()))
+		discard(os.Remove(tmp.Name()))
 		return fmt.Errorf("parsememo: %w", err)
 	}
 	return nil
 }
+
+// discard drops the error of a cleanup whose failure changes nothing: the
+// rename already failed, and a leftover temporary file is harmless.
+func discard(error) {}
 
 // ErrCorrupt is a Reader's error for data no Writer wrote.
 var ErrCorrupt = errors.New("parsememo: corrupt entry")

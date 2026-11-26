@@ -44,7 +44,7 @@ func constantRefsFrag() *FragmentJSON {
 	}
 }
 
-func constantRefFindings(t *testing.T, policy comparisonPolicy) []string {
+func constantRefFindings(t *testing.T, policy ComparisonPolicy) []string {
 	t.Helper()
 	cards := cardsFrom(t, `
 - rule: curve

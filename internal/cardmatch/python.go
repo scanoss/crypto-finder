@@ -955,7 +955,7 @@ func (fr *Frag) typeNamed(want, have, caller string, evidence bool) bool {
 // an element of the container tested), unless Membership is ComparisonsAll.
 // A dict entry, like a list / tuple / set element (array), is a table entry:
 // always reported, as a Java array or initializer entry is (owner decision,
-// E2.7-py.9). CRYPTO_FINDER_CARDS_PY_MEMBERSHIP=all reports every `in`
+// E2.7-py.9). Options.PyMembership set to ComparisonsAll reports every `in`
 // operand too, for debugging.
 func (fr *Frag) comparisonRef(context string) bool {
 	if comparisonContext(context) {

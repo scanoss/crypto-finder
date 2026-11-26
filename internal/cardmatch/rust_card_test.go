@@ -58,7 +58,7 @@ var rustHandRegexOnly = map[string][]int{"acme-enc": {19}, "acme-dec": {20}}
 // card's is the call's, which ends after its `)` (on line 10 for the call
 // written over two lines).
 func TestRustHandCardsAsOpenGrep(t *testing.T) {
-	assets, err := Load("", filepath.Join(rustHandDir, "cards"), filepath.Join(rustHandDir, "rules"))
+	assets, err := Load("", filepath.Join(rustHandDir, "cards"), filepath.Join(rustHandDir, "rules"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestRustHandCardsAsOpenGrep(t *testing.T) {
 		if got[f.RuleID] == nil {
 			got[f.RuleID] = map[place]string{}
 		}
-		got[f.RuleID][place{f.File, f.Line, f.Col}] = f.MetadataMap()["algorithmName"].(string)
+		got[f.RuleID][place{f.File, f.Line, f.Col}] = f.MetadataFields()["algorithmName"].(string)
 		if f.EndCol == 0 {
 			t.Errorf("%s at %d: no end column", f.RuleID, f.Line)
 		}
@@ -143,7 +143,7 @@ const rustCardRules = `rules:
 func rustCardSet(t *testing.T, cards string) (*CardSet, error) {
 	t.Helper()
 	dir := writeCards(t, map[string]string{"rules/rules.yaml": rustCardRules, "cards/c.cards": cards})
-	return loadCards(filepath.Join(dir, "cards"), filepath.Join(dir, "rules"))
+	return defaults.loadCards(filepath.Join(dir, "cards"), filepath.Join(dir, "rules"))
 }
 
 // A Rust hand card that would not replace its rule with working entries is
@@ -196,14 +196,14 @@ func TestRustCardReplacesCompiledEntries(t *testing.T) {
 `,
 	})
 	lines := func(cardsDir string) map[int]string {
-		a, err := Load("", cardsDir, filepath.Join(dir, "rules"))
+		a, err := Load("", cardsDir, filepath.Join(dir, "rules"), Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		out := map[int]string{}
 		found, _ := a.mustMatch(t, rustHandFragment(t))
 		for _, f := range found {
-			out[f.Line] = f.RuleID + " " + f.MetadataMap()["algorithmName"].(string)
+			out[f.Line] = f.RuleID + " " + f.MetadataFields()["algorithmName"].(string)
 		}
 		java := rustHandFragment(t)
 		java.ScanMetadata.Ecosystem = "java"
@@ -232,12 +232,12 @@ func TestRustCardForAnotherLanguageIsAnError(t *testing.T) {
 		"cards/c.cards": "cards:\n" + card,
 	})
 	want := "rust card acme-java: acme-java is not a rust rule"
-	if _, err := loadCards(filepath.Join(dir, "cards"), filepath.Join(dir, "rules")); err == nil || !strings.Contains(err.Error(), want) {
+	if _, err := defaults.loadCards(filepath.Join(dir, "cards"), filepath.Join(dir, "rules")); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("v2: err = %v, want %q", err, want)
 	}
 	v3 := "format: scanoss-cards/3\nrules:\n  acme-java: {severity: INFO, message: m, crypto: {assetType: algorithm}}\ncards:\n" + card
 	dir = writeCards(t, map[string]string{"cards/java/rules.cards": v3})
-	if _, err := Load("", filepath.Join(dir, "cards"), ""); err == nil || !strings.Contains(err.Error(), want) {
+	if _, err := Load("", filepath.Join(dir, "cards"), "", Options{}); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("v3: err = %v, want %q", err, want)
 	}
 }
@@ -258,7 +258,7 @@ cards:
     - pattern: Encryptor::<$C>::new(...)
     - metavariable-regex: {metavariable: $C, regex: '^Blk(?P<bits>128|256)$'}
 `})
-	a, err := Load("", dir, "")
+	a, err := Load("", dir, "", Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ cards:
 	found, _ := a.mustMatch(t, rustHandFragment(t))
 	got := map[int]string{}
 	for _, f := range found {
-		got[f.Line] = f.MetadataMap()["algorithmName"].(string)
+		got[f.Line] = f.MetadataFields()["algorithmName"].(string)
 	}
 	if !maps.Equal(got, map[int]string{6: "V3-256", 9: "V3-256"}) {
 		t.Errorf("found %v", got)
@@ -311,7 +311,7 @@ var rustAliasCardOnly = map[string][]int{"acme-mode": {48, 49}}
 // tells paths apart by their last segment (`other::Encryptor` at line 33).
 // The compiler holds it in a rule YAML; only a hand card's is served.
 func TestRustAliasCardsAsOpenGrep(t *testing.T) {
-	assets, err := Load("", filepath.Join(rustAliasDir, "cards"), filepath.Join(rustAliasDir, "rules"))
+	assets, err := Load("", filepath.Join(rustAliasDir, "cards"), filepath.Join(rustAliasDir, "rules"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestRustAliasCardsAsOpenGrep(t *testing.T) {
 		if got[f.RuleID] == nil {
 			got[f.RuleID] = map[place]string{}
 		}
-		got[f.RuleID][place{f.File, f.Line, f.Col, max(f.EndLine, f.Line), f.EndCol}] = f.MetadataMap()["algorithmName"].(string)
+		got[f.RuleID][place{f.File, f.Line, f.Col, max(f.EndLine, f.Line), f.EndCol}] = f.MetadataFields()["algorithmName"].(string)
 	}
 	if !slices.Equal(slices.Sorted(maps.Keys(got)), []string{"acme-mode", "acme-seal"}) {
 		t.Fatalf("rules found = %v", slices.Sorted(maps.Keys(got)))
@@ -394,7 +394,7 @@ func rustAliasFragment(t *testing.T) *FragmentJSON {
 // A hand card's type alias pattern waits for the aliased types a
 // graph-fragment-1.27 lists; an older fragment holds it.
 func TestRustAliasCardsHeldOnOlderFragment(t *testing.T) {
-	assets, err := Load("", filepath.Join(rustAliasDir, "cards"), filepath.Join(rustAliasDir, "rules"))
+	assets, err := Load("", filepath.Join(rustAliasDir, "cards"), filepath.Join(rustAliasDir, "rules"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

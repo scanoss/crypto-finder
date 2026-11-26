@@ -846,7 +846,7 @@ func fillCF(tmpl *OMap, groups fillGroups, s *Site, e *Entry) *OMap {
 		v := tmpl.Vals[i]
 		str, ok := v.(string)
 		if !ok {
-			out.Set(k, cfStr(v))
+			out.Set(k, metadataStr(v))
 			continue
 		}
 		complete := true
