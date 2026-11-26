@@ -4,39 +4,10 @@
 package appreach
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"strconv"
-	"strings"
 
 	"github.com/Masterminds/semver/v3"
-	gf "github.com/scanoss/reach/graphfrag"
-	pkgpurl "github.com/scanoss/reach/purl"
 )
-
-// StitchWithContext runs gf.StitchWithOptions on its own goroutine so ctx's
-// deadline can abort a pathologically large graph walk: StitchWithOptions
-// itself takes no context and never checks cancellation, so without this a
-// caller's timeout budget is unenforceable once the graphs are loaded.
-func StitchWithContext(ctx context.Context, root ComponentKey, deps DependencyGraph, fragments map[ComponentKey]Fragment, opts StitchOptions) (*Result, error) {
-	type outcome struct {
-		res *Result
-		err error
-	}
-	ch := make(chan outcome, 1)
-	go func() {
-		res, err := gf.StitchWithOptions(root, deps, fragments, opts)
-		ch <- outcome{res, err}
-	}()
-	select {
-	case o := <-ch:
-		return o.res, o.err
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
 
 // HighestRulesVersion returns the highest rules_version among the contributing
 // blocks (semver-aware; semver tags outrank non-semver; lexical fallback).
@@ -125,74 +96,4 @@ func ruleIDByFindingID(root ComponentKey, fragments map[ComponentKey]Fragment) m
 		}
 	}
 	return index
-}
-
-// DepPrefixedPath is a dependency file's path as the stitch names it:
-// module@version/path.
-func DepPrefixedPath(filePath, module, version string) string {
-	if filePath == "" || module == "" || version == "" {
-		return filePath
-	}
-	return module + "@" + version + "/" + filePath
-}
-
-// ComputeFindingID is the finding id the stitch gives a crypto operation
-// (graphfrag's own, which is unexported).
-func ComputeFindingID(path string, startLine int, ruleID string) string {
-	if path == "" && startLine == 0 && ruleID == "" {
-		return ""
-	}
-	h := sha256.Sum256([]byte(path + ":" + strconv.Itoa(startLine) + ":" + ruleID))
-	return hex.EncodeToString(h[:])[:8]
-}
-
-// PurlToModule converts a purl to crypto-finder's module id: "<group>:<artifact>"
-// for Maven, the PEP 503 normalised distribution name for PyPI (what the
-// Python dependency resolver names a dependency; not the import name, which
-// a distribution may not share and a namespace package shares with others).
-// The module path for Go and the package id for NuGet. Other purls pass
-// through unchanged.
-func PurlToModule(purl string) string {
-	if rest, ok := strings.CutPrefix(purl, "pkg:golang/"); ok {
-		if i := strings.IndexAny(rest, "@?#"); i >= 0 {
-			rest = rest[:i]
-		}
-		if rest != "" {
-			return rest
-		}
-		return purl
-	}
-	if rest, ok := strings.CutPrefix(purl, "pkg:pypi/"); ok {
-		if i := strings.IndexAny(rest, "@?#"); i >= 0 {
-			rest = rest[:i]
-		}
-		if rest == "" {
-			return purl
-		}
-		return pkgpurl.PyPIName(rest)
-	}
-	if rest, ok := strings.CutPrefix(purl, "pkg:nuget/"); ok {
-		if i := strings.IndexAny(rest, "@?#"); i >= 0 {
-			rest = rest[:i]
-		}
-		if rest != "" {
-			return rest
-		}
-		return purl
-	}
-	const prefix = "pkg:maven/"
-	if !strings.HasPrefix(purl, prefix) {
-		return purl
-	}
-	rest := purl[len(prefix):]
-	group, artifact, ok := strings.Cut(rest, "/")
-	if !ok {
-		return purl
-	}
-	return group + ":" + artifact
-}
-
-// EcosystemForPurl is crypto-finder's ecosystem name for a purl's type.
-func EcosystemForPurl(purl string) string {
-	return gf.EcosystemForPurl(purl)
 }

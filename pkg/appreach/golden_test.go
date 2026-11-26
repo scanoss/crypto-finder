@@ -125,7 +125,7 @@ func TestNewPlanRejectionsGolden(t *testing.T) {
 		{SchemaVersion: "1", Dependencies: []Dependency{dep}, CallSites: sites, MaxChainsPerFinding: -1},
 		{SchemaVersion: "1", Dependencies: []Dependency{dep}, CallSites: sites, ConditionedRules: []conditioned.Rule{{ID: "bad", Metadata: map[string]string{"parameterCondition": "param[0]=="}}}},
 	}
-	var out []*Response
+	out := make([]*Response, 0, len(reqs)+2)
 	for _, req := range reqs {
 		_, rejected := NewPlan(req, DefaultLimits)
 		out = append(out, rejected)

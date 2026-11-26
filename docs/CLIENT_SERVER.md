@@ -51,7 +51,7 @@ The base URL is `https://api.scanoss.com` unless `--api-url`,
 `SCANOSS_API_URL` or the config file says otherwise. A plain-HTTP URL on a
 remote host needs `--allow-http`.
 
-The verdicts come from `pkg/appreach`, the same Go package the API runs
+The verdicts come from `pkg/appreach` (over reach's `appreach`), the same Go package the API runs
 for `/reachability/application` and `--offline` runs in process.
 
 ## What a dependency scan sends and receives

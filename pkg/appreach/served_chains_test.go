@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	core "github.com/scanoss/reach/appreach"
 )
 
 // servedChainsCallgraph is a stitched callgraph as Run holds it after
@@ -66,7 +68,7 @@ func TestKeepServedChainsRendersTheSameBlock(t *testing.T) {
 			t.Fatal(err)
 		}
 		cg := servedChainsCallgraph()
-		keepServedChains(cg.FindingGraphs, resolveMaxChains(maxChains))
+		core.KeepServedChains(cg.FindingGraphs, resolveMaxChains(maxChains))
 		trimmed, err := renderServed(t, cg, maxChains)
 		if err != nil {
 			t.Fatal(err)
@@ -87,7 +89,7 @@ func TestKeepServedChainsRendersTheSameBlock(t *testing.T) {
 func TestKeepServedChainsKeepsIndexesInStep(t *testing.T) {
 	t.Parallel()
 	cg := servedChainsCallgraph()
-	keepServedChains(cg.FindingGraphs, 2)
+	core.KeepServedChains(cg.FindingGraphs, 2)
 	if got, want := cg.FindingGraphs[0].CallChainIndexes, [][]int{{1, 1}, {2, 2}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("indexes = %v, want %v", got, want)
 	}
@@ -99,7 +101,7 @@ func TestKeepServedChainsLeavesUnindexedNamelessFrames(t *testing.T) {
 	t.Parallel()
 	cg := servedChainsCallgraph()
 	cg.FindingGraphs[0].CallChainIndexes = nil
-	keepServedChains(cg.FindingGraphs, 1)
+	core.KeepServedChains(cg.FindingGraphs, 1)
 	if len(cg.FindingGraphs[0].CallChains) != 5 {
 		t.Fatalf("kept %d chains, want all 5", len(cg.FindingGraphs[0].CallChains))
 	}
