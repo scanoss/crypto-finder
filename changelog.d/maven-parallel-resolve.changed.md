@@ -1,0 +1,1 @@
+- `--scan-dependencies` resolves Maven dependencies in parallel: Maven runs with the breadth-first dependency collector and 8 download threads. On a cold local repository a 134-dependency project resolved in 20 s instead of 50 s. A value the user sets for one of these resolver properties in `MAVEN_ARGS` or `MAVEN_OPTS` is kept.

@@ -131,6 +131,30 @@ exit 0
 		if !slices.Contains(args, "-B") || !slices.Contains(args, "-Dstyle.color=never") {
 			t.Errorf("mvn %s: want -B and -Dstyle.color=never", invocation)
 		}
+		for _, want := range mavenParallelArgs {
+			if !slices.Contains(args, want) {
+				t.Errorf("mvn %s: want %s", invocation, want)
+			}
+		}
+	}
+}
+
+// TestMavenExtraArgs_KeepsTheUsersResolverSettings: a resolver property the
+// user sets in MAVEN_ARGS or MAVEN_OPTS is not passed again, since a -D on
+// the command line would override the user's value; the others still are.
+func TestMavenExtraArgs_KeepsTheUsersResolverSettings(t *testing.T) {
+	t.Setenv("MAVEN_ARGS", "-B -Daether.connector.basic.threads=2")
+	t.Setenv("MAVEN_OPTS", "-Xmx1g -Daether.dependencyCollector.impl=df")
+	got := mavenExtraArgs()
+	want := []string{"-B", "-Dstyle.color=never", "-Daether.dependencyCollector.bf.threads=8"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("mavenExtraArgs() = %v, want %v", got, want)
+	}
+
+	t.Setenv("MAVEN_ARGS", "")
+	t.Setenv("MAVEN_OPTS", "")
+	if got := mavenExtraArgs(); !slices.Equal(got, slices.Concat(mavenBatchArgs, mavenParallelArgs)) {
+		t.Fatalf("mavenExtraArgs() with no user settings = %v, want batch and parallel args", got)
 	}
 }
 
