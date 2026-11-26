@@ -45,30 +45,11 @@ func TestHasRootManifest(t *testing.T) {
 		ecosystem string
 		want      bool
 	}{
-		{name: "go.mod is a go root", files: map[string]string{"go.mod": "module x\n"}, ecosystem: "go", want: true},
-		{name: "a directory named go.mod is not", dirs: []string{"go.mod"}, ecosystem: "go", want: false},
 		{name: "pom.xml is a java root", files: map[string]string{"pom.xml": "<project/>"}, ecosystem: ecosystemJava, want: true},
 		{name: "build.gradle.kts is a java root", files: map[string]string{"build.gradle.kts": ""}, ecosystem: ecosystemJava, want: true},
 		{name: "settings.gradle is a java root", files: map[string]string{"settings.gradle": ""}, ecosystem: ecosystemJava, want: true},
-		{name: "Cargo.toml is a rust root", files: map[string]string{"Cargo.toml": ""}, ecosystem: "rust", want: true},
-		{
-			name:      "node needs the lockfile too",
-			files:     map[string]string{npmManifest: `{"name":"x"}`},
-			ecosystem: ecosystemNode,
-			want:      false,
-		},
-		{
-			name:      "node with both files is a root",
-			files:     map[string]string{npmManifest: `{"name":"x"}`, npmLockfile: `{"lockfileVersion":3}`},
-			ecosystem: ecosystemNode,
-			want:      true,
-		},
-		{
-			name:      "python is never manifest-rooted",
-			files:     map[string]string{"pyproject.toml": "", "requirements.txt": ""},
-			ecosystem: "python",
-			want:      false,
-		},
+		{name: "go.mod is a go root", files: map[string]string{"go.mod": "module x\n"}, ecosystem: "go", want: true},
+		{name: "Cargo.toml is a rust root", files: map[string]string{"Cargo.toml": "[package]\n"}, ecosystem: "rust", want: true},
 		{name: "an unknown ecosystem is never rooted", files: map[string]string{"pom.xml": "<project/>"}, ecosystem: "cobol", want: false},
 	}
 
@@ -104,21 +85,6 @@ func TestResolutionRoots_GateClosedWhenRootHasManifest(t *testing.T) {
 	}
 	if got.Roots != nil {
 		t.Errorf("Roots = %v, want nil", rootRels(got))
-	}
-}
-
-func TestResolutionRoots_GateClosedForPython(t *testing.T) {
-	t.Parallel()
-
-	root := writeTree(t, map[string]string{
-		"services/a/pyproject.toml":   "",
-		"services/a/app.py":           "import hashlib",
-		"services/b/requirements.txt": "cryptography==42.0.0",
-	})
-
-	got := ResolutionRoots(root, "python", nil)
-	if got.Searched || got.Roots != nil {
-		t.Errorf("ResolutionRoots(python) = %+v, want the closed gate: PipResolver resolves from the interpreter", got)
 	}
 }
 
@@ -221,20 +187,6 @@ func TestResolutionRoots_SkippedNameInTheScanRootAncestryDoesNotPrune(t *testing
 	}
 }
 
-func TestResolutionRoots_NodePackageJSONWithoutLockfileIsNotARoot(t *testing.T) {
-	t.Parallel()
-
-	root := writeTree(t, map[string]string{
-		"src/package.json": `{"type":"module"}`,
-		"src/index.js":     "export const x = 1",
-	})
-
-	got := ResolutionRoots(root, ecosystemNode, nil)
-	if len(got.Roots) != 0 {
-		t.Errorf("Roots = %v, want none: NpmResolver needs a lockfile and src/ is ordinary layout", rootRels(got))
-	}
-}
-
 // The cap is pinned on both sides. A manifest one level below it must be
 // unreachable with nothing above it to stop the descent first, which is the
 // only arrangement that reaches the depth branch at all.
@@ -331,55 +283,6 @@ func TestResolutionRoots_UnreadableDirIsCountedAndSiblingsSurvive(t *testing.T) 
 	}
 	if rels := rootRels(got); !reflect.DeepEqual(rels, []string{"ok"}) {
 		t.Errorf("Roots = %v, want [ok]: a partial answer is more coverage than none", rels)
-	}
-}
-
-// The Go toolchain finds its own manifest upward: GoResolver sets only cmd.Dir
-// and `go list` walks the ancestors. A directory inside a module
-// therefore resolves today, and opening the gate there would resolve a nested
-// tooling module instead and lose the parent's whole dependency list.
-func TestResolutionRoots_GateClosedForAGoDirInsideAModule(t *testing.T) {
-	t.Parallel()
-
-	tmp := writeTree(t, map[string]string{
-		"go.mod":               "module example.com/parent\n",
-		"sub/s.go":             "package sub",
-		"sub/tools/gen/go.mod": "module example.com/parent/sub/tools/gen\n",
-	})
-
-	got := ResolutionRoots(filepath.Join(tmp, "sub"), "go", nil)
-	if got.Searched || got.Roots != nil {
-		t.Errorf("ResolutionRoots = %+v, want the closed gate: go resolves example.com/parent from sub/", got)
-	}
-}
-
-func TestResolutionRoots_GateClosedForAGoWorkspaceRoot(t *testing.T) {
-	t.Parallel()
-
-	root := writeTree(t, map[string]string{
-		"go.work":  "go 1.25\n\nuse (\n\t./a\n\t./b\n)\n",
-		"a/go.mod": "module example.com/a\n",
-		"b/go.mod": "module example.com/b\n",
-	})
-
-	got := ResolutionRoots(root, "go", nil)
-	if got.Searched || got.Roots != nil {
-		t.Errorf("ResolutionRoots = %+v, want the closed gate: go.work resolves the whole workspace", got)
-	}
-}
-
-func TestResolutionRoots_FindsGoRootsWithNoModuleAbove(t *testing.T) {
-	t.Parallel()
-
-	root := writeTree(t, map[string]string{
-		"services/a/go.mod": "module example.com/a\n",
-		"services/b/go.mod": "module example.com/b\n",
-	})
-
-	got := ResolutionRoots(root, "go", nil)
-	want := []string{"services/a", "services/b"}
-	if rels := rootRels(got); !reflect.DeepEqual(rels, want) {
-		t.Errorf("Roots = %v, want %v: nothing above a temp dir is a Go module", rels, want)
 	}
 }
 
@@ -539,5 +442,83 @@ func TestMergeRootResolutions_NoResolutionsLeavesTheScanRootUnnamed(t *testing.T
 	}
 	if merged.Graph == nil || merged.VersionedGraph == nil {
 		t.Error("Graph and VersionedGraph must be non-nil maps")
+	}
+}
+
+// A Python resolution root is any directory the Python resolver can read: a
+// lock, pyproject.toml, a requirements file (a development one alone does
+// not make a root). A scan root that is one closes the gate; below a scan
+// root that is not, each Python project is a root.
+func TestResolutionRoots_Python(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	mkdirs(t, root, "services/api", "services/worker", "tools", "docs", "scripts")
+	for rel, body := range map[string]string{
+		"services/api/uv.lock":                  "version = 1\n",
+		"services/worker/requirements-prod.txt": "pyjwt==2.10.1\n",
+		"scripts/requirements-dev.txt":          "pytest==8.0.0\n",
+		"tools/pyproject.toml":                  "[project]\nname = \"tools\"\n",
+		"docs/index.md":                         "# docs\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := rootRels(resolutionRoots(root, ecosystemPython, nil, testBounds()))
+	if want := []string{"tools", "services/api", "services/worker"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Python roots = %v, want %v", got, want)
+	}
+	if d := resolutionRoots(filepath.Join(root, "tools"), ecosystemPython, nil, testBounds()); d.Searched {
+		t.Errorf("a Python project as scan root searched below it: %+v", d)
+	}
+}
+
+// The fields only the Python resolver sets survive a fan-out: each root's
+// source, the union of declared direct dependencies and every unpinned one.
+func TestMergeRootResolutions_KeepsPythonFields(t *testing.T) {
+	t.Parallel()
+	merged := MergeRootResolutions([]RootResolution{
+		{Root: discoveredRoot{Dir: "/r/a", Rel: "a"}, Result: &ResolveResult{Source: "uv.lock", DirectDependencies: []string{"pyjwt", "requests"}}},
+		{Root: discoveredRoot{Dir: "/r/b", Rel: "b"}, Result: &ResolveResult{
+			Source: "requirements.txt", DirectDependencies: []string{"cryptography", "pyjwt"},
+			Unpinned: []UnpinnedDependency{{Module: "flask", Specifier: ">=3"}},
+		}},
+	})
+	if merged.Source != "a/uv.lock, b/requirements.txt" {
+		t.Errorf("Source = %q", merged.Source)
+	}
+	if want := []string{"cryptography", "pyjwt", "requests"}; !reflect.DeepEqual(merged.DirectDependencies, want) {
+		t.Errorf("DirectDependencies = %v, want %v", merged.DirectDependencies, want)
+	}
+	if len(merged.Unpinned) != 1 || merged.Unpinned[0].Module != "flask" {
+		t.Errorf("Unpinned = %v", merged.Unpinned)
+	}
+}
+
+// A Ruby monorepo scanned from the parent: the locks sit in the services, not
+// at the root, and each is a resolution root of its own.
+func TestResolutionRoots_FindsRubyLocksBelowTheScanRoot(t *testing.T) {
+	t.Parallel()
+
+	root := writeTree(t, map[string]string{
+		"services/api/Gemfile.lock":    "GEM\n  specs:\n    openssl (3.2.0)\n",
+		"services/api/lib/api.rb":      "require 'openssl'\n",
+		"services/worker/Gemfile.lock": "GEM\n  specs:\n    openssl (3.2.0)\n",
+		"services/worker/lib/work.rb":  "require 'openssl'\n",
+		"README.md":                    "",
+	})
+
+	got := ResolutionRoots(root, ecosystemRuby, nil)
+	if !got.Searched {
+		t.Fatal("Searched = false, want true")
+	}
+	want := []string{"services/api", "services/worker"}
+	if rels := rootRels(got); !reflect.DeepEqual(rels, want) {
+		t.Fatalf("Roots = %v, want %v", rels, want)
+	}
+	for _, discovered := range got.Roots {
+		if !NewRubyResolver().CanResolve(discovered.Dir) {
+			t.Errorf("the Ruby resolver cannot read the discovered root %s", discovered.Rel)
+		}
 	}
 }

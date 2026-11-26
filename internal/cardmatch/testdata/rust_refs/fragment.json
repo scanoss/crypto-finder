@@ -1,0 +1,866 @@
+{
+ "schema_version": "graph-fragment-1.35",
+ "functions": [
+  {
+   "key": "probe::names.named",
+   "function_name": "probe::names.named",
+   "canonical_signature": "probe::names.named()",
+   "package": "probe::names",
+   "name": "named",
+   "file_path": "src/names.rs",
+   "start_line": 4,
+   "end_line": 10
+  },
+  {
+   "key": "probe::names.positions",
+   "function_name": "probe::names.positions",
+   "canonical_signature": "probe::names.positions(acme_kms::types::Spec, bool): u8",
+   "package": "probe::names",
+   "name": "positions",
+   "file_path": "src/names.rs",
+   "start_line": 17,
+   "end_line": 33,
+   "return_type": "u8",
+   "parameter_types": [
+    "acme_kms::types::Spec",
+    "bool"
+   ]
+  },
+  {
+   "key": "probe::names.shadowed",
+   "function_name": "probe::names.shadowed",
+   "canonical_signature": "probe::names.shadowed()",
+   "package": "probe::names",
+   "name": "shadowed",
+   "file_path": "src/names.rs",
+   "start_line": 12,
+   "end_line": 15
+  },
+  {
+   "key": "probe::names.sign",
+   "function_name": "probe::names.sign",
+   "canonical_signature": "probe::names.sign(T)",
+   "package": "probe::names",
+   "name": "sign",
+   "file_path": "src/names.rs",
+   "start_line": 35,
+   "end_line": 35,
+   "parameter_types": [
+    "T"
+   ]
+  },
+  {
+   "key": "probe::values.arms",
+   "function_name": "probe::values.arms",
+   "canonical_signature": "probe::values.arms(u8): u8",
+   "package": "probe::values",
+   "name": "arms",
+   "file_path": "src/values.rs",
+   "start_line": 23,
+   "end_line": 29,
+   "return_type": "u8",
+   "parameter_types": [
+    "u8"
+   ]
+  },
+  {
+   "key": "probe::values.module",
+   "function_name": "probe::values.module",
+   "canonical_signature": "probe::values.module()",
+   "package": "probe::values",
+   "name": "module",
+   "file_path": "src/values.rs",
+   "start_line": 12,
+   "end_line": 15
+  },
+  {
+   "key": "probe::values.other",
+   "function_name": "probe::values.other",
+   "canonical_signature": "probe::values.other()",
+   "package": "probe::values",
+   "name": "other",
+   "file_path": "src/values.rs",
+   "start_line": 17,
+   "end_line": 21
+  },
+  {
+   "key": "probe::values.ret",
+   "function_name": "probe::values.ret",
+   "canonical_signature": "probe::values.ret(): acme_kms::Mode",
+   "package": "probe::values",
+   "name": "ret",
+   "file_path": "src/values.rs",
+   "start_line": 31,
+   "end_line": 33,
+   "return_type": "acme_kms::Mode"
+  },
+  {
+   "key": "probe::values.shortened",
+   "function_name": "probe::values.shortened",
+   "canonical_signature": "probe::values.shortened()",
+   "package": "probe::values",
+   "name": "shortened",
+   "file_path": "src/values.rs",
+   "start_line": 6,
+   "end_line": 10
+  },
+  {
+   "key": "probe::values.sign",
+   "function_name": "probe::values.sign",
+   "canonical_signature": "probe::values.sign(T)",
+   "package": "probe::values",
+   "name": "sign",
+   "file_path": "src/values.rs",
+   "start_line": 43,
+   "end_line": 43,
+   "parameter_types": [
+    "T"
+   ]
+  },
+  {
+   "key": "probe::values.types",
+   "function_name": "probe::values.types",
+   "canonical_signature": "probe::values.types(acme_kms::Key): acme_kms::Key",
+   "package": "probe::values",
+   "name": "types",
+   "file_path": "src/values.rs",
+   "start_line": 35,
+   "end_line": 41,
+   "return_type": "acme_kms::Key",
+   "parameter_types": [
+    "acme_kms::Key"
+   ]
+  },
+  {
+   "key": "probe::values.value",
+   "function_name": "probe::values.value",
+   "canonical_signature": "probe::values.value()",
+   "package": "probe::values",
+   "name": "value",
+   "file_path": "src/values.rs",
+   "start_line": 1,
+   "end_line": 4
+  }
+ ],
+ "internal_edges_compact": [
+  [
+   0,
+   3,
+   7,
+   1,
+   0,
+   2,
+   0,
+   0,
+   0,
+   0,
+   5,
+   17,
+   0,
+   {
+    "line": 7,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "T",
+      "argument_expression": "&LEVEL"
+     }
+    ]
+   }
+  ],
+  [
+   5,
+   9,
+   14,
+   1,
+   0,
+   2,
+   0,
+   0,
+   0,
+   0,
+   5,
+   29,
+   0,
+   {
+    "line": 14,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "T",
+      "argument_expression": "types::Spec::Es256"
+     }
+    ]
+   }
+  ]
+ ],
+ "internal_edge_strings": [
+  "",
+  "exact",
+  "sign"
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe::values.types",
+   "target_key": "acme_kms.(Key).new",
+   "target_canonical_signature": "acme_kms.Key.new(?)",
+   "raw": "acme_kms::Key::new",
+   "line": 38,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "z",
+   "start_col": 13,
+   "end_col": 34,
+   "entry_call": {
+    "line": 38,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 38
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "constant_refs": [
+  [
+   0,
+   5,
+   15,
+   20,
+   "Es256",
+   "init"
+  ],
+  [
+   0,
+   7,
+   11,
+   16,
+   "LEVEL",
+   "other"
+  ],
+  [
+   1,
+   17,
+   17,
+   38,
+   "acme_kms::types::Spec",
+   "type"
+  ],
+  [
+   1,
+   22,
+   14,
+   19,
+   "LEVEL",
+   "compare"
+  ],
+  [
+   1,
+   23,
+   11,
+   16,
+   "LEVEL",
+   "other"
+  ],
+  [
+   1,
+   26,
+   13,
+   26,
+   "acme_kms::Key",
+   "struct"
+  ],
+  [
+   1,
+   26,
+   35,
+   40,
+   "LEVEL",
+   "other"
+  ],
+  [
+   1,
+   27,
+   17,
+   22,
+   "LEVEL",
+   "init"
+  ],
+  [
+   1,
+   28,
+   16,
+   21,
+   "LEVEL",
+   "other"
+  ],
+  [
+   1,
+   30,
+   11,
+   16,
+   "LEVEL",
+   "other"
+  ],
+  [
+   1,
+   31,
+   8,
+   13,
+   "LEVEL",
+   "other"
+  ],
+  [
+   1,
+   32,
+   5,
+   10,
+   "LEVEL",
+   "other"
+  ],
+  [
+   2,
+   14,
+   13,
+   23,
+   "LEVEL_COPY",
+   "init"
+  ],
+  [
+   3,
+   35,
+   15,
+   16,
+   "T",
+   "type"
+  ],
+  [
+   4,
+   24,
+   28,
+   47,
+   "acme_kms::Mode::Gcm",
+   "other"
+  ],
+  [
+   4,
+   24,
+   57,
+   76,
+   "acme_kms::Mode::Ctr",
+   "other"
+  ],
+  [
+   4,
+   26,
+   9,
+   28,
+   "acme_kms::Mode::Gcm",
+   "case"
+  ],
+  [
+   5,
+   14,
+   10,
+   28,
+   "types::Spec::Es256",
+   "arg"
+  ],
+  [
+   6,
+   19,
+   15,
+   26,
+   "Spec::Es256",
+   "init"
+  ],
+  [
+   7,
+   31,
+   13,
+   27,
+   "acme_kms::Mode",
+   "type"
+  ],
+  [
+   7,
+   32,
+   5,
+   24,
+   "acme_kms::Mode::Gcm",
+   "other"
+  ],
+  [
+   8,
+   8,
+   15,
+   26,
+   "Spec::Es256",
+   "init"
+  ],
+  [
+   9,
+   43,
+   15,
+   16,
+   "T",
+   "type"
+  ],
+  [
+   10,
+   35,
+   13,
+   26,
+   "acme_kms::Key",
+   "type"
+  ],
+  [
+   10,
+   35,
+   31,
+   44,
+   "acme_kms::Key",
+   "type"
+  ],
+  [
+   10,
+   36,
+   12,
+   25,
+   "acme_kms::Key",
+   "type"
+  ],
+  [
+   10,
+   37,
+   13,
+   26,
+   "acme_kms::Key",
+   "struct"
+  ],
+  [
+   11,
+   2,
+   15,
+   43,
+   "acme_kms::types::Spec::Es256",
+   "init"
+  ]
+ ],
+ "declarations": [
+  [
+   0,
+   5,
+   5,
+   21,
+   "",
+   "alg",
+   "other"
+  ],
+  [
+   0,
+   8,
+   5,
+   31,
+   "",
+   "level",
+   "other"
+  ],
+  [
+   1,
+   26,
+   5,
+   43,
+   "",
+   "k",
+   "other"
+  ],
+  [
+   1,
+   27,
+   5,
+   23,
+   "",
+   "level",
+   "other"
+  ],
+  [
+   1,
+   28,
+   5,
+   22,
+   "",
+   "c",
+   "other"
+  ],
+  [
+   2,
+   13,
+   5,
+   24,
+   "",
+   "LEVEL_COPY",
+   "literal"
+  ],
+  [
+   4,
+   24,
+   5,
+   79,
+   "",
+   "mode",
+   "other"
+  ],
+  [
+   6,
+   19,
+   5,
+   27,
+   "",
+   "alg",
+   "other"
+  ],
+  [
+   8,
+   8,
+   5,
+   27,
+   "",
+   "alg",
+   "other"
+  ],
+  [
+   10,
+   36,
+   5,
+   30,
+   "acme_kms::Key",
+   "x",
+   "other"
+  ],
+  [
+   10,
+   37,
+   5,
+   39,
+   "",
+   "y",
+   "other"
+  ],
+  [
+   10,
+   38,
+   5,
+   35,
+   "",
+   "z",
+   "call"
+  ],
+  [
+   11,
+   2,
+   5,
+   44,
+   "",
+   "alg",
+   "other"
+  ]
+ ],
+ "source_lines": {
+  "src/names.rs": {
+   "13": "    let LEVEL_COPY = 3;",
+   "14": "    let _ = LEVEL_COPY;",
+   "17": "fn positions(s: acme_kms::types::Spec, on: bool) -> u8 {",
+   "22": "    if on == LEVEL {}",
+   "23": "    match LEVEL {",
+   "26": "    let k = acme_kms::Key { bits: LEVEL };",
+   "27": "    let level = LEVEL;",
+   "28": "    let c = || LEVEL;",
+   "30": "    while LEVEL {}",
+   "31": "    if LEVEL {}",
+   "32": "    LEVEL",
+   "35": "fn sign<T>(_: T) {}",
+   "5": "    let alg = Es256;",
+   "7": "    sign(&LEVEL);",
+   "8": "    let level = default_level;"
+  },
+  "src/values.rs": {
+   "14": "    sign(types::Spec::Es256);",
+   "19": "    let alg = Spec::Es256;",
+   "2": "    let alg = acme_kms::types::Spec::Es256;",
+   "24": "    let mode = if m == 0 { acme_kms::Mode::Gcm } else { acme_kms::Mode::Ctr };",
+   "26": "        acme_kms::Mode::Gcm => 1,",
+   "31": "fn ret() -> acme_kms::Mode {",
+   "32": "    acme_kms::Mode::Gcm",
+   "35": "fn types(k: acme_kms::Key) -> acme_kms::Key {",
+   "36": "    let x: acme_kms::Key = k;",
+   "37": "    let y = acme_kms::Key { bits: 1 };",
+   "38": "    let z = acme_kms::Key::new(1);",
+   "43": "fn sign<T>(_: T) {}",
+   "8": "    let alg = Spec::Es256;"
+  }
+ },
+ "imports": {
+  "src/names.rs": [
+   {
+    "line": 1,
+    "module": "acme_kms::types::Spec",
+    "name": "Es256",
+    "start_col": 1,
+    "end_col": 34,
+    "text": "acme_kms::types::Spec::Es256"
+   },
+   {
+    "line": 2,
+    "module": "acme_kms",
+    "name": "default_level",
+    "start_col": 1,
+    "end_col": 38,
+    "text": "acme_kms::{default_level, LEVEL}"
+   },
+   {
+    "line": 2,
+    "module": "acme_kms",
+    "name": "LEVEL",
+    "start_col": 1,
+    "end_col": 38,
+    "text": "acme_kms::{default_level, LEVEL}"
+   }
+  ],
+  "src/values.rs": [
+   {
+    "line": 7,
+    "module": "acme_kms::types",
+    "name": "Spec",
+    "local": true,
+    "start_col": 5,
+    "end_col": 31,
+    "text": "acme_kms::types::Spec"
+   },
+   {
+    "line": 13,
+    "module": "acme_kms",
+    "name": "types",
+    "local": true,
+    "start_col": 5,
+    "end_col": 25,
+    "text": "acme_kms::types"
+   },
+   {
+    "line": 18,
+    "module": "other_kms::types",
+    "name": "Spec",
+    "local": true,
+    "start_col": 5,
+    "end_col": 32,
+    "text": "other_kms::types::Spec"
+   }
+  ]
+ },
+ "items": {
+  "src/names.rs": [
+   [
+    4,
+    1,
+    2,
+    "fn",
+    "named",
+    10
+   ],
+   [
+    12,
+    1,
+    2,
+    "fn",
+    "shadowed",
+    15
+   ],
+   [
+    17,
+    1,
+    2,
+    "fn",
+    "positions",
+    33,
+    "",
+    0,
+    [
+     [
+      17,
+      14,
+      38,
+      "s",
+      "acme_kms::types::Spec"
+     ],
+     [
+      17,
+      40,
+      48,
+      "on",
+      "bool"
+     ]
+    ]
+   ],
+   [
+    35,
+    1,
+    20,
+    "fn",
+    "sign",
+    0,
+    "",
+    0,
+    [
+     [
+      35,
+      12,
+      16,
+      "_",
+      "T"
+     ]
+    ]
+   ]
+  ],
+  "src/values.rs": [
+   [
+    1,
+    1,
+    2,
+    "fn",
+    "value",
+    4
+   ],
+   [
+    6,
+    1,
+    2,
+    "fn",
+    "shortened",
+    10
+   ],
+   [
+    12,
+    1,
+    2,
+    "fn",
+    "module",
+    15
+   ],
+   [
+    17,
+    1,
+    2,
+    "fn",
+    "other",
+    21
+   ],
+   [
+    23,
+    1,
+    2,
+    "fn",
+    "arms",
+    29,
+    "",
+    0,
+    [
+     [
+      23,
+      9,
+      14,
+      "m",
+      "u8"
+     ]
+    ]
+   ],
+   [
+    31,
+    1,
+    2,
+    "fn",
+    "ret",
+    33
+   ],
+   [
+    35,
+    1,
+    2,
+    "fn",
+    "types",
+    41,
+    "",
+    0,
+    [
+     [
+      35,
+      10,
+      26,
+      "k",
+      "acme_kms::Key"
+     ]
+    ]
+   ],
+   [
+    43,
+    1,
+    20,
+    "fn",
+    "sign",
+    0,
+    "",
+    0,
+    [
+     [
+      43,
+      12,
+      16,
+      "_",
+      "T"
+     ]
+    ]
+   ]
+  ]
+ },
+ "binary_exprs": {
+  "src/names.rs": [
+   [
+    22,
+    8,
+    19,
+    "==",
+    "on",
+    "LEVEL",
+    10,
+    14,
+    "probe::names.positions"
+   ]
+  ],
+  "src/values.rs": [
+   [
+    24,
+    19,
+    25,
+    "==",
+    "m",
+    "0",
+    20,
+    24,
+    "probe::values.arms"
+   ]
+  ]
+ },
+ "scan_metadata": {
+  "ecosystem": "rust"
+ }
+}

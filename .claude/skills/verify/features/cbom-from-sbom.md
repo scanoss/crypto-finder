@@ -47,4 +47,3 @@ Preconditions:
 - `pkg/sbomcbom/**`
 - `internal/api/component_findings.go`
 - `internal/api/client.go`
-- `pkg/purl/**`

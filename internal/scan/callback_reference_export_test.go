@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 const callbackExportSource = `import hashlib
@@ -41,7 +42,8 @@ class Migration(migrations.Migration):
 
 // TestExportCallGraph_CallbackReferencesReachTheCallback: a function handed to
 // an API that runs it is reachable from the function that registers it, which
-// is the chain's root. A function nothing registers or calls is not made
+// is the chain's root (a class body registers when its module is imported, so
+// the module is). A function nothing registers or calls is not made
 // reachable by the others.
 func TestExportCallGraph_CallbackReferencesReachTheCallback(t *testing.T) {
 	t.Parallel()
@@ -80,7 +82,7 @@ func TestExportCallGraph_CallbackReferencesReachTheCallback(t *testing.T) {
 
 	for id, frames := range map[string][]string{
 		"worker":   {"mod.start", "mod.worker"},
-		"backfill": {"Migration.<clinit>", "mod.backfill"},
+		"backfill": {"mod.<module>", "Migration.<clinit>", "mod.backfill"},
 	} {
 		fg := graphs[id]
 		if fg.Reachability != graphfrag.ReachabilityReachable {

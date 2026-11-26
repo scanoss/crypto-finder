@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag/equiv"
+	"github.com/scanoss/reach/graphfrag"
+	"github.com/scanoss/reach/graphfrag/equiv"
 )
 
 // equivalence_corpus_test.go replays a REAL scanned corpus through the stitcher

@@ -6,11 +6,11 @@ package scan
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // anchorScopeFunction declares one Go function spanning lines 1 to endLine of
@@ -148,14 +148,5 @@ func TestCallGraphExport_FindingBindsItsOwnArtifactFile(t *testing.T) {
 				t.Fatalf("containing function = %q, want %q", got, want)
 			}
 		})
-	}
-}
-
-func TestAnnotateContainingFunction_MatchesWholePathSegments(t *testing.T) {
-	fragment := graphfrag.Fragment{Functions: []graphfrag.Function{{
-		Signature: "example.com/app/ba.Seal", FilePath: "ba/seal.go", StartLine: 1, EndLine: 20,
-	}}}
-	if fn, ok := annotateContainingFunction(fragment, "a/seal.go", 10); ok {
-		t.Fatalf("a/seal.go bound to %s in ba/seal.go", fn.Signature)
 	}
 }

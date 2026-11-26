@@ -400,11 +400,6 @@ func generateBOMRef() string {
 	return uuid.NewString()
 }
 
-// countTotalAssets counts all cryptographic assets in the report.
-func countTotalAssets(report *entities.InterimReport) int {
-	return countFindingsAssets(report.Findings)
-}
-
 func countResolvedTotalAssets(report *oid.ResolvedReport) int {
 	return countFindingsAssets(report.Findings)
 }

@@ -1,0 +1,56 @@
+# Type alias items as enclosing contexts (TestRustAliasContextAsOpenGrep):
+# `type $T = $M::Digest;` followed by `...` holds at a call after the alias in
+# the block that declares it, comparing the aliased type by its last segment.
+rules:
+- id: wild
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "wild"}}
+  patterns:
+  - pattern: $T::digest(...)
+  - pattern-inside: |
+      type $T = $M::Digest;
+      ...
+- id: pubonly
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "pubonly"}}
+  patterns:
+  - pattern: $T::reset()
+  - pattern-inside: |
+      pub type $T = $M::Digest;
+      ...
+- id: literal
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "literal"}}
+  patterns:
+  - pattern: $T::init()
+  - pattern-inside: |
+      type $T = acme::Digest;
+      ...
+- id: guarded
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "guarded"}}
+  patterns:
+  - pattern-either:
+    - pattern: $T::finish(...)
+    - pattern: $T::build()
+  - pattern-either:
+    - pattern-inside: |
+        pub type $T = $M::Digest;
+        ...
+    - pattern-inside: |
+        type $T = $M::Digest;
+        ...
+  - pattern-inside: |
+      use $IMPORT;
+      ...
+  - metavariable-regex:
+      metavariable: $IMPORT
+      regex: '^acme(?:::|$)'

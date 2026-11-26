@@ -31,8 +31,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -89,7 +90,7 @@ func TestNettyFluentChain_VarargsProtocols_ResolvesRolesInBothForms(t *testing.T
 		t.Fatalf("BuildFromDirectories(netty stub + consumer): %v", err)
 	}
 
-	kb, err := contracts.LoadEmbedded("java")
+	kb, err := contracts.ForEcosystem("java")
 	if err != nil {
 		t.Fatalf("LoadEmbedded(java): %v", err)
 	}
@@ -132,7 +133,7 @@ func TestNettyFluentChain_VarargsProtocols_ResolvesRolesInBothForms(t *testing.T
 				StartLine: line,
 				EndLine:   line,
 				Match:     "SslContextBuilder.forServer(cert, key)",
-				Rules:     []entities.RuleInfo{{ID: "java.netty.protocol.tls.context-builder-server"}},
+				Rules:     []entities.RuleInfo{{ID: "fixture.java.netty.context-builder-server"}},
 				Metadata: map[string]string{
 					"api":          "io.netty.handler.ssl.SslContextBuilder.forServer",
 					"assetType":    "protocol",

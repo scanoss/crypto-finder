@@ -1,0 +1,55 @@
+# A glob use (`use other::*;`, in a group, of a longer path, through
+# `use super::*;`) is no `use $CRATE::$TYPE;` (TestRustGlobUseAsOpenGrep).
+rules:
+- id: neg
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "neg"}}
+  patterns:
+  - pattern: $KEY.sign(...)
+  - pattern-not:
+      patterns:
+      - pattern: $KEY.$METHOD(...)
+      - pattern-inside: |
+          use $CRATE::$TYPE;
+          ...
+      - metavariable-regex:
+          metavariable: $CRATE
+          regex: '^(?!(?:acme|crate|self|super)(?:::|$))'
+      - pattern-inside: |
+          let $KEY = $TYPE::$CTOR(...);
+          ...
+- id: pos
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "pos-$CRATE-$TYPE"}}
+  patterns:
+  - pattern-inside: |
+      use $CRATE::$TYPE;
+      ...
+  - pattern-inside: |
+      let $KEY = $TYPE::$CTOR(...);
+      ...
+  - pattern: $KEY.sign(...)
+- id: posuse
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "posuse-$CRATE-$TYPE"}}
+  patterns:
+  - pattern-inside: |
+      use $CRATE::$TYPE;
+      ...
+  - pattern: $KEY.sign(...)
+- id: poskeys
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "poskeys-$CRATE"}}
+  patterns:
+  - pattern-inside: |
+      use $CRATE::keys;
+      ...
+  - pattern: $KEY.sign(...)

@@ -24,7 +24,7 @@ func TestNodeSodiumPlusSupportingCallsCarryTheirContractRole(t *testing.T) {
 	t.Parallel()
 
 	asset := cAsset(7, 7, 20, 62, "await sodium.crypto_box_seal(message, publicKey);",
-		"javascript.sodium-plus.algorithm.aead.box-seal",
+		"fixture.javascript.sodium-plus.box-seal",
 		map[string]string{"assetType": "algorithm", "api": "sodium-plus.SodiumPlus.crypto_box_seal"})
 	want := map[string]string{
 		"sodium-plus.SodiumPlus.auto":                 "factory",

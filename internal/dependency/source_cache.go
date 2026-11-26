@@ -10,7 +10,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -168,12 +170,24 @@ func plannedFiles(files []*zip.File, extensions []string) []plannedFile {
 		if f.FileInfo().IsDir() || !filepath.IsLocal(rel) || f.UncompressedSize64 > maxExtractedFileSize {
 			continue
 		}
-		if len(extensions) > 0 && !hasMatchingExtension(f.Name, extensions) {
+		if len(extensions) > 0 && !hasMatchingExtension(f.Name, extensions) && !javaServiceEntry(f.Name, extensions) {
 			continue
 		}
 		planned = append(planned, plannedFile{file: f, rel: filepath.Clean(rel)})
 	}
 	return planned
+}
+
+// javaServiceEntry reports whether an archive entry is a ServiceLoader
+// provider-configuration file (META-INF/services/<service type>) of a Java
+// sources archive: the call graph reads the registrations from it, since no
+// source call instantiates a registered class.
+func javaServiceEntry(name string, extensions []string) bool {
+	if !slices.Contains(extensions, ".java") {
+		return false
+	}
+	dir, file := path.Split(name)
+	return file != "" && (dir == "META-INF/services/" || strings.HasSuffix(dir, "/META-INF/services/"))
 }
 
 // entryMatches reports whether destDir holds exactly the planned files,
@@ -266,11 +280,11 @@ func writeStamp(stampPath, stamp, keyDir, version string) error {
 	return nil
 }
 
-// removeBestEffort removes path, logging a failure.
-func removeBestEffort(path string) {
-	// #nosec G703 -- path is a temporary path this file created in the source cache.
-	if err := os.RemoveAll(path); err != nil {
-		log.Debug().Err(err).Str("path", path).Msg("Failed to remove source cache temp path")
+// removeBestEffort removes target, logging a failure.
+func removeBestEffort(target string) {
+	// #nosec G703 -- target is a temporary path this file created in the source cache.
+	if err := os.RemoveAll(target); err != nil {
+		log.Debug().Err(err).Str("path", target).Msg("Failed to remove source cache temp path")
 	}
 }
 

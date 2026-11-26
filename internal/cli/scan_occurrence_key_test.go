@@ -10,8 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/javaruntime"
+
+	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/output"
 )
@@ -44,7 +47,7 @@ func TestPrepareReportOccurrenceKeys_UsesParserAnchorsAndExportsThem(t *testing.
 				StartLine: line, EndLine: line, StartCol: 9, EndCol: 35,
 			}},
 		}}}
-		result := prepareReportOccurrenceKeys(dir, report, []string{"java"}, javaRuntime, false, "", nil, nil)
+		result := prepareReportOccurrenceKeys(nil, dir, report, []string{"java"}, javaRuntime, false, "", nil, nil)
 		if result.CallGraph.JavaPlatformSignatures != nil {
 			t.Fatal("report-only occurrence keys must not run Java type resolution")
 		}
@@ -112,7 +115,7 @@ func TestPrepareReportOccurrenceKeys_DegradesOnSourceAnchorFailure(t *testing.T)
 		CryptographicAssets: []entities.CryptographicAsset{{StartLine: 1, EndLine: 1}},
 	}}}
 
-	result := prepareReportOccurrenceKeys(filepath.Join(t.TempDir(), "missing"), report, []string{"java"}, javaRuntime, false, "", nil, nil)
+	result := prepareReportOccurrenceKeys(nil, filepath.Join(t.TempDir(), "missing"), report, []string{"java"}, javaRuntime, false, "", nil, nil)
 	if result != nil || report.Findings[0].CryptographicAssets[0].OccurrenceKey != "" {
 		t.Fatal("source-anchor failure must preserve report output without an occurrence_key")
 	}
@@ -136,7 +139,7 @@ func TestPrepareReportOccurrenceKeys_AssignsKeyToTopLevelCall(t *testing.T) {
 		CryptographicAssets: []entities.CryptographicAsset{{StartLine: 2, EndLine: 2, StartCol: 1, EndCol: 20}},
 	}}}
 
-	result := prepareReportOccurrenceKeys(dir, report, []string{"python"}, javaRuntime, false, "", nil, nil)
+	result := prepareReportOccurrenceKeys(nil, dir, report, []string{"python"}, javaRuntime, false, "", nil, nil)
 	if result == nil || result.CallGraph == nil {
 		t.Fatal("report-only enrichment must build source anchors")
 	}
@@ -175,7 +178,7 @@ class Crypto {
 		{FilePath: pythonPath, Language: "python", CryptographicAssets: []entities.CryptographicAsset{{StartLine: 2, EndLine: 2, StartCol: 5, EndCol: 25}}},
 	}}
 
-	result := prepareReportOccurrenceKeys(dir, report, []string{"java", "python"}, javaRuntime, false, "", nil, nil)
+	result := prepareReportOccurrenceKeys(nil, dir, report, []string{"java", "python"}, javaRuntime, false, "", nil, nil)
 	if result == nil || result.CallGraph == nil {
 		t.Fatal("report-only enrichment must build source anchors")
 	}
@@ -226,7 +229,7 @@ void run() {
 		{FilePath: cppPath, Language: "c", CryptographicAssets: []entities.CryptographicAsset{{StartLine: 3, EndLine: 3, StartCol: 3, EndCol: 15}}},
 	}}
 
-	result := prepareReportOccurrenceKeys(dir, report, []string{"c"}, javaRuntime, false, "", nil, nil)
+	result := prepareReportOccurrenceKeys(nil, dir, report, []string{"c"}, javaRuntime, false, "", nil, nil)
 	if result == nil || len(result.OccurrenceAnchors) != 2 {
 		t.Fatalf("occurrence anchors = %d, want both C and C++ declarations", len(result.OccurrenceAnchors))
 	}
@@ -247,4 +250,103 @@ void run() {
 			t.Fatalf("%s occurrence_key omitted", filepath.Base(finding.FilePath))
 		}
 	}
+}
+
+func TestOccurrenceKeyAnchorsReuseTheScanGraph(t *testing.T) {
+	dir := t.TempDir()
+	decl := &callgraph.FunctionDecl{}
+	graphs := newGraphStore(dir, "")
+	graphs.keep(dir, "go", &engine.DepScanResult{
+		Ecosystem: "go",
+		CallGraph: &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{"example.com/app.Encrypt": decl}},
+	})
+
+	result := addReportOccurrenceKeyAnchors(graphs, dir, &entities.InterimReport{}, "go", javaruntime.Config{}, false, "", nil, nil)
+
+	if result == nil || result.OccurrenceAnchors[occurrenceAnchorKey("go", "example.com/app.Encrypt")] != decl {
+		t.Fatalf("anchors = %v, want the declarations of the graph the scan already built for the target", result)
+	}
+}
+
+// A scan without --export-callgraph or --export-graph-fragment reaches the
+// Rust foreign-receiver filter with no graph of its own: the anchors build
+// supplies it, from the typed graph the cards scan kept or, when there is
+// none, from a source-only build. The Rust parser types a receiver the crate
+// declares in both, so both drop the consumer's own `own.sign(..)` and keep
+// the crate's `key.sign(..)`, and taking the kept graph changes no finding.
+func TestPrepareReportOccurrenceKeys_RustForeignReceiverWithoutExport(t *testing.T) {
+	const src = `use fakesig::SigningKey;
+
+pub struct ConsumerOwnType;
+
+impl ConsumerOwnType {
+    pub fn sign(&self, msg: &[u8]) -> Vec<u8> {
+        msg.to_vec()
+    }
+}
+
+pub fn own(msg: &[u8]) -> Vec<u8> {
+    let own = ConsumerOwnType;
+    own.sign(msg)
+}
+
+pub fn real(key: &SigningKey, msg: &[u8]) {
+    let _sig = key.sign(msg);
+}
+`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"leakprobe\"\nversion = \"0.1.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "src", "lib.rs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	assetAt := func(needle string) entities.CryptographicAsset {
+		for i, line := range strings.Split(src, "\n") {
+			if col := strings.Index(line, needle); col >= 0 {
+				return entities.CryptographicAsset{
+					StartLine: i + 1, EndLine: i + 1, StartCol: col + 1, EndCol: col + 1 + len(needle),
+					Rules: []entities.RuleInfo{{ID: "rust.fakesig.sign", Message: "detected", Severity: "INFO"}},
+				}
+			}
+		}
+		t.Fatalf("%q not in source", needle)
+		return entities.CryptographicAsset{}
+	}
+	scan := func(t *testing.T, graphs *graphStore) []int {
+		t.Helper()
+		report := &entities.InterimReport{Findings: []entities.Finding{
+			{FilePath: "src/lib.rs", Language: "rust", CryptographicAssets: []entities.CryptographicAsset{assetAt("own.sign(msg)")}},
+			{FilePath: "src/lib.rs", Language: "rust", CryptographicAssets: []entities.CryptographicAsset{assetAt("key.sign(msg)")}},
+		}}
+		prepareReportOccurrenceKeys(graphs, dir, report, []string{"rust"}, javaruntime.Config{}, false, "", nil, nil)
+		var lines []int
+		for _, finding := range report.Findings {
+			for _, asset := range finding.CryptographicAssets {
+				lines = append(lines, asset.StartLine)
+			}
+		}
+		return lines
+	}
+
+	t.Run("source-only anchors", func(t *testing.T) {
+		if got := scan(t, newGraphStore(dir, "")); len(got) != 1 || got[0] != 17 {
+			t.Fatalf("kept asset lines = %v, want [17]", got)
+		}
+	})
+	t.Run("graph the cards scan kept", func(t *testing.T) {
+		graphs := newGraphStore(dir, "")
+		if _, err := buildStandaloneCallGraphResultForEcosystem(graphs, dir, &entities.InterimReport{}, "rust", javaruntime.Config{}, false, "", nil, true); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := graphs.load(dir, "rust", nil); !ok {
+			t.Fatal("the typed graph was not kept for the target")
+		}
+		if got := scan(t, graphs); len(got) != 1 || got[0] != 17 {
+			t.Fatalf("kept asset lines = %v, want [17]", got)
+		}
+	})
 }

@@ -184,7 +184,7 @@ Fix any issues reported by the linter. Common rules include:
 # Run all tests locally (writes coverage.out)
 make test
 
-# Run tests in Docker, same environment as CI (includes semgrep + opengrep)
+# Run tests in Docker, same environment as CI
 make test-docker
 
 # Run tests for a specific package
@@ -194,11 +194,28 @@ go test ./internal/scanner/...
 go test -run TestScannerName ./internal/scanner/
 ```
 
-`make test` runs the suite with your local toolchain: tests that shell out to a
-real scanner are skipped when `opengrep`/`semgrep` are not installed. CI runs
-`make test-docker`, which builds `Dockerfile.test` (Go + semgrep + opengrep) and
-runs the full suite inside it — use it before submitting scanner-touching
-changes so the integration tests actually execute.
+`make test` runs the suite with your local toolchain: detection runs in-process
+on the cards engine, so no external scanner is needed. Tests that need `mvn` or
+a JDK skip when they are missing. CI runs `make test-docker`, which builds
+`Dockerfile.test` and runs the full suite inside it.
+
+### What CI runs
+
+A regression in any of these fails the pull request.
+
+| Guard | Command | Workflow, job |
+|-------|---------|---------------|
+| Engine import boundary, graph/algo version and golden, equivalence, cards, scripts, feature map | `make test-guards` | `test.yml`, `guards` |
+| Engine (`github.com/scanoss/reach`) tests that need the crypto KB | `make test-reach` | `test.yml`, `guards` |
+| Full suite with coverage thresholds (includes every guard) | `make test-docker` | `test.yml`, `test` |
+| Lint, pinned `golangci-lint` | `make lint` | `lint.yml` |
+| Binary size budget | `.claude/skills/verify/scripts/budgets.sh size` | `lint.yml` |
+| Feature map and PR evidence | `go run ./scripts/featuremap check-docs` | `pr-hygiene.yml` |
+| Startup budgets, network end-to-end | see the file | `nightly-e2e.yml` (nightly, not per PR) |
+
+Not in CI: the profiling and corpus harnesses that need a private input
+(`CRYPTO_FINDER_BCPROV_SRC`, `CRYPTO_FINDER_EQUIV_LIVE`,
+`CARDMATCH_PARITY_RULES`). They skip when it is unset; run them by hand.
 
 ## Pull Request Process
 

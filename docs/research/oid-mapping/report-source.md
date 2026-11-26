@@ -2,7 +2,7 @@
 
 **Audience:** SCANOSS crypto-finder maintainers and policy-engine consumers  
 **Research date:** 2026-09-08  
-**Repositories:** `scanoss/crypto-finder` current worktree and `scanoss/crypto_finder_poc` at `c8db56bd3c4cb64dac36cbdc6b531b1701d8c6c7`
+**Repositories:** `scanoss/crypto-finder` and the detection ruleset at a pinned revision
 
 ## Executive answer
 

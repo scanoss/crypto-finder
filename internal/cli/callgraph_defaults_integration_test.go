@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/reach/graphfrag"
 	"github.com/stretchr/testify/require"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 func TestCallgraphCLIExportProfiles(t *testing.T) {
@@ -30,22 +30,21 @@ func TestCallgraphCLIExportProfiles(t *testing.T) {
 	tmp := t.TempDir()
 	target := filepath.Join(tmp, "source")
 	require.NoError(t, os.Mkdir(target, 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(target, "go.mod"), []byte("module example.com/profile\n\ngo 1.24\n"), 0o600))
 	var source strings.Builder
-	source.WriteString("package profile\nimport \"crypto/sha256\"\nfunc hash(data []byte) []byte { digest := sha256.New(); digest.Write(data); return digest.Sum(nil) }\n")
+	source.WriteString("package profile;\nimport java.security.MessageDigest;\npublic class Profile {\n")
+	source.WriteString("  static byte[] hash(byte[] data) throws Exception { MessageDigest digest = MessageDigest.getInstance(\"SHA-256\"); digest.update(data); return digest.digest(); }\n")
 	for i := 0; i < 12; i++ {
-		fmt.Fprintf(&source, "func Entry%d(data []byte) []byte { return hash(data) }\n", i)
+		fmt.Fprintf(&source, "  public static byte[] entry%d(byte[] data) throws Exception { return hash(data); }\n", i)
 	}
-	sourcePath := filepath.Join(target, "profile.go")
-	require.NoError(t, os.WriteFile(sourcePath, []byte(source.String()), 0o600))
-	writeFakeScanner(t, tmp)
+	source.WriteString("}\n")
+	require.NoError(t, os.WriteFile(filepath.Join(target, "Profile.java"), []byte(source.String()), 0o600))
 	rulesPath := filepath.Join(tmp, "rules.yaml")
 	require.NoError(t, os.WriteFile(rulesPath, []byte(`rules:
-  - id: go.sha256.profile
+  - id: java.sha256.profile
     message: SHA-256
     severity: INFO
-    languages: [go]
-    pattern: $DIGEST.Sum($DATA)
+    languages: [java]
+    pattern: java.security.MessageDigest.getInstance("SHA-256")
     metadata:
       crypto:
         assetType: algorithm
@@ -53,17 +52,6 @@ func TestCallgraphCLIExportProfiles(t *testing.T) {
         algorithmPrimitive: hash
         algorithmName: SHA-256
 `), 0o600))
-	scannerOutput := filepath.Join(tmp, "scanner.json")
-	needle := "digest.Sum(nil)"
-	line, col := location(source.String(), needle)
-	writeJSON(t, scannerOutput, map[string]any{"results": []any{map[string]any{
-		"check_id": "go.sha256.profile", "path": sourcePath,
-		"start": map[string]int{"line": line, "col": col}, "end": map[string]int{"line": line, "col": col + len(needle)},
-		"extra": map[string]any{
-			"message": "SHA-256", "severity": "INFO", "lines": needle,
-			"metadata": map[string]any{"crypto": map[string]any{"assetType": "algorithm", "algorithmFamily": "SHA2", "algorithmPrimitive": "hash", "algorithmName": "SHA-256"}},
-		},
-	}}, "errors": []any{}})
 	var reports []entities.InterimReport
 	var exports []graphfrag.CallgraphExport
 	for _, profile := range []struct {
@@ -80,11 +68,11 @@ func TestCallgraphCLIExportProfiles(t *testing.T) {
 			findings := filepath.Join(tmp, profile.name+"-findings.json")
 			graphPath := filepath.Join(tmp, profile.name+"-graph.json")
 			args := make([]string, 0, 14+len(profile.flags))
-			args = append(args, "scan", "--scanner", "opengrep", "--no-remote-rules", "--no-default-exclusions", "--languages", "go", "--rules", rulesPath, "--output", findings, "--export-callgraph", graphPath)
+			args = append(args, "scan", "--no-remote-rules", "--no-default-exclusions", "--languages", "java", "--rules", rulesPath, "--output", findings, "--export-callgraph", graphPath)
 			args = append(args, profile.flags...)
 			args = append(args, target)
 			cmd := exec.CommandContext(t.Context(), binary, args...)
-			cmd.Env = append(os.Environ(), "HOME="+filepath.Join(tmp, "home"), "FAKE_OPENGREP_OUTPUT="+scannerOutput, "PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
+			cmd.Env = append(os.Environ(), "HOME="+filepath.Join(tmp, "home"))
 			output, err := cmd.CombinedOutput()
 			require.NoErrorf(t, err, "CLI output: %s", output)
 			var report entities.InterimReport

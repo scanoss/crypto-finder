@@ -8,7 +8,33 @@ on:
   push:
     branches: ["main"]
 
+permissions:
+  contents: read
+
 jobs:
+  # The guards, named: a red import boundary, graph/algo version, equivalence,
+  # cards or feature-map check says so in the job name instead of hiding in the
+  # full suite's log. They also run in `test` below. test-reach runs the engine's
+  # (github.com/scanoss/reach) tests that need a contracts KB; reach's own CI has
+  # none, so they skip there and run here against internal/cryptokb.
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.x
+
+      - name: Guard tests
+        run: make test-guards
+
+      - name: Engine tests against the crypto KB
+        run: make test-reach
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -20,9 +46,8 @@ jobs:
         run: docker build -t crypto-finder-test:latest -f Dockerfile.test .
 
       - name: Run tests with coverage
-        # Mount the host Docker socket and share the host network so
-        # testcontainers (Postgres findings-cache tests) can launch sibling
-        # containers and reach their published ports at localhost (DooD).
+        # The host Docker socket and network were for the Postgres
+        # findings-cache tests (testcontainers), removed with the cache.
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
@@ -50,15 +75,15 @@ jobs:
   # opened on the first red push, commented on later red pushes, and closed
   # by the next green one.
   red-main:
-    needs: test
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.test.result == 'success' || needs.test.result == 'failure')
+    needs: [guards, test]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.guards.result == 'success' || needs.guards.result == 'failure') && (needs.test.result == 'success' || needs.test.result == 'failure')
     runs-on: ubuntu-latest
     permissions:
       issues: write
     steps:
       - uses: actions/github-script@v9
         env:
-          RESULT: ${{ needs.test.result }}
+          RESULT: ${{ (needs.test.result == 'failure' || needs.guards.result == 'failure') && 'failure' || 'success' }}
         with:
           script: |
             const title = 'Test & Coverage is red on main';

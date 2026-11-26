@@ -19,8 +19,8 @@ package scan
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 // TestExportCallGraph_RefutedConditionVerdict: a rule's parameterCondition
@@ -43,11 +43,11 @@ func TestExportCallGraph_RefutedConditionVerdict(t *testing.T) {
 		wantChains            int
 	}{
 		{
-			name: "every call site refuted", span: "MessageDigest.getInstance(alg)", condition: "param[0]==MD5",
+			name: "every call site refuted", span: "MessageDigest.getInstance(alg)", condition: `param[0]=="MD5"`,
 			wantReachability: graphfrag.ReachabilityUnreachable, wantReachable: boolPtr(false),
 		},
 		{
-			name: "every route refuted", span: "MessageDigest.getInstance(algorithm)", condition: "param[0]==MD5",
+			name: "every route refuted", span: "MessageDigest.getInstance(algorithm)", condition: `param[0]=="MD5"`,
 			wantReachability: graphfrag.ReachabilityUnreachable, wantReachable: boolPtr(false),
 		},
 		{
@@ -59,7 +59,7 @@ func TestExportCallGraph_RefutedConditionVerdict(t *testing.T) {
 			wantReachability: graphfrag.ReachabilityUnknown, wantReason: unresolvedTraversalTruncated,
 		},
 		{
-			name: "budget dropped a route", span: "MessageDigest.getInstance(algorithm)", condition: "param[0]==MD5", maxChains: 1,
+			name: "budget dropped a route", span: "MessageDigest.getInstance(algorithm)", condition: `param[0]=="MD5"`, maxChains: 1,
 			wantReachability: graphfrag.ReachabilityUnknown, wantReason: unresolvedTraversalTruncated,
 		},
 	}

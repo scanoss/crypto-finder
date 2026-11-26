@@ -1,0 +1,152 @@
+{
+ "inside": [
+  {
+   "col": 13,
+   "end_col": 30,
+   "file": "src/arms.rs",
+   "line": 5,
+   "metavars": {
+    "$M": "acme"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 30,
+   "file": "src/arms.rs",
+   "line": 9,
+   "metavars": {
+    "$M": "other"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 26,
+   "file": "src/body.rs",
+   "line": 4,
+   "metavars": {
+    "$M": "acme"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 22,
+   "file": "src/body.rs",
+   "line": 6,
+   "metavars": {
+    "$M": "acme"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 26,
+   "file": "src/closure.rs",
+   "line": 4,
+   "metavars": {
+    "$M": "acme"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 26,
+   "file": "src/closure.rs",
+   "line": 9,
+   "metavars": {
+    "$M": "acme"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 26,
+   "file": "src/closure.rs",
+   "line": 13,
+   "metavars": {
+    "$M": "acme"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 26,
+   "file": "src/ifelse.rs",
+   "line": 4,
+   "metavars": {
+    "$M": "acme"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 30,
+   "file": "src/nested.rs",
+   "line": 5,
+   "metavars": {
+    "$M": "acme"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 26,
+   "file": "src/nested.rs",
+   "line": 7,
+   "metavars": {
+    "$M": "acme"
+   }
+  }
+ ],
+ "notacme": [
+  {
+   "col": 13,
+   "end_col": 30,
+   "file": "src/arms.rs",
+   "line": 9,
+   "metavars": {}
+  },
+  {
+   "col": 13,
+   "end_col": 30,
+   "file": "src/arms.rs",
+   "line": 12,
+   "metavars": {}
+  },
+  {
+   "col": 5,
+   "end_col": 22,
+   "file": "src/arms.rs",
+   "line": 15,
+   "metavars": {}
+  },
+  {
+   "col": 5,
+   "end_col": 22,
+   "file": "src/body.rs",
+   "line": 10,
+   "metavars": {}
+  },
+  {
+   "col": 5,
+   "end_col": 22,
+   "file": "src/closure.rs",
+   "line": 6,
+   "metavars": {}
+  },
+  {
+   "col": 5,
+   "end_col": 22,
+   "file": "src/closure.rs",
+   "line": 15,
+   "metavars": {}
+  },
+  {
+   "col": 9,
+   "end_col": 26,
+   "file": "src/ifelse.rs",
+   "line": 6,
+   "metavars": {}
+  },
+  {
+   "col": 5,
+   "end_col": 22,
+   "file": "src/nested.rs",
+   "line": 9,
+   "metavars": {}
+  }
+ ]
+}

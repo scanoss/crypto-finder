@@ -20,8 +20,10 @@ package deadcode
 
 import (
 	"bufio"
+	"maps"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -135,38 +137,84 @@ func FindDeadRegions(filePath string) ([]Region, error) {
 		}
 	}()
 
-	var regions []Region
-	var deadStart int
-	deadDepth := 0
-
+	var t regionTracker
 	scanner := bufio.NewScanner(f)
 	lineNum := 0
-
 	for scanner.Scan() {
 		lineNum++
-		line := scanner.Text()
-
-		if deadDepth > 0 {
-			deadDepth, regions = trackDeadBlock(line, deadDepth, deadStart, lineNum, regions)
-			continue
-		}
-
-		// Live code — check for statically-false #if directives.
-		if reIfdef.MatchString(line) {
-			// #ifdef / #ifndef are not statically evaluable — skip.
-			continue
-		}
-		if m := reIfDirective.FindStringSubmatch(line); len(m) > 1 && isStaticallyFalse(m[1]) {
-			deadStart = lineNum
-			deadDepth = 1
-		}
+		t.line(lineNum, scanner.Text())
 	}
-
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
+	return t.regions, nil
+}
 
-	return regions, nil
+// DeadRegionsOfLines returns the dead regions of a file known by some of its
+// lines (line number to text), as FindDeadRegions finds them in the whole
+// file when the lines hold every directive RegionDirectives keeps. A line
+// not listed reads as code.
+func DeadRegionsOfLines(lines map[int]string) []Region {
+	var t regionTracker
+	for _, n := range slices.Sorted(maps.Keys(lines)) {
+		t.line(n, lines[n])
+	}
+	return t.regions
+}
+
+// RegionDirectives returns, of a file's lines (fileLines[0] is line 1), the
+// preprocessor conditionals written inside its dead regions, by line
+// number: the opening statically-false #if, the conditionals nested in it
+// and the line that closes the region. DeadRegionsOfLines finds the same
+// regions from them, whatever other lines of the file it is given.
+func RegionDirectives(fileLines []string) map[int]string {
+	var t regionTracker
+	for i, line := range fileLines {
+		t.line(i+1, line)
+	}
+	if len(t.regions) == 0 {
+		return nil
+	}
+	out := make(map[int]string)
+	for _, r := range t.regions {
+		for n := r.StartLine; n <= r.EndLine && n <= len(fileLines); n++ {
+			if line := fileLines[n-1]; isConditional(line) {
+				out[n] = line
+			}
+		}
+	}
+	return out
+}
+
+// isConditional reports a preprocessor conditional line: #if, #ifdef,
+// #ifndef, #elif, #else or #endif.
+func isConditional(line string) bool {
+	return matchesIfFamily(line) || reElif.MatchString(line) || reElse.MatchString(line) || reEndif.MatchString(line)
+}
+
+// regionTracker follows a file's lines in order and collects its dead
+// regions.
+type regionTracker struct {
+	regions   []Region
+	deadStart int
+	deadDepth int
+}
+
+// line reads line lineNum of the file.
+func (t *regionTracker) line(lineNum int, line string) {
+	if t.deadDepth > 0 {
+		t.deadDepth, t.regions = trackDeadBlock(line, t.deadDepth, t.deadStart, lineNum, t.regions)
+		return
+	}
+	// Live code — check for statically-false #if directives.
+	if reIfdef.MatchString(line) {
+		// #ifdef / #ifndef are not statically evaluable — skip.
+		return
+	}
+	if m := reIfDirective.FindStringSubmatch(line); len(m) > 1 && isStaticallyFalse(m[1]) {
+		t.deadStart = lineNum
+		t.deadDepth = 1
+	}
 }
 
 // trackDeadBlock processes a single line while inside a dead code block,

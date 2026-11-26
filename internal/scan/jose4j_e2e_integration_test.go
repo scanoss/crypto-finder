@@ -4,16 +4,12 @@
 // jose4j_e2e_integration_test.go — scanoss/crypto-finder#188 scan-layer proof.
 //
 // Proves that entry-point synthesis (engine.SynthesizeRuleCryptoEntryPoints)
-// JOINS the jose4j detection rule "api" anchors against a
-// jose4j-shaped source tree mined with the real Java parser + callgraph
-// builder — the same path `crypto-finder scan --export-callgraph` uses when
-// mining jose4j itself. This is the public-export proof that the
-// jose4j.yaml contract's method+arity keys
-// (internal/callgraph/contracts/java/jose4j.yaml) match what the Java parser
-// actually emits for the JWE key-management/content-encryption constructors,
-// the hand-rolled KDF constructor+operation methods, and the JWK generator
-// factories — not just the embedded-contract loader assertions in
-// jose4j_java_library_test.go.
+// joins rule "api" anchors against a jose4j-shaped source tree mined with the
+// real Java parser and callgraph builder: key-management and
+// content-encryption constructors, hand-rolled KDF constructor and operation
+// methods, and JWK generator factories. The rules and class names are
+// invented.
+
 package scan
 
 import (
@@ -21,16 +17,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
 // jose4jJweSource is a jose4j-shaped stub of org/jose4j/jwe/*.java (0.9.6):
-// the RsaKeyManagementAlgorithm/AesKeyWrapManagementAlgorithm/
+// the RsaKeyMgmtAlgorithm/AesKeyWrapManagementAlgorithm/
 // AesGcmKeyEncryptionAlgorithm/Pbes2HmacShaWithAesKeyWrapAlgorithm nested-class
 // constructor shapes and the AesCbcHmacSha2ContentEncryptionAlgorithm
-// encrypt/decrypt method shapes the detection rules anchor on, at the
+// encrypt/decrypt method shapes the rules anchor on, at the
 // same arities the jose4j.yaml contract keys on. It is a stub (not a full
 // compilable copy) because the tree-sitter-based Java parser extracts
 // declarations syntactically and does not require the real supporting types
@@ -38,25 +35,25 @@ import (
 // resolvable.
 const jose4jJweSource = `package org.jose4j.jwe;
 
-public class RsaKeyManagementAlgorithm {
-    public RsaKeyManagementAlgorithm(String javaAlg, String alg) {
+public class RsaKeyMgmtAlgorithm {
+    public RsaKeyMgmtAlgorithm(String javaAlg, String alg) {
     }
 
-    public static class RsaOaep extends RsaKeyManagementAlgorithm {
+    public static class RsaOaep extends RsaKeyMgmtAlgorithm {
         public RsaOaep() {
-            super("RSA/ECB/OAEPWithSHA-1AndMGF1Padding", "RSA-OAEP");
+            super("FX-OAEP-A", "FX-A");
         }
     }
 
-    public static class RsaOaep256 extends RsaKeyManagementAlgorithm {
+    public static class RsaOaep256 extends RsaKeyMgmtAlgorithm {
         public RsaOaep256() {
-            super("RSA/ECB/OAEPWithSHA-256AndMGF1Padding", "RSA-OAEP-256");
+            super("FX-OAEP-B", "FX-B");
         }
     }
 
-    public static class Rsa1_5 extends RsaKeyManagementAlgorithm {
+    public static class Rsa1_5 extends RsaKeyMgmtAlgorithm {
         public Rsa1_5() {
-            super("RSA/ECB/PKCS1Padding", "RSA1_5");
+            super("FX-PLAIN", "FX-C");
         }
     }
 }
@@ -119,13 +116,13 @@ class ProviderContext {}
 `
 
 // jose4jKdfSource is a jose4j-shaped stub of org/jose4j/jwe/kdf/*.java: the
-// hand-rolled ConcatKeyDerivationFunction (NIST SP 800-56A Concat KDF) and
-// PasswordBasedKeyDerivationFunction2 (RFC 2898 PBKDF2) constructor +
+// hand-rolled ConcatKdf (NIST SP 800-56A Concat KDF) and
+// Pbkdf2Function (RFC 2898 PBKDF2) constructor +
 // operation method shapes.
 const jose4jKdfSource = `package org.jose4j.jwe.kdf;
 
-public class ConcatKeyDerivationFunction {
-    public ConcatKeyDerivationFunction(String hashAlgorithm) {
+public class ConcatKdf {
+    public ConcatKdf(String hashAlgorithm) {
     }
 
     public byte[] kdf(byte[] sharedSecret, int keydatalen, byte[] otherInfo) {
@@ -133,8 +130,8 @@ public class ConcatKeyDerivationFunction {
     }
 }
 
-public class PasswordBasedKeyDerivationFunction2 {
-    public PasswordBasedKeyDerivationFunction2(String hmacAlgorithm) {
+public class Pbkdf2Function {
+    public Pbkdf2Function(String hmacAlgorithm) {
     }
 
     public byte[] derive(byte[] password, byte[] salt, int iterationCount, int dkLen, String provider) {
@@ -159,13 +156,13 @@ public class EcJwkGenerator {
     }
 }
 
-public class OctJwkGenerator {
+public class OctJwkFactory {
     public static OctetSequenceJsonWebKey generateJwk(int keyLengthInBits) {
         return null;
     }
 }
 
-public class OkpJwkGenerator {
+public class OkpJwkFactory {
     public static OctetKeyPairJsonWebKey generateJwk(String subtype) {
         return null;
     }
@@ -186,57 +183,57 @@ class ECParameterSpec {}
 // *KeyUtil.generateKeyPair wrappers backing the JWK generators above.
 const jose4jKeysSource = `package org.jose4j.keys;
 
-public class RsaKeyUtil {
+public class RsaKeyTool {
     public java.security.KeyPair generateKeyPair(int bits) {
         return null;
     }
 }
 
-public class EcKeyUtil {
+public class EcKeyTool {
     public java.security.KeyPair generateKeyPair(java.security.spec.ECParameterSpec spec) {
         return null;
     }
 }
 
-public class OctetKeyPairUtil {
+public class OkpKeyTool {
     public java.security.KeyPair generateKeyPair(String name) {
         return null;
     }
 }
 `
 
-// jose4jRulesYAML mirrors the detection rule "api" anchors for
+// jose4jRulesYAML holds invented rule "api" anchors for
 // the P2/P3/hand-rolled jose4j scope: the three RSA key-management variants,
 // AES key wrap, AES-GCM key wrap, PBES2, the hand-rolled ConcatKDF/PBKDF2
 // constructor + operation pairs, the AES-CBC-HMAC encrypt/decrypt pair, the
 // four JWK generators, the three KeyUtil.generateKeyPair wrappers, and the
 // "oct" JWK material constructor.
 const jose4jRulesYAML = `rules:
-  - id: java.jose4j.algorithm.pke.rsa-oaep-sha1-transformation
+  - id: fixture.java.jose4j.rsa-oaep-sha1-transformation
     metadata:
       crypto:
         assetType: algorithm
         algorithmPrimitive: pke
         algorithmName: RSA-OAEP-SHA-1
         library: jose4j
-        api: org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep.<init>
-  - id: java.jose4j.algorithm.pke.rsa-oaep-sha256-transformation
+        api: org.jose4j.jwe.RsaKeyMgmtAlgorithm.RsaOaep.<init>
+  - id: fixture.java.jose4j.rsa-oaep-sha256-transformation
     metadata:
       crypto:
         assetType: algorithm
         algorithmPrimitive: pke
         algorithmName: RSA-OAEP-SHA-256
         library: jose4j
-        api: org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep256.<init>
-  - id: java.jose4j.algorithm.pke.rsa1_5-transformation
+        api: org.jose4j.jwe.RsaKeyMgmtAlgorithm.RsaOaep256.<init>
+  - id: fixture.java.jose4j.rsa1_5-transformation
     metadata:
       crypto:
         assetType: algorithm
         algorithmPrimitive: pke
         algorithmName: RSAES-PKCS1-v1_5
         library: jose4j
-        api: org.jose4j.jwe.RsaKeyManagementAlgorithm.Rsa1_5.<init>
-  - id: java.jose4j.algorithm.key-wrap.aes-kw
+        api: org.jose4j.jwe.RsaKeyMgmtAlgorithm.Rsa1_5.<init>
+  - id: fixture.java.jose4j.aes-kw
     metadata:
       crypto:
         assetType: algorithm
@@ -244,7 +241,7 @@ const jose4jRulesYAML = `rules:
         algorithmFamily: AES
         library: jose4j
         api: org.jose4j.jwe.AesKeyWrapManagementAlgorithm.<init>
-  - id: java.jose4j.algorithm.key-wrap.aes-gcm-kw
+  - id: fixture.java.jose4j.aes-gcm-kw
     metadata:
       crypto:
         assetType: algorithm
@@ -252,7 +249,7 @@ const jose4jRulesYAML = `rules:
         algorithmFamily: AES
         library: jose4j
         api: org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.<init>
-  - id: java.jose4j.algorithm.kdf.pbes2
+  - id: fixture.java.jose4j.pbes2
     metadata:
       crypto:
         assetType: algorithm
@@ -260,15 +257,15 @@ const jose4jRulesYAML = `rules:
         algorithmFamily: PBES2
         library: jose4j
         api: org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.<init>
-  - id: java.jose4j.algorithm.kdf.concat-kdf
+  - id: fixture.java.jose4j.concat-kdf
     metadata:
       crypto:
         assetType: algorithm
         algorithmPrimitive: kdf
         algorithmFamily: ConcatKDF
         library: jose4j
-        api: org.jose4j.jwe.kdf.ConcatKeyDerivationFunction.<init>
-  - id: java.jose4j.algorithm.kdf.concat-kdf-derive
+        api: org.jose4j.jwe.kdf.ConcatKdf.<init>
+  - id: fixture.java.jose4j.concat-kdf-derive
     metadata:
       crypto:
         assetType: algorithm
@@ -276,16 +273,16 @@ const jose4jRulesYAML = `rules:
         algorithmFamily: ConcatKDF
         operation: keyderive
         library: jose4j
-        api: org.jose4j.jwe.kdf.ConcatKeyDerivationFunction.kdf
-  - id: java.jose4j.algorithm.kdf.pbkdf2-handrolled
+        api: org.jose4j.jwe.kdf.ConcatKdf.kdf
+  - id: fixture.java.jose4j.pbkdf2-handrolled
     metadata:
       crypto:
         assetType: algorithm
         algorithmPrimitive: kdf
         algorithmFamily: PBKDF2
         library: jose4j
-        api: org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2.<init>
-  - id: java.jose4j.algorithm.kdf.pbkdf2-handrolled-derive
+        api: org.jose4j.jwe.kdf.Pbkdf2Function.<init>
+  - id: fixture.java.jose4j.pbkdf2-handrolled-derive
     metadata:
       crypto:
         assetType: algorithm
@@ -293,8 +290,8 @@ const jose4jRulesYAML = `rules:
         algorithmFamily: PBKDF2
         operation: keyderive
         library: jose4j
-        api: org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2.derive
-  - id: java.jose4j.algorithm.ae.aes-cbc-hmac-encrypt
+        api: org.jose4j.jwe.kdf.Pbkdf2Function.derive
+  - id: fixture.java.jose4j.aes-cbc-hmac-encrypt
     metadata:
       crypto:
         assetType: algorithm
@@ -303,7 +300,7 @@ const jose4jRulesYAML = `rules:
         operation: encrypt
         library: jose4j
         api: org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.encrypt
-  - id: java.jose4j.algorithm.ae.aes-cbc-hmac-decrypt
+  - id: fixture.java.jose4j.aes-cbc-hmac-decrypt
     metadata:
       crypto:
         assetType: algorithm
@@ -330,7 +327,7 @@ const jose4jRulesYAML = `rules:
         operation: keygen
         library: jose4j
         api: org.jose4j.jwk.EcJwkGenerator.generateJwk
-  - id: java.jose4j.related-crypto-material.key.oct-jwk-keygen
+  - id: fixture.java.jose4j.oct-jwk-keygen
     metadata:
       crypto:
         assetType: related-crypto-material
@@ -338,16 +335,16 @@ const jose4jRulesYAML = `rules:
         materialAlgorithm: AES
         operation: keygen
         library: jose4j
-        api: org.jose4j.jwk.OctJwkGenerator.generateJwk
-  - id: java.jose4j.related-crypto-material.key.okp-jwk-keygen
+        api: org.jose4j.jwk.OctJwkFactory.generateJwk
+  - id: fixture.java.jose4j.okp-jwk-keygen
     metadata:
       crypto:
         assetType: related-crypto-material
         materialType: key
         operation: keygen
         library: jose4j
-        api: org.jose4j.jwk.OkpJwkGenerator.generateJwk
-  - id: java.jose4j.related-crypto-material.key.rsa-keyutil-keygen
+        api: org.jose4j.jwk.OkpJwkFactory.generateJwk
+  - id: fixture.java.jose4j.rsa-keyutil-keygen
     metadata:
       crypto:
         assetType: related-crypto-material
@@ -355,8 +352,8 @@ const jose4jRulesYAML = `rules:
         materialAlgorithm: RSA
         operation: keygen
         library: jose4j
-        api: org.jose4j.keys.RsaKeyUtil.generateKeyPair
-  - id: java.jose4j.related-crypto-material.key.ec-keyutil-keygen
+        api: org.jose4j.keys.RsaKeyTool.generateKeyPair
+  - id: fixture.java.jose4j.ec-keyutil-keygen
     metadata:
       crypto:
         assetType: related-crypto-material
@@ -364,16 +361,16 @@ const jose4jRulesYAML = `rules:
         materialAlgorithm: EC
         operation: keygen
         library: jose4j
-        api: org.jose4j.keys.EcKeyUtil.generateKeyPair
-  - id: java.jose4j.related-crypto-material.key.octet-keypair-keyutil-keygen
+        api: org.jose4j.keys.EcKeyTool.generateKeyPair
+  - id: fixture.java.jose4j.octet-keypair-keyutil-keygen
     metadata:
       crypto:
         assetType: related-crypto-material
         materialType: key
         operation: keygen
         library: jose4j
-        api: org.jose4j.keys.OctetKeyPairUtil.generateKeyPair
-  - id: java.jose4j.related-crypto-material.key.octet-sequence-aes-labeling
+        api: org.jose4j.keys.OkpKeyTool.generateKeyPair
+  - id: fixture.java.jose4j.octet-sequence-aes-labeling
     metadata:
       crypto:
         assetType: related-crypto-material
@@ -386,31 +383,31 @@ const jose4jRulesYAML = `rules:
 // jose4jRuleAPIs is every "api" anchor synthesized above; used both to size
 // the expected entry-point count and to assert per-api coverage.
 var jose4jRuleAPIs = []string{
-	"org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep.<init>",
-	"org.jose4j.jwe.RsaKeyManagementAlgorithm.RsaOaep256.<init>",
-	"org.jose4j.jwe.RsaKeyManagementAlgorithm.Rsa1_5.<init>",
+	"org.jose4j.jwe.RsaKeyMgmtAlgorithm.RsaOaep.<init>",
+	"org.jose4j.jwe.RsaKeyMgmtAlgorithm.RsaOaep256.<init>",
+	"org.jose4j.jwe.RsaKeyMgmtAlgorithm.Rsa1_5.<init>",
 	"org.jose4j.jwe.AesKeyWrapManagementAlgorithm.<init>",
 	"org.jose4j.jwe.AesGcmKeyEncryptionAlgorithm.<init>",
 	"org.jose4j.jwe.Pbes2HmacShaWithAesKeyWrapAlgorithm.<init>",
-	"org.jose4j.jwe.kdf.ConcatKeyDerivationFunction.<init>",
-	"org.jose4j.jwe.kdf.ConcatKeyDerivationFunction.kdf",
-	"org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2.<init>",
-	"org.jose4j.jwe.kdf.PasswordBasedKeyDerivationFunction2.derive",
+	"org.jose4j.jwe.kdf.ConcatKdf.<init>",
+	"org.jose4j.jwe.kdf.ConcatKdf.kdf",
+	"org.jose4j.jwe.kdf.Pbkdf2Function.<init>",
+	"org.jose4j.jwe.kdf.Pbkdf2Function.derive",
 	"org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.encrypt",
 	"org.jose4j.jwe.AesCbcHmacSha2ContentEncryptionAlgorithm.decrypt",
 	"org.jose4j.jwk.RsaJwkGenerator.generateJwk",
 	"org.jose4j.jwk.EcJwkGenerator.generateJwk",
-	"org.jose4j.jwk.OctJwkGenerator.generateJwk",
-	"org.jose4j.jwk.OkpJwkGenerator.generateJwk",
-	"org.jose4j.keys.RsaKeyUtil.generateKeyPair",
-	"org.jose4j.keys.EcKeyUtil.generateKeyPair",
-	"org.jose4j.keys.OctetKeyPairUtil.generateKeyPair",
+	"org.jose4j.jwk.OctJwkFactory.generateJwk",
+	"org.jose4j.jwk.OkpJwkFactory.generateJwk",
+	"org.jose4j.keys.RsaKeyTool.generateKeyPair",
+	"org.jose4j.keys.EcKeyTool.generateKeyPair",
+	"org.jose4j.keys.OkpKeyTool.generateKeyPair",
 	"org.jose4j.jwk.OctetSequenceJsonWebKey.<init>",
 }
 
 // TestJose4j_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors proves
 // that mining jose4j-shaped source across its jwe/jwe.kdf/jwk/keys packages
-// produces a synthesized crypto entry point for every detection rules
+// produces a synthesized crypto entry point for every
 // "api" anchor in the P2/P3/hand-rolled scope: the RSA key-management
 // variants, AES/AES-GCM key wrap, PBES2, the hand-rolled ConcatKDF/PBKDF2
 // constructor+operation pairs, the AES-CBC-HMAC encrypt/decrypt pair, the JWK

@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/callgraph"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -137,6 +137,26 @@ func FilterForeignReceiverAssets(report *entities.InterimReport, result *engine.
 			Msg("Dropped crypto assets whose receiver type is declared by the scanned source, not by the rule's crate")
 	}
 	return dropped
+}
+
+// isUntypedMethodCall reports whether the call is spelled `receiver.name(..)`
+// and its receiver type did not resolve. For such a call reach keys the callee
+// {crate package, name}, the very key a free function of the same name in the
+// scanned source has, so the graph's "declared here" answer would be about the
+// free function and not about the method. `secp.sign_ecdsa_recoverable(..)`
+// next to a local `fn sign_ecdsa_recoverable()` is the crate's call, and a
+// path call `framing::write_message(..)` to the local function still is not.
+func isUntypedMethodCall(candidate *callgraph.FunctionCall) bool {
+	if candidate.Callee.Type != "" {
+		return false
+	}
+	return candidate.ReceiverVar != "" || strings.HasSuffix(candidate.Raw, "."+candidate.Callee.Name)
+}
+
+// declaresCalledFunction reports whether the scanned source declares what the
+// call invokes, which an untyped method call never does (see isUntypedMethodCall).
+func declaresCalledFunction(graph *callgraph.CallGraph, candidate *callgraph.FunctionCall) bool {
+	return !isUntypedMethodCall(candidate) && graphDeclaresMethod(graph, candidate.Callee)
 }
 
 // graphDeclaresMethod reports whether the scanned source declares the exact
@@ -419,7 +439,7 @@ func foreignSourceReceiver(
 		if methodNameCarriesClaimedCrate(candidate.Callee.Name, claimed) {
 			return "", false
 		}
-		if foreign == "" && graphDeclaresMethod(ctx.graph, candidate.Callee) {
+		if foreign == "" && declaresCalledFunction(ctx.graph, candidate) {
 			foreign = owner
 		}
 	}
@@ -583,13 +603,13 @@ func claimedCrates(rules []entities.RuleInfo) map[string]struct{} {
 
 // crateOfRuleID extracts the crate a Rust rule names, normalized to the module
 // spelling the parser uses: hyphens become underscores, so
-// "rust.ed25519-dalek.algorithm.signature.eddsa-sign" yields "ed25519_dalek".
+// "rust.ed25519-dalek.sign" yields "ed25519_dalek".
 //
 // The ID is NOT the one authored in the YAML. opengrep prefixes it with the
 // rule file's path relative to the config root, so the same rule arrives as
-// "rust.ed25519-dalek.algorithm.signature.eddsa-sign" from a single --rules
+// "rust.ed25519-dalek.sign" from a single --rules
 // file and as
-// "semgrep-rules.rust.ed25519-dalek.algorithm.signature.rust.ed25519-dalek.algorithm.signature.eddsa-sign"
+// "rules.rust.ed25519-dalek.rust.ed25519-dalek.sign"
 // from --rules-dir on the repository root — which is how the mining service
 // loads them. Anchoring on a "rust." PREFIX therefore matched nothing in
 // production while every unit test passed.

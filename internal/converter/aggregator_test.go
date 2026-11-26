@@ -576,7 +576,7 @@ func TestAggregator_CryptoFunctions_MergedAcrossSameIdentityAssets(t *testing.T)
 					{
 						StartLine: 70,
 						EndLine:   70,
-						Rules:     []entities.RuleInfo{{ID: "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", Severity: "INFO"}},
+						Rules:     []entities.RuleInfo{{ID: "fixture.java.bouncycastle.aes-init-encrypt", Severity: "INFO"}},
 						Metadata: map[string]string{
 							"assetType":          "algorithm",
 							"algorithmFamily":    "AES",
@@ -589,7 +589,7 @@ func TestAggregator_CryptoFunctions_MergedAcrossSameIdentityAssets(t *testing.T)
 					{
 						StartLine: 70,
 						EndLine:   70,
-						Rules:     []entities.RuleInfo{{ID: "java.bouncycastle.algorithm.block-cipher.aes-init-decrypt", Severity: "INFO"}},
+						Rules:     []entities.RuleInfo{{ID: "fixture.java.bouncycastle.aes-init-decrypt", Severity: "INFO"}},
 						Metadata: map[string]string{
 							"assetType":          "algorithm",
 							"algorithmFamily":    "AES",

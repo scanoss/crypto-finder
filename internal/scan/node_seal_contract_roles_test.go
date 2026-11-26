@@ -26,10 +26,10 @@ func TestNodeSealSupportingCallsCarryTheirContractRole(t *testing.T) {
 	t.Parallel()
 
 	asset := cAsset(6, 6, 24, 50, "const keyGenerator = seal.KeyGenerator(context);",
-		"javascript.node-seal.algorithm.pke.key-generator",
+		"fixture.javascript.node-seal.key-generator",
 		map[string]string{"assetType": "algorithm", "api": "node-seal.KeyGenerator"})
 	want := map[string]string{
-		"node-seal.SEAL":                         "factory",
+		"node-seal.default":                      "factory",
 		"node-seal.KeyGenerator.createPublicKey": "operation",
 		"node-seal.KeyGenerator.secretKey":       "output",
 	}

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"unicode/utf8"
 
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 // excerptCacheBytes bounds the source an export keeps in memory. Chains of

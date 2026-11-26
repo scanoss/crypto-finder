@@ -5,9 +5,7 @@ name: Nightly e2e
 # holds the noisy budgets (startup, scan time, peak memory) of the verify skill.
 #
 # The tests run on the runner rather than in Dockerfile.test: the runner
-# already has Maven, python3 and cargo, and only opengrep and a JDK are added.
-# opengrep is installed exactly as Dockerfile.test installs it; keep the
-# version and checksum in step with that file.
+# already has Maven, python3 and cargo, and only a JDK is added.
 
 on:
   schedule:
@@ -20,9 +18,6 @@ permissions:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    env:
-      OPENGREP_VERSION: v1.22.0
-      OPENGREP_AMD64_SHA256: 45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319
     steps:
       - uses: actions/checkout@v7
 
@@ -38,30 +33,17 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Install pinned opengrep
-        run: |
-          install_dir="$HOME/.opengrep/cli/${OPENGREP_VERSION}"
-          mkdir -p "$install_dir"
-          curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86" -o "$install_dir/opengrep"
-          echo "${OPENGREP_AMD64_SHA256}  $install_dir/opengrep" | sha256sum -c -
-          chmod a+x "$install_dir/opengrep"
-          "$install_dir/opengrep" --version
-          echo "$install_dir" >> "$GITHUB_PATH"
-
       - name: Run network end-to-end tests
         env:
           CRYPTO_FINDER_NETWORK_TESTS: "1"
           GORACE: atexit_sleep_ms=0
-        run: go test -race -run 'TestTransitiveReachability|TestProjectReachabilityMatchesDependencyScan' -v ./internal/cli/
+        run: go test -race -run 'TestTransitiveReachability|TestApplicationReachabilityMatchesDependencyScan' -v ./internal/cli/
 
-  # Startup and scan timings and peak memory against the loose limits in
+  # Startup timings against the loose limits in
   # .claude/skills/verify/budgets.json. They are too noisy for PRs; binary
   # size runs on every PR in lint.yml.
   budgets:
     runs-on: ubuntu-latest
-    env:
-      OPENGREP_VERSION: v1.22.0
-      OPENGREP_AMD64_SHA256: 45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319
     steps:
       - uses: actions/checkout@v7
 
@@ -70,26 +52,10 @@ jobs:
         with:
           go-version: 1.26.x
 
-      - name: Install pinned opengrep
-        run: |
-          install_dir="$HOME/.opengrep/cli/${OPENGREP_VERSION}"
-          mkdir -p "$install_dir"
-          curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86" -o "$install_dir/opengrep"
-          echo "${OPENGREP_AMD64_SHA256}  $install_dir/opengrep" | sha256sum -c -
-          chmod a+x "$install_dir/opengrep"
-          "$install_dir/opengrep" --version
-          echo "$install_dir" >> "$GITHUB_PATH"
-
-      - name: Install GNU time
-        run: |
-          if [ ! -x /usr/bin/time ]; then
-            sudo apt-get update && sudo apt-get install -y time
-          fi
-
-      - name: Check the startup and scan budgets
+      - name: Check the startup budgets
         run: |
           .claude/skills/verify/scripts/build.sh
-          .claude/skills/verify/scripts/budgets.sh startup scan
+          .claude/skills/verify/scripts/budgets.sh startup
 
       - name: Upload budget evidence
         if: always()

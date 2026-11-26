@@ -1,0 +1,21 @@
+# Invented Rust hand cards for the rules of ../rules/rules.yaml. A pattern for
+# each way the regex lets the path be written (OpenGrep does not read a
+# turbofish path through a use, nor a shorter pattern path as a longer one);
+# $C binds the generic as OpenGrep binds a type, by its last segment.
+cards:
+- rule: acme-enc
+  rust:
+    patterns:
+    - pattern-either:
+      - pattern: acme_mode::Encryptor::<$C>::new(...)
+      - pattern: Encryptor::<$C>::new(...)
+    - metavariable-regex: {metavariable: $C, regex: '^Blk(?P<bits>128|256)$'}
+- rule: acme-dec
+  rust:
+    patterns:
+    - pattern-either:
+      - pattern: acme_mode::Decryptor::<$C>::new(...)
+      - pattern: Decryptor::<$C>::new(...)
+      - pattern: acme_mode::Decryptor::<$C>::new_from_slices(...)
+      - pattern: Decryptor::<$C>::new_from_slices(...)
+    - metavariable-regex: {metavariable: $C, regex: '^Blk(?P<bits>128|256)$'}

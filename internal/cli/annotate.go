@@ -18,27 +18,34 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/graphfrag"
+	"github.com/scanoss/reach/language"
+	"github.com/scanoss/reach/skip"
 	"github.com/spf13/cobra"
 
 	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/cache"
 	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/crypto-finder/internal/deadcode"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
-	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/oid"
+	"github.com/scanoss/crypto-finder/internal/output"
+	"github.com/scanoss/crypto-finder/internal/pqc"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
 	"github.com/scanoss/crypto-finder/internal/scanner"
-	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
-	"github.com/scanoss/crypto-finder/internal/skip"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/crypto-finder/internal/scanner/cards"
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 var (
@@ -47,13 +54,11 @@ var (
 	annotateOutput           string
 	annotateRules            []string
 	annotateRuleDirs         []string
-	annotateScanner          string
 	annotateTimeout          string
-	annotateScannerJobs      int
-	annotateOpengrepMode     string
 	annotateNoRemoteRules    bool
 	annotateNoCache          bool
 	annotateRulesetVersion   string
+	annotateRuleset          string
 	annotateAPIKey           string
 	annotateAPIURL           string
 	annotateAllowHTTP        bool
@@ -61,46 +66,47 @@ var (
 	annotateIncludeTests     bool
 	annotateNoDefaultExclude bool
 	annotateExcludePatterns  []string
+	annotateFindingsOutput   string
 )
 
 var annotateCmd = &cobra.Command{
 	Use:   "annotate",
 	Short: "Re-annotate a cached structural graph fragment with fresh crypto findings",
-	Long: `Re-run ONLY crypto detection over a source tree and map the findings onto a
-previously-exported structural graph fragment, WITHOUT rebuilding the call graph.
+	Long: `Re-run ONLY crypto detection over a previously-exported structural graph
+fragment, WITHOUT rebuilding the call graph.
 
 The call graph build (parse + inference) is the expensive ~95% of a scan and is
 rules-independent. When only the crypto ruleset changes, annotate imports the
-cached structural fragment, runs detection, maps each finding to its containing
-function via the fragment's function line ranges, and emits crypto_annotations
-that are byte-identical to a full 'scan --export-graph-fragment' for the same
-source + rules.
+cached structural fragment, matches the ruleset's cards against its call sites,
+maps each finding to its containing function, and emits crypto_annotations that
+are byte-identical to a full 'scan --export-graph-fragment' for the same source
+and rules.
 
 Examples:
-  # Re-annotate using a cached fragment and the default remote ruleset
-  crypto-finder annotate --import-fragment graph-fragment.json --source ./src --output annotation.json
+  # Re-detect a stored graph with the default remote ruleset, no source tree
+  crypto-finder annotate --import-fragment frag.json --output annotation.json
 
-  # Re-annotate with local rules only
-  crypto-finder annotate --import-fragment frag.json --source ./src --rules-dir ./rules --no-remote-rules`,
+  # Re-detect with a local ruleset and also write the findings report, as
+  # scan --output writes it
+  crypto-finder annotate --import-fragment frag.json --rules-dir ./ruleset --no-remote-rules \
+    --output annotation.json --findings-output findings.json
+
+Without --source, detection reads only the fragment (graph-fragment-1.16 or
+later, which carries the call sites' source lines).`,
 	RunE: runAnnotate,
 }
 
 func init() {
 	annotateCmd.Flags().StringVar(&annotateImportFragment, "import-fragment", "", "Path to the cached structural graph fragment JSON to re-annotate (required)")
-	annotateCmd.Flags().StringVar(&annotateSource, "source", "", "Source directory to run crypto detection over (required)")
+	annotateCmd.Flags().StringVar(&annotateSource, "source", "", "Source tree the fragment was exported from, to read the source lines a fragment older than graph-fragment-1.16 does not carry")
+	annotateCmd.Flags().StringVar(&annotateFindingsOutput, "findings-output", "", "Also write the findings report, as scan --output writes it, to this file")
 	annotateCmd.Flags().StringVarP(&annotateOutput, "output", "o", "", "Output file path for the annotation JSON (default: stdout)")
 	annotateCmd.Flags().StringArrayVarP(&annotateRules, "rules", "r", []string{}, "Rule file path (repeatable)")
 	annotateCmd.Flags().StringArrayVar(&annotateRuleDirs, "rules-dir", []string{}, "Rule directory path (repeatable)")
-	annotateCmd.Flags().StringVar(&annotateScanner, "scanner", defaultScanner, fmt.Sprintf("Scanner to use (default: %s)", defaultScanner))
 	annotateCmd.Flags().StringVarP(&annotateTimeout, "timeout", "t", defaultTimeout, "Detection timeout (e.g., 10m, 1h)")
-	annotateCmd.Flags().IntVar(&annotateScannerJobs, "scanner-jobs", 0,
-		"Parallel jobs for the OpenGrep detection process (default 0: one per CPU the process may use, which honors a container CPU limit; "+
-			"can also be set via "+scannerJobsEnv+"). Lower it when several scans share a host")
-	annotateCmd.Flags().StringVar(&annotateOpengrepMode, "opengrep-mode", "core",
-		"How the OpenGrep scanner runs, as for scan: core (the default; falls back to cli whenever it cannot run) "+
-			"or cli (opts out of core). Can also be set via "+opengrepModeEnv)
 	annotateCmd.Flags().BoolVar(&annotateNoRemoteRules, "no-remote-rules", false, "Disable the default remote ruleset")
 	annotateCmd.Flags().BoolVar(&annotateNoCache, "no-cache", false, "Force fresh download of remote rules, bypass cache")
+	annotateCmd.Flags().StringVar(&annotateRuleset, rulesetFlag, defaultRulesetName, rulesetUsage)
 	annotateCmd.Flags().StringVar(&annotateRulesetVersion, rulesetVersionFlag, defaultRulesetVersion,
 		"Remote ruleset version to fetch, as for scan: latest or a release version such as v1.39.0")
 	annotateCmd.Flags().StringVar(&annotateAPIKey, "api-key", "", "SCANOSS API key")
@@ -116,15 +122,17 @@ func runAnnotate(cmd *cobra.Command, _ []string) error {
 	if annotateImportFragment == "" {
 		return failure.New(failure.CodeInvalidArguments, failure.StageInput, "--import-fragment is required")
 	}
-	if annotateSource == "" {
-		return failure.New(failure.CodeInvalidArguments, failure.StageInput, "--source is required")
-	}
 
 	// Load the cached structural fragment first: if it is unreadable there is no
 	// point running detection.
-	fragment, err := loadImportedFragment(annotateImportFragment)
+	document, err := loadImportedFragment(annotateImportFragment)
 	if err != nil {
 		return err
+	}
+	if annotateSource == "" && !hasSourceLines(document) {
+		return failure.New(failure.CodeInvalidArguments, failure.StageInput,
+			fmt.Sprintf("--import-fragment %q has no source lines (%s; graph-fragment-1.16 or later is needed without --source)",
+				annotateImportFragment, document.SchemaVersion))
 	}
 
 	timeout, err := scanutil.ParseDuration(annotateTimeout)
@@ -132,22 +140,14 @@ func runAnnotate(cmd *cobra.Command, _ []string) error {
 		return failure.Wrap(err, failure.CodeInvalidTimeout, failure.StageInput,
 			fmt.Sprintf("invalid timeout format '%s' (use format like '10m', '1h')", annotateTimeout))
 	}
-	scannerJobs, err := resolveScannerJobs(cmd.Flags().Changed("scanner-jobs"), annotateScannerJobs, os.LookupEnv)
-	if err != nil {
-		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
-	}
-	opengrepMode, err := resolveOpengrepMode(cmd.Flags().Changed("opengrep-mode"), annotateOpengrepMode, os.LookupEnv)
-	if err != nil {
-		return failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, err.Error())
-	}
-	rulesetVersion, err := resolveRulesetVersion(annotateRulesetVersion, cmd.Flags().Changed(rulesetVersionFlag), annotateNoRemoteRules)
+	rulesetName, rulesetVersion, err := resolveRemoteRuleset(cmd.Flags(), annotateRuleset, annotateRulesetVersion, annotateNoRemoteRules)
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	report, err := runAnnotateDetection(ctx, timeout, scannerJobs, opengrepMode, rulesetVersion)
+	report, graph, err := runAnnotateDetection(ctx, timeout, rulesetName, rulesetVersion, document)
 	if err != nil {
 		return err
 	}
@@ -156,7 +156,14 @@ func runAnnotate(cmd *cobra.Command, _ []string) error {
 		return failure.WrapUnknown(err, failure.CodeUnknown, failure.StageScan, "prepare exact OID report")
 	}
 
-	payload := scanutil.BuildAnnotateExport(resolved, fragment)
+	// With the cards scanner the call graph is rebuilt from the fragment, and
+	// the annotation is what a scan's graph-fragment export writes from it.
+	payload := scanutil.BuildGraphAnnotateExport(graph, resolved, document)
+	if annotateFindingsOutput != "" {
+		if err := writeAnnotateFindings(resolved); err != nil {
+			return err
+		}
+	}
 
 	if annotateOutput == "" {
 		data, err := scanutil.MarshalAnnotateExport(&payload)
@@ -191,47 +198,90 @@ func prepareAnnotateProjection(report *entities.InterimReport) (*oid.ResolvedRep
 	return prepared.ReportClone(), nil
 }
 
-func loadImportedFragment(path string) (graphfrag.Fragment, error) {
+// writeAnnotateFindings writes the findings report as scan --output writes
+// it, with the PQC classification. It runs after the annotation is built, so
+// the classification never enters it, as in a scan.
+func writeAnnotateFindings(findings *oid.ResolvedReport) error {
+	pqc.Annotate(findings)
+	writer, err := output.NewWriterFactory().GetWriter(formatJSON)
+	if err != nil {
+		return failure.WrapUnknown(err, failure.CodeOutputWriterUnavailable, failure.StageOutput, "failed to get output writer")
+	}
+	if err := writer.WriteResolved(findings, annotateFindingsOutput); err != nil {
+		return failure.WrapUnknown(err, failure.CodeOutputWriteFailed, failure.StageOutput, "failed to write findings")
+	}
+	return nil
+}
+
+// hasSourceLines reports a fragment schema that carries the call sites'
+// source lines (graph-fragment-1.16 and later).
+func hasSourceLines(document *graphfrag.GraphFragmentExport) bool {
+	minor, ok := strings.CutPrefix(document.SchemaVersion, "graph-fragment-1.")
+	if !ok {
+		return false
+	}
+	n, err := strconv.Atoi(minor)
+	return err == nil && n >= 16
+}
+
+// loadImportedFragment reads the cached fragment. The annotation reads it
+// through the graphfrag model; the cards scanner also gets the whole
+// document, whose source lines, constant references, declarations and casts
+// the model does not keep, as a scan builds it in memory.
+func loadImportedFragment(path string) (*graphfrag.GraphFragmentExport, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return graphfrag.Fragment{}, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput,
+		return nil, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput,
 			fmt.Sprintf("failed to read --import-fragment %q", path))
 	}
-	// ComponentKey identity is not needed for annotation (function_key join is
-	// by signature/line range, not purl), so an empty key is sufficient.
-	fragment, err := graphfrag.DecodeFragment(graphfrag.ComponentKey{}, data)
-	if err != nil {
-		return graphfrag.Fragment{}, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput,
+	// The document is decoded once: a stored fragment runs to hundreds of
+	// megabytes.
+	var document graphfrag.GraphFragmentExport
+	if err := json.Unmarshal(data, &document); err != nil {
+		return nil, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput,
 			fmt.Sprintf("failed to decode --import-fragment %q", path))
 	}
-	return fragment, nil
+	// What a 1.22 producer wrote once is restored before any section is read.
+	document.RestoreElided()
+	document.ExpandInternalEdges()
+	return &document, nil
 }
 
 // runAnnotateDetection runs ONLY the crypto detection pass (no callgraph build)
-// over --source and returns the interim report. It mirrors the detection setup
+// over --source and returns the interim report and, with document, the call
+// graph rebuilt from it with the report attached. It mirrors the detection setup
 // of the scan command but stops at orchestrator.Scan — deliberately skipping the
 // callgraph/inference work that annotate exists to avoid.
-func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJobs int16, opengrepMode scanner.OpengrepMode, rulesetVersion string) (*entities.InterimReport, error) {
+//
+// With the cards scanner and no --source, detection matches document alone
+// and runs over an empty directory, so no source file is read.
+func runAnnotateDetection(ctx context.Context, timeout time.Duration, rulesetName, rulesetVersion string, document *graphfrag.GraphFragmentExport) (*entities.InterimReport, *engine.DepScanResult, error) {
 	target := annotateSource
+	if target == "" {
+		empty, err := os.MkdirTemp("", "crypto-finder-annotate-")
+		if err != nil {
+			return nil, nil, failure.WrapUnknown(err, failure.CodeUnknown, failure.StageInput, "failed to create the detection directory")
+		}
+		defer func() { utils.Discard(os.RemoveAll(empty)) }()
+		target = empty
+	}
 
 	normalizedLanguages, err := scanutil.ValidateFlags(target, scanutil.ValidationOptions{
 		RuleFiles:        annotateRules,
 		RuleDirs:         annotateRuleDirs,
 		NoRemoteRules:    annotateNoRemoteRules,
-		Scanner:          annotateScanner,
-		AllowedScanners:  AllowedScanners,
 		Format:           formatJSON,
 		SupportedFormats: SupportedFormats,
 		Languages:        annotateLanguages,
 	})
 	if err != nil {
-		return nil, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, "failed to validate annotate flags")
+		return nil, nil, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput, "failed to validate annotate flags")
 	}
 	languages := normalizedLanguages
 
 	targetDir, err := callGraphTargetDir(target)
 	if err != nil {
-		return nil, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput,
+		return nil, nil, failure.WrapUnknown(err, failure.CodeInvalidArguments, failure.StageInput,
 			fmt.Sprintf("failed to resolve source directory for '%s'", target))
 	}
 
@@ -240,22 +290,24 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 	skipPatterns = applyCTestSkipPatterns(skipPatterns, targetDir, annotateIncludeTests)
 	skipMatcher := skip.NewMatcher(skipPatterns, !annotateNoDefaultExclude)
 
+	// The stored graph names its ecosystem and is matched with that
+	// language's cards, whatever --languages says.
+	cardsLanguage, err := annotateCardsLanguage(document)
+	if err != nil {
+		return nil, nil, err
+	}
 	if len(languages) == 0 {
-		detected, detectErr := language.NewEnryDetector(skipMatcher).Detect(target)
-		if detectErr != nil {
-			return nil, failure.WrapUnknown(detectErr, failure.CodeLanguageDetectionFailed, failure.StageScan, "failed to detect languages")
-		}
-		languages = detected
+		languages = []string{cardsLanguage}
 	}
 
 	cfg := config.GetInstance()
 	if err := cfg.Initialize(config.InitOptions{APIKey: annotateAPIKey, APIURL: annotateAPIURL, AllowHTTP: annotateAllowHTTP}); err != nil {
-		return nil, failure.WrapUnknown(err, failure.CodeConfigInitializationFailed, failure.StageConfig, "failed to initialize config")
+		return nil, nil, failure.WrapUnknown(err, failure.CodeConfigInitializationFailed, failure.StageConfig, "failed to initialize config")
 	}
 
-	rulesManager, remoteSource, err := buildAnnotateRulesManager(ctx, cfg, rulesetVersion)
+	rulesManager, remoteSource, err := buildAnnotateRulesManager(ctx, cfg, rulesetName, rulesetVersion)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if remoteSource != nil {
 		defer remoteSource.Close()
@@ -263,32 +315,73 @@ func runAnnotateDetection(ctx context.Context, timeout time.Duration, scannerJob
 
 	langDetector := language.NewEnryDetector(skipMatcher)
 	scannerRegistry := scanner.NewRegistry()
-	registerOpengrep(scannerRegistry, remoteSource)
-	scannerRegistry.RegisterFactory(semgrep.ScannerName, func() scanner.Scanner { return semgrep.NewScanner() })
+	scannerRegistry.RegisterFactory(cards.ScannerName, cards.NewScannerFactory(cards.Options{
+		Language: cardsLanguage,
+		Ruleset:  cardsRuleset(annotateRuleDirs, rulesManager),
+		// The cards match the stored call sites, whatever directory
+		// detection runs over.
+		Fragment: func(string) (graphfrag.GraphFragmentExport, error) { return *document, nil },
+	}))
 
 	orchestrator := engine.NewOrchestrator(langDetector, rulesManager, scannerRegistry)
 
 	log.Info().Msgf("Running crypto detection over %s (annotate-only, no callgraph)...", target)
 	report, err := orchestrator.Scan(ctx, engine.ScanOptions{
 		Target:       target,
-		ScannerName:  annotateScanner,
+		ScannerName:  cards.ScannerName,
 		LanguageHint: languages,
 		ScannerConfig: scanner.Config{
 			Timeout:      timeout,
 			SkipPatterns: skipPatterns,
-			Jobs:         scannerJobs,
-			OpengrepMode: opengrepMode,
 		},
 	})
 	if err != nil {
+		return nil, nil, err
+	}
+	// A scan drops the findings inside a C file's #if 0 blocks, which it
+	// reads in the file; the fragment's source lines hold the blocks'
+	// conditionals for a detection that has no file to read.
+	report = deadcode.FilterReportLines(report, document.SourceLines)
+	graph, err := runFragmentGraphPasses(report, document, targetDir, rulesManager)
+	if err != nil {
+		return nil, nil, err
+	}
+	return report, graph, nil
+}
+
+// annotateCardsLanguage is the cards language (cards.Options.Language) of
+// the stored graph: the one of its ecosystem. A graph written before scan
+// metadata named an ecosystem (the empty one) is Java's; any other ecosystem
+// without a scanned cards language fails.
+func annotateCardsLanguage(document *graphfrag.GraphFragmentExport) (string, error) {
+	ecosystem := ecosystemJava
+	if document != nil && document.GraphEcosystem() != "" {
+		ecosystem = document.GraphEcosystem()
+	}
+	return cardsLanguageOf(ecosystem)
+}
+
+// runFragmentGraphPasses runs over the fragment's call graph the passes a
+// scan runs over the graph it built after detection, in the scan's order:
+// rule entry points, conditioned findings and related material, finding ids,
+// then occurrence keys. It returns the rebuilt graph.
+func runFragmentGraphPasses(report *entities.InterimReport, document *graphfrag.GraphFragmentExport, projectRoot string, rulesManager *rules.Manager) (*engine.DepScanResult, error) {
+	engine.EnsureFindingSources(report)
+	result := scanutil.FragmentScanResult(document, projectRoot, report)
+	if err := runRuleGraphPasses(nil, "", rulesManager, report, []*engine.DepScanResult{result}); err != nil {
 		return nil, err
 	}
-	return report, nil
+	engine.AssignFindingIDs(report)
+	if scanutil.CountFindings(report) > 0 {
+		scanutil.FilterForeignReceiverAssets(report, result)
+		scanutil.AssignOccurrenceKeys(result)
+	}
+	return result, nil
 }
 
 // buildAnnotateRulesManager returns the rules manager and, when remote rules
 // are enabled, the remote source, which the caller must Close.
-func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config, rulesetVersion string) (*rules.Manager, *rules.RemoteRuleSource, error) {
+func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config, rulesetName, rulesetVersion string) (*rules.Manager, *rules.RemoteRuleSource, error) {
 	ruleSources := make([]rules.RuleSource, 0)
 	var remoteSource *rules.RemoteRuleSource
 
@@ -302,7 +395,7 @@ func buildAnnotateRulesManager(ctx context.Context, cfg *config.Config, rulesetV
 			return nil, nil, failure.WrapUnknown(err, failure.CodeCacheInitializationFailed, failure.StageConfig, "failed to create cache manager")
 		}
 		cacheManager.SetNoCache(annotateNoCache)
-		remoteSource = rules.NewRemoteRuleSource(ctx, defaultRulesetName, rulesetVersion, cacheManager)
+		remoteSource = rules.NewRemoteRuleSource(ctx, rulesetName, rulesetVersion, cacheManager)
 		ruleSources = append(ruleSources, remoteSource)
 	}
 

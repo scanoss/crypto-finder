@@ -73,7 +73,7 @@ var riskFloors = []riskFloor{
 	{riskHigh, "release packaging", regexp.MustCompile(`^(\.goreleaser|Dockerfile\.goreleaser|scripts/relprep/)`)},
 	{riskMedium, "a dependency", regexp.MustCompile(`(^|/)go\.(mod|sum)$`)},
 	{riskMedium, "an output contract other tools read", regexp.MustCompile(
-		`^(schemas/|pkg/schema/|pkg/failure/|pkg/graphfrag/(export|callgraph_export|findings_envelope|intern_functions|model)\.go$)`)},
+		`^(schemas/|pkg/schema/|pkg/failure/|pkg/appreach/)`)},
 	{riskMedium, "a CI check's configuration", regexp.MustCompile(`^(\.golangci\.yml|\.golangci-lint-version|\.testcoverage\.yml)$`)},
 }
 
@@ -222,7 +222,7 @@ func changedPaths(ctx context.Context, c client, number int) ([]string, error) {
 // runRisk scores the verdicts of the merge-risk skill, floors them by path and
 // keeps one merge-risk comment on the pull request, by the account running it.
 func runRisk(ctx context.Context, c client, number int, verdictsFile string, dryRun bool, stdout, stderr *printer) int {
-	raw, err := os.ReadFile(verdictsFile) //nolint:gosec // G304: the agent names its own verdicts file
+	raw, err := os.ReadFile(verdictsFile)
 	if err != nil {
 		stderr.println("cannot read the verdicts:", err)
 		return 2

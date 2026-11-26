@@ -1,307 +1,341 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+
 package dependency
 
 import (
-	"bytes"
+	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
+	"sort"
 	"strings"
+	"sync"
+	"time"
+	"unicode"
 
 	"github.com/rs/zerolog/log"
+
+	"github.com/scanoss/crypto-finder/internal/failure"
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
-// goModule represents the module fields in `go list` JSON output.
-type goModule struct {
-	Path    string `json:"Path"`
-	Version string `json:"Version"`
-	Dir     string `json:"Dir"`
-	Main    bool   `json:"Main"`
-	// files are the Go files the host build compiles in the module's
-	// packages in the import closure, nil when none of them has a directory.
-	// goListModules fills it; go list never does.
-	files []string
+const ecosystemGo = "go"
+
+// goModManifest is the manifest of a Go module.
+const goModManifest = "go.mod"
+
+// GoResolver reads a Go module's pinned closure from its go.mod, files only:
+// since Go 1.17 a module's go.mod lists every module its build needs, at the
+// version minimal version selection picks. A requirement marked `// indirect`
+// is not direct. A module's own requirements, the closure's edges, come from
+// the go.mod the module cache holds for it, when it holds one; the server
+// supplies the edges it lacks. A module replaced by a directory outside the
+// project (the scan root, else the module) is a local dependency
+// (Dependency.Local), its edges read from that directory's go.mod. Nothing is
+// downloaded and no go tool runs a build.
+type GoResolver struct {
+	modCache string
+	scanRoot string
 }
 
-// goPackage holds the fields goListModules requests from `go list -deps`.
-// GoFiles and CgoFiles are the Go files the build compiles once build
-// constraints, GOOS, GOARCH, tags and CGO_ENABLED have been applied, relative
-// to Dir. Only Go files are taken: a Go dependency scan runs only Go rules
-// and the Go call graph parses only Go files, so the package's C, assembly
-// and other files would add targets no rule or parser reads.
-type goPackage struct {
-	ImportPath string    `json:"ImportPath"`
-	Dir        string    `json:"Dir"`
-	GoFiles    []string  `json:"GoFiles"`
-	CgoFiles   []string  `json:"CgoFiles"`
-	Imports    []string  `json:"Imports"`
-	Module     *goModule `json:"Module"`
-	Error      *struct {
-		Err string `json:"Err"`
-	} `json:"Error"`
+// SetScanRoot names the scanned tree: a replace directory inside it is the
+// project's own code.
+func (r *GoResolver) SetScanRoot(dir string) {
+	r.scanRoot = dir
 }
 
-// compiledFiles returns the absolute paths of the Go files the build compiles.
-func (p *goPackage) compiledFiles() []string {
-	files := make([]string, 0, len(p.GoFiles)+len(p.CgoFiles))
-	for _, name := range slices.Concat(p.GoFiles, p.CgoFiles) {
-		files = append(files, filepath.Join(p.Dir, name))
-	}
-	return files
-}
-
-// GoResolver resolves Go module dependencies using the `go` tool.
-type GoResolver struct{}
-
-// NewGoResolver creates a new Go dependency resolver.
+// NewGoResolver creates a Go resolver over the module cache GOMODCACHE names
+// (else `go env GOMODCACHE`); without one, edges below the root are left out.
 func NewGoResolver() *GoResolver {
-	return &GoResolver{}
+	return &GoResolver{modCache: goModCache()}
 }
 
 // Ecosystem returns "go".
 func (r *GoResolver) Ecosystem() string {
-	return "go"
+	return ecosystemGo
 }
 
-// CanResolve reports whether targetDir is a directory inside a Go module or
-// workspace. `go list` searches upward from its working directory
-// for the nearest go.mod, or the go.work that stands in for one at a workspace
-// root, so a package directory below the module root resolves the whole module
-// and the precondition searches the same way. A file target answers false
-// because Resolve runs the go tool with targetDir as its working directory.
+// CanResolve reports whether targetDir holds a go.mod.
 func (r *GoResolver) CanResolve(targetDir string) bool {
-	dir, err := filepath.Abs(targetDir)
-	if err != nil {
-		return false
-	}
-	if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
-		return false
-	}
-	for {
-		if fileExists(filepath.Join(dir, "go.mod")) || fileExists(filepath.Join(dir, "go.work")) {
-			return true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return false
-		}
-		dir = parent
-	}
+	return fileExists(filepath.Join(targetDir, goModManifest))
 }
 
-// Resolve inventories the modules in the production import closure of the Go
-// project at targetDir: the modules that provide a package imported, directly
-// or transitively, by a non-test package of a main module.
-func (r *GoResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
-	modules, imports, err := r.goListModules(ctx, targetDir)
+// Resolve reads targetDir's go.mod into the pinned closure.
+func (r *GoResolver) Resolve(_ context.Context, targetDir string) (*ResolveResult, error) {
+	mod, err := readGoMod(filepath.Join(targetDir, goModManifest))
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Go modules in %s: %w", targetDir, err)
+		return nil, failure.New(failure.CodeDependencyResolutionFailed, failure.StageDependency,
+			fmt.Sprintf("read the go.mod of %s: %v", targetDir, err), failure.WithDetail("target_dir", targetDir))
 	}
-
 	result := &ResolveResult{
-		Dependencies: make([]Dependency, 0, len(modules)),
-		Graph:        make(map[string][]string),
-		ImportGraph:  imports,
+		RootModule:     mod.module,
+		Source:         goModManifest,
+		Graph:          map[string][]string{},
+		VersionedGraph: map[string][]Ref{},
 	}
-
-	for _, m := range modules {
-		if m.Main {
-			result.RootModule = m.Path
-			continue
+	if goVersionBefore117(mod.goVer) {
+		log.Warn().Str("module", mod.module).Str("go", mod.goVer).
+			Msg("go.mod predates Go 1.17 and may not list every module the build needs: the dependency closure may be partial")
+	}
+	selected := map[string]Ref{}
+	// local holds the source directory of each module a local directory
+	// replaces outside the module: the code the build compiles.
+	local := map[string]string{}
+	var order []string
+	project := projectDir(targetDir, r.scanRoot)
+	for _, req := range mod.requires {
+		ref, ok := mod.replaced(req.ref)
+		if !ok {
+			// A directory inside the project is its own code; one that does
+			// not exist cannot be analyzed.
+			dir := goLocalReplacement(targetDir, mod, req.ref)
+			if dir == "" || isWithin(dir, project) {
+				result.Unpinned = append(result.Unpinned, UnpinnedDependency{Module: req.ref.Module, Manifest: goModManifest})
+				continue
+			}
+			ref = req.ref
+			local[ref.Module] = absoluteScanRoot(dir)
 		}
-
-		// Skip modules without a directory (e.g., not yet downloaded)
-		if m.Dir == "" {
-			log.Debug().Str("module", m.Path).Str("version", m.Version).Msg("Skipping module without local directory")
-			continue
+		selected[req.ref.Module] = ref
+		order = append(order, req.ref.Module)
+		if !req.indirect {
+			result.DirectDependencies = append(result.DirectDependencies, ref.Module)
+			result.Graph[mod.module] = append(result.Graph[mod.module], ref.Module)
 		}
-
-		result.Dependencies = append(result.Dependencies, Dependency{
-			Module:  m.Path,
-			Version: m.Version,
-			Dir:     m.Dir,
-			Files:   m.files,
-		})
 	}
-
-	// Build dependency graph using `go mod graph`
-	graph, err := r.goModGraph(ctx, targetDir)
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to build dependency graph, call chain tracing may be limited")
-	} else {
-		result.Graph = graph
+	for _, path := range order {
+		ref := selected[path]
+		dep := Dependency{Module: ref.Module, Version: ref.Version, Dir: r.cacheDir(ref)}
+		requires := r.cachedRequires
+		if dir, ok := local[path]; ok {
+			dep.Dir, dep.Local = dir, true
+			requires = func(Ref) []string { return goModRequires(filepath.Join(dir, goModManifest)) }
+		}
+		result.Dependencies = append(result.Dependencies, dep)
+		for _, child := range requires(ref) {
+			target, ok := selected[child]
+			if !ok || target.Module == ref.Module {
+				continue
+			}
+			result.Graph[ref.Module] = appendUnique(result.Graph[ref.Module], target.Module)
+			result.VersionedGraph[ref.Key()] = append(result.VersionedGraph[ref.Key()], target)
+		}
 	}
-
-	log.Info().
-		Int("count", len(result.Dependencies)).
-		Str("root", result.RootModule).
-		Msg("Resolved Go dependencies")
-
+	log.Debug().Str("module", mod.module).Int("dependencies", len(result.Dependencies)).
+		Int("unpinned", len(result.Unpinned)).Msg("Resolved the Go dependency closure")
 	return result, nil
 }
 
-// goListModules returns the main modules, then each module that provides a
-// package in their non-test import closure, once, with the Go files the
-// build compiles in those packages. Requirements reached only from tests,
-// build-tagged tool files or nothing at all never enter it. It also returns
-// the closure's module import graph (moduleImportGraph).
-func (r *GoResolver) goListModules(ctx context.Context, dir string) ([]goModule, map[string][]string, error) {
-	modules, err := goList[goModule](ctx, dir, "-m", "-json")
+// cacheDir is a module version's extracted source in the module cache, or "".
+func (r *GoResolver) cacheDir(ref Ref) string {
+	if r.modCache == "" {
+		return ""
+	}
+	dir := filepath.Join(r.modCache, goModCacheEscape(ref.Module)+"@"+ref.Version)
+	if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		return dir
+	}
+	return ""
+}
+
+// cachedRequires are the module paths a module version's own go.mod requires,
+// read from the module cache's download cache; nil when it is not there.
+func (r *GoResolver) cachedRequires(ref Ref) []string {
+	if r.modCache == "" {
+		return nil
+	}
+	return goModRequires(filepath.Join(r.modCache, "cache", "download", goModCacheEscape(ref.Module), "@v", ref.Version+".mod"))
+}
+
+// goModRequires are the module paths the go.mod at path requires, sorted;
+// nil when it cannot be read.
+func goModRequires(path string) []string {
+	mod, err := readGoMod(path)
 	if err != nil {
-		return nil, nil, err
+		return nil
 	}
+	out := make([]string, 0, len(mod.requires))
+	for _, req := range mod.requires {
+		out = append(out, req.ref.Module)
+	}
+	sort.Strings(out)
+	return out
+}
 
-	// -e keeps a package that fails to load, such as a directory mixing two
-	// package names, from discarding the closure of every package that loads.
-	// Each main module's directory is listed because `./...` matches nothing
-	// at a go.work root and only a subtree below a module root.
-	args := []string{"-e", "-deps", "-json=ImportPath,Dir,GoFiles,CgoFiles,Imports,Module,Error"}
-	for _, m := range modules {
-		if m.Dir == "" {
-			return nil, nil, fmt.Errorf("go list -m: main module %s has no directory", m.Path)
-		}
-		args = append(args, filepath.Join(m.Dir, "..."))
+type goRequire struct {
+	ref      Ref
+	indirect bool
+}
+
+type goModFile struct {
+	module   string
+	goVer    string
+	requires []goRequire
+	// replaces maps `path` or `path@version` to the replacement: a module
+	// version, or a local directory (Version "").
+	replaces map[string]Ref
+}
+
+// replaced is ref after the go.mod's replace directives; ok is false for a
+// replacement by a local directory.
+func (m *goModFile) replaced(ref Ref) (Ref, bool) {
+	to, hit := m.replaces[ref.Module+"@"+ref.Version]
+	if !hit {
+		to, hit = m.replaces[ref.Module]
 	}
-	packages, err := goList[goPackage](ctx, dir, args...)
+	if !hit {
+		return ref, true
+	}
+	if to.Version == "" {
+		return Ref{}, false
+	}
+	return to, true
+}
+
+// readGoMod reads the module, require and replace directives of a go.mod.
+func readGoMod(path string) (*goModFile, error) {
+	f, err := os.Open(path) // #nosec G304 -- the scan target's own go.mod, or the module cache's.
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	index := make(map[string]int)
-	failed := 0
-	for _, p := range packages {
-		if p.Error != nil {
-			failed++
-			log.Debug().Str("package", p.ImportPath).Str("error", p.Error.Err).Msg("Go package failed to load")
+	defer func() { utils.Discard(f.Close()) }()
+	mod := &goModFile{replaces: map[string]Ref{}}
+	block := ""
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		indirect := strings.Contains(line, "// indirect")
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = strings.TrimSpace(line[:i])
 		}
-		if p.Module == nil || p.Module.Main {
-			continue
-		}
-		i, seen := index[p.Module.Path]
-		if !seen {
-			i = len(modules)
-			index[p.Module.Path] = i
-			modules = append(modules, *p.Module)
-		}
-		// A package the go tool could not find has no directory.
-		// One that compiles no file for this build still limits the scan.
-		if p.Dir != "" {
-			if modules[i].files == nil {
-				modules[i].files = []string{}
-			}
-			modules[i].files = append(modules[i].files, p.compiledFiles()...)
-		}
-	}
-	for _, i := range index {
-		slices.Sort(modules[i].files)
-		modules[i].files = slices.Compact(modules[i].files)
-	}
-	if failed > 0 {
-		log.Warn().Int("packages", failed).Msg("Go packages failed to load; modules imported only through them are not inventoried")
-	}
-
-	return modules, moduleImportGraph(packages), nil
-}
-
-// moduleImportGraph maps each module that provides one of packages to the
-// other modules whose packages its packages import, in first-import order; a
-// module whose packages import no other module maps to an empty list. Unlike
-// the requirement graph (go mod graph), it names the module that imports the
-// next one: since Go 1.17 a go.mod lists, // indirect, every module its build
-// needs, including those only its dependencies import.
-func moduleImportGraph(packages []goPackage) map[string][]string {
-	owner := make(map[string]string, len(packages))
-	for _, p := range packages {
-		if p.Module != nil {
-			owner[p.ImportPath] = p.Module.Path
-		}
-	}
-	graph := make(map[string][]string)
-	for _, p := range packages {
-		if p.Module == nil {
-			continue
-		}
-		from := p.Module.Path
-		if graph[from] == nil {
-			graph[from] = []string{}
-		}
-		for _, imported := range p.Imports {
-			if to := owner[imported]; to != "" && to != from && !slices.Contains(graph[from], to) {
-				graph[from] = append(graph[from], to)
-			}
-		}
-	}
-	return graph
-}
-
-// goList runs `go list` with args and decodes its output, a stream of JSON
-// objects rather than one array.
-func goList[T any](ctx context.Context, dir string, args ...string) ([]T, error) {
-	args = append([]string{"list"}, args...)
-	cmd := exec.CommandContext(ctx, "go", args...)
-	cmd.Dir = dir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("go %s: %w\nstderr: %s", strings.Join(args, " "), err, stderr.String())
-	}
-
-	var out []T
-	decoder := json.NewDecoder(&stdout)
-	for decoder.More() {
-		var v T
-		if err := decoder.Decode(&v); err != nil {
-			return nil, fmt.Errorf("failed to decode go list output: %w", err)
-		}
-		out = append(out, v)
-	}
-	return out, nil
-}
-
-// goModGraph runs `go mod graph` and parses the output into an adjacency list.
-// Each line of output is: "module@version module@version" (parent -> dependency).
-func (r *GoResolver) goModGraph(ctx context.Context, dir string) (map[string][]string, error) {
-	cmd := exec.CommandContext(ctx, "go", "mod", "graph")
-	cmd.Dir = dir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("go mod graph: %w\nstderr: %s", err, stderr.String())
-	}
-
-	graph := make(map[string][]string)
-	for _, line := range strings.Split(stdout.String(), "\n") {
-		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		parts := strings.Fields(line)
-		if len(parts) != 2 {
+		if block != "" {
+			if line == ")" {
+				block = ""
+				continue
+			}
+			mod.directive(block, strings.Fields(line), indirect)
 			continue
 		}
-		// Strip version from module paths for cleaner lookup
-		parent := stripVersion(parts[0])
-		child := stripVersion(parts[1])
-		graph[parent] = append(graph[parent], child)
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[1] == "(" {
+			block = fields[0]
+			continue
+		}
+		if len(fields) >= 2 {
+			mod.directive(fields[0], fields[1:], indirect)
+		}
 	}
-
-	return graph, nil
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return mod, nil
 }
 
-// stripVersion removes the @version suffix from a module path.
-// "golang.org/x/crypto@v0.17.0" -> "golang.org/x/crypto".
-func stripVersion(moduleAtVersion string) string {
-	if idx := strings.LastIndex(moduleAtVersion, "@"); idx != -1 {
-		return moduleAtVersion[:idx]
+func (m *goModFile) directive(verb string, args []string, indirect bool) {
+	unquote := func(s string) string { return strings.Trim(s, `"`) }
+	switch verb {
+	case "module":
+		if len(args) >= 1 {
+			m.module = unquote(args[0])
+		}
+	case "go":
+		if len(args) >= 1 {
+			m.goVer = args[0]
+		}
+	case "require":
+		if len(args) >= 2 {
+			m.requires = append(m.requires, goRequire{Ref{Module: unquote(args[0]), Version: args[1]}, indirect})
+		}
+	case "replace":
+		arrow := -1
+		for i, a := range args {
+			if a == "=>" {
+				arrow = i
+			}
+		}
+		if arrow < 1 || arrow+1 >= len(args) {
+			return
+		}
+		from := unquote(args[0])
+		if arrow == 2 {
+			from += "@" + args[1]
+		}
+		to := Ref{Module: unquote(args[arrow+1])}
+		if arrow+2 < len(args) {
+			to.Version = args[arrow+2]
+		}
+		m.replaces[from] = to
 	}
-	return moduleAtVersion
+}
+
+// goModCacheEscape writes a module path as the module cache stores it: an
+// upper-case letter becomes `!` and its lower case.
+func goModCacheEscape(path string) string {
+	var b strings.Builder
+	for _, r := range path {
+		if unicode.IsUpper(r) {
+			b.WriteByte('!')
+			r = unicode.ToLower(r)
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// goModCache is GOMODCACHE, else what `go env GOMODCACHE` reports, else "".
+func goModCache() string {
+	return GoEnv("GOMODCACHE")
+}
+
+var goEnvCache sync.Map
+
+// GoEnv is the environment variable name, else what `go env` reports for it,
+// else "". `go env` runs once per name, outside any module and with the local
+// toolchain, so it never downloads one.
+func GoEnv(name string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	if v, ok := goEnvCache.Load(name); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "env", name)
+	cmd.Dir = os.TempDir()
+	cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local", "GOFLAGS=")
+	out, err := cmd.Output()
+	v := ""
+	if err == nil {
+		v = strings.TrimSpace(string(out))
+	}
+	goEnvCache.Store(name, v)
+	return v
+}
+
+// goVersionBefore117 reports a go directive older than 1.17, from which go.mod
+// lists the whole closure; none counts as older.
+func goVersionBefore117(v string) bool {
+	var major, minor int
+	if _, err := fmt.Sscanf(v, "%d.%d", &major, &minor); err != nil {
+		return true
+	}
+	return major < 1 || (major == 1 && minor < 17)
+}
+
+func appendUnique(list []string, s string) []string {
+	for _, x := range list {
+		if x == s {
+			return list
+		}
+	}
+	return append(list, s)
 }

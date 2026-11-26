@@ -310,7 +310,7 @@ func TestQAPromptPlaceholdersMatchTheWorkflow(t *testing.T) {
 		t.Error("Write the prompt must read .github/post-merge-qa.md")
 	}
 	// The prompt names the command form the Bash rule allows.
-	if !strings.Contains(string(prompt), "`bash .claude/skills/verify/scripts/run.sh <id> [lang]`") {
+	if !strings.Contains(string(prompt), "`bash .claude/skills/verify/scripts/run.sh <id>`") {
 		t.Error("the prompt must tell the agent to drive run.sh with the bash prefix the permission rule allows")
 	}
 }

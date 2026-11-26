@@ -33,15 +33,10 @@ func TestOIDEnricher_ExactOnlyReport(t *testing.T) {
 	}
 }
 
-func TestOIDEnricher_NilAndAssetSeam(t *testing.T) {
+func TestOIDEnricher_NilReport(t *testing.T) {
 	enricher := NewOIDEnricher()
 	prepared, err := enricher.PrepareReport(nil)
 	if err != nil || prepared != nil {
 		t.Fatalf("nil preparation = %v, %v", prepared, err)
-	}
-	asset := &entities.CryptographicAsset{Metadata: map[string]string{"assetType": "algorithm", "algorithmPrimitive": "hash", "algorithmFamily": "SHA", "algorithmName": "SHA-256"}}
-	enricher.EnrichAsset(asset)
-	if asset.OID != "2.16.840.1.101.3.4.2.1" {
-		t.Fatalf("OID = %q", asset.OID)
 	}
 }

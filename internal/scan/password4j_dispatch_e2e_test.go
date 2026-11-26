@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // password4jSourceDir points at a real, unmodified checkout of password4j
@@ -36,7 +37,7 @@ var password4jSourceDir = os.Getenv("CRYPTO_FINDER_PASSWORD4J_SRC")
 // Argon2Function, PBKDF2Function, ScryptFunction, MessageDigestFunction,
 // CompressedPBKDF2Function, BalloonHashingFunction). Before this change, the
 // serving-path stitcher (StitchWithOptions{EntryRootedOnly: true}, mirroring
-// scanoss.api's usage via pkg/reachability) fails this call site closed
+// the SCANOSS API's usage) fails this call site closed
 // (SuppressReasonAmbiguousDispatch) and the PBEKeySpec finding inside
 // internalHash never reaches withPBKDF2 in the served callgraph, even though
 // the finding is real and reachable.

@@ -64,7 +64,7 @@ func FilterReport(report *entities.InterimReport, targetDir string) *entities.In
 	var cFindings []indexedFinding
 
 	for i, finding := range report.Findings {
-		if !isCFile(finding.FilePath) {
+		if !IsCFile(finding.FilePath) {
 			f := finding
 			results[i] = filterResult{index: i, finding: &f}
 		} else {
@@ -132,6 +132,43 @@ func filterFinding(finding entities.Finding, targetDir string) *entities.Finding
 		return &finding
 	}
 
+	return withoutDeadAssets(finding, regions)
+}
+
+// FilterReportLines removes, as FilterReport does, the assets that fall
+// within a dead code region of their C/C++ file, the regions read from
+// lines (a graph fragment's source_lines: by file path relative to the
+// scanned root, the text of some of its lines) instead of from the file.
+// A file lines does not hold keeps its findings; so does a file whose lines
+// hold no preprocessor conditional of a dead region.
+func FilterReportLines(report *entities.InterimReport, lines map[string]map[int]string) *entities.InterimReport {
+	if report == nil || len(report.Findings) == 0 || len(lines) == 0 {
+		return report
+	}
+	regions := make(map[string][]Region)
+	filtered := make([]entities.Finding, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		if !IsCFile(finding.FilePath) {
+			filtered = append(filtered, finding)
+			continue
+		}
+		path := filepath.ToSlash(finding.FilePath)
+		fileRegions, ok := regions[path]
+		if !ok {
+			fileRegions = DeadRegionsOfLines(lines[path])
+			regions[path] = fileRegions
+		}
+		if live := withoutDeadAssets(finding, fileRegions); live != nil {
+			filtered = append(filtered, *live)
+		}
+	}
+	report.Findings = filtered
+	return report
+}
+
+// withoutDeadAssets returns finding without the assets inside regions, nil
+// when none is left.
+func withoutDeadAssets(finding entities.Finding, regions []Region) *entities.Finding {
 	if len(regions) == 0 {
 		return &finding
 	}
@@ -158,8 +195,9 @@ func filterFinding(finding entities.Finding, targetDir string) *entities.Finding
 	return &finding
 }
 
-// isCFile checks if a file path has a C/C++ extension.
-func isCFile(filePath string) bool {
+// IsCFile reports a file path with a C/C++ extension, the files whose
+// findings the dead code filters read.
+func IsCFile(filePath string) bool {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	return cLanguageExtensions[ext]
 }

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 const (

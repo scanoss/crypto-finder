@@ -4,7 +4,14 @@
 ![License](https://img.shields.io/badge/license-GPL--2.0--only-brightgreen)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/scanoss/crypto-finder)](https://go.dev/)
 
-Crypto Finder is a CLI tool that detects cryptographic algorithm usage in source code. It runs detection rules through a scanning engine (OpenGrep by default, Semgrep supported), builds a call graph of the scanned code, computes which crypto findings are reachable from which API entry points, and exports the results as interim JSON, CycloneDX CBOM, a finding-centric call graph, or a reusable graph fragment.
+Crypto Finder is a CLI that finds the cryptography a codebase uses and tells you whether the application reaches it. It builds a typed call graph of the code (with the [reach](https://github.com/scanoss/reach) engine), detects cryptographic operations on it, traces call chains from the application's entry points, and writes interim JSON, a CycloneDX CBOM, a finding-centric call graph, or a reusable graph fragment. With `--scan-dependencies` it also reports the cryptography of the project's dependencies and whether the project reaches it.
+
+| | |
+|---|---|
+| Languages | **Java** and **Python**. Other languages fail with `language_not_supported` ([Language Coverage](#language-coverage)); 0.54.0 still scans them. |
+| Dependencies | Java (Maven, Gradle) and Python, from the SCANOSS API or `--offline` |
+| Runs locally | Everything that reads your code. The API serves the ruleset and dependency findings ([what runs where](docs/CLIENT_SERVER.md)). |
+| Upgrading from 0.5x | [docs/MIGRATION_1.0.md](docs/MIGRATION_1.0.md) |
 
 ## Quick Start
 
@@ -27,15 +34,7 @@ crypto-finder scan --export-callgraph callgraph.json --output findings.json /pat
 ### Prerequisites
 
 - **Go** 1.26+ (only for building from source)
-- **OpenGrep** (recommended) or **Semgrep** — the scanning engine. Included in the Docker images.
-
-    ```bash
-    # OpenGrep v1.22.0 (the version the images ship; core mode also runs against 1.30.2): download from https://github.com/opengrep/opengrep/releases/tag/v1.22.0
-    # Semgrep:
-    pip install semgrep==1.145.0
-    ```
-
-    On Windows, OpenGrep needs the [Microsoft Visual C++ Redistributable 2015-2022 (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe); without it OpenGrep exits at start with status `0xC0000135`.
+- A **JDK** for Java type resolution, and **Maven** or **Gradle** for `--scan-dependencies`. No external scanning engine is needed: detection runs in-process.
 
 ### Setup
 
@@ -57,13 +56,10 @@ go install github.com/scanoss/crypto-finder/cmd/crypto-finder@latest
 **Option 3: Docker**
 
 ```bash
-# Full image with scanners included (recommended)
+# The binary alone
 docker pull ghcr.io/scanoss/crypto-finder:latest
 
-# Slim image (bring your own scanner)
-docker pull ghcr.io/scanoss/crypto-finder:latest-slim
-
-# Deps image (all language toolchains for dependency scanning)
+# Deps image (JDKs, Maven and Gradle for --scan-dependencies)
 docker pull ghcr.io/scanoss/crypto-finder:latest-deps
 ```
 
@@ -90,8 +86,8 @@ crypto-finder scan --no-remote-rules --rules-dir ./rules /path/to/code
 # CI/CD: fail the build when crypto is detected
 crypto-finder scan --fail-on-findings /path/to/code
 
-# Scan third-party dependencies with call chain tracing
-crypto-finder scan --scan-dependencies /path/to/code
+# Report the dependencies' cryptography and whether the project reaches it
+crypto-finder scan --scan-dependencies --export-callgraph callgraph.json /path/to/code
 
 # Export the finding-centric call graph (reachability slices)
 crypto-finder scan --export-callgraph callgraph.json /path/to/code
@@ -102,27 +98,6 @@ crypto-finder scan --export-graph-fragment fragment.json /path/to/code
 
 The interim JSON report (findings + metadata) goes to `--output` (stdout by default). The call graph and graph fragment exports are **separate files** written to the paths given to `--export-callgraph` / `--export-graph-fragment`. Use `scan --progress` when an integration needs lifecycle JSONL on stderr; it suppresses human logs and leaves findings on stdout or `--output`. See [Output Formats](docs/OUTPUT_FORMATS.md) for all schemas.
 
-## Scanning changed files
-
-An incremental scan usually needs findings only for the files a change touched. `--exclude` is the wrong tool for that: it also removes the other files from the call graph, so a changed file's findings can turn unreachable because their callers were excluded. `--detect-paths-from` narrows detection alone:
-
-```bash
-git diff --name-only origin/main... > changed.txt
-crypto-finder scan --detect-paths-from changed.txt --scan-dependencies --export-callgraph callgraph.json /path/to/repo
-
-# or read the list from stdin
-git diff --name-only origin/main... | crypto-finder scan --detect-paths-from - /path/to/repo
-```
-
-- The list holds one path per line, relative to the scan target or absolute inside it. Blank lines are ignored.
-- Listed files that no longer exist, such as files the change deleted, are skipped. A directory or a path outside the target is an error.
-- Listed files still pass through `--exclude`, the default exclusions, and untracked files that git ignores, so the scope never reaches a file a full scan would skip.
-- The call graph, reachability, and dependency root discovery read the whole target. Each listed file reports the same findings, occurrence keys, metadata, reachability, and key sizes as a full scan of the same tree.
-- With `--scan-dependencies`, dependencies are scanned in full as usual. The list scopes only the target's own files.
-- It works with the default `opengrep` scanner only.
-
-Detection time scales with the number of listed files. Long lists are split across scanner invocations to stay under the platform command-line limit.
-
 ## Re-annotation: `annotate` vs `scan`
 
 The call graph build (parsing + type inference) is the expensive ~95% of a scan and is **rules-independent**. When only the detection ruleset changed — new rules version, local rule you are iterating on — you do not need to rebuild the graph:
@@ -131,11 +106,11 @@ The call graph build (parsing + type inference) is the expensive ~95% of a scan 
 # One-time: full scan, cache the structural fragment
 crypto-finder scan --export-graph-fragment fragment.json /path/to/code
 
-# Every rules change afterwards: detection-only re-annotation
-crypto-finder annotate --import-fragment fragment.json --source /path/to/code --output annotation.json
+# Every rules change afterwards: detection-only re-annotation, no source tree needed
+crypto-finder annotate --import-fragment fragment.json --output annotation.json --findings-output findings.json
 ```
 
-`annotate` runs only the detection pass, maps each finding onto the imported fragment's function line ranges, and emits `crypto_annotations` that are byte-identical to a full `scan --export-graph-fragment` for the same source + rules. On a large library this turns a ~20 minute re-scan into ~1 minute of detection.
+`annotate` rebuilds the graph from the imported fragment, matches the ruleset's cards against its call sites, and emits crypto sections (`crypto_annotations`, `supporting_calls`, `crypto_entry_points`) identical to a full `scan --export-graph-fragment` for the same source + rules. A fragment from graph-fragment-1.16 on carries the call sites' source lines; for an older one, `--source` supplies them.
 
 Use `scan` when the **source code** changed (the graph must be rebuilt); use `annotate` when only the **rules** changed. The fragment's `graph_algo_version` in `scan_metadata` tells you when a new binary release invalidates cached fragments (it bumps only on graph-construction changes).
 
@@ -158,84 +133,84 @@ Use `scan` when the **source code** changed (the graph must be rebuilt); use `an
 | `--rules-dir <dir>` | — | Rule directory path (repeatable) |
 | `--no-remote-rules` | off | Disable the default remote ruleset |
 | `--no-cache` | off | Force fresh download of remote rules, bypass cache |
-| `--strict` | off | Fail if the rules cache expired and the API is unreachable (no stale-cache fallback) |
+| `--strict` | off | Fail if the rules cache expired and the API is unreachable (no stale-cache fallback); a refused key (HTTP 401/403) always fails |
 | `--max-stale-age <dur>` | `30d` | Maximum age for stale cache fallback (max `90d`) |
+| `--ruleset <name>` | `crypto-cards` | Remote ruleset to fetch |
 | `--ruleset-version <ver>` | `latest` | Remote ruleset release to fetch (e.g. `v1.39.0`); pin it to rerun a scan with identical rules |
-| `--rule-prefilter <mode>` | `imports` | Skip, per scanned unit (the project and each dependency batch), the rules for libraries its sources never import; `off` runs every rule (also via `SCANOSS_RULE_PREFILTER`). OpenGrep only |
-| `--scanner <name>` | `opengrep` | Scanner engine: `opengrep`, `semgrep` |
 | `-f`, `--format <fmt>` | `json` | Output format: `json` (interim), `cyclonedx` |
 | `-o`, `--output <file>` | stdout | Output file path for the findings report |
 | `--languages <langs>` | auto | Override language detection (comma-separated) |
 | `--fail-on-findings` | off | Exit non-zero if findings are detected |
 | `-t`, `--timeout <dur>` | `10m` | Scan timeout (e.g. `10m`, `1h`, `2w`) |
 | `--no-dedup` | off | Disable per-line deduplication of findings |
-| `--include-tests` | off | Include test sources in findings and dependency scans |
+| `--include-tests` | off | Include test sources in findings |
 | `--no-default-exclusions` | off | Disable built-in exclusions (`vendor`, `node_modules`, `shaded/`, generated protobuf stubs, ...). Slows scans on large repos; combine with `--exclude` to re-add specific paths |
 | `--exclude <glob>` | — | Gitignore-style pattern to skip (repeatable); added on top of the defaults |
-| `--detect-paths-from <file>` | — | Detect findings only in the files listed in `<file>` (one path per line, relative to the target; `-` reads stdin). The call graph and reachability still read the whole target. OpenGrep only. See [Scanning changed files](#scanning-changed-files) |
-| `--scan-dependencies` | off | Recursively scan third-party dependencies (requires the deps image or local toolchains) |
-| `--dep-ecosystem <eco>` | `auto` | Dependency ecosystem: `auto`, `go`, `java`, `python`, `rust` |
-| `--dep-workers <n>` | `0` | Parallel dependency scan workers (0 = half of the usable CPUs, max 8; Java max 2). When two or more dependency scans run at once, each OpenGrep run gets `--jobs` set to the usable CPUs divided by the number of scans. Usable CPUs honor a container CPU limit |
-| `--scanner-jobs <n>` | `0` | Parallel jobs for the primary scan's OpenGrep process (0 = one per usable CPU, which honors a container CPU limit; also via `SCANOSS_SCANNER_JOBS`, the flag wins). Lower it when several scans share a host, for example to the host's cores divided by the concurrent scans. Does not change findings or cache keys |
-| `--no-dependency-findings-api` | off | Scan every dependency locally. Without it, and with an API key configured, a dependency the findings cache does not hold takes the findings the SCANOSS API publishes for its package version |
-| `--findings-cache <backend>` | `disk` | Dependency findings cache backend: `disk`, `none`, `postgres` (also via `SCANOSS_FINDINGS_CACHE_BACKEND`; postgres needs `SCANOSS_FINDINGS_CACHE_DSN`) |
+| `--scan-dependencies` | off | Java (Maven, Gradle), and Python (locks, pinned requirements, the installed environment): resolve the pinned dependency closure to compiled JARs, type the project's call graph with them, and take every dependency finding and its reachability verdict from the SCANOSS API in one request (`/v3/cryptography/reachability/application`). No dependency source is downloaded or scanned. Needs the API (`--api-url`, `--api-key`). See [docs/DEPENDENCY_SCANNING.md](docs/DEPENDENCY_SCANNING.md) |
+| `--offline` | off | With `--scan-dependencies`: decide dependency reachability locally instead of asking the SCANOSS API. Each dependency is mined from its sources (Java: Maven sources JAR; Python: installed distribution), cached, and stitched with the code the API runs. See [docs/OFFLINE.md](docs/OFFLINE.md) |
+| `--offline-cache-dir <dir>` | `~/.scanoss/crypto-finder/cache/mined` | With `--offline`, the mined-dependency cache |
+| `--offline-python-packages <dirs>` | — | With `--offline` on a Python target: installed packages to mine the dependencies from (OS path-list separated: virtual environments, site-packages directories, unpacked wheels), after the project's `.venv`, `venv` and `VIRTUAL_ENV`. Nothing is installed, downloaded or run |
+| `--offline-memory-mb <n>` | `10240` | With `--offline`, the scan's soft memory limit in MiB (unless `GOMEMLIMIT` is set); half of it bounds the dependencies mined at once |
+| `--dependency-reachability-max-chains` | `1` | With `--scan-dependencies`, call chains per dependency finding the API returns for `--export-callgraph` (0: none) |
+| `--cards-index <file>` | — | Compiled card index to detect with, instead of compiling it from the ruleset's Java rules |
+| `--cards-dir <dir>` | — | Cards directory to detect with, instead of the ruleset's `cards/` |
+| `--type-jars <jars>` | — | Compiled dependency JARs (OS path-list separated) indexed for Java type resolution only (the miner passes a component's pinned dependencies) |
+| `--type-packages <dirs>` | — | Installed Python dependency packages (OS path-list separated: site-packages or virtual environment directories, unpacked wheels or sdists) indexed for Python type resolution only, read as data: their classes and return annotations type the calls into them |
 | `--progress` | off | Write scan lifecycle JSONL to stderr; findings remain on stdout or `--output`, and explicit `--error-format=text` is incompatible |
 | `--export-callgraph <file>` | — | Write the finding-centric crypto call graph (reachability slices) to `<file>` |
 | `--export-callgraph-format <fmt>` | `json` | Call graph export format (only `json`) |
+| `--export-callgraph-max-chains <n>` | `8` | Sampled call chains per finding (depth cap 32); not a complete graph |
+| `--export-callgraph-entry-points` | off | Add the full `crypto_entry_points` reverse-reachability index |
+| `--export-callgraph-interned-frames` | on | Schema `6.18` interned frames; `=false` writes schema `6.14` inlined frames |
 | `--export-callgraph-project-reachability` | off | Without `--scan-dependencies` (or when none resolved), classify reachability against the target's own source packages instead of reporting `not_applicable`; leave off when scanning a library on its own |
 | `--export-graph-fragment <file>` | — | Write a reusable structural graph fragment to `<file>` |
 | `--export-graph-fragment-format <fmt>` | `json` | Graph fragment export format (only `json`) |
 | `--java-jdk-major <major>` | — | Java JDK major for dependency resolution/type enrichment: `auto`, `8`, `11`, `17`, `21` |
 | `--java-jdk-home <major=path>` | — | Explicit JDK home mapping (repeatable) |
 | `--java-compiled-artifact <path>` | — | Compiled Java artifact used for standalone callgraph/type enrichment |
-| `--interfile` | off | Cross-file analysis (Semgrep Pro only) |
 | `--api-key`, `--api-url` | config | Override the configured SCANOSS API key / base URL |
+| `--allow-http` | off | Allow a plain-HTTP `--api-url` on a remote host (sends the API key unencrypted) |
 
 ### `annotate` flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--import-fragment <file>` | required | Cached structural graph fragment JSON to re-annotate |
-| `--source <dir>` | required | Source directory to run crypto detection over |
+| `--source <dir>` | — | Source tree the fragment was exported from; only needed for a fragment older than graph-fragment-1.16, to read the source lines it lacks |
+| `--findings-output <file>` | — | Also write the findings report, as `scan --output` writes it |
 | `-o`, `--output <file>` | stdout | Output file for the annotation JSON |
 
-`annotate` also accepts the detection-related subset of `scan` flags: `--rules`, `--rules-dir`, `--no-remote-rules`, `--no-cache`, `--ruleset-version`, `--scanner`, `--scanner-jobs` (and `SCANOSS_SCANNER_JOBS`), `--timeout`, `--languages`, `--include-tests`, `--no-default-exclusions`, `--exclude`, `--api-key`, `--api-url`.
+`annotate` also accepts the detection-related subset of `scan` flags: `--rules`, `--rules-dir`, `--no-remote-rules`, `--no-cache`, `--ruleset`, `--ruleset-version`, `--timeout`, `--languages`, `--include-tests`, `--no-default-exclusions`, `--exclude`, `--api-key`, `--api-url`, `--allow-http`.
 
 ## Language Coverage
 
-Detection (rules-based scanning) covers whatever languages the ruleset covers. Call graph construction and reachability analysis support these ecosystems:
+Detection runs on the cards engine, which this version supports for **Java** (JDK JCA/JCE, BouncyCastle (+ OpenPGP), Tink, jjwt, Nimbus JOSE+JWT, Apache Santuario, Apache SSHD, Password4j, Spring Security Crypto and the rest of the ruleset's Java rules). Dependency scanning (`--scan-dependencies`) covers **Java** projects built with Maven or Gradle.
 
-| Ecosystem | Call graph parser | Contract knowledge bases (`internal/callgraph/contracts/`) |
-|-----------|-------------------|-------------------------------------------------------------|
-| C | yes | OpenSSL EVP, libsodium, Mbed TLS, wolfSSL/wolfCrypt |
-| C++ | yes | Crypto++ (SHA-256 hash lifecycle) |
-| Go | yes | stdlib `crypto/*`, `golang.org/x/crypto`, golang-fips/openssl |
-| Java | yes | JDK JCA/JCE, BouncyCastle (+ OpenPGP), Tink, jjwt, Nimbus JOSE+JWT, Apache Santuario, Apache SSHD, Password4j, Spring Security Crypto |
-| JavaScript / TypeScript (Node) | yes | none yet (bootstrap placeholder) |
-| Python | yes | pyca/cryptography, PyCryptodome(x), paramiko, passlib, bcrypt, argon2-cffi, PyNaCl, pyOpenSSL, M2Crypto, PyJWT, flask-jwt-extended, pyotp, werkzeug, boto3, azure-keyvault-keys/secrets |
-| Rust | yes | ring, chacha20poly1305 |
+**Python** (pyca/cryptography, hashlib, hmac, ssl, PyJWT, PyCryptodome, PyNaCl and the rest of the ruleset's Python rules) is scanned too: a target holding both is scanned for each, against each language's own rules, cards and call graph. `--scan-dependencies` resolves the closure of every scanned ecosystem that has one, including Python projects below the scan root (as for Maven and Gradle modules); on Python it resolves its pinned closure from its lock (`uv.lock`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `pylock.toml`), fully pinned requirements or installed environment, and takes the dependency findings from the API (or `--offline`, from the installed distributions). Python dependency findings carry reachability verdicts like Java's; where the analysis cannot decide a route they read `unknown` (measured results in [docs/KNOWN_LIMITS.md](docs/KNOWN_LIMITS.md)). A declared requirement without a pin is listed with reason `unpinned`. See [Python dependencies](docs/DEPENDENCY_SCANNING.md#python-dependencies).
 
-Dependency scanning (`--scan-dependencies`) resolves and scans third-party packages for: **Go**, **Java** (Maven/Gradle), **Python** (pip), **Rust** (Cargo).
+**Go** (the standard library's crypto packages, golang.org/x/crypto and the rest of the ruleset's Go rules) is scanned too, with calls into the standard library of the installed Go toolchain and into the `go.mod` modules the module cache holds typed from their declarations. On Go, `--scan-dependencies` resolves the pinned closure from `go.mod` without downloading anything (requirements at their versions, direct unless `// indirect`, after `replace`); `--offline` mines each dependency from the module cache.
+
+The other languages crypto-finder releases up to 0.54.0 scanned with OpenGrep (C, C++, C#, JavaScript/TypeScript, Ruby, Rust) come to the cards engine in later versions. Until then:
+
+- a target whose sources are only in those languages fails with `language_not_supported` (exit code 1, `details.languages` names them), so no empty report reads as "no cryptography";
+- a Java, Python or Go target with sources in those languages is scanned for its Java, Python and Go; a warning and the completed `detection` progress event (`unsupported_languages`) name the others;
+- `--scan-dependencies` skips the dependency phase when no scanned ecosystem has anything to resolve: a Java target without a Java build (`ecosystem_not_supported` or `manifest_absent`), a Python target without a Python manifest, lock or environment at or below it, a Go target without a `go.mod` (`manifest_absent`), a JavaScript or TypeScript target without an npm, yarn or pnpm lock file (`manifest_absent`), a Rust target without a `Cargo.toml` or `Cargo.lock` (`manifest_absent`).
+
+The call graph parsers for C, C++, Go, JavaScript/TypeScript, Python and Rust stay in the code base: they are the building blocks those cards engines will use.
 
 ## Detection Rules
 
-Detection rules are **not in this repository** — they are served as the remote `dca` ruleset via the SCANOSS API (cached locally with TTL + stale fallback; see [Remote Rulesets](docs/REMOTE_RULESETS.md)).
+Detection rules are **not in this repository**. SCANOSS maintains the ruleset privately and serves it as the remote `crypto-cards` ruleset through the SCANOSS API, as a signed, leased bundle that the cache keeps encrypted ([Remote Rulesets](docs/REMOTE_RULESETS.md)). Ruleset content (rules, cards, conditions, fixtures) must never be added to this repository.
 
-A scan loads only the rules its sources can match: the import prefilter skips, for the project and each dependency batch, the rules for libraries the unit never imports (`--rule-prefilter off` runs every rule). Rules declaring `metadata.imports: ["*"]`, and rules whose import requirement cannot be read, are always kept; when the rules or the targets cannot be read ahead of the scanner, every rule of the unit's languages runs.
+| To | Use |
+|---|---|
+| Scan with the remote ruleset (default) | `crypto-finder scan /path/to/code` |
+| Pin a ruleset release | `--ruleset-version v1.39.0` |
+| Use a local ruleset you have access to | `--no-remote-rules --rules-dir <dir>` |
+| Add local rules to the remote ones | `--rules-dir <dir>` |
+| Use a prebuilt card index or cards directory | `--cards-index <file>`, `--cards-dir <dir>` |
 
-Local rules development loop:
-
-```bash
-# Iterate on rules without touching the remote ruleset
-crypto-finder scan --no-remote-rules --rules-dir /path/to/my-rules /path/to/testcode
-
-# Combine remote rules with local additions
-crypto-finder scan --rules-dir ./custom-rules /path/to/code
-```
-
-Small rule fixtures used by this repo's tests live under `testdata/rules/`. Rules detect **terminal crypto operations only** and carry standard CycloneDX metadata; supporting/lifecycle calls are derived structurally from the call graph, never tagged by rules — see [Architecture](docs/ARCHITECTURE.md#load-bearing-invariants).
-
-Callgraph schema `6.12` places contract-derived Java key-generation key-length evidence on `supporting_calls[].supporting_call.resolved_key_length`, marking it `rule_conflict` when a rule-declared key length disagrees with the resolved one; terminal `crypto_call` records remain the detected operations.
+Rules detect terminal crypto operations only; supporting and lifecycle calls are derived from the call graph, never tagged by rules ([Architecture](docs/ARCHITECTURE.md#load-bearing-invariants)).
 
 ## Configuration
 
@@ -244,7 +219,7 @@ crypto-finder configure --api-key YOUR_API_KEY
 crypto-finder configure --api-url https://custom.scanoss.com
 ```
 
-Environment variables: `SCANOSS_API_KEY`, `SCANOSS_API_URL`, `SCANOSS_SCANNER_JOBS` (see `--scanner-jobs`). Project-level skip patterns via `scanoss.json`:
+Environment variables: `SCANOSS_API_KEY`, `SCANOSS_API_URL`. Project-level skip patterns via `scanoss.json`:
 
 ```json
 {
@@ -262,17 +237,22 @@ See [Configuration](docs/CONFIGURATION.md) for the full guide.
 
 ## Documentation
 
-| Document | Contents |
-|----------|----------|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Pipeline overview, package map, load-bearing invariants |
-| [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md) | Interim JSON, callgraph export (schema `6.12`), graph fragment (`graph-fragment-1.12`), CycloneDX CBOM |
-| [docs/ERROR_CODES.md](docs/ERROR_CODES.md) | Stable failure code/stage taxonomy emitted by `--error-format json` |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Configuration options and skip patterns |
-| [docs/DEPENDENCY_SCANNING.md](docs/DEPENDENCY_SCANNING.md) | Dependency scanning, call chain tracing, attribution |
-| [docs/REMOTE_RULESETS.md](docs/REMOTE_RULESETS.md) | Remote ruleset API, caching, troubleshooting |
-| [docs/DOCKER_USAGE.md](docs/DOCKER_USAGE.md) | Container usage and CI/CD integration |
-| [CONTEXT.md](CONTEXT.md) | Domain glossary — the ubiquitous language used across code and docs |
-| [AGENTS.md](AGENTS.md) | Conventions for AI agents and contributors (changelog policy, error layering, contracts KB) |
+| Document | Read it to |
+|----------|------------|
+| [docs/MIGRATION_1.0.md](docs/MIGRATION_1.0.md) | Upgrade from 0.5x: removed flags, images, Go import paths |
+| [docs/CLIENT_SERVER.md](docs/CLIENT_SERVER.md) | See what runs locally, what the SCANOSS API serves, what is sent |
+| [docs/OFFLINE.md](docs/OFFLINE.md) | Scan dependencies without the API: cache, flags, limits |
+| [docs/KNOWN_LIMITS.md](docs/KNOWN_LIMITS.md) | Know what is not decided (Python verdict coverage, unknowns) and why |
+| [docs/DEPENDENCY_SCANNING.md](docs/DEPENDENCY_SCANNING.md) | Understand the dependency pipeline step by step |
+| [docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md) | Parse interim JSON, the callgraph export, the graph fragment, CycloneDX |
+| [docs/ERROR_CODES.md](docs/ERROR_CODES.md) | Handle failures from `--error-format json` |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Configure the API, JDKs, skip patterns, timeouts |
+| [docs/REMOTE_RULESETS.md](docs/REMOTE_RULESETS.md) | Understand ruleset leases, caching and troubleshooting |
+| [docs/DOCKER_USAGE.md](docs/DOCKER_USAGE.md) | Run in containers and CI |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Find your way in the code: pipeline, packages, invariants |
+| [docs/GRAPH_IDS.md](docs/GRAPH_IDS.md) | Change graph construction: ids, when to bump, the guard |
+| [CONTEXT.md](CONTEXT.md) | Learn the domain vocabulary |
+| [AGENTS.md](AGENTS.md) | Contribute (agents and humans): changelog, errors, KB, merge gate |
 
 ## Contributing
 
@@ -306,6 +286,7 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 
 - [SCANOSS Website](https://www.scanoss.com)
 - [SCANOSS Documentation](https://scanoss.readthedocs.io)
+- [reach, the reachability engine](https://github.com/scanoss/reach)
 - [Issue Tracker](https://github.com/scanoss/crypto-finder/issues)
 
 ## Support

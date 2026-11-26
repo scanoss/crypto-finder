@@ -8,7 +8,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -185,7 +186,7 @@ func TestOccurrenceKeyGroupLess_UsesIdentityAfterLocation(t *testing.T) {
 // line 93, so its EndCol is a column of the later line.
 func ternaryStatementResult() *engine.DepScanResult {
 	const file = "/workspace/SSLUtils.java"
-	rule := []entities.RuleInfo{{ID: "java.jca.protocol.tls.sslcontext"}}
+	rule := []entities.RuleInfo{{ID: "fixture.java.jca.sslcontext"}}
 	return &engine.DepScanResult{
 		RootModule:  "com.example:app",
 		ProjectRoot: "/workspace",
@@ -278,7 +279,7 @@ func TestAssignOccurrenceKeys_NonCollidingKeysArePinned(t *testing.T) {
 // inside it.
 func misanchoredTernaryResult() *engine.DepScanResult {
 	const file = "/workspace/HttpsURLConnectionFactory.java"
-	rule := []entities.RuleInfo{{ID: "java.jca.protocol.tls.sslcontext"}}
+	rule := []entities.RuleInfo{{ID: "fixture.java.jca.sslcontext"}}
 	return &engine.DepScanResult{
 		RootModule:  "com.example:app",
 		ProjectRoot: "/workspace",
@@ -294,7 +295,7 @@ func misanchoredTernaryResult() *engine.DepScanResult {
 			FilePath: file,
 			CryptographicAssets: []entities.CryptographicAsset{
 				{StartLine: 160, EndLine: 160, StartCol: 49, EndCol: 81, Rules: rule},
-				{StartLine: 160, EndLine: 160, StartCol: 72, EndCol: 80, Rules: []entities.RuleInfo{{ID: "java.jca.protocol.tls.protocol-version"}}},
+				{StartLine: 160, EndLine: 160, StartCol: 72, EndCol: 80, Rules: []entities.RuleInfo{{ID: "fixture.java.jca.protocol-version"}}},
 				{StartLine: 160, EndLine: 161, StartCol: 84, EndCol: 49, Rules: rule},
 			},
 		}}},
@@ -380,6 +381,93 @@ func TestAssignOccurrenceKeys_TwoMatchesOfOneRuleOnOneAnchorAreDeterministic(t *
 		}
 		if r := rev[len(rev)-1-i]; r.OccurrenceKey != want[i].OccurrenceKey {
 			t.Errorf("asset %d key in a reversed report = %q, want %q", i, r.OccurrenceKey, want[i].OccurrenceKey)
+		}
+	}
+}
+
+// A dependency finding the API served (application reachability) has no code in
+// the scan's graph: recomputing its key would fall back to the file. It keeps
+// the AST-anchored key it was served with, and stays without one when served
+// without one.
+func TestAssignOccurrenceKeys_ServedFindingsKeepTheServedKey(t *testing.T) {
+	served := &entities.ServedReachability{Reachability: "reachable"}
+	dependency := &entities.DependencyInfo{Module: "org.a:a", Version: "1.0", PURL: "pkg:maven/org.a/a@1.0"}
+	result := &engine.DepScanResult{
+		RootModule:  "com.example:app",
+		ProjectRoot: "/workspace",
+		CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}},
+		Report: &entities.InterimReport{Findings: []entities.Finding{
+			{FilePath: "/workspace/App.java", CryptographicAssets: []entities.CryptographicAsset{{StartLine: 3, EndLine: 3, StartCol: 1, EndCol: 9}}},
+			{FilePath: "org/a/X.java", CryptographicAssets: []entities.CryptographicAsset{
+				{StartLine: 10, EndLine: 10, StartCol: 1, EndCol: 9, OccurrenceKey: "v1:00000000000000aa", Source: "dependency", DependencyInfo: dependency, Served: served},
+				{StartLine: 20, EndLine: 20, StartCol: 1, EndCol: 9, Source: "dependency", DependencyInfo: dependency, Served: served},
+				{StartLine: 30, EndLine: 30, StartCol: 1, EndCol: 9, OccurrenceKey: "v1:stale", Source: "dependency", DependencyInfo: dependency},
+			}},
+		}},
+	}
+
+	AssignOccurrenceKeys(result)
+
+	project := result.Report.Findings[0].CryptographicAssets[0].OccurrenceKey
+	assets := result.Report.Findings[1].CryptographicAssets
+	if assets[0].OccurrenceKey != "v1:00000000000000aa" {
+		t.Errorf("served key = %q, want the key it was served with", assets[0].OccurrenceKey)
+	}
+	if assets[1].OccurrenceKey != "" {
+		t.Errorf("served without a key: occurrence_key = %q, want none", assets[1].OccurrenceKey)
+	}
+	if !regexp.MustCompile(`^v1:[0-9a-f]{16}$`).MatchString(project) || !regexp.MustCompile(`^v1:[0-9a-f]{16}$`).MatchString(assets[2].OccurrenceKey) {
+		t.Errorf("scanned findings: occurrence_key %q and %q, want keys the scan computed", project, assets[2].OccurrenceKey)
+	}
+}
+
+// A static function of a C header that a C scan also reads as C++ is declared
+// twice, once by each graph, with the same span and ID; the C++ declaration has
+// no return type, so it hashes another container signature. The key must not
+// depend on which of the two the map iteration lists first: it is the key of
+// the C declaration on every run.
+func TestAssignOccurrenceKeys_HeaderFunctionDeclaredByTwoGraphsIsDeterministic(t *testing.T) {
+	id := callgraph.FunctionID{Package: "src/compat.h", Name: "hash", Linkage: callgraph.LinkageInternal}
+	call := callgraph.FunctionCall{
+		FilePath: "/workspace/src/compat.h", Line: 7, StartCol: 3, EndCol: 19,
+		ASTKind: "call_expression", NamedASTPath: "compound_statement[3]/expression_statement[1]/call_expression[0]",
+	}
+	params := []callgraph.FunctionParameter{{Name: "out", Type: "uint8_t"}}
+	newResult := func(withCPP bool) *engine.DepScanResult {
+		cDecl := &callgraph.FunctionDecl{
+			ID: id, FilePath: "/workspace/src/compat.h", StartLine: 3, EndLine: 11, StartCol: 1, EndCol: 2,
+			Parameters: params, ReturnType: "int", Calls: []callgraph.FunctionCall{call},
+		}
+		result := &engine.DepScanResult{
+			ProjectRoot: "/workspace",
+			CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{id.String(): cDecl}},
+			Report: &entities.InterimReport{Findings: []entities.Finding{{
+				FilePath:            "src/compat.h",
+				CryptographicAssets: []entities.CryptographicAsset{{StartLine: 7, EndLine: 7, StartCol: 3, EndCol: 19}},
+			}}},
+		}
+		if withCPP {
+			cppDecl := &callgraph.FunctionDecl{
+				ID: callgraph.FunctionID{Package: id.Package, Name: id.Name}, FilePath: cDecl.FilePath,
+				StartLine: 3, EndLine: 11, StartCol: 1, EndCol: 2, Parameters: params, Calls: []callgraph.FunctionCall{call},
+			}
+			// The anchors of each ecosystem, keyed as the CLI keys them.
+			result.OccurrenceAnchors = map[string]*callgraph.FunctionDecl{
+				"c\x00" + id.String():   cDecl,
+				"cpp\x00" + id.String(): cppDecl,
+			}
+		}
+		return result
+	}
+
+	cOnly := newResult(false)
+	AssignOccurrenceKeys(cOnly)
+	want := cOnly.Report.Findings[0].CryptographicAssets[0].OccurrenceKey
+	for range 200 {
+		result := newResult(true)
+		AssignOccurrenceKeys(result)
+		if got := result.Report.Findings[0].CryptographicAssets[0].OccurrenceKey; got != want {
+			t.Fatalf("occurrence_key = %q, want %q (the key of the C declaration)", got, want)
 		}
 	}
 }

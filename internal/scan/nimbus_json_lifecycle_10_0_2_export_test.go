@@ -6,7 +6,8 @@ package scan
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -36,7 +37,7 @@ import (
 // SslContextBuilder/HashBuilder, not independent bridging value types). Their
 // return-type/role correctness is fully proven at the KB layer by
 // TestLoadEmbeddedJava_NimbusJoseJwt1002JSONLifecycle
-// (internal/callgraph/contracts/nimbus_jose_jwt_10_0_2_java_library_test.go), and the
+// (internal/cryptokb/nimbus_jose_jwt_10_0_2_java_library_test.go), and the
 // nimbus-jose-jwt-10.0.2.yaml audit comment records this export-layer
 // heuristic mismatch explicitly rather than silently overstating export-path
 // coverage.

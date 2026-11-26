@@ -1,0 +1,65 @@
+# `use $IMPORT;` and `use $M::$N;` on a use group with a self leaf
+# (`use a::{self, B};`) elsewhere in the file (TestRustSelfGroupAsOpenGrep).
+rules:
+- id: regex
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "regex-$IMPORT"}}
+  patterns:
+  - pattern: $KEY.sign(...)
+  - pattern-inside: |
+      use $IMPORT;
+      ...
+  - metavariable-regex:
+      metavariable: $IMPORT
+      regex: '^acme(?:::|$)'
+- id: any
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "any-$IMPORT"}}
+  patterns:
+  - pattern: $KEY.sign(...)
+  - pattern-inside: |
+      use $IMPORT;
+      ...
+- id: two
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "two-$M-$N"}}
+  patterns:
+  - pattern: $KEY.sign(...)
+  - pattern-inside: |
+      use $M::$N;
+      ...
+- id: neg
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "neg"}}
+  patterns:
+  - pattern: $KEY.sign(...)
+  - pattern-not:
+      patterns:
+      - pattern: $KEY.$METHOD(...)
+      - pattern-inside: |
+          use $CRATE::$TYPE;
+          ...
+      - metavariable-regex:
+          metavariable: $CRATE
+          regex: '^(?!(?:acme|crate|self|super)(?:::|$))'
+      - pattern-inside: |
+          let $KEY = $TYPE::$CTOR(...);
+          ...
+- id: notfar
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "notfar"}}
+  patterns:
+  - pattern: $KEY.sign(...)
+  - pattern-not-inside: |
+      use far::$ANY;
+      ...

@@ -6,8 +6,8 @@ package scan
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
 )
 
 func TestCPPContractRolesUseProjectIndependentQualifiedIdentity(t *testing.T) {

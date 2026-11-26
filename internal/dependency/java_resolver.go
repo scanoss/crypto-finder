@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/scanoss/reach/javaruntime"
 
 	"github.com/scanoss/crypto-finder/internal/failure"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 const (
@@ -19,6 +23,14 @@ const (
 // dependency resolution and artifact/type enrichment.
 type JavaRuntimeConfigurer interface {
 	SetJavaRuntime(cfg javaruntime.Config)
+}
+
+// CompiledArtifactsConfigurer is a resolver that can resolve a project's
+// dependencies to their compiled artifacts only: no source is fetched or
+// extracted. The application reachability client needs nothing else, since the
+// server holds every dependency's graph.
+type CompiledArtifactsConfigurer interface {
+	SetCompiledArtifactsOnly(only bool)
 }
 
 // JavaResolver delegates Java dependency resolution to the build-tool-specific
@@ -57,6 +69,14 @@ func (r *JavaResolver) SetJavaRuntime(cfg javaruntime.Config) {
 	}
 	if r.gradle != nil {
 		r.gradle.SetJavaRuntime(cfg)
+	}
+}
+
+// SetCompiledArtifactsOnly makes the Maven resolver resolve each dependency to
+// its compiled JAR only, without sources. Gradle resolution is unchanged.
+func (r *JavaResolver) SetCompiledArtifactsOnly(only bool) {
+	if r.maven != nil {
+		r.maven.SetCompiledArtifactsOnly(only)
 	}
 }
 
@@ -127,4 +147,48 @@ func fileExists(path string) bool {
 		return true
 	}
 	return false
+}
+
+// SourcesJAR returns the path of dep's Maven sources JAR (classifier
+// sources), the source the offline mode mines a dependency from. It looks
+// beside dep's compiled JAR (the local Maven repository, or the Gradle cache,
+// which keeps each file of a version in its own directory) and, for a Maven
+// project resolved by this resolver, asks Maven to fetch it into the local
+// repository when it is missing (Maven's own repositories and settings apply;
+// an offline Maven fetches nothing). It returns an error naming the
+// dependency when there is none.
+func (r *JavaResolver) SourcesJAR(ctx context.Context, dep Dependency) (string, error) {
+	if found := siblingSourcesJAR(dep.CompiledArtifactPath); found != "" {
+		return found, nil
+	}
+	if r.maven != nil && r.maven.localRepo != "" { //nolint:nestif // complexity predates the lint gate; splitting it is a separate behavior-sensitive change
+		if path := r.maven.sourceJarPath(dep, r.maven.localRepo); path != "" {
+			if fileExists(path) {
+				return path, nil
+			}
+			if _, err := r.maven.fetchDependencySource(ctx, dep, r.maven.localRepo); err == nil && fileExists(path) {
+				return path, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no sources JAR for %s:%s", dep.Module, dep.Version)
+}
+
+// siblingSourcesJAR finds a-v-sources.jar next to the compiled a-v.jar, or in
+// another directory of the same version (Gradle's files-2.1 layout keeps each
+// file under its own hash directory).
+func siblingSourcesJAR(compiled string) string {
+	if compiled == "" || !strings.HasSuffix(compiled, ".jar") {
+		return ""
+	}
+	name := strings.TrimSuffix(filepath.Base(compiled), ".jar") + "-sources.jar"
+	if path := filepath.Join(filepath.Dir(compiled), name); fileExists(path) {
+		return path
+	}
+	matches := utils.Lenient(filepath.Glob(filepath.Join(filepath.Dir(filepath.Dir(compiled)), "*", name)))
+	sort.Strings(matches)
+	if len(matches) > 0 {
+		return matches[0]
+	}
+	return ""
 }

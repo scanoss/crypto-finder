@@ -6,16 +6,17 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // annotateGoldenFixture builds a callgraph + report that exercise the crypto
 // annotation path: a containing function doEncrypt that calls
 // javax.crypto.Cipher.getInstance("AES"), with a matching crypto asset.
-func annotateGoldenFixture(t *testing.T) (*engine.DepScanResult, ComponentKey) {
+func annotateGoldenFixture(t *testing.T) *engine.DepScanResult {
 	t.Helper()
 
 	cryptoFnID := callgraph.FunctionID{Package: "com.app", Type: "Service", Name: "doEncrypt#0"}
@@ -75,21 +76,21 @@ func annotateGoldenFixture(t *testing.T) (*engine.DepScanResult, ComponentKey) {
 		CallGraph:  graph,
 		RootModule: "com.app:app",
 		Ecosystem:  "java",
-	}, ComponentKey{Purl: "pkg:maven/com.app/app", Version: "1.0.0"}
+	}
 }
 
 type ComponentKey = graphfrag.ComponentKey
 
-// TestBuildAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan is the
+// TestBuildGraphAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan is the
 // load-bearing invariant test: a full --export-graph-fragment scan AND a
 // re-annotate against that exported fragment MUST produce byte-identical
 // crypto_annotations (same finding_id, function_key, oid, metadata, match,
 // matched_operation, crypto_call). Consumers join assets↔chains by finding_id,
 // so any drift breaks the join.
-func TestBuildAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan(t *testing.T) {
+func TestBuildGraphAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan(t *testing.T) {
 	t.Parallel()
 
-	result, component := annotateGoldenFixture(t)
+	result := annotateGoldenFixture(t)
 
 	// 1. Full scan path: build + export the graph fragment (callgraph present).
 	// Both paths consume the same prepared OID report.
@@ -99,20 +100,9 @@ func TestBuildAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan(t *testing
 		t.Fatal("full export produced no crypto annotations; fixture is broken")
 	}
 
-	// 2. Decode the exported fragment as a consumer would (this is the cached
-	//    structural graph the annotate path imports).
-	fragmentJSON, err := json.Marshal(full)
-	if err != nil {
-		t.Fatalf("marshal full export: %v", err)
-	}
-	fragment, err := graphfrag.DecodeFragment(component, fragmentJSON)
-	if err != nil {
-		t.Fatalf("DecodeFragment: %v", err)
-	}
-
-	// 3. Annotate-only path: re-run annotation against the imported fragment,
-	//    using the SAME detection report but NO live callgraph.
-	annotate := buildAnnotateExport(resolved, fragment)
+	// 2. Annotate-only path: re-run annotation against the stored fragment,
+	//    using the SAME detection report but NO live callgraph build.
+	annotate := annotateStoredGraph(t, &full, t.TempDir(), result.Report, resolved)
 
 	// Invariant: crypto_annotations must be byte-identical.
 	fullJSON, err := json.Marshal(full.CryptoAnnotations)
@@ -128,21 +118,15 @@ func TestBuildAnnotateExport_CryptoAnnotationsByteIdenticalToFullScan(t *testing
 	}
 }
 
-// TestBuildAnnotateExport_DoesNotBuildCallgraph asserts the annotate path emits
+// TestBuildGraphAnnotateExport_DoesNotBuildCallgraph asserts the annotate path emits
 // only scan_metadata + crypto_annotations and never reconstructs functions or
 // edges (the expensive callgraph work it exists to skip).
-func TestBuildAnnotateExport_DoesNotBuildCallgraph(t *testing.T) {
+func TestBuildGraphAnnotateExport_DoesNotBuildCallgraph(t *testing.T) {
 	t.Parallel()
 
-	result, component := annotateGoldenFixture(t)
+	result := annotateGoldenFixture(t)
 	full := buildGraphFragmentExport(result)
-	fragmentJSON, _ := json.Marshal(full)
-	fragment, err := graphfrag.DecodeFragment(component, fragmentJSON)
-	if err != nil {
-		t.Fatalf("DecodeFragment: %v", err)
-	}
-
-	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, result.Report), fragment)
+	annotate := annotateStoredGraph(t, &full, t.TempDir(), result.Report, prepareOIDFixtureReport(t, result.Report))
 
 	if len(annotate.Functions) != 0 {
 		t.Fatalf("annotate produced %d functions, want 0 (no callgraph)", len(annotate.Functions))
@@ -156,27 +140,21 @@ func TestBuildAnnotateExport_DoesNotBuildCallgraph(t *testing.T) {
 	}
 	// graph_algo_version is carried from the imported fragment so consumers can
 	// keep their structural cache keyed on it.
-	if annotate.ScanMetadata.GraphAlgoVersion != fragment.GraphAlgoVersion {
+	if annotate.ScanMetadata.GraphAlgoVersion != full.ScanMetadata.GraphAlgoVersion {
 		t.Fatalf("graph_algo_version = %q, want %q (from imported fragment)",
-			annotate.ScanMetadata.GraphAlgoVersion, fragment.GraphAlgoVersion)
+			annotate.ScanMetadata.GraphAlgoVersion, full.ScanMetadata.GraphAlgoVersion)
 	}
 }
 
-// TestBuildAnnotateExport_FunctionKeyFromImportedFragment verifies the
+// TestBuildGraphAnnotateExport_FunctionKeyFromImportedFragment verifies the
 // function_key is recovered from the imported fragment's line ranges (not a
 // live callgraph), matching what the full scan attached.
-func TestBuildAnnotateExport_FunctionKeyFromImportedFragment(t *testing.T) {
+func TestBuildGraphAnnotateExport_FunctionKeyFromImportedFragment(t *testing.T) {
 	t.Parallel()
 
-	result, component := annotateGoldenFixture(t)
+	result := annotateGoldenFixture(t)
 	full := buildGraphFragmentExport(result)
-	fragmentJSON, _ := json.Marshal(full)
-	fragment, err := graphfrag.DecodeFragment(component, fragmentJSON)
-	if err != nil {
-		t.Fatalf("DecodeFragment: %v", err)
-	}
-
-	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, result.Report), fragment)
+	annotate := annotateStoredGraph(t, &full, t.TempDir(), result.Report, prepareOIDFixtureReport(t, result.Report))
 
 	gotKeys := make([]string, len(annotate.CryptoAnnotations))
 	for i, op := range annotate.CryptoAnnotations {

@@ -9,11 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
+	"github.com/scanoss/reach/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 // m2cryptoConsumer calls the M2Crypto functions the detection rules name as
@@ -245,7 +246,7 @@ func TestPythonM2Crypto_RuleAPIsResolveToTheirContracts(t *testing.T) {
 	// so it is not part of the context's lifecycle and never becomes one of
 	// its supporting calls. In a real scan it is a finding of its own; here it
 	// must resolve to its module path and to its contract.
-	kb, err := contracts.LoadEmbedded("python")
+	kb, err := contracts.ForEcosystem("python")
 	if err != nil {
 		t.Fatalf("LoadEmbedded(python): %v", err)
 	}

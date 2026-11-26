@@ -1,0 +1,362 @@
+{
+ "pair": [
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 3,
+   "metavars": {
+    "$H": "h",
+    "$S": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 7,
+   "metavars": {
+    "$H": "_h",
+    "$S": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 11,
+   "metavars": {
+    "$H": "_h",
+    "$S": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 15,
+   "metavars": {
+    "$H": "h",
+    "$S": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 19,
+   "metavars": {
+    "$H": "_",
+    "$S": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 47,
+   "metavars": {
+    "$H": "h",
+    "$S": "s"
+   }
+  }
+ ],
+ "second": [
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 3,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 7,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 11,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 15,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 19,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 27,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 31,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 35,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 40,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 43,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 47,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 51,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 56,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 61,
+   "metavars": {
+    "$X": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 66,
+   "metavars": {
+    "$X": "s"
+   }
+  }
+ ],
+ "single": [
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 51,
+   "metavars": {
+    "$S": "s"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 61,
+   "metavars": {
+    "$S": "s"
+   }
+  }
+ ],
+ "typed": [
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/main.rs",
+   "line": 11,
+   "metavars": {
+    "$H": "_h",
+    "$HT": "Header",
+    "$S": "s"
+   }
+  }
+ ],
+ "whole": [
+  {
+   "col": 9,
+   "end_col": 47,
+   "file": "src/main.rs",
+   "line": 2,
+   "metavars": {
+    "$N": "(s h)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 52,
+   "file": "src/main.rs",
+   "line": 6,
+   "metavars": {
+    "$N": "(s _h)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 65,
+   "file": "src/main.rs",
+   "line": 10,
+   "metavars": {
+    "$N": "(s _h)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 65,
+   "file": "src/main.rs",
+   "line": 14,
+   "metavars": {
+    "$N": "(s h)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 47,
+   "file": "src/main.rs",
+   "line": 18,
+   "metavars": {
+    "$N": "(s _)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 47,
+   "file": "src/main.rs",
+   "line": 22,
+   "metavars": {
+    "$N": "(h s)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 50,
+   "file": "src/main.rs",
+   "line": 26,
+   "metavars": {
+    "$N": "(s h x)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 52,
+   "file": "src/main.rs",
+   "line": 30,
+   "metavars": {
+    "$N": "((s h)x)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 47,
+   "file": "src/main.rs",
+   "line": 38,
+   "metavars": {
+    "$N": "(s h)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 51,
+   "file": "src/main.rs",
+   "line": 46,
+   "metavars": {
+    "$N": "(s h)"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 42,
+   "file": "src/main.rs",
+   "line": 50,
+   "metavars": {
+    "$N": "s"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 42,
+   "file": "src/main.rs",
+   "line": 54,
+   "metavars": {
+    "$N": "s"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 42,
+   "file": "src/main.rs",
+   "line": 60,
+   "metavars": {
+    "$N": "s"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 47,
+   "file": "src/main.rs",
+   "line": 64,
+   "metavars": {
+    "$N": "(h s)"
+   }
+  }
+ ]
+}

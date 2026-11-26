@@ -9,8 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/reach/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/failure"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 func TestDetectJavaBuildTool(t *testing.T) {

@@ -14,8 +14,7 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
-
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
 )
 
 const (
@@ -63,13 +62,25 @@ func nodeDeclsByFile(root string, graph *callgraph.CallGraph) map[string][]*call
 		return out
 	}
 	for _, fn := range graph.Functions {
-		file := fn.FilePath
-		if !filepath.IsAbs(file) {
-			file = filepath.Join(root, file)
-		}
-		out[filepath.Clean(file)] = append(out[filepath.Clean(file)], fn)
+		file := nodeGraphFile(root, fn.FilePath)
+		out[file] = append(out[file], fn)
 	}
 	return out
+}
+
+// nodeGraphFile is a call graph declaration's file as the export index names
+// it: under root as root is written. A graph built from a scanned directory
+// names its files that way already, relative to the working directory when
+// the directory was given relative; a graph rebuilt from a fragment names them
+// relative to root.
+func nodeGraphFile(root, file string) string {
+	if filepath.IsAbs(file) {
+		return filepath.Clean(file)
+	}
+	if _, under := pathRelativeToRoot(root, file); under && !filepath.IsAbs(root) {
+		return filepath.Clean(file)
+	}
+	return filepath.Join(root, file)
 }
 
 // anchor moves each export-line declaration of api to the function, method or

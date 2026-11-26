@@ -11,11 +11,10 @@ import (
 
 	packageurl "github.com/package-url/packageurl-go"
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/purl"
 	"github.com/scanoss/scanoss.go/pkg/dependencies/resolve"
 	"github.com/scanoss/scanoss.go/pkg/dependencies/resolve/lockfile"
 	"github.com/scanoss/scanoss.go/pkg/dependencies/resolve/toolchain"
-
-	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // graphInput is one file a resolution root directory may hold, and how the
@@ -36,7 +35,7 @@ func readToolchain(ctx context.Context, dir, name string) (resolve.Graph, error)
 // graphInputs lists, per ecosystem, the files the shared resolver reads in a
 // resolution root directory.
 var graphInputs = map[string][]graphInput{
-	"go":   {{"go.mod", readToolchain}},
+	"go":   {{goModManifest, readToolchain}},
 	"java": {{"pom.xml", readToolchain}, {"gradle.lockfile", readLockfile}},
 	"node": {
 		{"package-lock.json", readLockfile},

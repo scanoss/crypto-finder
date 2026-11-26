@@ -1,0 +1,41 @@
+# Bare path patterns that rust_refs does not cover: a metavariable as the last
+# segment (acme_sig::signature::$ALG) and a single segment under a use context
+# (TestRustRefVarsAsOpenGrep).
+rules:
+- id: lastvar
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "lastvar-$ALG"}}
+  patterns:
+  - pattern-either:
+    - pattern: acme_sig::signature::$ALG
+    - patterns:
+      - pattern-inside: |
+          use $IMPORT;
+          ...
+      - pattern: signature::$ALG
+      - metavariable-regex:
+          metavariable: $IMPORT
+          regex: '^acme_sig(?:::|$)'
+  - metavariable-regex:
+      metavariable: $ALG
+      regex: '^(?<variant>ML_DSA_(?:44|65))$'
+- id: single
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "single"}}
+  patterns:
+  - pattern-either:
+    - pattern: acme_ec::constants::BASE_TABLE
+    - patterns:
+      - pattern-either:
+        - pattern: constants::BASE_TABLE
+        - pattern: BASE_TABLE
+      - pattern-inside: |
+          use $IMPORT;
+          ...
+      - metavariable-regex:
+          metavariable: $IMPORT
+          regex: '^acme_ec(?:::|$)'

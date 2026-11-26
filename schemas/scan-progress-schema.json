@@ -31,6 +31,16 @@
             "description": "The failure code of a failed dependency scan, when it has one.",
             "type": "string",
             "minLength": 1
+          },
+          "specifier": {
+            "description": "A declared dependency the scan could not pin: its version specifier as the manifest writes it.",
+            "type": "string",
+            "minLength": 1
+          },
+          "markers": {
+            "description": "A declared Python dependency the scan could not pin: its PEP 508 environment markers as written. Absent when unconditional.",
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
           }
         }
       }
@@ -76,16 +86,13 @@
         "reason": {
           "enum": [
             "not_requested",
-            "ecosystem_unknown",
-            "resolver_unavailable",
-            "parser_unavailable",
-            "callgraph_unavailable",
             "manifest_absent",
-            "lockfile_absent"
+            "ecosystem_not_supported",
+            "unsupported_lockfile"
           ]
         },
         "ecosystems": {
-          "description": "On a completed dependencies event, the dependency ecosystems the phase resolved, in resolution order, the primary first. With --dep-ecosystem auto every ecosystem whose resolver can read the target is resolved; an explicit --dep-ecosystem lists that ecosystem alone. Absent means not reported.",
+          "description": "On a completed dependencies event, the dependency ecosystems the phase resolved, sorted. Absent means not reported.",
           "type": "array",
           "items": {"type": "string", "minLength": 1}
         },
@@ -103,15 +110,17 @@
           }
         },
         "ecosystem": {
-          "description": "On a skipped dependencies event, the dependency ecosystem the skip reason is about. Absent when no ecosystem was picked (ecosystem_unknown, not_requested).",
+          "description": "On a skipped dependencies event, the dependency ecosystem the skip reason is about: java for manifest_absent, the ecosystem the target declares its dependencies in for ecosystem_not_supported. Absent for not_requested.",
           "type": "string",
           "minLength": 1
         },
         "deps_scanned": {
+          "description": "On a completed dependencies event, the dependencies the SCANOSS API answered with their findings. No dependency is scanned locally.",
           "type": "integer",
           "minimum": 0
         },
         "deps_skipped": {
+          "description": "On a completed dependencies event, the dependencies the SCANOSS API holds no reachability data for (deps_skipped_list names them, reason no_reachability_data, error_code the API's info code): their findings are missing.",
           "type": "integer",
           "minimum": 0
         },
@@ -136,6 +145,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "unsupported_languages": {
+          "description": "On a completed detection event, the target's languages this version does not detect cryptography in, sorted. Absent when there is none.",
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
         "deps_with_findings": {
           "type": "integer",
           "minimum": 0
@@ -143,6 +157,49 @@
         "total_dep_findings": {
           "type": "integer",
           "minimum": 0
+        },
+        "dep_findings_reachable": {
+          "description": "On a completed dependencies event, the dependency findings the SCANOSS API found the project reaches.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "dep_findings_unknown": {
+          "description": "On a completed dependencies event, the dependency findings whose reachability the SCANOSS API could not decide.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "dep_findings_unreachable": {
+          "description": "On a completed dependencies event, the dependency findings the SCANOSS API found the project does not reach.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "request_bytes": {
+          "description": "On a completed dependencies event, the size of the application reachability request.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "response_bytes": {
+          "description": "On a completed dependencies event, the size of the application reachability response.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "request_call_site_count": {
+          "description": "On a completed dependencies event, the project's calls into its dependencies the request carried.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "request_function_count": {
+          "description": "On a completed dependencies event, the project functions holding those calls.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "reachability_info_code": {
+          "description": "On a completed dependencies event, the SCANOSS API's status code for the application reachability answer (READY when every dependency had data).",
+          "type": "string"
+        },
+        "reachability_info_message": {
+          "description": "On a completed dependencies event, the SCANOSS API's status message for the answer.",
+          "type": "string"
         }
       },
       "oneOf": [

@@ -1,0 +1,108 @@
+rules:
+- id: object
+  message: m
+  severity: INFO
+  languages:
+  - go
+  mode: taint
+  metadata:
+    crypto:
+      assetType: algorithm
+      algorithmName: THING
+  pattern-sources:
+  - pattern-either:
+    - pattern: acme.NewThing(...)
+    - pattern: acme.NewSaltedThing(...)
+  pattern-sinks:
+  - pattern: $T.Seal(...)
+- id: object-prop
+  message: m
+  severity: INFO
+  languages:
+  - go
+  mode: taint
+  pattern-sources:
+  - pattern: acme.NewThing(...)
+  pattern-propagators:
+  - pattern: '&$TYPE{..., Thing: $SRC, ...}'
+    from: $SRC
+    to: $TYPE
+  - pattern: $OBJ.Thing
+    from: $OBJ
+    to: $OBJ.Thing
+  pattern-sinks:
+  - pattern: $T.Seal(...)
+- id: arg
+  message: m
+  severity: INFO
+  languages:
+  - go
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern: $F()
+    - metavariable-regex:
+        metavariable: $F
+        regex: ^acme\.Curve(?<bits>256|384)$
+  pattern-sinks:
+  - pattern: acme.GenKey($C, ...)
+- id: imported
+  message: m
+  severity: INFO
+  languages: [go]
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern-either:
+      - pattern-inside: |
+          import (
+            ...
+            "example.com/acme/v2"
+            ...
+          )
+          ...
+      - pattern-inside: |
+          import "example.com/acme/v2"
+          ...
+    - pattern: acme.Open(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: $T.$M(...)
+    - metavariable-regex:
+        metavariable: $M
+        regex: ^(Seal|Unseal)$
+- id: typed
+  message: m
+  severity: INFO
+  languages: [go]
+  mode: taint
+  pattern-sources:
+  - pattern-either:
+    - pattern: '($K : *acme.Key)'
+    - pattern: '($K : acme.Key)'
+    - pattern: var $K acme.Key
+  pattern-sinks:
+  - pattern: $K.Sign(...)
+- id: composite
+  message: m
+  severity: INFO
+  languages: [go]
+  mode: taint
+  pattern-sources:
+  - pattern: '&acme.Client{...}'
+  - pattern: 'acme.Client{...}'
+  pattern-sinks:
+  - pattern: $C.Do(...)
+- id: composite-imported
+  message: m
+  severity: INFO
+  languages: [go]
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern-inside: |
+        import "example.com/go-acme/v4"
+        ...
+    - pattern: '&acme.Client{...}'
+  pattern-sinks:
+  - pattern: $C.Do(...)

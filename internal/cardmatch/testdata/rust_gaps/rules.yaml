@@ -1,0 +1,174 @@
+# Invented rules for the Rust matcher's OpenGrep pin test of two positives in
+# one `patterns` and of metavariable-regex on a metavariable some branches do
+# not bind (TestRustGapsAsOpenGrep, rust_pin_test.go). They run on plain.rs and
+# strong.rs, copied under src/ of a crate. expected.json is what OpenGrep 1.33.1
+# reports for them, recorded from the crate root with:
+#   opengrep scan --config rules.yaml --json --quiet src
+# (one entry per result: file, line, columns, metavariables as OpenGrep prints them),
+# and fragment.json is the scan's --export-graph-fragment of that crate under
+# CRYPTO_FINDER_CARDS_RUST=1 (graph-fragment-1.26), trimmed to the tables the matcher
+# reads. The rules and the fixture are invented; none of them comes from a ruleset.
+rules:
+# A second positive pattern-either mixing a pattern that specializes the first
+# positive with a context: a site the specialized pattern matches, or one
+# inside the context.
+- id: mixed
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "mixed $X", primitive: kdf}}
+  patterns:
+  - pattern-either:
+    - pattern: acme_kdf::Kdf::new($X)
+    - pattern: acme_kdf::Mac::new($X)
+  - pattern-either:
+    - pattern: acme_kdf::Kdf::new(1)
+    - pattern-inside: |
+        use acme_kdf::Strong;
+        ...
+# The same, the mixed either first: OpenGrep's intersection is symmetric.
+- id: mixedrev
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "rev $X"}}
+  patterns:
+  - pattern-either:
+    - pattern: acme_kdf::Kdf::new(1)
+    - pattern-inside: |
+        use acme_kdf::Strong;
+        ...
+  - pattern-either:
+    - pattern: acme_kdf::Kdf::new($X)
+    - pattern: acme_kdf::Mac::new($X)
+# A branch equal to the first positive keeps every site.
+- id: equal
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "eq $X"}}
+  patterns:
+  - pattern: acme_kdf::Kdf::new($X)
+  - pattern-either:
+    - pattern: acme_kdf::Kdf::new($X)
+    - pattern-inside: |
+        use acme_kdf::Strong;
+        ...
+# A site inside a range the second positive matches is kept: the inner
+# Kdf::new(4) lies in the outer call.
+- id: outer
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "outer $X"}}
+  patterns:
+  - pattern: acme_kdf::Kdf::new($X)
+  - pattern-either:
+    - pattern: acme_kdf::Kdf::new(acme_kdf::Kdf::new(...))
+    - pattern-inside: |
+        use acme_kdf::Strong;
+        ...
+# pattern-either branches that are conjunctions with their own contexts: a
+# branch's context holds at the range its pattern matches.
+- id: subpatterns
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "sub $X"}}
+  patterns:
+  - pattern: acme_kdf::Kdf::new($X)
+  - pattern-either:
+    - patterns:
+      - pattern-inside: |
+          fn main(...) {...}
+      - pattern: acme_kdf::Kdf::new(2)
+    - patterns:
+      - pattern-inside: |
+          use acme_kdf::Strong;
+          ...
+      - pattern-inside: |
+          fn main(...) {...}
+# A specialized branch of the second positive that specializes the first's
+# other alternative: Mac::new(1) inside Kdf::new(...) is a Mac site too. Its
+# metadata reads no metavariable: OpenGrep binds $X there from the enclosing
+# Kdf::new(...) site, the matcher from Mac::new(1)'s own match.
+- id: cross
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "cross"}}
+  patterns:
+  - pattern-either:
+    - pattern: acme_kdf::Kdf::new($X)
+    - pattern: acme_kdf::Mac::new($X)
+  - pattern-either:
+    - pattern: acme_kdf::Mac::new(1)
+    - pattern-inside: |
+        use acme_kdf::Strong;
+        ...
+# metavariable-regex on $H, which one branch does not bind: that branch is
+# dropped, the rule is not.
+- id: unbound
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "$H"}}
+  patterns:
+  - pattern-either:
+    - pattern: acme_kdf::Kdf::<$H>::new(...)
+    - pattern: acme_kdf::Kdf::new(...)
+    - pattern: acme_kdf::Mac::new($H)
+  - metavariable-regex: {metavariable: $H, regex: '^Sha'}
+# The same when a context binds it in one branch.
+- id: viainside
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "in $H"}}
+  patterns:
+  - pattern: acme_kdf::Kdf::new(...)
+  - pattern-either:
+    - pattern-inside: |
+        use acme_hash::$H;
+        ...
+    - pattern-inside: |
+        fn legacy(...) {...}
+  - metavariable-regex: {metavariable: $H, regex: '^Sha'}
+# The same in a nested either.
+- id: nestedeither
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "nest"}}
+  pattern-either:
+  - patterns:
+    - pattern-either:
+      - pattern: acme_kdf::Kdf::<$H>::new(...)
+      - pattern: acme_kdf::Kdf::new(...)
+    - metavariable-regex: {metavariable: $H, regex: '^Sha'}
+  - pattern: acme_kdf::Mac::new(Md5)
+# A metavariable a pattern-not names binds nothing: the branch is dropped.
+- id: negonly
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "neg $H"}}
+  patterns:
+  - pattern-either:
+    - pattern: acme_kdf::Mac::new($H)
+    - pattern: acme_kdf::Kdf::new(...)
+  - pattern-not: acme_kdf::Kdf::new($H)
+  - metavariable-regex: {metavariable: $H, regex: '^(Sha|2)'}
+# Both gaps: the second positive binds $Y, the context branch does not.
+- id: within
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "w $X $Y"}}
+  patterns:
+  - pattern: acme_kdf::Mac::new($X)
+  - pattern-either:
+    - pattern: acme_kdf::Mac::new($Y)
+    - pattern-inside: |
+        fn main(...) {...}
+  - metavariable-regex: {metavariable: $Y, regex: '^Sha'}

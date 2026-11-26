@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 // pythonRuleAPIConsumer calls the pyca/cryptography and PyCryptodome APIs the

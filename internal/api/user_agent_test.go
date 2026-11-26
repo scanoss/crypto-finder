@@ -26,7 +26,7 @@ import (
 )
 
 // gatewayProduct reads the client family and version from a User-Agent the
-// way the SCANOSS gateway does (scanoss/gateway telemetry.ParseClient): the
+// way the SCANOSS API gateway does: the
 // first token's product names the family ("crypto-finder" and
 // "scanoss-crypto-finder" both map to crypto-finder) and a leading
 // semver of its version is kept with the patch.

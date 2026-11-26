@@ -37,10 +37,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // representativeAppSrc is the source for a small Python application that uses
@@ -115,7 +116,7 @@ func TestPythonSmoke_MultiLib_RepresentativeFixture(t *testing.T) {
 	}
 
 	// Build the callgraph from both files in one Python project.
-	resolver := callgraph.NewPythonContractTypeResolverFromEmbedded()
+	resolver := callgraph.NewPythonContractTypeResolverFromSource()
 	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
 	b.SetTypeResolver(resolver)
 	graph, err := b.BuildFromDirectories(
@@ -145,7 +146,7 @@ func TestPythonSmoke_MultiLib_RepresentativeFixture(t *testing.T) {
 					StartLine: 9,
 					EndLine:   9,
 					Match:     "bcrypt.hashpw(password.encode(\"utf-8\"), salt)",
-					Rules:     []entities.RuleInfo{{ID: "python.bcrypt.algorithm.kdf.bcrypt.hashpw"}},
+					Rules:     []entities.RuleInfo{{ID: "fixture.python.bcrypt.hashpw"}},
 					Metadata: map[string]string{
 						"api":                "bcrypt.hashpw",
 						"assetType":          "algorithm",
@@ -164,7 +165,7 @@ func TestPythonSmoke_MultiLib_RepresentativeFixture(t *testing.T) {
 					StartLine: 20,
 					EndLine:   20,
 					Match:     "jwt.encode(payload, secret_key, algorithm=\"HS256\")",
-					Rules:     []entities.RuleInfo{{ID: "python.pyjwt.algorithm.mac.jwt.encode-hmac"}},
+					Rules:     []entities.RuleInfo{{ID: "fixture.python.pyjwt.encode-hmac"}},
 					Metadata: map[string]string{
 						"api":                "jwt.encode",
 						"assetType":          "algorithm",
@@ -183,7 +184,7 @@ func TestPythonSmoke_MultiLib_RepresentativeFixture(t *testing.T) {
 					StartLine: 9,
 					EndLine:   9,
 					Match:     "AESGCM(key)",
-					Rules:     []entities.RuleInfo{{ID: "python.cryptography.algorithm.ae.aes-gcm"}},
+					Rules:     []entities.RuleInfo{{ID: "fixture.python.cryptography.aes-gcm"}},
 					Metadata: map[string]string{
 						"api":                "cryptography.hazmat.primitives.ciphers.aead.AESGCM.<init>",
 						"assetType":          "algorithm",
@@ -236,11 +237,11 @@ func TestPythonSmoke_MultiLib_RepresentativeFixture(t *testing.T) {
 	libsFound := make(map[string]bool)
 	for _, op := range frag.CryptoOperations {
 		switch op.RuleID {
-		case "python.bcrypt.algorithm.kdf.bcrypt.hashpw":
+		case "fixture.python.bcrypt.hashpw":
 			libsFound["bcrypt"] = true
-		case "python.pyjwt.algorithm.mac.jwt.encode-hmac":
+		case "fixture.python.pyjwt.encode-hmac":
 			libsFound["pyjwt"] = true
-		case "python.cryptography.algorithm.ae.aes-gcm":
+		case "fixture.python.cryptography.aes-gcm":
 			libsFound["cryptography"] = true
 		}
 	}

@@ -17,7 +17,6 @@
 package engine
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -26,9 +25,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
@@ -333,16 +329,16 @@ rules:
 	}
 
 	detector := &mockDetector{}
-	ruleSource := &mockRuleSource{}
+	ruleSource := &mockRuleSource{loadFunc: func() ([]string, error) { return []string{rulePath}, nil }}
 	rulesManager := rules.NewManager(ruleSource)
 	registry := scanner.NewRegistry()
 
 	orchestrator := NewOrchestrator(detector, rulesManager, registry)
 
 	opts := ScanOptions{
-		Target:      "/path/to/code",
-		ScannerName: "test-scanner",
-		RulePaths:   []string{rulePath},
+		Target:       "/path/to/code",
+		ScannerName:  "test-scanner",
+		LanguageHint: []string{"java"},
 	}
 
 	_, err := orchestrator.Scan(ctx, opts)
@@ -694,53 +690,9 @@ func TestNewOrchestrator(t *testing.T) {
 	}
 }
 
-type scopedMockScanner struct {
-	mockScanner
-	gotScope *scanner.DetectionScope
-}
-
-func (m *scopedMockScanner) ScanScoped(ctx context.Context, target string, scope *scanner.DetectionScope, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
-	m.gotScope = scope
-	return m.Scan(ctx, target, rulePaths, toolInfo)
-}
-
-func TestOrchestrator_ScanScoped(t *testing.T) {
-	t.Parallel()
-	opts := ScanOptions{Target: "/repo", ScannerName: "scoped", LanguageHint: []string{"go"}}
-	scope := &scanner.DetectionScope{Paths: []string{"a.go"}}
-
-	scoped := &scopedMockScanner{mockScanner: mockScanner{scanFunc: func(context.Context, string, []string, entities.ToolInfo) (*entities.InterimReport, error) {
-		return &entities.InterimReport{}, nil
-	}}}
-	registry := scanner.NewRegistry()
-	registry.Register("scoped", scoped)
-	registry.Register("plain", &mockScanner{scanFunc: func(context.Context, string, []string, entities.ToolInfo) (*entities.InterimReport, error) {
-		t.Fatal("a scanner that cannot honor a scope must not run a whole-target scan instead")
-		return nil, nil
-	}})
-	orchestrator := NewOrchestrator(&mockDetector{}, rules.NewManager(&mockRuleSource{}), registry)
-
-	if _, err := orchestrator.ScanScoped(context.Background(), opts, scope); err != nil {
-		t.Fatalf("ScanScoped: %v", err)
-	}
-	if scoped.gotScope != scope {
-		t.Fatalf("scope was not handed to the scanner, got %v", scoped.gotScope)
-	}
-
-	opts.ScannerName = "plain"
-	_, err := orchestrator.ScanScoped(context.Background(), opts, scope)
-	var fe *failure.Error
-	if !errors.As(err, &fe) || fe.Code != failure.CodeInvalidArguments {
-		t.Fatalf("expected %s for a scanner without scope support, got %v", failure.CodeInvalidArguments, err)
-	}
-}
-
-// The primary scan names the files a time or memory limit cut short in a
-// warning, and counts them on the completed detection phase.
+// The scan counts the files a time or memory limit cut short on the completed
+// detection phase.
 func TestOrchestrator_Scan_ReportsFilesCutShortByScannerLimits(t *testing.T) {
-	previous := log.Logger
-	t.Cleanup(func() { log.Logger = previous })
-
 	for _, tt := range []struct {
 		name       string
 		incomplete []string
@@ -750,8 +702,6 @@ func TestOrchestrator_Scan_ReportsFilesCutShortByScannerLimits(t *testing.T) {
 		{name: "two files cut short", incomplete: []string{"/repo/dist/a.js", "/repo/dist/b.js"}, wantCount: 2},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			var logs bytes.Buffer
-			log.Logger = zerolog.New(&logs)
 			registry := scanner.NewRegistry()
 			registry.Register("test-scanner", &mockScanner{scanFunc: func(_ context.Context, _ string, _ []string, info entities.ToolInfo) (*entities.InterimReport, error) {
 				return &entities.InterimReport{Version: "1.0", Tool: info, Findings: []entities.Finding{}, IncompleteFiles: tt.incomplete}, nil
@@ -771,15 +721,6 @@ func TestOrchestrator_Scan_ReportsFilesCutShortByScannerLimits(t *testing.T) {
 
 			if want := map[string]any{"files_incomplete": tt.wantCount}; !reflect.DeepEqual(detection, want) {
 				t.Errorf("detection completed details = %v, want %v", detection, want)
-			}
-			warned := strings.Contains(logs.String(), `"level":"warn"`)
-			if warned != (tt.wantCount > 0) {
-				t.Fatalf("warning logged = %v, want %v:\n%s", warned, tt.wantCount > 0, logs.String())
-			}
-			for _, file := range tt.incomplete {
-				if !strings.Contains(logs.String(), file) {
-					t.Fatalf("warning does not name %s:\n%s", file, logs.String())
-				}
 			}
 		})
 	}

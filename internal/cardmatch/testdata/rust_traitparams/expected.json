@@ -1,0 +1,196 @@
+{
+ "dynparam": [
+  {
+   "col": 27,
+   "end_col": 36,
+   "file": "src/aliasedsame.rs",
+   "line": 2,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 27,
+   "end_col": 36,
+   "file": "src/foreign.rs",
+   "line": 2,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 37,
+   "end_col": 46,
+   "file": "src/foreignpath.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 39,
+   "end_col": 48,
+   "file": "src/full.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 27,
+   "end_col": 36,
+   "file": "src/glob.rs",
+   "line": 2,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 27,
+   "end_col": 36,
+   "file": "src/grouped.rs",
+   "line": 2,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 40,
+   "end_col": 49,
+   "file": "src/impl.rs",
+   "line": 4,
+   "metavars": {
+    "$F": "i",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 54,
+   "end_col": 63,
+   "file": "src/inner.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 27,
+   "end_col": 36,
+   "file": "src/later.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 46,
+   "end_col": 55,
+   "file": "src/lifetime.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 40,
+   "end_col": 49,
+   "file": "src/modused.rs",
+   "line": 2,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 43,
+   "end_col": 52,
+   "file": "src/mutdyn.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 35,
+   "end_col": 44,
+   "file": "src/notdyn.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 27,
+   "end_col": 36,
+   "file": "src/nouse.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 41,
+   "end_col": 50,
+   "file": "src/rooted.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 27,
+   "end_col": 36,
+   "file": "src/used.rs",
+   "line": 2,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  }
+ ],
+ "implparam": [
+  {
+   "col": 27,
+   "end_col": 36,
+   "file": "src/impl.rs",
+   "line": 2,
+   "metavars": {
+    "$F": "f",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 39,
+   "end_col": 48,
+   "file": "src/impl.rs",
+   "line": 3,
+   "metavars": {
+    "$F": "g",
+    "$R": "r"
+   }
+  },
+  {
+   "col": 34,
+   "end_col": 43,
+   "file": "src/implforeign.rs",
+   "line": 1,
+   "metavars": {
+    "$F": "h",
+    "$R": "r"
+   }
+  }
+ ]
+}

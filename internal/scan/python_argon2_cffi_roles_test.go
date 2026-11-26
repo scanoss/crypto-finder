@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 // argon2Consumer is written the way the library's own tests/typing/api.py
@@ -40,7 +41,7 @@ func argon2Finding(line int, match string) entities.CryptographicAsset {
 		StartLine: line,
 		EndLine:   line,
 		Match:     match,
-		Rules:     []entities.RuleInfo{{ID: "python.argon2-cffi.algorithm.kdf.argon2.password-hasher"}},
+		Rules:     []entities.RuleInfo{{ID: "fixture.python.argon2-cffi.password-hasher"}},
 		Metadata: map[string]string{
 			"api":             "argon2.PasswordHasher",
 			"assetType":       "algorithm",

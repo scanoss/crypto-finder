@@ -11,46 +11,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
+	"github.com/scanoss/reach/graphfrag"
+	"github.com/scanoss/reach/perf"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
-	"github.com/scanoss/crypto-finder/internal/perf"
 	"github.com/scanoss/crypto-finder/internal/utils"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // The graph-fragment export schema (GraphFragmentExport and friends) lives in
-// the public package github.com/scanoss/crypto-finder/pkg/graphfrag: it is
+// the public package github.com/scanoss/reach/graphfrag: it is
 // crypto-finder's contract with downstream consumers. This file only BUILDS
 // that schema from a callgraph.
-
-// ExportGraphFragment writes the dependency scan result's call graph as a
-// graph-fragment export in the requested format.
-// ExportGraphFragment writes an OID-prepared graph-fragment projection.
-func ExportGraphFragment(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport) error {
-	return ExportResolvedGraphFragment(path, format, result, report)
-}
-
-// exportGraphFragment is the raw fixture helper; production must use ExportGraphFragment.
-func exportGraphFragment(path, format string, result *engine.DepScanResult) error {
-	if result == nil {
-		return fmt.Errorf("scan: cannot export graph fragment: dep scan result is nil")
-	}
-	if result.CallGraph == nil {
-		return fmt.Errorf("scan: cannot export graph fragment: result.CallGraph is nil")
-	}
-	if format != "json" {
-		return fmt.Errorf("scan: unsupported graph fragment format %q (supported: json)", format)
-	}
-
-	AssignOccurrenceKeys(result)
-	if err := writeGraphFragmentJSONFile(path, result); err != nil {
-		return fmt.Errorf("scan: failed to write graph fragment to %s: %w", path, err)
-	}
-	return nil
-}
 
 // ExportResolvedGraphFragment is the OID-safe graph-fragment command seam.
 func ExportResolvedGraphFragment(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport) error {
@@ -83,25 +58,29 @@ func writeResolvedGraphFragmentJSONFile(path string, result *engine.DepScanResul
 	})
 }
 
-func writeGraphFragmentJSONFile(path string, result *engine.DepScanResult) error {
-	return utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
-		bw := bufio.NewWriterSize(file, 1<<20)
-		writer := graphFragmentJSONWriter{w: bw}
-		if err := writer.writeResult(result); err != nil {
-			return err
-		}
-		return bw.Flush()
-	})
-}
-
 type graphFragmentJSONWriter struct {
 	w         *bufio.Writer
 	needComma bool
 	// scratch is writeCompactEdge's reusable encoding buffer.
 	scratch []byte
+	// functionKeys and functionFiles are the written functions' keys and
+	// file paths, by index; derivedFunctionNames reports that their names
+	// were left out (graphfrag.ElideFunctionNames).
+	functionKeys, functionFiles []string
+	derivedFunctionNames        bool
+	derivedTargetNames          bool
 }
 
-func (w *graphFragmentJSONWriter) writeResolvedResult(result *engine.DepScanResult, report *oid.ResolvedReport) error {
+// setElided records in meta what the writer left out of the document for
+// readers to restore (graph-fragment-1.22).
+func (w *graphFragmentJSONWriter) setElided(meta *graphfrag.GraphFragmentScanMetadata) {
+	meta.SharedEntryCalls = true
+	meta.ImplicitSourceFiles = true
+	meta.DerivedFunctionNames = w.derivedFunctionNames
+	meta.DerivedTargetNames = w.derivedTargetNames
+}
+
+func (w *graphFragmentJSONWriter) writeResolvedResult(result *engine.DepScanResult, report *oid.ResolvedReport) error { //nolint:gocognit,gocyclo // complexity predates the lint gate; splitting it is a separate behavior-sensitive change
 	if _, err := w.w.WriteString("{\n"); err != nil {
 		return err
 	}
@@ -118,9 +97,14 @@ func (w *graphFragmentJSONWriter) writeResolvedResult(result *engine.DepScanResu
 	}
 	meta.FunctionCount = count
 	span = perf.Start("export.graph_fragment.edges")
-	meta.InternalEdges, meta.ExternalCalls, err = w.writeEdges(ctx, functionIndex)
+	sourceLines := newFragmentSourceLines(ctx)
+	sourceLines.addIncludes()
+	meta.InternalEdges, meta.ExternalCalls, err = w.writeEdges(ctx, functionIndex, sourceLines)
 	span.End()
 	if err != nil {
+		return err
+	}
+	if err := w.writeConstantRefs(ctx, functionIndex, sourceLines); err != nil {
 		return err
 	}
 	span = perf.Start("export.graph_fragment.crypto")
@@ -138,6 +122,45 @@ func (w *graphFragmentJSONWriter) writeResolvedResult(result *engine.DepScanResu
 	if err := writeGraphFragmentArrayField(w, "crypto_entry_points", entries, true); err != nil {
 		return err
 	}
+	if supertypes := result.CallGraph.ExportSupertypes(); len(supertypes) > 0 {
+		// Lets a server stitching components follow a call on a supertype to
+		// its implementation in another component.
+		if err := w.writeField("supertypes", supertypes); err != nil {
+			return err
+		}
+	}
+	if providers := result.CallGraph.ServiceProviders; len(providers) > 0 {
+		// Lets a server stitching components dispatch a call on a service
+		// type to the implementations a component registers for it.
+		if err := w.writeField("service_providers", providers); err != nil {
+			return err
+		}
+	}
+	if text := sourceLines.text(); len(text) > 0 {
+		if err := w.writeField("source_lines", text); err != nil {
+			return err
+		}
+	}
+	if signatures := buildGraphFragmentExternalSignatures(ctx); len(signatures) > 0 {
+		if err := w.writeField("external_signatures", signatures); err != nil {
+			return err
+		}
+	}
+	if err := w.writeRebindLines(ctx, functionIndex, &meta); err != nil {
+		return err
+	}
+	if err := w.writeImportsAndItems(ctx); err != nil {
+		return err
+	}
+	if exports := fragmentExports(ctx.graph); len(exports) > 0 {
+		if err := w.writeField("exports", exports); err != nil {
+			return err
+		}
+	}
+	if err := w.writePublicPaths(ctx.graph); err != nil {
+		return err
+	}
+	w.setElided(&meta)
 	if err := w.writeField("scan_metadata", meta); err != nil {
 		return err
 	}
@@ -145,45 +168,50 @@ func (w *graphFragmentJSONWriter) writeResolvedResult(result *engine.DepScanResu
 	return err
 }
 
-func (w *graphFragmentJSONWriter) writeResult(result *engine.DepScanResult) error {
-	if _, err := w.w.WriteString("{\n"); err != nil {
-		return err
+// writePublicPaths writes the public paths re-exports give declarations:
+// Python's public_paths and Rust's public_type_paths.
+func (w *graphFragmentJSONWriter) writePublicPaths(graph *callgraph.CallGraph) error {
+	if paths := graph.PythonPublicPaths; len(paths) > 0 {
+		if err := w.writeField("public_paths", paths); err != nil {
+			return err
+		}
 	}
-	if err := w.writeField("schema_version", graphfrag.SchemaVersion); err != nil {
-		return err
+	if paths := graph.PublicTypePaths; len(paths) > 0 {
+		return w.writeField("public_type_paths", paths)
 	}
+	return nil
+}
 
-	ctx := newExportBuildContext(result)
-	meta := buildGraphFragmentScanMetadata(result)
-	var err error
-	var functionIndex map[string]int
-	functionIndex, meta.FunctionCount, err = w.writeFunctions(ctx)
-	if err != nil {
-		return err
+// writeImportsAndItems writes the import bindings, Go's values, Node's object literals and
+// property reads, Rust's items each file declares and the binary
+// expressions of its function bodies, and the string literals each C or C++
+// file writes, in the export's field order; a graph with none writes no
+// section.
+func (w *graphFragmentJSONWriter) writeImportsAndItems(ctx *exportBuildContext) error {
+	// Each section is built right before it is written, so memory peaks at
+	// the largest one, not at their sum.
+	for _, f := range []struct {
+		name  string
+		build func() (any, int)
+	}{
+		{"imports", func() (any, int) { v := buildGraphFragmentImports(ctx); return v, len(v) }},
+		{"go_values", func() (any, int) { v := buildGraphFragmentGoValues(ctx); return v, len(v) }},
+		{"go_blocks", func() (any, int) { v := buildGraphFragmentGoBlocks(ctx); return v, len(v) }},
+		{"object_literals", func() (any, int) { v := buildGraphFragmentObjectLiterals(ctx); return v, len(v) }},
+		{"property_reads", func() (any, int) { v := buildGraphFragmentPropertyReads(ctx); return v, len(v) }},
+		{"items", func() (any, int) { v := buildGraphFragmentItems(ctx); return v, len(v) }},
+		{"binary_exprs", func() (any, int) { v := buildGraphFragmentBinaryExprs(ctx); return v, len(v) }},
+		{"strings", func() (any, int) { v := buildGraphFragmentStrings(ctx); return v, len(v) }},
+	} {
+		v, n := f.build()
+		if n == 0 {
+			continue
+		}
+		if err := w.writeField(f.name, v); err != nil {
+			return err
+		}
 	}
-	meta.InternalEdges, meta.ExternalCalls, err = w.writeEdges(ctx, functionIndex)
-	if err != nil {
-		return err
-	}
-
-	cryptoAnnotations, supportingCalls, entryPoints := materializeGraphFragmentCrypto(ctx, result, functionIndex)
-	meta.CryptoOps = len(cryptoAnnotations)
-	if err := writeGraphFragmentArrayField(w, "crypto_annotations", cryptoAnnotations, true); err != nil {
-		return err
-	}
-	meta.SupportingCalls = len(supportingCalls)
-	if err := writeGraphFragmentArrayField(w, "supporting_calls", supportingCalls, true); err != nil {
-		return err
-	}
-	meta.CryptoEntryPoints = len(entryPoints)
-	if err := writeGraphFragmentArrayField(w, "crypto_entry_points", entryPoints, true); err != nil {
-		return err
-	}
-	if err := w.writeField("scan_metadata", meta); err != nil {
-		return err
-	}
-	_, err = w.w.WriteString("\n}\n")
-	return err
+	return nil
 }
 
 func (w *graphFragmentJSONWriter) writeFunctions(ctx *exportBuildContext) (map[string]int, int, error) {
@@ -191,19 +219,36 @@ func (w *graphFragmentJSONWriter) writeFunctions(ctx *exportBuildContext) (map[s
 		return nil, 0, err
 	}
 	functionIndex := make(map[string]int, len(ctx.graph.Functions))
-	count := 0
+	functions := make([]graphfrag.GraphFragmentFunction, 0, len(ctx.graph.Functions))
+	w.functionKeys, w.functionFiles = nil, nil
 	for _, key := range sortedKeys(ctx.graph.Functions) {
 		decl := ctx.graph.Functions[key]
-		if err := w.writeArrayElement(count, buildGraphFragmentFunction(ctx, decl.ID, decl)); err != nil {
+		fn := buildGraphFragmentFunction(ctx, decl.ID, decl)
+		graphfrag.ElideRawSourceFiles(fn.ReturnSources, fn.FilePath)
+		functionIndex[key] = len(functions)
+		w.functionKeys = append(w.functionKeys, key)
+		w.functionFiles = append(w.functionFiles, fn.FilePath)
+		functions = append(functions, fn)
+	}
+	w.derivedFunctionNames = graphfrag.ElideFunctionNames(functions)
+	for i := range functions {
+		if err := w.writeArrayElement(i, functions[i]); err != nil {
 			return nil, 0, err
 		}
-		functionIndex[key] = count
-		count++
 	}
-	return functionIndex, count, w.endArrayField(count)
+	return functionIndex, len(functions), w.endArrayField(len(functions))
 }
 
-func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIndex map[string]int) (int, int, error) {
+// functionFile is the file path the document gives the function key, ""
+// for a key it does not hold.
+func (w *graphFragmentJSONWriter) functionFile(functionIndex map[string]int, key string) string {
+	if index, ok := functionIndex[key]; ok {
+		return w.functionFiles[index]
+	}
+	return ""
+}
+
+func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIndex map[string]int, sourceLines *fragmentSourceLines) (int, int, error) { //nolint:gocognit,gocyclo // complexity predates the lint gate; splitting it is a separate behavior-sensitive change
 	stringInterner := newFragmentStringInterner()
 	if err := w.startArrayField("internal_edges_compact"); err != nil {
 		return 0, 0, err
@@ -213,22 +258,42 @@ func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIn
 	var pending *graphfrag.GraphFragmentEdge
 	var pendingEntryCall []byte
 	var externalCalls []graphfrag.GraphFragmentExternal
+	sharer := graphfrag.NewEntryCallSharer()
 	flush := func() error {
 		if pending == nil {
 			return nil
 		}
 		compact := compactGraphFragmentEdge(*pending, functionIndex, stringInterner)
-		if err := w.writeCompactEdge(internalCount, compact, pendingEntryCall); err != nil {
+		entryCall := pendingEntryCall
+		if compact.EntryCall != nil && entryCall == nil {
+			data, err := json.Marshal(compact.EntryCall)
+			if err != nil {
+				return err
+			}
+			entryCall = data
+		}
+		entryCall = sharer.Share(w.functionKeys[compact.Caller], compact.Line, compact.StartCol, compact.EndCol, compact.Arity, entryCall)
+		compact.EntryCall = sharedEntryCall(compact.EntryCall, entryCall)
+		if err := w.writeCompactEdge(internalCount, compact, entryCall); err != nil {
 			return err
 		}
 		internalCount++
 		return nil
 	}
 
+	// Workers leave the caller's file out of an entry call's locations
+	// before they encode it.
+	prepare := func(edges *fragmentEdges) {
+		for i := range edges.internal {
+			graphfrag.ElideCallSiteFiles(edges.internal[i].EntryCall, w.functionFile(functionIndex, edges.internal[i].CallerKey))
+		}
+		encodeFragmentEntryCalls(edges)
+	}
 	var err error
-	forEachFragmentEdges(ctx, sortedKeys(ctx.graph.Callers), encodeFragmentEntryCalls, func(edges fragmentEdges) bool {
+	forEachFragmentEdges(ctx, sortedKeys(ctx.graph.Callers), prepare, func(edges fragmentEdges) bool {
 		for i := range edges.internal {
 			edge := edges.internal[i]
+			sourceLines.addInternal(edge)
 			if pending != nil && fragmentEdgeSameKey(*pending, edge) {
 				*pending = edge
 				pendingEntryCall = edges.entryCalls[i]
@@ -239,6 +304,9 @@ func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIn
 			}
 			pending = &edge
 			pendingEntryCall = edges.entryCalls[i]
+		}
+		for i := range edges.external {
+			sourceLines.addExternal(&edges.external[i])
 		}
 		externalCalls = append(externalCalls, edges.external...)
 		return true
@@ -257,10 +325,183 @@ func (w *graphFragmentJSONWriter) writeEdges(ctx *exportBuildContext, functionIn
 	}
 
 	externalCalls = sortedFragmentExternalCalls(externalCalls)
+	for i := range externalCalls {
+		call := &externalCalls[i]
+		graphfrag.ElideCallSiteFiles(call.EntryCall, w.functionFile(functionIndex, call.CallerKey))
+		var entryCall []byte
+		if call.EntryCall != nil {
+			if entryCall, err = json.Marshal(call.EntryCall); err != nil {
+				return 0, 0, err
+			}
+		}
+		entryCall = sharer.Share(call.CallerKey, call.Line, call.StartCol, call.EndCol, call.Arity, entryCall)
+		call.EntryCall = sharedEntryCall(call.EntryCall, entryCall)
+	}
+	w.derivedTargetNames = graphfrag.ElideTargetNames(externalCalls)
 	if err := writeGraphFragmentArrayField(w, "external_calls", externalCalls, true); err != nil {
 		return 0, 0, err
 	}
 	return internalCount, len(externalCalls), nil
+}
+
+// sharedEntryCall is the entry call an edge writes for what
+// graphfrag.EntryCallSharer.Share returned: none, the empty one that stands
+// for none, or its own.
+func sharedEntryCall(call *graphfrag.GraphFragmentCallSite, shared []byte) *graphfrag.GraphFragmentCallSite {
+	switch {
+	case shared == nil:
+		return nil
+	case string(shared) == "{}":
+		return &graphfrag.GraphFragmentCallSite{}
+	default:
+		return call
+	}
+}
+
+// writeRebindLines writes rebind_lines and says in meta that the document
+// records them.
+func (w *graphFragmentJSONWriter) writeRebindLines(ctx *exportBuildContext, functionIndex map[string]int, meta *graphfrag.GraphFragmentScanMetadata) error {
+	meta.RebindLines = writesRebindLines(ctx)
+	rebinds := buildGraphFragmentRebinds(ctx, functionIndex)
+	// Line 0: the rebinds add no line to source_lines.
+	return writePositionalField(w, "rebind_lines", rebinds, w.functionKeys, nil, graphfrag.AppendRebindJSON,
+		func(r *graphfrag.GraphFragmentRebind) (int, int, int) { return r.Function, 0, 0 })
+}
+
+// writeConstantRefs writes constant_refs, declarations, casts and call
+// anchors, and records the lines they stand on.
+func (w *graphFragmentJSONWriter) writeConstantRefs(ctx *exportBuildContext, functionIndex map[string]int, sourceLines *fragmentSourceLines) error {
+	keys := make([]string, len(functionIndex))
+	for key, index := range functionIndex {
+		keys[index] = key
+	}
+	refs := buildGraphFragmentConstantRefs(ctx, functionIndex)
+	for i := range refs {
+		graphfrag.ElideParameterFiles(refs[i].Operand, w.functionFiles[refs[i].Function])
+	}
+	if err := writePositionalField(w, "constant_refs", refs, keys, sourceLines, graphfrag.AppendConstantRefJSON,
+		func(r *graphfrag.GraphFragmentConstantRef) (int, int, int) { return r.Function, r.Line, r.EndLine }); err != nil {
+		return err
+	}
+	stores := buildGraphFragmentAttributeStores(ctx, functionIndex)
+	for i := range stores {
+		graphfrag.ElideParameterFiles(&stores[i].Value, w.functionFiles[stores[i].Function])
+	}
+	if err := writePositionalField(w, "attribute_stores", stores, keys, sourceLines, graphfrag.AppendAttributeStoreJSON,
+		func(s *graphfrag.GraphFragmentAttributeStore) (int, int, int) { return s.Function, s.Line, s.EndLine }); err != nil {
+		return err
+	}
+	// A binding adds no line to source_lines (line 0).
+	if err := writePositionalField(w, "local_bindings", buildGraphFragmentLocalBindings(ctx, functionIndex), keys, sourceLines,
+		graphfrag.AppendLocalBindingJSON, func(b *graphfrag.GraphFragmentLocalBinding) (int, int, int) { return b.Function, 0, 0 }); err != nil {
+		return err
+	}
+	declarations, casts := buildGraphFragmentDeclarations(ctx, functionIndex)
+	if err := writePositionalField(w, "declarations", declarations, keys, sourceLines, graphfrag.AppendDeclarationJSON,
+		func(d *graphfrag.GraphFragmentDeclaration) (int, int, int) { return d.Function, d.Line, d.EndLine }); err != nil {
+		return err
+	}
+	if err := writePositionalField(w, "casts", casts, keys, sourceLines, graphfrag.AppendCastJSON,
+		func(c *graphfrag.GraphFragmentCast) (int, int, int) { return c.Function, c.Line, c.EndLine }); err != nil {
+		return err
+	}
+	// An anchor adds no line to source_lines (line 0): a call's lines come
+	// with its edges.
+	anchors := buildGraphFragmentCallAnchors(ctx, functionIndex)
+	for i := range anchors {
+		for _, sources := range anchors[i].ArgumentSources {
+			graphfrag.ElideRawSourceFiles(sources, w.functionFiles[anchors[i].Function])
+		}
+	}
+	return writePositionalField(w, "call_anchors", anchors, keys, sourceLines, graphfrag.AppendCallAnchorJSON,
+		func(a *graphfrag.GraphFragmentCallAnchor) (int, int, int) { return a.Function, 0, 0 })
+}
+
+// writePositionalField writes items, each encoded by appendJSON, as the array
+// field name, and records the lines each stands on (at: function index,
+// line, end line). Nothing is written for no items.
+func writePositionalField[T any](w *graphFragmentJSONWriter, name string, items []T, keys []string, sourceLines *fragmentSourceLines,
+	appendJSON func([]byte, T) []byte, at func(*T) (int, int, int),
+) error {
+	if len(items) == 0 {
+		return nil
+	}
+	if err := w.startArrayField(name); err != nil {
+		return err
+	}
+	for i := range items {
+		function, line, endLine := at(&items[i])
+		sourceLines.add(keys[function], line, endLine)
+		if i == 0 {
+			w.scratch = append(w.scratch[:0], "\n    "...)
+		} else {
+			w.scratch = append(w.scratch[:0], ",\n    "...)
+		}
+		w.scratch = appendJSON(w.scratch, items[i])
+		if _, err := w.w.Write(w.scratch); err != nil {
+			return err
+		}
+	}
+	return w.endArrayField(len(items))
+}
+
+// exportComparedOperand is the operand a constant reference is compared
+// with, traced as a fragment call site's argument is (buildCallSiteParameters):
+// return provenance inlined, no caller resolution (a detector resolves a
+// parameter from the fragment's own call sites), then the parameter object.
+func exportComparedOperand(ctx *exportBuildContext, fn *callgraph.FunctionDecl, ref callgraph.ConstantRef) *graphfrag.GraphFragmentParameter {
+	if ref.Operand == nil {
+		return nil
+	}
+	out := exportTracedValue(ctx, fn, *ref.Operand, ref.Line)
+	return &out
+}
+
+// exportTracedValue is a value the parser traced in fn at line (a compared
+// operand, a stored value) as a fragment parameter object.
+func exportTracedValue(ctx *exportBuildContext, fn *callgraph.FunctionDecl, value callgraph.ComparedOperand, line int) graphfrag.GraphFragmentParameter {
+	p := callGraphParameter{ArgumentExpression: value.Text}
+	if isSimpleIdentifier(value.Text) {
+		p.VariableName = value.Text
+	}
+	if len(value.Sources) > 0 {
+		p.SourceNodes = convertSourceNodes(ctx, resolveExportSourceNodes(ctx, nil, value.Sources, 0), normalizeExportPath(ctx, fn.FilePath).FilePath, line)
+	}
+	p.ResolvedValue = resolveSimpleExportParameterValue(p.ArgumentExpression, p.SourceNodes)
+	return convertCallGraphParameterToFragment(p)
+}
+
+// buildGraphFragmentConstantRefs lists the constant references of every
+// exported function, in function index order, then line and column.
+func buildGraphFragmentConstantRefs(ctx *exportBuildContext, functionIndex map[string]int) []graphfrag.GraphFragmentConstantRef {
+	if ctx == nil || ctx.graph == nil {
+		return nil
+	}
+	var out []graphfrag.GraphFragmentConstantRef
+	for _, key := range sortedKeys(ctx.graph.Functions) {
+		index, ok := functionIndex[key]
+		if !ok {
+			continue
+		}
+		fn := ctx.graph.Functions[key]
+		for _, ref := range fn.ConstantRefs {
+			out = append(out, graphfrag.GraphFragmentConstantRef{
+				Function: index, Line: ref.Line, StartCol: ref.StartCol, EndCol: ref.EndCol, EndLine: ref.EndLine,
+				Text: ref.Text, Context: ref.Context, Operand: exportComparedOperand(ctx, fn, ref),
+			})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Function != b.Function {
+			return a.Function < b.Function
+		}
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		return a.StartCol < b.StartCol
+	})
+	return out
 }
 
 func (w *graphFragmentJSONWriter) startArrayField(name string) error {
@@ -307,25 +548,29 @@ func appendCompactFragmentEdge(dst []byte, edge graphfrag.GraphFragmentCompactEd
 	values := [...]int{
 		edge.Caller, edge.Callee, edge.Line, edge.Resolution, edge.DeclaredType, edge.MethodName,
 		edge.Arity, edge.ReceiverVar, edge.AssignedVar, edge.ChainID, edge.StartCol, edge.EndCol,
-		edge.ResolvedReceiverType,
+		edge.ResolvedReceiverType, edge.EndLine,
 	}
-	last := len(values) - 1
-	for last >= 0 && values[last] == 0 {
+	fields := values[:]
+	if edge.EndLine == 0 {
+		fields = values[:len(values)-1]
+	}
+	last := len(fields) - 1
+	for last >= 0 && fields[last] == 0 {
 		last--
 	}
 	if edge.EntryCall != nil {
-		last = len(values)
+		last = len(fields)
 	}
 	dst = append(dst, '[')
 	for i := 0; i <= last; i++ {
 		if i > 0 {
 			dst = append(dst, ',')
 		}
-		if i == len(values) {
+		if i == len(fields) {
 			dst = append(dst, entryCall...)
 			continue
 		}
-		dst = strconv.AppendInt(dst, int64(values[i]), 10)
+		dst = strconv.AppendInt(dst, int64(fields[i]), 10)
 	}
 	return append(dst, ']')
 }
@@ -376,6 +621,7 @@ func compactGraphFragmentEdge(edge graphfrag.GraphFragmentEdge, functionIndex ma
 		StartCol:             edge.StartCol,
 		EndCol:               edge.EndCol,
 		ResolvedReceiverType: stringInterner.index(edge.ResolvedReceiverType),
+		EndLine:              edge.EndLine,
 		EntryCall:            edge.EntryCall,
 	}
 }
@@ -490,54 +736,33 @@ func buildResolvedGraphFragmentProjection(result *engine.DepScanResult, report *
 		out.Functions = append(out.Functions, buildGraphFragmentFunction(ctx, decl.ID, decl))
 	}
 	out.InternalEdges, out.ExternalCalls = buildGraphFragmentResolvedEdges(ctx)
+	out.Supertypes = result.CallGraph.ExportSupertypes()
+	out.ServiceProviders = result.CallGraph.ServiceProviders
+	out.ConstantRefs = buildGraphFragmentConstantRefs(ctx, functionIndex)
+	out.AttributeStores = buildGraphFragmentAttributeStores(ctx, functionIndex)
+	out.LocalBindings = buildGraphFragmentLocalBindings(ctx, functionIndex)
+	out.Declarations, out.Casts = buildGraphFragmentDeclarations(ctx, functionIndex)
+	out.CallAnchors = buildGraphFragmentCallAnchors(ctx, functionIndex)
+	out.ExternalSignatures = buildGraphFragmentExternalSignatures(ctx)
+	out.SourceLines = graphFragmentSourceLines(ctx, &out)
+	out.RebindLines = buildGraphFragmentRebinds(ctx, functionIndex)
+	out.Imports = buildGraphFragmentImports(ctx)
+	out.GoValues = buildGraphFragmentGoValues(ctx)
+	out.GoBlocks = buildGraphFragmentGoBlocks(ctx)
+	out.ObjectLiterals = buildGraphFragmentObjectLiterals(ctx)
+	out.PropertyReads = buildGraphFragmentPropertyReads(ctx)
+	out.Items = buildGraphFragmentItems(ctx)
+	out.BinaryExprs = buildGraphFragmentBinaryExprs(ctx)
+	if literals := buildGraphFragmentStrings(ctx); len(literals) > 0 {
+		out.Strings = literals
+	}
+	out.Exports = fragmentExports(result.CallGraph)
+	out.PublicPaths = result.CallGraph.PythonPublicPaths
+	out.PublicTypePaths = result.CallGraph.PublicTypePaths
+	out.ScanMetadata.RebindLines = writesRebindLines(ctx)
 	out.CryptoAnnotations, out.SupportingCalls, out.CryptoEntryPoints = materializeGraphFragmentCryptoFromFindings(ctx, result, report.Findings, functionIndex)
 	out.ScanMetadata.FunctionCount, out.ScanMetadata.InternalEdges, out.ScanMetadata.ExternalCalls = len(out.Functions), len(out.InternalEdges), len(out.ExternalCalls)
 	out.ScanMetadata.CryptoOps, out.ScanMetadata.SupportingCalls, out.ScanMetadata.CryptoEntryPoints = len(out.CryptoAnnotations), len(out.SupportingCalls), len(out.CryptoEntryPoints)
-	return out
-}
-
-// buildGraphFragmentExport is the raw fixture helper; production must use BuildGraphFragmentExport.
-func buildGraphFragmentExport(result *engine.DepScanResult) graphfrag.GraphFragmentExport {
-	AssignOccurrenceKeys(result)
-	return buildGraphFragmentProjection(result)
-}
-
-// buildGraphFragmentProjection reads finalized report data without mutating it.
-func buildGraphFragmentProjection(result *engine.DepScanResult) graphfrag.GraphFragmentExport {
-	out := graphfrag.GraphFragmentExport{
-		SchemaVersion: graphfrag.SchemaVersion,
-		ScanMetadata:  buildGraphFragmentScanMetadata(result),
-	}
-	if result.CallGraph == nil {
-		return out
-	}
-
-	ctx := newExportBuildContext(result)
-
-	functionKeys := make([]string, 0, len(result.CallGraph.Functions))
-	for key := range result.CallGraph.Functions {
-		functionKeys = append(functionKeys, key)
-	}
-	sort.Strings(functionKeys)
-
-	// Same numbering the streaming writer assigns, and built here rather than
-	// re-derived later: a route resolved against a different order would name
-	// the wrong functions and still look well-formed.
-	functionIndex := make(map[string]int, len(functionKeys))
-	for _, key := range functionKeys {
-		decl := result.CallGraph.Functions[key]
-		functionIndex[key] = len(out.Functions)
-		out.Functions = append(out.Functions, buildGraphFragmentFunction(ctx, decl.ID, decl))
-	}
-	out.InternalEdges, out.ExternalCalls = buildGraphFragmentResolvedEdges(ctx)
-
-	out.CryptoAnnotations, out.SupportingCalls, out.CryptoEntryPoints = materializeGraphFragmentCrypto(ctx, result, functionIndex)
-	out.ScanMetadata.FunctionCount = len(out.Functions)
-	out.ScanMetadata.InternalEdges = len(out.InternalEdges)
-	out.ScanMetadata.ExternalCalls = len(out.ExternalCalls)
-	out.ScanMetadata.CryptoOps = len(out.CryptoAnnotations)
-	out.ScanMetadata.SupportingCalls = len(out.SupportingCalls)
-	out.ScanMetadata.CryptoEntryPoints = len(out.CryptoEntryPoints)
 	return out
 }
 
@@ -551,7 +776,7 @@ func buildGraphFragmentScanMetadata(result *engine.DepScanResult) graphfrag.Grap
 	meta := graphfrag.GraphFragmentScanMetadata{
 		Ecosystem:        result.Ecosystem,
 		RootModule:       result.RootModule,
-		GraphAlgoVersion: graphfrag.GraphAlgoVersion,
+		GraphAlgoVersion: graphfrag.GraphAlgoVersionFor(result.Ecosystem),
 		ExportedAt:       time.Now().UTC().Format(time.RFC3339),
 	}
 	if result.Report != nil {
@@ -560,6 +785,7 @@ func buildGraphFragmentScanMetadata(result *engine.DepScanResult) graphfrag.Grap
 		meta.RulesVersion = result.Report.Rules.Version
 	}
 	meta.EntryKinds = result.CallGraph != nil
+	meta.AbstractMethods = result.CallGraph != nil && (result.Ecosystem == ecosystemJava || result.Ecosystem == ecosystemPython || result.Ecosystem == ecosystemRust)
 	return meta
 }
 
@@ -598,7 +824,7 @@ func buildResolvedFragmentEdgesFrom(ctx *exportBuildContext, calleeKey string, c
 		if callerDecl == nil {
 			continue
 		}
-		resolutions := resolveFragmentEdges(ctx, callerKey, calleeKey)
+		resolutions := resolveFragmentEdges(ctx, callerKey, callerDecl, calleeKey)
 		for i := range resolutions {
 			buildResolvedFragmentEdge(ctx, callerKey, callerDecl, calleeKey, resolutions[i], &out)
 		}
@@ -615,7 +841,7 @@ func buildResolvedFragmentEdge(
 	out *fragmentEdges,
 ) {
 	line := fragmentEdgeLine(ctx, callerKey, callerDecl, calleeKey, res)
-	call := findCallForCalleeAtLine(ctx, callerKey, callerDecl, calleeKey, line)
+	call := findCallForCalleeAtSite(ctx, callerKey, callerDecl, calleeKey, line, res.StartCol, res.EndCol)
 	if call == nil {
 		call = findDispatchCallAtLine(callerDecl, line, res.StartCol, res.EndCol, res.MethodName, res.Arity)
 	}
@@ -684,6 +910,7 @@ func buildFragmentCallSiteEntryCall(ctx *exportBuildContext, call *callgraph.Fun
 func convertCallGraphParameterToFragment(p callGraphParameter) graphfrag.GraphFragmentParameter {
 	fp := graphfrag.GraphFragmentParameter{
 		ParameterIndex:     p.ParameterIndex,
+		Keyword:            p.Keyword,
 		Type:               p.Type,
 		VariableName:       p.VariableName,
 		ArgumentExpression: p.ArgumentExpression,
@@ -699,11 +926,13 @@ func convertCallGraphParameterToFragment(p callGraphParameter) graphfrag.GraphFr
 // the equivalent GraphFragmentSourceNode (recursive).
 func convertExportSourceNodeToFragment(n exportSourceNode) graphfrag.GraphFragmentSourceNode {
 	fsn := graphfrag.GraphFragmentSourceNode{
-		Type:         n.Type,
-		Name:         n.Name,
-		DeclaredType: n.DeclaredType,
-		Value:        n.Value,
-		CallTarget:   n.CallTarget,
+		Type:                n.Type,
+		Name:                n.Name,
+		DeclaredType:        n.DeclaredType,
+		Value:               n.Value,
+		CallTarget:          n.CallTarget,
+		MayValues:           n.mayValues,
+		MayValuesExhaustive: n.mayValuesExhaustive,
 	}
 	if n.ParameterIndex != nil {
 		idx := *n.ParameterIndex
@@ -750,11 +979,12 @@ func buildFragmentInternalEdge(
 			edge.StartCol = call.StartCol
 			edge.EndCol = call.EndCol
 		}
+		edge.EndLine = fragmentCallEndLine(call, edge.Line)
 	}
 	return edge
 }
 
-func buildFragmentExternalCall(
+func buildFragmentExternalCall( //nolint:gocognit,gocyclo // complexity predates the lint gate; splitting it is a separate behavior-sensitive change
 	ctx *exportBuildContext,
 	callerDecl *callgraph.FunctionDecl,
 	call *callgraph.FunctionCall,
@@ -776,8 +1006,56 @@ func buildFragmentExternalCall(
 		StartCol:             res.StartCol,
 		EndCol:               res.EndCol,
 	}
+	if call != nil {
+		external.CandidateModules = call.CandidateModules
+	}
+	// A Java or Go call whose receiver type the parser could not name (a
+	// fluent chain on a dependency's return value, a method on an untyped
+	// local, a call of a func value) has a bare target. Nothing in the graph
+	// typed it, so it is a name_only call, not an exact one: a stitcher then
+	// matches it by name and reads what it reaches as unknown, as the live
+	// tracer does.
+	if call != nil && ctx != nil && (ctx.ecosystem == ecosystemJava || ctx.ecosystem == ecosystemGo) &&
+		external.Resolution == string(callgraph.EdgeKindExact) &&
+		call.Callee.Type == "" && call.Callee.Package == "" {
+		external.Resolution = string(callgraph.EdgeKindNameOnly)
+		if external.MethodName == "" {
+			external.MethodName = callgraph.BaseFunctionName(call.Callee.Name)
+		}
+		if external.Arity == 0 {
+			external.Arity = len(call.Arguments)
+		}
+	}
+	// A Go call on an interface value of a package outside the graph
+	// (`aead.Seal` on a crypto/cipher.AEAD) names no implementation: the one
+	// that runs lives in whichever dependency built the value. Exported as
+	// exact, it joined nothing and what it reaches read unreachable; as
+	// name_only it reads unknown.
+	// A call on a type of a module the source roots lack (not in the module
+	// cache) may be on an interface too, so it is exported the same way.
+	if call != nil && ctx != nil && ctx.ecosystem == ecosystemGo && external.Resolution == string(callgraph.EdgeKindExact) &&
+		(ctx.graph.GoInterfaceCall(call) || ctx.graph.GoUnreadTypeCall(call)) {
+		external.Resolution = string(callgraph.EdgeKindNameOnly)
+		external.DeclaredType = call.Callee.Package + "." + strings.TrimLeft(call.Callee.Type, "*")
+		if external.MethodName == "" {
+			external.MethodName = callgraph.BaseFunctionName(call.Callee.Name)
+		}
+		if external.Arity == 0 {
+			external.Arity = len(call.Arguments)
+		}
+	}
+	// A Python call nothing typed (a method on a duck-typed receiver, a call
+	// of a parameter) is keyed by the receiver's text in the caller's module,
+	// a function no component declares. Exported as exact, a stitcher found
+	// no target for it and read the dependency method it may reach as
+	// unreachable; as name_only it matches by method name, and what it
+	// reaches reads unknown.
+	if call != nil && ctx != nil && external.Resolution == string(callgraph.EdgeKindExact) && callgraph.PythonCallUntyped(ctx.graph, call) {
+		external.Resolution = string(callgraph.EdgeKindNameOnly)
+		external.Arity = len(call.Arguments)
+	}
 	external.TargetFunctionName = fragmentTargetFunctionName(ctx, callerKey, callerDecl, calleeKey, &external)
-	if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil {
+	if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil { //nolint:nestif // complexity predates the lint gate; splitting it is a separate behavior-sensitive change
 		meta := buildExportFunctionMetadata(ctx.graph, calleeID, nil)
 		if call != nil && call.Callee.String() == calleeKey {
 			meta, _ = buildCallExportFunctionMetadata(ctx, call, nil)
@@ -790,6 +1068,20 @@ func buildFragmentExternalCall(
 			}
 			parameterTypes = mergeExportParameterTypes(parameterTypes, callTypes)
 		}
+		// A method declared in a type-only dependency has every overload in the
+		// bytecode index; the per-function metadata above takes the first one of
+		// any arity. Pick the overload this call's arguments select, so a server
+		// joining on the signature reaches the right declaration.
+		if call != nil && call.Callee.String() == calleeKey && ctx.graph != nil {
+			sigs := ctx.graph.ExternalMethodSignatures[callgraph.ExternalMethodSignatureKey(call.Callee)]
+			if sig, ok := callgraph.SelectExternalOverload(sigs, call); ok {
+				parameterTypes = append([]string(nil), sig.ParameterTypes...)
+				// A constructor's bytecode return is void; keep the declared-type spelling.
+				if rt := strings.TrimSpace(sig.ReturnType); rt != "" && call.Callee.Name != constructorMethodName {
+					meta.ReturnType = rt
+				}
+			}
+		}
 		external.TargetCanonicalSignature = canonicalSignature(meta.FunctionName, parameterTypes, meta.ReturnType)
 	}
 	if call != nil {
@@ -801,6 +1093,7 @@ func buildFragmentExternalCall(
 			external.StartCol = call.StartCol
 			external.EndCol = call.EndCol
 		}
+		external.EndLine = fragmentCallEndLine(call, external.Line)
 	}
 	return external
 }
@@ -856,11 +1149,11 @@ func sortedFragmentExternalCalls(values []graphfrag.GraphFragmentExternal) []gra
 		return nil
 	}
 	sort.SliceStable(values, func(i, j int) bool {
-		return fragmentExternalLess(values[i], values[j])
+		return fragmentExternalLess(&values[i], &values[j])
 	})
 	out := values[:0]
 	for i := range values {
-		if i+1 < len(values) && fragmentExternalSameKey(values[i], values[i+1]) {
+		if i+1 < len(values) && fragmentExternalSameKey(&values[i], &values[i+1]) {
 			continue
 		}
 		out = append(out, values[i])
@@ -908,7 +1201,7 @@ func fragmentEdgeSameKey(a, b graphfrag.GraphFragmentEdge) bool {
 		a.Arity == b.Arity
 }
 
-func fragmentExternalLess(a, b graphfrag.GraphFragmentExternal) bool {
+func fragmentExternalLess(a, b *graphfrag.GraphFragmentExternal) bool {
 	if a.CallerKey != b.CallerKey {
 		return a.CallerKey < b.CallerKey
 	}
@@ -936,7 +1229,7 @@ func fragmentExternalLess(a, b graphfrag.GraphFragmentExternal) bool {
 	return a.Arity < b.Arity
 }
 
-func fragmentExternalSameKey(a, b graphfrag.GraphFragmentExternal) bool {
+func fragmentExternalSameKey(a, b *graphfrag.GraphFragmentExternal) bool {
 	return a.CallerKey == b.CallerKey &&
 		a.TargetKey == b.TargetKey &&
 		a.Line == b.Line &&
@@ -957,14 +1250,55 @@ type fragmentEdgeResolution struct {
 // An edge with no recorded resolution is an exact, directly-resolved source
 // call (e.g. a typed re-resolution from the bytecode/type resolver), so it
 // defaults to exact rather than the fail-closed "unknown" — the producer is the
-// authority on resolution quality.
-func resolveFragmentEdges(ctx *exportBuildContext, callerKey, calleeKey string) []fragmentEdgeResolution {
+// authority on resolution quality. Such an edge gets one exact resolution per
+// call site of the caller that names the callee (defaultFragmentEdgeResolutions),
+// so every call is exported with its line, columns, method name and arity.
+func resolveFragmentEdges(ctx *exportBuildContext, callerKey string, callerDecl *callgraph.FunctionDecl, calleeKey string) []fragmentEdgeResolution {
 	if ctx != nil {
 		if out := ctx.fragmentEdgeResolutions[fragmentEdgePairKey(callerKey, calleeKey)]; len(out) > 0 {
 			return out
 		}
 	}
-	return []fragmentEdgeResolution{newFragmentEdgeResolution(callgraph.EdgeResolution{Kind: callgraph.EdgeKindExact})}
+	return defaultFragmentEdgeResolutions(ctx, callerKey, callerDecl, calleeKey)
+}
+
+// defaultFragmentEdgeResolutions gives an edge without a recorded resolution
+// one exact resolution per call of callerDecl that names calleeKey: the calls
+// spelled as calleeKey, else the calls of its base method with its arity. With
+// none of either it keeps one site without a position, which fragmentEdgeLine
+// places at the first call of the method (an alias the graph added for a call
+// written as another overload). Method name and arity come from calleeKey, as
+// recordEdgeResolution derives them for a recorded edge.
+func defaultFragmentEdgeResolutions(ctx *exportBuildContext, callerKey string, callerDecl *callgraph.FunctionDecl, calleeKey string) []fragmentEdgeResolution {
+	base := callgraph.EdgeResolution{Kind: callgraph.EdgeKindExact}
+	if calleeID, err := callgraph.ParseFunctionID(calleeKey); err == nil {
+		base.MethodName = callgraph.BaseFunctionName(calleeID.Name)
+		base.Arity = callgraph.FunctionArity(calleeID.Name)
+	}
+	candidates := matchingCallsForCallee(ctx, callerKey, callerDecl, calleeKey)
+	var calls []*callgraph.FunctionCall
+	for _, call := range candidates {
+		if call.Callee.String() == calleeKey {
+			calls = append(calls, call)
+		}
+	}
+	if len(calls) == 0 {
+		for _, call := range candidates {
+			if len(call.Arguments) == base.Arity {
+				calls = append(calls, call)
+			}
+		}
+	}
+	if len(calls) == 0 {
+		return []fragmentEdgeResolution{newFragmentEdgeResolution(base)}
+	}
+	out := make([]fragmentEdgeResolution, 0, len(calls))
+	for _, call := range calls {
+		res := base
+		res.CallSite, res.StartCol, res.EndCol = call.Line, call.StartCol, call.EndCol
+		out = append(out, newFragmentEdgeResolution(res))
+	}
+	return out
 }
 
 func indexFragmentEdgeResolutions(graph *callgraph.CallGraph) map[string][]fragmentEdgeResolution {
@@ -1018,10 +1352,19 @@ func fragmentEdgePairKey(callerKey, calleeKey string) string {
 	return callerKey + "\x00" + calleeKey
 }
 
+// newFragmentEdgeResolution carries an edge's resolution into the fragment.
+// A Python subclass-dispatch edge (a base method's call reaching an override)
+// is the fragment's interface_dispatch: the stitch has no other kind for an
+// expansion to implementations, and decoded an unknown kind as untrusted and
+// dropped the edge.
 func newFragmentEdgeResolution(res callgraph.EdgeResolution) fragmentEdgeResolution {
+	kind := res.Kind
+	if kind == callgraph.EdgeKindPythonSubclassDispatch {
+		kind = callgraph.EdgeKindInterfaceDispatch
+	}
 	return fragmentEdgeResolution{
 		EdgeResolution: res,
-		Resolution:     string(res.Kind),
+		Resolution:     string(kind),
 	}
 }
 
@@ -1100,6 +1443,33 @@ func findCallForCalleeAtLine(ctx *exportBuildContext, callerKey string, callerDe
 		}
 	}
 	return fallback
+}
+
+// findCallForCalleeAtSite is findCallForCalleeAtLine for a site with known
+// columns: among the matching calls on line it takes the one at startCol and
+// endCol, so two calls of one callee on one line keep their own call.
+//
+// A Python callee keyed by a receiver's source text can hold `).` itself
+// (`<module>.(b64encode(x).decode("utf-8")).replace`), which the key parser
+// splits at the wrong place, so the parsed index misses the call; for Python
+// the call at the site is also looked up by its key as written.
+func findCallForCalleeAtSite(ctx *exportBuildContext, callerKey string, callerDecl *callgraph.FunctionDecl, calleeKey string, line, startCol, endCol int) *callgraph.FunctionCall {
+	if line > 0 && startCol > 0 {
+		for _, call := range matchingCallsForCallee(ctx, callerKey, callerDecl, calleeKey) {
+			if call.Line == line && call.StartCol == startCol && call.EndCol == endCol {
+				return call
+			}
+		}
+		if ctx != nil && ctx.ecosystem == ecosystemPython {
+			for i := range callerDecl.Calls {
+				call := &callerDecl.Calls[i]
+				if call.Line == line && call.StartCol == startCol && call.EndCol == endCol && call.Callee.String() == calleeKey {
+					return call
+				}
+			}
+		}
+	}
+	return findCallForCalleeAtLine(ctx, callerKey, callerDecl, calleeKey, line)
 }
 
 func findCallForCallee(ctx *exportBuildContext, callerKey string, callerDecl *callgraph.FunctionDecl, calleeKey string) *callgraph.FunctionCall {
@@ -1238,12 +1608,46 @@ func buildGraphFragmentFunction(ctx *exportBuildContext, id callgraph.FunctionID
 		fn.FilePath = normalizeExportPath(ctx, decl.FilePath).FilePath
 		fn.StartLine = decl.StartLine
 		fn.EndLine = decl.EndLine
+		if ctx.ecosystem == ecosystemNode {
+			// graph-algo-node-9: annotate tells a callback written on its
+			// caller's line from the caller by these columns.
+			fn.StartCol, fn.EndCol = decl.StartCol, decl.EndCol
+		}
 		fn.ReturnsCalls = returnedCallees(decl)
+		fn.Abstract = decl.Abstract
+		fn.Constructs = fragmentConstructs(ctx, decl)
+		if fragmentCarriesCalls(ctx) {
+			fn.ReturnSources = fragmentRawSources(ctx, decl.ReturnSources)
+			fn.ParameterNames = fragmentParameterNames(decl.Parameters)
+		}
+		if ctx.ecosystem == ecosystemCPP {
+			// A C++ function context reads the parameters as written.
+			for _, p := range decl.WrittenParameters {
+				fn.WrittenParameters = append(fn.WrittenParameters, graphfrag.GraphFragmentWrittenParameter{
+					Type: p.Type, Name: p.Name, Line: p.Line, StartCol: p.StartCol, EndCol: p.EndCol, EndLine: p.EndLine,
+				})
+			}
+		}
 		if mark, ok := ctx.sharedTracer().EntryPoint(decl, ctx.userPackages); ok {
 			fn.EntryKind = string(mark.Kind)
 		}
 	}
 	return fn
+}
+
+// fragmentConstructs is the class every return of a Java function builds
+// with a plain `new` (graph-fragment-1.39, graph-algo-40), as a stitch reads
+// it to narrow a call on the function's result to that class's method. Empty
+// for any other ecosystem and when a return yields anything else.
+func fragmentConstructs(ctx *exportBuildContext, decl *callgraph.FunctionDecl) string {
+	if ctx.ecosystem != ecosystemJava {
+		return ""
+	}
+	class, ok := decl.ConstructedClass()
+	if !ok {
+		return ""
+	}
+	return graphfrag.ClassKey(class.Package, class.Type)
 }
 
 // compatibleCanonicalSignatures emits only source-hierarchy-proven parent
@@ -1258,7 +1662,7 @@ func compatibleCanonicalSignatures(ctx *exportBuildContext, id callgraph.Functio
 		return nil
 	}
 	owner := id.Package + "." + id.Type
-	return compatibleParentSignatures(ctx, hierarchyAncestors(ctx.combinedTypeHierarchy(), owner), method, len(decl.Parameters))
+	return compatibleParentSignatures(ctx, hierarchyAncestors(ctx.combinedTypeHierarchy(), owner), method, decl)
 }
 
 // combinedTypeHierarchy returns the bytecode hierarchy merged with edges
@@ -1266,7 +1670,7 @@ func compatibleCanonicalSignatures(ctx *exportBuildContext, id callgraph.Functio
 // Bytecode edges win on conflict; source edges only add what bytecode
 // indexing never saw — in a bare-source scan (mining workspace, no jars)
 // that is the entire hierarchy.
-func (ctx *exportBuildContext) combinedTypeHierarchy() map[string][]string {
+func (ctx *exportBuildContext) combinedTypeHierarchy() map[string][]string { //nolint:gocognit,gocyclo // complexity predates the lint gate; splitting it is a separate behavior-sensitive change
 	if ctx.combinedHierarchy != nil {
 		return ctx.combinedHierarchy
 	}
@@ -1282,6 +1686,42 @@ func (ctx *exportBuildContext) combinedTypeHierarchy() map[string][]string {
 		for _, base := range bases {
 			if !existing[base] {
 				merged[owner] = append(merged[owner], base)
+			}
+		}
+	}
+	// A type that declares no method of its own (an interface that only
+	// extends others: nimbus ConfigurableJWTProcessor extends JWTProcessor)
+	// never reaches sourceTypeHierarchy, which reads bases off declarations;
+	// without its edge an implementation's ancestry stops at it. The parser's
+	// supertypes record it; take each clause's single candidate this scan or
+	// the bytecode knows.
+	known := func(t string) bool {
+		if _, ok := merged[t]; ok {
+			return true
+		}
+		_, ok := ctx.graph.SourceSupertypes[t]
+		return ok
+	}
+	for owner, clauses := range ctx.graph.SourceSupertypes {
+		existing := make(map[string]bool, len(merged[owner]))
+		for _, base := range merged[owner] {
+			existing[base] = true
+		}
+		for _, clause := range clauses {
+			chosen := ""
+			for _, candidate := range strings.Split(clause, "|") {
+				if candidate = strings.TrimSpace(candidate); candidate == "" || !known(candidate) {
+					continue
+				}
+				if chosen != "" && chosen != candidate {
+					chosen = ""
+					break
+				}
+				chosen = candidate
+			}
+			if chosen != "" && chosen != owner && !existing[chosen] {
+				existing[chosen] = true
+				merged[owner] = append(merged[owner], chosen)
 			}
 		}
 	}
@@ -1405,15 +1845,28 @@ func hierarchyAncestors(hierarchy map[string][]string, owner string) []string {
 	return ancestors
 }
 
-func compatibleParentSignatures(ctx *exportBuildContext, parents []string, method string, arity int) []string {
+func compatibleParentSignatures(ctx *exportBuildContext, parents []string, method string, decl *callgraph.FunctionDecl) []string {
+	arity := len(decl.Parameters)
 	compatible := make(map[string]bool)
 	for _, parent := range parents {
+		var sameArity, sameParams []*callgraph.FunctionDecl
 		for _, candidate := range ctx.declsByMethod[method] {
 			candidateID := candidate.decl.ID
 			if candidateID.Package+"."+candidateID.Type != parent || len(candidate.decl.Parameters) != arity {
 				continue
 			}
-			signature := buildExportFunctionMetadata(ctx.graph, candidateID, candidate.decl).CanonicalSignature
+			sameArity = append(sameArity, candidate.decl)
+			if sameErasedParameters(decl.Parameters, candidate.decl.Parameters) {
+				sameParams = append(sameParams, candidate.decl)
+			}
+		}
+		// An override has the parent's parameter types: when a parent overload
+		// has them, the other overloads of that arity are not this method's parents.
+		if len(sameParams) > 0 {
+			sameArity = sameParams
+		}
+		for _, parentDecl := range sameArity {
+			signature := buildExportFunctionMetadata(ctx.graph, parentDecl.ID, parentDecl).CanonicalSignature
 			if signature != "" {
 				compatible[signature] = true
 			}
@@ -1428,24 +1881,6 @@ func compatibleParentSignatures(ctx *exportBuildContext, parents []string, metho
 	}
 	sort.Strings(out)
 	return out
-}
-
-// materializeGraphFragmentCrypto builds crypto_annotations, supporting_calls, and
-// crypto_entry_points in one pass over findings. Supporting-call derivation and
-// structural reachability chains are computed once per asset (not three times).
-func materializeGraphFragmentCrypto(
-	ctx *exportBuildContext,
-	result *engine.DepScanResult,
-	functionIndex map[string]int,
-) (
-	[]graphfrag.GraphFragmentCryptoOp,
-	[]graphfrag.GraphFragmentSupporting,
-	[]graphfrag.GraphFragmentCryptoEntryPoint,
-) {
-	if result == nil || result.Report == nil {
-		return nil, nil, nil
-	}
-	return materializeGraphFragmentCryptoFromFindings(ctx, result, result.Report.Findings, functionIndex)
 }
 
 func materializeGraphFragmentCryptoFromFindings(
@@ -1927,4 +2362,49 @@ func toGraphFragmentParameterRoles(src []callGraphParameterRole) []graphfrag.Gra
 		}
 	}
 	return out
+}
+
+// sameErasedParameters reports whether two parameter lists have the same types
+// by erased simple name (generics stripped, package dropped).
+func sameErasedParameters(a, b []callgraph.FunctionParameter) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if erasedSimpleParam(a[i].Type) != erasedSimpleParam(b[i].Type) {
+			return false
+		}
+	}
+	return true
+}
+
+func erasedSimpleParam(t string) string {
+	t = strings.TrimSpace(t)
+	if i := strings.Index(t, "<"); i >= 0 {
+		if j := strings.LastIndex(t, ">"); j > i {
+			t = t[:i] + t[j+1:]
+		}
+	}
+	t = strings.ReplaceAll(t, "...", "[]")
+	if i := strings.LastIndex(t, "."); i >= 0 {
+		t = t[i+1:]
+	}
+	return t
+}
+
+// fragmentExports is the graph's `exports` field: the public names a caller
+// spells mapped to the function keys the graph declares them under -- Python's
+// module exports, Node's package specifiers, the constant paths a Ruby
+// component publishes, or the public paths of a Rust crate's `pub use` items,
+// aliases and modules. A graph is one ecosystem, so one of them is filled.
+func fragmentExports(graph *callgraph.CallGraph) map[string]string {
+	switch {
+	case len(graph.PythonExports) > 0:
+		return graph.PythonExports
+	case len(graph.NodePackageExports) > 0:
+		return graph.NodePackageExports
+	case len(graph.RustExports) > 0:
+		return graph.RustExports
+	}
+	return graph.RubyExports
 }

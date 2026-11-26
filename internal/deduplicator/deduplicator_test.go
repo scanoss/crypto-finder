@@ -465,7 +465,7 @@ func TestDeduplicateInterimReport_DifferentAssetTypesSameLine(t *testing.T) {
 						Match:     "GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv);",
 						Rules: []entities.RuleInfo{{
 							ID:       "java.jca.related-crypto-material.initialization-vector",
-							Message:  "Detected GCM initialization vector usage",
+							Message:  "GCM nonce spotted",
 							Severity: "INFO",
 						}},
 						Metadata: map[string]string{
@@ -736,8 +736,8 @@ func TestDeduplicateInterimReport_CertificateDifferentLines(t *testing.T) {
 						EndLine:   44,
 						Match:     "factory.generateCertificate(certificateStream)",
 						Rules: []entities.RuleInfo{{
-							ID:       "java.jca.certificate.x509.generate",
-							Message:  "Detected certificate generation from input stream",
+							ID:       "fixture.java.jca.generate",
+							Message:  "certificate built from a stream",
 							Severity: "INFO",
 						}},
 						Metadata: map[string]string{
@@ -796,8 +796,8 @@ func TestDeduplicateInterimReport_SameAlgorithmDifferentLines(t *testing.T) {
 						EndLine:   30,
 						Match:     "cipher.init(mode, key, gcpSpec);",
 						Rules: []entities.RuleInfo{{
-							ID:       "java.jca.algorithm.ae.aes-gcm",
-							Message:  "Detected AES-GCM authenticated encryption usage",
+							ID:       "fixture.java.jca.aes-gcm",
+							Message:  "AEAD cipher spotted",
 							Severity: "INFO",
 						}},
 						Metadata: map[string]string{
@@ -845,25 +845,8 @@ func TestDeduplicateInterimReport_SameAlgorithmDifferentLines(t *testing.T) {
 	if len(assets[1].Rules) != 1 {
 		t.Errorf("Second asset should have 1 rule, got %d", len(assets[1].Rules))
 	}
-	if assets[1].Rules[0].ID != "java.jca.algorithm.ae.aes-gcm" {
-		t.Errorf("Second asset should have rule java.jca.algorithm.ae.aes-gcm")
-	}
-}
-
-// TestAssetGroupKey_String tests the string representation of assetGroupKey.
-func TestAssetGroupKey_String(t *testing.T) {
-	key := assetGroupKey{
-		filePath:  "crypto.go",
-		assetKey:  "algorithm:AES:AES-256-GCM",
-		startLine: 42,
-		endLine:   42,
-	}
-
-	expected := "crypto.go[algorithm:AES:AES-256-GCM@42:42]"
-	actual := key.String()
-
-	if actual != expected {
-		t.Errorf("Expected %s, got %s", expected, actual)
+	if assets[1].Rules[0].ID != "fixture.java.jca.aes-gcm" {
+		t.Errorf("Second asset should have rule fixture.java.jca.aes-gcm")
 	}
 }
 

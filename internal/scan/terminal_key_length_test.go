@@ -10,11 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 const (
@@ -525,7 +526,7 @@ func terminalExportsWithSiblings(t *testing.T, ecosystem, file, source string, s
 	stitchedExport := stitched.ToCallgraphExport(component, graphfrag.ScanMeta{Ecosystem: ecosystem})
 
 	resolved := prepareOIDFixtureReport(t, report)
-	annotate := buildAnnotateExport(resolved, fragment)
+	annotate := annotateStoredGraph(t, &fullFragment, dir, report, resolved)
 
 	return terminalExportResult{live: live, stitched: stitchedExport, fragment: fullFragment, annotate: annotate, report: resolved, findingID: findingID}
 }

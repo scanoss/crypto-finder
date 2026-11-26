@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // supportingFixtureSrc has two independent crypto-object lifecycles so the tests
@@ -72,15 +72,6 @@ func reportForTerminal(t *testing.T, line int, match, api string) *entities.Inte
 	return report
 }
 
-func decodeFragmentForTest(t *testing.T, data []byte) graphfrag.Fragment {
-	t.Helper()
-	frag, err := graphfrag.DecodeFragment(graphfrag.ComponentKey{}, data)
-	if err != nil {
-		t.Fatalf("DecodeFragment: %v", err)
-	}
-	return frag
-}
-
 func marshalSorted(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -105,8 +96,7 @@ func TestAnnotateSupportingCalls_ByteIdenticalToFullExport(t *testing.T) {
 		t.Fatal("fixture produced no supporting calls; cannot test equivalence")
 	}
 
-	fragment := decodeFragmentForTest(t, marshalSorted(t, full))
-	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
+	annotate := annotateStoredGraph(t, &full, dir, report, prepareOIDFixtureReport(t, report))
 
 	if got, want := marshalSorted(t, annotate.SupportingCalls), marshalSorted(t, full.SupportingCalls); !bytes.Equal(got, want) {
 		t.Fatalf("supporting_calls diverge (identity case).\n full:     %s\n annotate: %s", want, got)
@@ -126,7 +116,6 @@ func TestAnnotateSupportingCalls_ChangedRules_NewFinding(t *testing.T) {
 	fullR1 := buildGraphFragmentExport(&engine.DepScanResult{
 		Report: reportR1, CallGraph: graph, ProjectRoot: dir, RootModule: "com.app:app", Ecosystem: "java",
 	})
-	fragmentR1 := decodeFragmentForTest(t, marshalSorted(t, fullR1))
 
 	// R2: a new rule now flags object B's terminal (line 10) instead.
 	reportR2 := reportForTerminal(t, 10, "b.execute()", "com.app.Other.execute")
@@ -138,87 +127,11 @@ func TestAnnotateSupportingCalls_ChangedRules_NewFinding(t *testing.T) {
 	}
 
 	// Annotate the R1-era fragment with the R2 report — no live callgraph.
-	annotateR2 := buildAnnotateExport(prepareOIDFixtureReport(t, reportR2), fragmentR1)
+	annotateR2 := annotateStoredGraph(t, &fullR1, dir, reportR2, prepareOIDFixtureReport(t, reportR2))
 
 	if got, want := marshalSorted(t, annotateR2.SupportingCalls), marshalSorted(t, fullR2.SupportingCalls); !bytes.Equal(got, want) {
 		t.Fatalf("changed-rules supporting_calls diverge: a new rule's finding did not re-derive its lifecycle from the cached fragment.\n full@R2:     %s\n annotate@R2: %s", want, got)
 	}
-}
-
-// TestTerminalEdgeIndex_ColumnAwareSelection pins the column-parity mechanism:
-// the annotate path runs the same column-intersection + chain-root selection as
-// the live exporter (findCryptoCallNode), so it picks the correct terminal on a
-// line that carries multiple calls — the case the old line-only heuristic could
-// not disambiguate. The legacy subtest proves graceful fallback when a cached
-// fragment predates columns (every column 0).
-func TestTerminalEdgeIndex_ColumnAwareSelection(t *testing.T) {
-	t.Parallel()
-
-	t.Run("two calls on one line - column intersection selects the matching edge", func(t *testing.T) {
-		edges := []fragEdge{
-			{raw: "a.foo()", line: 5, startCol: 1, endCol: 10},
-			{raw: "b.bar()", line: 5, startCol: 20, endCol: 30},
-		}
-		asset := entities.CryptographicAsset{StartLine: 5, EndLine: 5, StartCol: 20, EndCol: 30}
-		if got := terminalEdgeIndex(edges, asset); got != 1 {
-			t.Fatalf("terminalEdgeIndex = %d, want 1 (column span selects second edge)", got)
-		}
-	})
-
-	t.Run("nested invocation spans select the matched edge", func(t *testing.T) {
-		edges := []fragEdge{
-			{raw: "cipher.encrypt(new KeyParameter(key))", line: 5, startCol: 10, endCol: 49},
-			{raw: "new KeyParameter(key)", line: 5, startCol: 25, endCol: 46},
-		}
-		for _, tt := range []struct {
-			name       string
-			start, end int
-			want       int
-		}{
-			{"nested constructor", 25, 46, 1},
-			{"enclosing invocation", 10, 49, 0},
-		} {
-			t.Run(tt.name, func(t *testing.T) {
-				asset := entities.CryptographicAsset{StartLine: 5, EndLine: 5, StartCol: tt.start, EndCol: tt.end}
-				if got := terminalEdgeIndex(edges, asset); got != tt.want {
-					t.Fatalf("terminalEdgeIndex = %d, want %d", got, tt.want)
-				}
-			})
-		}
-	})
-
-	t.Run("fluent chain on one line - chain root (AssignedVar) selected", func(t *testing.T) {
-		edges := []fragEdge{
-			{raw: "Password.hash(p)", line: 6, startCol: 1, endCol: 17, identity: objectIdentity{ChainID: "c1"}},
-			{
-				raw: "Password.hash(p).addRandomSalt().withBcrypt()", line: 6, startCol: 1, endCol: 46,
-				identity: objectIdentity{ChainID: "c1", AssignedVar: "hash"},
-			},
-		}
-		for _, endCol := range []int{17, 46} {
-			asset := entities.CryptographicAsset{StartLine: 6, EndLine: 6, StartCol: 1, EndCol: endCol}
-			if got := terminalEdgeIndex(edges, asset); got != 1 {
-				t.Fatalf("span [1,%d) selected edge %d, want chain root", endCol, got)
-			}
-		}
-	})
-
-	t.Run("legacy column-less fragment - falls back to rule symbol match", func(t *testing.T) {
-		finishID := callgraph.FunctionID{Package: "com.app", Type: "Maker", Name: "finish#0"}
-		otherID := callgraph.FunctionID{Package: "java.lang", Type: "String", Name: "getBytes#0"}
-		edges := []fragEdge{
-			{calleeKey: otherID.String(), raw: "x.getBytes()", line: 7}, // no columns
-			{calleeKey: finishID.String(), raw: "a.finish()", line: 7},  // no columns
-		}
-		asset := entities.CryptographicAsset{
-			StartLine: 7, EndLine: 7,
-			Match:    "a.finish()",
-			Metadata: map[string]string{"api": fullFunctionName(finishID)},
-		}
-		if got := terminalEdgeIndex(edges, asset); got != 1 {
-			t.Fatalf("terminalEdgeIndex = %d, want 1 (symbol match in column-less fallback)", got)
-		}
-	})
 }
 
 // TestGraphFragmentExport_CryptoAnnotationCarriesSupportingCallIDs pins the
@@ -255,9 +168,7 @@ func TestGraphFragmentExport_CryptoAnnotationCarriesSupportingCallIDs(t *testing
 
 	// The annotate path (structural-only fragment, no live graph) must re-derive
 	// the SAME supporting_call_ids — the Option-A precision guarantee end-to-end.
-	fragment := decodeFragmentForTest(t, marshalSorted(t, full))
-	fragment.CryptoOperations = nil // exactly what component_code_graphs stores.
-	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
+	annotate := annotateStoredGraph(t, &full, dir, report, prepareOIDFixtureReport(t, report))
 	if len(annotate.CryptoAnnotations) != 1 {
 		t.Fatalf("annotate: want 1 crypto annotation, got %d", len(annotate.CryptoAnnotations))
 	}
@@ -267,7 +178,7 @@ func TestGraphFragmentExport_CryptoAnnotationCarriesSupportingCallIDs(t *testing
 }
 
 // TestAnnotateCryptoCall_ReDerivedFromStructuralOnlyFragment models the
-// mining-service reality: the cached fragment is structural-only (code graph,
+// server-side mining case: the cached fragment is structural-only (code graph,
 // NO crypto operations — those are rules-versioned elsewhere). Carry-forward
 // therefore finds no prior crypto_call, so the terminal crypto_call must be
 // re-derived from the cached edges and match a full export's crypto_annotations.
@@ -283,11 +194,9 @@ func TestAnnotateCryptoCall_ReDerivedFromStructuralOnlyFragment(t *testing.T) {
 		t.Fatal("fixture produced no crypto annotations")
 	}
 
-	// Decode then STRIP crypto operations — exactly what component_code_graphs holds.
-	fragment := decodeFragmentForTest(t, marshalSorted(t, full))
-	fragment.CryptoOperations = nil
-
-	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
+	// annotateStoredGraph strips the crypto sections, exactly what
+	// component_code_graphs holds.
+	annotate := annotateStoredGraph(t, &full, dir, report, prepareOIDFixtureReport(t, report))
 
 	if got, want := marshalSorted(t, annotate.CryptoAnnotations), marshalSorted(t, full.CryptoAnnotations); !bytes.Equal(got, want) {
 		t.Fatalf("crypto_annotations diverge from a structural-only fragment (crypto_call not re-derived).\n full:     %s\n annotate: %s", want, got)

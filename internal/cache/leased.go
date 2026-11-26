@@ -177,36 +177,51 @@ func olderCacheFormat(rulesetPath string) bool {
 // confirmCurrentRelease handles an expired TTL of a cached ruleset without a
 // download: when the API reports the same release as the cached lease and
 // the lease does not expire within leaseRefreshWindow, it records the check
-// and returns true. Any other outcome (an API error included) returns false
-// so the caller downloads.
-func (m *Manager) confirmCurrentRelease(ctx context.Context, name, version, rulesetPath, metadataPath string) bool {
-	if m.apiClient == nil || leasedCacheUsable(rulesetPath) != nil {
-		return false
-	}
-	metadata, err := LoadMetadata(metadataPath)
-	if err != nil || time.Until(metadata.ExpiresAt) < leaseRefreshWindow {
-		return false
-	}
-	l, err := ReadLease(rulesetPath)
-	if err != nil {
-		return false
+// and returns true. A refused key (401/403) is returned as an error, so the
+// cache is neither used nor downloaded again; any other outcome (another API
+// error included) returns false so the caller downloads.
+func (m *Manager) confirmCurrentRelease(ctx context.Context, name, version, rulesetPath, metadataPath string) (bool, error) {
+	metadata, l, ok := m.leaseToConfirm(rulesetPath, metadataPath)
+	if !ok {
+		return false, nil
 	}
 	release, err := m.apiClient.GetRelease(ctx, name, version)
+	if refusedByAPI(err) {
+		return false, fmt.Errorf("cache: check ruleset %s@%s: %w", name, version, err)
+	}
 	if err != nil {
 		log.Debug().Err(err).Str("ruleset", name).Str("version", version).Msg("Ruleset release check failed")
-		return false
+		return false, nil
 	}
 	if release.Version != l.Version || release.PayloadSHA != l.PayloadSHA {
 		log.Info().Str("ruleset", name).Str("cached", l.Version).Str("current", release.Version).Msg("A new ruleset release is available")
-		return false
+		return false, nil
 	}
 	metadata.CheckedAt = time.Now()
 	if err := metadata.Save(metadataPath); err != nil {
 		log.Warn().Err(err).Msg("Failed to record the ruleset release check")
-		return false
+		return false, nil
 	}
 	log.Debug().Str("ruleset", name).Str("version", l.Version).Msg("Cached ruleset is the current release")
-	return true
+	return true, nil
+}
+
+// leaseToConfirm returns the metadata and lease of a cached ruleset whose
+// release the API can confirm: one that is complete and whose lease does
+// not expire within leaseRefreshWindow. ok is false otherwise.
+func (m *Manager) leaseToConfirm(rulesetPath, metadataPath string) (metadata *Metadata, l ruleset.Lease, ok bool) {
+	if m.apiClient == nil || leasedCacheUsable(rulesetPath) != nil {
+		return nil, ruleset.Lease{}, false
+	}
+	metadata, err := LoadMetadata(metadataPath)
+	if err != nil || time.Until(metadata.ExpiresAt) < leaseRefreshWindow {
+		return nil, ruleset.Lease{}, false
+	}
+	l, err = ReadLease(rulesetPath)
+	if err != nil {
+		return nil, ruleset.Lease{}, false
+	}
+	return metadata, l, true
 }
 
 // OpenLeased decrypts the cached ruleset name@version, verifies its

@@ -7,6 +7,1552 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-26
+### Added
+- `annotate --scanner cards` re-detects a stored graph fragment
+  (`graph-fragment-1.16` or later) without `--source`: the cards match the
+  fragment's call sites and source lines, and the steps a scan runs after
+  detection (rule entry points, conditioned findings, related material,
+  finding ids, OID, PQC) run over the graph the fragment describes. The new
+  `--findings-output` flag writes the findings report as `scan --output`
+  does. Related material is not reported when the buffer's reuse sits on a
+  line the fragment does not hold.
+- A constant compared with a field (`polyType == Params.SIMPLE`) is reported
+  when the field's class assigns that constant to it (an initializer,
+  `this.f = X`, or `f = X` in a constructor or method with no local `f`).
+  Cached graphs move to `graph-algo-31`.
+- The cards matcher can compile its symbol index from the rule YAML itself,
+  so the index can come from the served rules instead of shipping
+  precompiled. The compiled index equals the one the earlier
+  prototype compiler writes. The cards scanner still reads `--cards-index` for now.
+- A constant card takes `at`: the position kinds it reports (`arg`, `array`,
+  `dict`, `init`, `assign`, `return`, `compare`, `in`, `case`, `other`), so a
+  rule written for algorithm tables (`{..., $K: $V, ...}`, `[..., $X, ...]`)
+  reports a table entry and not the same constant passed to a call. A
+  constant card's keys are now checked (`const`, `member`, `at`).
+- The cards detector reports a rule that names a constant (`Owner.$C`,
+  `constant:` cards) wherever the constant is written, as OpenGrep does: in a
+  comparison, an `equals` call, a `case` label, a return, an assignment, an
+  initializer or an array, not only as the argument of a call. The finding
+  spans the constant. Fragments from before `graph-fragment-1.17` still match
+  constants passed to a call only.
+- The cards detector reports a rule that names a declared type
+  (`X509Certificate $C = $E;`, a `declaration:` card with `type` and `init`)
+  at the declaration, as OpenGrep does, whatever the initializer is: a call, a
+  cast, `null`, a variable. A cast card (`cast: T`) reports the cast around
+  its call wherever the value goes (returned, assigned, passed on), at the
+  cast. `assigned_type` holds only for the initializer of a declaration, not
+  for a later plain assignment. Fragments from before `graph-fragment-1.18`
+  keep the earlier behaviour, and declaration cards find nothing in them.
+- The hidden developer commands `cards-export` and `cards verify` accept
+  `--lang javascript` (alias `typescript`): the rule compiler reads JavaScript
+  and TypeScript rules into index entries keyed the way the call graph keys an
+  imported call (`<module>.<member path>`, constructors as `<module>.x.(Y).<init>`,
+  WebCrypto as `(SubtleCrypto).<method>`). Scanning JavaScript and TypeScript with
+  the cards engine is not enabled yet.
+- The cards detector resolves a parametric algorithm in place, as OpenGrep's
+  taint does: a taint card reads the literals a parameter receives from
+  callers in the same file, and the literals a variable written more than
+  once is assigned (graph fragment `may_values`). A variable every write of
+  which is a string literal (`may_values_exhaustive`) no longer fires the
+  dynamic-selection rule.
+- The rule compiler reads Python rules (a rule whose `languages` name
+  python) with Python pattern shapes: a dotted callee (`a.b.f(...)`, a class
+  instantiation included), a method on any receiver (`$X.m(...)`), a bare
+  name, keyword arguments (`kw=$X`, `kw="lit"`, `kw=...`), single-quoted
+  literals, and the Python spelling of the `$V = "..."` / `...` not-inside.
+  A Python cards scan now matches the index compiled from
+  `semgrep-rules/python` plus `cards/python` (a card replaces every compiled
+  entry of its rule), as Java does; the scan command still refuses Python
+  targets (developer test `TestDevPythonCardsScan`). An `index.json` written
+  by the earlier prototype compiler loads too.
+- The rule compiler reads more Python rule shapes than before: nested call arguments
+  with metavariables (`hashes.Hash(hashes.$ALG(...))`), dotted constant
+  references (`hashes.$ALG`, `ssl.PROTOCOL_TLSv1`) matched against the
+  fragment's constant references, with table pattern-insides as position
+  kinds; pattern-insides that say where an object comes from
+  (`$X = F(...)`, `with F(...) as $X:`, `$X: T = ...`,
+  `def $F(..., $X: T, ...):`); taint rules whose sources are factory calls,
+  matched as a call on an object from one of them (the local's latest
+  assignment before the call decides, or the fragment's resolved receiver
+  class); pattern-not-inside a call; import pattern-insides that give the
+  callee its module (`from jose import jwt` + `jwt.encode(...)`);
+  `"=~/re/"` string arguments; `a.$C.m(...)` callees; metavariable-pattern
+  alternatives that are dotted names. What a rule loses on the way is
+  recorded on its entries.
+- Card format additions for Python cards (any language may use them): a call
+  pattern takes `object: {type, from, via}` (the receiver is an object of a
+  class: typed by the fragment, or a local assigned from one of the `from`
+  calls; expanded at load into `call: T.m` and `receiver: {from}`
+  alternatives), `inside` / `not_inside` (the call is, or is not, written in
+  the argument list of a matching call of the same function), and
+  `flows_to: {arg, to}` (the call's result is passed, inline or through a
+  later local, as argument `arg` of a matching call).
+- The cards matcher reads a Python fragment (`scan_metadata.ecosystem`
+  `python`) in a Python mode: callees are dotted names compared exactly (a
+  class instantiation `a.b.(C).<init>` is the call `a.b.C`, a `name_only`
+  call has no class), arguments are read by position among the positional
+  arguments or by keyword (card keys `0`, `salt`, `"2|salt"`), single-quoted
+  literals read double-quoted, redundant parentheses are dropped, and names
+  are qualified through the file's `imports`. Compiled entries take keyword
+  arguments (`keyword`). Java fragments are matched as before. The shipped
+  scan still refuses Python targets.
+- More Python rule shapes compile (1,527 of 1,823 rules): `"$X"` string
+  metavariables (the content binds `$X`, a regex on it reads the content),
+  dict and list display arguments holding a focused metavariable
+  (`lib.sign({"kind": $K, ...}, ...)`, `Token([$K, ...])`),
+  object-flow sources made of a factory minus `pattern-not` calls, and
+  sources that are `self` fields assigned from a class instantiation. A
+  Python taint value is also a string literal written inside the argument
+  (a dict or list display, a call's arguments), as OpenGrep's taint
+  propagates through containers and calls.
+- A Python rule constraint on a dict entry's value in a display argument
+  (`cryptographic_parameters={..., "cryptographic_algorithm": $ALG, ...}`)
+  compiles: the value of that key is matched, qualified through the file's
+  imports for dotted names.
+- Python cards match constants, declarations, casts and attribute stores. A
+  constant reference, a declared type and a cast type are qualified through
+  the file's `imports` and compared exactly with the card's name. A
+  reference in a dict, list, tuple or set display is a table entry and is
+  always reported, as a Java array or initializer entry is; one read as an
+  `in` operand or element is reported like a comparison: only when the
+  compared value can be the constant (`CRYPTO_FINDER_CARDS_PY_MEMBERSHIP=all`
+  reports every one, for debugging). A new card kind,
+  `store: {attribute, operator, receiver, value}`, matches an assignment to
+  an attribute (`ctx.verify_mode = ssl.CERT_NONE`) and reports it at the
+  assignment; `with` / `without` / `optional` apply to it.
+- `--scanner cards` reads its cards from the ruleset it scans with: the
+  index is compiled from the ruleset's Java rules and the cards come from its
+  `cards/` directory (`rules.cards` files), for a `--rules-dir` and for a
+  leased ruleset alike. `--cards-index` and `--cards-dir` only override them.
+  A ruleset's `cards/` directory is never passed to OpenGrep as rules.
+- `scan --scan-dependencies` resolves the Cargo dependencies of a Rust target and
+  runs application reachability for them, online and with `--offline`, as for Go
+  and JavaScript/TypeScript. This restores the Rust dependency scan 0.54.0 had:
+  a Rust target no longer skips the dependency phase with `ecosystem_not_supported`.
+  The pinned closure is read with `cargo metadata --format-version 1 --locked`
+  (`cargo` on the `PATH`; `Cargo.lock` is read as it is and never rewritten) at the
+  scan root or at the module roots below it. Only production dependencies are
+  requested: dev-dependencies and build-dependencies, and what only they require,
+  are left out (0.54.0 included them). Workspace members are the project itself,
+  and the request names each crate `pkg:cargo/name@version` with its direct flag
+  and its requirements. A target with a `Cargo.toml` and no `Cargo.lock` skips the
+  dependency phase with reason `manifest_absent`; a path crate is the project's own code (its
+  registry dependencies are requested), and a git crate is listed in `deps_skipped_list` with
+  reason `unpinned` while its registry dependencies are requested. A crate locked at several versions is
+  requested once, at the version a workspace member declares (else the highest); the
+  others are listed with reason `other_version_requested`, and a crate only such a
+  version requires with reason `under_other_version`. With `--offline`, cargo runs with
+  `--offline` too and each crate is mined from Cargo's registry cache
+  (`$CARGO_HOME/registry/src`) or the project's `vendor/`: run `cargo fetch` or
+  `cargo vendor` first, or the resolution fails with `dependency_resolution_failed`.
+- Graph fragments (`graph-fragment-1.24`, Java) mark `abstract` every method
+  declared without a body (an interface method that is not `default` or
+  `static`, an `abstract` method) and say so in
+  `scan_metadata.abstract_methods`, so a consumer can tell an empty concrete
+  method from an abstract one. `annotate` keeps the metadata of the fragment it
+  reads, and `graphfrag.EncodeFragment` re-encodes the marks.
+- The graph algorithm version is `graph-algo-36`, so consumers that check it
+  mine Java graphs stored without the marks again.
+- Graph fragments (`graph-fragment-1.20`) carry `call_anchors`: for each
+  call, in the order the parser recorded them, its syntax node kind, its path
+  from the containing function and the fluent chain it is a link of, which a
+  scan picks and keys an asset's occurrence by. `annotate --scanner cards` without
+  `--source` then gives every asset the scan's `occurrence_key`. Readers of
+  older schemas ignore the new section.
+- Graph fragments (`graph-fragment-1.21`) carry what a scan's crypto export
+  reads from its call graph beyond the edges: every call has an anchor, which
+  adds the call's target as the parser named it, its text, its argument
+  expressions and their untraced provenance; each function has its
+  `parameter_names` and `return_sources`; and `external_signatures` holds the
+  signatures read for the methods outside the graph that its calls target.
+  They add about a quarter to a Java fragment. The graph algorithm version is
+  `graph-algo-33`, so graphs stored without them are mined again.
+- Graph fragments (`graph-fragment-1.19`) carry, for a constant reference in a
+  comparison (`==`, `!=`, `equals`, a `case` label), the operand it is compared
+  with: the other side, or the `switch` subject, traced like a call argument.
+  A 1.18 fragment still reads, without operands. Cached graphs move to
+  `graph-algo-29`.
+- Graph fragments (`graph-fragment-1.17`) list every reference a Java function
+  makes to a qualified constant (`Owner.NAME`, `a.b.Owner.NAME`, or a name
+  brought in by `import static`), with its position, its text and where it
+  stands: a comparison, an `equals` call, a `case` label, a return, an
+  assignment, an initializer, an array initializer or a call argument.
+  `source_lines` also holds the lines these references stand on. A 1.16
+  fragment still reads, without references.
+- Graph fragments (`graph-fragment-1.18`) list the local variable and field
+  declarations of Java functions (declared type, name, the whole declaration's
+  position and the kind of its initializer: a call, a cast, `null`, a literal,
+  something else or none) and every cast of a call, with the position of the
+  call it wraps. Declarations of a primitive type, `var`, `String` or `Object`
+  are left out. `source_lines` also holds the lines they stand on. A 1.17
+  fragment still reads, without them. Cached graphs move to `graph-algo-28`.
+- Graph fragments (`graph-fragment-1.16`) carry the end line of a call
+  written over several lines, the text of every line a call site covers
+  (`source_lines`), and supertypes named through wildcard imports settled
+  against the types the scan knows. The cards detector reads a finding's
+  matched text from the fragment and reports a multi-line call with its end
+  line and all of its lines, as OpenGrep does.
+- Go graph fragments (`graph-fragment-1.36`, Go graph algorithm `graph-algo-go-15`) gain three facts:
+  - `go_blocks`: the extent of every function-body block.
+  - The `go_values` kind `assign`: every assignment's names, operator and value.
+  - An `EXPRESSION` return source for a function that returns a composite literal.
+- Go cards use these facts to match as OpenGrep does:
+  - A producer `pattern-inside` (`$B, $E := blk.NewCipher(..) ... sink($B)`) holds in the rest of its block and in nested blocks, also after a reassignment in the same block, and never in a sibling `case` or `else`.
+  - Object-flow taint follows a local copied from another (`u := t`), a struct field that a composite literal fills (`h.Thing.Seal()`), and an object that a function of the same file returns as a composite literal.
+  - A `1.34` Go fragment still loads and matches as before.
+- Go cards: a taint source written as a call of no arguments whose callee a `metavariable-regex` names (`$FUNC()` with `^(?<package>elliptic)\.P(?<curve>224|256|384|521)$`) now compiles and matches as OpenGrep `--taint-intrafile` reports it. It matches the call written in any argument of the sink, through a local, through a parameter that a caller in the same file fills, and through a call it is passed to. The regex's named groups fill the metadata (`algorithmName: ECDSA-P$curve`). Before, such rules were skipped.
+- Go cards: taint rules whose sources are objects now compile and match, as OpenGrep `--taint-intrafile` reports them. A source can be a factory call (`blowfish.NewCipher(...)`), a typed metavariable (`($K : *otr.PrivateKey)`), a composite literal (`&acme.Client{...}`) or a `var` declaration, alone or after an import clause that names its package. The sink's receiver holds the object through a local, a chained call, a call it flows through, or a parameter that a caller in the same file fills. `pattern-propagators` are left out and recorded as a dropped clause. A rule with `pattern-sanitizers` is still skipped. Not yet followed: a local copied from another local (`u := t`), a struct field, and what a function of the same file returns as a composite literal.
+- Go cards: a rule that says where a sink's argument or receiver comes from with a `pattern-inside` assignment (`$BLOCK, $ERR := $PKG.NewCipher($KEY) ... cipher.NewCBCEncrypter($BLOCK, ...)`, also `$V = call` or `var $V = call`) now compiles and matches as OpenGrep does: some earlier assignment of the variable in the same function comes from that call, even when the variable is reassigned later. The import idiom that binds `$PKG` to a package, whether or not the file aliases it, qualifies the call. Before, such rules were skipped, and so was a rule whose producer sits in a branch while its import clause is outside it.
+- Go cards: rules written as a composite literal (`tls.Config{..., MinVersion: $V, ...}`, `&T{...}`), a `new(T)` or a field store (`$C.CipherSuites = $V`, typed or not) now match, at the spans OpenGrep reports. A store rule written inside an import clause matches only in files that import that path.
+- Go graph fragments list `constant_refs`: every value read through an import
+  outside a call (`crypto/tls.VersionTLS13`), with its position kind and, in a
+  comparison or `case`, the compared operand.
+- Go graph fragments list `declarations`: every `var` of an imported type
+  (`var p dsa.Parameters`), with the type written through its import path.
+- Go graph fragments carry the call data (`call_anchors`, `rebind_lines`), so
+  `annotate` re-annotates a stored Go graph without its source.
+- `scan` detects cryptography in Go, as in Java and Python. With
+  `--scan-dependencies` a Go project's closure is read from its `go.mod`
+  (a `go.mod` older than Go 1.17 warns that it may be partial), and
+  `--offline` mines each dependency from the module cache.
+- Go scans type calls from the standard library and from the modules every
+  `go.mod` below the scan root requires (after `replace`) that the module
+  cache holds, so a call such as `base64.StdEncoding.Strict()` names its method.
+- `scan --scanner cards` builds the target's call graph once: the cards
+  detector and `--export-graph-fragment` share it, so a mining scan parses
+  and type-indexes the source a single time (about half the wall time).
+- `scan --type-jars <jar>:<jar>...` indexes compiled dependency JARs for Java
+  type resolution only, so calls into those dependencies carry exact targets
+  without a build tool or a dependency scan.
+- Inside a Java branch guarded by `v == X`, `X.equals(v)`, `v.equals(X)` (also
+  as one `&&` condition) or `case X` of `switch (v)`, a call argument `v` is
+  known to be `X`: `Mac.getInstance(alg)` under `case "HmacSHA256":` now
+  reports HMAC-SHA256 instead of a dynamically selected Mac. A `case` group
+  that can be entered by falling through, a label with several values,
+  `default`, `equalsIgnoreCase`, a field, and a branch that writes `v` are not
+  refined. Cached graphs move to `graph-algo-30`.
+- `scan` of a target whose sources are only in languages this version does
+  not detect cryptography in (C, C++, C#, Go, JavaScript, TypeScript, Python,
+  Ruby, Rust: every one but Java) fails with the new failure code
+  `language_not_supported` (stage `scan`, exit code 1, `details.languages`
+  names them) instead of writing an empty report. A Java target with sources
+  in those languages is scanned for its Java: a warning names the others,
+  and the completed `detection` progress event carries them in
+  `unsupported_languages`.
+- JavaScript and TypeScript `mode: taint` rules are now matched: a sink reports when a value a source matches is passed to it, directly or through a parameter of a function in the same file. Taint rules with sanitizers or propagators are still skipped.
+- `scan --scan-dependencies` resolves the npm dependencies of a JavaScript or
+  TypeScript target and runs application reachability for them, online and with
+  `--offline`, as for Python and Go. The pinned closure is read from the lock file
+  at the scan root or at the module roots below it (`npm-shrinkwrap.json`,
+  `package-lock.json` of lockfile version 2 or 3, `pnpm-lock.yaml`, `yarn.lock`;
+  the first present decides), without running or downloading anything: dev-only
+  packages are left out, workspace members are the project itself, and the request
+  names each package as `pkg:npm/name@version` (scoped: `pkg:npm/%40scope/name@version`)
+  with its direct flag and its requirements. A target with no lock file skips the
+  dependency phase with reason `manifest_absent`; a package pinned to a git, tarball
+  or path source is listed in `deps_skipped_list` with reason `unpinned`.
+  A package the lock holds at several versions is requested once, at the version the project
+  loads (top-level `node_modules`, else declared directly, else most depended on, else the highest
+  semver; across the locks of a monorepo, an installed version, else the highest semver); the others are listed in `deps_skipped_list` with reason `other_version_requested`, and a package only such a version requires (nothing requested leads to it) with reason `under_other_version`, rather than being served as unreachable.
+  An npm 6 lock (lockfileVersion 1) skips its own module root with a warning, and the other roots
+  resolve; when every lock is version 1, the npm dependencies are skipped with reason
+  `unsupported_lockfile` (a new `--progress` skip reason) and the scan and its other ecosystems go on. With `--offline`, each
+  dependency is mined from its package under the project's `node_modules` (npm, yarn and
+  pnpm layouts), and one that is not installed is reported with reason `no_reachability_data`.
+- `scan --scan-dependencies --offline` decides dependency reachability without
+  the SCANOSS API. Crypto Finder mines each pinned dependency itself, from the
+  `-sources.jar` Maven or Gradle keeps beside its compiled JAR (Maven fetches
+  a missing one), the way the SCANOSS miner mines it, caches the result in
+  `~/.scanoss/crypto-finder/cache/mined` (`--offline-cache-dir`), and runs the
+  reachability code the API runs. A later scan reads the cache; a new ruleset
+  re-checks the cached graphs without their sources. `--offline-memory-mb`
+  (default 10240) is the scan's soft memory limit; half of it bounds the
+  dependencies mined at once. A dependency without a sources JAR is reported
+  as one without data. On the PoC projects (36 and 132 dependencies) the
+  first offline scan takes 42 s and 121 s, a later one 12 s and 26 s; the
+  local dependency scan of 0.53.1 took 66 s and 254 s.
+- Python graph fragments list the assignments to an attribute of an object
+  (`attribute_stores`: `ctx.verify_mode = ssl.CERT_NONE`, `ctx.options |=
+  ssl.OP_NO_TLSv1`) with the receiver, the attribute, the operator and the
+  value traced as a call argument is. A Python local or module name written
+  more than once carries the string literals it may hold (`may_values`,
+  exhaustive when every write is one), as Java's do. Python graphs move to
+  `graph-algo-py-24`; Java fragments are unchanged.
+- A Python graph traces a variable to the value its branch fixes: inside the
+  body of `if alg == "HS256":` (also as an `and` conjunct), of
+  `if alg in ("HS384", "HS512"):` and of `case "HS256":` /
+  `case "blake2b" | "blake2s":` of `match alg:`, a call's argument `alg` (and
+  an operand compared with a constant) is that literal, or one of those
+  literals; a dotted constant (`hashes.SHA256`, compared with `==` or `is`)
+  is read the same way. An else branch, a negated or `or` condition and a
+  body that binds the variable again refine nothing. Python graphs move to
+  `graph-algo-py-28`.
+- A Python constant compared with a field of the object
+  (`self.mode == ssl.CERT_REQUIRED`, `cls.mode`, also in an `in` test or as a
+  `match` subject) is reported when the class assigns that constant to the
+  field: the compared operand carries the fixed values the class body
+  (`mode = X`) and its methods (`self.mode = X`) write, so a field set to
+  one constant by one method and to another by a second can be either. A
+  field the class never assigns a fixed value, and a field of another
+  object, stay unresolved. Python graphs move to `graph-algo-py-31`.
+- Python graph fragments list the constants the code references outside a
+  call (`constant_refs`): attribute chains rooted in an import
+  (`ssl.PROTOCOL_TLSv1_1`, `hashes.SHA256`), from-imported names used as
+  values and dotted `case` patterns, with their position (`compare`, `in`,
+  `case`, `return`, `assign`, `init`, `array`, `dict`, `arg`, `other`), the
+  operand a comparison, membership test or `match` compares them with, and a
+  dict entry's key. A module or class body with such references and no call
+  gets its `<module>` / `<clinit>` function. Python graphs move to
+  `graph-algo-py-23`; Java fragments are unchanged.
+- Python graph fragments list annotated assignments as `declarations` and
+  `typing.cast(T, f(..))` as `casts`, and mark abstract methods
+  (`@abstractmethod`, stubs of a `Protocol` class, bodies that only raise
+  `NotImplementedError`) with `scan_metadata.abstract_methods` set, so the
+  stitch's concrete-override rule (graph-fragment-1.24) applies to Python: a
+  route only through an override of a method with a body is served
+  `unknown` unless the receiver's type picks it. Python graphs move to
+  `graph-algo-py-25`; Java fragments are unchanged.
+- The Python dependency resolver reads a project's pinned closure from its
+  files, never by running pip or Python: uv.lock, poetry.lock and
+  Pipfile.lock (through scanoss.go's resolver, with their requirement
+  edges); pdm.lock; pylock.toml (PEP 751); requirements files where every
+  requirement is pinned with `==` (pip freeze, pip-compile with or without
+  hashes, its `# via` annotations giving the edges); an installed
+  environment (.venv, venv, VIRTUAL_ENV: each dist-info's METADATA and
+  RECORD); or, with none of those, the requirements pyproject.toml, Pipfile and requirements files
+  declare (an `==` pin is a dependency, any other is unpinned and has no
+  closure). Every environment marker branch and every extra is in the
+  closure; each dependency keeps its markers and extras for display.
+  Development dependencies are left out. `scan` does not use it yet.
+- A Python graph resolves a dispatch table read whose key is known:
+  `{"HS256": hashlib.sha256, "HS512": hashlib.sha512}[alg]`, or the same
+  through a name bound once to the dict display (`TABLE["HS512"]`,
+  `TABLE[alg]`), traces to the value of the entry the key selects when the
+  key is a literal or resolves to literals (an assigned constant, the values
+  a variable may hold, the value a branch fixes). The cards scanner then
+  reads the argument as that value: `hmac.new(key, msg, TABLE["HS512"])` is
+  HMAC-SHA-512. A key that does not resolve, a table with a `**spread`, a
+  computed key or written items resolve nothing. Python graphs move to
+  `graph-algo-py-30`.
+- Python graph fragments carry the call data a source-free
+  `annotate --scanner cards` rebuilds the call graph from (call anchors with
+  target, text, arguments and argument provenance, parameter names, return
+  provenance; graph-fragment-1.21) and `rebind_lines` (1.23), as Java
+  fragments do. The rebuilt graph of a Python fragment now names the
+  parameters of a function none of whose parameters is annotated. Python
+  graphs move to `graph-algo-py-26`; Java fragments are unchanged.
+- A source-free annotate rebuilds a call from its own edge when the call has
+  two edges at one site (a Python instantiation or a call through a
+  re-export also has an edge to the declaration): the call keeps its
+  receiver and assigned variables and its end line, and an exact edge that
+  records no argument count no longer leaves the call without them.
+- Python graph fragments carry `exports`: each public dotted name of the
+  component that names a declaration made elsewhere in it, mapped to that
+  declaration (a function key, or a class as `pkg.(Type)`). Re-exports
+  (`from .api_jwt import encode`, absolute or aliased, through packages),
+  star imports (by `__all__`, else every name without an underscore),
+  `__all__` (which makes an underscore name public) and module-level aliases
+  of a function, a method or a bound method of a module-level instance
+  (`encode = _jwt_global_obj.encode`) give such names: pyjwt's `jwt.encode`
+  maps to `jwt.api_jwt.(PyJWT).encode`, `jwt.PyJWT` to `jwt.api_jwt.(PyJWT)`.
+  A package's own binding of a name shadows its submodule of that name
+  (`github.GithubException` is the class `from github.GithubException import
+  GithubException` binds). Optional section, no schema bump; Python graphs
+  carry `graph-algo-py-21`.
+- Python graph fragments carry `imports`: for each scanned file, the bindings
+  of its import statements in source order (`module`, the `name` a
+  from-import takes, the `alias`, `local` for an import inside a function or
+  class body), relative modules resolved against the file's package and the
+  project's own modules named as its function keys are. A rule that names an
+  import, or reads an argument through an import alias, can be matched on a
+  stored fragment without the source. Optional section, no schema bump;
+  Python graphs carry `graph-algo-py-19`.
+- Python graph fragments record a keyword argument with its keyword:
+  `jwt.encode(p, k, algorithm="HS256")` exports its third argument as
+  `keyword: "algorithm"`, `argument_expression: "\"HS256\""` at its place in
+  the call, instead of the text `algorithm="HS256"`. Its type is the callee
+  parameter it names, and its value resolves as a positional argument's does.
+  A rule's `param[i|name]` condition reads the positional argument at `i`,
+  else the keyword argument `name`; a keyword argument is no longer read by
+  its place in the call. A keyword argument whose value spans lines is
+  recorded the same way, and key-length and related-material reading of
+  Python keyword arguments now accept one. Python graphs carry
+  `graph-algo-py-22`.
+- A Python name bound once to a list or tuple of string and integer literals
+  (`algs = ["HS256"]`) traces to that display, so a card or the compiled
+  index reads `jws.verify(t, k, algorithms=algs)` as written with the list in
+  place: the named HMAC rule reports it, the dynamic one does not. A list the
+  function changes or uses other than as a call argument, and a module list,
+  stay without a value.
+- A Python graph traces a local or module name bound once to a dotted
+  constant (`variant = Type.ID`, `ALG = kenums.CryptographicAlgorithm.AES`)
+  to that constant, as it traced one bound to an integer or a string
+  literal: the argument's `resolved_value` is the name as written, and a
+  str enum member folds into its string. A taint pattern then reads it as
+  OpenGrep's taint does: `hash_secret_raw(.., variant)` after
+  `variant = Type.ID` is Argon2id. A pattern on the argument's text still
+  reads the local's name. Python graphs move to `graph-algo-py-32`.
+- A Python graph traces an argument to the parameter it reads in a method
+  and for a keyword-only parameter too: a method's parameters count from the
+  one after `self` / `cls`, as a caller writes them (`self.digest("sha224",
+  data)` fills `name` of `def digest(self, name, data)` at position 0), and
+  a keyword-only parameter has no position (`parameter_index` -1), so it is
+  read by its name. Before, only a plain function's positional parameters
+  were traced. Python graphs move to `graph-algo-py-29`.
+- The Python cards matcher follows an object into a function of the same
+  file: a receiver that is a parameter has the origins of the arguments its
+  same-file callers pass (a call written in place, a local of the caller, or
+  a parameter of the caller in turn, up to four callers), as same-file
+  parameter literals already were. `def sign_with(acct, t):
+  acct.sign_message(t)` called as `sign_with(Account.from_key(k), t)` reports
+  the signature. A parameter the body rebinds before the use, and a caller in
+  another file, give none.
+- Python dependency findings now carry reachability verdicts (reachable,
+  unreachable, or `unknown` with a reason), online and with `--offline`. The
+  hidden `--python-reachability` flag, the `python_reachability` request field
+  and the `python_reachability_not_validated` reason are gone: there is no
+  switch. A server receiving the old field ignores it.
+- Python fragments list the bindings of each local a function binds more
+  than once with a call among the values (`local_bindings`), and the cards
+  matcher follows only the assignment of a local that reaches its use:
+  `e = EVP.Cipher("aes_128_cbc", ..); e.update(x); e = EVP.Cipher("bf_cbc",
+  ..); e.update(y)` gives each update its own cipher, an assignment in a
+  branch adds its value to the earlier one, and a rebinding that is no call
+  (`k = other`) ends the flow. Python graphs move to `graph-algo-py-35`.
+- `scan` detects cryptography in Python targets (a target without Java; a
+  target with Java is scanned for its Java as before), with the ruleset's
+  Python rules and cards. `--scan-dependencies` on a Python target resolves
+  its pinned closure (locks, pinned requirements, installed environment) and
+  asks the API with `pkg:pypi` purls; `--offline` mines each dependency from
+  its installed distribution (the project's `.venv`, `venv`, `VIRTUAL_ENV`,
+  and `--offline-python-packages`). An unpinned requirement is listed in
+  `deps_skipped_list` with reason `unpinned`. Python findings' `dependency_info`
+  carries the dependency's `markers` and `extras` when it has any.
+- Python graph fragments now carry `supertypes`: every class a component
+  declares, keyed `<module>.<Class>`, with its bases resolved through the
+  enclosing class bodies, the module, its imports (`from jwt.algorithms import
+  Algorithm`, `import abc` then `abc.ABC`) and the builtins
+  (`builtins.ValueError`; `object` is left out). The stitch builds the
+  cross-component class hierarchy from them, as it does for Java. Python graphs
+  carry `graph-algo-py-3`.
+- A Python table read whose key is not known carries the values it may
+  hold when the function itself writes or binds the table: after
+  `names = {"a": "sha256", "b": "sha512"}`, `hashlib.new(names[alg])` is
+  reported with the SHA-2 literals a taint pattern reads, next to the
+  dynamic finding, as OpenGrep's taint reports it; so is a local bound to
+  the read (`name = names[alg]` then `hashlib.new(name)`). A module-level
+  table read with an unknown key stays dynamic. Python graphs move to
+  `graph-algo-py-33`.
+- Python fragments list every name of a tuple or list pattern assigned a
+  call with the element it holds (`pub, priv = rsa.newkeys(..)`: priv is
+  element 1, in `local_bindings`), and a card's `from: {call: rsa.newkeys,
+  element: 1}` ties `priv.save_pkcs1()` to the call. A card without
+  `element` does not read an element as the call's value.
+- **C# call chains start at ASP.NET Core entry points** (`github.com/scanoss/reach` v0.35.0,
+  `graph-algo-cs-2`). A controller action, a routing attribute, a view component's `Invoke`, a minimal-API
+  method group and a hosted service's `ExecuteAsync`/`StartAsync` are `framework_entry` roots, where a chain
+  started at `no_callers` or read `unreachable`. A call on a field, property or primary-constructor parameter
+  now reaches the service behind it, and a project's implicit usings are read from its `.csproj`. Stored C#
+  graphs of `graph-algo-cs-1` are rebuilt.
+- `scan` detects cryptography in Ruby (`.rb`): its sources are matched against the ruleset's
+  `ruby` cards over the Ruby call graph. A target holding only Ruby no longer fails with
+  `language_not_supported`, and `CRYPTO_FINDER_CARDS_RUBY` is no longer needed. Ruby test files
+  (`*_test.rb` and the RSpec `*_spec.rb`) are scanned only with `--include-tests`.
+  `--scan-dependencies` resolves a project's gems from `Gemfile.lock`.
+- A Ruby project's gems are resolved from its `Gemfile.lock`, at the scan root
+  or in the modules below it, and asked for over application reachability. A
+  project with no lock skips the phase with reason `manifest_absent`.
+- `scan` detects cryptography in JavaScript and TypeScript (`.js`, `.mjs`, `.cjs`,
+  `.jsx`, `.ts`, `.mts`, `.cts`, `.tsx`): both are matched against the ruleset's
+  `javascript` cards over one call graph, in the `node` ecosystem. A target holding
+  only JavaScript or TypeScript no longer fails with `language_not_supported`.
+  A JavaScript or TypeScript target is never resolved as a Java project, even
+  beside a `pom.xml`.
+- `scan` detects cryptography in Rust (`.rs`): its sources are matched against the ruleset's
+  `rust` cards over the Rust call graph. A target holding only Rust no longer fails with
+  `language_not_supported`, and `CRYPTO_FINDER_CARDS_RUST` is no longer needed.
+  Rust test code (the `tests/` directory, `tests.rs`, `*_test.rs` and inline `#[cfg(test)]`
+  modules) is scanned only with `--include-tests`, as for the other languages; releases up to
+  0.54.0 reported inline test modules and test files by default. Calls inside macro arguments
+  are detected, which releases up to 0.54.0 missed. `--scan-dependencies` does not resolve Cargo
+  crates: a Rust target reports the dependency phase skipped with reason `ecosystem_not_supported`.
+- Graph fragments (`graph-fragment-1.25`, Java) carry `service_providers`: the
+  classes a component registers for `java.util.ServiceLoader` in
+  `META-INF/services/<service type>`, keyed by the service type. Project
+  reachability (`--scan-dependencies`, online through `pkg/appreach` and
+  `--offline`) dispatches a call on a service type to the registered
+  implementations present in the dependency closure, so a finding behind a
+  registered plugin (an Apache Tika parser in tika-parsers, reached from
+  tika-core's `Parser.parse`) is no longer a false `unreachable`: it is
+  `unknown` (`ambiguous_dispatch`) when several implementations are
+  candidates, `reachable` when one is. The project's own registrations travel
+  in the request's call sites. `graphfrag.StitchOptions.ServiceProviderDispatch`
+  enables it for other stitch callers.
+- `--offline` extracts the `META-INF/services` files of a dependency's sources
+  JAR along with its `.java` files.
+- The graph algorithm version is `graph-algo-39`: stored Java graphs of
+  components that register service providers must be mined again to carry
+  them.
+- `graphfrag.StitchOptions.ClosureTargets`: a component's typed external
+  calls that its dependency closure leaves without a target resolve against
+  every other component of the stitched closure, as a Java runtime
+  classpath holds them all (a Maven tree omits an edge whose artifact
+  appears elsewhere). Declared dependencies are tried first and name-only
+  calls never widen. Off by default, and off in application reachability.
+- The stitch joins a Python client's call spelled with a dependency's public
+  names through the dependency's `exports`: `jwt.encode(..)` reaches
+  `jwt.api_jwt.(PyJWT).encode`, `requests.Session(..)` the `__init__` of
+  `requests.sessions.Session`, and `urllib3.Retry` methods those of
+  `urllib3.util.retry.Retry` (inherited ones through the class hierarchy).
+  A Python class's instantiation at its own path joins its `__init__`.
+  These calls read unreachable before. Java stitching is unchanged.
+- The stitch's selector value walk reads Python keyword arguments: a value a
+  component passes a dependency's parameter by keyword (`sign(p, k,
+  alg="RS256")`, wherever the keyword is written) reaches the selector the
+  dependency hands that parameter to, a keyword argument of another name is
+  no longer read by its place in the call, and a keyword-only parameter
+  (`parameter_index` -1) takes the value passed under its name. A rule whose
+  `parameterCondition` names the selector with a keyword alternative
+  (`param[2|algorithm]`) then specializes the dependency's generic finding
+  over the closure, as it does for a positional argument. Calls without
+  keywords (Java) resolve as before.
+### Changed
+- **Breaking:** the dependency reachability request goes to
+  `POST /v3/cryptography/reachability/application`, which replaces
+  `POST /v3/cryptography/reachability/project`. The endpoint is named after the
+  subject of the analysis, the application, as `/component` and `/dep-tree` are.
+  Request and response bodies are unchanged. The Go package `pkg/projectreach`
+  is now `pkg/appreach`, and the `api` client and `engine` types named
+  `Project*` are `Application*`. Flags and output are unchanged.
+- `scan --scan-dependencies` has one pipeline: it resolves the Java (Maven,
+  Gradle) project's pinned dependency closure to compiled JARs only (no
+  dependency source is downloaded or scanned), builds the project's call
+  graph once with those JARs as type-only packages, and asks the SCANOSS API
+  in one request to `POST /v3/cryptography/reachability/application` for every
+  finding of those dependencies and whether the project reaches it. The
+  request carries the scan's conditioned rules, so the API specializes a
+  dependency's generic finding by the values another dependency passes it.
+  The report and the CycloneDX output keep their shape (a dependency finding
+  carries `dependency_info` and no rule `purl`, and the `occurrence_key` the
+  API serves for it); `--export-callgraph` carries the API's verdict in
+  `finding_graphs[].reachability`, an unknown verdict's reason in
+  `unresolved_reason`, and up to `--dependency-reachability-max-chains`
+  (default 1) call chains per dependency finding. The scan needs the SCANOSS
+  API (`--api-url`, `--api-key`).
+- A target without a Java build manifest skips the dependency phase:
+  `--progress` reports `dependencies` `skipped` with reason
+  `ecosystem_not_supported` (and the ecosystem) when it declares Go, Python,
+  Rust or Node dependencies, `manifest_absent` otherwise.
+- A completed `dependencies` progress event counts as `deps_scanned` the
+  dependencies the API answered for, as `deps_skipped` (with
+  `deps_skipped_list`, reason `no_reachability_data`) those it holds no data
+  for, and adds `dep_findings_reachable`, `dep_findings_unknown`,
+  `dep_findings_unreachable`, `request_bytes`, `response_bytes`,
+  `request_call_site_count`, `request_function_count`,
+  `reachability_info_code` and `reachability_info_message`.
+- The dependency reachability stitch (`pkg/appreach`, run by the SCANOSS
+  API's `POST /v3/cryptography/reachability/application` and by
+  `scan --scan-dependencies --offline`) no longer keeps a record of every call
+  edge it refuses to traverse, only that it refused one, which is all its
+  verdicts read: on a 131-dependency closure about a million records, 1 GB of
+  live memory and 3 GB allocated per request. Responses are unchanged.
+  `pkg/graphfrag.StitchOptions.SuppressedSummaryOnly` selects this.
+- The stitch resolves inherited call targets once per target and sorts
+  without building component strings: the stitch for an internal Java test
+  project takes about a quarter less time. Where a call resolves to several inherited
+  overloads, they are now listed in a fixed order instead of the order a map
+  happened to yield.
+- A decoded dependency graph (`pkg/graphfrag.ToFragment`) keeps one copy of
+  each string it repeats and sizes its lists exactly: the 131 graphs of an
+  internal Java test project's closure take 1.9 GB instead of 2.4 GB, in the SCANOSS API's
+  component cache and in an offline scan.
+- The verdicts of a `--scan-dependencies` scan are computed by one Go package,
+  `pkg/appreach`, which the SCANOSS API runs for
+  `POST /v3/cryptography/reachability/application` and which crypto-finder can run
+  in process. It holds the request validation, the stitch policy, the
+  verdicts and reasons, the conditioned expansion and the response, plus the
+  post-quantum classification of served findings (`pkg/pqc`).
+- The post-quantum dataset is now crypto-pqc-dataset 1.3.0 (was 1.1.0), so
+  `pqc` blocks in scan output carry `dataset_version` 1.3.0. Its
+  classifications are those of 1.2.2 (1.3.0 adds a migration priority API and
+  changes no data); a finding the SCANOSS API classified with an older dataset
+  is classified again with 1.3.0.
+- C graphs move to `graph-algo-c-2`: a function used as a value (a callback
+  argument, a struct field or a handler table) now has a caller, so crypto
+  reached only through a function pointer no longer reads `unreachable`.
+  Stored C graphs will be mined again. Requires reach v0.21.0.
+- C and C++ graph fragments list each file's `#include` directives in `imports`
+  (the header as `module`, with the directive's text and span).
+- C and C++ graphs have their own graph algorithm ids, `graph-algo-c-1` and
+  `graph-algo-cpp-1`, instead of sharing Java's. Stored C and C++ fragments
+  stamped with the shared id are stale and re-generate; other ids are unchanged.
+- C graph fragments list the `#include` directives written inside a function
+  body too (marked `local`), each function's local declarations and its
+  assignments to a field of an object (`attribute_stores`), with the lines of
+  all of them in `source_lines`. Needs reach `feat/c-scope-facts`.
+- C and C++ graph fragments are `graph-fragment-1.37`. A C function that a
+  preprocessor conditional splits mid-statement (an `#ifdef` around one
+  `else if` arm) keeps its calls past the conditional, and a function a macro
+  declares (`PHP_FUNCTION(name) { ... }`, `ZEND_METHOD(Cls, name) { ... }`)
+  keeps its calls.
+- C and C++ graph fragments list each file's string literals (`strings`, by
+  file: the literal as written and its span, each piece of a concatenation
+  on its own, literals over 256 bytes left out), with their lines in
+  `source_lines`. Needs reach `feat/c-strings`.
+- C and C++ graph fragments list each function's parameter names, and a C
+  taint rule follows a parameter to the calls of its function written in the
+  same file, as OpenGrep's `--taint-intrafile` does (locals and callers
+  together, four deep).
+- The cards detector reports a constant written in a comparison (`==`, `!=`,
+  `equals`) or a `case` label only when the value compared with it can be that
+  constant: a value the variable is assigned, or one a caller in the same file
+  passes for the parameter. A comparison against a value that cannot be
+  resolved is no longer reported (OpenGrep reports every such constant).
+  Fragments older than `graph-fragment-1.19` keep reporting every one.
+  `CRYPTO_FINDER_CARDS_CONSTANT_COMPARISONS=all` restores reporting every one,
+  `=off` reports none.
+- The cards scanner reads a language's cards from `cards/<language>/` of a
+  ruleset (Java: `cards/java/`, as releases ship them); a `cards/` with no
+  language directory still holds Java cards, and the cards of other
+  languages are never loaded into a Java scan. A Python cards scan (cards of
+  `cards/python/`, no compiled index: the rule compiler reads Java rules
+  only) runs from the developer test `TestDevPythonCardsScan`; the shipped
+  scan still refuses Python targets.
+- A scan whose rules are all local files (`--no-remote-rules` with `--rules`
+  or `--rules-dir`) keeps what it parsed from each v3 card file in memo files
+  under `~/.scanoss/crypto-finder/cache/` (`cards-rules.memo`, and one
+  `cards-match-<language>.memo` per language scanned), and later scans by the
+  same binary reuse them instead of parsing the ruleset again. Every check and
+  detection reads the same data as before; a card file whose content changed
+  is parsed again, and a memo written by another build is ignored. A remote
+  (leased) ruleset is never written to the memo. On standard library
+  fixtures, a small scan takes 0.7 to 0.8 CPU-s instead of
+  2.7 to 3.1 for Go, Java and Python, and 1.6 to 2.0 instead of 4.5 to 5.0
+  for Rust and JavaScript, with identical findings and call graph.
+- A scan with a v3 cards ruleset parses each card file once instead of once per
+  pass over the rules (rule filter, parameter condition validation, crypto
+  metadata, entry-point synthesis). On a small target, where reading the
+  ruleset dominated, a scan takes about a third of the time: a Go standard
+  library fixture goes from 3.6 s to 1.2 s and 4.9 to
+  1.9 CPU-s, with identical findings and call graph.
+- A scan with a v3 cards ruleset reads each card file once instead of once per
+  pass over the rules; a later pass reads a file again only when its size or
+  modification time changed. On Go and Python standard
+  library fixtures this saves about 0.12 CPU-s per scan, with identical
+  findings and call graph.
+- The cards engine compiles and matches the C++ rule shapes (C++ scanning is
+  still gated by `CRYPTO_FINDER_CARDS_C=1`): qualified names (through
+  `using` directives too) and templates, member calls, constructions
+  (`T $X(...);`, `T $X;`, `T $X = ...;`, `new T(...)`, `T{...}`), typed
+  metavariables `(T $X)`, function contexts with typed parameters,
+  initializer lists, and `pattern-regex` / `pattern-not-regex` searched in the
+  calls, constructions and string literals they can match in. A rule outside
+  these shapes is skipped whole, with a precise reason. A C++ scan also
+  matches the C rules that name C++ (`languages: [c, cpp]`), as OpenGrep runs
+  them on C++ files.
+- C++ graph fragments carry each function's parameters as written
+  (`written_parameters`). The C++ graph algorithm id moves to
+  `graph-algo-cpp-3` with reach v0.30.0, which records construction sites,
+  using directives, local declarations and calls of calls: stored C++ graphs
+  are mined again.
+- `ToFindingsEnvelope`, `FindingsEnvelope`, `FindingFile`, `FindingAsset` and `FindingsSchemaVersion` moved from `pkg/graphfrag` to `pkg/appreach` (which already re-exported them); `pkg/graphfrag` gains `DependencyClosure` and `BuildDependencyInfo`. The findings.json envelope it renders is unchanged.
+- Graph fragments (`graph-fragment-1.22`) write once what they repeated: the
+  argument provenance of a call to several targets goes on one of its edges,
+  a source location in its function's file leaves the file out, and a
+  function or an external call leaves out the names its key gives.
+  `scan_metadata` says which (`shared_entry_calls`, `implicit_source_files`,
+  `derived_function_names`, `derived_target_names`). `pkg/graphfrag`
+  restores them (`GraphFragmentExport.RestoreElided`, which `ToFragment` and
+  `DecodeFragment` run), so readers built on this version see the same graph;
+  a reader of a decoded document's sections calls it first. An older reader
+  must not be given a 1.22 fragment. The call data added in 1.21 (anchored
+  calls, parameter names, return provenance, external signatures) is written
+  for Java only, the one language `annotate --scanner cards` re-annotates
+  without source. Over 162 Maven components the stored graph is 36% smaller
+  raw, 24% smaller gzipped and 14% smaller with zstd; a Go and a Python
+  fragment are about 25% smaller raw and gzipped. The graph algorithm version
+  is unchanged: 1.21 fragments still read as before.
+- A Go call on an untyped receiver is now `name_only` rather than `exact`, so
+  what it reaches reads `unknown` instead of `unreachable`.
+- The graph algorithm version is `graph-algo-32`: graphs stored before
+  `graph-fragment-1.20` have no call anchors, so a source-free cards
+  re-annotation of them would give other occurrence keys; consumers that
+  check the version mine them again.
+- A graph fragment's `scan_metadata.graph_algo_version` is now the graph
+  algorithm id of its ecosystem. Python graphs carry `graph-algo-py-1`; Java
+  and every other ecosystem keep `graph-algo-37`, so stored Java graphs stay
+  current. A consumer that checks a stored graph compares it with the id of
+  the graph's ecosystem (`graphfrag.GraphAlgoVersionFor`,
+  `graphfrag.GraphAlgoVersionForPurl`); a fragment without an ecosystem is
+  read as Java.
+- Graph fragments are `graph-fragment-1.39`. A Java function carries
+  `constructs`, the one class every `return` of it builds with a plain
+  `new T(...)`, as `package.(Type)` (`"org.acme.liba.(Standard)"`); it is left
+  out when a return yields anything else (a call result, a field, an
+  anonymous class, another class, an expression the parser cannot read). A
+  call site of an application reachability request may carry
+  `receiver_producer`, the dependency function whose result its receiver
+  holds; a stored fragment never carries it. A `graph-fragment-1.38` fragment
+  still loads, without `constructs`.
+- The Java graph algorithm id is `graph-algo-40`: stored Java dependency
+  fragments must be mined again for a call on a dependency factory's result
+  to reach only the class the factory builds. Other ecosystems keep their ids.
+- A scan that finds cryptography builds the project's call graph once. The
+  occurrence keys of the findings used to parse the whole project a second
+  time, without type resolution, to find the function around each finding;
+  they now take it from the graph the cards scan already built. Findings,
+  occurrence keys and exported call graphs are byte-identical; a default scan
+  of a 1,100-file Go project goes from 10.3 s and 43 CPU-s to 8.0 s and 27 CPU-s.
+- A pre-release tag (`v1.0.0-rc.1`) publishes only the versioned
+  `ghcr.io/scanoss/crypto-finder` images (`1.0.0-rc.1`, `1.0.0-rc.1-deps`) and
+  never moves `latest` or `latest-deps`. Its GitHub release is published as a
+  pre-release, never as the latest release.
+- A Python fragment no longer lists `self.f = g(..)` (or `cls.f`) as an
+  attribute store: the call's `assigned_var` already names the field, and
+  the store repeated the call's text and provenance for most fields of a
+  class (PyGithub: 3,847 stores, 1,046 KB -> 1,979, 374 KB). Python graphs move
+  to `graph-algo-py-27`.
+- The Python cards matcher reads a name whose value the graph knows for
+  certain as that value, as it already read a resolved dispatch table read:
+  a local or module name bound once to a literal or a constant
+  (`alg = "sha384"`, `variant = Type.ID`), bound to a resolved table read,
+  or fixed by a branch. `hmac.new(key, msg, digestmod=alg)` after
+  `alg = "sha384"` is HMAC-SHA-384 instead of the unnamed finding, and a
+  name that may hold one of a few values and nothing else (every write a
+  string literal, or `if alg in ("sha256", "sha384"):`) is reported with
+  each of them. A parameter, and a name written after its binding, stay as written.
+- Python application reachability no longer reads a finding `unknown` because
+  of an untyped call whose only candidates are methods of classes nothing the
+  project reaches instantiates, calls through or hands around (`.close()`,
+  `.sign()` matched every installed method of that name). Such a finding is
+  `unreachable`. Classes of a dependency the project never imports (a plugin
+  loaded by name) are kept.
+- A JavaScript or TypeScript package's graph fragment now lists in `exports` each key a caller spells through the
+  package's specifier (`acme.sign`, `@acme/sign.sign`) mapped to the function the package declares
+  (`graph-algo-node-7`, no schema bump), so an application's `require("acme")` call stitches into the package's mined
+  graph. With reach's node-7 graphs, two functions with the same name in one module no longer share a key, and calls
+  through local aliases of the WebCrypto object, project re-exports of `node:crypto`, functions nested in class
+  methods, default parameter values, `this` fields and `||` / `??` fallbacks are found.
+- Requires reach v0.18.0. JavaScript and TypeScript graphs move to `graph-algo-node-8` (stored Node graphs are
+  rebuilt). More crypto calls are found: on a variable captured from an enclosing function (`const ecdh =
+  createECDH(c); return () => ecdh.computeSecret(k)`), on a member call whose name a function of the same file
+  shares (`signer.sign(...)` in a module that declares `sign`), and a rule written on `crypto.getRandomValues` now
+  also matches that call when the file binds `crypto` to `require("crypto")`. On 160 real npm packages, the
+  findings crypto-finder 0.54.0 reported and this version missed go from 95 to 1.
+- Rust graphs carry each call argument's value sources (literals, constants, `let` bindings, parameters, call results), so detection can follow a value or a constructed object to a crypto call within the file.
+- Graph fragments are `graph-fragment-1.29`, built with reach v0.7.0. Rust
+  graphs carry their own graph algorithm id `graph-algo-rs-6`, JavaScript and
+  TypeScript graphs `graph-algo-node-6` and Go graphs `graph-algo-go-11`, where
+  they carried `graph-algo-39`: stored Rust, Node and Go graphs are mined again.
+  Java, C and C++ keep `graph-algo-39`.
+- JavaScript and TypeScript graph fragments carry `object_literals`: for each
+  scanned file, every outermost object expression with its span, its source
+  text and the key of the function that holds it.
+- JavaScript and TypeScript graph fragments carry `imports`: for each scanned
+  file, every `import`, `require`, dynamic `import()` and `export ... from`, with
+  the specifier as written (`module`), the export taken (`name`), the local name
+  (`alias`), the form (`kind`: `type`, `require`, `dynamic`, `export`, or empty
+  for an ES import) and `local` for one inside a function or class body.
+- A JavaScript or TypeScript call or `new` of a module binding
+  (`const h = require('keccak'); h('keccak256')`) is keyed by the module's
+  default export (`keccak.default`), whatever the binding is named, where it was
+  keyed by the binding's name. The keccak, jwa, jwk-to-pem, node-seal, node-ssh,
+  web3 and js-sha256 knowledge-base contracts are keyed the same way, so their
+  supporting calls and return types resolve under any local name.
+- A JavaScript or TypeScript call through a name that holds a module without
+  being its import is keyed by the module, as a call on the import is: an alias
+  (`const s = sodium`), a `require` or destructuring inside a function, a
+  dynamic `import()` binding, a bundler interop helper
+  (`_interopNamespaceDefault(m)`) and an inline `require('m').a.b()`. A
+  parameter or reassigned variable of the same name stays caller-local.
+- JavaScript and TypeScript graph fragments carry `property_reads` (every
+  outermost member read, keyed as a call of the property would be), and
+  object literals assigned to a variable carry `assigned_var`. A call on an
+  `Object.assign` of several requires carries the modules it may come from
+  (`candidate_modules`).
+- JavaScript and TypeScript calls through a string index (`hash["sha256"]()`),
+  a `var` destructuring of a module binding, a member of `new X(...)` and
+  Rollup's `_interopDefaultLegacy` are keyed by their module where they were
+  keyed by the calling file, and a call a contract re-keys no longer leaves a
+  second, caller-local copy behind.
+- Graph fragments are `graph-fragment-1.30`, built with reach v0.8.0. Rust
+  graphs carry graph algorithm id `graph-algo-rs-7`, where they carried
+  `graph-algo-rs-6`: stored Rust graphs are mined again. Other ecosystems keep
+  their ids.
+- Rust graph fragments carry `binary_exprs`: for each scanned file, every
+  binary expression of its function bodies with its operator, both operands as
+  written, their spans and the key of the function that holds it. A `fn` item
+  of `items` carries its parameters, each with its pattern and type as written
+  and whether it is a `self` receiver.
+- Requires reach v0.12.0. Rust graphs carry graph algorithm id
+  `graph-algo-rs-9`, where they carried `graph-algo-rs-8`: stored Rust graphs
+  are mined again. Other ecosystems keep their ids, and fragments stay
+  `graph-fragment-1.34`.
+- Rust graph fragments list more `constant_refs`: a one-segment name read as a
+  value whose name starts with an upper-case letter (`&X25519` after
+  `use ring::agreement::X25519`), wherever it is read but in a pattern, and
+  the path of every struct literal, with the new position kind `struct`.
+- Requires reach v0.11.0: graph fragments are `graph-fragment-1.34`. Go fragments carry `go_values` (composite literals, `new(T)` expressions and field stores) and the Go graph algorithm id is `graph-algo-go-13`. Reach v0.10.0's Rust changes come with it (`graph-algo-rs-8`).
+- Requires reach v0.14.0: graph fragments are `graph-fragment-1.35` and Rust
+  graphs carry graph algorithm id `graph-algo-rs-10`, where they carried
+  `graph-algo-rs-9`: stored Rust graphs are mined again. Other ecosystems keep
+  their ids.
+- Rust graph fragments list more `constant_refs`: each path written as a type
+  (`rng: SysRng`, `-> acme::Key`, `Vec<acme::Key>`), with the new position
+  kind `type`.
+- JavaScript and TypeScript files over 1,000,000 bytes are no longer parsed or scanned (`github.com/scanoss/reach` v0.36.0,
+  `graph-algo-node-13`), as in 0.54.x, which skipped every target over that size. Each skipped file is logged as a warning
+  with its size. Minified or generated bundles such as emscripten output made a single npm package take half an hour and
+  19 GB; such packages now scan in seconds. Stored npm graphs of `graph-algo-node-12` are rebuilt.
+- Requires reach v0.9.0: Go graph fragments are `graph-fragment-1.32` and carry each file's import specs under `imports`, and the Go graph algorithm id is `graph-algo-go-12`. A Go call through an import whose last path element is not an identifier (`go-jose/v4` declares `package jose`), or through a file's only dot import, now resolves to that package.
+- `scan` and `annotate` fetch the remote `crypto-cards` ruleset by default instead of `dca`.
+  The new `--ruleset <name>` flag fetches another ruleset; it cannot be combined with
+  `--no-remote-rules`. `--ruleset-version` picks a release of the ruleset `--ruleset`
+  selects, so a version pinned to a `dca` release is not a `crypto-cards` release. A remote
+  ruleset without card files, such as `dca`, still loads, with a warning that its findings
+  may be incomplete.
+- Graph fragment exports are now `graph-fragment-1.26`. A Rust fragment carries
+  the file's `use` and `extern crate` bindings (`imports`, each with its span and
+  use tree), the items each file declares (`items`), and its `constant_refs` and
+  `declarations`. A `1.25` fragment still loads, without them.
+- Rust graphs have their own graph algorithm id, `graph-algo-rs-4`, instead of
+  sharing Java's. Stored Rust fragments stamped with an older id are stale and
+  re-generate; Java and Python ids are unchanged.
+- Building several Java call graphs in one process can now index the Java
+  platform and each type JAR once and reuse the result for every graph,
+  instead of paying several seconds of type resolution per graph. Each graph
+  still gets exactly the types a separate run would give it. A single scan is
+  unchanged.
+### Removed
+- OpenGrep and Semgrep as detectors. `scan` and `annotate` detect with the
+  cards engine only: it builds the target's typed Java call graph and matches
+  the ruleset's cards against its call sites. Removed with them: `--scanner`,
+  `--interfile`, `--opengrep-mode` (`SCANOSS_OPENGREP_MODE`),
+  `--rule-prefilter` (`SCANOSS_RULE_PREFILTER`), `--scanner-jobs`
+  (`SCANOSS_SCANNER_JOBS`), `--detect-paths-from`, and the OpenGrep
+  probe cache. `annotate` no longer needs `--source`: it re-detects the
+  stored graph's call sites (graph-fragment-1.16 or later); `--source` only
+  supplies the source lines an older fragment lacks. Neither `opengrep` nor
+  `semgrep` needs to be installed. Compare with a released crypto-finder
+  (0.54.0 or earlier) for OpenGrep detection.
+- Breaking cleanup for 1.0.0. The reports and the API requests are unchanged:
+  the interim JSON, the CBOM, the graph fragment and call graph exports, and
+  the SCANOSS API contract are byte for byte what 0.55 wrote.
+- The flags that 0.54.0 accepted and this version ignored with a warning are
+  unknown flags now, and a command that passes one fails: on `scan`,
+  `--dep-ecosystem`, `--dep-workers`, `--detect-paths-from`,
+  `--findings-cache`, `--include-dev-dependencies`, `--install-dependencies`,
+  `--interfile`, `--no-dependency-findings-api`, `--opengrep-mode`,
+  `--rule-prefilter`, `--scanner` and `--scanner-jobs`; on `annotate`,
+  `--opengrep-mode`, `--scanner` and `--scanner-jobs`. Drop them from your
+  invocations; none changed the report. The `flag_no_effect` warning goes with
+  them.
+- The `-slim` Docker image tags (`<version>-slim`, `latest-slim`). The standard
+  image holds the binary and CA certificates only, as the slim image did, so
+  `latest` replaces `latest-slim`. The standard and `-deps` images no longer
+  ship OpenGrep or Semgrep, which nothing in a scan used.
+- The public packages `pkg/graphfrag` (with `pkg/graphfrag/equiv`), `pkg/graphwalk`, `pkg/paramcondition` and `pkg/purl` moved to the MIT-licensed engine module `github.com/scanoss/reach` as `graphfrag`, `graphfrag/equiv`, `graphwalk`, `paramcondition` and `purl`, with the same identifiers. Go consumers change their import paths; the graph-fragment and callgraph JSON (keys, schema versions, graph algorithm ids) and every CLI output are unchanged.
+- The local dependency pipeline: `scan --scan-dependencies` no longer
+  downloads, installs or scans dependency source, asks `/component` per
+  dependency, or computes dependency reachability over local dependency
+  graphs. Removed with it: `--no-dependency-findings-api`,
+  `--dependency-reachability-api` (the project pipeline is the only one),
+  `--dep-ecosystem`, `--dep-workers`, `--install-dependencies`,
+  `--include-dev-dependencies`, `--findings-cache` and the
+  `SCANOSS_FINDINGS_CACHE_BACKEND`, `SCANOSS_FINDINGS_CACHE_DSN` and
+  `SCANOSS_FINDINGS_CACHE_TABLE` settings (the disk and Postgres findings
+  caches), and dependency resolution for Go, Python, Rust and Node. The
+  `dependencies` progress skip reasons `ecosystem_unknown`,
+  `resolver_unavailable`, `parser_unavailable`, `callgraph_unavailable` and
+  `lockfile_absent` are no longer emitted. Compare with a released
+  crypto-finder (0.54.0 or earlier) for the old behavior.
+### Fixed
+- Extracting a downloaded ruleset skips entries with an absolute path, as it
+  already skipped `..` paths, so every file lands under the ruleset directory.
+- `schemas/scan-progress-schema.json` accepts the `specifier` and `markers` a
+  `deps_skipped_list` entry carries for a declared dependency the scan could
+  not pin; the schema rejected those progress events. The `ecosystems` and
+  `unsupported_languages` descriptions no longer say that only Java is
+  resolved and detected.
+- `annotate` of a stored C graph fragment drops the findings inside `#if 0`
+  blocks (and the other statically false `#if` forms), as `scan` does. A
+  fragment written by `scan --export-graph-fragment` now holds, in
+  `source_lines`, the preprocessor conditionals of each C or C++ file's
+  dead blocks, and `annotate` reads the blocks from them. Before, `annotate`
+  reported the findings of dead code a scan had left out (nettle: a
+  `{ "dsa", ... }` table row and multi-line `ASSERT (dsa_sign(...))` calls
+  under `#if 0`), with the occurrence keys of the findings after them in the
+  same function shifted. Fragments stored before this change keep those
+  findings on annotate; scan the component again to get the fix.
+- `annotate` of a stored C graph fragment writes the supporting calls, crypto
+  operations and entry points a fresh `scan` writes. A C fragment written by
+  `scan --export-graph-fragment` now carries the parser's calls (the call
+  anchors' callee, text and arguments, with function return provenance), as
+  Java, Python, Go and Node fragments do, and `annotate` restores the linkage
+  of each C callee from them. Before, an annotated supporting call had an
+  empty `matched_operation.expression`, and a call of an externally linked
+  function in a subdirectory lost the `category` and `parameter_roles` the C
+  KB gives it, with the operations' `supporting_call_ids` and the entry
+  points that list them. The C graph algorithm id moves to `graph-algo-c-3`
+  with the reach release that carries it: stored C graphs are mined again.
+- `annotate --scanner cards` writes the crypto sections a scan's
+  `--export-graph-fragment` writes for the same graph and ruleset, built by
+  the same code from the call graph rebuilt out of the fragment: typed
+  `crypto_call`s and symbols, the scan's `supporting_calls`, and
+  `crypto_entry_points`. Before, it wrote untyped calls, other supporting
+  calls and no entry points. The opengrep and semgrep annotate path is
+  unchanged.
+- `annotate` of a stored C++ graph fragment writes the findings, crypto
+  operations, supporting calls and entry points a fresh `scan` writes:
+  - A C++ fragment written by `scan --export-graph-fragment` now carries the
+    parser's calls (each call anchor's callee, text and arguments, with
+    function return provenance and rebind lines), as C, Java, Python, Go,
+    Node, Rust and Ruby fragments do, and `annotate` links a call of a type
+    or method the project declares internally, as the scan's graph does.
+    Before, a supporting call the graph resolved to a project function had an
+    empty `matched_operation.expression`, and a call of a project type the C++
+    KB also describes (Qt's `QCryptographicHash` in qtbase) took a KB
+    `category` the scan does not give it.
+  - A `--languages cpp` scan keys a finding of a C rule on the C++ graph
+    alone, the graph its fragment stores: a finding in a header no longer
+    takes the occurrence key of a C parse of the header, which annotate fell
+    back from to a file-only key. A `--languages c` scan is unchanged.
+  - The crypto call of `std::make_unique<T>(...)` / `std::make_shared<T>(...)`
+    is the construction of `T` (`T.T`), the call the graph's reachability
+    follows, whichever of the two calls at that span the function lists
+    first; it was `std.make_unique` in a scan and `T.T` in annotate.
+  - A call through a base reference (`const Base& pk = sk; pk.write()`) keeps
+    its own receiver in annotate when a dispatch edge of it to an override
+    the function also calls directly is listed first: it no longer joins the
+    lifecycle of the object the override is called on.
+  C++ graphs keep the id `graph-algo-cpp-4`: no C++ graph is mined in
+  production yet, so none is cached under it.
+- `annotate` matches a stored graph with the cards of the graph's own
+  ecosystem (its `scan_metadata.ecosystem`, else a `graph-algo-py` id), and
+  `--languages` defaults to it. A Python graph was matched with the Java
+  cards before, unless `--languages python` was given. Java annotate is
+  unchanged.
+- `annotate` of a stored JavaScript or TypeScript graph fragment attributes a crypto call written on the line where a
+  callback argument starts (`crypto.randomBytes(16, function (err, buf) {...})`) to the function that writes the call,
+  as `scan` does, not to the callback. Requires reach v0.19.0: Node fragments (`graph-fragment-1.38`,
+  `graph-algo-node-9`) carry each function's columns; stored Node graphs are rebuilt.
+- `annotate` of a stored JavaScript or TypeScript graph fragment attributes a
+  chained call such as `createHash(a).update(d).digest()` to the same terminal
+  call a fresh `scan` does. A Node fragment written by `scan
+  --export-graph-fragment` now carries the parser's calls (the call anchors'
+  callee, text and arguments, with function parameter names and return
+  provenance), as Java, Python and Go fragments do. Before, a chain link that
+  resolves to a function of the module itself, with no graph edge, was lost
+  from the fragment, so annotate picked another link and wrote other
+  `crypto_call`s, supporting calls, entry points and occurrence keys. Node
+  fragments grow by about 15%. Fragments stored before this change still
+  annotate as before; scan the package again to get the fix.
+- Python fragments carry `public_paths` (the names a package's `__init__.py`
+  imports, mapped to the modules that declare them), and `annotate` restores
+  them, so a library's own API declared behind a re-export
+  (`cryptography.x509.CertificateBuilder`, `Cipher.__init__`,
+  `random_serial_number`) surfaces as an entry point without the source, as a
+  scan does. Python graphs are now `graph-algo-py-39` and need a re-mine;
+  Java graphs are unchanged.
+- `annotate` of a stored Ruby graph fragment writes the crypto operations and
+  supporting calls a fresh `scan` writes. A Ruby fragment written by
+  `scan --export-graph-fragment` now carries the parser's calls (the call
+  anchors' callee, text and arguments, with each argument's provenance), as
+  Java, Python, Go, Node, C and Rust fragments do. Before, an annotated
+  operation had an empty `matched_operation.expression` and an argument's
+  provenance could name a same-named parameter of another method in the file.
+  The Ruby graph algorithm id moves to `graph-algo-rb-10` with the reach
+  release that carries it: stored Ruby graphs are mined again.
+- `annotate` of a stored Rust graph writes the findings and crypto sections a
+  scan of the crate writes. Rust fragments now carry `public_type_paths` (the
+  public paths a crate's `pub use` items re-export its types under) and the
+  parser's calls in `call_anchors` (their text, arguments and argument
+  provenance), as Java, Python, Go and Node fragments do. `annotate` restores
+  both, so an api a rule names by its public path
+  (`rsa::pkcs1v15::SigningKey::new`) surfaces as a
+  `crypto-finder.api-entry-point` without the source, and supporting calls keep
+  their expressions and every hop of their parameter provenance. Rust graphs
+  are now `graph-algo-rs-13` and need a re-mine; other ecosystems are unchanged.
+- `annotate --findings-output` names a finding's language after the cards
+  that matched it when the source file cannot be read: Rust findings read
+  `"language": "rust"` as in a scan, no longer `"xml"`.
+- A C target is no longer scanned as C++ because a header says `namespace`,
+  `class` or `::` in a comment or a string, holds an inline asm clobber list
+  (`::: "memory"`), or carries C++ code behind a `__cplusplus` test. Only
+  C++ code a C compiler reads makes a header C++. curl and openssh-portable
+  were built as C++ graphs of a few dozen functions, and every C finding read
+  `not_applicable`.
+- `scan --languages c` of a C tree that also holds C++ headers (a C++
+  wrapper such as `gnutlsxx.h`, C++ tests or tools, a namespace a macro opts
+  into) exports the C graph of its `.c` units, the graph its C findings were
+  matched against. Before, one header read as C++ switched the exported
+  graph fragment and call graph to the C++ ecosystem, which leaves out the
+  `.c` files, so `annotate` of the stored fragment found nothing and the
+  graph held no C function. A `c` target now reads as C++ only when it has no
+  `.c` file (a header-only C++ library, or a C++ header scanned alone), and
+  occurrence keys of a C target are computed on the C graph alone, as
+  `annotate` computes them.
+- A JavaScript or TypeScript scan no longer slows down quadratically on long
+  lines: matching a call's result to a destructuring declaration
+  (`const { a, b } = f()`) reads at most the 1,024 bytes before the call
+  instead of the whole line up to it. On a one-line minified bundle each call
+  took time proportional to its column; findings are unchanged, except that a
+  destructuring declaration longer than 1,024 bytes on one line no longer
+  names its variables.
+- `scan` no longer crashes with `panic: int("0|algorithm")` when a cards
+  directory holding several languages (`--cards-dir` pointed at a whole
+  `cards/` tree) is matched against a Java, Go or other non-Python project.
+  A card argument key of the `"i|name"` form now reads as position `i` in a
+  language without keyword arguments, and a keyword-only key matches no
+  argument there. A card the cards engine still cannot evaluate now stops the
+  scan with an error naming the card and its file, instead of a panic.
+- A leased ruleset that holds only v3 card files (`.cards`), such as
+  `crypto-cards`, now records its languages in the cache metadata: each card
+  file adds the language of its `cards/<language>/` directory. Before, such a
+  ruleset was stored with no languages.
+- The cards scanner compiles a Go rule whose `pattern-not` sub-rule starts with
+  an import clause binding a metavariable alias (`import $B "example.com/lib"`).
+  OpenGrep needs that sub-rule to tell apart two imported packages that share a
+  name. The cards scanner resolves each call to its import path, so it drops the
+  clause and records it as `pattern-not scoped by an import alias` in the rule's
+  dropped clauses. Before, it skipped the whole rule.
+- `crypto-finder annotate` on a stored graph of an ecosystem the cards engine does not scan
+  (C and C++) now fails with `language_not_supported` instead of matching the graph against the
+  Java rules and cards; Java and Python graphs, and graphs from before scan metadata named an
+  ecosystem (read as Java), annotate as before.
+- Cards: a numbered capture group of a `metavariable-regex` (`$1`, `$2`, ...) now fills rule metadata, as it does under OpenGrep. Groups are numbered left to right, named groups included. Before, such fields came out empty.
+- `scan --rules-dir` on a ruleset of v3 card files no longer fails with "not a scanoss-cards/3 card file" when the tree also holds earlier card files (no `format:` key, such as hand cards kept beside rule YAML). Those files carry no rules and are skipped, as the cards scanner already skipped them.
+- `scan` of JavaScript/TypeScript against a ruleset of v3 card files alone found nothing when the tree held other languages' card files: the language filter compared the `node` ecosystem with the `cards/javascript/` directory. It now hints the language names rule files and card directories use (`javascript`, `typescript`), and reads the short ids `js` and `ts` in a rule's `languages:` as those.
+- In such a ruleset, rule ids no longer gain the card language directory as a prefix (they read `lib.rule`, as from the rule YAML, not `javascript.lib.rule`): earlier card files no longer count among the scan's rule files.
+- `scan` of a target holding Java beside JavaScript or TypeScript with a cards-only ruleset (the remote `crypto-cards` bundle, or `--rules-dir` of card files) reports the JavaScript and TypeScript findings again: the language filter compared the detector's names (`typescript`, `tsx`) with the card directory's (`javascript`) only when Java was present, and dropped every JavaScript card file. Language names now compare by one canonical name everywhere (`ts`, `tsx`, `jsx`, `mjs` and `cjs` are JavaScript; `c++`, `cxx` and `hpp` are C++; `cs` is C#; `golang`, `py`, `rs` and `rb` name their languages), for `scan`, `annotate` and `--languages`.
+- The cards detector no longer reports matches OpenGrep does not make for the
+  same rules. A typed receiver (`(AESEngine $E).init(...)`, `call: T.m`)
+  matches a call on a receiver declared as that type, not one the call graph
+  links to the type by expanding an interface or matching a method name. A
+  pattern written with a receiver does not match a call written without one
+  (`sha256(data)` inside the library's own class). `new T(...)` does not match
+  a `this(...)` or `super(...)` constructor delegation. Two calls of one rule
+  on one line are two findings. Cards that cover a rule's
+  `pattern-inside: class T { ... }` alternative need their own
+  `caller_type: T` card.
+- A Python constant reference inside a builtin call the fragment does not
+  export (`isinstance(x, (hashes.MD5, ...))`, `issubclass`, `type`,
+  `getattr`, `hasattr`) is recognised from the source line, so a rule or
+  card that excludes constants inside them does.
+- The cards matcher reads the method of a Python call on an untyped chain
+  whose receiver holds calls (`ec.EllipticCurvePublicNumbers(x, y,
+  ec.SECP256R1()).public_key().verify(..)`): the callee key's receiver text
+  holds `).` itself and was split there, so the call read as a method named
+  `public_key()).verify` and no `verify` pattern, `not_inside` or `inside`
+  saw it.
+- Python cards match a chained call the contracts typed
+  (`key.public_key().encapsulate()`, target `...(MLKEM1024PublicKey).encapsulate#-1`:
+  the arity suffix is dropped from the method), and follow an object stored
+  in an attribute or a dotted local in the same function
+  (`b.c = Fernet(k); b.c.encrypt(d)`, `self.f = Fernet(k); self.f.encrypt(d)`)
+  to the call it was assigned from.
+- A Python card that excludes a call when its argument comes from a call
+  (`cbc-iv` and the other IV, nonce and salt cards: not when the value is a
+  random draw) excluded it when one same-file caller of the function passed a
+  draw, also when another caller passed a fixed value. It now excludes the
+  call only when every same-file caller passes a value the exclusion matches;
+  `def lock(key, iv): Cipher(algorithms.AES(key), modes.CBC(iv))` called with
+  `os.urandom(16)` and with a literal reports `cbc-iv` again, as 0.53.1 did.
+- The cards matcher reads how a call inside a scanned Python package is
+  written, which an internal edge does not record: a `super().__init__(..)`,
+  `Base.__init__(self, ..)` or the instantiation of a subclass without its own
+  `__init__` is no instantiation of the base class (`cls(..)` is one); a
+  pattern written as the call is (`SHA512.new(..)` after a relative import)
+  matches; a pattern written without a receiver matches only where that name
+  is written (not `self.m(..)`, `super(C, cls).m(..)`, `cls(..)` or an
+  alias). A Python name imported in a `try` and again in its `except
+  ImportError` is read as either module's. A callee's annotated parameters
+  that the call does not pass are no arguments. A receiver the graph typed as
+  the class holds a compiled object flow from its constructor although its
+  local was assigned from a factory.
+- Cards: loading a v3 cards directory now fails when a card sits under one language's directory (`cards/python/...`) but names a rule that another language's card file defines (`cards/go/...`). Before, such a card was accepted when both directories were loaded together (`--cards-dir` pointing at the cards root): it dropped the rule's entries from its own language and ran in the other one.
+- `scan --scan-dependencies` on a Rust project reports `dependency_info.module` as the crate's package name (`aes-gcm`), the name its `purl` carries, instead of its library name (`aes_gcm`), as 0.54.0 did. Library names stay in the call graph, where source paths need them. Finding ids of Rust dependency findings follow the package name again.
+- C and C++ scans spend about 40 percent less CPU matching rules (qtbase
+  5.15.2: 1370 to 785 CPU seconds, 14 to 10 minutes); findings are
+  unchanged.
+- A C++ scan no longer panics on a call site whose text ends at `new` (seen in Apache Arrow): the C++ reader treats it as unreadable.
+- C and C++ scans use about half the peak memory: the matcher no longer keeps
+  every site regex's matches until the scan ends, and the call graph's
+  fragment is released once the matcher has its copy (qtbase 5.15.2: 14.1 GB
+  to 7.2 GB RSS; botan: 2.7 GB to 1.4 GB). Findings are unchanged.
+- `scan --scan-dependencies` (with the API and with `--offline`) no longer
+  reports a dependency finding as `reachable` when the project calls the
+  dependency only from dead code. The request now carries a call into a
+  dependency only when the function making it is reachable from the project's
+  entry points, by the rules that decide a first-party finding's
+  `reachability` (the roots `docs/OUTPUT_FORMATS.md` describes under
+  `root_kind`). A project with no recognized entry point keeps every function
+  nothing calls as a root, as before. Dependency findings that were
+  `reachable` only through such a function now read `unreachable`.
+- `scan --scan-dependencies` on a Java project (with the API and with
+  `--offline`) now decides a dependency finding behind a method called on the
+  object a dependency's factory returns, as in
+  `Hasher h = Hashers.standard(); h.sum(data);`. The project sees only the
+  interface the factory declares, so every finding behind an implementation
+  of it read `unknown` with `unresolved_reason` `ambiguous_dispatch`. The
+  request now names, on such a call, the factory that produced the receiver
+  (`receiver_producer` on the call site), when the receiver is a local
+  variable assigned once, by that one call. When every `return` of the
+  factory builds the same class with `new`, the call reaches that class's
+  method only: the finding behind it reads `reachable`, the findings behind
+  the other implementations `unreachable`. A factory that may return several
+  classes, an anonymous class or anything else, a variable assigned again and
+  a parameter keep the `unknown` verdict. With the API, the answer needs an
+  API version that reads `receiver_producer`; an older one ignores it and
+  answers as before. The class a factory builds is read from the
+  dependency's graph fragment (`constructs`, `graph-fragment-1.39`), so a
+  Java dependency mined before `graph-algo-40` keeps the `unknown` verdict
+  until it is mined again.
+- Library entry-point findings (`crypto-finder.api-entry-point`) a file holds
+  come in source order, by declaration line, on every run; with several
+  declarations of one api in a file (overloads), the order could change
+  between runs of the same scan.
+- `scan --export-graph-fragment` no longer takes time quadratic in the size of
+  a target whose functions have thousands of call sites, such as a large
+  generated SDK. On 160 services of `github.com/aws/aws-sdk-go` v1.54.19 the
+  scan uses 148 CPU seconds instead of 3,646. The fragment and the findings
+  are unchanged.
+- Graph fragments list every call a function makes, each with its line,
+  columns, method name and arity. A caller that called one function several
+  times, or several times on one line, could be exported with a single site
+  and without method name or arity, so the cards detector missed the other
+  calls and any rule that checks the arity. `graph_algo_version` is now
+  `graph-algo-27`.
+- `annotate --scanner cards` without `--source` (and the offline cache's
+  re-annotation) reports the related material (iv, salt, nonce) a random fill
+  such as `random.nextBytes(iv)` reaches, as a scan does, also when lines that
+  are no call site stand between the fill and the use. Graph fragments
+  (`graph-fragment-1.23`, Java) carry `rebind_lines`: for each variable a
+  function passes to a call, the lines that may rebind it, so the pass needs
+  no source to tell the buffer was not overwritten.
+- The graph algorithm version is `graph-algo-35`, so consumers that check it
+  mine Java graphs stored without these lines again.
+- Go call arguments holding a shift or a comparison (`scrypt.Key(p, s,
+  1<<15, 8, 1, 32)`) keep their count, and a Go call a scan retypes is no
+  longer reported a second time on the next line.
+- Go cards: a rule with a `focus-metavariable` on the call's receiver (`$K.Sign(...)` with focus `$K`, typed or not) is now compiled. Its finding is reported at the receiver's span, as OpenGrep reports it. Before, the rule was skipped.
+- Go cards: a rule that binds its receiver with `pattern-inside: import $P "p" ...` now matches only calls through an aliased import of `p`, as OpenGrep does. An import `pattern-inside` without a following `...` now matches no call, as under OpenGrep.
+- Go cards: a rule whose `pattern-not` is written as a sub-rule (`pattern:` or a `pattern-either` of plain patterns) now subtracts each call, as OpenGrep does. Any other `pattern-not` sub-rule skips that rule. Before, either case aborted the whole scan.
+- Go cards: a taint rule now reaches a value source through a local variable, through a parameter that a caller in the same file fills (up to four calls deep), and through a call's result, as OpenGrep `--taint-intrafile` reports it. Before, only a literal or a constant written in the sink call itself was reached. Requires reach v0.13.0; the Go graph algorithm id is now `graph-algo-go-14`.
+- Go cards: a value rule written inside an import clause (`tls.Config{...}`, `&ssh.ServerConfig{...}`, `new(ssh.Key)` under `import "crypto/tls"`) now keeps its type when the clause qualifies the package (`crypto/tls.Config`), and matches as OpenGrep does. Before, the type was dropped and the rule matched nothing.
+- A Go call on an interface value (`aead.Seal` on a `cipher.AEAD`), or on a
+  type of a module missing from the module cache, is matched by name, so the
+  dependency code it may run reads `unknown` instead of `unreachable`.
+- `scan --scan-dependencies --offline` analyzes a Go module that a `replace`
+  directive points at a directory outside the scanned project, mined from that
+  directory at its required version and mined again when its files change.
+  Before, it was reported `unpinned` and its crypto was never found. Online
+  it is still listed in `deps_skipped_list` with reason `unpinned`, now with
+  the specifier `path <dir>` and a warning to scan with `--offline`, as the
+  SCANOSS API knows only published versions. A replacement inside the scanned
+  project, such as a sibling module of a monorepo, is the project's own code,
+  as before.
+- When another module root of the same scan takes that module at the same
+  version from the registry, the registry version is analyzed, with a
+  warning, and the local directory is not.
+- `crypto-finder --help` names the languages this version scans, Java and
+  Python. It said Java only.
+- The call graph's return type inference statistics are a debug log entry
+  instead of a plain-text line on stderr, so `--progress` and
+  `--error-format json` keep stderr to JSON.
+- Java method chains on a value a dependency or the JDK returns are typed from
+  the bytecode return types (`--type-jars`, the platform signatures): in
+  `holder.getObjectDigestInfo().getDigestAlgorithm()`, with `holder` a
+  dependency type, every link now names its owner instead of a bare
+  `name#arity` exported as `name_only`. On bcpkix-jdk18on 1.78.1 with its
+  dependency JARs, `name_only` external calls drop from 1,227 to 322. A
+  retyped call site keeps its edge in the export: before, a chain rewrite could
+  drop another call of the same name from the export.
+- The graph algorithm version is `graph-algo-34`, so consumers that check it
+  mine Java graphs stored without these links again.
+- A Java scan whose JDK has no `jmods/` directory (a JRE or a jlink'd runtime image) now logs one warning naming the JDK path it tried (`JAVA_HOME`, or the `--java-jdk-home` of `--java-jdk-major`) and saying that full Java dispatch needs a JDK 21 with `jmods/`. Without it, calls dispatched on JDK types resolve by name only and can end `unknown`; that degradation was silent before. Findings and verdicts are unchanged.
+- Java call graphs link a call to the one overload its arguments select in
+  more cases: an argument that is an enum constant or a field
+  (`Purpose.ANY`, `cell.image`), or the result of a JDK or dependency method
+  (`key.getEncoded()`), now narrows the overloads, so `this(...)` delegation
+  between constructors no longer links every same-arity constructor. A
+  method called on an unimported `java.lang` type (`String`) now names
+  `java.lang` instead of the caller's package. Cached structural graphs are
+  invalidated (`graph-algo-26`).
+- `--scan-dependencies` on a Maven project now resolves `runtime`-scope dependencies (and what they pull in) alongside `compile`, `provided` and `system`, and on a Gradle project walks `runtimeClasspath` as well as `compileClasspath`, so a `runtimeOnly` dependency is included. These JARs are on the application's runtime classpath, so their cryptography is now requested from the SCANOSS API and, with `--offline`, mined. Test-scope dependencies stay out. The 1.0.0 release candidates and 0.54.0 left runtime-only dependencies out (for example `slf4j-api`, `saaj-impl` and `stax-ex` in a SOAP client).
+- The application reachability request names the dependency edges Maven's tree
+  omits as duplicates or conflict losers (bcpkix -> bcprov when the project
+  pins bcprov), so a dependency's calls into such a dependency resolve:
+  `NamedJcaJceHelper.createCipher` is served unknown (ambiguous dispatch)
+  instead of unreachable.
+- `scan` scans a target holding both Java and Python source for both (it
+  scanned only the Java), each against its own rules, cards and call graph;
+  the detection progress event no longer names Python unsupported there.
+  `--scan-dependencies` resolves every scanned ecosystem with something to
+  resolve, in one `dependencies` phase whose details list each ecosystem and
+  add up the counters, as auto mode resolves every ecosystem with a manifest
+  since 0.53.0. Python projects below a scan root that is not one (a
+  monorepo's `services/<name>`) are resolution roots, as Maven and Gradle
+  modules are: each is resolved and the closures merged.
+- `scan --scan-dependencies --offline` on a JavaScript or TypeScript project
+  no longer reports API entry points (`crypto-finder.api-entry-point`) that the
+  SCANOSS API does not: a package method whose body already holds a crypto
+  finding (ssh2 `Client.connect`, jsonwebtoken `sign` and `verify`) was
+  surfaced once per algorithm its rule lists. The same held for `scan` of an
+  npm package given by a relative path.
+- An offline scan that re-annotates a cached npm dependency with a new
+  ruleset reads the installed package for its API entry points, as the
+  SCANOSS miner does, instead of losing them.
+- The `occurrence_key` of a finding inside a `static` function of a C header
+  is the same on every scan. When the scan also read the target as C++, the
+  function was declared by both the C and the C++ graph, and the key hashed
+  whichever declaration came first, with or without its return type.
+- `scan --scan-dependencies --offline` with a remote ruleset (for example
+  `--ruleset dca`) no longer fails with `offline: hash
+  .../.crypto-finder-filtered/<version>/run-...: is a directory`. The
+  mined-dependency cache is keyed by the content of the ruleset, whatever
+  per-run directory it was decrypted into, so a second run reuses what the
+  first one mined; the per-run copies a ruleset cache keeps under
+  `.crypto-finder-filtered/` are never part of that key.
+- `scan --scan-dependencies --offline` now mines a Maven dependency with the
+  compiled JARs of its whole closure, including the dependencies Maven's tree
+  omits under it as duplicates or conflict losers. A dependency the project
+  also declares (bcprov under bcpkix and bcutil) was left off the classpath,
+  so calls into it were exported untyped, and offline verdicts differed from
+  the API's for the same project: `unknown` where the API proves
+  `unreachable`, and findings the API reports were missing. Offline caches
+  re-mine the affected dependencies once.
+- `scan --scan-dependencies --offline` on a JavaScript or TypeScript project
+  reports a dependency's findings with the rule ids and `finding_id`s the
+  SCANOSS API reports for them. Offline mining loaded the whole ruleset for
+  the `node` ecosystem instead of the JavaScript and TypeScript rules a mined
+  package is scanned with, so rule ids gained a `javascript.` prefix and every
+  `finding_id` differed from the online answer.
+- `scan --scan-dependencies --offline` fails as soon as `--timeout` runs out
+  while it mines dependencies, with `scanner_timeout` (stage `dependency`,
+  retryable), instead of mining on past the deadline and then failing with
+  `dependency_resolution_failed` (`context deadline exceeded`) after the
+  last mine. The dependencies mined by then stay cached, so a run with a
+  larger `--timeout` continues from them. `--timeout` bounds the whole scan,
+  mining included, as documented.
+- `scan --export-callgraph` marks `analysis.call_chains` `partial` again on a
+  finding whose selector value enumeration hit its depth cap or value bound.
+  The OID preparation every scan export reads from lost that state, so those
+  findings read their chains as complete.
+- Graph fragments name the same overload for a call reached through a
+  library's own method on every run. A call such as log4j's
+  `isEnabled(level, marker, (Object) null, null)` now binds the overload its
+  cast names, as the Java compiler does; when the argument types leave two
+  overloads equally likely, the call stays an ambiguous dispatch instead of
+  taking whichever came first in an order that changed between runs.
+- A Java call with a cast argument binds the overload the cast names wherever
+  the graph picks an overload by argument types: pdfbox's
+  `setItem(COSName.DESTS, (COSObjectable) null)` now reaches
+  `setItem(COSName, COSObjectable)`, not the `COSBase` overload. The graph
+  algorithm version is `graph-algo-37`, so consumers that check it mine Java
+  graphs again.
+- Graph fragments place a call reached through a library's own method on the
+  same line on every run. When a method calls that library method from
+  several lines, the edge one hop further now sits on the first of them; it
+  could sit on any of them depending on the run.
+- A Python call on a parameter or local with a declared annotation is typed
+  with the class the annotation names where it is written: a class of the
+  module or of the enclosing class bodies, an imported class (`from m import
+  C`, `mod.C`, `a.b.C`, also inside `Optional[..]`, `C | None` and string
+  forward references), a builtin class (`data: bytes` gives
+  `builtins.(bytes).decode`). Typing constructs, aliases and names neither
+  declared nor imported type nothing. Such a call is spelled `m.(C).method`;
+  it was `m.C.method` for a from-imported class, and untyped otherwise.
+- A function's return annotation is resolved the same way, so a local
+  assigned from a call of a function returning an imported class is typed
+  with that class; an annotation naming no class no longer types the local
+  with a made-up class of the function's module. A call of an `async def`
+  types no local (it returns a coroutine).
+- A class, function or method named through another module's import (`from
+  app.views import Signer` where app.views imports Signer from
+  app.signer), not only through a package's `__init__.py`, links to its
+  declaration; a typed call reaches an inherited method through the class's
+  method resolution order. Python graphs carry `graph-algo-py-15`.
+- A comment inside a Python call's argument list (`f(a,  # note\n b)`) is no
+  longer glued onto the next argument, and a comment holding a comma or a
+  quote no longer shifts the arguments after it. Python graphs carry
+  `graph-algo-py-9`.
+- Python call graphs now hold the functions and classes defined inside
+  module-level `if` / `try` / `with` blocks, and the classes nested in a class
+  body (keyed `Outer.Inner`). pyjwt defines all of its RSA, EC, RSA-PSS and
+  EdDSA algorithms under `if has_crypto:`, and none of their methods or calls
+  were in its graph. A name defined twice in one file (the two branches of a
+  `try` / `except ImportError`, a property's getter and setter) keeps the
+  calls of both bodies. Python graphs carry `graph-algo-py-2`.
+- Python graph fragments no longer export calls of builtins as calls of the
+  caller's module: `len(x)`, `isinstance(..)` or `raise ValueError(..)` read
+  as `<module>.len`, a package function no component declares (cryptography:
+  889 sites). A name the module or the function rebinds (a def, a class, an
+  assignment such as requests' `str = str`, an import, a parameter) is not the
+  builtin and keeps its call, and `sorted(key=f)` and its kin still register
+  their callbacks. A parameter's annotation (`data: bytes`) no longer counts
+  as a binding of the annotation's names. Python graphs carry
+  `graph-algo-py-6`.
+- A Python call on a chain whose receiver holds a call with arguments
+  (`base64.b64encode(x).decode("utf-8").replace("\n", "")`) keeps its text and
+  arguments in the graph fragment and reads `name_only` like other untyped
+  calls; the fragment export did not find the call behind such a site and
+  wrote it without them, as `exact`. Python graphs carry `graph-algo-py-12`.
+- A Python method called on a class object imported from another module
+  (`from app.signer import Signer` then `Signer.default()`, or
+  `signer.Signer.tool()`, also through a package's re-export) is now an edge to
+  the classmethod or staticmethod the class's method resolution order
+  declares. The call keeps its spelling. A project keyed under a root module
+  now requalifies such a callee's class path like a module path. Python graphs
+  carry `graph-algo-py-7`.
+- A Python class handed around as a value (stored in a table, passed,
+  returned, raised) may be instantiated by whatever holds it: the graph now
+  records the reference (a `name_only` edge to the class object,
+  `pkg.(K).<class>`), and application reachability reads a finding in that
+  class's `__init__` as `unknown` instead of `unreachable`. Python graphs move
+  to `graph-algo-py-38`.
+- Python dunder methods whose body makes a call (`__eq__`, `__repr__`,
+  `__getstate__`, `__copy__`, ...) are now graph functions with their calls.
+  Only `__init__`, `__call__`, `__enter__` and `__exit__` were kept before, so
+  requests lost 48 calls and cryptography 180. A dunder without a call (an
+  abstract stub, an attribute read) is still left out. Python graphs carry
+  `graph-algo-py-5`.
+- Python field typing reads further: a field's own annotation (`x: C` in
+  the class body, `self.x: C = ..`, a property's return annotation) decides
+  its class over writes that tell none; a field assigned an attribute of a
+  typed value (`self.store = hs.get_datastores().main`, `self.x =
+  self.y.z`), `self` or `cast(C, v)` is typed with that attribute's class;
+  a receiver `self.a.b` is typed field by field. `x = cast(C, v)` types the
+  local like an annotation. A write on a receiver annotated or cast to a
+  class (`p = cast(Sub, p); p.hs = ..`) counts as a write of that class's
+  field and no longer blocks the typing of every class's field of that
+  name. Python graphs carry `graph-algo-py-17`.
+- A Python call whose only argument is a generator expression without
+  parentheses of its own (`users.update(k for k, _ in items)`,
+  `any(x for x in xs)`) now has that argument in the call graph; it had none.
+  Python graphs carry `graph-algo-py-13`.
+- Python graph fragments no longer call every call site `exact`. A call
+  nothing typed is `name_only`, with its method name and argument count: a
+  method on a parameter or a value of unknown type (`sink.write(data)`,
+  `self.hasher.update(..)`, `make().run(..)`) and a call of a parameter
+  (`fn(data)`). Such a call into a dependency used to find no target and read
+  as unreachable; it now matches by method name and reads as unknown. Calls
+  through imports, on a class, and on locals typed from their assignment stay
+  `exact`. A base method's call that reaches subclass overrides is exported
+  `interface_dispatch` instead of `python_subclass_dispatch`, a kind the
+  stitch treated as untrusted and dropped. Python graphs carry
+  `graph-algo-py-10`.
+- Python module-level code is no longer unreachable when the project imports
+  its module: importing a module runs its top level, and the graph now says so
+  (a module's `<module>` calls the `<module>` of each module it imports and the
+  `<clinit>` of each class it defines; a function the modules it imports in its
+  body). Imports under `if TYPE_CHECKING:`, in stubs and of the standard
+  library add nothing. Python graphs move to `graph-algo-py-37`.
+- A Python local built from a class that declares no method of its own
+  (`fast = Fast()` with `class Fast(Base): pass`, also imported or named
+  through another module) is typed with that class, and its calls reach the
+  methods the class inherits; it stayed `name_only`. Python graphs carry
+  `graph-algo-py-16`.
+- Python: a field a module statement also writes on a module-level object
+  (pyjwt's `_jwt_global_obj._jws = _jws_global_obj`) is typed when that write
+  and the class's own writes agree on a class, so calls on it (`self._jws.encode`)
+  link to the method instead of guessing by name. A module-level object is a
+  name the module binds once, to a call; a write on any other object still
+  leaves the field untyped. Python graphs move to `graph-algo-py-40`.
+- Python calls on the caller's own class are now internal edges. `self.m()`
+  and `cls.m()` reach the method of the caller's class, or of the first class
+  of its method resolution order (C3, across the project's modules) that
+  declares it; `super().m()` starts after the caller's class; `cls(...)` and
+  every instantiation of a class the graph declares (`Leaf(..)`,
+  `keys.Leaf(..)`, `Outer.Inner(..)`, a re-exported class) reach the nearest
+  `__init__`. Before, `self._check()` was exported as the external call
+  `<module>._check` and a class instantiation linked to nothing. An
+  instantiation keeps its own callee spelling, which contracts key on. A
+  method no class of the graph declares is typed with the caller's class
+  (`(Leaf).m`), and a `super()` call with no declaration in the graph names
+  the first base (`builtins.(ValueError).<init>`). Python graphs carry
+  `graph-algo-py-4`.
+- `scan --scan-dependencies` on a Python project whose requirements files pin
+  every requirement with `==` completes the closure from the installed
+  environment (`.venv`, `venv` or `VIRTUAL_ENV`) when one is present: the
+  pins give the versions of what they list, and the environment adds what
+  they require, transitively. Before, such a requirements file was taken as
+  the whole closure, so the transitive dependencies of a file that pins only
+  direct ones were dropped with their findings. A pin the environment holds
+  at another version keeps its version, with a warning. Without an
+  environment, the pins are the closure, as before.
+- A Python method called on a local whose type is learned from its
+  assignment (`key = ec.generate_private_key(..)` then `key.sign(data, ..)`,
+  `aesgcm = AESGCM(k)` then `aesgcm.encrypt(nonce, data, aad)`, an own class's
+  constructor) is now one call site at the typed method, with the call's text,
+  receiver and arguments (keyword arguments as `k=v`). The graph fragment used
+  to export the call under the local's name (`<module>.(key).sign`) with none
+  of them, and no edge to the typed method. A method the class inherits links
+  to the base class's declaration. Python graphs carry `graph-algo-py-8`.
+- A Python call on `self.<field>` (`self._requester.request(..)`) is typed
+  with the class the field holds when every write of the field that can
+  reach `self` names one class: `self.x = C(..)`, a typed parameter stored as
+  is, a call of a function annotated to return the class or with a contract
+  return type, an awaited `async def`, `x: C` in the class body (dataclass
+  and attrs fields), `self.x: C`, a property's return annotation. Writes are
+  read across the methods of the caller's class, its bases and its
+  subclasses; None is ignored. The call stays `name_only` when a write names
+  no class or another class, when a class of that hierarchy has a base
+  outside the graph or sets attributes by computed name or customizes
+  attribute access, or when code writes the attribute on another object.
+  Bases and classes named through another module's import resolve to their
+  declaration. Python graphs carry `graph-algo-py-14`.
+- A Python call on a parameter or local named like an imported module
+  (`import rsa` + `def f(rsa): rsa.encrypt(..)`) no longer matches a card
+  written for the module: the calling function's own binding hides the
+  import. The module itself, and the optional-import idiom at module level
+  (`try: import rsa` / `except ImportError: rsa = None`), still match.
+- A Python `super().m()` call and a class instantiation (`Signer(..)`,
+  `super().__init__()`) no longer reach the overrides of the callee's
+  subclasses, siblings of the caller's class included: `super().__init__()`
+  in one exception class linked to the `__init__` of every other subclass of
+  the base. `self.m()`, `cls(..)` and methods on typed locals keep reaching
+  subclass overrides. Python graphs carry `graph-algo-py-11`.
+- A Python dispatch table handed to other code (passed as an argument,
+  aliased, returned, put in a list, tuple, set or dict) is no longer read
+  as fixed: that code may write its items, so `hmac.new(k, m, T["HS512"])`
+  after `register(T)` stays the dynamic finding, as it already did after
+  `T["HS512"] = ...`, `T.update(..)`, `del T[..]` or a rebinding through
+  `global`. Python graphs move to `graph-algo-py-34`.
+- A Python constant reference tested by `isinstance` / `issubclass` (the
+  class argument, or an element of its tuple of classes) has the position
+  `type_check`, however the call is laid out over lines. Rules that exclude
+  constants inside these builtins no longer report the classes of a
+  multi-line `isinstance(x, (hashes.SHA256, ...))` as a table of algorithms
+  (the matcher read the builtin call only from the reference's own line).
+  Python graphs move to `graph-algo-py-36`.
+- **JavaScript and TypeScript dependency reachability follows values** (`github.com/scanoss/reach` v0.26.0,
+  `graph-algo-node-10`). A dependency call through a class instance, a factory's result, `this`, a
+  function table, a function passed as an argument or a lazy `require` is now joined to the function it
+  reaches, as are exports taken from an instance (`exports.f = i.f`), from another module's property, or
+  written by tsc (`Object.defineProperty` getters) and esbuild (`__export`). Calls that were reported
+  `unreachable` although the application reaches them now come out `reachable`. Stored npm graphs of
+  `graph-algo-node-9` are rebuilt.
+- **npm packages built to `dist/` or `build/` are scanned again** when their `main`, `module`, `browser`
+  or `exports` load from there, even if they ship another source file outside it (liquidjs, socket.io,
+  engine.io): those packages reported no findings.
+- **Mining a package whose modules `export *` from each other no longer runs for minutes**
+  (@redis/client 5.11.0: 22.5 min to 24 s).
+- **Rust graphs move to `graph-algo-rs-14`** with the same reach: the call graph exports the paths a crate's
+  `pub use` items make public. Stored Rust graphs of `graph-algo-rs-13` are rebuilt.
+- **JavaScript and TypeScript dependency reachability resolves more calls and says `unknown` when it cannot**
+  (`github.com/scanoss/reach` v0.33.0, `graph-algo-node-11`). A module named by a string constant that reaches
+  `import()` or `require()` through calls is loaded; a parameter's methods resolve to what its function's callers
+  pass; an HTTP agent class (one whose bases reach `http.Agent`, `https.Agent` or agent-base) reaches the
+  `addRequest`, `createSocket` and `connect` the Node runtime calls; members of runtime modules and of what their
+  calls return resolve to the runtime. A call whose receiver stays unknown no longer reports the findings behind it
+  `unreachable`: they read `unknown` with `unresolved_reason` `unresolved_dispatch`, as for Python. Stored npm graphs
+  of `graph-algo-node-10` are rebuilt.
+- **A JavaScript name assigned a `require` binds to the module** (`github.com/scanoss/reach` v0.34.0,
+  `graph-algo-node-12`). Babel compiles a conditional require to `let AES; AES = require('crypto-js/aes');`;
+  calls through such a name were not matched, so crypto findings crypto-finder 0.54.0 reports were lost (the
+  parse SDK's `CryptoController` AES encrypt and decrypt). Stored npm graphs of `graph-algo-node-11` are rebuilt.
+- Exporting a graph fragment or call graph no longer changes the scanned
+  code's return-value provenance while it reads it. Inlining a callee's
+  returns marked the callee's own return sources as return values, so what a
+  later call site exported depended on the order the parallel edge build ran
+  in, and the build raced on them.
+- `scan --scan-dependencies` on a Rust project no longer reports every
+  dependency finding as unreachable. A call written with the public path a
+  crate gives a function or type now reaches the function the crate
+  declares, from the project and from one dependency to another. This covers
+  a `pub use` re-export (`jsonwebtoken::decode`,
+  `ring::signature::RsaKeyPair`), a re-exported module
+  (`age::scrypt::Identity`), a `pub type` alias (`MlKem768::generate`),
+  another crate's re-exported item (`rand::rngs::OsRng`) and a call through
+  an imported module (`use ring::hmac; hmac::sign(..)`). Rust graph fragments
+  now carry `exports`, and the Rust graph algorithm id is `graph-algo-rs-14`,
+  so cached and stored Rust dependency graphs are mined again. On jwt-cli
+  6.2.0, 81 dependency findings that an LLVM-IR call-graph oracle proves
+  reachable now read reachable instead of unreachable.
+- `scan --scan-dependencies` on a Rust project now follows calls through a
+  crate's traits, so fewer dependency findings read unreachable when the
+  code runs. A method a type gets from a trait's default body or a blanket
+  `impl<T: Bound> Trait for T` (`ChaCha20Poly1305::encrypt` from `aead`)
+  reaches that body, and a trait method a default body calls dispatches to
+  the implementations: one is followed, several read `unknown`. A call
+  through an associated type (`<MlKem768 as KemCore>::EncapsulationKey::from_bytes`)
+  resolves through the crate's own `impl` or the knowledge base, `s.parse::<T>()`
+  reaches `T::from_str`, a function passed as a value is reached by the
+  function that passes it, and a crate's call to its own item through a
+  `pub use` path reaches the declaration. Rust graph fragments now carry
+  `supertypes` and `abstract` trait methods, and the Rust graph algorithm id
+  is `graph-algo-rs-15`, so cached and stored Rust dependency graphs are
+  mined again. On rage 0.12.1, of the 11 dependency findings an LLVM-IR
+  call-graph oracle proves reachable and the scan read unreachable, 8 now
+  read reachable and 3 unknown (an `aead` dispatch with several
+  implementations); none reads unreachable.
+- `scan --scan-dependencies --offline` analyzes a Cargo path dependency that
+  lies outside the scanned project, mined from its directory at the version
+  its `Cargo.toml` names (and mined again when its files change), with its
+  registry dependencies as transitive ones. Before, it was dropped silently:
+  neither analyzed nor listed. Online it is listed in `deps_skipped_list`
+  with reason `unpinned` and the specifier `path <dir>`, with a warning to
+  scan with `--offline`. A path dependency inside the project is its own
+  code, as before.
+- When another crate root of the same scan takes that crate at the same
+  version from the registry, the registry version is analyzed, with a
+  warning, and the local directory is not.
+- Rust scans report the findings crypto-finder 0.54.0 reports in four more
+  shapes of real code: functions of one name defined more than once in one
+  file under mutually exclusive `#[cfg]` attributes (every body is scanned,
+  not only the last one); a glob `use a::*;` in scope of a rule that excludes
+  receivers through `use $CRATE::$TYPE`; a use group with a `self` leaf
+  (`use a::{self, B};`) anywhere in the file; and a `use` declared in one
+  block of a function (a match arm, an if branch), which no longer applies
+  to later sibling blocks or the else branch. Rust graph fragments carry
+  graph algorithm id `graph-algo-rs-12`.
+- `scan --languages rust` with the cards engine no longer slows down sharply on
+  large crates and generated files: matching a file now grows with its size
+  instead of with its size squared. Findings and the exported graph fragment
+  are unchanged. Measured on tfhe 1.6.2, p521 0.13.3 and lalrpop 0.22.2, which
+  took minutes each before.
+- Rust graph fragments carry each type alias's aliased type and the column of
+  its `type` keyword in `items`, the two trailing fields of
+  `graph-fragment-1.27`, which the export left out.
+- Dependency findings specialized by values passed from another dependency
+  (conditioned assets) come in the same order on every run; the order could
+  change between runs of the same scan or request.
+- A Java type name a file imports by a single-type import stays certain when
+  dependency type JARs bring other top-level classes of the same simple name:
+  sshj 0.27.0 mined with bcprov and eddsa JARs reports
+  `SecurityUtils.getKeyFactory(..).generatePrivate(..)` as key-factory-parse
+  again. The graph algorithm version is `graph-algo-38`, so consumers that
+  check it mine Java graphs again.
+- The stitch no longer takes a call on a class to the only override of the
+  method as a definite route. A method with a body of its own (read from a
+  `graph-fragment-1.24` fragment's `abstract` marks) is itself a dispatch
+  candidate, so a call that may run it or an override is ambiguous dispatch:
+  the routes through the override are served `unknown` (`ambiguous_dispatch`)
+  and the routes through the declared method stay reachable, unless the
+  receiver's resolved type picks one. In iText, `PdfDocument.close()` called
+  `writer.flushAcroFields()` on a `PdfWriter` and was taken into `PdfCopy`'s
+  override, which decrypts with PdfReader. Fragments without the marks stitch
+  as before.
+- The stitch matches a Python `name_only` call (a method on a duck-typed
+  receiver) by method name against the dependencies' Python functions, whose
+  keys carry no arity; it looked them up by `name#arity` and found none, so
+  the dependency's method it may call read without a candidate instead of
+  unknown for unresolved dispatch. Java keys are never matched by the bare
+  name.
+### Security
+- The `-deps` images turn off the JVM's Base64 decode intrinsic
+  (`-XX:-UseBASE64Intrinsics` through `JDK_JAVA_OPTIONS`) for the bundled
+  JDK 17 and 21, which mitigates Java4Shell (CVE-2026-114938) while Temurin
+  has not shipped the fixed builds. Maven and Gradle runs print a
+  `NOTE: Picked up JDK_JAVA_OPTIONS` line on stderr.
+- A ruleset release check or download that the SCANOSS API refuses with HTTP 401 or 403
+  (an invalid or revoked API key, or one without ruleset access) now fails the scan with
+  `rules_load_failed` and never falls back to the cached ruleset. A network error or a 5xx
+  answer still uses the stale cache until its lease expires. Leases are short (24 hours by
+  default), so a machine must reach the API at least once a day to keep using remote rules.
+
 ## [0.55.1] - 2026-11-18
 ### Changed
 - The API notice header is now `SCANOSS-Notice`, without the deprecated `X-` prefix
@@ -542,7 +2088,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scan` with a call graph (`--export-callgraph`, `--export-callgraph-project-reachability`,
   `--scan-dependencies`) no longer reports a related-crypto-material asset twice on one call,
   once as the rule's own match (with its `parameterCondition` pattern) and once as the
-  per-value asset with `conditioned_value` (for example `param[0]==RSA` on
+  per-value asset with `conditioned_value` (for example `param[0]=="RSA"` on
   `KeyPairGenerator.getInstance("RSA", "BC")`). As for algorithm assets, the per-value asset
   now replaces the rule's match when both name the same material type and algorithm, also
   when the rule file sits at the rules root and the match carries the bare rule id.
@@ -582,8 +2128,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scan --scan-dependencies` now links Rust calls into a crate whose package name holds a
   dash, or whose manifest sets `[lib] name`. Callgraph symbols of a Cargo dependency or
   workspace member are keyed by the crate's library name, the name source code writes
-  (`cbench_transitive_libb.digest` for package `cbench-transitive-libb`), so a call such as
-  `cbench_transitive_libb::digest(..)` from another crate resolves. Before, every finding in
+  (`demo_lib_b.digest` for package `demo-lib-b`), so a call such as
+  `demo_lib_b::digest(..)` from another crate resolves. Before, every finding in
   such a crate read `unreachable` with a one-frame chain. Dependency identity
   (`dependency_info.module`, `purl`, `dependency.path`) keeps the package name.
 - The graph algorithm version is now `graph-algo-16`, so structural graphs cached under
@@ -1014,7 +2560,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A library's public API now keeps its rule's crypto entry point when its body
   only calls another library's crypto. Re-mine the affected libraries to pick up
   the new entry points.
-- Go dependencies are served from the SCANOSS API's published findings again. The API missed every exact Go release (scanoss/scanoss.api#241), so each Go dependency was scanned locally. crypto-finder now asks for `~X.Y.Z` and uses the answer only when the API served that exact release; otherwise the dependency is scanned locally as before.
+- Go dependencies are served from the SCANOSS API's published findings again. The API missed every exact Go release, so each Go dependency was scanned locally. crypto-finder now asks for `~X.Y.Z` and uses the answer only when the API served that exact release; otherwise the dependency is scanned locally as before.
 - CBOM conversion maps the Java padding names `PKCS1Padding` (to `pkcs1v15`), `OAEPPadding` and `OAEPWith<digest>AndMGF1Padding` (to `oaep`). Before, an asset with one of them failed strict CycloneDX validation and the whole CBOM was refused.
 
 ## [0.38.0] - 2026-10-20
@@ -1596,7 +3142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Call chains walk back through application code to where the program starts, instead of stopping at the first application frame. `TransferService.submit -> IdempotencyKeyHasher.hash` now reads `TransferHandler.handle -> TransferService.submit -> IdempotencyKeyHasher.hash`, and dependency chains start at the application's entry point rather than at the nearest application caller. An application function follows only its application callers; the function holding the crypto follows every caller. `crypto_entry_points[].root` marks these roots. A function nothing calls that holds the crypto itself stays `unreachable` unless it is a recognized `main` or framework entry, so a handler doing crypto inline now reads `reachable`.
 ### Fixed
 - The GnuTLS C callgraph contracts now publish the HMAC key length of `gnutls_hmac_init` and `gnutls_hmac_fast` as `keySize` (derived from bytes), which key-length evidence reads, instead of the unread `keyLength`. The libjwt contracts no longer attach a key-length role to the key buffer of `jwt_set_alg` and `jwt_decode`, which is a PEM document for the RSA and EC algorithms, and the s2n-tls contract no longer attaches one to `s2n_config_add_ticket_crypto_key`, whose key is expanded into an AES-256-GCM key.
-- Rules with a `parameterCondition` are now indexed for call-site specialization whatever semgrep shape they use: a top-level `pattern-either`, a sink `pattern` or `pattern-either` without `patterns`, and `patterns` nested inside `pattern-either`, at any depth. A `$FUNC(...)` callee, a `new $T(...)` constructor or a `Type.$M(...)` method now gets a key for each name that a `metavariable-regex` with a finite, `$`-anchored set of identifiers (`^(gcm_init|gcm_memory)$`) or a `metavariable-pattern` of plain identifiers allows. A typed receiver, `(AESEngine $E).init(...)`, keys as `AESEngine.init`. The key is now the callee of the outermost call, so `require("crypto").createHash($ALGO)` no longer keys as `require`, and a method on a call result (`Password.hash(...).with($F)`) no longer keys as the first call in the chain. A callee behind an unconstrained metavariable (`$CRYPTO.createHash(...)`), an open-ended regex or a case-insensitive regex still gets no key.
+- Rules with a `parameterCondition` are now indexed for call-site specialization whatever semgrep shape they use: a top-level `pattern-either`, a sink `pattern` or `pattern-either` without `patterns`, and `patterns` nested inside `pattern-either`, at any depth. A `$FUNC(...)` callee, a `new $T(...)` constructor or a `Type.$M(...)` method now gets a key for each name that a `metavariable-regex` with a finite, `$`-anchored set of identifiers (`^(gcm_init|gcm_memory)$`) or a `metavariable-pattern` of plain identifiers allows. A typed receiver, `(AESEngine $E).init(...)`, keys as `AESEngine.init`. The key is now the callee of the outermost call, so `require("lib").build($X)` no longer keys as `require`, and a method on a call result (`Widget.make(...).with($F)`) no longer keys as the first call in the chain. A callee behind an unconstrained metavariable (`$CRYPTO.createHash(...)`), an open-ended regex or a case-insensitive regex still gets no key.
 - Conditioned rules now specialize Rust and Go calls. A rule's API key is compared with the call the way each language spells it. Rust keys keep `::` (`openssl::hash::MessageDigest::from_name`, or a shorter `MessageDigest::from_name`) and match the resolved path on segment boundaries; before, no Rust conditioned rule ever matched. A Go key's qualifier (`jwt.GetSigningMethod`) is the package's name: the package clause of parsed source, or the name an unaliased import binds, so it matches `github.com/golang-jwt/jwt/v5` and aliased imports. A qualified key (`jwt.NewWithClaims`) no longer matches a Go call whose qualifier the parser could not resolve unless the call is spelled that way; a bare key (`NewWithClaims`) still matches any call to that function. A conditioned rule now applies only to calls in an ecosystem its `languages` target: the catalog holds every language's rules under shared keys, so a Rust `bcrypt::hash` call could otherwise take a Python passlib rule's condition and metadata. Key matching in other languages is unchanged.
 - Python: a call from one module to a function, class or method defined in another module of the same project now links to that declaration, so call chains and reachability cross module boundaries. Declarations were keyed by their package directory without the module (`app/digest.py`'s `digest` was `app.digest`, its import spells `app.digest.digest`), and a project named by its `pyproject.toml` prefixed that name, which no import spells, onto every key (`probe.app.digest` against a callee `app.digest.digest`). Absolute and relative imports, `import pkg.mod` then `pkg.mod.f()`, flat layouts, and a pyproject name equal to or different from the package all had no cross-module caller. Every Python declaration is now keyed by the module that defines it: `pkg/mod.py`'s `f` is `pkg.mod.f`, `pkg.mod.(C).m` for a method and `pkg.mod.(C).<init>` for a constructor, and only `pkg/__init__.py` defines names at `pkg.f`. Under a pyproject name the prefix stays (`probe.app.digest.digest`), and an absolute import of one of the project's own modules is qualified with it; a call into the standard library or a dependency keeps its spelling. A root-level module at an unnamed root keys `bench.(Benchmark)._random_bytes`, and pycryptodome's `lib/Crypto/Hash/HMAC.py` keys `Crypto.Hash.HMAC.new`, the path `import Crypto.Hash.HMAC` spells. The `<package>.<stem>.<name>` alias that only a name collision between sibling modules used to add is gone, because every module now has that key; the unaliased `<package>.<name>` it shadowed, which carried no callers, is gone with it. A name a package's `__init__.py` imports with `from module import name`, relative or absolute, is its public path: a call to `jwt.encode` links to `jwt.api.encode` while its callee keeps the public spelling contracts key on, through chains of nested packages and for dependencies too, and rule-backed entry-point synthesis finds a declaration by the public path a rule api names. Exported `function_key`, `function_name`, display symbols, signatures and the occurrence keys of findings inside Python functions change with the keys. This is part of the `graph-algo-3` structural change listed above.
 - A conditioned rule now specializes a finding with every value its callers pass, not only the values on the sampled call chains. A helper such as `getDigest(String algorithm)` called with many algorithm constants used to lose the values whose routes did not fit the chain budget. The values are found by following the parameter through every caller, up to the chain depth cap, and at most 256 distinct values per parameter; reaching the value bound is logged as a warning, and the depth cap at debug level. Each parameter is specialized on its own, so a rule whose condition reads two forwarded parameters is still specialized only from the sampled chains. The exported call chains are unchanged. A specialized finding whose value comes from a caller outside the sample keeps only the chains whose argument did not resolve, and when none is left its `analysis.call_chains` is `partial`.
@@ -1609,7 +3155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node calls in anonymous callbacks, in functions declared by assignment or as object-literal properties, and at module scope now belong to a function, so their findings get supporting calls and contract roles. Before, the parser declared no function for `new Promise(function (resolve) { .. })`, a route handler, `exports.derive = function`, `EC.prototype.sign = function` or `module.exports = { sign: function (..) {..} }`, and recorded nothing a module runs when it loads. Each such function is now a declaration of its own: an assigned or object-literal function under its name (a prototype method under its class), and any other under `<anonymous>@line:column`, so one handler's calls never join another's lifecycle. A module's top-level calls belong to a synthetic `<module>` declaration, as they already do in Python. A variable the module binds, such as `const ec = new EC('secp256k1')`, types the calls a function makes on it when the function does not declare that name itself. On eccrypto 1.1.6, 7 of its 8 elliptic findings now resolve a crypto call, up from none, and 5 of its 7 supporting calls carry a role. Other languages are unchanged.
 - The contract roles of the Node knowledge bases now reach the export. A Node consumer holds a library object in a variable (`const ec = new EC('secp256k1'); const key = ec.genKeyPair(); key.sign(h)`), and every call on it was keyed to the consumer's own file, so no Node supporting call carried a category. Four gaps are closed. The parser now names the export an import binds, through `require('m').x`, aliased destructuring, aliased ESM imports, and tsc's `__importStar`, `__importDefault` and `(0, ns.fn)(..)` output. `new C(..)` on an imported class is a constructor call. A variable is typed from the contract of the call that assigns it, so the calls made on it resolve to the contract's receiver type. Fluent chains such as `hash.sha256().update(m).digest()` resolve link by link. On an elliptic consumer written in each import style, a finding on `key.sign` now lists `elliptic.ec.<init>` and `elliptic.ec.genKeyPair` as factories and `elliptic.KeyPair.verify` as an operation. Other languages are unchanged.
 - `annotate` now derives the supporting calls of a factory finding. The lifecycle selector reads a variable's calls only after the call that bound it, and annotate handed it the cached fragment's edges in target order, so a lifecycle call whose target sorted before the factory's was dropped. A Go `chacha20poly1305.NewX` finding annotated no supporting calls against one in the full export. Annotate now reads each function's edges in source order. On the repository's Go and Java fixture projects it reports 4 of 4 and 14 of 19 supporting calls, up from 0 and 11. Scan exports are unchanged.
-- A JavaScript or TypeScript string argument now resolves, and matches a rule's `parameterCondition`, whatever its spelling. Before, only a double-quoted argument resolved: `initialize('NN', ...)` and ``initialize(`NN`, ...)`` kept no value, so `param[0]=="NN"` could never select them, and most JavaScript code uses single quotes. The parser now records a single-quoted string, a template literal without substitutions and an escaped spelling such as `'N\u004E'` as the double-quoted literal of the same value, so the argument expression reads `"NN"` in the call graph and graph fragment exports. A template literal with a `${...}` substitution stays unresolved and selects nothing. Other languages are unchanged.
+- A JavaScript or TypeScript string argument now resolves, and matches a rule's `parameterCondition`, whatever its spelling. Before, only a double-quoted argument resolved: `initialize('QQ', ...)` and ``initialize(`QQ`, ...)`` kept no value, so `param[0]=="QQ"` could never select them, and most JavaScript code uses single quotes. The parser now records a single-quoted string, a template literal without substitutions and an escaped spelling such as `'Q\u0051'` as the double-quoted literal of the same value, so the argument expression reads `"QQ"` in the call graph and graph fragment exports. A template literal with a `${...}` substitution stays unresolved and selects nothing. Other languages are unchanged.
 - `--export-graph-fragment` no longer expands the provenance of a recursive method exponentially. A method that returns a call to itself, such as a helper that unwraps a nested exception from several branches, had its return provenance inlined into itself again at every level up to the depth limit, so one argument could carry hundreds of thousands of copies of the same few source nodes. Return provenance is now inlined once per call path. On the Apache MINA SSHD `sshd-common` 2.4.0 sources the fragment shrinks from 2.0 GB to 17.7 MB and peak scan memory from 4.8 GB to 274 MB; on `sshd-core` 1.2.0 it shrinks from 4.9 GB to 39.5 MB. Findings, functions, edges, supporting calls and entry points are unchanged. Provenance keeps every distinct source node and only loses the repeated copies, so resolved parameter values do not change.
 - C free-function calls now join the lifecycle of the object they operate on, so the contract roles of the C knowledge bases reach the export. C APIs pass their object as the first argument (`EVP_DigestUpdate(ctx, ...)`, `crypto_secretstream_xchacha20poly1305_push(&state, ...)`) rather than through a receiver, and the supporting-call derivation only followed receivers, so a C scan exported no supporting calls at all. The first argument now counts as the call's object when it is the address of a variable or a variable the function declares as a pointer or passes by address. A return code passed first, as in `ASSERT_STATUS(status, ...)`, stays unbound. A finding on `EVP_DigestInit(ctx, EVP_sha256())` now lists `EVP_MD_CTX_new` as a factory and `EVP_DigestUpdate` and `EVP_DigestFinal_ex` as operations. Other languages are unchanged.
 - The M2Crypto Python callgraph contracts now apply from 0.11 instead of 0.40. Each contract sits in a file whose range starts at the first release whose signature matches it, checked against every release from 0.11 to 0.48.0, and the ENGINE contracts skip 0.45.0 to 0.46.2, where those APIs were absent. RSA encrypt, decrypt and sign, DSA and EC signing, DH and ECDH key agreement, digest and HMAC finalisation, `EVP.hmac`, `EVP.pbkdf2`, `EVP.PKey.digest_sign`, cipher and RC4 update, and S/MIME sign and verify are now operations instead of outputs. Contracts for `EVP.PKey.sign()`, `SMIME.SMIME.public_encrypt` and `SMIME.SMIME.public_decrypt`, which no release defines, are gone, and `EVP.PKey.digest_sign` and `EC.pub_key_from_params` now carry their released arities of 1 and 2. `EC.EC.verify_dsa_asn1`, which the detection rules now report, is contracted as an operation from 0.16.
@@ -1675,10 +3221,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Python class with a call in its body (`queryset = Model.objects.all()`, `template = load()`) lost its base classes for entry-point matching, so its framework methods, such as Django REST framework `ModelViewSet.create` or Django `View.get`, were no longer entry points and crypto in them could read as unreachable. The class body now carries the class's bases like its methods do.
 - A Python method called on an object built by a constructor now links to that class's method in the call graph, so a finding inside it is no longer reported unreachable when its only callers reach it that way. This covers a local bound to the constructor call (`s = Scanner(cfg); s.scan(p)`), a call made directly on it (`Scanner(cfg).scan(p)`) and a chain such as `A().b().c()`, for a class imported from another module, re-exported by its package, or defined in the same file. A constructor annotated `-> None` no longer hides the class. A receiver typed from a function's declared return annotation (`x = make()` with `-> Scanner`) is linked too. The receiver is typed only from a class the scanned tree declares: a rebind to a call of unknown type, a function that shares the class's name (local or imported), a name that is no class, a class named in a subscripted annotation such as `Optional[Scanner]`, or an annotation naming a class from another module links nothing. A class with no methods of its own and a chain split across several lines are not typed, so they link nothing.
 - A Python project nested below the scan root (a monorepo's `packages/<name>/src/<import_name>/`) is now keyed by its import name, so `from <import_name>.module import X` links to the declaration. Before, the modules kept the `packages.<name>.src.` prefix, no import matched, and crypto reached only through such an import read as having no callers. A directory is re-rooted only when all of these hold: it has a `pyproject.toml`, `setup.py` or `setup.cfg`; it has a `src` or `lib` directory holding Python, or its manifest declares `packages` or `package-dir`/`package_dir`; no project file imports a module through the directory's own prefixed path (`packages.<name>...`); and every top-level module it defines is not already defined by the scan root, a dependency, or an earlier project. Anything else keeps the directory-prefixed keys it had, so a root-level `from tools.x import mod` still resolves. Names every project has its own copy of (`tests`, `docs`, `examples`, ...) never count as a clash. Known limit: when sibling projects define the same top-level name, imports link to the first one in path order only; the later project keeps its prefix and its imports do not link.
-- A finding whose rule has a `parameterCondition` that every route contradicts now reads `unreachable` (`reachable: false`) instead of `reachable` with no chain. Each route's caller passes an argument that refutes the condition, for example `MessageDigest.getInstance(alg)` reached only with `"SHA-1"` and `"SHA-256"` under a rule for `param[0]==MD5`, so the crypto the rule describes runs on no known route. This is the answer the graph fragment's `crypto_entry_points` already gave by not listing the finding. When the chain budget left a route or a call site into the function unexamined, the finding reads `unknown` with `unresolved_reason: "traversal_truncated"`, because an unexamined call may satisfy the condition. When every route found crosses a `name_only` edge, the refuted routes are guesses, so the finding reads `unknown` with `unresolved_reason: "unresolved_dispatch"` as it would without the condition, never a definite `unreachable`. A route whose argument did not resolve still keeps the finding `reachable`.
-- A finding on a fluent call chain whose rule has a `parameterCondition` keeps its `call_chains`. The condition was read against the outermost link of the chain instead of the call the rule matched, so `createHash('md5').update(email).digest('hex')` tested `param[0]==md5` against `'hex'`, and the finding read `reachable` with no chain. The same held for Java (`MessageDigest.getInstance("MD5").digest("salt".getBytes(UTF_8))`) and Python (`hashlib.new("sha256", data).hexdigest().encode("ascii")`) whenever the outer link's argument resolved to a value. `matched_operation.symbol` and `occurrence_key` are unchanged: both still name the outermost link.
+- A finding whose rule has a `parameterCondition` that every route contradicts now reads `unreachable` (`reachable: false`) instead of `reachable` with no chain. Each route's caller passes an argument that refutes the condition, for example `MessageDigest.getInstance(alg)` reached only with `"SHA-1"` and `"SHA-256"` under a rule for `param[0]==EXAMPLE`, so the crypto the rule describes runs on no known route. This is the answer the graph fragment's `crypto_entry_points` already gave by not listing the finding. When the chain budget left a route or a call site into the function unexamined, the finding reads `unknown` with `unresolved_reason: "traversal_truncated"`, because an unexamined call may satisfy the condition. When every route found crosses a `name_only` edge, the refuted routes are guesses, so the finding reads `unknown` with `unresolved_reason: "unresolved_dispatch"` as it would without the condition, never a definite `unreachable`. A route whose argument did not resolve still keeps the finding `reachable`.
+- A finding on a fluent call chain whose rule has a `parameterCondition` keeps its `call_chains`. The condition was read against the outermost link of the chain instead of the call the rule matched, so `createHash('md5').update(email).digest('hex')` tested the first-argument condition for `md5` against `'hex'`, and the finding read `reachable` with no chain. The same held for Java (`MessageDigest.getInstance("MD5").digest("salt".getBytes(UTF_8))`) and Python (`hashlib.new("sha256", data).hexdigest().encode("ascii")`) whenever the outer link's argument resolved to a value. `matched_operation.symbol` and `occurrence_key` are unchanged: both still name the outermost link.
 - A depth limit that cuts every route of a finding before a root now reads `unknown` with `unresolved_reason: "traversal_truncated"` and `analysis.call_chains: "partial"`, instead of `unreachable` with the analysis `complete`. A chain the limit cuts inside application code is marked `depth_limit` and the analysis `partial`. The live export has no depth limit by default; the limit applies to SDK callers that set one.
-- A parameter condition now matches a string literal written with single quotes or a plain backtick template. `hashlib.new('sha1')` and `createHash('sha1')` satisfy `param[0]==sha1`; before, only double-quoted literals had their quotes stripped, so the quoted text never equalled the rule's value and the value also reached asset names with its quotes. The quote handling is the same function the entry-point guard matching uses, so a guard on a selector value also matches a single-quoted or backtick literal now.
+- A parameter condition now matches a string literal written with single quotes or a plain backtick template. `hashlib.new('sha1')` and `createHash('sha1')` satisfy a first-argument condition for `sha1`; before, only double-quoted literals had their quotes stripped, so the quoted text never equalled the rule's value and the value also reached asset names with its quotes. The quote handling is the same function the entry-point guard matching uses, so a guard on a selector value also matches a single-quoted or backtick literal now.
 - A per-value asset (one a parameter condition specialized to a resolved value) now reads its reachability from the routes that carry that value. Before, the verdict came from the enclosing function's trace, so a value that arrived only through a `name_only` guessed edge read `reachable` whenever another value of the same call had an exact route. It now reads `unknown` with `unresolved_reason` `unresolved_dispatch`, `route_evidence` `name_only` and no `reachable` flag, as any finding whose routes are all guesses does. A value reached only from a caller nothing calls is unchanged: it reads `reachable` with `analysis.no_callers_only` set, the same as a finding reached only from such a caller.
 
 ## [0.27.2] - 2026-09-17

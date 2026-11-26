@@ -4,11 +4,14 @@
 package scan
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -123,14 +126,22 @@ func (a *exportArtifacts) absPath(path string) string {
 	return filepath.Join(a.cwd, path)
 }
 
-// functionFileIndex groups functions by the file that declares them.
+// functionFileIndex groups functions by the file that declares them, each
+// file's functions in the order of their keys in the graph.
 type functionFileIndex struct {
 	byFile map[string][]*callgraph.FunctionDecl
 }
 
+// newFunctionFileIndex indexes functions in key order, so two declarations
+// containing cannot tell apart keep one order on every run. One function can
+// be listed twice under one ID: a C header a C scan also parses as C++ gives
+// the C graph and the C++ anchors each a declaration of its static functions,
+// with the same span and ID but not the same signature (the C++ parser records
+// no return type).
 func newFunctionFileIndex(artifacts *exportArtifacts, functions map[string]*callgraph.FunctionDecl) *functionFileIndex {
 	idx := &functionFileIndex{byFile: make(map[string][]*callgraph.FunctionDecl)}
-	for _, fn := range functions {
+	for _, key := range slices.Sorted(maps.Keys(functions)) {
+		fn := functions[key]
 		if fn == nil || fn.FilePath == "" {
 			continue
 		}
@@ -143,7 +154,8 @@ func newFunctionFileIndex(artifacts *exportArtifacts, functions map[string]*call
 // containing returns the innermost function of file whose span holds the
 // position (line, col). Spans nest (a synthetic <clinit> may cover the whole
 // class around the real method, a JS callback sits inside its caller), so the
-// tightest span wins, with the function key as a deterministic tie-break.
+// tightest span wins, with the function ID as a deterministic tie-break, and
+// among declarations with the same span and ID the first in key order.
 //
 // Containment is column-aware: a function that starts later on the finding's
 // own line, as the arrow function passed to `generateKeyPair(..., (e) => {`,

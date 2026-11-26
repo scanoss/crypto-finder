@@ -7,10 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
+	"github.com/scanoss/reach/javaruntime"
 )
 
 func TestMavenResolver_ParseRootModule(t *testing.T) {
@@ -102,6 +103,49 @@ com.acme:app:jar:1.0.0:compile
 	}
 	if len(graph["org.example:lib@1.2.3"]) != 1 || graph["org.example:lib@1.2.3"][0].Module != "com.acme:tool" || graph["org.example:lib@1.2.3"][0].Version != "2.0.0" {
 		t.Fatalf("unexpected nested edge parsing: %#v", graph)
+	}
+}
+
+// TestVerboseTreeEdges_Omitted reads the children `dependency:tree -Dverbose`
+// left out of the tree as edges to the versions the classpath tree selected,
+// runtime-scope children included. Test nodes contribute nothing; nor do
+// cycles, test-scope entries, or edges the tree already has.
+func TestVerboseTreeEdges_Omitted(t *testing.T) {
+	r := NewMavenResolver()
+	versioned := r.parseTreeOutput(`
+com.acme:app:jar:1.0.0
++- org.bouncycastle:bcprov-jdk18on:jar:1.78.1:compile
++- org.bouncycastle:bcpkix-jdk18on:jar:1.78.1:compile
+|  \- org.bouncycastle:bcutil-jdk18on:jar:1.78.1:compile
++- com.google.guava:guava:jar:33.0.0-jre:compile
+\- org.example:lib:jar:2.0:provided
+`)
+	verbose := `com.acme:app:jar:1.0.0
++- org.bouncycastle:bcprov-jdk18on:jar:1.78.1:compile
++- org.bouncycastle:bcpkix-jdk18on:jar:1.78.1:compile
+|  +- (org.bouncycastle:bcprov-jdk18on:jar:1.78.1:compile - omitted for duplicate)
+|  \- org.bouncycastle:bcutil-jdk18on:jar:1.78.1:compile
+|     \- (org.bouncycastle:bcprov-jdk18on:jar:1.78.1:compile - omitted for duplicate)
++- com.google.guava:guava:jar:33.0.0-jre:compile
+|  \- (org.example:lib:jar:1.0:compile - version managed from 0.9; omitted for conflict with 2.0)
++- org.example:lib:jar:2.0:provided (scope not updated to compile)
+|  +- (com.google.guava:guava:jar:33.0.0-jre:runtime - omitted for duplicate)
+|  \- (com.acme:app:jar:1.0.0:compile - omitted for cycle)
+\- junit:junit:jar:4.13.1:test
+   \- (org.bouncycastle:bcprov-jdk18on:jar:1.78.1:test - omitted for duplicate)
+`
+	placed, got := verboseTreeEdges(verbose, versioned)
+	if placed != nil {
+		t.Errorf("placed edges = %v, want none: the plain tree holds every in-place edge", placed)
+	}
+	want := map[string][]Ref{
+		"org.bouncycastle:bcpkix-jdk18on@1.78.1": {{Module: "org.bouncycastle:bcprov-jdk18on", Version: "1.78.1"}},
+		"org.bouncycastle:bcutil-jdk18on@1.78.1": {{Module: "org.bouncycastle:bcprov-jdk18on", Version: "1.78.1"}},
+		"com.google.guava:guava@33.0.0-jre":      {{Module: "org.example:lib", Version: "2.0"}},
+		"org.example:lib@2.0":                    {{Module: "com.google.guava:guava", Version: "33.0.0-jre"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("omitted edges =\n%v\nwant\n%v", got, want)
 	}
 }
 
@@ -1258,4 +1302,258 @@ func TestMavenResolver_CanResolve(t *testing.T) {
 			t.Fatal("CanResolve() = true, want false for an empty directory")
 		}
 	})
+}
+
+// mavenScopeStub is an mvn that prints, for testdata/maven-runtime-scope, the
+// entries Maven would print under the scope filter it was given: -DincludeScope
+// for dependency:list and -Dscope for dependency:tree, with Maven's meaning
+// (compile: compile, provided, system; runtime: compile, runtime; none or
+// test: every scope). A runtime dependency's child is runtime scope, a test
+// dependency's child test scope, as Maven's scope mediation makes them.
+const mavenScopeStub = `#!/bin/sh
+out=""
+filter=""
+for arg in "$@"; do
+  case "$arg" in
+    -DoutputFile=*) out="${arg#-DoutputFile=}" ;;
+    -DincludeScope=*) filter="${arg#-DincludeScope=}" ;;
+    -Dscope=*) filter="${arg#-Dscope=}" ;;
+  esac
+done
+case "$filter" in
+  compile) keep='compile|provided|system' ;;
+  runtime) keep='compile|runtime' ;;
+  *) keep='compile|provided|system|runtime|test' ;;
+esac
+if [ "$1" = "dependency:list" ]; then
+  {
+    echo "The following files have been resolved:"
+    printf '%s\n' \
+      "   org.example:compiled:jar:1.0.0:compile" \
+      "   org.example:container:jar:2.0.0:provided" \
+      "   org.example:driver:jar:3.0.0:runtime" \
+      "   org.example:driver-support:jar:3.1.0:runtime -- module driver.support" \
+      "   org.example:testkit:jar:4.0.0:test" \
+      "   org.example:testkit-support:jar:4.1.0:test" | grep -E ":($keep)( |\$)"
+  } > "$out"
+  exit 0
+fi
+if [ "$1" = "dependency:tree" ]; then
+  {
+    echo "com.acme:app:jar:1.0.0"
+    printf '%s\n' \
+      "+- org.example:compiled:jar:1.0.0:compile" \
+      "+- org.example:container:jar:2.0.0:provided" \
+      "+- org.example:driver:jar:3.0.0:runtime" \
+      "|  \\- org.example:driver-support:jar:3.1.0:runtime" \
+      "\\- org.example:testkit:jar:4.0.0:test" \
+      "   \\- org.example:testkit-support:jar:4.1.0:test" | grep -E ":($keep)( |\$)"
+  } > "$out"
+  exit 0
+fi
+if [ "$1" = "dependency:sources" ] || [ "$1" = "help:evaluate" ]; then
+  exit 0
+fi
+exit 0
+`
+
+// TestMavenResolver_Resolve_IncludesRuntimeScope resolves a project with a
+// dependency of every scope. Runtime-scope jars (and what they pull in) are on
+// the application's runtime classpath, so their crypto is real exposure and
+// they must be resolved and graphed; test-scope jars are not and must stay
+// out.
+func TestMavenResolver_Resolve_IncludesRuntimeScope(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	project := t.TempDir()
+	pom, err := os.ReadFile(filepath.Join("testdata", "maven-runtime-scope", "pom.xml"))
+	if err != nil {
+		t.Fatalf("read fixture pom: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "pom.xml"), pom, 0o600); err != nil {
+		t.Fatalf("write pom.xml: %v", err)
+	}
+	binDir := t.TempDir()
+	writeExecutable(t, binDir, "mvn", mavenScopeStub)
+	prependPath(t, binDir)
+
+	result, err := NewMavenResolver().Resolve(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	got := make(map[string]bool)
+	for _, dep := range result.Dependencies {
+		got[dep.Module+"@"+dep.Version] = true
+	}
+	for _, want := range []string{
+		"org.example:compiled@1.0.0",
+		"org.example:container@2.0.0",
+		"org.example:driver@3.0.0",
+		"org.example:driver-support@3.1.0",
+	} {
+		if !got[want] {
+			t.Errorf("dependency %s not resolved; got %v", want, got)
+		}
+	}
+	for _, unwanted := range []string{"org.example:testkit@4.0.0", "org.example:testkit-support@4.1.0"} {
+		if got[unwanted] {
+			t.Errorf("test-scope dependency %s resolved; got %v", unwanted, got)
+		}
+	}
+
+	var rootChildren []Ref
+	for parent, children := range result.VersionedGraph {
+		if strings.HasPrefix(parent, "com.acme:app@") {
+			rootChildren = children
+		}
+		for _, child := range children {
+			if strings.HasPrefix(child.Module, "org.example:testkit") {
+				t.Errorf("test-scope edge %s -> %s graphed", parent, child.Key())
+			}
+		}
+	}
+	if !containsDependencyRef(rootChildren, Ref{Module: "org.example:driver", Version: "3.0.0"}) {
+		t.Errorf("root children = %v, want the runtime dependency org.example:driver@3.0.0", rootChildren)
+	}
+	want := []Ref{{Module: "org.example:driver-support", Version: "3.1.0"}}
+	if got := result.VersionedGraph["org.example:driver@3.0.0"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("runtime dependency children = %v, want %v", got, want)
+	}
+}
+
+// TestMavenResolver_PopulateDependencyGraph_ClasspathChildOfTestDependency
+// reads the trees real Maven 3 prints for a project declaring a test
+// dependency first and then a compile one, both of which depend on shared.
+// The plain tree prints shared, compile scope, under the test dependency; the
+// verbose view prints it under the compile one. shared and its child stay in
+// the graph, reached from the root through lib, and the test dependency gets
+// no edge.
+func TestMavenResolver_PopulateDependencyGraph_ClasspathChildOfTestDependency(t *testing.T) {
+	project := t.TempDir()
+	binDir := t.TempDir()
+	writeExecutable(t, binDir, "mvn", `#!/bin/sh
+out=""
+verbose=""
+for arg in "$@"; do
+  case "$arg" in
+    -DoutputFile=*) out="${arg#-DoutputFile=}" ;;
+    -Dverbose) verbose=1 ;;
+  esac
+done
+if [ -n "$verbose" ]; then
+  cat > "$out" <<'EOF_TREE'
+com.acme:app:jar:1.0.0
++- org.example:testkit:jar:1.0:test
+|  \- (org.example:shared:jar:1.0:compile - scope updated from test; omitted for duplicate)
+\- org.example:lib:jar:1.0:compile
+   \- org.example:shared:jar:1.0:compile
+      \- org.example:leaf:jar:1.0:compile
+EOF_TREE
+else
+  cat > "$out" <<'EOF_TREE'
+com.acme:app:jar:1.0.0
++- org.example:testkit:jar:1.0:test
+|  \- org.example:shared:jar:1.0:compile
+|     \- org.example:leaf:jar:1.0:compile
+\- org.example:lib:jar:1.0:compile
+EOF_TREE
+fi
+exit 0
+`)
+	prependPath(t, binDir)
+
+	result := &ResolveResult{}
+	NewMavenResolver().populateDependencyGraph(context.Background(), project, result, 3)
+
+	var rootKey string
+	for parent := range result.VersionedGraph {
+		if strings.HasPrefix(parent, "com.acme:app@") {
+			rootKey = parent
+		}
+	}
+	want := map[string][]Ref{
+		rootKey:                  {{Module: "org.example:lib", Version: "1.0"}},
+		"org.example:lib@1.0":    {{Module: "org.example:shared", Version: "1.0"}},
+		"org.example:shared@1.0": {{Module: "org.example:leaf", Version: "1.0"}},
+	}
+	if !reflect.DeepEqual(result.VersionedGraph, want) {
+		t.Errorf("VersionedGraph =\n%v\nwant\n%v", result.VersionedGraph, want)
+	}
+	if result.OmittedEdges != nil {
+		t.Errorf("OmittedEdges = %v, want none", result.OmittedEdges)
+	}
+	if got := result.Graph["org.example:lib"]; !reflect.DeepEqual(got, []string{"org.example:shared"}) {
+		t.Errorf("Graph[lib] = %v, want shared", got)
+	}
+}
+
+// TestVerboseTreeEdges_ConflictLoserAfterWinner keeps the version the closure
+// selected when the verbose tree prints a conflict loser after the winner: the
+// loser's version is not the module's version, so no edge is added to it.
+func TestVerboseTreeEdges_ConflictLoserAfterWinner(t *testing.T) {
+	r := NewMavenResolver()
+	versioned := r.parseTreeOutput(`com.acme:app:jar:1.0.0
++- commons-codec:commons-codec:jar:1.17.0:compile
+\- org.example:client:jar:2.0:provided
+`)
+	verbose := `com.acme:app:jar:1.0.0
++- commons-codec:commons-codec:jar:1.17.0:compile
+\- org.example:client:jar:2.0:provided
+   \- (commons-codec:commons-codec:jar:1.16.1:provided - omitted for conflict with 1.17.0)
+`
+	placed, omitted := verboseTreeEdges(verbose, versioned)
+	if placed != nil {
+		t.Errorf("placed = %v, want none", placed)
+	}
+	want := map[string][]Ref{"org.example:client@2.0": {{Module: "commons-codec:commons-codec", Version: "1.17.0"}}}
+	if !reflect.DeepEqual(omitted, want) {
+		t.Errorf("omitted = %v, want %v", omitted, want)
+	}
+}
+
+// TestMavenResolver_PopulateDependencyGraph_UnderTestWithoutVerboseTree keeps
+// a classpath dependency the plain tree printed under a test dependency on a
+// path from the root when the verbose tree is unavailable: it is attached to
+// its nearest classpath ancestor (the root here).
+func TestMavenResolver_PopulateDependencyGraph_UnderTestWithoutVerboseTree(t *testing.T) {
+	project := t.TempDir()
+	binDir := t.TempDir()
+	writeExecutable(t, binDir, "mvn", `#!/bin/sh
+out=""
+for arg in "$@"; do
+  case "$arg" in
+    -DoutputFile=*) out="${arg#-DoutputFile=}" ;;
+    -Dverbose) echo "verbose tree unavailable" >&2; exit 1 ;;
+  esac
+done
+cat > "$out" <<'EOF_TREE'
+com.acme:app:jar:1.0.0
++- org.example:testkit:jar:1.0:test
+|  \- org.example:shared:jar:1.0:compile
+|     \- org.example:leaf:jar:1.0:compile
+\- org.example:lib:jar:1.0:compile
+EOF_TREE
+exit 0
+`)
+	prependPath(t, binDir)
+
+	result := &ResolveResult{}
+	NewMavenResolver().populateDependencyGraph(context.Background(), project, result, 3)
+
+	var rootKey string
+	for parent := range result.VersionedGraph {
+		if strings.HasPrefix(parent, "com.acme:app@") {
+			rootKey = parent
+		}
+	}
+	want := map[string][]Ref{
+		rootKey:                  {{Module: "org.example:lib", Version: "1.0"}, {Module: "org.example:shared", Version: "1.0"}},
+		"org.example:shared@1.0": {{Module: "org.example:leaf", Version: "1.0"}},
+	}
+	if !reflect.DeepEqual(result.VersionedGraph, want) {
+		t.Errorf("VersionedGraph =\n%v\nwant\n%v", result.VersionedGraph, want)
+	}
+	if got := result.Graph["com.acme:app"]; !reflect.DeepEqual(got, []string{"org.example:lib", "org.example:shared"}) {
+		t.Errorf("Graph[root] = %v, want lib and shared", got)
+	}
 }

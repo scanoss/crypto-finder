@@ -1,0 +1,317 @@
+{
+ "schema_version": "graph-fragment-1.29",
+ "scan_metadata": {
+  "ecosystem": "rust"
+ },
+ "functions": [
+  {
+   "key": "probe.local",
+   "function_name": "probe.local",
+   "canonical_signature": "probe.local(): u8",
+   "package": "probe",
+   "name": "local",
+   "file_path": "src/main.rs",
+   "start_line": 18,
+   "end_line": 21,
+   "return_type": "u8"
+  },
+  {
+   "key": "probe.not_alias",
+   "function_name": "probe.not_alias",
+   "canonical_signature": "probe.not_alias()",
+   "package": "probe",
+   "name": "not_alias",
+   "file_path": "src/main.rs",
+   "start_line": 40,
+   "end_line": 42
+  }
+ ],
+ "internal_edges_compact": [],
+ "internal_edge_strings": [
+  ""
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe.not_alias",
+   "target_key": "probe.make",
+   "target_function_name": "probe.make",
+   "target_canonical_signature": "probe.make()",
+   "raw": "make",
+   "line": 41,
+   "resolution": "exact",
+   "method_name": "make",
+   "assigned_var": "t",
+   "start_col": 32,
+   "end_col": 38,
+   "entry_call": {
+    "line": 41
+   }
+  }
+ ],
+ "declarations": [
+  [
+   1,
+   41,
+   5,
+   39,
+   "Encryptor<Blk128>",
+   "t",
+   "call"
+  ]
+ ],
+ "source_lines": {
+  "src/main.rs": {
+   "41": "    let t: Encryptor<Blk128> = make();"
+  }
+ },
+ "imports": {
+  "src/main.rs": [
+   {
+    "line": 1,
+    "module": "acme_aead",
+    "name": "Sealer",
+    "start_col": 1,
+    "end_col": 23,
+    "text": "acme_aead::Sealer"
+   }
+  ]
+ },
+ "items": {
+  "src/main.rs": [
+   [
+    3,
+    1,
+    49,
+    "type",
+    "Plain",
+    0,
+    "acme_mode::Encryptor<acme::Blk128>",
+    1
+   ],
+   [
+    4,
+    1,
+    37,
+    "type",
+    "Public",
+    0,
+    "Decryptor<Blk256>",
+    5
+   ],
+   [
+    5,
+    1,
+    55,
+    "type",
+    "Deep",
+    0,
+    "Encryptor<acme::inner::Blk192>",
+    12
+   ],
+   [
+    6,
+    1,
+    45,
+    "type",
+    "Pair",
+    0,
+    "Sealer<acme::Blk256, acme::N12>",
+    1
+   ],
+   [
+    7,
+    1,
+    40,
+    "type",
+    "Triple",
+    0,
+    "Sealer<Blk128, N12, T16>",
+    1
+   ],
+   [
+    8,
+    1,
+    40,
+    "type",
+    "Multi",
+    9,
+    "acme_mode::Decryptor<acme::Blk128>",
+    1
+   ],
+   [
+    10,
+    1,
+    3,
+    "type",
+    "Wide",
+    12,
+    "Sealer<Blk256,\n    N12,\n>",
+    1
+   ],
+   [
+    14,
+    1,
+    2,
+    "mod",
+    "inner",
+    16
+   ],
+   [
+    15,
+    5,
+    58,
+    "type",
+    "InMod",
+    0,
+    "acme_mode::Encryptor<super::Blk128>",
+    9
+   ],
+   [
+    18,
+    1,
+    2,
+    "fn",
+    "local",
+    21
+   ],
+   [
+    19,
+    5,
+    35,
+    "type",
+    "InFn",
+    0,
+    "Encryptor<Blk256>",
+    5
+   ],
+   [
+    23,
+    1,
+    10,
+    "struct",
+    "S"
+   ],
+   [
+    24,
+    1,
+    2,
+    "trait",
+    "Tr",
+    26
+   ],
+   [
+    27,
+    1,
+    2,
+    "impl",
+    "S",
+    29
+   ],
+   [
+    28,
+    5,
+    34,
+    "type",
+    "Out",
+    0,
+    "Decryptor<Blk192>",
+    5
+   ],
+   [
+    33,
+    1,
+    45,
+    "type",
+    "Other",
+    0,
+    "other::Encryptor<acme::Blk128>",
+    1
+   ],
+   [
+    34,
+    1,
+    37,
+    "type",
+    "Small",
+    0,
+    "Encryptor<acme::Blk64>",
+    1
+   ],
+   [
+    35,
+    1,
+    38,
+    "type",
+    "Nested",
+    0,
+    "Box<Encryptor<Blk128>>",
+    1
+   ],
+   [
+    36,
+    1,
+    37,
+    "type",
+    "Extra",
+    0,
+    "Encryptor<Blk128, Pad>",
+    1
+   ],
+   [
+    37,
+    1,
+    49,
+    "type",
+    "Qualified",
+    0,
+    "acme_aead::Sealer<Blk128, N12>",
+    1
+   ],
+   [
+    38,
+    1,
+    34,
+    "type",
+    "Narrow",
+    0,
+    "Sealer<Blk64, N12>",
+    1
+   ],
+   [
+    40,
+    1,
+    2,
+    "fn",
+    "not_alias",
+    42
+   ],
+   [
+    47,
+    1,
+    62,
+    "const",
+    "IN_STRING"
+   ],
+   [
+    48,
+    1,
+    35,
+    "type",
+    "Spaced",
+    0,
+    "Encryptor< Blk128 >",
+    1
+   ],
+   [
+    49,
+    1,
+    37,
+    "type",
+    "Generic",
+    0,
+    "Encryptor<Blk256>",
+    1
+   ]
+  ]
+ }
+}

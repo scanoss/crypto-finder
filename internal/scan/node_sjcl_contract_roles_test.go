@@ -28,13 +28,13 @@ func TestNodeSJCLSupportingCallsCarryTheirContractRole(t *testing.T) {
 	t.Parallel()
 
 	aes := cAsset(4, 4, 13, 38, "var aes = new sjcl.cipher.aes(key);",
-		"javascript.sjcl.algorithm.block-cipher.aes",
+		"fixture.javascript.sjcl.aes",
 		map[string]string{"assetType": "algorithm", "api": "sjcl.cipher.aes"})
 	assertNodeSupportingRoles(t, "seal.js", nodeSJCLConsumer, aes,
 		map[string]string{"sjcl.cipher.aes.encrypt": "operation"})
 
 	hmac := cAsset(10, 10, 13, 59, "var mac = new sjcl.misc.hmac(key, sjcl.hash.sha256);",
-		"javascript.sjcl.algorithm.mac.hmac",
+		"fixture.javascript.sjcl.hmac",
 		map[string]string{"assetType": "algorithm", "api": "sjcl.misc.hmac"})
 	assertNodeSupportingRoles(t, "seal.js", nodeSJCLConsumer, hmac,
 		map[string]string{

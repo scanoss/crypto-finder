@@ -4,9 +4,10 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // A scan resolves dependencies for one ecosystem, the primary one, but a

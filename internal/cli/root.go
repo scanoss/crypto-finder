@@ -35,7 +35,6 @@ import (
 
 	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/failure"
-	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
@@ -50,8 +49,9 @@ var rootCmd = &cobra.Command{
 	Use:   "crypto-finder",
 	Short: "SCANOSS Crypto-Finder scans source code for cryptographic algorithm usage",
 	Long: `SCANOSS Crypto-Finder is a CLI tool that scans source code repositories to detect
-	cryptographic operations and extract relevant values. It executes OpenGrep
-	as the default scanning engine and outputs results in a standardized interim JSON format.`,
+	cryptographic operations and extract relevant values. It matches the ruleset's cards
+	against the call sites of the target's typed call graph (Java, Python, Go, JavaScript, TypeScript, Rust and Ruby in this version) and
+	outputs results in a standardized interim JSON format.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
@@ -92,7 +92,6 @@ func init() {
 func setupLogging() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	semgrep.SetHumanErrorOutputEnabled(normalizedErrorOutputFormat() != formatJSON)
 
 	if normalizedErrorOutputFormat() == formatJSON {
 		pterm.DisableColor()

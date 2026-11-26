@@ -2,7 +2,10 @@
 // project dependencies to their source code locations on disk.
 package dependency
 
-import "context"
+import (
+	"context"
+	"path/filepath"
+)
 
 const ecosystemJava = "java"
 
@@ -36,6 +39,25 @@ type Dependency struct {
 	// SourceArchivePath is the absolute path to the downloaded source archive when
 	// available. The extracted source directory in Dir remains the preferred scan input.
 	SourceArchivePath string
+	// Markers, for a Python dependency, are the PEP 508 environment markers
+	// under which the lock or environment installs it, as written: the
+	// entry's own markers where the format writes them per package, else
+	// the markers of the requirements that pull it in when every one of
+	// them carries one. Empty means unconditional. The closure is the union of all
+	// marker branches; the markers are kept for display, not evaluated.
+	Markers []string
+	// Extras, for a Python dependency, are its extras the lock or environment
+	// enables (requests[socks]), sorted. Their requirements are in the
+	// closure under the same union policy.
+	Extras []string
+	// Local marks a dependency whose source of truth is a directory outside
+	// the project that its manifest points at (a Go replace directory, a
+	// Cargo path crate), not a registry release. Dir holds its code and
+	// Version is the version the manifest names, which no registry need
+	// publish with that code. An offline scan mines it from Dir; the API
+	// knows only published versions, so an online scan carries it as
+	// unpinned (see LocalAsUnpinned).
+	Local bool
 }
 
 // Ref identifies a dependency edge target without requiring a source directory.
@@ -101,6 +123,83 @@ type ResolveResult struct {
 	// VersionedGraph maps each parent node key to its direct dependency targets with versions preserved.
 	// Parent keys should use the same canonical coordinate form as Ref.Key() when a version is known.
 	VersionedGraph map[string][]Ref
+	// Source names what the closure was read from: a lock file's name, or
+	// the site-packages directory of an installed environment. Set by the
+	// Python resolver.
+	Source string
+	// Unpinned lists the declared dependencies with no pinned version (a
+	// range, or no version at all). They have no closure, and the API cannot
+	// answer for them: their findings are unknown, reason unpinned.
+	Unpinned []UnpinnedDependency
+	// OtherVersions lists the versions of a package the closure holds at
+	// several (npm nests a copy under the package that needs it) that the
+	// request leaves out: it takes one version per package URL, and the closure
+	// keeps the one the project's own code loads. Edges to them point at the
+	// kept version.
+	OtherVersions []Dependency
+	// UnderOtherVersions lists the packages only a version in OtherVersions
+	// requires: the request leaves them out too, as no requested package
+	// leads to them and their verdicts would read unreachable while the
+	// project loads them.
+	UnderOtherVersions []Dependency
+	// OmittedEdges holds the dependency edges a tree resolver resolved but
+	// left out of VersionedGraph, keyed the same way: a parent declares a
+	// child that the closure resolves at another position of the tree (Maven
+	// prints such a child once, and elsewhere only as "omitted for duplicate"
+	// or "omitted for conflict"). Each child carries the version the closure
+	// selected. The parent's code still calls the child, so the project
+	// reachability request names these edges too; dependency paths do not
+	// use them.
+	OmittedEdges map[string][]Ref
+}
+
+// ReasonUnpinned is the reachability reason of a declared dependency without
+// a pinned version.
+const ReasonUnpinned = "unpinned"
+
+// UnpinnedDependency is a declared dependency whose version the client cannot
+// pin.
+type UnpinnedDependency struct {
+	// Module is the dependency name (PEP 503 normalised for Python).
+	Module string
+	// Specifier is the version constraint as written; empty for none.
+	Specifier string
+	// Marker is the requirement's environment marker as written.
+	Marker string
+	// Manifest is the file that declares it.
+	Manifest string
+}
+
+// LocalAsUnpinned moves the local dependencies (Dependency.Local) of r to
+// Unpinned, the specifier naming the directory relative to target, and
+// returns them: the API holds only published versions, so a request to it
+// cannot name them. Edges to them stay; a request names only the
+// dependencies left.
+func (r *ResolveResult) LocalAsUnpinned(target string) []Dependency {
+	var local []Dependency
+	kept := r.Dependencies[:0]
+	for _, dep := range r.Dependencies {
+		if !dep.Local {
+			kept = append(kept, dep)
+			continue
+		}
+		local = append(local, dep)
+		r.Unpinned = append(r.Unpinned, UnpinnedDependency{
+			Module:    dep.Module,
+			Specifier: "path " + filepath.ToSlash(relOr(absoluteScanRoot(target), dep.Dir)),
+			Manifest:  r.Source,
+		})
+	}
+	r.Dependencies = kept
+	return local
+}
+
+// ScanRootConfigurer is a resolver that tells a local dependency directory
+// from the project's own code: a directory inside the scan root is the
+// project's code even when Resolve is given a module root below it, as a scan
+// root without a manifest resolves each module root it holds.
+type ScanRootConfigurer interface {
+	SetScanRoot(dir string)
 }
 
 // Resolver resolves a project's dependencies to filesystem paths.

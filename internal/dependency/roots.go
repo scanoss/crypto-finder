@@ -8,40 +8,24 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/scanoss/crypto-finder/internal/skip"
+	"github.com/scanoss/reach/skip"
 )
 
 // rootManifests names the files whose presence makes a directory a RESOLUTION
 // ROOT for an ecosystem, meaning the directory that ecosystem's resolver must
-// be pointed at. That is a narrower question than "which ecosystem is this",
-// which scan.DetectEcosystem answers.
-//
-// The absence of an ecosystem is the design, not an oversight. "python" is
-// deliberately missing: PipResolver resolves from the interpreter or venv
-// associated with the target rather than from a manifest, so a Python tree
-// with no root manifest already resolves today, and fanning out would run the
-// same interpreter query once per subdirectory for the same answer.
+// be pointed at. Java and Python are the ecosystems whose dependencies this
+// version resolves. A Python root is any directory the Python resolver can
+// read (pythonRoot): a lock, pyproject.toml, Pipfile, a pylock or
+// requirements file, or an installed environment.
 var rootManifests = map[string][]string{
-	// go.work is here because a workspace root carries no go.mod of its own and
-	// `go list -m -json` lists the workspace modules from it.
-	"go":          {"go.mod", "go.work"},
-	ecosystemJava: {"pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"},
-	"rust":        {"Cargo.toml"},
-	// Node needs BOTH. NpmResolver.Resolve reads package.json and then
-	// package-lock.json and errors without either, and a bare package.json
-	// holding {"type":"module"} is ordinary source layout, not a module root.
-	ecosystemNode: {npmManifest, npmLockfile},
+	ecosystemJava:   {"pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"},
+	ecosystemPython: nil,
+	ecosystemGo:     {goModManifest},
+	ecosystemNode:   npmLocks,
+	ecosystemRust:   {cargoManifest},
+	ecosystemRuby:   {rubyLockFile},
+	ecosystemCSharp: {csharpLockFile, csharpPackagesFile},
 }
-
-// rootManifestsAllRequired lists the ecosystems whose entry in rootManifests
-// must ALL be present rather than any one of them.
-var rootManifestsAllRequired = map[string]bool{ecosystemNode: true}
-
-// ecosystemsResolvingUpward names the ecosystems whose toolchain locates its
-// own manifest by searching the scan root's ancestors. GoResolver sets only
-// cmd.Dir and lets `go list` walk up, so a directory inside a module resolves
-// today with no manifest of its own and must not be treated as manifest-less.
-var ecosystemsResolvingUpward = map[string]bool{"go": true}
 
 // rootDiscoveryIgnoredDirs are pruned on top of skip.DefaultDirMatcher(). A
 // manifest under one of these names a fixture, not a module of the repository
@@ -132,13 +116,8 @@ func HasRootManifest(dir, ecosystem string) bool {
 	if !ok {
 		return false
 	}
-	if rootManifestsAllRequired[ecosystem] {
-		for _, name := range manifests {
-			if !fileExists(filepath.Join(dir, name)) {
-				return false
-			}
-		}
-		return true
+	if ecosystem == ecosystemPython {
+		return NewPythonResolver().CanResolve(dir)
 	}
 	for _, name := range manifests {
 		if fileExists(filepath.Join(dir, name)) {
@@ -154,35 +133,10 @@ func HasRootManifest(dir, ecosystem string) bool {
 const (
 	// SkipReasonManifestAbsent: no manifest the ecosystem's resolver reads.
 	SkipReasonManifestAbsent = "manifest_absent"
-	// SkipReasonLockfileAbsent: a Node package.json without the
-	// package-lock.json the npm resolver needs to know what is installed.
-	SkipReasonLockfileAbsent = "lockfile_absent"
+	// SkipReasonUnsupportedLockfile: the ecosystem's lock file is a version
+	// its resolver does not read (an npm 6 package-lock.json).
+	SkipReasonUnsupportedLockfile = "unsupported_lockfile"
 )
-
-// UnresolvableSkipReason names why the dependency phase is skipped for a
-// target whose resolver cannot run on it and below which no resolution root
-// was discovered.
-func UnresolvableSkipReason(target, ecosystem string) string {
-	if ecosystem == ecosystemNode && fileExists(filepath.Join(target, npmManifest)) && !fileExists(filepath.Join(target, npmLockfile)) {
-		return SkipReasonLockfileAbsent
-	}
-	return SkipReasonManifestAbsent
-}
-
-// hasRootManifestAbove reports whether a strict ancestor of dir carries a root
-// manifest for ecosystem. It stops at the filesystem root.
-func hasRootManifestAbove(dir, ecosystem string) bool {
-	for {
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return false
-		}
-		if HasRootManifest(parent, ecosystem) {
-			return true
-		}
-		dir = parent
-	}
-}
 
 // absoluteScanRoot is the one form of the scan root that discovery and merging
 // both work from. A relative target would otherwise name the merged result ".",
@@ -222,9 +176,6 @@ func resolutionRoots(targetDir, ecosystem string, skipPatterns []string, bounds 
 	}
 	root := absoluteScanRoot(targetDir)
 	if HasRootManifest(root, ecosystem) {
-		return RootDiscovery{}
-	}
-	if ecosystemsResolvingUpward[ecosystem] && hasRootManifestAbove(root, ecosystem) {
 		return RootDiscovery{}
 	}
 	info, err := os.Stat(root)
@@ -342,11 +293,38 @@ func MergeRootResolutions(resolutions []RootResolution) *ResolveResult {
 		out.WorkspaceMembers = append(out.WorkspaceMembers, mergedMembers(r)...)
 		out.Dependencies = append(out.Dependencies, r.Result.Dependencies...)
 		mergeGraph(out.Graph, r.Result.Graph)
+		mergePython(out, r)
 		mergeVersionedGraph(out.VersionedGraph, r.Result.VersionedGraph)
+		if len(r.Result.OmittedEdges) > 0 {
+			if out.OmittedEdges == nil {
+				out.OmittedEdges = map[string][]Ref{}
+			}
+			mergeVersionedGraph(out.OmittedEdges, r.Result.OmittedEdges)
+		}
 	}
 	sortGraph(out.Graph)
 	sortVersionedGraph(out.VersionedGraph)
+	sortVersionedGraph(out.OmittedEdges)
 	return out
+}
+
+// mergePython folds the fields only the Python resolver sets: what each
+// root's closure was read from (prefixed with the root), the declared
+// direct dependencies and the unpinned ones.
+func mergePython(out *ResolveResult, r RootResolution) {
+	if r.Result.Source != "" {
+		source := r.Root.Rel + "/" + r.Result.Source
+		if out.Source != "" {
+			source = out.Source + ", " + source
+		}
+		out.Source = source
+	}
+	for _, module := range r.Result.DirectDependencies {
+		out.DirectDependencies = addSorted(out.DirectDependencies, module)
+	}
+	out.Unpinned = append(out.Unpinned, r.Result.Unpinned...)
+	out.OtherVersions = append(out.OtherVersions, r.Result.OtherVersions...)
+	out.UnderOtherVersions = append(out.UnderOtherVersions, r.Result.UnderOtherVersions...)
 }
 
 // mergedMembers is what one resolved root contributes to the merged member

@@ -9,7 +9,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -89,7 +90,7 @@ module.exports = { digest };
 
 func nodeSignAsset(line, startCol, endCol int) entities.CryptographicAsset {
 	return cAsset(line, line, startCol, endCol, "const sig = key.sign(msgHash);",
-		"javascript.elliptic.algorithm.signature.sign",
+		"fixture.javascript.elliptic.sign",
 		map[string]string{"assetType": "algorithm", "api": "elliptic.KeyPair.sign"})
 }
 
@@ -152,7 +153,7 @@ func TestNodeSupportingCallsCarryTheirContractRole(t *testing.T) {
 			file: "chain.js",
 			src:  nodeHashJSChain,
 			asset: cAsset(4, 4, 10, 23, "return hash.sha256().update(msg).digest('hex');",
-				"javascript.hash-js.algorithm.hash.sha256",
+				"fixture.javascript.hash-js.sha256",
 				map[string]string{"assetType": "algorithm", "api": "hash.js.sha256"}),
 			// A chain's terminal is its outermost link, so the other links are
 			// its supporting calls.
@@ -220,8 +221,7 @@ func assertNodeSupportingRoles(t *testing.T, file, src string, asset entities.Cr
 		t.Errorf("callgraph export supporting calls = %v, graph fragment = %v", fromCallgraph, got)
 	}
 
-	cached := decodeFragmentForTest(t, marshalSorted(t, fragment))
-	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), cached)
+	annotate := annotateStoredGraph(t, &fragment, dir, report, prepareOIDFixtureReport(t, report))
 	annotateIDs := make([]string, 0, len(annotate.SupportingCalls))
 	for i := range annotate.SupportingCalls {
 		annotateIDs = append(annotateIDs, annotate.SupportingCalls[i].SupportingID)

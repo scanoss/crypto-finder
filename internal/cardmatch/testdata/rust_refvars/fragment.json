@@ -1,0 +1,405 @@
+{
+ "schema_version": "graph-fragment-1.35",
+ "functions": [
+  {
+   "key": "probe::ec.table",
+   "function_name": "probe::ec.table",
+   "canonical_signature": "probe::ec.table()",
+   "package": "probe::ec",
+   "name": "table",
+   "file_path": "src/ec.rs",
+   "start_line": 3,
+   "end_line": 8
+  },
+  {
+   "key": "probe::ec::other.module",
+   "function_name": "probe::ec::other.module",
+   "canonical_signature": "probe::ec::other.module()",
+   "package": "probe::ec::other",
+   "name": "module",
+   "file_path": "src/ec.rs",
+   "start_line": 12,
+   "end_line": 16
+  },
+  {
+   "key": "probe::plain.unrelated",
+   "function_name": "probe::plain.unrelated",
+   "canonical_signature": "probe::plain.unrelated()",
+   "package": "probe::plain",
+   "name": "unrelated",
+   "file_path": "src/plain.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::sig.full",
+   "function_name": "probe::sig.full",
+   "canonical_signature": "probe::sig.full()",
+   "package": "probe::sig",
+   "name": "full",
+   "file_path": "src/sig.rs",
+   "start_line": 3,
+   "end_line": 9
+  },
+  {
+   "key": "probe::sig.lower",
+   "function_name": "probe::sig.lower",
+   "canonical_signature": "probe::sig.lower(u8)",
+   "package": "probe::sig",
+   "name": "lower",
+   "file_path": "src/sig.rs",
+   "start_line": 11,
+   "end_line": 14,
+   "parameter_types": [
+    "u8"
+   ]
+  }
+ ],
+ "internal_edges_compact": [],
+ "internal_edge_strings": [
+  ""
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe::sig.full",
+   "target_key": "acme_sig::signature.verify",
+   "target_function_name": "acme_sig::signature.verify",
+   "target_canonical_signature": "acme_sig::signature.verify(?, ?)",
+   "raw": "acme_sig::signature::verify",
+   "line": 7,
+   "resolution": "exact",
+   "method_name": "verify",
+   "start_col": 5,
+   "end_col": 39,
+   "entry_call": {
+    "line": 7,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&a"
+     },
+     {
+      "parameter_index": 1,
+      "variable_name": "b",
+      "argument_expression": "b"
+     }
+    ]
+   }
+  }
+ ],
+ "constant_refs": [
+  [
+   0,
+   4,
+   13,
+   23,
+   "BASE_TABLE",
+   "init"
+  ],
+  [
+   0,
+   5,
+   14,
+   24,
+   "BASE_TABLE",
+   "other"
+  ],
+  [
+   0,
+   6,
+   13,
+   43,
+   "acme_ec::constants::BASE_TABLE",
+   "init"
+  ],
+  [
+   1,
+   13,
+   17,
+   38,
+   "constants::BASE_TABLE",
+   "init"
+  ],
+  [
+   1,
+   14,
+   17,
+   45,
+   "crate::constants::BASE_TABLE",
+   "init"
+  ],
+  [
+   2,
+   4,
+   13,
+   23,
+   "BASE_TABLE",
+   "init"
+  ],
+  [
+   3,
+   4,
+   13,
+   43,
+   "acme_sig::signature::ML_DSA_44",
+   "init"
+  ],
+  [
+   3,
+   5,
+   13,
+   33,
+   "signature::ML_DSA_65",
+   "init"
+  ],
+  [
+   3,
+   6,
+   13,
+   41,
+   "acme_sig::signature::ED25519",
+   "init"
+  ],
+  [
+   4,
+   12,
+   13,
+   51,
+   "acme_sig::signature::ML_DSA_44_SIGNING",
+   "init"
+  ]
+ ],
+ "declarations": [
+  [
+   0,
+   4,
+   5,
+   24,
+   "",
+   "t",
+   "other"
+  ],
+  [
+   0,
+   5,
+   5,
+   29,
+   "",
+   "q",
+   "other"
+  ],
+  [
+   0,
+   6,
+   5,
+   44,
+   "",
+   "r",
+   "other"
+  ],
+  [
+   1,
+   13,
+   9,
+   39,
+   "",
+   "m",
+   "other"
+  ],
+  [
+   1,
+   14,
+   9,
+   46,
+   "",
+   "n",
+   "other"
+  ],
+  [
+   2,
+   4,
+   5,
+   24,
+   "",
+   "t",
+   "other"
+  ],
+  [
+   3,
+   4,
+   5,
+   44,
+   "",
+   "a",
+   "other"
+  ],
+  [
+   3,
+   5,
+   5,
+   34,
+   "",
+   "b",
+   "other"
+  ],
+  [
+   3,
+   6,
+   5,
+   42,
+   "",
+   "c",
+   "other"
+  ],
+  [
+   4,
+   12,
+   5,
+   52,
+   "",
+   "d",
+   "other"
+  ]
+ ],
+ "source_lines": {
+  "src/ec.rs": {
+   "13": "        let m = constants::BASE_TABLE;",
+   "14": "        let n = crate::constants::BASE_TABLE;",
+   "4": "    let t = BASE_TABLE;",
+   "5": "    let q = &BASE_TABLE * 2;",
+   "6": "    let r = acme_ec::constants::BASE_TABLE;"
+  },
+  "src/plain.rs": {
+   "4": "    let t = BASE_TABLE;"
+  },
+  "src/sig.rs": {
+   "12": "    let d = acme_sig::signature::ML_DSA_44_SIGNING;",
+   "4": "    let a = acme_sig::signature::ML_DSA_44;",
+   "5": "    let b = signature::ML_DSA_65;",
+   "6": "    let c = acme_sig::signature::ED25519;",
+   "7": "    acme_sig::signature::verify(&a, b);"
+  }
+ },
+ "imports": {
+  "src/ec.rs": [
+   {
+    "line": 1,
+    "module": "acme_ec::constants",
+    "name": "BASE_TABLE",
+    "start_col": 1,
+    "end_col": 36,
+    "text": "acme_ec::constants::BASE_TABLE"
+   },
+   {
+    "line": 11,
+    "module": "acme_ec",
+    "name": "constants",
+    "start_col": 5,
+    "end_col": 28,
+    "text": "acme_ec::constants"
+   }
+  ],
+  "src/sig.rs": [
+   {
+    "line": 1,
+    "module": "acme_sig",
+    "name": "signature",
+    "start_col": 1,
+    "end_col": 25,
+    "text": "acme_sig::signature"
+   }
+  ]
+ },
+ "items": {
+  "src/ec.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "table",
+    8
+   ],
+   [
+    10,
+    1,
+    2,
+    "mod",
+    "other",
+    17
+   ],
+   [
+    12,
+    5,
+    6,
+    "fn",
+    "module",
+    16
+   ]
+  ],
+  "src/plain.rs": [
+   [
+    1,
+    1,
+    26,
+    "const",
+    "BASE_TABLE"
+   ],
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "unrelated",
+    6
+   ]
+  ],
+  "src/sig.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "full",
+    9
+   ],
+   [
+    11,
+    1,
+    2,
+    "fn",
+    "lower",
+    14,
+    "",
+    0,
+    [
+     [
+      11,
+      10,
+      15,
+      "x",
+      "u8"
+     ]
+    ]
+   ]
+  ]
+ },
+ "binary_exprs": {
+  "src/ec.rs": [
+   [
+    5,
+    13,
+    28,
+    "*",
+    "&BASE_TABLE",
+    "2",
+    24,
+    27,
+    "probe::ec.table"
+   ]
+  ]
+ },
+ "scan_metadata": {
+  "ecosystem": "rust"
+ }
+}

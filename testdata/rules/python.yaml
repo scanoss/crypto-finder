@@ -7,7 +7,7 @@ rules:
     patterns:
       - pattern-either:
           - pattern: secrets.token_bytes(...)
-          - pattern: secrets.token_bytes($NBYTES)
+          - pattern: secrets.token_bytes($N)
     metadata:
       category: security
       subcategory: cryptography

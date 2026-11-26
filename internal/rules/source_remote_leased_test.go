@@ -17,6 +17,7 @@
 package rules
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -24,6 +25,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	api "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/cache"
@@ -82,5 +86,44 @@ func TestRemoteRuleSource_LeasedRulesetLivesOnlyForTheRun(t *testing.T) {
 	}
 	if source.Info().Lease == nil {
 		t.Fatal("Info() lost the lease after Close()")
+	}
+}
+
+// A remote ruleset without card files (dca) still loads, with a warning
+// that names the card ruleset; one with card files loads without it.
+func TestRemoteRuleSource_WarnsWithoutCardFiles(t *testing.T) {
+	cases := []struct {
+		name  string
+		files map[string]string
+		warn  bool
+	}{
+		{name: "rules only", files: map[string]string{"semgrep-rules/java/aes.yaml": rulesettest.RuleYAML}, warn: true},
+		{name: "with cards", files: map[string]string{"semgrep-rules/java/aes.yaml": rulesettest.RuleYAML, "cards/java/rules.cards": "cards: []\n"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			previous := log.Logger
+			t.Cleanup(func() { log.Logger = previous })
+			var output bytes.Buffer
+			log.Logger = zerolog.New(&output)
+
+			signer := rulesettest.NewSigner(t, "test-key-1", true)
+			issued := rulesettest.Issue(t, signer, "some-ruleset", "v1.40.0", tc.files, time.Now().Add(30*24*time.Hour))
+			srv := rulesettest.NewServer(t, issued)
+			manager, err := cache.NewManager(api.NewClient(srv.URL, "test-key"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := NewRemoteRuleSource(context.Background(), "some-ruleset", "latest", manager)
+			defer source.Close()
+			if _, err := source.Load(); err != nil {
+				t.Fatal(err)
+			}
+			warned := strings.Contains(output.String(), "holds no card files")
+			if warned != tc.warn {
+				t.Fatalf("warned = %v, want %v; log:\n%s", warned, tc.warn, output.String())
+			}
+		})
 	}
 }

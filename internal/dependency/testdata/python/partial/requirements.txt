@@ -1,0 +1,4 @@
+cryptography>=42,<45
+pyOpenSSL==25.0.0
+-e git+https://github.com/example/internal-lib.git#egg=internal-lib
+-e .

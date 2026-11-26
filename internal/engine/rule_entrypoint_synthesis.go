@@ -17,6 +17,7 @@
 package engine
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"os"
@@ -27,13 +28,14 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/paramcondition"
+	"github.com/scanoss/reach/purl"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/rules"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
-	"github.com/scanoss/crypto-finder/pkg/purl"
+	"github.com/scanoss/crypto-finder/pkg/conditioned"
 )
 
 // SyntheticEntryPointRuleID labels findings produced by surfacing a library's
@@ -117,6 +119,8 @@ func synthesizeRuleCryptoEntryPoints(
 			defer nodeIdents.shapes.Close()
 		}
 	}
+	sortDeclsBySource(declsByFQN)
+	sortDeclsBySource(declsByClass)
 	fileIdx := indexReportFiles(report)
 	added := synthesizeRuleCryptoAssets(report, fileIdx, apiCrypto, declsByFQN, declsByClass, ecosystem, nodeIdents, result)
 
@@ -160,6 +164,30 @@ func indexGraphDeclarations(
 	return declsByFQN, declsByClass
 }
 
+// sortDeclsBySource orders each declaration list by where the declaration
+// sits: file, line, column, then key. The lists are built from the graph's
+// function map, whose iteration order changes from run to run; the synthetic
+// assets of one api are appended in list order, and the implicit-constructor
+// representative is the first lowest line, so both take this order instead.
+func sortDeclsBySource(index map[string][]*callgraph.FunctionDecl) {
+	for _, decls := range index {
+		slices.SortFunc(decls, compareDeclSource)
+	}
+}
+
+func compareDeclSource(a, b *callgraph.FunctionDecl) int {
+	if c := strings.Compare(a.FilePath, b.FilePath); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.StartLine, b.StartLine); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.StartCol, b.StartCol); c != 0 {
+		return c
+	}
+	return strings.Compare(a.ID.String(), b.ID.String())
+}
+
 // addPythonPublicPathDeclarations also indexes each Python declaration under
 // the public paths `__init__.py` re-exports give its module-level name, so
 // `jwt/api_jwt.py`'s `encode` meets a rule api written `jwt.encode`. A
@@ -200,6 +228,11 @@ func addPythonPublicPathDeclarations(graph *callgraph.CallGraph, declsByFQN, dec
 func rustDeclarationsBySynthesisKey(graph *callgraph.CallGraph) map[string][]*callgraph.FunctionDecl {
 	out := make(map[string][]*callgraph.FunctionDecl)
 	for _, fn := range graph.Functions {
+		if fn.Abstract {
+			// A trait's required method has no body: it runs nothing, and the
+			// impls that do are declarations of their own.
+			continue
+		}
 		fqn := baseFQN(functionFQN(fn.ID))
 		if fqn == "" {
 			continue
@@ -675,6 +708,42 @@ type RuleCryptoMetadata struct {
 	Languages []string
 }
 
+// ConditionedRules is the conditioned-rule catalog of the rules at rulePaths
+// that target ecosystem, in the form pkg/conditioned sends it: one rule per id
+// and metadata, with every symbol it is indexed under.
+func ConditionedRules(rulePaths []string, ecosystem string) []conditioned.Rule {
+	byAPI := LoadRuleCryptoMetadata(rulePaths)
+	var out []conditioned.Rule
+	index := make(map[string]int)
+	for _, api := range slices.Sorted(maps.Keys(byAPI)) {
+		for i := range byAPI[api] {
+			rule := &byAPI[api][i]
+			if !RuleTargetsEcosystem(rule.Languages, ecosystem) {
+				continue
+			}
+			key := rule.Rule.ID + "\x00" + canonicalMetadata(rule.Metadata)
+			if at, seen := index[key]; seen {
+				out[at].Symbols = append(out[at].Symbols, api)
+				continue
+			}
+			metadata := maps.Clone(rule.Metadata)
+			rulePURL := metadata[RulePURLMetadataKey]
+			delete(metadata, RulePURLMetadataKey)
+			binders := make([]string, len(rule.CaptureBinders))
+			for j, re := range rule.CaptureBinders {
+				binders[j] = re.String()
+			}
+			index[key] = len(out)
+			out = append(out, conditioned.Rule{
+				ID: rule.Rule.ID, Message: rule.Rule.Message, Severity: rule.Rule.Severity,
+				Symbols: []string{api}, Metadata: metadata, PURL: rulePURL,
+				CaptureNames: rule.CaptureNames, CaptureBinders: binders,
+			})
+		}
+	}
+	return out
+}
+
 // LoadRuleCryptoMetadata indexes conditioned crypto rules by terminal symbols
 // parsed from their sink/direct patterns. Call-site specialization resolves
 // those structural symbols against the selected terminal call; metadata.api is
@@ -690,7 +759,14 @@ func LoadRuleCryptoMetadata(rulePaths []string) map[string][]RuleCryptoMetadata 
 }
 
 func loadRuleCryptoMetadataFile(out map[string][]RuleCryptoMetadata, file string) {
-	data, err := os.ReadFile(file)
+	if rules.IsCardsFile(file) {
+		found, conditionedRules := cardsRuleCrypto(file)
+		for i := range found {
+			appendCardsRuleCryptoMetadata(out, &found[i], conditionedRules[i])
+		}
+		return
+	}
+	data, err := readRuleFile(file)
 	if err != nil {
 		return
 	}
@@ -720,6 +796,12 @@ func appendRuleCryptoMetadata(out map[string][]RuleCryptoMetadata, rule *ruleCry
 		CaptureBinders: ruleCaptureBinders(rule.PatternSources),
 		Languages:      rule.Languages,
 	}
+	addRuleCryptoCandidate(out, entrypoints, candidate)
+}
+
+// addRuleCryptoCandidate indexes candidate under each of its entry points,
+// once per rule id and metadata.
+func addRuleCryptoCandidate(out map[string][]RuleCryptoMetadata, entrypoints []string, candidate RuleCryptoMetadata) {
 	for _, entrypoint := range entrypoints {
 		duplicate := false
 		for i := range out[entrypoint] {
@@ -814,15 +896,17 @@ func buildRuleCryptoByAPI(rulePaths []string, ecosystem string) map[string][]map
 }
 
 func addRuleCryptoFile(out map[string][]map[string]string, file, ecosystem string) {
-	// Rule paths come from the trusted ruleset manager.
-	data, err := os.ReadFile(file)
-	if err != nil {
-		return
-	}
-
 	var rf ruleFileCryptoYAML
-	if ruleCryptoDocuments.Decode(file, data, &rf) != nil {
-		return
+	if rules.IsCardsFile(file) {
+		rf.Rules, _ = cardsRuleCrypto(file)
+	} else {
+		data, err := readRuleFile(file)
+		if err != nil {
+			return
+		}
+		if ruleCryptoDocuments.Decode(file, data, &rf) != nil {
+			return
+		}
 	}
 
 	for i := range rf.Rules {
@@ -932,8 +1016,15 @@ func removeUnresolvedMetadataVariables(meta map[string]string) {
 	}
 }
 
-// expandRuleFiles returns the YAML rule files for a path that may be a file or a
-// directory.
+// readRuleFile reads a rule file. Rule paths come from the trusted ruleset
+// manager.
+func readRuleFile(file string) ([]byte, error) {
+	return os.ReadFile(file) // #nosec G304 -- a rule file of the ruleset the user named.
+}
+
+// expandRuleFiles returns the rule files for a path that may be a file or a
+// directory: its YAML rule files or, for a ruleset of card files only, its
+// card files.
 func expandRuleFiles(path string) []string {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -953,6 +1044,9 @@ func expandRuleFiles(path string) []string {
 		return nil
 	}); err != nil {
 		log.Debug().Err(err).Str("path", path).Msg("failed to walk rule directory")
+	}
+	if len(files) == 0 {
+		return rules.CardFilesUnder(path)
 	}
 	return files
 }

@@ -9,7 +9,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -98,7 +99,7 @@ func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 			file: "digest.c",
 			src:  cEVPDigestConsumer,
 			asset: cAsset(5, 5, 5, 38, "EVP_DigestInit(ctx, EVP_sha256());",
-				"c.openssl.algorithm.hash.sha-2.digestinit", map[string]string{"assetType": "algorithm", "api": "EVP_DigestInit"}),
+				"fixture.c.openssl.digestinit", map[string]string{"assetType": "algorithm", "api": "EVP_DigestInit"}),
 			want: map[string]string{
 				"EVP_MD_CTX_new":     "factory",
 				"EVP_DigestUpdate":   "operation",
@@ -111,7 +112,7 @@ func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 			file: "stream.c",
 			src:  cSecretstreamConsumer,
 			asset: cAsset(10, 11, 12, 103, "return crypto_secretstream_xchacha20poly1305_push(&state, c, clen, m, mlen, NULL, 0,\n                                                      crypto_secretstream_xchacha20poly1305_TAG_FINAL);",
-				"c.libsodium.algorithm.ae.xchacha20-poly1305.secretstream-push",
+				"fixture.c.libsodium.secretstream-push",
 				map[string]string{"assetType": "algorithm", "api": "sodium.crypto_secretstream_xchacha20poly1305_push"}),
 			want: map[string]string{
 				"crypto_secretstream_xchacha20poly1305_init_push": "config",
@@ -125,7 +126,7 @@ func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 			file: "csr.c",
 			src:  cMbedTLSCSRConsumer,
 			asset: cAsset(6, 6, 38, 42, "int ret = mbedtls_x509_csr_parse(&csr, buf, len);",
-				"c.crypto.mbedtls.x509-csr", map[string]string{"assetType": "certificate"}),
+				"fixture.c.crypto.x509-csr", map[string]string{"assetType": "certificate"}),
 			want: map[string]string{
 				"mbedtls_x509_csr_init": "factory",
 				"mbedtls_x509_csr_free": "",
@@ -136,7 +137,7 @@ func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 			file: "keygen.c",
 			src:  cPSAKeyGenerationConsumer,
 			asset: cAsset(8, 8, 44, 55, "psa_status_t status = psa_generate_key(&attributes, key);",
-				"c.crypto.mbedtls.psa-key-generation", map[string]string{"assetType": "algorithm"}),
+				"fixture.c.crypto.psa-key-generation", map[string]string{"assetType": "algorithm"}),
 			want: map[string]string{
 				"psa_set_key_usage_flags":  "config",
 				"psa_set_key_type":         "config",
@@ -150,7 +151,7 @@ func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 			file: "digest.c",
 			src:  cPSAHashConsumer,
 			asset: cAsset(5, 5, 25, 40, "psa_hash_setup(&op, PSA_ALG_SHA_256);",
-				"c.mbedtls.algorithm.hash.sha-2.psa-alg",
+				"fixture.c.mbedtls.psa-alg",
 				map[string]string{"assetType": "algorithm", "algorithmName": "SHA-256", "api": "psa_crypto"}),
 			want: map[string]string{
 				"psa_hash_update": "operation",
@@ -231,8 +232,7 @@ func TestCFreeFunctionSupportingCallsCarryTheirContractRole(t *testing.T) {
 				t.Errorf("callgraph export supporting calls = %v, graph fragment = %v", fromCallgraph, got)
 			}
 
-			cached := decodeFragmentForTest(t, marshalSorted(t, fragment))
-			annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), cached)
+			annotate := annotateStoredGraph(t, &fragment, dir, report, prepareOIDFixtureReport(t, report))
 			var annotateIDs []string
 			for i := range annotate.SupportingCalls {
 				annotateIDs = append(annotateIDs, annotate.SupportingCalls[i].SupportingID)

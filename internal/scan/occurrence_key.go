@@ -11,7 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -31,6 +32,7 @@ type occurrenceKeyCandidate struct {
 
 // AssignOccurrenceKeys attaches structural occurrence keys to canonical findings,
 // using terminal call AST anchors when available and a file/module fallback otherwise.
+// A finding the API served keeps the key it was served with.
 func AssignOccurrenceKeys(result *engine.DepScanResult) {
 	if result == nil || result.Report == nil || result.CallGraph == nil {
 		return
@@ -90,6 +92,13 @@ func occurrenceKeyCandidates(result *engine.DepScanResult) []occurrenceKeyCandid
 		finding := &result.Report.Findings[i]
 		for j := range finding.CryptographicAssets {
 			asset := &finding.CryptographicAssets[j]
+			if asset.Served != nil {
+				// The API served this finding with the key the scan of its
+				// component anchored in the component's call graph. The scan
+				// holds no code of the component, so it could only key it by
+				// file; the served key is the occurrence's identity.
+				continue
+			}
 			asset.OccurrenceKey = ""
 			ctx, functions := occurrenceAnchorSourceFor(primary, dependencySources, finding, asset)
 			var containing *callgraph.FunctionDecl

@@ -1,0 +1,25 @@
+# `use $V::N;` on a use tree with a self leaf (TestRustSelfUseAsOpenGrep):
+# `use a::N::{self};` reads as a use of a::N only when that path has two
+# segments and the self is in the outermost group; a self leaf of another
+# name is no use of N.
+rules:
+- id: inside
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "inside-$V"}}
+  patterns:
+  - pattern-inside: |
+      use $V::wanted;
+      ...
+  - pattern: acme::make(...)
+- id: notinside
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "notinside"}}
+  patterns:
+  - pattern-not-inside: |
+      use $V::wanted;
+      ...
+  - pattern: acme::make(...)

@@ -274,3 +274,26 @@ func TestLocalRuleSource_Info_BeforeLoad(t *testing.T) {
 		t.Errorf("Info() before Load() should be zero-value, got %+v", got)
 	}
 }
+
+// A ruleset release's cards/ beside semgrep-rules/ holds the cards detector's
+// cards; the local source passes only the rules on.
+func TestLocalRuleSourceSkipsTheRulesetCards(t *testing.T) {
+	root := t.TempDir()
+	rule := filepath.Join(root, "semgrep-rules", "java", "x", "rules.yaml")
+	card := filepath.Join(root, "cards", "x", "rules.yaml")
+	for _, path := range []string{rule, card} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("rules: []\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := NewLocalRuleSource(nil, []string{root}).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != rule {
+		t.Errorf("rule files = %v, want only %s", got, rule)
+	}
+}

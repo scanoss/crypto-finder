@@ -1,143 +1,43 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+
 package dependency
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
-	"time"
 
-	"github.com/rs/zerolog/log"
+	"github.com/package-url/packageurl-go"
+	"github.com/scanoss/scanoss.go/pkg/dependencies/resolve"
 
 	"github.com/scanoss/crypto-finder/internal/failure"
 )
 
-const (
-	ecosystemNode   = "node"
-	npmManifest     = "package.json"
-	npmLockfile     = "package-lock.json"
-	npmModulesDir   = "node_modules"
-	npmModulesSlash = npmModulesDir + "/"
-	npmInstallHint  = "run `npm install` before scanning, or scan with --install-dependencies"
-)
+const ecosystemNode = "node"
 
-// npmManifestFile is the subset of package.json this resolver reads.
-type npmManifestFile struct {
-	Name         string            `json:"name"`
-	Version      string            `json:"version"`
-	Dependencies map[string]string `json:"dependencies"`
-}
+// npmLocks are the lock files the npm resolver reads, in the order the first
+// one present decides the closure: npm itself prefers a shrinkwrap to a
+// package-lock.json.
+var npmLocks = []string{"npm-shrinkwrap.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
 
-// npmLockFile covers both lockfile shapes npm has shipped. A v2 lockfile carries
-// BOTH fields for backwards compatibility, so `packages` is preferred wherever it
-// is present: it is keyed by install path and therefore already answers the
-// question `dependencies` needs a tree walk to answer.
-type npmLockFile struct {
-	Name            string                    `json:"name"`
-	Version         string                    `json:"version"`
-	LockfileVersion int                       `json:"lockfileVersion"`
-	Packages        map[string]npmLockPackage `json:"packages"`
-	Dependencies    map[string]npmLockV1Entry `json:"dependencies"`
-}
+// NpmResolver resolves a JavaScript or TypeScript project's pinned npm
+// closure from its lock file (package-lock.json or npm-shrinkwrap.json of
+// lockfileVersion 2 and 3, yarn.lock, pnpm-lock.yaml), read with the
+// resolver the other SCANOSS tools share. Nothing runs and nothing is
+// downloaded: a project without a lock file has no closure (package.json
+// ranges are never resolved), and dev-only packages are left out. A
+// dependency installed under node_modules carries its directory.
+type NpmResolver struct{}
 
-// npmLockPackage is one entry of a v2/v3 `packages` map. The key is the install
-// path; `Dependencies` maps a name to a SEMVER RANGE, never to a resolved
-// version, which is why edges are resolved through the install tree below.
-type npmLockPackage struct {
-	Name         string            `json:"name"`
-	Version      string            `json:"version"`
-	Dependencies map[string]string `json:"dependencies"`
-	// Peer and optional dependencies are real edges. Reading only `dependencies`
-	// loses the bridge package on a user -> crypto path, and a chain that has to
-	// cross a peer edge cannot be built at all.
-	PeerDependencies     map[string]string `json:"peerDependencies"`
-	OptionalDependencies map[string]string `json:"optionalDependencies"`
-	Dev                  bool              `json:"dev"`
-	// Optional marks a package npm may legitimately not install. The platform
-	// packages of esbuild, rollup, swc and sharp are optional and gated by os and
-	// cpu, so a healthy linux-x64 install is missing most of them BY DESIGN.
-	Optional bool `json:"optional"`
-	// Link marks a node_modules entry that is a symlink to a workspace member.
-	// It carries no version of its own: the real entry is keyed by the member's
-	// own path elsewhere in the same map.
-	Link bool `json:"link"`
-}
-
-// npmLockV1Entry is one entry of a v1 `dependencies` map, which nests instead of
-// keying by path.
-type npmLockV1Entry struct {
-	Version string `json:"version"`
-	Dev     bool   `json:"dev"`
-	// npm 5.0 and 5.1 wrote `"requires": true` here instead of a map. Typing
-	// this as map[string]string made the whole scan fail on a lockfile the code
-	// deliberately claims to support, so the shape is decoded leniently and a
-	// non-object is read as no edges.
-	Requires     json.RawMessage           `json:"requires"`
-	Optional     bool                      `json:"optional"`
-	Dependencies map[string]npmLockV1Entry `json:"dependencies"`
-}
-
-// requireMap decodes the v1 `requires` field, tolerating the boolean npm 5.0
-// and 5.1 emitted.
-func (e npmLockV1Entry) requireMap() map[string]string {
-	if len(e.Requires) == 0 {
-		return nil
-	}
-	out := map[string]string{}
-	if err := json.Unmarshal(e.Requires, &out); err != nil {
-		return nil
-	}
-	return out
-}
-
-// errNpmNotInstalled marks a lockfile whose required packages are not on disk:
-// the one state an install can fix.
-var errNpmNotInstalled = errors.New("dependencies not installed")
-
-// NpmResolver resolves Node dependencies from package-lock.json and the
-// node_modules tree npm has installed.
-//
-// npm puts dependency sources on disk at install time, so resolution is reading
-// the lockfile and pointing at directories that are already there. Without an
-// install there is nothing to point at, and this resolver fails rather than
-// return dependencies whose Dir is empty, unless install is enabled, in which
-// case it runs `npm ci` itself first.
-type NpmResolver struct {
-	includeDev bool
-	install    bool
-	lookPath   func(string) (string, error)
-}
-
-// NpmResolverOption configures an NpmResolver.
-type NpmResolverOption func(*NpmResolver)
-
-// WithNpmDevDependencies also resolves the dev-only packages of the lockfile.
-func WithNpmDevDependencies() NpmResolverOption {
-	return func(r *NpmResolver) { r.includeDev = true }
-}
-
-// WithNpmInstall installs the lockfile at a root whose lockfile names required
-// packages that node_modules does not hold, then resolves the fresh tree (see
-// npmInstallArgs).
-func WithNpmInstall() NpmResolverOption {
-	return func(r *NpmResolver) { r.install = true }
-}
-
-// NewNpmResolver creates a new npm dependency resolver.
-func NewNpmResolver(opts ...NpmResolverOption) *NpmResolver {
-	r := &NpmResolver{lookPath: exec.LookPath}
-	for _, opt := range opts {
-		opt(r)
-	}
-	return r
+// NewNpmResolver returns the npm resolver.
+func NewNpmResolver() *NpmResolver {
+	return &NpmResolver{}
 }
 
 // Ecosystem returns "node".
@@ -145,515 +45,262 @@ func (r *NpmResolver) Ecosystem() string {
 	return ecosystemNode
 }
 
-// CanResolve reports whether targetDir has both files Resolve reads: the root
-// package.json and the package-lock.json that records which versions are
-// installed. A package.json alone is first-party source whose dependencies
-// cannot be resolved, so the dependency phase is skipped for it rather than
-// failing the scan (see SkipReasonLockfileAbsent).
+// CanResolve reports whether targetDir holds an npm, yarn or pnpm lock file.
 func (r *NpmResolver) CanResolve(targetDir string) bool {
-	return HasRootManifest(targetDir, ecosystemNode)
+	return npmLockName(targetDir) != ""
 }
 
-// Resolve reads package.json and package-lock.json at targetDir and maps every
-// production dependency to the directory npm installed it in.
+// npmLockName is the lock file of dir that decides its closure, or "".
+func npmLockName(dir string) string {
+	for _, name := range npmLocks {
+		if fileExists(filepath.Join(dir, name)) {
+			return name
+		}
+	}
+	return ""
+}
+
+// Resolve reads the lock file of targetDir into the pinned runtime closure.
 func (r *NpmResolver) Resolve(ctx context.Context, targetDir string) (*ResolveResult, error) {
-	result, err := r.resolveTree(targetDir)
-	if !r.install || !errors.Is(err, errNpmNotInstalled) {
-		return result, err
+	lock := npmLockName(targetDir)
+	if lock == "" {
+		return nil, npmFailure(targetDir, "no npm, yarn or pnpm lock file")
 	}
-	overExisting := isDir(filepath.Join(targetDir, npmModulesDir))
-	if err := r.npmInstall(ctx, targetDir); err != nil {
-		return nil, err
-	}
-	result, err = r.resolveTree(targetDir)
-	if err != nil || !overExisting {
-		// npm ci, used without node_modules, already refuses a lockfile out of
-		// sync with package.json.
-		return result, err
-	}
-	return result, installedVersionsMatchLockfile(targetDir, result)
-}
-
-// installedVersionsMatchLockfile fails when an installed package's version is
-// not the one package-lock.json records. `npm install --no-save` accepts a
-// lockfile out of sync with package.json and installs what package.json asks
-// for without rewriting the lockfile; the findings would then be reported
-// under a version that is not on disk. `npm ci` refuses such a lockfile, and
-// this makes the install over an existing node_modules refuse it as well.
-func installedVersionsMatchLockfile(targetDir string, result *ResolveResult) error {
-	var stale []string
-	for _, dep := range result.Dependencies {
-		raw, err := os.ReadFile(filepath.Join(dep.Dir, npmManifest))
-		if err != nil {
-			continue
-		}
-		var installed struct {
-			Version string `json:"version"`
-		}
-		if json.Unmarshal(raw, &installed) != nil || installed.Version == "" || installed.Version == dep.Version {
-			continue
-		}
-		if strings.ContainsAny(dep.Version, ":#/") {
-			// A v1 lockfile records a git or npm: alias dependency by its spec,
-			// not by the version it installs.
-			continue
-		}
-		stale = append(stale, fmt.Sprintf("%s %s installed, %s in %s", dep.Module, installed.Version, dep.Version, npmLockfile))
-	}
-	if len(stale) == 0 {
-		return nil
-	}
-	return failure.New(failure.CodeDependencyResolutionFailed, failure.StageDependency,
-		fmt.Sprintf("%s in %s is out of sync with %s (%s): run npm install to update it, then scan again",
-			npmLockfile, targetDir, npmManifest, strings.Join(npmSampleNames(stale), "; ")),
-		failure.WithDetail("target_dir", targetDir),
-	)
-}
-
-// npmInstallArgs installs what the lockfile records. Without node_modules,
-// `npm ci` installs exactly that. `npm ci` deletes an existing node_modules
-// first, so over one `npm install --no-save` adds what is missing and keeps the
-// installed packages the lockfile lists, dev ones included: --omit=dev would
-// remove them. --ignore-scripts is the security boundary in both: no package's
-// lifecycle script runs on the scanning host.
-func (r *NpmResolver) npmInstallArgs(targetDir string) []string {
-	flags := []string{"--ignore-scripts", "--no-audit", "--no-fund"}
-	if isDir(filepath.Join(targetDir, npmModulesDir)) {
-		return slices.Concat([]string{"install", "--no-save"}, flags)
-	}
-	if !r.includeDev {
-		flags = append(flags, "--omit=dev")
-	}
-	return slices.Concat([]string{"ci"}, flags)
-}
-
-func (r *NpmResolver) npmInstall(ctx context.Context, targetDir string) error {
-	npm, err := r.lookPath("npm")
+	graph, err := readLockfile(ctx, targetDir, lock)
 	if err != nil {
-		return failure.Wrap(err, failure.CodeDependencyResolutionFailed, failure.StageDependency,
-			"npm is not on PATH, and --install-dependencies needs it to install the dependencies of "+targetDir)
+		return nil, npmFailure(targetDir, fmt.Sprintf("%s: %v", lock, err))
 	}
-	args := r.npmInstallArgs(targetDir)
-	log.Info().Str("root", targetDir).Strs("args", args).Msg("Installing npm dependencies")
-	start := time.Now()
-	cmd := exec.CommandContext(ctx, npm, args...)
-	cmd.Dir = targetDir
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		tail := tailForFailure(strings.TrimSpace(stderr.String()), failureOutputLimit)
-		return failure.Wrap(err, failure.CodeDependencyResolutionFailed, failure.StageDependency,
-			fmt.Sprintf("npm %s failed in %s: %s", args[0], targetDir, tail),
-			failure.WithDetail("target_dir", targetDir),
-			failure.WithDetail("stderr", tail),
-		)
+	for _, root := range graph.Roots {
+		if root.Status == resolve.StatusUnknown {
+			detail := fmt.Sprintf("%s: %s %s", lock, root.Reason, root.Detail)
+			if root.Reason == resolve.ReasonUnsupportedVersion {
+				return nil, failure.Wrap(ErrUnsupportedNpmLock, failure.CodeDependencyResolutionFailed, failure.StageDependency,
+					fmt.Sprintf("read the npm dependency closure of %s: %s", targetDir, detail), failure.WithDetail("target_dir", targetDir))
+			}
+			return nil, npmFailure(targetDir, detail)
+		}
 	}
-	log.Info().Str("root", targetDir).Dur("duration", time.Since(start)).Msg("Installed npm dependencies")
-	return nil
-}
-
-func (r *NpmResolver) resolveTree(targetDir string) (*ResolveResult, error) {
-	manifest, err := readNpmManifest(targetDir)
-	if err != nil {
-		return nil, err
+	result := npmClosure(lock, graph, npmHoistedVersions(targetDir, lock))
+	result.RootModule = npmPackageName(targetDir)
+	installed := indexInstalledNpm(filepath.Join(targetDir, "node_modules"))
+	for i := range result.Dependencies {
+		dep := &result.Dependencies[i]
+		dep.Dir = installed[Ref{Module: dep.Module, Version: dep.Version}.Key()]
 	}
-	lock, err := readNpmLockfile(targetDir)
-	if err != nil {
-		return nil, err
-	}
-
-	packages, workspacePaths, rootDeps := npmPackagesByInstallPath(manifest, lock, r.includeDev)
-
-	result := &ResolveResult{
-		RootModule:     npmRootModule(manifest, lock),
-		Dependencies:   make([]Dependency, 0, len(packages)),
-		Graph:          make(map[string][]string),
-		VersionedGraph: make(map[string][]Ref),
-	}
-
-	appendNpmWorkspaceMembers(result, targetDir, workspacePaths)
-	resolved, absent := appendNpmDependencies(result, targetDir, packages)
-
-	// An absent OPTIONAL package is not a defect: npm gates the platform
-	// packages of esbuild, rollup, swc and sharp on os and cpu, so a healthy
-	// linux-x64 tree is missing most of them by design. An absent DEV package is
-	// not a defect either, since `npm install --omit=dev` is ordinary. Counting
-	// those made the warning fire on every real project, which is the same as
-	// having no warning at all. What does mean the install is incomplete is an
-	// absent REQUIRED production package.
-	if len(absent.required) > 0 {
-		return nil, fmt.Errorf(
-			"npm resolver: %w: %d required %s in %s are in %s but not installed under %s (%s): %s",
-			errNpmNotInstalled, len(absent.required), npmPluralPackages(len(absent.required)), targetDir, npmLockfile,
-			npmModulesDir, strings.Join(npmSampleNames(absent.required), ", "), npmInstallHint,
-		)
-	}
-	if len(result.Dependencies) == 0 && len(packages) > 0 {
-		return nil, fmt.Errorf(
-			"npm resolver: %w: %s in %s lists %d dependencies and none are installed under %s: %s",
-			errNpmNotInstalled, npmLockfile, targetDir, len(packages), npmModulesDir, npmInstallHint,
-		)
-	}
-	if len(absent.dev) > 0 {
-		log.Debug().
-			Int("dev", len(absent.dev)).
-			Int("optional", len(absent.optional)).
-			Str("target", targetDir).
-			Msg("Dev or optional npm packages in the lockfile are not installed, which is expected")
-	}
-
-	// The graph is built from what RESOLVED, plus the workspace members and the
-	// root. Walking the lockfile instead put nodes in the graph for packages
-	// that are not on disk at all.
-	populateNpmGraph(result, packages, workspacePaths, resolved, rootDeps, manifest)
-
-	log.Info().
-		Int("count", len(result.Dependencies)).
-		Str("root", result.RootModule).
-		Msg("Resolved npm dependencies")
-
 	return result, nil
 }
 
-func readNpmManifest(targetDir string) (*npmManifestFile, error) {
-	raw, err := os.ReadFile(filepath.Join(targetDir, npmManifest))
-	if err != nil {
-		return nil, fmt.Errorf("npm resolver: read %s in %s: %w", npmManifest, targetDir, err)
-	}
-	manifest := &npmManifestFile{}
-	if err := json.Unmarshal(raw, manifest); err != nil {
-		return nil, fmt.Errorf("npm resolver: parse %s in %s: %w", npmManifest, targetDir, err)
-	}
-	return manifest, nil
+// ErrUnsupportedNpmLock is the cause of a resolution that read a lock file
+// version the shared parser does not read (npm 6, lockfileVersion 1).
+var ErrUnsupportedNpmLock = errors.New("unsupported npm lock file version")
+
+func npmFailure(dir, detail string) error {
+	return failure.New(failure.CodeDependencyResolutionFailed, failure.StageDependency,
+		fmt.Sprintf("read the npm dependency closure of %s: %s", dir, detail), failure.WithDetail("target_dir", dir))
 }
 
-func readNpmLockfile(targetDir string) (*npmLockFile, error) {
-	raw, err := os.ReadFile(filepath.Join(targetDir, npmLockfile))
-	if err != nil {
-		return nil, fmt.Errorf(
-			"npm resolver: read %s in %s: %w: a lockfile is the only record of which versions are installed",
-			npmLockfile, targetDir, err,
-		)
+// npmClosure reads the runtime closure out of the lock's graph: the members
+// of every root (a workspace has one per member) that some root reaches
+// outside its dev dependencies, the edges between them, and which are
+// declared. A local node is the project's own package, not a dependency; a
+// member with no registry package URL or version is unpinned.
+func npmClosure(source string, graph resolve.Graph, hoisted map[string]string) *ResolveResult {
+	c := &npmCollector{
+		source: source,
+		result: &ResolveResult{Source: source, Graph: map[string][]string{}, VersionedGraph: map[string][]Ref{}},
+		nodes:  make(map[resolve.NodeID]resolve.Node, len(graph.Nodes)),
+		refs:   map[resolve.NodeID]Ref{},
+		kept:   map[Ref]bool{},
+		direct: map[string]bool{},
+		seen:   map[string]bool{},
+
+		hoisted:   hoisted,
+		directRef: map[Ref]bool{},
+		incoming:  map[Ref]int{},
 	}
-	lock := &npmLockFile{}
-	if err := json.Unmarshal(raw, lock); err != nil {
-		return nil, fmt.Errorf("npm resolver: parse %s in %s: %w", npmLockfile, targetDir, err)
+	for _, node := range graph.Nodes {
+		c.nodes[node.ID] = node
+		if module, ok := npmModuleOf(node.PURL); ok && node.Version != "" && !node.Local {
+			c.refs[node.ID] = Ref{Module: module, Version: node.Version}
+		}
 	}
-	return lock, nil
+	for i := range graph.Roots {
+		c.addRoot(&graph.Roots[i])
+	}
+	return c.finish()
 }
 
-func npmRootModule(manifest *npmManifestFile, lock *npmLockFile) string {
-	if manifest.Name != "" {
-		return manifest.Name
-	}
-	return lock.Name
+// npmCollector accumulates the closure over the roots of a lock's graph.
+type npmCollector struct {
+	source string
+	result *ResolveResult
+	nodes  map[resolve.NodeID]resolve.Node
+	refs   map[resolve.NodeID]Ref
+	kept   map[Ref]bool
+	direct map[string]bool
+	seen   map[string]bool
+
+	// hoisted, directRef and incoming choose among the versions of a package.
+	hoisted   map[string]string
+	directRef map[Ref]bool
+	incoming  map[Ref]int
 }
 
-// npmPackagesByInstallPath reduces either lockfile shape to one path-keyed map,
-// and returns the root's own direct dependency names alongside it. Dev-only
-// packages are dropped unless includeDev is set: they are build tooling that
-// never ships, and walking them multiplies the scanned tree without adding
-// anything a consumer runs. A devOptional package stays, because npm installs
-// it without dev when an optional production dependency needs it.
-func npmPackagesByInstallPath(
-	manifest *npmManifestFile,
-	lock *npmLockFile,
-	includeDev bool,
-) (packages, workspacePaths map[string]npmLockPackage, rootDeps []string) {
-	packages = make(map[string]npmLockPackage)
-	workspacePaths = make(map[string]npmLockPackage)
-
-	if len(lock.Packages) == 0 {
-		collectNpmV1Entries("", lock.Dependencies, packages, includeDev)
-		return packages, workspacePaths, sortedKeys(manifest.Dependencies)
-	}
-	for installPath, pkg := range lock.Packages {
-		if installPath == "" {
-			rootDeps = sortedKeys(pkg.Dependencies)
+func (c *npmCollector) addRoot(root *resolve.Root) {
+	for _, member := range root.Members {
+		node := c.nodes[member.ID]
+		if member.Dev || node.Local {
 			continue
 		}
-		if pkg.Link {
-			// A link entry is the symlink npm drops in node_modules for a
-			// workspace member. Its target is already keyed by its own path,
-			// and the entry itself has no version, so taking it would report
-			// the same source twice and once without a coordinate.
+		ref, pinned := c.refs[member.ID]
+		if !pinned {
+			c.addUnpinned(node)
 			continue
 		}
-		if !strings.HasPrefix(installPath, npmModulesSlash) {
-			// A path outside node_modules is the user's OWN package in a
-			// workspace, not something installed for them.
-			workspacePaths[installPath] = pkg
-			continue
-		}
-		if pkg.Dev && !includeDev {
-			continue
-		}
-		packages[installPath] = pkg
+		c.kept[ref] = true
+		c.direct[ref.Module] = c.direct[ref.Module] || member.Direct
+		c.directRef[ref] = c.directRef[ref] || member.Direct
 	}
-	if len(rootDeps) == 0 {
-		rootDeps = sortedKeys(manifest.Dependencies)
-	}
-	return packages, workspacePaths, rootDeps
-}
-
-// collectNpmV1Entries flattens the nested v1 shape into install paths, which is
-// exactly what the v2 `packages` map states directly. A dev entry's nested
-// entries are dev too, so they leave with it.
-func collectNpmV1Entries(prefix string, entries map[string]npmLockV1Entry, out map[string]npmLockPackage, includeDev bool) {
-	for name, entry := range entries {
-		if entry.Dev && !includeDev {
-			continue
-		}
-		installPath := path.Join(prefix, npmModulesDir, name)
-		out[installPath] = npmLockPackage{
-			Name:         name,
-			Version:      entry.Version,
-			Dependencies: entry.requireMap(),
-			Dev:          entry.Dev,
-			Optional:     entry.Optional,
-		}
-		collectNpmV1Entries(installPath, entry.Dependencies, out, includeDev)
-	}
-}
-
-// npmAbsent separates the packages a lockfile names but the tree does not hold,
-// because the three kinds mean different things.
-type npmAbsent struct {
-	required []string
-	dev      []string
-	optional []string
-}
-
-// appendNpmDependencies records one Dependency per installed package. It returns
-// the set of install paths that actually resolved — the graph is built from that
-// rather than from the lockfile — and what was absent, classified.
-func appendNpmDependencies(
-	result *ResolveResult,
-	targetDir string,
-	packages map[string]npmLockPackage,
-) (map[string]struct{}, npmAbsent) {
-	resolved := make(map[string]struct{}, len(packages))
-	var absent npmAbsent
-	for _, installPath := range sortedPackagePaths(packages) {
-		pkg := packages[installPath]
-		dir := filepath.Join(targetDir, filepath.FromSlash(installPath))
-		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-			name := npmModuleName(installPath, pkg)
-			switch {
-			case pkg.Optional:
-				absent.optional = append(absent.optional, name)
-			case pkg.Dev:
-				absent.dev = append(absent.dev, name)
-			default:
-				absent.required = append(absent.required, name)
-			}
-			continue
-		}
-		resolved[installPath] = struct{}{}
-		result.Dependencies = append(result.Dependencies, Dependency{
-			Module:  npmModuleName(installPath, pkg),
-			Version: pkg.Version,
-			Dir:     dir,
-		})
-	}
-	return resolved, absent
-}
-
-func npmPluralPackages(n int) string {
-	if n == 1 {
-		return "package"
-	}
-	return "packages"
-}
-
-// npmSampleNames keeps an error message actionable without pasting a whole tree
-// into it.
-func npmSampleNames(names []string) []string {
-	const sampleLimit = 5
-	if len(names) <= sampleLimit {
-		return names
-	}
-	return append(append([]string{}, names[:sampleLimit]...), "...")
-}
-
-// appendNpmWorkspaceMembers records the user's own packages. They are source the
-// consumer wrote, so attributing them to an external coordinate would put author
-// code under a dependency's name.
-func appendNpmWorkspaceMembers(result *ResolveResult, targetDir string, workspacePaths map[string]npmLockPackage) {
-	for _, installPath := range sortedPackagePaths(workspacePaths) {
-		pkg := workspacePaths[installPath]
-		dir := filepath.Join(targetDir, filepath.FromSlash(installPath))
-		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-			continue
-		}
-		result.WorkspaceMembers = append(result.WorkspaceMembers, WorkspaceMember{
-			Name: npmModuleName(installPath, pkg),
-			Dir:  dir,
-		})
-	}
-}
-
-// npmEdgeSources returns every declared edge of a package. peerDependencies and
-// optionalDependencies are real edges: a bridge package reached only through a
-// peer edge is invisible without them, and the chain that crosses it cannot be
-// built.
-func npmEdgeSources(pkg npmLockPackage) []string {
-	names := map[string]struct{}{}
-	for _, m := range []map[string]string{pkg.Dependencies, pkg.PeerDependencies, pkg.OptionalDependencies} {
-		for name := range m {
-			names[name] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(names))
-	for name := range names {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// populateNpmGraph walks the packages that RESOLVED, the workspace members and
-// the root. A workspace member is a graph parent like any other: its own
-// dependencies are edges the consumer wrote, and omitting them left every
-// dependency of a member as an orphan with no path from the root.
-func populateNpmGraph(
-	result *ResolveResult,
-	packages map[string]npmLockPackage,
-	workspacePaths map[string]npmLockPackage,
-	resolved map[string]struct{},
-	rootDeps []string,
-	manifest *npmManifestFile,
-) {
-	lookup := func(fromPath, name string) (npmLockPackage, string, bool) {
-		return npmResolveEdge(packages, resolved, fromPath, name)
-	}
-
-	if result.RootModule != "" {
-		rootKey := npmVersionedKey(result.RootModule, manifest.Version)
-		for _, name := range rootDeps {
-			if target, targetPath, ok := lookup("", name); ok {
-				appendNpmEdge(result, result.RootModule, rootKey, npmModuleName(targetPath, target), target.Version)
-			}
-		}
-	}
-
-	for _, installPath := range sortedPackagePaths(workspacePaths) {
-		pkg := workspacePaths[installPath]
-		parent := npmModuleName(installPath, pkg)
-		parentKey := npmVersionedKey(parent, pkg.Version)
-		for _, name := range npmEdgeSources(pkg) {
-			if target, targetPath, ok := lookup(installPath, name); ok {
-				appendNpmEdge(result, parent, parentKey, npmModuleName(targetPath, target), target.Version)
-			}
-		}
-	}
-
-	for _, installPath := range sortedPackagePaths(packages) {
-		if _, ok := resolved[installPath]; !ok {
-			continue
-		}
-		pkg := packages[installPath]
-		parent := npmModuleName(installPath, pkg)
-		parentKey := npmVersionedKey(parent, pkg.Version)
-		for _, name := range npmEdgeSources(pkg) {
-			if target, targetPath, ok := lookup(installPath, name); ok {
-				appendNpmEdge(result, parent, parentKey, npmModuleName(targetPath, target), target.Version)
-			}
+	for _, edge := range root.Edges {
+		from, fromOK := c.refs[edge.From]
+		to, toOK := c.refs[edge.To]
+		if fromOK && toOK && from != to {
+			c.result.VersionedGraph[from.Key()] = appendRef(c.result.VersionedGraph[from.Key()], to)
+			c.incoming[to]++
 		}
 	}
 }
 
-func appendNpmEdge(result *ResolveResult, parent, parentKey, childName, childVersion string) {
-	result.Graph[parent] = append(result.Graph[parent], childName)
-	result.VersionedGraph[parentKey] = append(result.VersionedGraph[parentKey], Ref{
-		Module:  childName,
-		Version: childVersion,
+func (c *npmCollector) addUnpinned(node resolve.Node) {
+	name := npmNodeName(node)
+	if name == "" || c.seen[name] {
+		return
+	}
+	c.seen[name] = true
+	c.result.Unpinned = append(c.result.Unpinned, UnpinnedDependency{Module: name, Manifest: c.source})
+}
+
+func (c *npmCollector) finish() *ResolveResult {
+	result := c.result
+	redirect := c.chooseVersions()
+	for ref := range c.kept {
+		result.Dependencies = append(result.Dependencies, Dependency{Module: ref.Module, Version: ref.Version})
+	}
+	sort.Slice(result.Dependencies, func(i, j int) bool {
+		a, b := result.Dependencies[i], result.Dependencies[j]
+		if a.Module != b.Module {
+			return a.Module < b.Module
+		}
+		return a.Version < b.Version
 	})
+	droppedEdges := map[Ref][]Ref{}
+	for other := range redirect {
+		droppedEdges[other] = result.VersionedGraph[other.Key()]
+	}
+	npmTrimEdges(result, c.kept, redirect)
+	for module, declared := range c.direct {
+		if declared {
+			result.DirectDependencies = append(result.DirectDependencies, module)
+		}
+	}
+	sort.Strings(result.DirectDependencies)
+	sort.Slice(result.Unpinned, func(i, j int) bool { return result.Unpinned[i].Module < result.Unpinned[j].Module })
+	npmDropUnderOtherVersions(result, droppedEdges)
+	return result
 }
 
-// npmResolveEdge applies node's own resolution order: a dependency is looked up
-// in the depender's own node_modules first, then in each ancestor's, ending at
-// the root. That walk is what makes a nested copy resolve to the nested copy —
-// guessing `node_modules/<name>` reports the hoisted one for both, and the two
-// are different source.
-//
-// It returns the install PATH as well as the package, because the caller must
-// name the child by the package it resolved to. `name` here is the key from the
-// depender's dependency map, which for an aliased install
-// (`"foo": "npm:bar@1"`) is the ALIAS. Naming the edge after it produced a child
-// no Dependency carried, so the edge joined nothing.
-//
-// A target that did not resolve on disk is not an edge: it would put a node in
-// the graph for source that cannot be parsed.
-func npmResolveEdge(
-	packages map[string]npmLockPackage,
-	resolved map[string]struct{},
-	fromPath, name string,
-) (npmLockPackage, string, bool) {
-	prefix := fromPath
-	for {
-		candidate := path.Join(prefix, npmModulesDir, name)
-		if pkg, ok := packages[candidate]; ok {
-			if _, live := resolved[candidate]; live {
-				return pkg, candidate, true
+// npmTrimEdges keeps the edges between kept dependencies (a dev-only package
+// is no child) and fills the name-keyed Graph the dependency paths read.
+func npmTrimEdges(result *ResolveResult, kept map[Ref]bool, redirect map[Ref]Ref) {
+	for from, children := range result.VersionedGraph {
+		parent := refOfKey(from)
+		var out []Ref
+		if kept[parent] {
+			for _, child := range children {
+				if to, moved := redirect[child]; moved {
+					child = to
+				}
+				if kept[child] && child != parent {
+					out = appendRef(out, child)
+				}
 			}
-			return npmLockPackage{}, "", false
 		}
-		if prefix == "" {
-			return npmLockPackage{}, "", false
-		}
-		idx := strings.LastIndex(prefix, npmModulesSlash)
-		if idx < 0 {
-			// A workspace member's path holds no node_modules segment at all, so
-			// the next place node looks is the root.
-			prefix = ""
+		if len(out) == 0 {
+			delete(result.VersionedGraph, from)
 			continue
 		}
-		prefix = strings.TrimSuffix(prefix[:idx], "/")
-	}
-}
-
-// npmModuleName reads the package name off its install path, which holds the
-// scope as its own segment (`node_modules/@noble/hashes`). The lockfile's own
-// `name` field is preferred when present, since an aliased install
-// (`"foo": "npm:bar@1"`) makes the path the alias rather than the package.
-func npmModuleName(installPath string, pkg npmLockPackage) string {
-	if pkg.Name != "" {
-		return pkg.Name
-	}
-	idx := strings.LastIndex(installPath, npmModulesSlash)
-	if idx < 0 {
-		return installPath
-	}
-	return installPath[idx+len(npmModulesSlash):]
-}
-
-func npmVersionedKey(module, version string) string {
-	return Ref{Module: module, Version: version}.Key()
-}
-
-// sortedPackagePaths keeps resolution deterministic, and orders shallow installs
-// before the copies nested under them.
-func sortedPackagePaths(packages map[string]npmLockPackage) []string {
-	paths := make([]string, 0, len(packages))
-	for installPath := range packages {
-		paths = append(paths, installPath)
-	}
-	sort.Slice(paths, func(i, j int) bool {
-		di, dj := strings.Count(paths[i], npmModulesSlash), strings.Count(paths[j], npmModulesSlash)
-		if di != dj {
-			return di < dj
+		sort.Slice(out, func(i, j int) bool { return out[i].Key() < out[j].Key() })
+		result.VersionedGraph[from] = out
+		for _, child := range out {
+			result.Graph[parent.Module] = appendUnique(result.Graph[parent.Module], child.Module)
 		}
-		return paths[i] < paths[j]
-	})
-	return paths
+	}
+	for _, children := range result.Graph {
+		sort.Strings(children)
+	}
 }
 
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+// refOfKey is the Ref of a "module@version" key; a scoped module keeps its
+// leading "@".
+func refOfKey(key string) Ref {
+	i := strings.LastIndex(key, "@")
+	if i <= 0 {
+		return Ref{Module: key}
 	}
-	sort.Strings(keys)
-	return keys
+	return Ref{Module: key[:i], Version: key[i+1:]}
+}
+
+func appendRef(list []Ref, ref Ref) []Ref {
+	for _, r := range list {
+		if r == ref {
+			return list
+		}
+	}
+	return append(list, ref)
+}
+
+// npmModuleOf names an npm package URL's package the way npm does:
+// "@scope/name" for a scoped one. It reports false for another package type.
+func npmModuleOf(raw string) (string, bool) {
+	p, err := packageurl.FromString(raw)
+	if err != nil || p.Type != packageurl.TypeNPM || p.Name == "" {
+		return "", false
+	}
+	if p.Namespace == "" {
+		return p.Name, true
+	}
+	return p.Namespace + "/" + p.Name, true
+}
+
+// npmNodeName is a name for a node that has no registry version, for the
+// unpinned list.
+func npmNodeName(node resolve.Node) string {
+	if module, ok := npmModuleOf(node.PURL); ok {
+		return module
+	}
+	if p, err := packageurl.FromString(node.PURL); err == nil {
+		return p.Name
+	}
+	return ""
+}
+
+// npmPackageName is the "name" of dir's package.json, or "".
+func npmPackageName(dir string) string {
+	name, _ := readPackageNameVersion(filepath.Join(dir, "package.json"))
+	return name
+}
+
+func readPackageNameVersion(path string) (name, version string) {
+	data, err := os.ReadFile(path) // #nosec G304 -- the scan target's own package.json, or an installed package's.
+	if err != nil {
+		return "", ""
+	}
+	var manifest struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(data, &manifest) != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(manifest.Name), strings.TrimSpace(manifest.Version)
 }

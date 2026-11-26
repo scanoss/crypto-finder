@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/reach/paramcondition"
 )
 
 func TestInterimFormatVersion_Is1_9(t *testing.T) {
@@ -40,13 +40,13 @@ func TestCryptographicAsset_ParameterConditions_MarshalOmitEmpty(t *testing.T) {
 
 		idx := 0
 		asset := CryptographicAsset{
-			Metadata: map[string]string{"parameterCondition": "param[0]==true"},
+			Metadata: map[string]string{"parameterCondition": "param[0]==yes"},
 			ParameterConditions: []paramcondition.Condition{{
-				Raw:      "param[0]==true",
+				Raw:      "param[0]==yes",
 				Selector: paramcondition.Selector{Index: &idx},
 				Operator: paramcondition.OpExact,
 				Match:    paramcondition.MatchValue,
-				Value:    "true",
+				Value:    "yes",
 			}},
 		}
 		b, err := json.Marshal(asset)

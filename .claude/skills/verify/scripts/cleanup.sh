@@ -30,7 +30,7 @@ else
 fi
 if [[ -d $EVIDENCE_ROOT ]]; then
 	echo "cleanup: evidence kept in $EVIDENCE_ROOT:"
-	for v in "$EVIDENCE_ROOT"/*/verdict.txt "$EVIDENCE_ROOT"/*/*/verdict.txt; do
+	for v in "$EVIDENCE_ROOT"/*/verdict.txt; do
 		echo "  ${v#"$EVIDENCE_ROOT"/}: $(head -1 "$v")"
 	done
 fi

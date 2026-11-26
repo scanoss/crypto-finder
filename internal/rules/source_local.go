@@ -187,6 +187,10 @@ func (l *LocalRuleSource) loadRulesFromDirectory(dirPath string) ([]string, erro
 			if info.Name() == config.FilteredRulesDirName {
 				return filepath.SkipDir
 			}
+			// A ruleset release's cards are not OpenGrep rules.
+			if path == filepath.Join(absPath, config.RulesetCardsDirName) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
@@ -201,9 +205,14 @@ func (l *LocalRuleSource) loadRulesFromDirectory(dirPath string) ([]string, erro
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
 
+	// A ruleset of v3 card files only: its card files are its rules.
+	if len(rules) == 0 {
+		rules = CardFilesUnder(absPath)
+	}
+
 	// Ensure we found at least one rule file
 	if len(rules) == 0 {
-		return nil, fmt.Errorf("no rule files found (expected .yaml or .yml files)")
+		return nil, fmt.Errorf("no rule files found (expected .yaml or .yml files, or a cards/ directory of %s card files)", CardsFormat)
 	}
 
 	return rules, nil

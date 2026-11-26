@@ -1,0 +1,1014 @@
+{
+ "schema_version": "graph-fragment-1.35",
+ "functions": [
+  {
+   "key": "probe::deepequals.f",
+   "function_name": "probe::deepequals.f",
+   "canonical_signature": "probe::deepequals.f()",
+   "package": "probe::deepequals",
+   "name": "f",
+   "file_path": "src/deepequals.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::deepplain.f",
+   "function_name": "probe::deepplain.f",
+   "canonical_signature": "probe::deepplain.f()",
+   "package": "probe::deepplain",
+   "name": "f",
+   "file_path": "src/deepplain.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::differs.f",
+   "function_name": "probe::differs.f",
+   "canonical_signature": "probe::differs.f()",
+   "package": "probe::differs",
+   "name": "f",
+   "file_path": "src/differs.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::equals.f",
+   "function_name": "probe::equals.f",
+   "canonical_signature": "probe::equals.f()",
+   "package": "probe::equals",
+   "name": "f",
+   "file_path": "src/equals.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::equalsalone.f",
+   "function_name": "probe::equalsalone.f",
+   "canonical_signature": "probe::equalsalone.f()",
+   "package": "probe::equalsalone",
+   "name": "f",
+   "file_path": "src/equalsalone.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::nested.f",
+   "function_name": "probe::nested.f",
+   "canonical_signature": "probe::nested.f()",
+   "package": "probe::nested",
+   "name": "f",
+   "file_path": "src/nested.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::nestedeq.f",
+   "function_name": "probe::nestedeq.f",
+   "canonical_signature": "probe::nestedeq.f()",
+   "package": "probe::nestedeq",
+   "name": "f",
+   "file_path": "src/nestedeq.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::nestedplain.f",
+   "function_name": "probe::nestedplain.f",
+   "canonical_signature": "probe::nestedplain.f()",
+   "package": "probe::nestedplain",
+   "name": "f",
+   "file_path": "src/nestedplain.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::plain.f",
+   "function_name": "probe::plain.f",
+   "canonical_signature": "probe::plain.f()",
+   "package": "probe::plain",
+   "name": "f",
+   "file_path": "src/plain.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::rooted.f",
+   "function_name": "probe::rooted.f",
+   "canonical_signature": "probe::rooted.f()",
+   "package": "probe::rooted",
+   "name": "f",
+   "file_path": "src/rooted.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::selfalias.f",
+   "function_name": "probe::selfalias.f",
+   "canonical_signature": "probe::selfalias.f()",
+   "package": "probe::selfalias",
+   "name": "f",
+   "file_path": "src/selfalias.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::sibling.f",
+   "function_name": "probe::sibling.f",
+   "canonical_signature": "probe::sibling.f()",
+   "package": "probe::sibling",
+   "name": "f",
+   "file_path": "src/sibling.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::topself.f",
+   "function_name": "probe::topself.f",
+   "canonical_signature": "probe::topself.f()",
+   "package": "probe::topself",
+   "name": "f",
+   "file_path": "src/topself.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::x1.f",
+   "function_name": "probe::x1.f",
+   "canonical_signature": "probe::x1.f()",
+   "package": "probe::x1",
+   "name": "f",
+   "file_path": "src/x1.rs",
+   "start_line": 2,
+   "end_line": 2
+  }
+ ],
+ "internal_edges_compact": [],
+ "internal_edge_strings": [
+  ""
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe::deepequals.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::deepplain.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::differs.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::equals.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::equalsalone.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::nested.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::nestedeq.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::nestedplain.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::plain.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::rooted.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::selfalias.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::sibling.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::topself.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::x1.f",
+   "target_key": "acme.make",
+   "target_function_name": "acme.make",
+   "target_canonical_signature": "acme.make(?)",
+   "raw": "acme::make",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "make",
+   "start_col": 10,
+   "end_col": 23,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "source_lines": {
+  "src/deepequals.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/deepplain.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/differs.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/equals.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/equalsalone.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/nested.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/nestedeq.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/nestedplain.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/plain.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/rooted.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/selfalias.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/sibling.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/topself.rs": {
+   "2": "fn f() { acme::make(1); }"
+  },
+  "src/x1.rs": {
+   "2": "fn f() { acme::make(1); }"
+  }
+ },
+ "imports": {
+  "src/deepequals.rs": [
+   {
+    "line": 1,
+    "module": "a::b",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 29,
+    "text": "a::b::wanted::{self, X}"
+   },
+   {
+    "line": 1,
+    "module": "a::b::wanted",
+    "name": "X",
+    "start_col": 1,
+    "end_col": 29,
+    "text": "a::b::wanted::{self, X}"
+   }
+  ],
+  "src/deepplain.rs": [
+   {
+    "line": 1,
+    "module": "a::b",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 18,
+    "text": "a::b::wanted"
+   }
+  ],
+  "src/differs.rs": [
+   {
+    "line": 1,
+    "module": "std",
+    "name": "io",
+    "start_col": 1,
+    "end_col": 30,
+    "text": "std::io::{self, IoSlice}"
+   },
+   {
+    "line": 1,
+    "module": "std::io",
+    "name": "IoSlice",
+    "start_col": 1,
+    "end_col": 30,
+    "text": "std::io::{self, IoSlice}"
+   }
+  ],
+  "src/equals.rs": [
+   {
+    "line": 1,
+    "module": "vendor",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 35,
+    "text": "vendor::wanted::{self, Other}"
+   },
+   {
+    "line": 1,
+    "module": "vendor::wanted",
+    "name": "Other",
+    "start_col": 1,
+    "end_col": 35,
+    "text": "vendor::wanted::{self, Other}"
+   }
+  ],
+  "src/equalsalone.rs": [
+   {
+    "line": 1,
+    "module": "vendor",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 28,
+    "text": "vendor::wanted::{self}"
+   }
+  ],
+  "src/nested.rs": [
+   {
+    "line": 1,
+    "module": "std",
+    "name": "io",
+    "start_col": 1,
+    "end_col": 37,
+    "text": "std::{io::{self, IoSlice}, fmt}"
+   },
+   {
+    "line": 1,
+    "module": "std::io",
+    "name": "IoSlice",
+    "start_col": 1,
+    "end_col": 37,
+    "text": "std::{io::{self, IoSlice}, fmt}"
+   },
+   {
+    "line": 1,
+    "module": "std",
+    "name": "fmt",
+    "start_col": 1,
+    "end_col": 37,
+    "text": "std::{io::{self, IoSlice}, fmt}"
+   }
+  ],
+  "src/nestedeq.rs": [
+   {
+    "line": 1,
+    "module": "v",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 33,
+    "text": "v::{wanted::{self, X}, fmt}"
+   },
+   {
+    "line": 1,
+    "module": "v::wanted",
+    "name": "X",
+    "start_col": 1,
+    "end_col": 33,
+    "text": "v::{wanted::{self, X}, fmt}"
+   },
+   {
+    "line": 1,
+    "module": "v",
+    "name": "fmt",
+    "start_col": 1,
+    "end_col": 33,
+    "text": "v::{wanted::{self, X}, fmt}"
+   }
+  ],
+  "src/nestedplain.rs": [
+   {
+    "line": 1,
+    "module": "v::x",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 25,
+    "text": "v::{x::wanted, fmt}"
+   },
+   {
+    "line": 1,
+    "module": "v",
+    "name": "fmt",
+    "start_col": 1,
+    "end_col": 25,
+    "text": "v::{x::wanted, fmt}"
+   }
+  ],
+  "src/plain.rs": [
+   {
+    "line": 1,
+    "module": "vendor",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 20,
+    "text": "vendor::wanted"
+   }
+  ],
+  "src/rooted.rs": [
+   {
+    "line": 1,
+    "module": "v",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 25,
+    "text": "::v::wanted::{self}"
+   }
+  ],
+  "src/selfalias.rs": [
+   {
+    "line": 1,
+    "module": "v",
+    "name": "wanted",
+    "alias": "w",
+    "start_col": 1,
+    "end_col": 31,
+    "text": "v::wanted::{self as w, X}"
+   },
+   {
+    "line": 1,
+    "module": "v::wanted",
+    "name": "X",
+    "start_col": 1,
+    "end_col": 31,
+    "text": "v::wanted::{self as w, X}"
+   }
+  ],
+  "src/sibling.rs": [
+   {
+    "line": 1,
+    "module": "",
+    "name": "vendor",
+    "start_col": 1,
+    "end_col": 28,
+    "text": "vendor::{self, wanted}"
+   },
+   {
+    "line": 1,
+    "module": "vendor",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 28,
+    "text": "vendor::{self, wanted}"
+   }
+  ],
+  "src/topself.rs": [
+   {
+    "line": 1,
+    "module": "",
+    "name": "wanted",
+    "start_col": 1,
+    "end_col": 23,
+    "text": "wanted::{self, X}"
+   },
+   {
+    "line": 1,
+    "module": "wanted",
+    "name": "X",
+    "start_col": 1,
+    "end_col": 23,
+    "text": "wanted::{self, X}"
+   }
+  ],
+  "src/x1.rs": [
+   {
+    "line": 1,
+    "module": "v::wanted",
+    "name": "X",
+    "start_col": 1,
+    "end_col": 25,
+    "text": "v::{wanted::X, fmt}"
+   },
+   {
+    "line": 1,
+    "module": "v",
+    "name": "fmt",
+    "start_col": 1,
+    "end_col": 25,
+    "text": "v::{wanted::X, fmt}"
+   }
+  ]
+ },
+ "items": {
+  "src/deepequals.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/deepplain.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/differs.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/equals.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/equalsalone.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/nested.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/nestedeq.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/nestedplain.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/plain.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/rooted.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/selfalias.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/sibling.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/topself.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/x1.rs": [
+   [
+    2,
+    1,
+    26,
+    "fn",
+    "f"
+   ]
+  ]
+ },
+ "scan_metadata": {
+  "ecosystem": "rust",
+  "root_module": "probe",
+  "tool_name": "crypto-finder",
+  "tool_version": "dev",
+  "graph_algo_version": "graph-algo-rs-10",
+  "exported_at": "2026-11-18T12:21:43Z",
+  "function_count": 14,
+  "internal_edge_count": 0,
+  "external_call_count": 14,
+  "crypto_operation_count": 14,
+  "crypto_entry_point_count": 14,
+  "entry_kinds": true,
+  "shared_entry_calls": true,
+  "implicit_source_files": true,
+  "derived_function_names": true,
+  "derived_target_names": true
+ }
+}

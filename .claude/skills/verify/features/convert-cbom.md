@@ -17,17 +17,7 @@
 
 ## Driving it with run.sh
 
-Preconditions:
-
-- `doctor.sh` is clean.
-- Fixture `testdata/projects/transitive_reachability/go/app` (SHA-256 and MD5) with `testdata/rules/transitive-reachability.yaml`. The rules carry `assetType`/`algorithmName` metadata, so both assets map.
-
-- **Drive it.** Run `.claude/skills/verify/scripts/run.sh convert-cbom`. It exits 0, and `evidence/convert-cbom/verdict.txt` reads `VERDICT: PASS`.
-- **Scan first.** `scan ... --output findings.json app/` exits 0.
-- **File to file.** `convert findings.json --output cbom.json` exits 0. `cbom.json` has `bomFormat: CycloneDX` and `specVersion: 1.7`. Its `cryptographic-asset` components with `cryptoProperties.assetType: algorithm` are named `MD5,SHA-256`, and every one has `evidence.occurrences`.
-- **Stdin to stdout.** `convert` with `findings.json` on stdin exits 0, and `convert-stdin.stdout` passes the same checks.
-- **Direct CBOM.** `scan --format cyclonedx --output scan-cbom.json app/` exits 0 and passes the same checks.
-- **Invalid input.** `convert broken.json` (truncated JSON) exits 1. The JSON error message starts `failed to parse interim JSON`, and no `cbom-broken.json` is written.
+This feature has no drive in this version. The 0.54.0 drive (OpenGrep, non-Java fixtures) was removed. A new drive for this version is to be written against the cards engine.
 
 ## Gotchas
 

@@ -48,7 +48,7 @@ func NewRegistry() *Registry {
 // Example:
 //
 //	registry := NewRegistry()
-//	registry.Register("semgrep", semgrep.NewScanner())
+//	registry.Register("cards", scanner)
 func (r *Registry) Register(name string, scanner Scanner) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -71,7 +71,7 @@ func (r *Registry) RegisterFactory(name string, factory func() Scanner) {
 //
 // Example:
 //
-//	scanner, err := registry.Get("semgrep")
+//	scanner, err := registry.Get("cards")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}

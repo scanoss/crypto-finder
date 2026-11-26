@@ -23,10 +23,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/paramcondition"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 // fluentConditionCase plants one conditioned finding on a fluent call chain.
@@ -56,15 +57,15 @@ func TestExportCallGraph_FluentChainConditionReadsTheMatchedLink(t *testing.T) {
 			dir: "node", ecosystem: "npm", language: "typescript",
 			parser: func() callgraph.Parser { return callgraph.NewNodeParser() },
 			cases: []fluentConditionCase{
-				{id: "node-md5", file: "src/avatar.ts", span: "createHash('md5')", condition: "param[0]==md5", wantChains: true},
-				{id: "node-other", file: "src/avatar.ts", span: "createHash('sha256')", condition: "param[0]==md5"},
+				{id: "node-md5", file: "src/avatar.ts", span: "createHash('md5')", condition: `param[0]=="md5"`, wantChains: true},
+				{id: "node-other", file: "src/avatar.ts", span: "createHash('sha256')", condition: `param[0]=="md5"`},
 			},
 		},
 		{
 			dir: "java", ecosystem: "maven", language: "java",
 			parser: func() callgraph.Parser { return callgraph.NewJavaParser() },
 			cases: []fluentConditionCase{
-				{id: "java-md5", file: "src/main/java/com/app/Fingerprint.java", span: `"MD5"`, condition: "param[0]==MD5", wantChains: true},
+				{id: "java-md5", file: "src/main/java/com/app/Fingerprint.java", span: `"MD5"`, condition: `param[0]=="MD5"`, wantChains: true},
 			},
 		},
 		{

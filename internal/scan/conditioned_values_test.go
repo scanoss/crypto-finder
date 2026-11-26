@@ -9,17 +9,18 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 const selectorValueRules = `rules:
   - id: java.digest.variant
     message: Variant digest
     severity: INFO
-    pattern: MessageDigest.getInstance($ALGO)
+    pattern: MessageDigest.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm

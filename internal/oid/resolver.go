@@ -373,19 +373,10 @@ func (r *Resolver) PrepareReport(unprepared *entities.InterimReport) (*PreparedR
 	if unprepared == nil {
 		return nil, fmt.Errorf("oid: nil interim report")
 	}
-	raw, err := json.Marshal(unprepared)
-	if err != nil {
-		return nil, fmt.Errorf("oid: clone report: %w", err)
-	}
-	var clone entities.InterimReport
-	if err := json.Unmarshal(raw, &clone); err != nil {
-		return nil, fmt.Errorf("oid: clone report: %w", err)
-	}
-	// The interim wire schema intentionally excludes structural terminal columns,
-	// but callgraph projections consume them after preparation. Preserve that
-	// internal state while still deep-cloning all public maps and slices.
-	restoreInternalAssetState(unprepared.Findings, clone.Findings)
-	p := &PreparedReport{report: (*ResolvedReport)(&clone)}
+	// A deep clone that keeps the in-process asset state the wire schema
+	// leaves out: the callgraph export reads it from the prepared report.
+	clone := unprepared.Clone()
+	p := &PreparedReport{report: (*ResolvedReport)(clone)}
 	for i := range clone.Findings {
 		for j := range clone.Findings[i].CryptographicAssets {
 			a := &clone.Findings[i].CryptographicAssets[j]
@@ -398,35 +389,12 @@ func (r *Resolver) PrepareReport(unprepared *entities.InterimReport) (*PreparedR
 	return p, nil
 }
 
-func restoreInternalAssetState(source, clone []entities.Finding) {
-	for findingIndex := range clone {
-		if findingIndex >= len(source) {
-			break
-		}
-		for assetIndex := range clone[findingIndex].CryptographicAssets {
-			if assetIndex >= len(source[findingIndex].CryptographicAssets) {
-				break
-			}
-			sourceAsset := source[findingIndex].CryptographicAssets[assetIndex]
-			cloneAsset := &clone[findingIndex].CryptographicAssets[assetIndex]
-			cloneAsset.TerminalStartCol = sourceAsset.TerminalStartCol
-			cloneAsset.TerminalEndCol = sourceAsset.TerminalEndCol
-		}
-	}
-}
-
 // ReportClone returns an independently mutable clone of the prepared report.
-//
-//nolint:errcheck // JSON round-trip only fails for impossible in-memory schema values.
 func (p *PreparedReport) ReportClone() *ResolvedReport {
 	if p == nil || p.report == nil {
 		return nil
 	}
-	raw, _ := json.Marshal(p.report)
-	var clone ResolvedReport
-	_ = json.Unmarshal(raw, &clone)
-	restoreInternalAssetState(p.report.Findings, clone.Findings)
-	return &clone
+	return (*ResolvedReport)((*entities.InterimReport)(p.report).Clone())
 }
 
 // Summary returns a value copy of the preparation summary.

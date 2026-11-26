@@ -12,19 +12,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // These assignments make every exported OID projection require the prepared
 // type-state; an InterimReport cannot satisfy these signatures.
 var (
-	_ func(string, string, *engine.DepScanResult, *oid.ResolvedReport) error         = ExportCallGraph
-	_ func(string, string, *engine.DepScanResult, *oid.ResolvedReport) error         = ExportGraphFragment
-	_ func(*engine.DepScanResult, *oid.ResolvedReport) graphfrag.GraphFragmentExport = BuildGraphFragmentExport
-	_ func(*oid.ResolvedReport, graphfrag.Fragment) graphfrag.GraphFragmentExport    = BuildAnnotateExport
+	_ func(string, string, *engine.DepScanResult, *oid.ResolvedReport, CallGraphExportOptions) error = ExportResolvedCallGraph
+	_ func(string, string, *engine.DepScanResult, *oid.ResolvedReport) error                         = ExportResolvedGraphFragment
+	_ func(*engine.DepScanResult, *oid.ResolvedReport) graphfrag.GraphFragmentExport                 = BuildGraphFragmentExport
+
+	_ func(*engine.DepScanResult, *oid.ResolvedReport, *graphfrag.GraphFragmentExport) graphfrag.GraphFragmentExport = BuildGraphAnnotateExport
 )
 
 func TestPreparedGraphProjectionsDoNotRestoreRejectedOIDClaims(t *testing.T) {
@@ -42,10 +44,6 @@ func TestPreparedGraphProjectionsDoNotRestoreRejectedOIDClaims(t *testing.T) {
 	fragment := BuildGraphFragmentExport(result, resolved)
 	if len(fragment.CryptoAnnotations) > 0 && fragment.CryptoAnnotations[0].OID != "" {
 		t.Fatalf("graph fragment restored rejected OID: %#v", fragment.CryptoAnnotations)
-	}
-	annotation := BuildAnnotateExport(resolved, graphfrag.Fragment{})
-	if len(annotation.CryptoAnnotations) != 1 || annotation.CryptoAnnotations[0].OID != "" {
-		t.Fatalf("annotation restored rejected OID: %#v", annotation.CryptoAnnotations)
 	}
 }
 

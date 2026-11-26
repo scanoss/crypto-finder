@@ -21,29 +21,7 @@
 
 ## Driving it with run.sh
 
-Preconditions:
-
-- `doctor.sh` reports `lang go: ready`.
-- Fixture `testdata/projects/transitive_reachability/go` scanned with `--scan-dependencies`, using `testdata/rules/transitive-reachability.yaml`.
-- Fixture `testdata/projects/key_params_across_methods/java` scanned with `--languages java` (no dependencies, so no Maven), using `testdata/rules/key-params-across-methods.yaml`, which matches only `KeyPairGenerator.getInstance($ALG)`, then annotated with the same rules from the scan's graph fragment.
-
-- **Drive it.** Run `.claude/skills/verify/scripts/run.sh callgraph-export`. It exits 0, and `evidence/callgraph-export/verdict.txt` reads `VERDICT: PASS`.
-- **Default export plus fragment.** `scan ... --export-callgraph callgraph.json --export-graph-fragment graph-fragment.json` exits 0, with these results:
-  - `callgraph.json` has `schema_version: "6.18"`;
-  - `scan_metadata` reads `tool_name: crypto-finder, ecosystem: go, root_module: example.com/transapp`, with non-zero `function_count`/`edge_count`;
-  - frames carry no `function_name`;
-  - the report's finding ids equal the graph's finding ids;
-  - every reachable graph has in-range `call_chain_indexes`;
-  - one libb chain runs from `example.com/transapp.main` to `example.com/translibb`;
-  - there is no `crypto_entry_points`.
-- **Fragment.** `graph-fragment.json` has `schema_version: "graph-fragment-1.15"`, plus non-empty `functions`, edges and `crypto_annotations`.
-- **Legacy and options.** `--export-callgraph-interned-frames=false --export-callgraph-entry-points --export-callgraph-max-chains 1` exits 0, with these results in `callgraph-6.14.json`:
-  - `schema_version` is `"6.14"`;
-  - every frame of a reachable chain has `function_name`;
-  - no finding has more than one chain;
-  - `crypto_entry_points` is present.
-- **Key size across methods.** `scan --languages java --rules .../key-params-across-methods.yaml --output findings-key-params.json --export-callgraph callgraph-key-params.json --export-graph-fragment graph-fragment-key-params.json` exits 0. Joining each `getInstance` finding's `finding_graphs[].supporting_call_ids` to `supporting_calls[].supporting_call.resolved_key_length.bits` gives `14:3072,21:4096,28:2048,33:none,40:3072,47:384` (line:bits in `Keys.java`): a literal next to `getInstance`, a size parameter both callers fill with 4096, a returned generator the caller initializes to 2048, callers that disagree (no size), a `static final` constant through a parameter, and an EC curve name through a parameter.
-- **Annotate from the fragment.** `annotate --languages java --rules .../key-params-across-methods.yaml --import-fragment graph-fragment-key-params.json --source <fixture> --output annotate-key-params.json` exits 0. Joining each `crypto_annotations[].supporting_call_ids` to `supporting_calls[].supporting_call.resolved_key_length.bits` gives the same `14:3072,21:4096,28:2048,33:none,40:3072,47:384`. A fragment without `returns_calls` (before `graph-fragment-1.15`) gives `28:none`.
+This feature has no drive in this version. The 0.54.0 drive (OpenGrep, non-Java fixtures) was removed. A new drive for this version is to be written against the cards engine.
 
 ## Gotchas
 
@@ -64,10 +42,4 @@ Preconditions:
 - `internal/scan/key_length*.go`
 - `internal/scan/supporting_calls.go`
 - `internal/scan/returned_object_lifecycle.go`
-- `pkg/graphfrag/callgraph_export.go`
-- `pkg/graphfrag/export.go`
-- `pkg/graphfrag/intern_functions.go`
-- `pkg/graphfrag/encode.go`
-- `pkg/graphfrag/model.go`
-- `pkg/graphfrag/findings_envelope.go`
-- `pkg/graphfrag/stitch*.go`
+- `pkg/appreach/findings_envelope.go`

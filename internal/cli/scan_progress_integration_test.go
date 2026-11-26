@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -27,9 +26,7 @@ func TestScanProgressWritesJSONLToStderr(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	writeProgressOpenGrep(t, filepath.Join(dir, "opengrep"))
-	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
-	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
+	writeJavaFindingFixture(t, dir, dir)
 	binary := buildProgressCryptoFinder(t)
 
 	cmd := exec.CommandContext(t.Context(), binary, "scan", "--progress", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), dir)
@@ -135,9 +132,7 @@ func TestScanProgressJavaRuntimeFailureDoesNotStartCallgraph(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	writeProgressOpenGrep(t, filepath.Join(dir, "opengrep"))
-	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
-	writeFile(t, filepath.Join(dir, "Main.java"), "class Main {}\n")
+	writeJavaFindingFixture(t, dir, dir)
 	binary := buildProgressCryptoFinder(t)
 
 	cmd := exec.CommandContext(t.Context(), binary, "scan", "--progress", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), "--java-jdk-home", "invalid", "--export-callgraph", filepath.Join(dir, "callgraph.json"), dir)
@@ -202,25 +197,7 @@ func TestScanProgressAbsentDependencyManifestSkipsAndKeepsOutput(t *testing.T) {
 			if tc.pom {
 				writeFile(t, filepath.Join(filepath.Dir(source), "pom.xml"), "<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>x</artifactId><version>1.0</version></project>\n")
 			}
-			writeFile(t, filepath.Join(dir, "rule.yaml"), "rules:\n  - id: "+ruleID+"\n    message: aes cipher\n    severity: INFO\n    languages: [java]\n    pattern: $X\n    metadata:\n      crypto:\n        assetType: algorithm\n        algorithmFamily: AES\n        algorithmPrimitive: block-cipher\n")
-			results, err := json.Marshal(map[string]any{
-				"errors": []any{},
-				"results": []map[string]any{{
-					"check_id": ruleID,
-					"path":     source,
-					"start":    map[string]int{"line": 2, "col": 43},
-					"end":      map[string]int{"line": 2, "col": 43 + len(matched)},
-					"extra": map[string]any{
-						"message": "aes cipher", "severity": "INFO", "lines": matched,
-						"metadata": map[string]any{"crypto": map[string]any{"assetType": "algorithm", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher"}},
-					},
-				}},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			writeFile(t, filepath.Join(dir, "opengrep.json"), string(results))
-			writeProgressOpenGrepWithResults(t, filepath.Join(dir, "opengrep"), filepath.Join(dir, "opengrep.json"))
+			writeCardsRule(t, dir, ruleID, matched)
 			output := filepath.Join(dir, "findings.json")
 			target := filepath.Join(root, filepath.FromSlash(tc.target))
 
@@ -249,7 +226,6 @@ func TestScanProgressAbsentDependencyManifestSkipsAndKeepsOutput(t *testing.T) {
 				"rules:started",
 				"rules:completed",
 				"detection:completed",
-				"dependencies:started",
 				"dependencies:skipped",
 				"occurrence_keys:started",
 				"occurrence_keys:completed",
@@ -302,127 +278,6 @@ func TestScanProgressAbsentDependencyManifestSkipsAndKeepsOutput(t *testing.T) {
 	}
 }
 
-// The #533 discovery of module roots below a manifest-less scan root composes
-// with the #391 manifest_absent skip over one tree, where the resolver cannot
-// read the scan root yet a module root below it is resolvable. The skip must
-// lose that composition, or the downward discovery never runs.
-func TestScanProgressModuleRootBelowScanRootRunsDependencyPhase(t *testing.T) {
-	if testing.Short() {
-		t.Skip("requires a compiled CLI and external scanner process")
-	}
-
-	const ruleID = "java.crypto.aes-cipher"
-	const matched = `Cipher.getInstance("AES/GCM/NoPadding")`
-	const moduleRel = "services/ledger"
-	const sourceRel = moduleRel + "/src/Use.java"
-
-	dir := t.TempDir()
-	root := filepath.Join(dir, "repo")
-	source := filepath.Join(root, filepath.FromSlash(sourceRel))
-	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, source, "import javax.crypto.Cipher;\nclass Use { void run() throws Exception { "+matched+"; } }\n")
-	// The only manifest sits below the scan root, and it declares neither
-	// <dependencies> nor <modules>, so MavenResolver returns on that fast path
-	// without invoking mvn. This case needs no Maven, no JDK and no network.
-	writeFile(t, filepath.Join(root, filepath.FromSlash(moduleRel), "pom.xml"), "<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>ledger</artifactId><version>1.0</version></project>\n")
-	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules:\n  - id: "+ruleID+"\n    message: aes cipher\n    severity: INFO\n    languages: [java]\n    pattern: $X\n    metadata:\n      crypto:\n        assetType: algorithm\n        algorithmFamily: AES\n        algorithmPrimitive: block-cipher\n")
-	results, err := json.Marshal(map[string]any{
-		"errors": []any{},
-		"results": []map[string]any{{
-			"check_id": ruleID,
-			"path":     source,
-			"start":    map[string]int{"line": 2, "col": 43},
-			"end":      map[string]int{"line": 2, "col": 43 + len(matched)},
-			"extra": map[string]any{
-				"message": "aes cipher", "severity": "INFO", "lines": matched,
-				"metadata": map[string]any{"crypto": map[string]any{"assetType": "algorithm", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher"}},
-			},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(dir, "opengrep.json"), string(results))
-	writeProgressOpenGrepWithResults(t, filepath.Join(dir, "opengrep"), filepath.Join(dir, "opengrep.json"))
-	output := filepath.Join(dir, "findings.json")
-	binary := buildProgressCryptoFinder(t)
-
-	cmd := exec.CommandContext(t.Context(), binary, "scan", "--progress", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), "--scan-dependencies", "--output", output, root)
-	cmd.Env = progressTestEnv(dir)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("scan with --scan-dependencies and a module root below the scan root exited non-zero: %v\nstderr:\n%s", err, stderr.String())
-	}
-
-	// Only scan_progress events are read: a finding makes the callgraph
-	// inference print a plain-text stats line to stderr through the stdlib
-	// logger, which is not part of the progress stream under test here.
-	var events []map[string]any
-	for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
-		var event map[string]any
-		if err := json.Unmarshal([]byte(line), &event); err != nil || event["event"] != "scan_progress" {
-			continue
-		}
-		events = append(events, event)
-	}
-	for _, event := range events {
-		if event["phase"] != "dependencies" || event["status"] != "skipped" {
-			continue
-		}
-		details, _ := event["details"].(map[string]any)
-		if details["reason"] == "manifest_absent" {
-			t.Fatalf("manifest_absent skipped the dependency phase although %s below the scan root is a resolvable module root: %#v", moduleRel, event)
-		}
-	}
-	want := []string{
-		"scan:started",
-		"detection:started",
-		"rules:started",
-		"rules:completed",
-		"detection:completed",
-		"dependencies:started",
-		"dependencies:completed",
-		"occurrence_keys:started",
-		"occurrence_keys:completed",
-		"oid_projection:started",
-		"oid_projection:completed",
-		"export:skipped",
-		"output:started",
-		"output:completed",
-		"scan:completed",
-	}
-	if len(events) != len(want) {
-		t.Fatalf("progress event count = %d, want %d:\n%s", len(events), len(want), stderr.String())
-	}
-	for i, event := range events {
-		if got := event["phase"].(string) + ":" + event["status"].(string); got != want[i] {
-			t.Fatalf("event %d = %q, want %q", i, got, want[i])
-		}
-	}
-
-	raw, err := os.ReadFile(output)
-	if err != nil {
-		t.Fatalf("interim output was not written: %v", err)
-	}
-	var report entities.InterimReport
-	if err := json.Unmarshal(raw, &report); err != nil {
-		t.Fatalf("interim output is not JSON: %v\n%s", err, raw)
-	}
-	if len(report.Findings) != 1 {
-		t.Fatalf("findings = %d, want the 1 finding detection produced:\n%s", len(report.Findings), raw)
-	}
-	finding := report.Findings[0]
-	if !strings.HasSuffix(filepath.ToSlash(finding.FilePath), sourceRel) {
-		t.Fatalf("finding file_path = %q, want suffix %q", finding.FilePath, sourceRel)
-	}
-	if len(finding.CryptographicAssets) == 0 || len(finding.CryptographicAssets[0].Rules) == 0 || finding.CryptographicAssets[0].Rules[0].ID != ruleID {
-		t.Fatalf("finding does not carry rule %s:\n%s", ruleID, raw)
-	}
-}
-
 // The passes between the dependency phase and the written report used to run
 // with no progress events, so on a large target the reported phases accounted
 // for less than half of the scan's wall time. Each pass is reported as a child
@@ -432,8 +287,6 @@ func TestScanProgressReportsEveryPassBeforeOutput(t *testing.T) {
 		t.Skip("requires a compiled CLI and external scanner process")
 	}
 
-	const ruleID = "java.crypto.aes-cipher"
-	const matched = `Cipher.getInstance("AES/GCM/NoPadding")`
 	binary := buildProgressCryptoFinder(t)
 
 	cases := []struct {
@@ -445,7 +298,7 @@ func TestScanProgressReportsEveryPassBeforeOutput(t *testing.T) {
 		{
 			name: "findings report only",
 			fixture: func(t *testing.T, dir, root string) []string {
-				writeJavaFindingFixture(t, dir, root, ruleID, matched)
+				writeJavaFindingFixture(t, dir, root)
 				return nil
 			},
 			want: []string{
@@ -468,7 +321,7 @@ func TestScanProgressReportsEveryPassBeforeOutput(t *testing.T) {
 		{
 			name: "callgraph export builds its own graph",
 			fixture: func(t *testing.T, dir, root string) []string {
-				writeJavaFindingFixture(t, dir, root, ruleID, matched)
+				writeJavaFindingFixture(t, dir, root)
 				return []string{"--export-callgraph", filepath.Join(dir, "callgraph.json")}
 			},
 			want: []string{
@@ -491,73 +344,6 @@ func TestScanProgressReportsEveryPassBeforeOutput(t *testing.T) {
 				"export/occurrence_keys:completed",
 				"export/oid_projection:started",
 				"export/oid_projection:completed",
-				"scan/export:completed",
-				"scan/output:started",
-				"scan/output:completed",
-				"/scan:completed",
-			},
-		},
-		{
-			name: "dependency scan builds the graph",
-			fixture: func(t *testing.T, dir, root string) []string {
-				writeNodeDependencyFixture(t, dir, root)
-				return []string{"--scan-dependencies"}
-			},
-			// The passes after the dependency phase add assets, so their
-			// finding ids are assigned even when no export asks for them.
-			want: []string{
-				"/scan:started",
-				"scan/detection:started",
-				"scan/rules:started",
-				"scan/rules:completed",
-				"scan/detection:completed",
-				"scan/dependencies:started",
-				"dependencies/callgraph:started",
-				"dependencies/callgraph:completed",
-				"scan/dependencies:completed",
-				"scan/entry_points:started",
-				"scan/entry_points:completed",
-				"scan/conditioned_findings:started",
-				"scan/conditioned_findings:completed",
-				"scan/finding_ids:started",
-				"scan/finding_ids:completed",
-				"scan/occurrence_keys:started",
-				"scan/occurrence_keys:completed",
-				"scan/oid_projection:started",
-				"scan/oid_projection:completed",
-				"scan/export:skipped",
-				"scan/output:started",
-				"scan/output:completed",
-				"/scan:completed",
-			},
-		},
-		{
-			name: "dependency scan graph feeds a requested export",
-			fixture: func(t *testing.T, dir, root string) []string {
-				writeNodeDependencyFixture(t, dir, root)
-				return []string{"--scan-dependencies", "--export-callgraph", filepath.Join(dir, "callgraph.json")}
-			},
-			want: []string{
-				"/scan:started",
-				"scan/detection:started",
-				"scan/rules:started",
-				"scan/rules:completed",
-				"scan/detection:completed",
-				"scan/dependencies:started",
-				"dependencies/callgraph:started",
-				"dependencies/callgraph:completed",
-				"scan/dependencies:completed",
-				"scan/entry_points:started",
-				"scan/entry_points:completed",
-				"scan/conditioned_findings:started",
-				"scan/conditioned_findings:completed",
-				"scan/finding_ids:started",
-				"scan/finding_ids:completed",
-				"scan/occurrence_keys:started",
-				"scan/occurrence_keys:completed",
-				"scan/oid_projection:started",
-				"scan/oid_projection:completed",
-				"scan/export:started",
 				"scan/export:completed",
 				"scan/output:started",
 				"scan/output:completed",
@@ -595,71 +381,6 @@ func TestScanProgressReportsEveryPassBeforeOutput(t *testing.T) {
 	}
 }
 
-// A rule that times out leaves its file's findings out. The scan still
-// succeeds, and the progress stream counts the cut-short files of the
-// primary scan and the dependencies whose scan was cut short.
-func TestScanProgressCountsScansCutShortByTimeouts(t *testing.T) {
-	if testing.Short() {
-		t.Skip("requires a compiled CLI and external scanner process")
-	}
-
-	dir := t.TempDir()
-	root := filepath.Join(dir, "repo")
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeNodeDependencyFixture(t, dir, root)
-	timedOut := filepath.Join(root, "node_modules", "dep", "index.js")
-	results, err := json.Marshal(map[string]any{
-		"results": []any{},
-		"errors": []map[string]any{{
-			"code": 2, "level": "warn", "type": "Timeout", "rule_id": "fixture",
-			"message": "Timeout when running fixture on " + timedOut + ":\n ", "path": timedOut,
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(dir, "opengrep.json"), string(results))
-	writeProgressOpenGrepWithResults(t, filepath.Join(dir, "opengrep"), filepath.Join(dir, "opengrep.json"))
-	binary := buildProgressCryptoFinder(t)
-
-	cmd := exec.CommandContext(t.Context(), binary, "scan", "--progress", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), "--scan-dependencies", "--output", filepath.Join(dir, "findings.json"), root)
-	cmd.Env = progressTestEnv(dir)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("a scan with timed-out files exited non-zero: %v\nstderr:\n%s", err, stderr.String())
-	}
-
-	progressTransitions(t, stderr.String())
-	details := map[string]map[string]any{}
-	for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
-		var event map[string]any
-		if json.Unmarshal([]byte(line), &event) != nil || event["event"] != "scan_progress" {
-			continue
-		}
-		if counts, ok := event["details"].(map[string]any); ok {
-			details[event["phase"].(string)] = counts
-		}
-	}
-	if got := details["detection"]["files_incomplete"]; got != float64(1) {
-		t.Errorf("detection files_incomplete = %v, want 1: %v", got, details["detection"])
-	}
-	if got := details["dependencies"]["deps_incomplete"]; got != float64(1) {
-		t.Errorf("dependencies deps_incomplete = %v, want 1: %v", got, details["dependencies"])
-	}
-	wantList := []any{map[string]any{"module": "dep", "version": "1.0.0", "purl": "pkg:npm/dep@1.0.0", "reason": "time_or_memory_limit"}}
-	if got := details["dependencies"]["deps_incomplete_list"]; !reflect.DeepEqual(got, wantList) {
-		t.Errorf("dependencies deps_incomplete_list = %v, want %v", got, wantList)
-	}
-	for _, list := range []string{"deps_skipped_list", "deps_failed_list"} {
-		if got := details["dependencies"][list]; !reflect.DeepEqual(got, []any{}) {
-			t.Errorf("dependencies %s = %v, want empty", list, got)
-		}
-	}
-}
-
 // A pass that fails closes as failed, and the scan after it, before the
 // structured error payload.
 func TestScanProgressFailedPassClosesScanAsFailed(t *testing.T) {
@@ -668,9 +389,7 @@ func TestScanProgressFailedPassClosesScanAsFailed(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	writeProgressOpenGrep(t, filepath.Join(dir, "opengrep"))
-	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
-	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
+	writeJavaFindingFixture(t, dir, dir)
 	binary := buildProgressCryptoFinder(t)
 
 	// An existing directory cannot be replaced by the findings report.
@@ -731,78 +450,29 @@ func progressTransitions(t *testing.T, stderr string) []string {
 	return transitions
 }
 
-// writeJavaFindingFixture writes one Java source under root with an AES finding
-// that the stub scanner replays, and the rule that names it.
-func writeJavaFindingFixture(t *testing.T, dir, root, ruleID, matched string) {
+// The progress tests detect one AES cipher with the cards detector.
+const (
+	progressRuleID  = "java.crypto.aes-cipher"
+	progressMatched = `Cipher.getInstance("AES/GCM/NoPadding")`
+)
+
+// writeJavaFindingFixture writes a Java source under root whose one call the
+// rule.yaml it writes in dir detects.
+func writeJavaFindingFixture(t *testing.T, dir, root string) {
 	t.Helper()
 	source := filepath.Join(root, "src", "Use.java")
 	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, source, "import javax.crypto.Cipher;\nclass Use { void run() throws Exception { "+matched+"; } }\n")
-	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules:\n  - id: "+ruleID+"\n    message: aes cipher\n    severity: INFO\n    languages: [java]\n    pattern: $X\n    metadata:\n      crypto:\n        assetType: algorithm\n        algorithmFamily: AES\n        algorithmPrimitive: block-cipher\n")
-	results, err := json.Marshal(map[string]any{
-		"errors": []any{},
-		"results": []map[string]any{{
-			"check_id": ruleID,
-			"path":     source,
-			"start":    map[string]int{"line": 2, "col": 43},
-			"end":      map[string]int{"line": 2, "col": 43 + len(matched)},
-			"extra": map[string]any{
-				"message": "aes cipher", "severity": "INFO", "lines": matched,
-				"metadata": map[string]any{"crypto": map[string]any{"assetType": "algorithm", "algorithmFamily": "AES", "algorithmPrimitive": "block-cipher"}},
-			},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(dir, "opengrep.json"), string(results))
-	writeProgressOpenGrepWithResults(t, filepath.Join(dir, "opengrep"), filepath.Join(dir, "opengrep.json"))
+	writeFile(t, source, "import javax.crypto.Cipher;\nclass Use { void run() throws Exception { "+progressMatched+"; } }\n")
+	writeCardsRule(t, dir, progressRuleID, progressMatched)
 }
 
-// writeNodeDependencyFixture writes a Node package whose one dependency is
-// already installed, so the dependency phase resolves it and builds a graph
-// without a network or an npm install.
-func writeNodeDependencyFixture(t *testing.T, dir, root string) {
+// writeCardsRule writes dir/rule.yaml: one rule the cards detector compiles,
+// matching matched, a call on javax.crypto.
+func writeCardsRule(t *testing.T, dir, ruleID, matched string) {
 	t.Helper()
-	dep := filepath.Join(root, "node_modules", "dep")
-	if err := os.MkdirAll(dep, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(root, "package.json"), `{"name":"app","version":"1.0.0","dependencies":{"dep":"1.0.0"}}`)
-	writeFile(t, filepath.Join(root, "package-lock.json"), `{"name":"app","version":"1.0.0","lockfileVersion":3,"packages":{"":{"name":"app","version":"1.0.0","dependencies":{"dep":"1.0.0"}},"node_modules/dep":{"version":"1.0.0"}}}`)
-	writeFile(t, filepath.Join(root, "index.js"), "const dep = require('dep');\ndep.run();\n")
-	writeFile(t, filepath.Join(dep, "package.json"), `{"name":"dep","version":"1.0.0","main":"index.js"}`)
-	writeFile(t, filepath.Join(dep, "index.js"), "exports.run = function run() { return 1; };\n")
-	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
-	writeProgressOpenGrep(t, filepath.Join(dir, "opengrep"))
-}
-
-func writeProgressOpenGrep(t *testing.T, path string) {
-	t.Helper()
-	writeProgressOpenGrepScript(t, path, `printf '%s\n' '{"results":[],"errors":[]}'`)
-}
-
-// writeProgressOpenGrepWithResults stubs opengrep with a script that replays
-// the JSON at resultsPath for every scan invocation.
-func writeProgressOpenGrepWithResults(t *testing.T, path, resultsPath string) {
-	t.Helper()
-	writeProgressOpenGrepScript(t, path, `cat '`+resultsPath+`'`)
-}
-
-func writeProgressOpenGrepScript(t *testing.T, path, scanCommand string) {
-	t.Helper()
-	writeFile(t, path, `#!/bin/sh
-case "$1:$2" in
-  --version:*) echo 1.12.1; exit 0 ;;
-  scan:--help|--help:*) exit 0 ;;
-esac
-`+scanCommand+`
-`)
-	if err := os.Chmod(path, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules:\n  - id: "+ruleID+"\n    message: aes cipher\n    severity: INFO\n    languages: [java]\n    pattern: javax.crypto."+matched+"\n    metadata:\n      crypto:\n        assetType: algorithm\n        algorithmFamily: AES\n        algorithmPrimitive: block-cipher\n")
 }
 
 func progressTestEnv(dir string) []string {
@@ -830,91 +500,9 @@ func buildProgressCryptoFinder(t *testing.T) string {
 	return binary
 }
 
-// With --dep-ecosystem auto every ecosystem with a manifest is resolved, not
-// only the first: one dependencies phase names them all, and the ecosystems it
-// saw but could not resolve. Both manifests declare no dependencies, so
-// neither Maven nor npm runs.
-func TestScanProgressResolvesEveryEcosystemWithAManifest(t *testing.T) {
-	if testing.Short() {
-		t.Skip("requires a compiled CLI and external scanner process")
-	}
-	binary := buildProgressCryptoFinder(t)
-
-	cases := []struct {
-		name          string
-		lockfile      bool
-		wantResolved  []any
-		wantSkipped   []any
-		explicitFlags []string
-	}{
-		{
-			name:         "java and node both resolved",
-			lockfile:     true,
-			wantResolved: []any{"java", "node"},
-			wantSkipped:  []any{},
-		},
-		{
-			name:         "node without a lockfile is reported beside the java it resolved",
-			wantResolved: []any{"java"},
-			wantSkipped:  []any{map[string]any{"ecosystem": "node", "reason": "lockfile_absent"}},
-		},
-		{
-			name:          "an explicit ecosystem is resolved alone",
-			lockfile:      true,
-			explicitFlags: []string{"--dep-ecosystem", "node"},
-			wantResolved:  []any{"node"},
-			wantSkipped:   []any{},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			root := filepath.Join(dir, "repo")
-			for _, sub := range []string{"src", "web"} {
-				if err := os.MkdirAll(filepath.Join(root, sub), 0o755); err != nil {
-					t.Fatal(err)
-				}
-			}
-			writeFile(t, filepath.Join(root, "src", "Use.java"), "class Use {}\n")
-			writeFile(t, filepath.Join(root, "web", "app.js"), "export const x = 1;\n")
-			writeFile(t, filepath.Join(root, "pom.xml"), "<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>x</artifactId><version>1.0</version></project>\n")
-			writeFile(t, filepath.Join(root, "package.json"), `{"name":"web","version":"1.0.0"}`+"\n")
-			if tc.lockfile {
-				writeFile(t, filepath.Join(root, "package-lock.json"), `{"name":"web","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"web","version":"1.0.0"}}}`+"\n")
-			}
-			writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
-			writeProgressOpenGrep(t, filepath.Join(dir, "opengrep"))
-
-			args := append([]string{"scan", "--progress", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"), "--scan-dependencies"}, tc.explicitFlags...)
-			cmd := exec.CommandContext(t.Context(), binary, append(args, root)...)
-			cmd.Env = progressTestEnv(dir)
-			var stderr bytes.Buffer
-			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
-				t.Fatalf("scan exited non-zero: %v\nstderr:\n%s", err, stderr.String())
-			}
-			transitions := progressTransitions(t, stderr.String())
-			var completed map[string]any
-			dependencyEvents := 0
-			for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
-				var event map[string]any
-				if err := json.Unmarshal([]byte(line), &event); err != nil || event["event"] != "scan_progress" || event["phase"] != "dependencies" {
-					continue
-				}
-				dependencyEvents++
-				if event["status"] == progressStatusCompleted {
-					completed, _ = event["details"].(map[string]any)
-				}
-			}
-			if dependencyEvents != 2 || completed == nil {
-				t.Fatalf("dependencies events = %d, completed details %v, want one started/completed pair: %v", dependencyEvents, completed, transitions)
-			}
-			if got := completed["ecosystems"]; !reflect.DeepEqual(got, tc.wantResolved) {
-				t.Errorf("ecosystems = %#v, want %#v", got, tc.wantResolved)
-			}
-			if got := completed["ecosystems_skipped"]; !reflect.DeepEqual(got, tc.wantSkipped) {
-				t.Errorf("ecosystems_skipped = %#v, want %#v", got, tc.wantSkipped)
-			}
-		})
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }

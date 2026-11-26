@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -647,5 +648,55 @@ func TestMarkSyntheticVariantsKeepsIDsOfAPIsOnTheirOwnLines(t *testing.T) {
 		if a.FindingID != want {
 			t.Errorf("%s: id = %s, want the unchanged %s", a.Metadata["api"], a.FindingID, want)
 		}
+	}
+}
+
+// A package scanned through a relative path (a scan of "node_modules/x", an
+// offline mine from the project's directory) is synthesized as it is through
+// its absolute path: the class method a rule names is anchored at the call
+// graph's declaration, and a crypto finding in its body still suppresses it.
+func TestSynthesizeNodeRelativeRootLikeAbsolute(t *testing.T) {
+	root := t.TempDir()
+	writeNodeFiles(t, root, map[string]string{
+		"package.json":  `{"name": "acme", "main": "./lib/index.js"}`,
+		"lib/index.js":  "module.exports = {\n  Client: require('./client.js'),\n};\n",
+		"lib/client.js": "class Client {\n  connect(cfg) {\n    const h = require('crypto').createHash('sha1');\n    return h;\n  }\n}\nmodule.exports = Client;\n",
+	})
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(cwd, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := writeNodeRules(t, map[string]string{"acme.Client.connect": "keygen"})
+	synthesize := func(root string) map[string]*entities.CryptographicAsset {
+		connect := &callgraph.FunctionDecl{
+			ID:       callgraph.FunctionID{Package: "acme/lib/client", Type: "Client", Name: "connect"},
+			FilePath: filepath.Join(root, "lib", "client.js"), StartLine: 2, EndLine: 5,
+		}
+		report := &entities.InterimReport{Findings: []entities.Finding{{
+			FilePath: "lib/client.js",
+			CryptographicAssets: []entities.CryptographicAsset{{
+				StartLine: 3, EndLine: 3, Rules: []entities.RuleInfo{{ID: "test.hash"}},
+				Metadata: map[string]string{"assetType": "algorithm", "algorithmPrimitive": "hash"},
+			}},
+		}}}
+		result := &DepScanResult{
+			Report:      report,
+			CallGraph:   &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{"connect": connect}},
+			Ecosystem:   ecosystemNode,
+			ProjectRoot: root,
+		}
+		SynthesizeRuleCryptoEntryPointsForResult(result, []string{rules})
+		return syntheticAssets(result.Report)
+	}
+
+	if got := synthesize(root); len(got) != 0 {
+		t.Fatalf("absolute root: the body's finding must suppress the entry point; got %v", got)
+	}
+	if got := synthesize(relative); len(got) != 0 {
+		t.Errorf("relative root %q: got %v, want what the absolute root gives (none)", relative, got)
 	}
 }

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Read-only: is this checkout ready to drive? Exits 1 when a required piece is
-# missing or the binary is stale; a missing language toolchain only marks that
-# language SKIP.
+# missing or the binary is stale.
 #
 # Usage: .claude/skills/verify/scripts/doctor.sh
 # shellcheck source=lib.sh
@@ -36,26 +35,9 @@ else
 fi
 
 # Scanner and tools the scripts need.
-if command -v opengrep >/dev/null; then
-	ok "opengrep: $(opengrep --version 2>/dev/null | head -1) at $(command -v opengrep)"
-else
-	no "opengrep: not on PATH (every scan drive needs it)"
-fi
-if command -v semgrep >/dev/null; then info "semgrep: $(command -v semgrep) (drives use opengrep)"; else info "semgrep: absent (not needed)"; fi
-for tool in jq git realpath; do
+for tool in jq git realpath python3; do
 	if command -v "$tool" >/dev/null; then ok "$tool: $(command -v "$tool")"; else no "$tool: not on PATH"; fi
 done
-
-# Per-language toolchains for the reachability drives.
-have() { command -v "$1" >/dev/null; }
-lang() { if "${@:2}"; then ok "lang $1: ready"; else info "lang $1: SKIP ($3 missing)"; fi; }
-lang go have go
-lang python have python3
-if have python3 && ! python3 -c 'import venv, ensurepip' 2>/dev/null; then info "lang python: SKIP (python3 has no venv/ensurepip)"; fi
-ok "lang node: ready (the npm resolver reads package-lock.json and node_modules; no node toolchain needed)"
-rustup_dir=${RUSTUP_HOME:-$HOME/.rustup}
-if have cargo && [[ -d $rustup_dir ]]; then ok "lang rust: ready (RUSTUP_HOME=$rustup_dir kept in the sandbox)"; else info "lang rust: SKIP (cargo or $rustup_dir missing)"; fi
-info "lang java: not driven (Maven resolution needs the real ~/.m2)"
 
 # Host environment: drives strip these, but say so.
 for var in SCANOSS_API_KEY SC_API_KEY SCANOSS_API_URL VIRTUAL_ENV; do
@@ -74,7 +56,7 @@ else
 	ok "sandbox: none"
 fi
 if [[ -d $EVIDENCE_ROOT ]]; then
-	for v in "$EVIDENCE_ROOT"/*/verdict.txt "$EVIDENCE_ROOT"/*/*/verdict.txt; do
+	for v in "$EVIDENCE_ROOT"/*/verdict.txt; do
 		[[ -f $v ]] && info "evidence ${v#"$EVIDENCE_ROOT"/}: $(head -1 "$v")"
 	done
 fi

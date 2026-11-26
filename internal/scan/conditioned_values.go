@@ -10,8 +10,7 @@ import (
 	"strconv"
 
 	"github.com/rs/zerolog/log"
-
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
 )
 
 // maxConditionedSelectorValues bounds the distinct values one parameter may

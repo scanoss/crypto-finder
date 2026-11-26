@@ -1,0 +1,1674 @@
+{
+ "schema_version": "graph-fragment-1.34",
+ "scan_metadata": {
+  "ecosystem": "rust"
+ },
+ "functions": [
+  {
+   "key": "probe.muts",
+   "function_name": "probe.muts",
+   "canonical_signature": "probe.muts()",
+   "package": "probe",
+   "name": "muts",
+   "file_path": "src/main.rs",
+   "start_line": 5,
+   "end_line": 8
+  },
+  {
+   "key": "probe.nested",
+   "function_name": "probe.nested",
+   "canonical_signature": "probe.nested()",
+   "package": "probe",
+   "name": "nested",
+   "file_path": "src/main.rs",
+   "start_line": 29,
+   "end_line": 32
+  },
+  {
+   "key": "probe.other",
+   "function_name": "probe.other",
+   "canonical_signature": "probe.other()",
+   "package": "probe",
+   "name": "other",
+   "file_path": "src/main.rs",
+   "start_line": 33,
+   "end_line": 36
+  },
+  {
+   "key": "probe.param",
+   "function_name": "probe.param",
+   "canonical_signature": "probe.param(Stream)",
+   "package": "probe",
+   "name": "param",
+   "file_path": "src/main.rs",
+   "start_line": 42,
+   "end_line": 44,
+   "parameter_types": [
+    "Stream"
+   ]
+  },
+  {
+   "key": "probe.plain",
+   "function_name": "probe.plain",
+   "canonical_signature": "probe.plain()",
+   "package": "probe",
+   "name": "plain",
+   "file_path": "src/main.rs",
+   "start_line": 1,
+   "end_line": 4
+  },
+  {
+   "key": "probe.refpat",
+   "function_name": "probe.refpat",
+   "canonical_signature": "probe.refpat()",
+   "package": "probe",
+   "name": "refpat",
+   "file_path": "src/main.rs",
+   "start_line": 45,
+   "end_line": 48
+  },
+  {
+   "key": "probe.second_shadowed",
+   "function_name": "probe.second_shadowed",
+   "canonical_signature": "probe.second_shadowed()",
+   "package": "probe",
+   "name": "second_shadowed",
+   "file_path": "src/main.rs",
+   "start_line": 63,
+   "end_line": 67
+  },
+  {
+   "key": "probe.shadowed",
+   "function_name": "probe.shadowed",
+   "canonical_signature": "probe.shadowed()",
+   "package": "probe",
+   "name": "shadowed",
+   "file_path": "src/main.rs",
+   "start_line": 37,
+   "end_line": 41
+  },
+  {
+   "key": "probe.single",
+   "function_name": "probe.single",
+   "canonical_signature": "probe.single()",
+   "package": "probe",
+   "name": "single",
+   "file_path": "src/main.rs",
+   "start_line": 49,
+   "end_line": 52
+  },
+  {
+   "key": "probe.single_rebound",
+   "function_name": "probe.single_rebound",
+   "canonical_signature": "probe.single_rebound()",
+   "package": "probe",
+   "name": "single_rebound",
+   "file_path": "src/main.rs",
+   "start_line": 58,
+   "end_line": 62
+  },
+  {
+   "key": "probe.single_shadowed",
+   "function_name": "probe.single_shadowed",
+   "canonical_signature": "probe.single_shadowed()",
+   "package": "probe",
+   "name": "single_shadowed",
+   "file_path": "src/main.rs",
+   "start_line": 53,
+   "end_line": 57
+  },
+  {
+   "key": "probe.swapped",
+   "function_name": "probe.swapped",
+   "canonical_signature": "probe.swapped()",
+   "package": "probe",
+   "name": "swapped",
+   "file_path": "src/main.rs",
+   "start_line": 21,
+   "end_line": 24
+  },
+  {
+   "key": "probe.three",
+   "function_name": "probe.three",
+   "canonical_signature": "probe.three()",
+   "package": "probe",
+   "name": "three",
+   "file_path": "src/main.rs",
+   "start_line": 25,
+   "end_line": 28
+  },
+  {
+   "key": "probe.typed",
+   "function_name": "probe.typed",
+   "canonical_signature": "probe.typed()",
+   "package": "probe",
+   "name": "typed",
+   "file_path": "src/main.rs",
+   "start_line": 9,
+   "end_line": 12
+  },
+  {
+   "key": "probe.typed_both",
+   "function_name": "probe.typed_both",
+   "canonical_signature": "probe.typed_both()",
+   "package": "probe",
+   "name": "typed_both",
+   "file_path": "src/main.rs",
+   "start_line": 13,
+   "end_line": 16
+  },
+  {
+   "key": "probe.wild",
+   "function_name": "probe.wild",
+   "canonical_signature": "probe.wild()",
+   "package": "probe",
+   "name": "wild",
+   "file_path": "src/main.rs",
+   "start_line": 17,
+   "end_line": 20
+  }
+ ],
+ "internal_edges_compact": [],
+ "internal_edge_strings": [
+  ""
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe.muts",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 6,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 23,
+   "end_col": 51,
+   "entry_call": {
+    "line": 6,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 6
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.muts",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 7,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 7,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 7
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.nested",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 30,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 23,
+   "end_col": 51,
+   "entry_call": {
+    "line": 30,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 30
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.nested",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 31,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 31,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 31
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.other",
+   "target_key": "other.open",
+   "target_function_name": "other.open",
+   "target_canonical_signature": "other.open(?)",
+   "raw": "other::open",
+   "line": 34,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 18,
+   "end_col": 32,
+   "entry_call": {
+    "line": 34,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 34
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.other",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 35,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 35,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 35
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.param",
+   "target_key": "probe.(Stream).push",
+   "target_canonical_signature": "probe.Stream.push(?)",
+   "raw": "s.push",
+   "line": 43,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 43,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 43
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.plain",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 18,
+   "end_col": 46,
+   "entry_call": {
+    "line": 2,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 2
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.plain",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 3,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 3,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 3
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.refpat",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 46,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 22,
+   "end_col": 50,
+   "entry_call": {
+    "line": 46,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 46
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.refpat",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 47,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 47,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 47
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.second_shadowed",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 64,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 18,
+   "end_col": 46,
+   "entry_call": {
+    "line": 64,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 64
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.second_shadowed",
+   "target_key": "probe.fresh",
+   "target_function_name": "probe.fresh",
+   "target_canonical_signature": "probe.fresh()",
+   "raw": "fresh",
+   "line": 65,
+   "resolution": "exact",
+   "method_name": "fresh",
+   "assigned_var": "s",
+   "start_col": 13,
+   "end_col": 20,
+   "entry_call": {
+    "line": 65
+   }
+  },
+  {
+   "caller_key": "probe.second_shadowed",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 66,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 66,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 66
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.shadowed",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 38,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 18,
+   "end_col": 46,
+   "entry_call": {
+    "line": 38,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 38
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.shadowed",
+   "target_key": "probe.fresh",
+   "target_function_name": "probe.fresh",
+   "target_canonical_signature": "probe.fresh()",
+   "raw": "fresh",
+   "line": 39,
+   "resolution": "exact",
+   "method_name": "fresh",
+   "assigned_var": "s",
+   "start_col": 13,
+   "end_col": 20,
+   "entry_call": {
+    "line": 39
+   }
+  },
+  {
+   "caller_key": "probe.shadowed",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 40,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 40,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 40
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.single",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 50,
+   "resolution": "exact",
+   "method_name": "open",
+   "assigned_var": "s",
+   "start_col": 13,
+   "end_col": 41,
+   "entry_call": {
+    "line": 50,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 50
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.single",
+   "target_key": "acme_stream.(Stream).push",
+   "target_canonical_signature": "acme_stream.Stream.push(?)",
+   "raw": "s.push",
+   "line": 51,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 51,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 51
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.single_rebound",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 60,
+   "resolution": "exact",
+   "method_name": "open",
+   "assigned_var": "s",
+   "start_col": 13,
+   "end_col": 41,
+   "entry_call": {
+    "line": 60,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 60
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.single_rebound",
+   "target_key": "acme_stream.(Stream).push",
+   "target_canonical_signature": "acme_stream.Stream.push(?)",
+   "raw": "s.push",
+   "line": 61,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 61,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 61
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.single_rebound",
+   "target_key": "probe.fresh",
+   "target_function_name": "probe.fresh",
+   "target_canonical_signature": "probe.fresh()",
+   "raw": "fresh",
+   "line": 59,
+   "resolution": "exact",
+   "method_name": "fresh",
+   "assigned_var": "s",
+   "start_col": 13,
+   "end_col": 20,
+   "entry_call": {
+    "line": 59
+   }
+  },
+  {
+   "caller_key": "probe.single_shadowed",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 54,
+   "resolution": "exact",
+   "method_name": "open",
+   "assigned_var": "s",
+   "start_col": 13,
+   "end_col": 41,
+   "entry_call": {
+    "line": 54,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 54
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.single_shadowed",
+   "target_key": "acme_stream.(Stream).push",
+   "target_canonical_signature": "acme_stream.Stream.push(?)",
+   "raw": "s.push",
+   "line": 56,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 56,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 56
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.single_shadowed",
+   "target_key": "probe.fresh",
+   "target_function_name": "probe.fresh",
+   "target_canonical_signature": "probe.fresh()",
+   "raw": "fresh",
+   "line": 55,
+   "resolution": "exact",
+   "method_name": "fresh",
+   "assigned_var": "s",
+   "start_col": 13,
+   "end_col": 20,
+   "entry_call": {
+    "line": 55
+   }
+  },
+  {
+   "caller_key": "probe.swapped",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 22,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 18,
+   "end_col": 46,
+   "entry_call": {
+    "line": 22,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 22
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.swapped",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 23,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 23,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 23
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.three",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 26,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 21,
+   "end_col": 49,
+   "entry_call": {
+    "line": 26,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 26
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.three",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 27,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 27,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 27
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.typed",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 10,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 36,
+   "end_col": 64,
+   "entry_call": {
+    "line": 10,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 10
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.typed",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 11,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 11,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 11
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.typed_both",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 14,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 36,
+   "end_col": 64,
+   "entry_call": {
+    "line": 14,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 14
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.typed_both",
+   "target_key": "probe.(Stream).push",
+   "target_canonical_signature": "probe.Stream.push(?)",
+   "raw": "s.push",
+   "line": 15,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 15,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 15
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.wild",
+   "target_key": "acme_stream.(Stream).open",
+   "target_canonical_signature": "acme_stream.Stream.open(?)",
+   "raw": "acme_stream::Stream::open",
+   "line": 18,
+   "resolution": "exact",
+   "method_name": "open",
+   "start_col": 18,
+   "end_col": 46,
+   "entry_call": {
+    "line": 18,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 18
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.wild",
+   "target_key": "probe.push",
+   "target_function_name": "probe.push",
+   "target_canonical_signature": "probe.push(?)",
+   "raw": "s.push",
+   "line": 19,
+   "resolution": "exact",
+   "method_name": "push",
+   "receiver_var": "s",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 19,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 19
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "declarations": [
+  [
+   0,
+   6,
+   5,
+   52,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   0,
+   6,
+   5,
+   52,
+   "",
+   "_h",
+   "call"
+  ],
+  [
+   1,
+   30,
+   5,
+   52,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   1,
+   30,
+   5,
+   52,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   1,
+   30,
+   5,
+   52,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   2,
+   34,
+   5,
+   33,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   2,
+   34,
+   5,
+   33,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   4,
+   2,
+   5,
+   47,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   4,
+   2,
+   5,
+   47,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   5,
+   46,
+   5,
+   51,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   5,
+   46,
+   5,
+   51,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   6,
+   64,
+   5,
+   47,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   6,
+   64,
+   5,
+   47,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   6,
+   65,
+   5,
+   21,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   7,
+   38,
+   5,
+   47,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   7,
+   38,
+   5,
+   47,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   7,
+   39,
+   5,
+   21,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   8,
+   50,
+   5,
+   42,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   9,
+   59,
+   5,
+   21,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   9,
+   60,
+   5,
+   42,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   10,
+   54,
+   5,
+   42,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   10,
+   55,
+   5,
+   21,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   11,
+   22,
+   5,
+   47,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   11,
+   22,
+   5,
+   47,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   12,
+   26,
+   5,
+   50,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   12,
+   26,
+   5,
+   50,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   12,
+   26,
+   5,
+   50,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   13,
+   10,
+   5,
+   65,
+   "(_,Header)",
+   "s",
+   "call"
+  ],
+  [
+   13,
+   10,
+   5,
+   65,
+   "(_,Header)",
+   "_h",
+   "call"
+  ],
+  [
+   14,
+   14,
+   5,
+   65,
+   "(Stream,Header)",
+   "s",
+   "call"
+  ],
+  [
+   14,
+   14,
+   5,
+   65,
+   "(Stream,Header)",
+   "h",
+   "call"
+  ],
+  [
+   15,
+   18,
+   5,
+   47,
+   "",
+   "s",
+   "call"
+  ]
+ ],
+ "source_lines": {
+  "src/main.rs": {
+   "10": "    let (mut s, _h): (_, Header) = acme_stream::Stream::open(1);",
+   "11": "    s.push(2);",
+   "14": "    let (s, h): (Stream, Header) = acme_stream::Stream::open(1);",
+   "15": "    s.push(2);",
+   "18": "    let (s, _) = acme_stream::Stream::open(1);",
+   "19": "    s.push(2);",
+   "2": "    let (s, h) = acme_stream::Stream::open(1);",
+   "22": "    let (h, s) = acme_stream::Stream::open(1);",
+   "23": "    s.push(2);",
+   "26": "    let (s, h, x) = acme_stream::Stream::open(1);",
+   "27": "    s.push(2);",
+   "3": "    s.push(2);",
+   "30": "    let ((s, h), x) = acme_stream::Stream::open(1);",
+   "31": "    s.push(2);",
+   "34": "    let (s, h) = other::open(1);",
+   "35": "    s.push(2);",
+   "38": "    let (s, h) = acme_stream::Stream::open(1);",
+   "39": "    let s = fresh();",
+   "40": "    s.push(2);",
+   "43": "    s.push(2);",
+   "46": "    let (ref s, h) = acme_stream::Stream::open(1);",
+   "47": "    s.push(2);",
+   "50": "    let s = acme_stream::Stream::open(1);",
+   "51": "    s.push(2);",
+   "54": "    let s = acme_stream::Stream::open(1);",
+   "55": "    let s = fresh();",
+   "56": "    s.push(2);",
+   "59": "    let s = fresh();",
+   "6": "    let (mut s, _h) = acme_stream::Stream::open(1);",
+   "60": "    let s = acme_stream::Stream::open(1);",
+   "61": "    s.push(2);",
+   "64": "    let (h, s) = acme_stream::Stream::open(1);",
+   "65": "    let s = fresh();",
+   "66": "    s.push(2);",
+   "7": "    s.push(2);"
+  }
+ },
+ "items": {
+  "src/main.rs": [
+   [
+    1,
+    1,
+    2,
+    "fn",
+    "plain",
+    4
+   ],
+   [
+    5,
+    1,
+    2,
+    "fn",
+    "muts",
+    8
+   ],
+   [
+    9,
+    1,
+    2,
+    "fn",
+    "typed",
+    12
+   ],
+   [
+    13,
+    1,
+    2,
+    "fn",
+    "typed_both",
+    16
+   ],
+   [
+    17,
+    1,
+    2,
+    "fn",
+    "wild",
+    20
+   ],
+   [
+    21,
+    1,
+    2,
+    "fn",
+    "swapped",
+    24
+   ],
+   [
+    25,
+    1,
+    2,
+    "fn",
+    "three",
+    28
+   ],
+   [
+    29,
+    1,
+    2,
+    "fn",
+    "nested",
+    32
+   ],
+   [
+    33,
+    1,
+    2,
+    "fn",
+    "other",
+    36
+   ],
+   [
+    37,
+    1,
+    2,
+    "fn",
+    "shadowed",
+    41
+   ],
+   [
+    42,
+    1,
+    2,
+    "fn",
+    "param",
+    44,
+    "",
+    0,
+    [
+     [
+      42,
+      10,
+      19,
+      "s",
+      "Stream"
+     ]
+    ]
+   ],
+   [
+    45,
+    1,
+    2,
+    "fn",
+    "refpat",
+    48
+   ],
+   [
+    49,
+    1,
+    2,
+    "fn",
+    "single",
+    52
+   ],
+   [
+    53,
+    1,
+    2,
+    "fn",
+    "single_shadowed",
+    57
+   ],
+   [
+    58,
+    1,
+    2,
+    "fn",
+    "single_rebound",
+    62
+   ],
+   [
+    63,
+    1,
+    2,
+    "fn",
+    "second_shadowed",
+    67
+   ]
+  ]
+ }
+}

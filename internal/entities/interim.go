@@ -37,6 +37,8 @@ type (
 	CryptographicAsset = schema.CryptographicAsset
 	// DependencyInfo contains attribution metadata for dependency findings.
 	DependencyInfo = schema.DependencyInfo
+	// ServedReachability is a reachability verdict a server decided.
+	ServedReachability = schema.ServedReachability
 	// RuleInfo contains information about the detection rule that identified an asset.
 	RuleInfo = schema.RuleInfo
 

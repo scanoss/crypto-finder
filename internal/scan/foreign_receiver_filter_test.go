@@ -9,7 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -86,7 +87,7 @@ fn consumer_code() {
 }
 `
 
-const eddsaSignRule = "rust.ed25519-dalek.algorithm.signature.eddsa-sign"
+const eddsaSignRule = "fixture.rust.ed25519-dalek.eddsa-sign"
 
 // The defect this filter exists for: a consumer's OWN type with a same-named
 // method, in a file that imports the crate, is claimed by the crate's rule.
@@ -204,11 +205,11 @@ func TestForeignReceiverFilter_DropsOnlyTheOffendingRule(t *testing.T) {
 func TestForeignReceiverFilter_CrateOfRuleID(t *testing.T) {
 	t.Parallel()
 	for id, want := range map[string]string{
-		"rust.ed25519-dalek.algorithm.signature.eddsa-sign": "ed25519_dalek",
+		"fixture.rust.ed25519-dalek.eddsa-sign": "ed25519_dalek",
 		// The shape --rules-dir on the repository root actually produces, which
 		// is how the mining service loads the ruleset.
-		"semgrep-rules.rust.ed25519-dalek.algorithm.signature.rust.ed25519-dalek.algorithm.signature.eddsa-sign": "ed25519_dalek",
-		"ed25519-dalek.algorithm.signature.rust.ed25519-dalek.algorithm.signature.eddsa-sign":                    "ed25519_dalek",
+		"semgrep-rules.rust.ed25519-dalek.algorithm.signature.fixture.rust.ed25519-dalek.eddsa-sign": "ed25519_dalek",
+		"ed25519-dalek.algorithm.signature.fixture.rust.ed25519-dalek.eddsa-sign":                    "ed25519_dalek",
 		// Two different crates in one ID is a shape this does not understand.
 		"rust.p256.x.rust.k256.y":                "",
 		"rust.p256.algorithm.signature.ecdsa":    "p256",
@@ -231,7 +232,7 @@ func TestForeignReceiverFilter_CrateOfRuleID(t *testing.T) {
 func TestForeignReceiverFilter_DropsWithTheRuleIDShapeProductionProduces(t *testing.T) {
 	t.Parallel()
 	const productionID = "semgrep-rules.rust.ed25519-dalek.algorithm.signature." +
-		"rust.ed25519-dalek.algorithm.signature.eddsa-sign"
+		"fixture.rust.ed25519-dalek.eddsa-sign"
 
 	result := buildRustResultForFilter(t, "app", consumerSrc)
 	line, sc, ec := lineOf(t, consumerSrc, "own.sign(b\"x\")")
@@ -421,7 +422,7 @@ pub fn spki_der(cert: &CapturedX509Certificate) -> Vec<u8> {
 `
 	result := buildRustResultForFilter(t, "app", extensionSrc)
 	line, sc, ec := lineOf(t, extensionSrc, "cert.to_public_key_der()")
-	report := reportAt("rust.spki.related-crypto-material.public-key.encode", line, sc, ec)
+	report := reportAt("fixture.rust.spki.encode", line, sc, ec)
 
 	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0 (to_public_key_der is not declared here)", got)
@@ -450,7 +451,7 @@ fn consumer_code(payload: &[u8], out: &mut [u8]) {
 }
 `
 
-const snowTransportRule = "rust.snow.protocol.noise-patterns.transport-message-write"
+const snowTransportRule = "fixture.rust.snow.transport-message-write"
 
 func TestForeignReceiverFilter_DropsTheConsumersOwnModuleFunction(t *testing.T) {
 	t.Parallel()
@@ -549,7 +550,7 @@ fn consumer_code(key: &[u8], message: &[u8]) {
 `
 	result := buildRustResultForFilter(t, "app", src)
 	line, sc, ec := lineOf(t, src, "sign_hmac(hmac::HMAC_SHA256, key, message)")
-	report := reportAt("rust.aws-lc-rs.algorithm.mac.hmac", line, sc, ec)
+	report := reportAt("fixture.rust.aws-lc-rs.hmac", line, sc, ec)
 
 	if got := FilterForeignReceiverAssets(report, result); got != 0 {
 		t.Fatalf("dropped = %d, want 0 — the algorithm constant is the crate's own evidence", got)
@@ -641,7 +642,7 @@ fn decode(point: &CompressedRistretto) -> RistrettoPoint {
 }
 `
 
-const ristrettoDHRule = "rust.curve25519-dalek.algorithm.key-agree.ristretto-dh"
+const ristrettoDHRule = "fixture.rust.curve25519-dalek.ristretto-dh"
 
 // A binary operator has no call node. When the matched operation is
 // `secret * decode(&peer)`, the only call on the span is the program's own
@@ -672,5 +673,35 @@ func TestForeignReceiverFilter_StillDropsAMatchThatStartsAtTheProgramsOwnCall(t 
 
 	if got := FilterForeignReceiverAssets(report, result); got != 1 {
 		t.Fatalf("dropped = %d, want 1 — the match is the program's own Helper.decode", got)
+	}
+}
+
+const methodSharingALocalFunctionNameSrc = `fn write_message(_p: &[u8]) {}
+
+fn consumer_code(payload: &[u8], out: &mut [u8]) {
+    write_message(payload);
+    let hs = untyped_source();
+    let _ = hs.write_message(payload, out);
+}
+`
+
+// A method call on a receiver the parser could not type shares its callee key
+// with a same-named free function of the file. The method is the crate's, the
+// free function is the consumer's: only the path-less call to the local
+// function is dropped.
+func TestForeignReceiverFilter_KeepsAMethodSharingALocalFunctionName(t *testing.T) {
+	t.Parallel()
+	result := buildRustResultForFilter(t, "app", methodSharingALocalFunctionNameSrc)
+
+	line, sc, ec := lineOf(t, methodSharingALocalFunctionNameSrc, "hs.write_message(payload, out)")
+	method := reportAt(snowTransportRule, line, sc, ec)
+	if got := FilterForeignReceiverAssets(method, result); got != 0 {
+		t.Fatalf("method call dropped = %d, want 0 — it is not a call of the local free function", got)
+	}
+
+	line, sc, ec = lineOf(t, methodSharingALocalFunctionNameSrc, "write_message(payload);")
+	free := reportAt(snowTransportRule, line, sc, ec-1)
+	if got := FilterForeignReceiverAssets(free, result); got != 1 {
+		t.Fatalf("local function call dropped = %d, want 1", got)
 	}
 }

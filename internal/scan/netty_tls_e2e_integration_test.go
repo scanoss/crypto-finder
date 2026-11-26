@@ -4,25 +4,22 @@
 // netty_tls_e2e_integration_test.go — scanoss/crypto-finder#183 scan-layer proof.
 //
 // Proves that entry-point synthesis (engine.SynthesizeRuleCryptoEntryPoints)
-// JOINS the Netty TLS detection rule api anchors
-// (io.netty.handler.ssl.SslContextBuilder.{forClient,forServer,sslProvider,
-// protocols,ciphers} plus the server PEM key-material rule, which shares the
-// forServer anchor) against a netty-shaped source file mined with the real
-// Java parser + callgraph builder — the same path `crypto-finder scan
-// --export-callgraph` uses when mining netty-handler itself. This is the
-// public-export proof that the netty-tls.yaml contract's method+arity keys
-// (internal/callgraph/contracts/java/netty-tls.yaml) match what the Java
-// parser actually emits for SslContextBuilder's factory/config/build methods,
-// not just the embedded-contract loader assertions in java_libraries_test.go.
+// joins rule api anchors on a netty-shaped TLS context builder against a
+// source file mined with the real Java parser and callgraph builder: the
+// client/server factory split, two rules sharing one api, and two
+// value-variant rules sharing one api. The rules and the class name are
+// invented.
 
 package scan
 
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -67,88 +64,87 @@ public final class SslContextBuilder {
 }
 `
 
-// nettyTLSRulesYAML mirrors the detection rule shapes anchored
-// on SslContextBuilder: the client/server factory split, the two
+// nettyTLSRulesYAML holds invented rules anchored on TlsContextBuilder: the client/server factory split, the two
 // value-variant sslProvider selection rules (OpenSSL vs JDK, sharing one api
 // per the crypto-kb-author skill's literal-argument convention), the
 // protocol-version and cipher-config rules, and the server PEM key-material
 // rule (which shares the forServer anchor with the factory rule above it —
 // proving two independently-authored rules on the same api both resolve).
 const nettyTLSRulesYAML = `rules:
-  - id: java.netty.protocol.tls.context-builder-client
+  - id: fixture.java.netty.context-builder-client
     metadata:
       crypto:
         assetType: protocol
         protocolType: tls
         protocolName: TLS
         library: Netty
-        api: io.netty.handler.ssl.SslContextBuilder.forClient
-  - id: java.netty.protocol.tls.context-builder-server
+        api: io.netty.handler.ssl.TlsContextBuilder.forClient
+  - id: fixture.java.netty.context-builder-server
     metadata:
       crypto:
         assetType: protocol
         protocolType: tls
         protocolName: TLS
         library: Netty
-        api: io.netty.handler.ssl.SslContextBuilder.forServer
-  - id: java.netty.related-crypto-material.key.server-pem-key-material
+        api: io.netty.handler.ssl.TlsContextBuilder.forServer
+  - id: fixture.java.netty.server-pem-key-material
     metadata:
       crypto:
         assetType: related-crypto-material
         materialType: private-key
         materialFormat: PEM
         library: Netty
-        api: io.netty.handler.ssl.SslContextBuilder.forServer
-  - id: java.netty.protocol.tls.provider-selection-openssl
+        api: io.netty.handler.ssl.TlsContextBuilder.forServer
+  - id: fixture.java.netty.provider-selection-openssl
     metadata:
       crypto:
         assetType: protocol
         protocolType: tls
         provider: OpenSSL
         library: Netty
-        api: io.netty.handler.ssl.SslContextBuilder.sslProvider
-  - id: java.netty.protocol.tls.provider-selection-jdk
+        api: io.netty.handler.ssl.TlsContextBuilder.sslProvider
+  - id: fixture.java.netty.provider-selection-jdk
     metadata:
       crypto:
         assetType: protocol
         protocolType: tls
         provider: JDK
         library: Netty
-        api: io.netty.handler.ssl.SslContextBuilder.sslProvider
-  - id: java.netty.protocol.tls.protocol-version-selection
+        api: io.netty.handler.ssl.TlsContextBuilder.sslProvider
+  - id: fixture.java.netty.protocol-version-selection
     metadata:
       crypto:
         assetType: protocol
         protocolType: tls
         protocolName: TLS
         library: Netty
-        api: io.netty.handler.ssl.SslContextBuilder.protocols
-  - id: java.netty.protocol.tls.cipher-config
+        api: io.netty.handler.ssl.TlsContextBuilder.protocols
+  - id: fixture.java.netty.cipher-config
     metadata:
       crypto:
         assetType: protocol
         protocolType: tls
         library: Netty
-        api: io.netty.handler.ssl.SslContextBuilder.ciphers
+        api: io.netty.handler.ssl.TlsContextBuilder.ciphers
 `
 
 // TestNettyTLS_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors proves
-// that mining netty-handler's own SslContextBuilder source produces a
-// synthesized crypto entry point for every detection rules api
+// that mining netty-handler's own TlsContextBuilder source produces a
+// synthesized crypto entry point for every rule api
 // anchor: forClient, forServer (shared by two independent rules), sslProvider
 // (shared by two value-variant rules), protocols, and ciphers.
 func TestNettyTLS_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "SslContextBuilder.java"), []byte(nettySslContextBuilderSource), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "TlsContextBuilder.java"), []byte(strings.ReplaceAll(nettySslContextBuilderSource, "SslContextBuilder", "TlsContextBuilder")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	graph, err := callgraph.NewBuilder(callgraph.NewJavaParser()).
 		BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "io.netty.handler.ssl"}}, nil)
 	if err != nil {
-		t.Fatalf("BuildFromDirectories(netty SslContextBuilder stub): %v", err)
+		t.Fatalf("BuildFromDirectories(netty TlsContextBuilder stub): %v", err)
 	}
 
 	ruleDir := t.TempDir()
@@ -187,19 +183,19 @@ func TestNettyTLS_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors(t *tes
 	}
 
 	wantRulesByAPI := map[string][]string{
-		"io.netty.handler.ssl.SslContextBuilder.forClient": {
+		"io.netty.handler.ssl.TlsContextBuilder.forClient": {
 			engine.SyntheticEntryPointRuleID,
 		},
-		"io.netty.handler.ssl.SslContextBuilder.forServer": {
+		"io.netty.handler.ssl.TlsContextBuilder.forServer": {
 			engine.SyntheticEntryPointRuleID,
 		},
-		"io.netty.handler.ssl.SslContextBuilder.sslProvider": {
+		"io.netty.handler.ssl.TlsContextBuilder.sslProvider": {
 			engine.SyntheticEntryPointRuleID,
 		},
-		"io.netty.handler.ssl.SslContextBuilder.protocols": {
+		"io.netty.handler.ssl.TlsContextBuilder.protocols": {
 			engine.SyntheticEntryPointRuleID,
 		},
-		"io.netty.handler.ssl.SslContextBuilder.ciphers": {
+		"io.netty.handler.ssl.TlsContextBuilder.ciphers": {
 			engine.SyntheticEntryPointRuleID,
 		},
 	}
@@ -217,22 +213,22 @@ func TestNettyTLS_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors(t *tes
 
 	// forServer must carry BOTH the factory rule and the PEM key-material rule
 	// at the same definition site -- proving two independently-authored
-	// detection rules sharing one api both resolve, not just the first.
+	// rules sharing one api both resolve, not just the first.
 	forServerRuleIDs := map[string]bool{}
 	forClientRuleIDs := map[string]bool{}
 	sslProviderValues := map[string]bool{}
 	for _, finding := range report.Findings {
 		for _, asset := range finding.CryptographicAssets {
 			switch asset.Metadata["api"] {
-			case "io.netty.handler.ssl.SslContextBuilder.forServer":
+			case "io.netty.handler.ssl.TlsContextBuilder.forServer":
 				for _, r := range asset.Rules {
 					forServerRuleIDs[r.ID] = true
 				}
-			case "io.netty.handler.ssl.SslContextBuilder.forClient":
+			case "io.netty.handler.ssl.TlsContextBuilder.forClient":
 				for _, r := range asset.Rules {
 					forClientRuleIDs[r.ID] = true
 				}
-			case "io.netty.handler.ssl.SslContextBuilder.sslProvider":
+			case "io.netty.handler.ssl.TlsContextBuilder.sslProvider":
 				sslProviderValues[asset.Metadata["provider"]] = true
 			}
 		}
@@ -257,9 +253,9 @@ func TestNettyTLS_E2E_SynthesizeRuleCryptoEntryPoints_JoinsRuleAPIAnchors(t *tes
 	for _, finding := range report.Findings {
 		for _, asset := range finding.CryptographicAssets {
 			switch asset.Metadata["api"] {
-			case "io.netty.handler.ssl.SslContextBuilder.forServer":
+			case "io.netty.handler.ssl.TlsContextBuilder.forServer":
 				forServerAssets++
-			case "io.netty.handler.ssl.SslContextBuilder.sslProvider":
+			case "io.netty.handler.ssl.TlsContextBuilder.sslProvider":
 				sslProviderAssets++
 			}
 		}

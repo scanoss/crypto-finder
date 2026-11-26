@@ -15,17 +15,19 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
+	"github.com/scanoss/reach/graphfrag"
+	"github.com/scanoss/reach/paramcondition"
+	"github.com/scanoss/reach/purl"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/crypto-finder/internal/cryptokb"
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/utils"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
-	"github.com/scanoss/crypto-finder/pkg/purl"
+	"github.com/scanoss/crypto-finder/pkg/conditioned"
 )
 
 const (
@@ -320,6 +322,7 @@ type callGraphEntryCall struct {
 
 type callGraphParameter struct {
 	ParameterIndex     int                `json:"parameter_index"`
+	Keyword            string             `json:"keyword,omitempty"`
 	Type               string             `json:"type,omitempty"`
 	VariableName       string             `json:"variable_name,omitempty"`
 	ArgumentExpression string             `json:"argument_expression,omitempty"`
@@ -349,7 +352,10 @@ type exportSourceNode struct {
 	returnValue              bool
 	guard                    *callgraph.SourceGuard
 	callArgument             bool
-	sourceParameterIndex     int
+	// mayValues goes to the graph fragment only (GraphFragmentSourceNode.MayValues).
+	mayValues            []string
+	mayValuesExhaustive  bool
+	sourceParameterIndex int
 	// runtime is the runtime input the node's value is read from. Its
 	// children are the input's key or default, never its value.
 	runtime *callgraph.RuntimeSource
@@ -480,17 +486,6 @@ type CallGraphExportOptions struct {
 	ProjectReachability bool
 }
 
-// ExportCallGraph writes the current finding-centric callgraph export.
-// ExportCallGraph writes an OID-prepared callgraph projection.
-func ExportCallGraph(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport) error {
-	return ExportCallGraphWithOptions(path, format, result, report, CallGraphExportOptions{})
-}
-
-// exportCallGraph is the raw fixture helper; production must use ExportCallGraph.
-func exportCallGraph(path, format string, result *engine.DepScanResult) error {
-	return exportCallGraphWithOptions(path, format, result, CallGraphExportOptions{})
-}
-
 // ExportResolvedCallGraph is the OID-safe projection entry point used by
 // commands. It keeps the prepared type-state at the public seam while the
 // legacy result-shaped helper remains available for non-OID fixture plumbing.
@@ -502,12 +497,6 @@ func ExportResolvedCallGraph(path, format string, result *engine.DepScanResult, 
 		return fmt.Errorf("cannot export call graph: dep scan result is nil")
 	}
 	return exportResolvedCallGraphProjection(path, format, result, report, options)
-}
-
-// ExportCallGraphWithOptions writes the callgraph export with explicit
-// optional-section and per-finding controls.
-func ExportCallGraphWithOptions(path, format string, result *engine.DepScanResult, report *oid.ResolvedReport, options CallGraphExportOptions) error {
-	return ExportResolvedCallGraph(path, format, result, report, options)
 }
 
 // exportResolvedCallGraphProjection is a pure projection from ResolvedReport.
@@ -542,85 +531,6 @@ func buildResolvedCallGraphExportV2ToFile(path string, result *engine.DepScanRes
 		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
 	}
 	return callGraphExportV2{SchemaVersion: graphfrag.CallgraphExportSchemaVersion(options.InternedFrames), ScanMetadata: meta, FindingGraphs: make([]callGraphExportFinding, len(assets)), Functions: streamed.functions, SupportingCalls: streamed.supportingCalls, CryptoEntryPoints: streamed.entryPoints}, nil
-}
-
-func exportCallGraphWithOptions(path, format string, result *engine.DepScanResult, options CallGraphExportOptions) error {
-	AssignOccurrenceKeys(result)
-	return exportCallGraphProjectionWithOptions(path, format, result, options)
-}
-
-// exportCallGraphProjectionWithOptions reads a finalized report without modifying it.
-func exportCallGraphProjectionWithOptions(path, format string, result *engine.DepScanResult, options CallGraphExportOptions) error {
-	if result == nil {
-		return fmt.Errorf("cannot export call graph: dep scan result is nil")
-	}
-	if result.CallGraph == nil {
-		return fmt.Errorf("cannot export call graph: result.CallGraph is nil")
-	}
-	if result.Report == nil {
-		return fmt.Errorf("cannot export call graph: result.Report is nil")
-	}
-	if format != callGraphJSONFormat {
-		return fmt.Errorf("unsupported call graph format %q (supported: "+callGraphJSONFormat+")", format)
-	}
-
-	exportStart := time.Now()
-	totalAssets := countExportFindingAssets(result.Report)
-	log.Info().
-		Str("file", path).
-		Str("format", format).
-		Int("finding_assets", totalAssets).
-		Int("max_chains", graphfrag.ResolveMaxChains(options.MaxChains)).
-		Bool("omit_crypto_entry_points", options.OmitCryptoEntryPoints).
-		Bool("interned_frames", options.InternedFrames).
-		Bool("project_reachability", options.ProjectReachability).
-		Msg("Starting integration call graph export")
-
-	buildStart := time.Now()
-	payload, err := buildCallGraphExportV2ToFile(path, result, options)
-	buildDuration := time.Since(buildStart)
-	if err != nil {
-		return err
-	}
-
-	log.Info().
-		Str("file", path).
-		Str("format", format).
-		Int("functions", payload.ScanMetadata.FunctionCount).
-		Int("edges", payload.ScanMetadata.EdgeCount).
-		Int("findings", len(payload.FindingGraphs)).
-		Dur("build_duration", buildDuration).
-		Dur("total_duration", time.Since(exportStart)).
-		Msg("Exported integration call graph")
-
-	return nil
-}
-
-func buildCallGraphExportV2ToFile(path string, result *engine.DepScanResult, options CallGraphExportOptions) (callGraphExportV2, error) {
-	ctxs := newCallGraphExportContextSet(result, result.Report.Findings, options)
-	assets := callGraphExportAssets(result.Report)
-	meta := buildCallGraphExportScanMeta(result)
-	applyExportEcosystemsMeta(&meta, result, options)
-
-	var streamed streamedCallGraphExport
-	if err := utils.WriteFileAtomic(path, 0o600, func(file *os.File) error {
-		bw := bufio.NewWriterSize(file, 1<<20)
-		writer := graphFragmentJSONWriter{w: bw}
-		var writeErr error
-		streamed, writeErr = streamCallGraphExport(&writer, ctxs, assets, meta, options)
-		return finishBufferedOutput(bw, writeErr)
-	}); err != nil {
-		return callGraphExportV2{}, fmt.Errorf("failed to write call graph to %s: %w", path, err)
-	}
-
-	return callGraphExportV2{
-		SchemaVersion:     graphfrag.CallgraphExportSchemaVersion(options.InternedFrames),
-		ScanMetadata:      meta,
-		FindingGraphs:     make([]callGraphExportFinding, len(assets)),
-		Functions:         streamed.functions,
-		SupportingCalls:   streamed.supportingCalls,
-		CryptoEntryPoints: streamed.entryPoints,
-	}, nil
 }
 
 type streamedCallGraphExport struct {
@@ -730,7 +640,7 @@ type streamedFindingGraphs struct {
 	functions            []graphfrag.ExportInternedFunction
 }
 
-func streamFindingGraphs(
+func streamFindingGraphs( //nolint:gocognit // complexity predates the lint gate; splitting it is a separate behavior-sensitive change
 	writer *graphFragmentJSONWriter,
 	ctxs *exportContextSet,
 	assets []callGraphExportAsset,
@@ -755,6 +665,18 @@ func streamFindingGraphs(
 	for i := range assets {
 		item := assets[i]
 		ctx, analyzed := ctxs.forFinding(item.finding)
+		if item.asset.Served != nil {
+			// The API decided this dependency finding against the
+			// dependency's mined graph; the local graph holds only the
+			// project, so there is nothing to trace or index here.
+			fg := servedFindingGraph(ctx, item.asset)
+			internStreamedFindingGraph(&intern, &fg, internedFrames)
+			if err := writer.writeArrayElement(i, fg); err != nil {
+				return streamedFindingGraphs{}, err
+			}
+			logCallGraphExportProgress(i+1, len(assets), buildStart)
+			continue
+		}
 		index := indexes[ctx]
 		supporting := deriveSupportingCallsForFinding(ctx, item.finding, item.asset)
 		indexSupportingCalls(supportingByID, supporting)
@@ -863,13 +785,6 @@ type callGraphExportAsset struct {
 	asset   entities.CryptographicAsset
 }
 
-func callGraphExportAssets(report *entities.InterimReport) []callGraphExportAsset {
-	if report == nil {
-		return nil
-	}
-	return callGraphExportAssetsFromFindings(report.Findings)
-}
-
 func callGraphExportAssetsFromFindings(findings []entities.Finding) []callGraphExportAsset {
 	var assets []callGraphExportAsset
 	for _, finding := range findings {
@@ -931,129 +846,6 @@ func writeIndentedJSONFile(path string, payload any) error {
 }
 
 // --- Build pipeline ---
-
-func buildCallGraphExportV2(result *engine.DepScanResult) callGraphExportV2 {
-	return buildCallGraphExportV2WithMaxChains(result, 0)
-}
-
-func buildCallGraphExportV2WithMaxChains(result *engine.DepScanResult, maxChains int) callGraphExportV2 {
-	AssignOccurrenceKeys(result)
-	ctx := newExportBuildContextWithMaxChains(result, maxChains)
-	totalAssets := countExportFindingAssets(result.Report)
-
-	out := callGraphExportV2{
-		SchemaVersion: callGraphSchemaVersion,
-		ScanMetadata: callGraphExportScanMeta{
-			Ecosystem:     result.Ecosystem,
-			RootModule:    result.RootModule,
-			ExportedAt:    time.Now().UTC().Format(time.RFC3339),
-			FunctionCount: len(result.CallGraph.Functions),
-			EdgeCount:     countCallGraphEdges(result.CallGraph),
-		},
-		FindingGraphs: make([]callGraphExportFinding, 0),
-	}
-
-	if result.Report != nil {
-		out.ScanMetadata.ToolName = result.Report.Tool.Name
-		out.ScanMetadata.ToolVersion = result.Report.Tool.Version
-	}
-	if result.Ecosystem == ecosystemJava && result.CallGraph != nil && result.CallGraph.JavaPlatformSignatures != nil {
-		meta := result.CallGraph.JavaPlatformSignatures
-		out.ScanMetadata.JavaRequestedJDKMajor = meta.RequestedMajor
-		out.ScanMetadata.JavaRuntimeVersion = meta.RuntimeVersion
-		used := meta.SignaturesUsed
-		out.ScanMetadata.JavaPlatformSignaturesUsed = &used
-		out.ScanMetadata.JavaPlatformSignatureSource = meta.SignatureSource
-		out.ScanMetadata.JavaPlatformSignatureUnavailableReason = meta.UnavailableReason
-	}
-
-	// containingByFinding remembers where each finding sits so the entry-point
-	// pass below can resolve its containing function after supporting calls
-	// have been deduped.
-	type findingSite struct {
-		findingID  string
-		filePath   string
-		dependency *entities.DependencyInfo
-		startLine  int
-		startCol   int
-	}
-	var sites []findingSite
-
-	processedAssets := 0
-	buildStart := time.Now()
-	for _, finding := range result.Report.Findings {
-		for i := range finding.CryptographicAssets {
-			asset := finding.CryptographicAssets[i]
-			sites = append(sites, findingSite{
-				findingID:  asset.FindingID,
-				filePath:   finding.FilePath,
-				dependency: asset.DependencyInfo,
-				startLine:  asset.StartLine,
-				startCol:   asset.StartCol,
-			})
-			if log.Debug().Enabled() {
-				log.Debug().
-					Str("finding_id", asset.FindingID).
-					Str("file", finding.FilePath).
-					Int("start_line", asset.StartLine).
-					Int("processed", processedAssets+1).
-					Int("total", totalAssets).
-					Msg("Building finding graph")
-			}
-			// Derive once: the per-finding supporting calls are the precise
-			// finding->supporting link. Capture their ids onto the finding_graph
-			// HERE — the top-level slice is deduped across findings (line ~375)
-			// and loses which finding each call belongs to.
-			supporting := deriveSupportingCallsForFinding(ctx, finding, asset)
-			fg := buildFindingGraph(ctx, finding, asset)
-			fg.SupportingCallIDs = supportingCallIDsOf(supporting)
-			out.FindingGraphs = append(out.FindingGraphs, fg)
-			out.SupportingCalls = append(out.SupportingCalls, supporting...)
-			processedAssets++
-			if processedAssets%callGraphExportProgress == 0 || processedAssets == totalAssets {
-				log.Info().
-					Int("processed", processedAssets).
-					Int("total", totalAssets).
-					Dur("elapsed", time.Since(buildStart)).
-					Msg("Building integration call graph export")
-			}
-		}
-	}
-
-	sort.SliceStable(out.FindingGraphs, func(i, j int) bool {
-		return out.FindingGraphs[i].FindingID < out.FindingGraphs[j].FindingID
-	})
-
-	out.SupportingCalls = dedupSupportingCalls(out.SupportingCalls)
-	sort.SliceStable(out.SupportingCalls, func(i, j int) bool {
-		return out.SupportingCalls[i].SupportingID < out.SupportingCalls[j].SupportingID
-	})
-	out.CryptoEntryPoints = buildCryptoEntryPoints(ctx, out.FindingGraphs, out.SupportingCalls, func(findingID string) *callgraph.FunctionDecl {
-		for i := range sites {
-			if sites[i].findingID == findingID {
-				return ctx.findContainingFunctionByFinding(sites[i].filePath, sites[i].dependency, sites[i].startLine, sites[i].startCol)
-			}
-		}
-		return nil
-	})
-	for i := range out.CryptoEntryPoints {
-		out.CryptoEntryPoints[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, out.CryptoEntryPoints[i].FunctionKey)
-	}
-	for i := range out.SupportingCalls {
-		out.SupportingCalls[i].ErasedSignature = erasedSignatureForFunctionKey(ctx, out.SupportingCalls[i].FunctionKey)
-	}
-
-	out.Functions = internLiveCatalog(out.FindingGraphs)
-	return out
-}
-
-func internLiveCatalog(graphs []callGraphExportFinding) []graphfrag.ExportInternedFunction {
-	intern := graphfrag.FunctionInterner{}
-	for i := range graphs {
-		internLiveFindingGraph(&intern, &graphs[i])
-	}
-	return intern.Functions()
-}
 
 func internLiveFindingGraph(intern *graphfrag.FunctionInterner, fg *callGraphExportFinding) {
 	if intern == nil || fg == nil || len(fg.CallChains) == 0 {
@@ -1167,59 +959,6 @@ func liveFindingAnalysis(chains [][]callGraphChainNode, truncated bool) *graphfr
 		CallChains: callChains,
 		Parameters: graphfrag.ParameterCompleteness(resolved, total),
 	}
-}
-
-// buildCryptoEntryPoints creates an O(1) lookup from function name to reachable
-// crypto operations, derived from reverse reachability over the call graph
-// (issue #249). kb is consulted (issue-103 WU3) to populate parameter_roles on
-// entries whose function+arity matches a contract; nil kb skips that enrichment.
-//
-// containingFor resolves a finding's containing function; the two live builders
-// reach it differently, so they supply it rather than duplicating the lookup.
-func buildCryptoEntryPoints(
-	ctx *exportBuildContext,
-	findingGraphs []callGraphExportFinding,
-	supportingCalls []callGraphSupportingCall,
-	containingFor func(findingID string) *callgraph.FunctionDecl,
-) []callGraphCryptoEntryPoint {
-	index := make(map[string]*entryPointData)
-	roots := make(map[string]bool)
-	supportingByID := make(map[string]callGraphSupportingCall, len(supportingCalls))
-	for i := range supportingCalls {
-		if supportingCalls[i].SupportingID != "" {
-			supportingByID[supportingCalls[i].SupportingID] = supportingCalls[i]
-		}
-	}
-	referencedSupporting := make(map[string]struct{}, len(supportingByID))
-	for i := range findingGraphs {
-		// An entry point is something user code reaches. A finding the tracer
-		// proved unreachable contributes none: publishing its containing function
-		// here would list a function nothing calls beside the ones that really run,
-		// with nothing to tell them apart. Reachable is nil on the mine path, where
-		// a chainless finding means "graph root" — a library's public API, and its
-		// most important entry point — so that case is deliberately not filtered.
-		if findingGraphs[i].Reachable != nil && !*findingGraphs[i].Reachable {
-			claimSupportingCalls(referencedSupporting, &findingGraphs[i])
-			continue
-		}
-		containingFn := containingFor(findingGraphs[i].FindingID)
-		addFindingGraphReachSetToEntryPointIndex(
-			ctx, index, &findingGraphs[i], containingFn, supportingByID, referencedSupporting)
-		markReachSetRoots(ctx, roots, containingFn)
-	}
-	for i := range supportingCalls {
-		if _, ok := referencedSupporting[supportingCalls[i].SupportingID]; ok {
-			continue
-		}
-		addSupportingCallToEntryPointIndex(index, supportingCalls[i])
-	}
-	out := flattenEntryPointIndex(ctx.kb, index)
-	for i := range out {
-		if roots[out[i].FunctionKey] {
-			out[i].Root = true
-		}
-	}
-	return out
 }
 
 // splitFunctionName extracts class and method from a fully qualified function name.
@@ -1503,7 +1242,7 @@ func contractMatchesForCall(ctx *exportBuildContext, call *callgraph.FunctionCal
 // wins. Constructors are not inherited.
 func (ctx *exportBuildContext) inheritedContracts(fqn string, arity int) []contracts.Contract {
 	class, method := splitFunctionName(fqn)
-	if class == "" || method == "<init>" || method == "<clinit>" {
+	if class == "" || method == constructorMethodName || method == "<clinit>" {
 		return nil
 	}
 	seen := map[string]bool{class: true}
@@ -1749,18 +1488,6 @@ func flattenReachableFindings(findings map[string]entryPointFindingRef) []callGr
 	return flattened
 }
 
-func countExportFindingAssets(report *entities.InterimReport) int {
-	if report == nil {
-		return 0
-	}
-
-	total := 0
-	for _, finding := range report.Findings {
-		total += len(finding.CryptographicAssets)
-	}
-	return total
-}
-
 func (ctx *exportBuildContext) emitMaxChains() int {
 	if ctx == nil || ctx.maxChainsBudget <= 0 {
 		return callGraphExportMaxChains
@@ -1828,7 +1555,7 @@ func newExportBuildContextWithUserPackages(result *engine.DepScanResult, finding
 
 	// Load contracts + index method definitions so synthesized terminal entry
 	// points can attach their fluent lifecycle methods as supporting calls.
-	if kb, err := contracts.LoadEmbedded(result.Ecosystem); err == nil {
+	if kb, err := cryptokb.Load(result.Ecosystem); err == nil {
 		ctx.kb = kb
 	} else {
 		log.Debug().
@@ -2939,28 +2666,6 @@ func supportingIDFromParts(sourcePath string, line int, calleeKey string) string
 	return hex.EncodeToString(hash[:])[:8]
 }
 
-// dedupSupportingCalls removes duplicate supporting-call entries by SupportingID.
-// The same lifecycle call can be derived from multiple findings that share a
-// crypto object; we keep the first occurrence, folding each later claimant's
-// rule-declared key-length conflict into it so no conflict is lost.
-func dedupSupportingCalls(calls []callGraphSupportingCall) []callGraphSupportingCall {
-	if len(calls) <= 1 {
-		return calls
-	}
-	seen := make(map[string]int, len(calls))
-	out := make([]callGraphSupportingCall, 0, len(calls))
-	for i := range calls {
-		c := &calls[i]
-		if kept, exists := seen[c.SupportingID]; exists {
-			mergeRuleKeyLengthConflict(supportingCallKeyLength(&out[kept]), supportingCallKeyLength(c))
-			continue
-		}
-		seen[c.SupportingID] = len(out)
-		out = append(out, *c)
-	}
-	return out
-}
-
 func buildMatchedOperation(asset entities.CryptographicAsset) *callGraphMatchedOperation {
 	line := asset.StartLine
 	if line <= 0 {
@@ -3104,7 +2809,9 @@ func ruleMatchedCall(ctx *exportBuildContext, containingFn *callgraph.FunctionDe
 	}
 	candidates := cryptoCallLineCandidates(containingFn, asset.StartLine, asset.EndLine)
 	i := tightestContainingIndexAmong(callCandidateViews(candidates), asset.StartCol, asset.EndCol)
-	if i < 0 || candidates[i] == terminal {
+	// make_unique<T>(...) is the construction the terminal is
+	// (constructionOverItsCall), not another call the rule matched.
+	if i < 0 || candidates[i] == terminal || constructionOverItsCall(terminal, candidates[i]) {
 		return nil
 	}
 	return buildCryptoCall(ctx, ctx.graph, containingFn, candidates[i])
@@ -3221,7 +2928,9 @@ func bestScoredCandidate(graph *callgraph.CallGraph, candidates []*callgraph.Fun
 		scored0[i] = scored{c, s}
 	}
 
-	// Step 3c: deterministic final tiebreak — lowest StartCol, then slice order.
+	// Step 3c: deterministic final tiebreak — lowest StartCol, then the C++
+	// construction of a call that performs one (constructionOverItsCall), then
+	// slice order.
 	best := scored0[0]
 	for _, sc := range scored0[1:] {
 		if sc.score > best.score {
@@ -3230,9 +2939,43 @@ func bestScoredCandidate(graph *callgraph.CallGraph, candidates []*callgraph.Fun
 		}
 		if sc.score == best.score && sc.call.StartCol > 0 && (best.call.StartCol == 0 || sc.call.StartCol < best.call.StartCol) {
 			best = sc
+			continue
+		}
+		if sc.score == best.score && constructionOverItsCall(sc.call, best.call) {
+			best = sc
 		}
 	}
 	return best.call
+}
+
+// constructionOverItsCall reports a C++ construction of a type ((T).T) at the
+// span of other, a call that is not one: `std::make_unique<T>(args)` and
+// `std::make_shared<T>(args)` are both a call of make_unique and a
+// construction of T at one span (reach graph-algo-cpp-4). The construction
+// is the operation, the one the graph's reachability follows into T's
+// constructor, so the crypto call is T's constructor, whichever of the two
+// the call list holds first.
+func constructionOverItsCall(construction, other *callgraph.FunctionCall) bool {
+	return sameCallSpan(construction, other) && isCPPConstruction(construction.Callee) && !isCPPConstruction(other.Callee)
+}
+
+// isCPPConstruction reports a C++ construction site's callee, (T).T: its
+// name is the last segment of its type without template arguments
+// (`(Botan::TLS::Server).Server`, `(std::vector<int>).vector`).
+func isCPPConstruction(callee callgraph.FunctionID) bool {
+	typeName := callee.Type
+	if i := strings.IndexByte(typeName, '<'); i >= 0 {
+		typeName = typeName[:i]
+	}
+	if i := strings.LastIndex(typeName, "::"); i >= 0 {
+		typeName = typeName[i+2:]
+	}
+	return typeName != "" && callgraph.BaseFunctionName(callee.Name) == typeName
+}
+
+// sameCallSpan reports two calls written at one span.
+func sameCallSpan(a, b *callgraph.FunctionCall) bool {
+	return a.Line == b.Line && a.StartCol == b.StartCol && a.EndCol == b.EndCol && a.StartCol > 0
 }
 
 func findCryptoCall(
@@ -3270,7 +3013,7 @@ func buildCryptoCall(
 
 // mergeCallParameters combines declared parameter types, argument expressions,
 // and argument source traces into a unified parameters array.
-func mergeCallParameters(
+func mergeCallParameters( //nolint:gocognit // complexity predates the lint gate; splitting it is a separate behavior-sensitive change
 	ctx *exportBuildContext,
 	callerID *callgraph.FunctionID,
 	calleeID *callgraph.FunctionID,
@@ -3295,9 +3038,17 @@ func mergeCallParameters(
 	params := make([]callGraphParameter, 0, size)
 	for i := range size {
 		p := callGraphParameter{ParameterIndex: i}
-		p.Type = resolveExportParameterType(ctx.graph, calleeID, callee, i)
+		var expr string
 		if i < len(args) {
-			expr := strings.TrimSpace(args[i])
+			expr = strings.TrimSpace(args[i])
+		}
+		if keyword, value := splitKeywordArgument(expr, ctx.ecosystem); keyword != "" {
+			p.Keyword, expr = keyword, value
+			p.Type = pythonKeywordParameterType(callee, keyword)
+		} else {
+			p.Type = resolveExportParameterType(ctx.graph, calleeID, callee, i)
+		}
+		if i < len(args) {
 			p.ArgumentExpression = expr
 			if isSimpleIdentifier(expr) {
 				p.VariableName = expr
@@ -3365,10 +3116,15 @@ func resolveCalleeReturnSources(ctx *exportBuildContext, node *callgraph.SourceN
 
 	returns := selectGuardedReturnSources(callee.ReturnSources, node.SourceNodes)
 	for i := range returns {
-		if returns[i].Flow == nil {
-			returns[i].Flow = &callgraph.SourceFlow{}
+		// The selected nodes share their Flow with the callee's own return
+		// sources: mark a copy. Writing through the shared one changed the
+		// graph for every later export and raced with the parallel edge build.
+		flow := callgraph.SourceFlow{}
+		if returns[i].Flow != nil {
+			flow = *returns[i].Flow
 		}
-		returns[i].Flow.ReturnValue = true
+		flow.ReturnValue = true
+		returns[i].Flow = &flow
 	}
 	return resolveExportSourceNodes(ctx, node.CallTarget, returns, depth)
 }
@@ -3384,60 +3140,85 @@ func resolveIncomingParameterSources(ctx *exportBuildContext, calleeID *callgrap
 
 	// Prefer a once-built reverse index over scanning every function per hop.
 	// Hand-built tests often omit graph.Callers; production graphs have both.
-	callerKeys := ctx.reverseCallersOf(calleeID.String())
-
-	var matches [][]callgraph.SourceNode
-	for _, callerKey := range callerKeys {
+	calleeKey := calleeID.String()
+	var agreed incomingAgreement
+	for _, callerKey := range ctx.reverseCallersOf(calleeKey) {
 		caller := ctx.graph.Functions[callerKey]
 		if caller == nil {
 			continue
 		}
-		for i := range caller.Calls {
-			call := &caller.Calls[i]
-			if call.Callee.String() != calleeID.String() {
-				continue
-			}
-			slot, ok := argumentSlot(len(call.Arguments), func(i int) string { return call.Arguments[i] }, parameterIndex, parameterName)
-			if !ok {
-				// This call site's value is unknown, so no agreed value exists.
-				return nil
-			}
-			if slot >= len(call.ArgumentSources) {
-				continue
-			}
-			matches = append(matches, resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[slot], depth+1))
-		}
-	}
-	return agreedIncomingSources(matches)
-}
-
-// agreedIncomingSources picks the provenance of a parameter from its call
-// sites. One call site is its provenance. Several call sites count only when
-// every one of them passes the same constant (a literal, or a constant the
-// graph folded to one), and then the first site in caller order stands for
-// them all. Call sites that pass different values, or any value the graph
-// cannot fold, give no provenance: picking one would invent the value of the
-// others.
-func agreedIncomingSources(matches [][]callgraph.SourceNode) []callgraph.SourceNode {
-	switch len(matches) {
-	case 0:
-		return nil
-	case 1:
-		return matches[0]
-	}
-	first, ok := resolveSimpleCallgraphSourceValue(matches[0])
-	if !ok {
-		return nil
-	}
-	for _, match := range matches[1:] {
-		if value, ok := resolveSimpleCallgraphSourceValue(match); !ok || value != first {
+		if !agreeAtCaller(ctx, caller, calleeKey, parameterName, parameterIndex, depth, &agreed) {
 			return nil
 		}
 	}
-	return matches[0]
+	return agreed.first
 }
 
-// reverseCallersOf returns stable-sorted caller function keys for a callee.
+// agreeAtCaller feeds agreed the provenance each of caller's calls to
+// calleeKey passes for the parameter. It reports false once no agreed
+// provenance can exist: a call site whose value is unknown, or values that
+// disagree.
+func agreeAtCaller(ctx *exportBuildContext, caller *callgraph.FunctionDecl, calleeKey, parameterName string, parameterIndex, depth int, agreed *incomingAgreement) bool {
+	for i := range caller.Calls {
+		call := &caller.Calls[i]
+		if call.Callee.String() != calleeKey {
+			continue
+		}
+		slot, ok := argumentSlot(len(call.Arguments), func(i int) string { return call.Arguments[i] }, parameterIndex, parameterName)
+		if !ok {
+			// This call site's value is unknown, so no agreed value exists.
+			return false
+		}
+		if slot >= len(call.ArgumentSources) {
+			continue
+		}
+		if !agreed.add(func() []callgraph.SourceNode {
+			return resolveExportSourceNodes(ctx, &caller.ID, call.ArgumentSources[slot], depth+1)
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
+// incomingAgreement picks the provenance of a parameter from its call sites,
+// fed in caller order. One call site is its provenance. Several call sites
+// count only when every one of them passes the same constant (a literal, or a
+// constant the graph folded to one), and then the first site stands for them
+// all. Call sites that pass different values, or any value the graph cannot
+// fold, give no provenance: picking one would invent the value of the others.
+//
+// add stops the walk at the first call site that rules agreement out, and
+// resolves a site only when its value can still decide the outcome. A callee
+// with thousands of call sites (a generated SDK's shared request builder)
+// otherwise resolved every site, recursively, for each edge that reads it.
+type incomingAgreement struct {
+	first []callgraph.SourceNode
+	value string
+	sites int
+}
+
+// add records one more call site whose provenance resolve computes. It
+// reports false once no agreed provenance can exist, whatever sites follow.
+func (a *incomingAgreement) add(resolve func() []callgraph.SourceNode) bool {
+	a.sites++
+	switch a.sites {
+	case 1:
+		a.first = resolve()
+		return true
+	case 2:
+		value, ok := resolveSimpleCallgraphSourceValue(a.first)
+		if !ok {
+			return false
+		}
+		a.value = value
+	}
+	value, ok := resolveSimpleCallgraphSourceValue(resolve())
+	return ok && value == a.value
+}
+
+// reverseCallersOf returns the sorted caller function keys of a callee. The
+// slice is the shared index's own: callers must not modify it.
 func (ctx *exportBuildContext) reverseCallersOf(calleeKey string) []string {
 	if ctx == nil || ctx.graph == nil || calleeKey == "" {
 		return nil
@@ -3445,9 +3226,7 @@ func (ctx *exportBuildContext) reverseCallersOf(calleeKey string) []string {
 	if ctx.callsReverseIndex == nil {
 		ctx.callsReverseIndex = buildCallsReverseIndex(ctx.graph)
 	}
-	keys := append([]string(nil), ctx.callsReverseIndex[calleeKey]...)
-	sort.Strings(keys)
-	return keys
+	return ctx.callsReverseIndex[calleeKey]
 }
 
 func buildCallsReverseIndex(graph *callgraph.CallGraph) map[string][]string {
@@ -3482,6 +3261,9 @@ func buildCallsReverseIndex(graph *callgraph.CallGraph) map[string][]string {
 		for _, callerKey := range callers {
 			add(calleeKey, callerKey)
 		}
+	}
+	for _, callers := range index {
+		sort.Strings(callers)
 	}
 	return index
 }
@@ -3569,24 +3351,10 @@ func resolveSimpleCallgraphSourceValue(nodes []callgraph.SourceNode) (string, bo
 	return resolved, resolved != ""
 }
 
-// normalizeSelectorValue strips the quotes around a string literal: double
-// quotes (Java, Go, C), single quotes (Python, JavaScript, Ruby) and a backtick
-// template without interpolation. A template with ${...} is not a constant and
-// stays as written.
+// normalizeSelectorValue strips the quotes around a string literal; see
+// conditioned.NormalizeValue.
 func normalizeSelectorValue(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) < 2 || value[0] != value[len(value)-1] {
-		return value
-	}
-	switch value[0] {
-	case '"', '\'':
-		return value[1 : len(value)-1]
-	case '`':
-		if !strings.Contains(value, "${") {
-			return value[1 : len(value)-1]
-		}
-	}
-	return value
+	return conditioned.NormalizeValue(value)
 }
 
 func cloneCallgraphSourceNodes(nodes []callgraph.SourceNode) []callgraph.SourceNode {
@@ -3636,6 +3404,8 @@ func convertSourceNodes(ctx *exportBuildContext, nodes []callgraph.SourceNode, d
 			callArgument:         n.Flow != nil && n.Flow.CallArgument,
 			sourceParameterIndex: n.ParameterIndex,
 			runtime:              exportRuntimeSource(n),
+			mayValues:            n.MayValues,
+			mayValuesExhaustive:  n.MayValuesExhaustive,
 		}
 		if n.Type == sourceNodeTypeParameter {
 			idx := n.ParameterIndex
@@ -4756,7 +4526,7 @@ func slotKeyword(expr string) string {
 }
 
 func parameterArgumentSlot(params []callGraphParameter, index int, name string) (int, bool) {
-	return argumentSlot(len(params), func(i int) string { return params[i].ArgumentExpression }, index, name)
+	return argumentSlot(len(params), func(i int) string { return params[i].argumentText() }, index, name)
 }
 
 func propagateSourceNodeChildren(

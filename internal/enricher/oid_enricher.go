@@ -20,15 +20,6 @@ func NewOIDEnricher() *OIDEnricher {
 	return &OIDEnricher{resolver: oid.NewDefaultResolver(), mapper: struct{}{}}
 }
 
-// EnrichAsset resolves a single asset through the same exact-only policy used for reports.
-func (e *OIDEnricher) EnrichAsset(asset *entities.CryptographicAsset) {
-	if asset == nil {
-		return
-	}
-	result := e.resolver.ResolveAsset(asset)
-	asset.OID = result.OID
-}
-
 // PrepareReport is the sole report-level compatibility seam. It never writes a
 // resolved clone back into an InterimReport: callers must pass the opaque
 // prepared result to a projection, so raw reports cannot be mistaken for final

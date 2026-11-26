@@ -35,7 +35,7 @@ func TestServerMessage(t *testing.T) {
 		body   string
 		want   string
 	}{
-		{"scanoss.api error body", jsonHeader, `{"status":"error","error":{"code":"CLIENT_UPGRADE_REQUIRED","message":"crypto-finder 0.40 is no longer supported. Upgrade: https://example.com"},"timestamp":"2026-11-11T00:00:00Z"}`, "crypto-finder 0.40 is no longer supported. Upgrade: https://example.com (CLIENT_UPGRADE_REQUIRED)"},
+		{"API error body", jsonHeader, `{"status":"error","error":{"code":"CLIENT_UPGRADE_REQUIRED","message":"crypto-finder 0.40 is no longer supported. Upgrade: https://example.com"},"timestamp":"2026-11-11T00:00:00Z"}`, "crypto-finder 0.40 is no longer supported. Upgrade: https://example.com (CLIENT_UPGRADE_REQUIRED)"},
 		{"error as a string", jsonHeader, `{"error":"Endpoint access denied"}`, "Endpoint access denied"},
 		{"top-level message", jsonHeader, `{"message":"key expired"}`, "key expired"},
 		{"plain text", textHeader, "Upgrade crypto-finder.\r\n\r\nSee the release notes.\n", "Upgrade crypto-finder.\nSee the release notes."},

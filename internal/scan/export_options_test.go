@@ -22,8 +22,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 func TestExportCallGraphWithOptions_CryptoEntryPoints(t *testing.T) {

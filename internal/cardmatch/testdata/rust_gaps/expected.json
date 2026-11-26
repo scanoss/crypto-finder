@@ -1,0 +1,384 @@
+{
+ "cross": [
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 6,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 32,
+   "end_col": 53,
+   "file": "src/plain.rs",
+   "line": 7,
+   "metavars": {
+    "$X": "acme_kdf::Mac::new(1)"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "2"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 6,
+   "metavars": {
+    "$X": "3"
+   }
+  }
+ ],
+ "equal": [
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "2"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/plain.rs",
+   "line": 7,
+   "metavars": {
+    "$X": "acme_kdf::Mac::new(1)"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/plain.rs",
+   "line": 8,
+   "metavars": {
+    "$X": "acme_kdf::Kdf::new(4)"
+   }
+  },
+  {
+   "col": 32,
+   "end_col": 53,
+   "file": "src/plain.rs",
+   "line": 8,
+   "metavars": {
+    "$X": "4"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 15,
+   "metavars": {
+    "$X": "2"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "2"
+   }
+  }
+ ],
+ "mixed": [
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "2"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 6,
+   "metavars": {
+    "$X": "3"
+   }
+  }
+ ],
+ "mixedrev": [
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "2"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 6,
+   "metavars": {
+    "$X": "3"
+   }
+  }
+ ],
+ "negonly": [
+  {
+   "col": 13,
+   "end_col": 39,
+   "file": "src/plain.rs",
+   "line": 10,
+   "metavars": {
+    "$1": "Sha",
+    "$H": "Sha512"
+   }
+  }
+ ],
+ "nestedeither": [
+  {
+   "col": 13,
+   "end_col": 44,
+   "file": "src/plain.rs",
+   "line": 9,
+   "metavars": {
+    "$H": "Sha256"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 36,
+   "file": "src/plain.rs",
+   "line": 11,
+   "metavars": {}
+  }
+ ],
+ "outer": [
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/plain.rs",
+   "line": 8,
+   "metavars": {
+    "$X": "acme_kdf::Kdf::new(4)"
+   }
+  },
+  {
+   "col": 32,
+   "end_col": 53,
+   "file": "src/plain.rs",
+   "line": 8,
+   "metavars": {
+    "$X": "4"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "2"
+   }
+  }
+ ],
+ "subpatterns": [
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "2"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/strong.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "2"
+   }
+  }
+ ],
+ "unbound": [
+  {
+   "col": 13,
+   "end_col": 44,
+   "file": "src/plain.rs",
+   "line": 9,
+   "metavars": {
+    "$H": "Sha256"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 39,
+   "file": "src/plain.rs",
+   "line": 10,
+   "metavars": {
+    "$H": "Sha512"
+   }
+  }
+ ],
+ "viainside": [
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 4,
+   "metavars": {
+    "$H": "Sha256"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 5,
+   "metavars": {
+    "$H": "Sha256"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/plain.rs",
+   "line": 7,
+   "metavars": {
+    "$H": "Sha256"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/plain.rs",
+   "line": 8,
+   "metavars": {
+    "$H": "Sha256"
+   }
+  },
+  {
+   "col": 32,
+   "end_col": 53,
+   "file": "src/plain.rs",
+   "line": 8,
+   "metavars": {
+    "$H": "Sha256"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/plain.rs",
+   "line": 15,
+   "metavars": {
+    "$H": "Sha256"
+   }
+  }
+ ],
+ "within": [
+  {
+   "col": 13,
+   "end_col": 39,
+   "file": "src/plain.rs",
+   "line": 10,
+   "metavars": {
+    "$X": "Sha512",
+    "$Y": "Sha512"
+   }
+  }
+ ]
+}

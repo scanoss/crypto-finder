@@ -1,0 +1,2372 @@
+{
+ "schema_version": "graph-fragment-1.35",
+ "functions": [
+  {
+   "key": "probe.main",
+   "package": "probe",
+   "file_path": "src/main.rs",
+   "start_line": 3,
+   "end_line": 16
+  },
+  {
+   "key": "probe::gglob.gglob",
+   "package": "probe::gglob",
+   "file_path": "src/gglob.rs",
+   "start_line": 3,
+   "end_line": 7
+  },
+  {
+   "key": "probe::glob0.glob0",
+   "package": "probe::glob0",
+   "file_path": "src/glob0.rs",
+   "start_line": 3,
+   "end_line": 5
+  },
+  {
+   "key": "probe::glob1.glob1",
+   "package": "probe::glob1",
+   "file_path": "src/glob1.rs",
+   "start_line": 3,
+   "end_line": 5
+  },
+  {
+   "key": "probe::glob2.glob2",
+   "package": "probe::glob2",
+   "file_path": "src/glob2.rs",
+   "start_line": 3,
+   "end_line": 5
+  },
+  {
+   "key": "probe::godd.godd",
+   "package": "probe::godd",
+   "file_path": "src/godd.rs",
+   "start_line": 3,
+   "end_line": 5
+  },
+  {
+   "key": "probe::items.(Kdf).x",
+   "file_path": "src/items.rs",
+   "start_line": 16,
+   "end_line": 18
+  },
+  {
+   "key": "probe::items.<varinit:items>",
+   "package": "probe::items",
+   "file_path": "src/items.rs",
+   "start_line": 1,
+   "end_line": 28
+  },
+  {
+   "key": "probe::items.a",
+   "package": "probe::items",
+   "file_path": "src/items.rs",
+   "start_line": 2,
+   "end_line": 5
+  },
+  {
+   "key": "probe::items.d",
+   "package": "probe::items",
+   "file_path": "src/items.rs",
+   "start_line": 12,
+   "end_line": 14
+  },
+  {
+   "key": "probe::items.e",
+   "package": "probe::items",
+   "file_path": "src/items.rs",
+   "start_line": 21,
+   "end_line": 23
+  },
+  {
+   "key": "probe::items.z",
+   "package": "probe::items",
+   "file_path": "src/items.rs",
+   "start_line": 25,
+   "end_line": 27
+  },
+  {
+   "key": "probe::items::acme_kdf.b",
+   "package": "probe::items::acme_kdf",
+   "file_path": "src/items.rs",
+   "start_line": 8,
+   "end_line": 10
+  },
+  {
+   "key": "probe::lets.g",
+   "package": "probe::lets",
+   "file_path": "src/lets.rs",
+   "start_line": 2,
+   "end_line": 13
+  },
+  {
+   "key": "probe::lets.other",
+   "package": "probe::lets",
+   "file_path": "src/lets.rs",
+   "start_line": 14,
+   "end_line": 16
+  },
+  {
+   "key": "probe::uses.g",
+   "package": "probe::uses",
+   "file_path": "src/uses.rs",
+   "start_line": 13,
+   "end_line": 24
+  },
+  {
+   "key": "probe::uses::local.f",
+   "package": "probe::uses::local",
+   "file_path": "src/uses.rs",
+   "start_line": 8,
+   "end_line": 10
+  }
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe.main",
+   "target_key": "acme_kdf.(Kdf).derive",
+   "target_canonical_signature": "acme_kdf.Kdf.derive(?)",
+   "raw": "k.derive",
+   "line": 7,
+   "resolution": "exact",
+   "method_name": "derive",
+   "receiver_var": "k",
+   "assigned_var": "d",
+   "start_col": 13,
+   "end_col": 27,
+   "entry_call": {
+    "line": 7,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&out"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "acme_kdf.(Kdf).new",
+   "target_canonical_signature": "acme_kdf.Kdf.new(?, ?)",
+   "raw": "Kdf::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 27,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "acme_kdf.(Kdf).new",
+   "target_canonical_signature": "acme_kdf.Kdf.new(?, ?)",
+   "raw": "Kdf::new",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "h",
+   "start_col": 13,
+   "end_col": 37,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "acme_kdf.(Kdf).new",
+   "target_canonical_signature": "acme_kdf.Kdf.new(?, ?)",
+   "raw": "acme_kdf::Kdf::new",
+   "line": 6,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "q",
+   "start_col": 13,
+   "end_col": 47,
+   "entry_call": {
+    "line": 6,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 6
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 6
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "acme_kdf.(Kdf).new",
+   "target_canonical_signature": "acme_kdf.Kdf.new(?, ?)",
+   "raw": "acme_kdf::Kdf::new",
+   "line": 9,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "z",
+   "start_col": 13,
+   "end_col": 37,
+   "entry_call": {
+    "line": 9,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "3",
+      "resolved_value": "3",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "3",
+        "location": {
+         "line": 9
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "argument_expression": "4",
+      "resolved_value": "4",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "4",
+        "location": {
+         "line": 9
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "acme_kdf.(Kdf).new",
+   "target_canonical_signature": "acme_kdf.Kdf.new(?, ?)",
+   "raw": "Kdf::new",
+   "line": 12,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "m",
+   "start_col": 13,
+   "end_col": 44,
+   "entry_call": {
+    "line": 12,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&acme_kdf::PARAM_A"
+     },
+     {
+      "parameter_index": 1,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 12
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "acme_kdf.(Kdf).new",
+   "target_canonical_signature": "acme_kdf.Kdf.new(?, ?)",
+   "raw": "Kdf::new",
+   "line": 13,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 18,
+   "end_col": 32,
+   "entry_call": {
+    "line": 13,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "5",
+      "resolved_value": "5",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "5",
+        "location": {
+         "line": 13
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "argument_expression": "6",
+      "resolved_value": "6",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "6",
+        "location": {
+         "line": 13
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "probe.(Other).derive",
+   "target_canonical_signature": "probe.Other.derive(?)",
+   "raw": "Other::derive",
+   "line": 8,
+   "resolution": "exact",
+   "method_name": "derive",
+   "assigned_var": "x",
+   "start_col": 13,
+   "end_col": 29,
+   "entry_call": {
+    "line": 8,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 8
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "probe.(Sha256).digest",
+   "target_canonical_signature": "probe.Sha256.digest(?)",
+   "raw": "<Sha256 as Digest>::digest",
+   "line": 14,
+   "resolution": "exact",
+   "method_name": "digest",
+   "assigned_var": "u",
+   "start_col": 13,
+   "end_col": 45,
+   "entry_call": {
+    "line": 14,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 14
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "probe.(Sha256).digest",
+   "target_canonical_signature": "probe.Sha256.digest(?)",
+   "raw": "<Sha256 as sha2::Digest>::digest",
+   "line": 15,
+   "resolution": "exact",
+   "method_name": "digest",
+   "assigned_var": "t",
+   "start_col": 13,
+   "end_col": 51,
+   "entry_call": {
+    "line": 15,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 15
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "probe.derive",
+   "target_function_name": "probe.derive",
+   "target_canonical_signature": "probe.derive(?)",
+   "raw": "foo(1).derive",
+   "line": 10,
+   "resolution": "exact",
+   "method_name": "derive",
+   "assigned_var": "w",
+   "chain_id": "254",
+   "start_col": 13,
+   "end_col": 29,
+   "entry_call": {
+    "line": 10,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 10
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "probe.derive",
+   "target_function_name": "probe.derive",
+   "target_canonical_signature": "probe.derive(?)",
+   "raw": "a.b.derive",
+   "line": 11,
+   "resolution": "exact",
+   "method_name": "derive",
+   "assigned_var": "v",
+   "start_col": 13,
+   "end_col": 26,
+   "entry_call": {
+    "line": 11,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 11
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "probe.foo",
+   "target_function_name": "probe.foo",
+   "target_canonical_signature": "probe.foo(?)",
+   "raw": "foo",
+   "line": 10,
+   "resolution": "exact",
+   "method_name": "foo",
+   "chain_id": "254",
+   "start_col": 13,
+   "end_col": 19,
+   "entry_call": {
+    "line": 10,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 10
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.main",
+   "target_key": "probe.sign",
+   "target_function_name": "probe.sign",
+   "target_canonical_signature": "probe.sign(?, ?)",
+   "raw": "sign",
+   "line": 13,
+   "resolution": "exact",
+   "method_name": "sign",
+   "assigned_var": "s",
+   "start_col": 13,
+   "end_col": 38,
+   "entry_call": {
+    "line": 13,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "Kdf::new(5, 6)",
+      "source_nodes": [
+       {
+        "type": "CALL_RESULT",
+        "value": "Kdf::new(5, 6)",
+        "call_target": "acme_kdf.Kdf.new",
+        "location": {
+         "line": 13
+        },
+        "source_nodes": [
+         {
+          "type": "VALUE",
+          "value": "5",
+          "location": {
+           "line": 13
+          }
+         },
+         {
+          "type": "VALUE",
+          "value": "6",
+          "location": {
+           "line": 13
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "variable_name": "key",
+      "argument_expression": "key"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::gglob.gglob",
+   "target_key": "acme_gs.(GSafe).gmake",
+   "target_canonical_signature": "acme_gs.GSafe.gmake()",
+   "raw": "acme_gs::GSafe::gmake",
+   "line": 6,
+   "resolution": "exact",
+   "method_name": "gmake",
+   "assigned_var": "c",
+   "start_col": 13,
+   "end_col": 36,
+   "entry_call": {
+    "line": 6
+   }
+  },
+  {
+   "caller_key": "probe::gglob.gglob",
+   "target_key": "probe::gglob.(GFoo).gmake",
+   "target_canonical_signature": "probe::gglob.GFoo.gmake()",
+   "raw": "GFoo::gmake",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "gmake",
+   "assigned_var": "a",
+   "start_col": 13,
+   "end_col": 26,
+   "entry_call": {
+    "line": 4
+   }
+  },
+  {
+   "caller_key": "probe::gglob.gglob",
+   "target_key": "probe::gglob.(GSafe).gmake",
+   "target_canonical_signature": "probe::gglob.GSafe.gmake()",
+   "raw": "GSafe::gmake",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "gmake",
+   "assigned_var": "b",
+   "start_col": 13,
+   "end_col": 27,
+   "entry_call": {
+    "line": 5
+   }
+  },
+  {
+   "caller_key": "probe::glob0.glob0",
+   "target_key": "probe::glob0.acme_gderive",
+   "target_function_name": "probe::glob0.acme_gderive",
+   "target_canonical_signature": "probe::glob0.acme_gderive(&[u8])",
+   "raw": "acme_gderive",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "acme_gderive",
+   "start_col": 5,
+   "end_col": 20,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "p",
+      "argument_expression": "p",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "p",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::glob1.glob1",
+   "target_key": "probe::glob1.acme_gderive",
+   "target_function_name": "probe::glob1.acme_gderive",
+   "target_canonical_signature": "probe::glob1.acme_gderive(&[u8])",
+   "raw": "acme_gderive",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "acme_gderive",
+   "start_col": 5,
+   "end_col": 20,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "p",
+      "argument_expression": "p",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "p",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::glob2.glob2",
+   "target_key": "probe::glob2.acme_gderive",
+   "target_function_name": "probe::glob2.acme_gderive",
+   "target_canonical_signature": "probe::glob2.acme_gderive(&[u8])",
+   "raw": "acme_gderive",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "acme_gderive",
+   "start_col": 5,
+   "end_col": 20,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "p",
+      "argument_expression": "p",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "p",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::godd.godd",
+   "target_key": "probe::godd.(GBar).gmake",
+   "target_canonical_signature": "probe::godd.GBar.gmake()",
+   "raw": "GBar::gmake",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "gmake",
+   "assigned_var": "a",
+   "start_col": 13,
+   "end_col": 26,
+   "entry_call": {
+    "line": 4
+   }
+  },
+  {
+   "caller_key": "probe::items.(Kdf).x",
+   "target_key": "probe::items.(Kdf).new",
+   "target_canonical_signature": "probe::items.Kdf.new(?)",
+   "raw": "Kdf::new",
+   "line": 17,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 9,
+   "end_col": 20,
+   "entry_call": {
+    "line": 17,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "4",
+      "resolved_value": "4",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "4",
+        "location": {
+         "line": 17
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::items.a",
+   "target_key": "probe::items.(Kdf).new",
+   "target_canonical_signature": "probe::items.Kdf.new(u8)",
+   "raw": "Kdf::new",
+   "line": 3,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 18,
+   "entry_call": {
+    "line": 3,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "u8",
+      "variable_name": "ALG",
+      "argument_expression": "ALG",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "FIELD",
+        "name": "ALG",
+        "declared_type": "u8",
+        "location": {
+         "line": 1
+        },
+        "source_nodes": [
+         {
+          "type": "VALUE",
+          "value": "1",
+          "location": {
+           "line": 3
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::items.a",
+   "target_key": "probe::items.(Kdf).new",
+   "target_canonical_signature": "probe::items.Kdf.new(u8)",
+   "raw": "Kdf::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 19,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "u8",
+      "variable_name": "LATE",
+      "argument_expression": "LATE",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "FIELD",
+        "name": "LATE",
+        "declared_type": "u8",
+        "location": {
+         "line": 6
+        },
+        "source_nodes": [
+         {
+          "type": "VALUE",
+          "value": "2",
+          "location": {
+           "line": 4
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::items.d",
+   "target_key": "probe::items.(Kdf).new",
+   "target_canonical_signature": "probe::items.Kdf.new(?)",
+   "raw": "Kdf::new",
+   "line": 13,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 16,
+   "entry_call": {
+    "line": 13,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "3",
+      "resolved_value": "3",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "3",
+        "location": {
+         "line": 13
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::items.e",
+   "target_key": "probe::items.(Kdf).new",
+   "target_canonical_signature": "probe::items.Kdf.new(?)",
+   "raw": "Kdf::new",
+   "line": 22,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 16,
+   "entry_call": {
+    "line": 22,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "5",
+      "resolved_value": "5",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "5",
+        "location": {
+         "line": 22
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::items.z",
+   "target_key": "probe::items.(Kdf).new",
+   "target_canonical_signature": "probe::items.Kdf.new(u8)",
+   "raw": "Kdf::new",
+   "line": 26,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 17,
+   "entry_call": {
+    "line": 26,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "u8",
+      "variable_name": "ST",
+      "argument_expression": "ST",
+      "resolved_value": "5",
+      "source_nodes": [
+       {
+        "type": "FIELD",
+        "name": "ST",
+        "declared_type": "u8",
+        "location": {
+         "line": 24
+        },
+        "source_nodes": [
+         {
+          "type": "VALUE",
+          "value": "5",
+          "location": {
+           "line": 26
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::items::acme_kdf.b",
+   "target_key": "probe::items.(Kdf).new",
+   "target_canonical_signature": "probe::items.Kdf.new(?)",
+   "raw": "Kdf::new",
+   "line": 9,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 9,
+   "end_col": 20,
+   "entry_call": {
+    "line": 9,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 9
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::lets.g",
+   "target_key": "acme_kdf.(Kdf).derive",
+   "target_canonical_signature": "acme_kdf.Kdf.derive(?)",
+   "raw": "k.derive",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "derive",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 16,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::lets.g",
+   "target_key": "acme_kdf.(Kdf).derive",
+   "target_canonical_signature": "acme_kdf.Kdf.derive(?)",
+   "raw": "t.derive",
+   "line": 6,
+   "resolution": "exact",
+   "method_name": "derive",
+   "receiver_var": "t",
+   "start_col": 5,
+   "end_col": 16,
+   "entry_call": {
+    "line": 6,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 6
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::lets.g",
+   "target_key": "acme_kdf.(Kdf).new",
+   "target_canonical_signature": "acme_kdf.Kdf.new(?)",
+   "raw": "Kdf::new",
+   "line": 3,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 17,
+   "end_col": 28,
+   "entry_call": {
+    "line": 3,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 3
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::lets.g",
+   "target_key": "acme_kdf.(Kdf).new",
+   "target_canonical_signature": "acme_kdf.Kdf.new(?)",
+   "raw": "acme_kdf::Kdf::new",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "t",
+   "start_col": 18,
+   "end_col": 39,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::lets.g",
+   "target_key": "acme_kdf.f",
+   "target_function_name": "acme_kdf.f",
+   "target_canonical_signature": "acme_kdf.f(?)",
+   "raw": "acme_kdf::f",
+   "line": 11,
+   "resolution": "exact",
+   "method_name": "f",
+   "start_col": 5,
+   "end_col": 43,
+   "entry_call": {
+    "line": 11,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "acme_kdf::params::PARAM_A"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::lets.g",
+   "target_key": "acme_kdf::params.(PARAM_A).derive",
+   "target_canonical_signature": "acme_kdf::params.PARAM_A.derive(?)",
+   "raw": "p.derive",
+   "line": 8,
+   "resolution": "exact",
+   "method_name": "derive",
+   "receiver_var": "p",
+   "start_col": 5,
+   "end_col": 16,
+   "entry_call": {
+    "line": 8,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "3",
+      "resolved_value": "3",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "3",
+        "location": {
+         "line": 8
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::lets.g",
+   "target_key": "acme_kdf::params.(PARAM_A).derive",
+   "target_canonical_signature": "acme_kdf::params.PARAM_A.derive(?)",
+   "raw": "r.derive",
+   "line": 10,
+   "resolution": "exact",
+   "method_name": "derive",
+   "receiver_var": "r",
+   "start_col": 5,
+   "end_col": 16,
+   "entry_call": {
+    "line": 10,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "4",
+      "resolved_value": "4",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "4",
+        "location": {
+         "line": 10
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::lets.other",
+   "target_key": "probe::lets.derive",
+   "target_function_name": "probe::lets.derive",
+   "target_canonical_signature": "probe::lets.derive(?)",
+   "raw": "k.derive",
+   "line": 15,
+   "resolution": "exact",
+   "method_name": "derive",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 16,
+   "entry_call": {
+    "line": 15,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "5",
+      "resolved_value": "5",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "5",
+        "location": {
+         "line": 15
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses.g",
+   "target_key": "acme_ext.(Kdf).new",
+   "target_canonical_signature": "acme_ext.Kdf.new(?)",
+   "raw": "ext2::Kdf::new",
+   "line": 20,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 22,
+   "entry_call": {
+    "line": 20,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 20
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses.g",
+   "target_key": "acme_glob.(Glob).new",
+   "target_canonical_signature": "acme_glob.Glob.new(?)",
+   "raw": "Glob::new",
+   "line": 17,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 17,
+   "entry_call": {
+    "line": 17,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 17
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses.g",
+   "target_key": "acme_glob.(Scoped).new",
+   "target_canonical_signature": "acme_glob.Scoped.new(?)",
+   "raw": "Scoped::new",
+   "line": 18,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 19,
+   "entry_call": {
+    "line": 18,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 18
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses.g",
+   "target_key": "acme_kdf.(Hasher).new",
+   "target_canonical_signature": "acme_kdf.Hasher.new(?)",
+   "raw": "Hasher::new",
+   "line": 14,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 19,
+   "entry_call": {
+    "line": 14,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 14
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses.g",
+   "target_key": "acme_kdf.(Mac).new",
+   "target_canonical_signature": "acme_kdf.Mac.new(?)",
+   "raw": "M2::new",
+   "line": 16,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 15,
+   "entry_call": {
+    "line": 16,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 16
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses.g",
+   "target_key": "acme_kdf::other.(Thing).new",
+   "target_canonical_signature": "acme_kdf::other.Thing.new(?)",
+   "raw": "Thing::new",
+   "line": 15,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 18,
+   "entry_call": {
+    "line": 15,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 15
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses.g",
+   "target_key": "acme_late.(Late).new",
+   "target_canonical_signature": "acme_late.Late.new(?)",
+   "raw": "Late::new",
+   "line": 19,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 17,
+   "entry_call": {
+    "line": 19,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 19
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses.g",
+   "target_key": "acme_late.(Late).new",
+   "target_canonical_signature": "acme_late.Late.new(?)",
+   "raw": "Late::new",
+   "line": 22,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 17,
+   "entry_call": {
+    "line": 22,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 22
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses.g",
+   "target_key": "probe::items.(Kdf).new",
+   "target_canonical_signature": "probe::items.Kdf.new(?, ?)",
+   "raw": "Kdf::new",
+   "line": 23,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 5,
+   "end_col": 26,
+   "entry_call": {
+    "line": 23,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&PARAM_B"
+     },
+     {
+      "parameter_index": 1,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 23
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::uses::local.f",
+   "target_key": "acme_scoped.(Scoped).new",
+   "target_canonical_signature": "acme_scoped.Scoped.new(?)",
+   "raw": "Scoped::new",
+   "line": 9,
+   "resolution": "exact",
+   "method_name": "new",
+   "start_col": 9,
+   "end_col": 23,
+   "entry_call": {
+    "line": 9,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 9
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "constant_refs": [
+  [
+   0,
+   5,
+   19,
+   25,
+   "Sha256",
+   "type"
+  ],
+  [
+   0,
+   6,
+   13,
+   26,
+   "acme_kdf::Kdf",
+   "other"
+  ],
+  [
+   0,
+   6,
+   29,
+   35,
+   "Sha512",
+   "type"
+  ],
+  [
+   0,
+   12,
+   23,
+   40,
+   "acme_kdf::PARAM_A",
+   "other"
+  ],
+  [
+   7,
+   15,
+   13,
+   16,
+   "Kdf",
+   "type"
+  ],
+  [
+   8,
+   3,
+   14,
+   17,
+   "ALG",
+   "arg"
+  ],
+  [
+   8,
+   4,
+   14,
+   18,
+   "LATE",
+   "arg"
+  ],
+  [
+   11,
+   26,
+   14,
+   16,
+   "ST",
+   "arg"
+  ],
+  [
+   13,
+   5,
+   12,
+   15,
+   "Kdf",
+   "type"
+  ],
+  [
+   13,
+   7,
+   13,
+   28,
+   "params::PARAM_A",
+   "init"
+  ],
+  [
+   13,
+   9,
+   13,
+   38,
+   "acme_kdf::params::PARAM_A",
+   "init"
+  ],
+  [
+   13,
+   11,
+   17,
+   42,
+   "acme_kdf::params::PARAM_A",
+   "arg"
+  ],
+  [
+   13,
+   12,
+   13,
+   24,
+   "acme_kdf::f",
+   "init"
+  ],
+  [
+   15,
+   23,
+   15,
+   22,
+   "PARAM_B",
+   "other"
+  ]
+ ],
+ "declarations": [
+  [
+   0,
+   4,
+   5,
+   28,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   0,
+   5,
+   5,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   0,
+   6,
+   5,
+   48,
+   "",
+   "q",
+   "call"
+  ],
+  [
+   0,
+   7,
+   5,
+   28,
+   "",
+   "d",
+   "call"
+  ],
+  [
+   0,
+   8,
+   5,
+   30,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   0,
+   9,
+   5,
+   38,
+   "",
+   "z",
+   "call"
+  ],
+  [
+   0,
+   10,
+   5,
+   30,
+   "",
+   "w",
+   "call"
+  ],
+  [
+   0,
+   11,
+   5,
+   27,
+   "",
+   "v",
+   "call"
+  ],
+  [
+   0,
+   12,
+   5,
+   45,
+   "",
+   "m",
+   "call"
+  ],
+  [
+   0,
+   13,
+   5,
+   39,
+   "",
+   "s",
+   "call"
+  ],
+  [
+   0,
+   14,
+   5,
+   46,
+   "",
+   "u",
+   "call"
+  ],
+  [
+   0,
+   15,
+   5,
+   52,
+   "",
+   "t",
+   "call"
+  ],
+  [
+   1,
+   4,
+   5,
+   27,
+   "",
+   "a",
+   "call"
+  ],
+  [
+   1,
+   5,
+   5,
+   28,
+   "",
+   "b",
+   "call"
+  ],
+  [
+   1,
+   6,
+   5,
+   37,
+   "",
+   "c",
+   "call"
+  ],
+  [
+   5,
+   4,
+   5,
+   27,
+   "",
+   "a",
+   "call"
+  ],
+  [
+   13,
+   3,
+   5,
+   29,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   13,
+   5,
+   5,
+   40,
+   "Kdf",
+   "t",
+   "call"
+  ],
+  [
+   13,
+   7,
+   5,
+   29,
+   "",
+   "p",
+   "other"
+  ],
+  [
+   13,
+   9,
+   5,
+   39,
+   "",
+   "r",
+   "other"
+  ],
+  [
+   13,
+   12,
+   5,
+   25,
+   "",
+   "h",
+   "other"
+  ]
+ ],
+ "source_lines": {
+  "src/gglob.rs": {
+   "4": "    let a = GFoo::gmake();",
+   "5": "    let b = GSafe::gmake();",
+   "6": "    let c = acme_gs::GSafe::gmake();"
+  },
+  "src/glob0.rs": {
+   "4": "    acme_gderive(p);"
+  },
+  "src/glob1.rs": {
+   "4": "    acme_gderive(p);"
+  },
+  "src/glob2.rs": {
+   "4": "    acme_gderive(p);"
+  },
+  "src/godd.rs": {
+   "4": "    let a = GBar::gmake();"
+  },
+  "src/items.rs": {
+   "13": "    Kdf::new(3);",
+   "15": "impl Tr for Kdf {",
+   "17": "        Kdf::new(4);",
+   "22": "    Kdf::new(5);",
+   "26": "    Kdf::new(ST);",
+   "3": "    Kdf::new(ALG);",
+   "4": "    Kdf::new(LATE);",
+   "9": "        Kdf::new(2);"
+  },
+  "src/lets.rs": {
+   "10": "    r.derive(4);",
+   "11": "    acme_kdf::f(acme_kdf::params::PARAM_A);",
+   "12": "    let h = acme_kdf::f;",
+   "15": "    k.derive(5);",
+   "3": "    let mut k = Kdf::new(1);",
+   "4": "    k.derive(1);",
+   "5": "    let t: Kdf = acme_kdf::Kdf::new(2);",
+   "6": "    t.derive(2);",
+   "7": "    let p = params::PARAM_A;",
+   "8": "    p.derive(3);",
+   "9": "    let r = acme_kdf::params::PARAM_A;"
+  },
+  "src/main.rs": {
+   "10": "    let w = foo(1).derive(2);",
+   "11": "    let v = a.b.derive(1);",
+   "12": "    let m = Kdf::new(&acme_kdf::PARAM_A, 2);",
+   "13": "    let s = sign(Kdf::new(5, 6), key);",
+   "14": "    let u = <Sha256 as Digest>::digest(b\"x\");",
+   "15": "    let t = <Sha256 as sha2::Digest>::digest(b\"x\");",
+   "4": "    let k = Kdf::new(1, 2);",
+   "5": "    let h = Kdf::<Sha256>::new(1, 2);",
+   "6": "    let q = acme_kdf::Kdf::<Sha512>::new(1, 2);",
+   "7": "    let d = k.derive(&out);",
+   "8": "    let x = Other::derive(1);",
+   "9": "    let z = acme_kdf::Kdf::new(3, 4);"
+  },
+  "src/uses.rs": {
+   "14": "    Hasher::new(1);",
+   "15": "    Thing::new(1);",
+   "16": "    M2::new(1);",
+   "17": "    Glob::new(1);",
+   "18": "    Scoped::new(2);",
+   "19": "    Late::new(1);",
+   "20": "    ext2::Kdf::new(1);",
+   "22": "    Late::new(2);",
+   "23": "    Kdf::new(&PARAM_B, 1);",
+   "9": "        Scoped::new(1);"
+  }
+ },
+ "imports": {
+  "src/gglob.rs": [
+   {
+    "line": 1,
+    "module": "",
+    "name": "acme_gio",
+    "start_col": 1,
+    "end_col": 34,
+    "text": "acme_gio::{self, prelude::*}"
+   },
+   {
+    "line": 1,
+    "module": "acme_gio::prelude",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 34,
+    "text": "acme_gio::{self, prelude::*}"
+   }
+  ],
+  "src/glob0.rs": [
+   {
+    "line": 1,
+    "module": "acme_gk",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 16,
+    "text": "acme_gk::*"
+   }
+  ],
+  "src/glob1.rs": [
+   {
+    "line": 1,
+    "module": "acme_gk::derive",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 24,
+    "text": "acme_gk::derive::*"
+   }
+  ],
+  "src/glob2.rs": [
+   {
+    "line": 1,
+    "module": "acme_gk::derive::sub",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 29,
+    "text": "acme_gk::derive::sub::*"
+   }
+  ],
+  "src/godd.rs": [
+   {
+    "line": 1,
+    "module": "acme_ox",
+    "name": "OddY",
+    "start_col": 1,
+    "end_col": 21,
+    "text": "{acme_ox::OddY}"
+   }
+  ],
+  "src/lets.rs": [
+   {
+    "line": 1,
+    "module": "acme_kdf",
+    "name": "Kdf",
+    "start_col": 1,
+    "end_col": 19,
+    "text": "acme_kdf::Kdf"
+   },
+   {
+    "line": 17,
+    "module": "acme_kdf",
+    "name": "params",
+    "start_col": 1,
+    "end_col": 22,
+    "text": "acme_kdf::params"
+   }
+  ],
+  "src/main.rs": [
+   {
+    "line": 1,
+    "module": "acme_kdf",
+    "name": "Kdf",
+    "start_col": 1,
+    "end_col": 19,
+    "text": "acme_kdf::Kdf"
+   }
+  ],
+  "src/uses.rs": [
+   {
+    "line": 1,
+    "module": "acme_kdf",
+    "name": "Hasher",
+    "start_col": 1,
+    "end_col": 38,
+    "text": "acme_kdf::{Hasher, other::Thing}"
+   },
+   {
+    "line": 1,
+    "module": "acme_kdf::other",
+    "name": "Thing",
+    "start_col": 1,
+    "end_col": 38,
+    "text": "acme_kdf::{Hasher, other::Thing}"
+   },
+   {
+    "line": 2,
+    "module": "acme_kdf",
+    "name": "Mac",
+    "alias": "M2",
+    "start_col": 1,
+    "end_col": 25,
+    "text": "acme_kdf::Mac as M2"
+   },
+   {
+    "line": 3,
+    "module": "acme_glob",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 18,
+    "text": "acme_glob::*"
+   },
+   {
+    "line": 4,
+    "module": "acme_ext",
+    "alias": "ext2",
+    "start_col": 1,
+    "end_col": 31,
+    "text": "acme_ext as ext2"
+   },
+   {
+    "line": 7,
+    "module": "acme_scoped",
+    "name": "Scoped",
+    "start_col": 5,
+    "end_col": 29,
+    "text": "acme_scoped::Scoped"
+   },
+   {
+    "line": 21,
+    "module": "acme_late",
+    "name": "Late",
+    "local": true,
+    "start_col": 5,
+    "end_col": 25,
+    "text": "acme_late::Late"
+   },
+   {
+    "line": 25,
+    "module": "acme_kdf",
+    "name": "PARAM_B",
+    "start_col": 1,
+    "end_col": 23,
+    "text": "acme_kdf::PARAM_B"
+   }
+  ]
+ },
+ "items": {
+  "src/gglob.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "gglob",
+    7
+   ]
+  ],
+  "src/glob0.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "glob0",
+    5,
+    "",
+    0,
+    [
+     [
+      3,
+      10,
+      18,
+      "p",
+      "&[u8]"
+     ]
+    ]
+   ]
+  ],
+  "src/glob1.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "glob1",
+    5,
+    "",
+    0,
+    [
+     [
+      3,
+      10,
+      18,
+      "p",
+      "&[u8]"
+     ]
+    ]
+   ]
+  ],
+  "src/glob2.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "glob2",
+    5,
+    "",
+    0,
+    [
+     [
+      3,
+      10,
+      18,
+      "p",
+      "&[u8]"
+     ]
+    ]
+   ]
+  ],
+  "src/godd.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "godd",
+    5
+   ]
+  ],
+  "src/items.rs": [
+   [
+    1,
+    1,
+    19,
+    "const",
+    "ALG"
+   ],
+   [
+    2,
+    1,
+    2,
+    "fn",
+    "a",
+    5
+   ],
+   [
+    6,
+    1,
+    20,
+    "const",
+    "LATE"
+   ],
+   [
+    7,
+    1,
+    2,
+    "mod",
+    "acme_kdf",
+    11
+   ],
+   [
+    8,
+    5,
+    6,
+    "fn",
+    "b",
+    10
+   ],
+   [
+    12,
+    1,
+    2,
+    "fn",
+    "d",
+    14
+   ],
+   [
+    15,
+    1,
+    2,
+    "impl",
+    "Kdf",
+    19
+   ],
+   [
+    16,
+    5,
+    6,
+    "fn",
+    "x",
+    18
+   ],
+   [
+    20,
+    1,
+    20,
+    "struct",
+    "Kdf"
+   ],
+   [
+    21,
+    1,
+    2,
+    "fn",
+    "e",
+    23
+   ],
+   [
+    24,
+    1,
+    19,
+    "static",
+    "ST"
+   ],
+   [
+    25,
+    1,
+    2,
+    "fn",
+    "z",
+    27
+   ]
+  ],
+  "src/lets.rs": [
+   [
+    2,
+    1,
+    2,
+    "fn",
+    "g",
+    13
+   ],
+   [
+    14,
+    1,
+    2,
+    "fn",
+    "other",
+    16
+   ]
+  ],
+  "src/main.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "main",
+    16
+   ]
+  ],
+  "src/uses.rs": [
+   [
+    4,
+    1,
+    31,
+    "extern_crate",
+    "acme_ext"
+   ],
+   [
+    6,
+    1,
+    2,
+    "mod",
+    "local",
+    11
+   ],
+   [
+    8,
+    5,
+    6,
+    "fn",
+    "f",
+    10
+   ],
+   [
+    13,
+    1,
+    2,
+    "fn",
+    "g",
+    24
+   ]
+  ]
+ },
+ "scan_metadata": {
+  "ecosystem": "rust"
+ }
+}

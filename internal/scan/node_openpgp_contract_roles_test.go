@@ -22,7 +22,7 @@ func TestNodeOpenPGPSupportingCallsCarryTheirContractRole(t *testing.T) {
 	t.Parallel()
 
 	asset := cAsset(5, 5, 28, 83, "const privateKey = await openpgp.decryptKey({ privateKey: locked, passphrase });",
-		"javascript.openpgp.protocol.openpgp.decrypt-key",
+		"fixture.javascript.openpgp.decrypt-key",
 		map[string]string{"assetType": "protocol", "api": "openpgp.decryptKey"})
 	want := map[string]string{
 		"openpgp.PrivateKey.getFingerprint":    "output",

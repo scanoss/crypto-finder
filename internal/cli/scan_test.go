@@ -17,20 +17,18 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/config"
+	"github.com/scanoss/reach/graphfrag"
+	"github.com/scanoss/reach/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/oid"
 	scanutil "github.com/scanoss/crypto-finder/internal/scan"
-	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 func mustPrepareOIDReport(t testing.TB, report *entities.InterimReport) *oid.ResolvedReport {
@@ -90,23 +88,6 @@ func TestEcosystemFromHints_CPPHeaderOverridesCHint(t *testing.T) {
 	}
 }
 
-func TestNewFindingsCache_NoneBackend(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	cfg := &config.Config{}
-	if err := cfg.Initialize(config.InitOptions{FindingsCacheBackend: findingsCacheBackendNone}); err != nil {
-		t.Fatalf("Initialize: %v", err)
-	}
-
-	cache, closeCache, err := newFindingsCache(context.Background(), cfg)
-	if err != nil {
-		t.Fatalf("newFindingsCache: %v", err)
-	}
-	defer closeCache()
-	if cache != nil {
-		t.Fatal("expected nil cache for none backend")
-	}
-}
-
 func TestEcosystemFromHints_Node(t *testing.T) {
 	t.Parallel()
 
@@ -140,10 +121,6 @@ func validateScanFlags(target string) error {
 		RuleFiles:        scanRules,
 		RuleDirs:         scanRuleDirs,
 		NoRemoteRules:    scanNoRemoteRules,
-		Scanner:          scanScanner,
-		AllowedScanners:  AllowedScanners,
-		Interfile:        scanInterfile,
-		InterfileScanner: semgrep.ScannerName,
 		Format:           scanFormat,
 		SupportedFormats: SupportedFormats,
 		Languages:        scanLanguages,
@@ -162,10 +139,8 @@ func TestValidateScanFlags(t *testing.T) {
 	origRules := scanRules
 	origRuleDirs := scanRuleDirs
 	origNoRemoteRules := scanNoRemoteRules
-	origScanner := scanScanner
 	origFormat := scanFormat
 	origLanguages := scanLanguages
-	origInterfile := scanInterfile
 	origScanDependencies := scanDependencies
 	origScanExportCallgraph := scanExportCallgraph
 	origJavaJDKMajor := scanJavaJDKMajor
@@ -176,10 +151,8 @@ func TestValidateScanFlags(t *testing.T) {
 		scanRules = origRules
 		scanRuleDirs = origRuleDirs
 		scanNoRemoteRules = origNoRemoteRules
-		scanScanner = origScanner
 		scanFormat = origFormat
 		scanLanguages = origLanguages
-		scanInterfile = origInterfile
 		scanDependencies = origScanDependencies
 		scanExportCallgraph = origScanExportCallgraph
 		scanJavaJDKMajor = origJavaJDKMajor
@@ -191,7 +164,6 @@ func TestValidateScanFlags(t *testing.T) {
 		scanRules = []string{"rule.yaml"}
 		scanRuleDirs = []string{}
 		scanNoRemoteRules = false
-		scanScanner = "opengrep"
 		scanFormat = "json"
 		scanLanguages = []string{}
 
@@ -205,7 +177,6 @@ func TestValidateScanFlags(t *testing.T) {
 		scanRules = []string{"rule.yaml"}
 		scanRuleDirs = []string{}
 		scanNoRemoteRules = false
-		scanScanner = "opengrep"
 		scanFormat = "json"
 
 		err := validateScanFlags("/path/that/does/not/exist")
@@ -219,7 +190,6 @@ func TestValidateScanFlags(t *testing.T) {
 		scanRules = []string{}
 		scanRuleDirs = []string{}
 		scanNoRemoteRules = true
-		scanScanner = "opengrep"
 		scanFormat = "json"
 
 		err := validateScanFlags(tempDir)
@@ -233,7 +203,6 @@ func TestValidateScanFlags(t *testing.T) {
 		scanRules = []string{}
 		scanRuleDirs = []string{}
 		scanNoRemoteRules = false
-		scanScanner = "opengrep"
 		scanFormat = "json"
 
 		err := validateScanFlags(tempDir)
@@ -242,26 +211,11 @@ func TestValidateScanFlags(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid scanner", func(t *testing.T) {
-		tempDir := t.TempDir()
-		scanRules = []string{"rule.yaml"}
-		scanRuleDirs = []string{}
-		scanNoRemoteRules = false
-		scanScanner = "invalid-scanner"
-		scanFormat = "json"
-
-		err := validateScanFlags(tempDir)
-		if err == nil {
-			t.Error("Expected error for invalid scanner")
-		}
-	})
-
 	t.Run("invalid format", func(t *testing.T) {
 		tempDir := t.TempDir()
 		scanRules = []string{"rule.yaml"}
 		scanRuleDirs = []string{}
 		scanNoRemoteRules = false
-		scanScanner = "opengrep"
 		scanFormat = "invalid-format"
 
 		err := validateScanFlags(tempDir)
@@ -275,7 +229,6 @@ func TestValidateScanFlags(t *testing.T) {
 		scanRules = []string{"rule.yaml"}
 		scanRuleDirs = []string{}
 		scanNoRemoteRules = false
-		scanScanner = "opengrep"
 		scanFormat = "json"
 		scanLanguages = []string{"  JAVA  ", "Python", "GO"}
 
@@ -306,7 +259,6 @@ func TestValidateScanFlags(t *testing.T) {
 		scanRules = []string{}
 		scanRuleDirs = []string{ruleDir}
 		scanNoRemoteRules = false
-		scanScanner = "semgrep"
 		scanFormat = "cyclonedx"
 
 		err := validateScanFlags(tempDir)
@@ -315,42 +267,11 @@ func TestValidateScanFlags(t *testing.T) {
 		}
 	})
 
-	t.Run("interfile with non-semgrep scanner", func(t *testing.T) {
-		tempDir := t.TempDir()
-		scanRules = []string{"rule.yaml"}
-		scanRuleDirs = []string{}
-		scanNoRemoteRules = false
-		scanScanner = "opengrep"
-		scanFormat = "json"
-		scanInterfile = true
-
-		err := validateScanFlags(tempDir)
-		if err == nil {
-			t.Error("Expected error when --interfile is used with non-semgrep scanner")
-		}
-	})
-
-	t.Run("interfile with semgrep scanner", func(t *testing.T) {
-		tempDir := t.TempDir()
-		scanRules = []string{"rule.yaml"}
-		scanRuleDirs = []string{}
-		scanNoRemoteRules = false
-		scanScanner = "semgrep"
-		scanFormat = "json"
-		scanInterfile = true
-
-		err := validateScanFlags(tempDir)
-		if err != nil {
-			t.Errorf("Expected no error with --interfile and semgrep scanner, got: %v", err)
-		}
-	})
-
 	t.Run("export callgraph allowed without dependency scanning", func(t *testing.T) {
 		tempDir := t.TempDir()
 		scanRules = []string{"rule.yaml"}
 		scanRuleDirs = []string{}
 		scanNoRemoteRules = false
-		scanScanner = "semgrep"
 		scanFormat = "json"
 		scanDependencies = false
 		scanExportCallgraph = filepath.Join(tempDir, "cg.json")
@@ -435,7 +356,7 @@ func Encrypt(key []byte) error {
 		}},
 	}
 
-	result, err := buildStandaloneCallGraphResult(tempDir, report, nil, javaruntime.Config{}, false, "", nil, true)
+	result, err := buildStandaloneCallGraphResult(nil, tempDir, report, nil, javaruntime.Config{}, false, "", nil)
 	if err != nil {
 		t.Fatalf("buildStandaloneCallGraphResult: %v", err)
 	}
@@ -443,7 +364,7 @@ func Encrypt(key []byte) error {
 	engine.AssignFindingIDs(report)
 
 	out := filepath.Join(t.TempDir(), "callgraph.json")
-	if err := scanutil.ExportCallGraph(out, "json", result, mustPrepareOIDReport(t, report)); err != nil {
+	if err := scanutil.ExportResolvedCallGraph(out, "json", result, mustPrepareOIDReport(t, report), scanutil.CallGraphExportOptions{}); err != nil {
 		t.Fatalf("ExportCallGraph: %v", err)
 	}
 
@@ -536,7 +457,7 @@ func TestEncrypt() {
 		}},
 	}
 
-	result, err := buildStandaloneCallGraphResult(tempDir, report, nil, javaruntime.Config{}, true, "", nil, true)
+	result, err := buildStandaloneCallGraphResult(nil, tempDir, report, nil, javaruntime.Config{}, true, "", nil)
 	if err != nil {
 		t.Fatalf("buildStandaloneCallGraphResult: %v", err)
 	}
@@ -672,27 +593,7 @@ func TestCountFindings(t *testing.T) {
 	})
 }
 
-func TestAllowedScannersAndFormats(t *testing.T) {
-	t.Run("AllowedScanners contains expected values", func(t *testing.T) {
-		if len(AllowedScanners) == 0 {
-			t.Error("AllowedScanners should not be empty")
-		}
-
-		expectedScanners := []string{"opengrep", "semgrep"}
-		for _, scanner := range expectedScanners {
-			found := false
-			for _, allowed := range AllowedScanners {
-				if allowed == scanner {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Errorf("Expected scanner '%s' not found in AllowedScanners", scanner)
-			}
-		}
-	})
-
+func TestSupportedFormats(t *testing.T) {
 	t.Run("SupportedFormats contains expected values", func(t *testing.T) {
 		if len(SupportedFormats) == 0 {
 			t.Error("SupportedFormats should not be empty")

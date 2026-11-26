@@ -17,15 +17,15 @@
 package rules
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/reach/paramcondition"
+
+	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
 const (
@@ -56,21 +56,7 @@ type paramConditionRuleFile struct {
 // scan on a non-nil error rather than continue with a partially-invalid
 // ruleset (resolved proposal decision — warn-and-continue was rejected).
 func ValidateParameterConditions(rulePaths []string) error {
-	return (*ParameterConditionValidator)(nil).Validate(rulePaths)
-}
-
-// ParameterConditionValidator reuses successful validation of exact file bytes.
-// Create one per dependency invocation, never retain it across scans. Each gate
-// still discovers and reads files; this is not an atomic execution snapshot.
-// The zero value is ready for use. A nil validator disables proof reuse.
-type ParameterConditionValidator struct {
-	mu         sync.Mutex
-	successful map[string][sha256.Size]byte
-}
-
-// Validate preserves the standalone gate's aggregated errors and path handling.
-func (v *ParameterConditionValidator) Validate(rulePaths []string) error {
-	return v.ValidateDocuments(nil, rulePaths)
+	return ValidateParameterConditionDocuments(nil, rulePaths)
 }
 
 // ParameterConditionView is the view the validator decodes, for a Documents
@@ -79,43 +65,37 @@ func ParameterConditionView() any {
 	return new(paramConditionRuleFile)
 }
 
-// ValidateDocuments is Validate decoding each file through docs, so a pass
-// that registered ParameterConditionView shares its YAML parse.
-func (v *ParameterConditionValidator) ValidateDocuments(docs *Documents, rulePaths []string) error {
+// ValidateParameterConditionDocuments is ValidateParameterConditions decoding
+// each file through docs, so a pass that registered ParameterConditionView
+// shares its YAML parse.
+func ValidateParameterConditionDocuments(docs *Documents, rulePaths []string) error {
 	var errs []error
 	for _, path := range expandParamConditionRulePaths(rulePaths) {
-		if err := v.validateFile(docs, path); err != nil {
+		if IsCardsFile(path) {
+			found, readErr, parseErr := cardsRulesAt(path)
+			if readErr != nil {
+				errs = append(errs, fmt.Errorf("read rule file %s: %w", path, readErr))
+			} else if err := validateCardsRules(path, found, parseErr); err != nil {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read rule file %s: %w", path, err))
+			continue
+		}
+		if err := validateParameterConditionBytes(docs, path, data); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (v *ParameterConditionValidator) validateFile(docs *Documents, path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read rule file %s: %w", path, err)
-	}
-	if v == nil {
-		return validateParameterConditionBytes(docs, path, data)
-	}
-	digest := sha256.Sum256(data)
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if previous, ok := v.successful[path]; ok && previous == digest {
-		return nil
-	}
-	if err := validateParameterConditionBytes(docs, path, data); err != nil {
-		return err
-	}
-	if v.successful == nil {
-		v.successful = make(map[string][sha256.Size]byte)
-	}
-	v.successful[path] = digest
-	return nil
-}
-
 func validateParameterConditionBytes(docs *Documents, path string, data []byte) error {
+	if IsCardsFile(path) {
+		return validateCardsParameterConditions(path, data)
+	}
 	var parsed paramConditionRuleFile
 	if err := docs.Decode(path, data, &parsed); err != nil {
 		return fmt.Errorf("parse rule file %s: %w", path, err)
@@ -147,6 +127,7 @@ func expandParamConditionRulePaths(rulePaths []string) []string {
 			continue
 		}
 
+		start := len(files)
 		if err := filepath.WalkDir(path, func(p string, d os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
@@ -162,6 +143,41 @@ func expandParamConditionRulePaths(rulePaths []string) []string {
 		}); err != nil {
 			continue
 		}
+		if len(files) == start {
+			// A ruleset of v3 card files only: its card files are its rules.
+			files = append(files, CardFilesUnder(path)...)
+		}
 	}
 	return files
+}
+
+// validateCardsParameterConditions is validateParameterConditionBytes for a
+// v3 card file: the parameterCondition of each rule of its rules: block. An
+// earlier card file carries no rules (they are in a rule YAML beside it), so
+// there is nothing to validate, as the cards scanner skips it.
+func validateCardsParameterConditions(path string, data []byte) error {
+	found, err := ReadCardsRules(data)
+	return validateCardsRules(path, found, err)
+}
+
+// validateCardsRules is validateCardsParameterConditions of a card file's
+// rules and parse error.
+func validateCardsRules(path string, found []CardsRule, err error) error {
+	if errors.Is(err, ErrNotV3Cards) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("parse card file %s: %w", path, err)
+	}
+	var errs []error
+	for _, r := range found {
+		raw := utils.AsOr[string](r.Crypto["parameterCondition"])
+		if raw = strings.TrimSpace(raw); raw == "" {
+			continue
+		}
+		if _, err := paramcondition.ParseAll(raw); err != nil {
+			errs = append(errs, fmt.Errorf("rule %q (%s): %w", r.ID, path, err))
+		}
+	}
+	return errors.Join(errs...)
 }

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 // schema618Export is the provenance fixture's interned export, with its

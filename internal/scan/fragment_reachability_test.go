@@ -3,10 +3,11 @@ package scan
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // TestBuildGraphFragmentExport13_DerivesSupportingCallsFromObjectLifecycle
@@ -61,7 +62,7 @@ func TestBuildGraphFragmentExport13_DerivesSupportingCallsFromObjectLifecycle(t 
 					StartLine: 17,
 					EndLine:   17,
 					Match:     "SHA3Digest digest = new SHA3Digest(256);",
-					Rules:     []entities.RuleInfo{{ID: "java.bouncycastle.algorithm.hash.sha-3-lightweight"}},
+					Rules:     []entities.RuleInfo{{ID: "fixture.java.bouncycastle.sha-3-lightweight"}},
 					Metadata:  map[string]string{"api": "SHA3Digest", "assetType": "algorithm"},
 				},
 			},

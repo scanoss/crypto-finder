@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,6 +17,7 @@ import (
 	"github.com/scanoss/crypto-finder/internal/config"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/rules/rulejson"
+	"github.com/scanoss/crypto-finder/internal/scanner/cards"
 )
 
 // ruleFile is a minimal representation of a semgrep rule file, used only to
@@ -36,6 +38,9 @@ var ruleLoadDocuments = rules.NewDocuments(new(ruleFile), rules.ParameterConditi
 // contains zero rules: such a file can never match anything, so callers must
 // exclude it rather than treat it as "unknown language".
 func ruleLanguages(path string) ([]string, bool) {
+	if rules.IsCardsFile(path) {
+		return cardsFileLanguages(path)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		log.Debug().Err(err).Str("path", path).Msg("Failed to read rule file for language extraction")
@@ -56,7 +61,7 @@ func ruleLanguages(path string) ([]string, bool) {
 	var langs []string
 	for _, r := range rf.Rules {
 		for _, l := range r.Languages {
-			lower := canonicalLanguage(l)
+			lower := cards.Canonical(l)
 			if !seen[lower] {
 				seen[lower] = true
 				langs = append(langs, lower)
@@ -66,23 +71,12 @@ func ruleLanguages(path string) ([]string, bool) {
 	return langs, false
 }
 
-// canonicalLanguage maps a language name to the id rule files use. The
-// detector reports linguist names ("c++", "c#") while rules use opengrep ids
-// ("cpp", "csharp"); without this, C++-only rules were dropped whenever the tree
-// also held C, because the C rules kept the filtered set non-empty.
-func canonicalLanguage(lang string) string {
-	switch lower := strings.ToLower(lang); lower {
-	case "c++":
-		return "cpp"
-	case "c#":
-		return "csharp"
-	default:
-		return lower
-	}
-}
-
 // filterRulesByLanguages filters rule paths to only include rules whose YAML
 // `languages:` field matches at least one of the detected languages.
+// Languages compare by cards.Canonical on both sides: the detector reports
+// linguist names ("c++", "typescript", "tsx") while rules and card
+// directories use other ids ("cpp", "javascript"), and a spelling compared as
+// written dropped that language's rules.
 // If filtering would result in zero rules, returns all rules unchanged.
 func filterRulesByLanguages(allRules, languages []string) []string {
 	candidateRules := expandRulePaths(allRules)
@@ -91,10 +85,10 @@ func filterRulesByLanguages(allRules, languages []string) []string {
 		return candidateRules
 	}
 
-	// Build lookup set from detected languages (normalized to lowercase)
+	// Build lookup set from detected languages (canonical names)
 	wanted := make(map[string]bool, len(languages))
 	for _, lang := range languages {
-		wanted[canonicalLanguage(lang)] = true
+		wanted[cards.Canonical(lang)] = true
 	}
 
 	filtered := make([]string, 0, len(candidateRules))
@@ -480,6 +474,11 @@ func collectRuleFiles(root string) []string {
 			if d.Name() == config.FilteredRulesDirName {
 				return filepath.SkipDir
 			}
+			// A ruleset release keeps the cards detector's cards in cards/
+			// beside semgrep-rules/. They are not OpenGrep rules.
+			if path == filepath.Join(root, config.RulesetCardsDirName) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
@@ -490,6 +489,33 @@ func collectRuleFiles(root string) []string {
 	}); err != nil {
 		log.Debug().Err(err).Str("root", root).Msg("Failed to walk rule directory")
 	}
+	if len(files) == 0 {
+		// A ruleset of v3 card files only: its card files are its rules.
+		return rules.CardFilesUnder(root)
+	}
 	sort.Strings(files)
 	return files
+}
+
+// cardsFileLanguages is ruleLanguages of a v3 card file: the language of its
+// directory (cards/<language>/), which every rule of the file targets.
+func cardsFileLanguages(path string) ([]string, bool) {
+	found, err := rules.ReadCardsRulesFile(path)
+	if errors.Is(err, rules.ErrNotV3Cards) {
+		// An earlier card file: its rules are in a rule YAML beside it, so it
+		// carries none, and kept it would widen the filtered files' common
+		// directory (the rule ids' prefix) to cards/.
+		return nil, true
+	}
+	if err != nil {
+		log.Debug().Err(err).Str("path", path).Msg("Failed to read card file for language extraction")
+		return nil, false
+	}
+	if len(found) == 0 {
+		return nil, true
+	}
+	if language := config.CardsLanguage(path); language != "" {
+		return []string{cards.Canonical(language)}, false
+	}
+	return nil, false
 }

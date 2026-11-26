@@ -97,16 +97,16 @@ rules:
       - pattern-either:
           - patterns:
               - pattern-inside: |
-                  ECKeyPairGenerator $GEN = new ECKeyPairGenerator();
+                  ECKeyPairGenerator $G = new ECKeyPairGenerator();
                   ...
-              - pattern: $GEN.generateKeyPair()
+              - pattern: $G.generateKeyPair()
           - patterns:
               - pattern-inside: |
-                  org.bouncycastle.crypto.generators.ECKeyPairGenerator $GEN = new org.bouncycastle.crypto.generators.ECKeyPairGenerator();
+                  org.bouncycastle.crypto.generators.ECKeyPairGenerator $G = new org.bouncycastle.crypto.generators.ECKeyPairGenerator();
                   ...
-              - pattern: $GEN.generateKeyPair()
-          - pattern: (new ECKeyPairGenerator()).generateKeyPair()
-          - pattern: (new org.bouncycastle.crypto.generators.ECKeyPairGenerator()).generateKeyPair()
+              - pattern: $G.generateKeyPair()
+          - pattern: new ECKeyPairGenerator().generateKeyPair()
+          - pattern: new org.bouncycastle.crypto.generators.ECKeyPairGenerator().generateKeyPair()
     metadata:
       category: security
       subcategory: cryptography
@@ -115,7 +115,7 @@ rules:
         assetType: algorithm
         algorithmPrimitive: key-agree
         algorithmFamily: ECDH
-        algorithmName: Bouncy Castle EC key pair generation
+        algorithmName: EC key pair generation (fixture)
         operation: keygen
         library: BouncyCastle
         api: org.bouncycastle.crypto.generators.ECKeyPairGenerator.generateKeyPair

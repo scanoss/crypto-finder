@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 // boto3Consumer binds a KMS client every way boto3 allows. The client type
@@ -87,7 +88,7 @@ func boto3Finding(line int) entities.CryptographicAsset {
 		StartLine: line,
 		EndLine:   line,
 		Match:     strings.TrimSpace(strings.Split(boto3Consumer, "\n")[line-1]),
-		Rules:     []entities.RuleInfo{{ID: "python.boto3.algorithm.ae.aes-gcm.kms-encrypt"}},
+		Rules:     []entities.RuleInfo{{ID: "fixture.python.boto3.kms-encrypt"}},
 		Metadata: map[string]string{
 			"api":       "kms.encrypt",
 			"assetType": "algorithm",

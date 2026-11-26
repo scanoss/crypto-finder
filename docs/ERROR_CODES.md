@@ -48,7 +48,7 @@ Note: `--error-format json` also disables log output and colors so stderr carrie
 | `config` | Configuration, cache, and Java runtime initialization |
 | `rules` | Rule source loading |
 | `scan` | Language detection and scanner execution |
-| `dependency` | Dependency resolution and dependency scanning |
+| `dependency` | Dependency resolution and the application reachability request |
 | `callgraph` | Call graph construction |
 | `export` | Call graph / graph fragment export |
 | `output` | Findings report formatting and writing |
@@ -66,16 +66,16 @@ The stage column shows the typical stage; the stage is assigned where the error 
 | `invalid_timeout` | `input` | Unparseable duration | `--timeout` / `--max-stale-age` not in `10m` / `1h` / `30d` / `2w` form |
 | `config_initialization_failed` | `config` | Configuration could not be initialized | Unreadable/invalid config file or environment |
 | `java_runtime_config_invalid` | `config` | Java runtime selection invalid | Bad `--java-jdk-major` / malformed `--java-jdk-home <major>=<path>` |
-| `cache_initialization_failed` | `config` | Rules or findings cache setup failed | Cache dir not writable; `--findings-cache=postgres` without `SCANOSS_FINDINGS_CACHE_DSN`, pool/schema failure |
-| `rules_load_failed` | `rules` | No usable rule source | `--no-remote-rules` without `--rules`/`--rules-dir`; remote ruleset fetch failed with no cache |
-| `scanner_unavailable` | `scan` | Requested scanner not found | `opengrep`/`semgrep` binary not installed or not on `PATH` |
+| `cache_initialization_failed` | `config` | Rules cache setup failed | Cache dir not writable |
+| `rules_load_failed` | `rules` | No usable rule source | `--no-remote-rules` without `--rules`/`--rules-dir`; remote ruleset fetch failed with no cache; the API refused the key (HTTP 401/403, `details.http_status`), which never falls back to the cache |
+| `scanner_unavailable` | `scan` | Requested scanner not found | Not emitted since the cards engine became the only detector; kept as a stable code |
 | `scanner_initialization_failed` | `scan` | Scanner setup failed | Scanner present but could not be prepared for the run |
 | `scanner_execution_failed` | `scan` | Scanner process failed | Non-zero scanner exit, crash, or invalid rule files |
-| `scanner_timeout` | `scan` | Scan exceeded `--timeout` | Target too large for the configured timeout |
+| `scanner_timeout` | `scan` | Scan exceeded `--timeout` | Target too large for the configured timeout; with `--scan-dependencies --offline`, a first run whose dependency mining outlasts it (stage `dependency`; what it mined stays cached) |
 | `scanner_canceled` | `scan` | Scan canceled | Context canceled (e.g. SIGINT) |
 | `scanner_output_parse_failed` | `scan` | Scanner output unreadable | Scanner emitted output the parser could not decode |
 | `language_detection_failed` | `scan` | Language detection failed | Unreadable target tree |
-| `dependency_resolution_failed` | `dependency` | Dependency resolution/scan failed | Missing toolchain, unresolvable manifest, dep scan error |
+| `dependency_resolution_failed` | `dependency` | Dependency resolution or the application reachability request failed | Missing `mvn`/`gradle`, unresolvable manifest, the SCANOSS API unreachable or answering without dependencies |
 | `java_build_tool_unknown` | `dependency` | Java build tool not detected | No `pom.xml` / Gradle build files found at the scan root or in any module directory discovered below it. The Java build tool is detected per directory, and no search is made above the scan root. `scan` checks for a manifest before the resolver runs and reports that case as the `manifest_absent` dependency skip instead; the code remains for other callers of `DetectJavaBuildTool` |
 | `java_build_tool_ambiguous` | `dependency` | Multiple Java build tools detected | Both Maven and Gradle present without a clear winner |
 | `gradle_tool_missing` | `dependency` | Gradle unavailable | No usable `gradle` / wrapper for dependency export |
@@ -87,6 +87,7 @@ The stage column shows the typical stage; the stage is assigned where the error 
 | `output_write_failed` | `output` | Report write failed | Output path not writable, disk full |
 | `component_lookup_failed` | `dependency` | The SCANOSS API refused the component findings lookups of `cbom` | Missing or invalid API key, key without cryptography access |
 | `upgrade_required` | `rules` | The SCANOSS API no longer serves this crypto-finder version (HTTP 410 or 426 on a ruleset download). The message is the server's; no cached ruleset is used and nothing is retried | An outdated crypto-finder; upgrade it |
+| `language_not_supported` | `scan` | The target holds source only in languages this version does not detect cryptography in. `details.languages` names them | A C, C++ or C# target: this version detects Java, Python, Go, JavaScript, TypeScript, Rust and Ruby only (a target with source in one of those and in these languages is scanned for the supported ones and only warns) |
 | `findings_detected` | `policy` | Findings found with `--fail-on-findings` | Expected CI gate behavior, not an error in the tool |
 
 ## Adding a new failure mode

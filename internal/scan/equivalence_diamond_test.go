@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag/equiv"
+	"github.com/scanoss/reach/graphfrag"
+	"github.com/scanoss/reach/graphfrag/equiv"
 )
 
 // diamondFixtureSrc has a re-convergent ("diamond") call graph: the crypto-bearing
