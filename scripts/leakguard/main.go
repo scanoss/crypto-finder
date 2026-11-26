@@ -21,7 +21,7 @@
 // Usage (from the repository root):
 //
 //	go run ./scripts/leakguard hash [--exact] [--category C] <name>
-//	go run ./scripts/leakguard scan-tree [--rev HEAD]
+//	go run ./scripts/leakguard scan-tree [--rev HEAD] [--rulesets]
 //
 // hash prints the denylist line for name: append it to
 // scripts/internal/leakguard/denylist.txt. The name itself is never stored.
@@ -29,9 +29,11 @@
 // --exact matches only that spelling (case-insensitive); use it when the
 // name's words also occur legitimately in public code or prose.
 //
-// scan-tree scans every file of the tree at rev, whole, as a pull request adding
-// it would be scanned, and lists every finding. Run it after adding a name: a
-// name that already occurs legitimately must be scoped with --exact or dropped.
+// scan-tree scans every file of the tree at rev, whole, for internal names and
+// home paths, and lists every finding. Run it after adding a name: a name that
+// already occurs legitimately must be scoped with --exact or dropped.
+// --rulesets also lists ruleset-shaped YAML without the invented-rules marker;
+// pull requests are held to that only for the files they add or change.
 //
 // Exit codes: 0 clean, 1 findings, 2 usage error.
 package main
@@ -51,7 +53,7 @@ import (
 	"github.com/scanoss/crypto-finder/scripts/internal/leakguard"
 )
 
-const usage = "usage: leakguard hash [--exact] [--category C] <name|-> | scan-tree [--rev REV]"
+const usage = "usage: leakguard hash [--exact] [--category C] <name|-> | scan-tree [--rev REV] [--rulesets]"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -96,6 +98,7 @@ func dispatch(args []string, stdin io.Reader, stdout, stderr *printer) int {
 	exact := fs.Bool("exact", false, "match only this spelling, for hash")
 	category := fs.String("category", "name", "category the finding names, for hash")
 	rev := fs.String("rev", "HEAD", "tree to scan, for scan-tree")
+	rulesets := fs.Bool("rulesets", false, "also list ruleset-shaped YAML, for scan-tree")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
@@ -107,7 +110,7 @@ func dispatch(args []string, stdin io.Reader, stdout, stderr *printer) int {
 		}
 		return runHash(fs.Arg(0), *exact, *category, stdin, stdout, stderr)
 	case "scan-tree":
-		return runScanTree(*rev, stdout, stderr)
+		return runScanTree(*rev, *rulesets, stdout, stderr)
 	default:
 		stderr.println(usage)
 		return 2
@@ -136,7 +139,7 @@ func runHash(name string, exact bool, category string, stdin io.Reader, stdout, 
 	return 0
 }
 
-func runScanTree(rev string, stdout, stderr *printer) int {
+func runScanTree(rev string, rulesets bool, stdout, stderr *printer) int {
 	d, err := leakguard.Default()
 	if err != nil {
 		stderr.println(err)
@@ -157,6 +160,9 @@ func runScanTree(rev string, stdout, stderr *printer) int {
 			return 1
 		}
 		findings = append(findings, g.ScanFile(name, []byte(content))...)
+		if !rulesets {
+			continue
+		}
 		if f := leakguard.CheckRuleset(name, []byte(content)); f != nil {
 			findings = append(findings, *f)
 		}

@@ -42,9 +42,21 @@ func TestCheckLeaks(t *testing.T) {
 	ruleset := "rules:\n  - id: invented\n    metadata:\n      crypto:\n        assetType: algorithm\n"
 	writeFile(t, root, "rules/x.yaml", ruleset)
 	writeFile(t, root, "internal/rules/testdata/x.yaml", ruleset)
+	writeFile(t, root, "internal/rules/testdata/y.yaml", "# leakguard: invented-rules\n"+ruleset)
 	gitT(t, root, "add", ".")
 	gitT(t, root, "commit", "-q", "-m", "feat: talk to zq9host")
-	head := strings.TrimSpace(gitT(t, root, "rev-parse", "HEAD"))
+	first := strings.TrimSpace(gitT(t, root, "rev-parse", "HEAD"))
+
+	// A commit the branch merges in, written by someone else, is not scanned;
+	// the merge commit itself is.
+	gitT(t, root, "checkout", "-q", "-b", "other", base)
+	writeFile(t, root, "docs/b.md", "b\n")
+	gitT(t, root, "add", ".")
+	gitT(t, root, "commit", "-q", "-m", "chore: zq9host elsewhere")
+	gitT(t, root, "checkout", "-q", "main")
+	gitT(t, root, "merge", "-q", "--no-ff", "-m", "merge zq9host", "other")
+	merged := strings.TrimSpace(gitT(t, root, "rev-parse", "HEAD"))
+	head := merged
 
 	sum, err := leakguard.Hash("zq9host", false)
 	if err != nil {
@@ -61,9 +73,11 @@ func TestCheckLeaks(t *testing.T) {
 	want := []string{
 		"PR title:1: internal name (host)",
 		"PR body:3: internal name (host)",
-		"commit " + head[:12] + ":1: internal name (host)",
+		"commit " + merged[:12] + ":1: internal name (host)",
+		"commit " + first[:12] + ":1: internal name (host)",
 		"docs/a.md:3: internal name (host)",
 		"scripts/run.sh:1: absolute home path",
+		"internal/rules/testdata/x.yaml: looks like private ruleset content (rules with crypto metadata)",
 		"rules/x.yaml: looks like private ruleset content (rules with crypto metadata)",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {

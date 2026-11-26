@@ -157,7 +157,7 @@ type Guard struct{ names *Denylist }
 func New(d *Denylist) *Guard { return &Guard{names: d} }
 
 // homePath matches an absolute home directory and captures the user name.
-var homePath = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.~$-])/(?:home|Users)/([A-Za-z0-9_][A-Za-z0-9._-]*)/`)
+var homePath = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.~$-])/(?:home|Users)/([A-Za-z0-9_][A-Za-z0-9._-]*)(?:[^A-Za-z0-9._-]|$)`)
 
 // syntheticUsers are the invented home directories that tests, docs and
 // container images already use; none of them is a person.
@@ -281,16 +281,13 @@ const OverrideMarker = "leakguard: invented-rules"
 // cdxFields are CycloneDX crypto fields a detection rule's metadata carries.
 var cdxFields = []string{"assetType", "algorithmFamily", "primitive", "cryptoFunctions"}
 
-// CheckRuleset flags a YAML file outside testdata that looks like a detection
-// ruleset: a top-level rules list with an entry whose metadata holds a crypto
-// block of CycloneDX fields. Testdata (a path with a testdata segment) holds
-// invented rules and is never flagged; neither is a file with OverrideMarker.
+// CheckRuleset flags a YAML file that looks like a detection ruleset: a
+// top-level rules list with an entry whose metadata holds a crypto block of
+// CycloneDX fields. Testdata is not exempt, since real rule fixtures must not
+// land there either: a file of invented rules carries OverrideMarker.
 func CheckRuleset(name string, content []byte) *Finding {
 	ext := path.Ext(name)
 	if ext != ".yaml" && ext != ".yml" {
-		return nil
-	}
-	if strings.HasPrefix(name, "testdata/") || strings.Contains(name, "/testdata/") {
 		return nil
 	}
 	if bytes.Contains(content, []byte(OverrideMarker)) {

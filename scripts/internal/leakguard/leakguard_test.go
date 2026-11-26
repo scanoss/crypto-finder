@@ -82,7 +82,10 @@ func TestScanDiff(t *testing.T) {
 		{"home path", diffOf("e.sh", "cd "+realHome+"alice/src", "open "+realUsers+"bob/x"), []string{
 			"e.sh:11: absolute home path", "e.sh:12: absolute home path",
 		}},
-		{"synthetic home path", diffOf("internal/x/testdata/f.json", `"/home/u/app"`, "/home/crypto/.cache", "/Users/tester/y", "/home/.local/z"), nil},
+		{"home path without a trailing slash", diffOf("f.sh", "HOME="+realHome+"alice", `cd "`+realUsers+`bob" && ls`), []string{
+			"f.sh:11: absolute home path", "f.sh:12: absolute home path",
+		}},
+		{"synthetic home path", diffOf("internal/x/testdata/f.json", `"/home/u/app"`, "/home/crypto/.cache", "/Users/tester/y", "/home/.local/z", "HOME=/home/u"), nil},
 		{"removed lines are ignored", "diff --git a/g b/g\n--- a/g\n+++ b/g\n@@ -1 +0,0 @@\n-zq9host\n", nil},
 		{"go.sum is skipped", diffOf("go.sum", "h1:zq9host/x="), nil},
 		{"deleted file", "diff --git a/h b/h\n--- a/h\n+++ /dev/null\n@@ -1 +0,0 @@\n-zq9host\n", nil},
@@ -134,7 +137,8 @@ func TestCheckRuleset(t *testing.T) {
 		flagged             bool
 	}{
 		{"ruleset outside testdata", "rules/go/x.yaml", rulesetYAML, true},
-		{"ruleset inside testdata", "internal/rules/testdata/x.yaml", rulesetYAML, false},
+		{"ruleset inside testdata", "internal/rules/testdata/x.yaml", rulesetYAML, true},
+		{"invented rules inside testdata", "internal/rules/testdata/x.yaml", "# leakguard: invented-rules\n" + rulesetYAML, false},
 		{"reviewed override", "examples/x.yml", "# leakguard: invented-rules\n" + rulesetYAML, false},
 		{"rules without crypto metadata", "x.yaml", "rules:\n  - id: a\n    metadata:\n      category: style\n", false},
 		{"knowledge base yaml", "internal/cryptokb/go/x.yaml", "schema_version: \"2\"\ncontracts:\n  - method: a\n", false},

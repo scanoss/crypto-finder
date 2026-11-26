@@ -49,10 +49,11 @@ adds or changes. It fails on:
   whose words also occur legitimately in public text;
 - an absolute home path, except the synthetic users tests, docs and images
   already use (`/home/u/`, `/home/crypto/`, `/Users/tester/`, ...);
-- a YAML file outside a `testdata/` directory shaped like a detection ruleset
-  (`rules:` entries whose `metadata.crypto` holds CycloneDX fields). For a
-  reviewed file of invented rules outside testdata, add the comment
-  `# leakguard: invented-rules` to it.
+- an added or changed YAML file shaped like a detection ruleset (`rules:`
+  entries whose `metadata.crypto` holds CycloneDX fields), in `testdata/` too.
+  A file of invented rules (a test fixture) carries the comment
+  `# leakguard: invented-rules`, which its author adds and its reviewer
+  checks.
 
 Findings name the place and the category, never the matched text. The denylist,
 `scripts/internal/leakguard/denylist.txt`, holds only SHA-256 hashes, so it
@@ -65,7 +66,8 @@ go run ./scripts/leakguard hash --category host -        # or --exact for exact 
 go run ./scripts/leakguard scan-tree                     # must stay clean
 ```
 
-A name `scan-tree` finds in today's tree must be scoped with `--exact` or left
+`scan-tree --rulesets` also lists ruleset-shaped files without the marker. A
+name `scan-tree` finds in today's tree must be scoped with `--exact` or left
 out. Never name a denied name in the PR that adds its hash.
 
 ## Changelog (HARD REQUIREMENT)

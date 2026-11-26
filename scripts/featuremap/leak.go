@@ -33,7 +33,9 @@ func checkLeaks(root, base, head, title, body string, g *leakguard.Guard) ([]str
 	findings = append(findings, g.ScanText("PR title", title)...)
 	findings = append(findings, g.ScanText("PR body", body)...)
 
-	log, err := git(root, "log", "--format=%H%x00%B%x00", base+".."+head)
+	// --first-parent: commits a merge brings in from main or another branch
+	// were written elsewhere and cannot be amended here.
+	log, err := git(root, "log", "--first-parent", "--format=%H%x00%B%x00", base+".."+head)
 	if err != nil {
 		return nil, err
 	}
