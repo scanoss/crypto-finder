@@ -20,7 +20,7 @@
 // Usage (from the repository root):
 //
 //	go run ./scripts/featuremap check-docs
-//	go run ./scripts/featuremap check-pr --base <sha> --head <sha> --body-file <path>
+//	go run ./scripts/featuremap check-pr --base <sha> --head <sha> --body-file <path> [--title-file <path>]
 //	go run ./scripts/featuremap replay [--rev origin/main] [-n 60]
 //	go run ./scripts/featuremap select --base <rev> --head <rev> [--max 5]
 //	go run ./scripts/featuremap qa-result --file <claude -p output>
@@ -37,6 +37,12 @@
 // "<id>: N/A: <reason>". An id is named only as a whole token: naming
 // "reachability-dependencies" does not name "reachability". HTML comments in
 // the body are ignored.
+//
+// check-pr also runs the leak guard (scripts/internal/leakguard) over the PR
+// title, body and commit messages, the lines the diff adds and the YAML files
+// it adds or changes, and fails on an internal name, an absolute home path or
+// ruleset-shaped YAML outside testdata. The title comes from --title-file, else
+// from the pull request in $GITHUB_EVENT_PATH, else it is not checked.
 //
 // replay runs the check-pr matching over each of the last n first-parent
 // commits of rev against its parent, with an empty body, and prints how many
@@ -108,7 +114,7 @@ var errFailed = errors.New("check failed")
 // errUsage marks arguments a subcommand refused; it exits 2.
 var errUsage = errors.New("usage")
 
-const usage = "usage: featuremap check-docs | check-pr --base SHA --head SHA --body-file PATH | replay [--rev REV] [-n N] | select --base REV --head REV [--max N] | qa-result --file PATH"
+const usage = "usage: featuremap check-docs | check-pr --base SHA --head SHA --body-file PATH [--title-file PATH] | replay [--rev REV] [-n N] | select --base REV --head REV [--max N] | qa-result --file PATH"
 
 // run runs one subcommand and returns its exit code. Output that could not be
 // written turns a success into a failure.
@@ -132,6 +138,7 @@ func dispatch(args []string, stdout, stderr *printer) int {
 	base := fs.String("base", "", "base commit, for check-pr")
 	head := fs.String("head", "", "head commit, for check-pr")
 	bodyFile := fs.String("body-file", "", "file holding the PR body, for check-pr")
+	titleFile := fs.String("title-file", "", "file holding the PR title, for check-pr (default: $GITHUB_EVENT_PATH)")
 	rev := fs.String("rev", "origin/main", "branch to replay, for replay")
 	n := fs.Int("n", 60, "number of first-parent commits to replay, for replay")
 	limit := fs.Int("max", 5, "most features one run drives, for select")
@@ -148,7 +155,7 @@ func dispatch(args []string, stdout, stderr *printer) int {
 			stderr.println("check-pr needs --base, --head and --body-file")
 			return 2
 		}
-		err = runCheckPR(*root, *base, *head, *bodyFile, stdout)
+		err = runCheckPR(*root, *base, *head, *bodyFile, *titleFile, stdout)
 	case "replay":
 		err = runReplay(*root, *rev, *n, stdout)
 	case "select":
@@ -244,7 +251,26 @@ func loadRepoFeatures(root string) ([]feature, error) {
 	return loadFeatures(os.DirFS(dir))
 }
 
-func runCheckPR(root, base, head, bodyFile string, stdout *printer) error {
+func runCheckPR(root, base, head, bodyFile, titleFile string, stdout *printer) error {
+	body, err := os.ReadFile(bodyFile) // #nosec G304 -- a path the caller passed on the command line
+	if err != nil {
+		return fmt.Errorf("read body: %w", err)
+	}
+	title, err := prTitle(titleFile, os.Getenv("GITHUB_EVENT_PATH"))
+	if err != nil {
+		return err
+	}
+	evidenceErr := runCheckEvidence(root, base, head, string(body), stdout)
+	if evidenceErr != nil && !errors.Is(evidenceErr, errFailed) {
+		return evidenceErr
+	}
+	if err := runCheckLeaks(root, base, head, title, string(body), stdout); err != nil {
+		return err
+	}
+	return evidenceErr
+}
+
+func runCheckEvidence(root, base, head, body string, stdout *printer) error {
 	features, err := loadRepoFeatures(root)
 	if err != nil {
 		return err
@@ -253,11 +279,7 @@ func runCheckPR(root, base, head, bodyFile string, stdout *printer) error {
 	if err != nil {
 		return err
 	}
-	body, err := os.ReadFile(bodyFile)
-	if err != nil {
-		return fmt.Errorf("read body: %w", err)
-	}
-	problems, accepted := checkPR(features, changed, string(body))
+	problems, accepted := checkPR(features, changed, body)
 	if len(problems) > 0 {
 		stdout.printf("featuremap: the PR body must name every touched feature under %q:\n", evidenceHeader)
 		for _, p := range problems {
