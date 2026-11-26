@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-26
+### Added
+- Graph fragments move to `graph-fragment-1.40`: a C# call into a dependency
+  carries `external_calls[].candidate_owners`, the types its owner can be under
+  the file's `using` directives (the caller's own namespace first). The stitch
+  keeps the one owner a dependency declares, so a .NET application's call into
+  a NuGet package is no longer always reported unreachable.
+### Changed
+- C# graphs move to `graph-algo-cs-3`: a receiver written with the name of a
+  field, property or event the file declares reads as that value, not as a type
+  a `using` could name. Stored `graph-algo-cs-2` C# (NuGet) graphs must be
+  mined again.
+### Fixed
+- `crypto-finder scan --help` lists every language and dependency ecosystem 1.0 supports and describes the online offline fallback; `--offline` no longer says dependencies come only from Maven sources JARs.
+- `--scan-dependencies` on a Maven project no longer drops every dependency that declares a Java module name when Maven prints in color (Maven 3.9 in a terminal, or a `MAVEN_ARGS`/`MAVEN_OPTS` that forces `-Dstyle.color=always`). crypto-finder now runs every `mvn` command in batch mode with color off (`-B -Dstyle.color=never`) and strips ANSI escape sequences from Maven's output before reading it, so the `MAVEN_ARGS=-B` workaround is no longer needed.
+- A NuGet dependency's module is its package id (`pkg/appreach.PurlToModule`),
+  and its chain frames read `pkg:nuget/<id>@<version>` instead of a purl
+  prefixed twice (`pkg:nuget/pkg:nuget%2F<id>@<version>`).
+
 ## [1.0.2] - 2026-11-26
 ### Added
 - `scan --scan-dependencies` online now answers locally the dependencies the
