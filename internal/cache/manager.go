@@ -108,8 +108,14 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 			Str("ruleset", name).
 			Str("version", version).
 			Msg("Cache bypass enabled, forcing fresh download")
-	} else if m.useCached(ctx, name, version, rulesetPath, metadataPath) {
-		return rulesetPath, nil
+	} else {
+		cached, err := m.useCached(ctx, name, version, rulesetPath, metadataPath)
+		if err != nil {
+			return "", err
+		}
+		if cached {
+			return rulesetPath, nil
+		}
 	}
 
 	// Cache is invalid, doesn't exist, or noCache is enabled - download and cache the ruleset
@@ -126,8 +132,10 @@ func (m *Manager) GetRulesetPath(ctx context.Context, name, version string) (str
 }
 
 // useCached reports whether the cached ruleset can be used without a
-// download: it is valid, or the API confirms it is the current release.
-func (m *Manager) useCached(ctx context.Context, name, version, rulesetPath, metadataPath string) bool {
+// download: it is valid, or the API confirms it is the current release. It
+// fails when the API refused the key on the release check (see
+// refusedByAPI).
+func (m *Manager) useCached(ctx context.Context, name, version, rulesetPath, metadataPath string) (bool, error) {
 	if !m.isCacheValid(rulesetPath, metadataPath) {
 		return m.confirmCurrentRelease(ctx, name, version, rulesetPath, metadataPath)
 	}
@@ -139,16 +147,17 @@ func (m *Manager) useCached(ctx context.Context, name, version, rulesetPath, met
 	if err := m.updateLastAccessed(metadataPath); err != nil {
 		log.Warn().Err(err).Msg("Failed to update last accessed time")
 	}
-	return true
+	return true, nil
 }
 
 // fallbackAfterDownloadError uses the stale cache when a download failed,
-// unless strict mode is on or the API answered that this client must be
-// upgraded (api.ErrUpgradeRequired), which is final. An expired lease is
-// reported instead of the download error alone, since it is why no cached
-// copy can be used.
+// unless strict mode is on, the API answered that this client must be
+// upgraded (api.ErrUpgradeRequired) or the API refused the key (401/403,
+// see refusedByAPI); both answers are final. An expired lease is reported
+// instead of the download error alone, since it is why no cached copy can
+// be used.
 func (m *Manager) fallbackAfterDownloadError(rulesetPath, metadataPath, name, version string, downloadErr error) (string, error) {
-	if errors.Is(downloadErr, api.ErrUpgradeRequired) {
+	if errors.Is(downloadErr, api.ErrUpgradeRequired) || refusedByAPI(downloadErr) {
 		return "", fmt.Errorf("failed to download ruleset: %w", downloadErr)
 	}
 	if !m.strictMode {
@@ -164,6 +173,14 @@ func (m *Manager) fallbackAfterDownloadError(rulesetPath, metadataPath, name, ve
 		log.Debug().Err(staleErr).Msg("Stale cache fallback unavailable")
 	}
 	return "", fmt.Errorf("failed to download ruleset: %w", downloadErr)
+}
+
+// refusedByAPI reports an API answer that the key is invalid, revoked or
+// not allowed the ruleset (HTTP 401 or 403). A refused key must not keep
+// scanning with a ruleset it once downloaded, so such an answer is final:
+// the cached copy is not opened, whatever its age.
+func refusedByAPI(err error) bool {
+	return errors.Is(err, api.ErrUnauthorized) || errors.Is(err, api.ErrForbidden)
 }
 
 // getRulesetCachePath returns the cache path for a specific ruleset.
@@ -369,7 +386,7 @@ func (m *Manager) extractTarball(tarball []byte, targetDir string) error {
 
 		// Clean the path to prevent directory traversal
 		cleanName := filepath.Clean(header.Name)
-		if strings.HasPrefix(cleanName, "..") {
+		if !filepath.IsLocal(cleanName) {
 			log.Warn().
 				Str("file", header.Name).
 				Msg("Skipping file with invalid path")

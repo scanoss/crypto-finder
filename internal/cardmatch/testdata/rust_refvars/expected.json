@@ -1,0 +1,57 @@
+{
+ "lastvar": [
+  {
+   "col": 13,
+   "end_col": 43,
+   "file": "src/sig.rs",
+   "line": 4,
+   "metavars": {
+    "$1": "ML_DSA_44",
+    "$ALG": "ML_DSA_44",
+    "$variant": "ML_DSA_44"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 33,
+   "file": "src/sig.rs",
+   "line": 5,
+   "metavars": {
+    "$1": "ML_DSA_65",
+    "$ALG": "ML_DSA_65",
+    "$IMPORT": "acme_sig::signature",
+    "$variant": "ML_DSA_65"
+   }
+  }
+ ],
+ "single": [
+  {
+   "col": 13,
+   "end_col": 23,
+   "file": "src/ec.rs",
+   "line": 4,
+   "metavars": {}
+  },
+  {
+   "col": 14,
+   "end_col": 24,
+   "file": "src/ec.rs",
+   "line": 5,
+   "metavars": {}
+  },
+  {
+   "col": 13,
+   "end_col": 43,
+   "file": "src/ec.rs",
+   "line": 6,
+   "metavars": {}
+  },
+  {
+   "col": 17,
+   "end_col": 38,
+   "file": "src/ec.rs",
+   "line": 13,
+   "metavars": {}
+  }
+ ]
+}

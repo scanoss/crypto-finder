@@ -38,7 +38,7 @@ func TestNodeNobleHashesSupportingCallsCarryTheirContractRole(t *testing.T) {
 		{
 			name: "keccak_256.create on a namespace import",
 			asset: cAsset(5, 5, 13, 37, "const h = sha3.keccak_256.create();",
-				"javascript.noble-hashes.algorithm.hash.keccak-256-create",
+				"fixture.javascript.noble-hashes.keccak-256-create",
 				map[string]string{"assetType": "algorithm", "api": "@noble/hashes/sha3.keccak_256.create"}),
 			want: map[string]string{
 				"@noble/hashes.Hash.update": "operation",
@@ -48,7 +48,7 @@ func TestNodeNobleHashesSupportingCallsCarryTheirContractRole(t *testing.T) {
 		{
 			name: "awaited eskdf from the .js subpath",
 			asset: cAsset(12, 12, 21, 41, "const kdf = await eskdf(user, password);",
-				"javascript.noble-hashes.algorithm.kdf.eskdf",
+				"fixture.javascript.noble-hashes.eskdf",
 				map[string]string{"assetType": "algorithm", "api": "@noble/hashes/eskdf.eskdf"}),
 			want: map[string]string{"@noble/hashes.ESKDF.deriveChildKey": "operation"},
 		},

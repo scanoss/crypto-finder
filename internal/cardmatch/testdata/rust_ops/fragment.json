@@ -1,0 +1,2797 @@
+{
+ "schema_version": "graph-fragment-1.30",
+ "scan_metadata": {
+  "ecosystem": "rust"
+ },
+ "functions": [
+  {
+   "key": "probe::ops.keygen_before",
+   "package": "probe::ops",
+   "file_path": "src/ops.rs",
+   "start_line": 53,
+   "end_line": 56
+  },
+  {
+   "key": "probe::ops.keygen_deep",
+   "package": "probe::ops",
+   "file_path": "src/ops.rs",
+   "start_line": 31,
+   "end_line": 34
+  },
+  {
+   "key": "probe::ops.keygen_let",
+   "package": "probe::ops",
+   "file_path": "src/ops.rs",
+   "start_line": 24,
+   "end_line": 29
+  },
+  {
+   "key": "probe::ops.keygen_mul_base",
+   "package": "probe::ops",
+   "file_path": "src/ops.rs",
+   "start_line": 64,
+   "end_line": 67
+  },
+  {
+   "key": "probe::ops.keygen_nested",
+   "package": "probe::ops",
+   "file_path": "src/ops.rs",
+   "start_line": 41,
+   "end_line": 46
+  },
+  {
+   "key": "probe::ops.keygen_other_order",
+   "package": "probe::ops",
+   "file_path": "src/ops.rs",
+   "start_line": 48,
+   "end_line": 51
+  },
+  {
+   "key": "probe::ops.keygen_tail",
+   "package": "probe::ops",
+   "file_path": "src/ops.rs",
+   "start_line": 36,
+   "end_line": 39
+  },
+  {
+   "key": "probe::ops.keygen_two",
+   "package": "probe::ops",
+   "file_path": "src/ops.rs",
+   "start_line": 58,
+   "end_line": 62
+  },
+  {
+   "key": "probe::ops.mul",
+   "package": "probe::ops",
+   "file_path": "src/ops.rs",
+   "start_line": 4,
+   "end_line": 22
+  },
+  {
+   "key": "probe::params.(Holder).by_box",
+   "file_path": "src/params.rs",
+   "start_line": 25,
+   "end_line": 25
+  },
+  {
+   "key": "probe::params.(Holder).by_mut",
+   "file_path": "src/params.rs",
+   "start_line": 26,
+   "end_line": 26
+  },
+  {
+   "key": "probe::params.(Holder).by_ref",
+   "file_path": "src/params.rs",
+   "start_line": 24,
+   "end_line": 24
+  },
+  {
+   "key": "probe::params.sign_bare",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 7,
+   "end_line": 7
+  },
+  {
+   "key": "probe::params.sign_boxed",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 9,
+   "end_line": 9
+  },
+  {
+   "key": "probe::params.sign_dyn",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 16,
+   "end_line": 16
+  },
+  {
+   "key": "probe::params.sign_generic",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 11,
+   "end_line": 11
+  },
+  {
+   "key": "probe::params.sign_generic_other",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 14,
+   "end_line": 14
+  },
+  {
+   "key": "probe::params.sign_head",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 18,
+   "end_line": 18
+  },
+  {
+   "key": "probe::params.sign_lifetime",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 12,
+   "end_line": 12
+  },
+  {
+   "key": "probe::params.sign_local",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 19,
+   "end_line": 19
+  },
+  {
+   "key": "probe::params.sign_mut",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 4,
+   "end_line": 4
+  },
+  {
+   "key": "probe::params.sign_mut_binding",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 10,
+   "end_line": 10
+  },
+  {
+   "key": "probe::params.sign_other",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 6,
+   "end_line": 6
+  },
+  {
+   "key": "probe::params.sign_owned",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 5,
+   "end_line": 5
+  },
+  {
+   "key": "probe::params.sign_ref",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 3,
+   "end_line": 3
+  },
+  {
+   "key": "probe::params.sign_returns",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 13,
+   "end_line": 13
+  },
+  {
+   "key": "probe::params.sign_space",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 8,
+   "end_line": 8
+  },
+  {
+   "key": "probe::params.sign_spaced_mut",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 17,
+   "end_line": 17
+  },
+  {
+   "key": "probe::params.sign_two",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 15,
+   "end_line": 15
+  },
+  {
+   "key": "probe::params.verify_let",
+   "package": "probe::params",
+   "file_path": "src/params.rs",
+   "start_line": 29,
+   "end_line": 36
+  }
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe::ops.keygen_before",
+   "target_key": "acme_curve.(Scalar).random",
+   "target_canonical_signature": "acme_curve.Scalar.random(?)",
+   "raw": "acme_curve::Scalar::random",
+   "line": 55,
+   "resolution": "exact",
+   "method_name": "random",
+   "assigned_var": "x",
+   "start_col": 13,
+   "end_col": 49,
+   "entry_call": {
+    "line": 55,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut rng"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_deep",
+   "target_key": "acme_curve.(Scalar).random",
+   "target_canonical_signature": "acme_curve.Scalar.random(?)",
+   "raw": "acme_curve::Scalar::random",
+   "line": 32,
+   "resolution": "exact",
+   "method_name": "random",
+   "assigned_var": "x",
+   "start_col": 13,
+   "end_col": 49,
+   "entry_call": {
+    "line": 32,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut rng"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_deep",
+   "target_key": "probe::ops.acme_send",
+   "target_function_name": "probe::ops.acme_send",
+   "target_canonical_signature": "probe::ops.acme_send(?)",
+   "raw": "acme_send",
+   "line": 33,
+   "resolution": "exact",
+   "method_name": "acme_send",
+   "start_col": 5,
+   "end_col": 38,
+   "entry_call": {
+    "line": 33,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&x * &acme_curve::BASE",
+      "source_nodes": [
+       {
+        "type": "EXPRESSION",
+        "value": "&x * &acme_curve::BASE",
+        "location": {
+         "line": 33
+        },
+        "source_nodes": [
+         {
+          "type": "VARIABLE",
+          "name": "x",
+          "location": {
+           "line": 32
+          },
+          "source_nodes": [
+           {
+            "type": "CALL_RESULT",
+            "value": "acme_curve::Scalar::random(&mut rng)",
+            "call_target": "acme_curve.Scalar.random",
+            "location": {
+             "line": 32
+            }
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_let",
+   "target_key": "acme_curve.(Scalar).random",
+   "target_canonical_signature": "acme_curve.Scalar.random(?)",
+   "raw": "acme_curve::Scalar::random",
+   "line": 25,
+   "resolution": "exact",
+   "method_name": "random",
+   "assigned_var": "x",
+   "start_col": 13,
+   "end_col": 49,
+   "entry_call": {
+    "line": 25,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut rng"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_mul_base",
+   "target_key": "acme_curve.(Point).compress",
+   "target_canonical_signature": "acme_curve.Point.compress()",
+   "raw": "acme_curve::Point::mul_base(&x).compress",
+   "line": 66,
+   "resolution": "exact",
+   "method_name": "compress",
+   "assigned_var": "pk",
+   "chain_id": "1436",
+   "start_col": 14,
+   "end_col": 56,
+   "entry_call": {
+    "line": 66
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_mul_base",
+   "target_key": "acme_curve.(Point).mul_base",
+   "target_canonical_signature": "acme_curve.Point.mul_base(?)",
+   "raw": "acme_curve::Point::mul_base",
+   "line": 66,
+   "resolution": "exact",
+   "method_name": "mul_base",
+   "chain_id": "1436",
+   "start_col": 14,
+   "end_col": 45,
+   "entry_call": {
+    "line": 66,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&x",
+      "source_nodes": [
+       {
+        "type": "VARIABLE",
+        "name": "x",
+        "location": {
+         "line": 65
+        },
+        "source_nodes": [
+         {
+          "type": "CALL_RESULT",
+          "value": "acme_curve::Scalar::random(&mut rng)",
+          "call_target": "acme_curve.Scalar.random",
+          "location": {
+           "line": 65
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_mul_base",
+   "target_key": "acme_curve.(Scalar).random",
+   "target_canonical_signature": "acme_curve.Scalar.random(?)",
+   "raw": "acme_curve::Scalar::random",
+   "line": 65,
+   "resolution": "exact",
+   "method_name": "random",
+   "assigned_var": "x",
+   "start_col": 13,
+   "end_col": 49,
+   "entry_call": {
+    "line": 65,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut rng"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_nested",
+   "target_key": "acme_curve.(Scalar).random",
+   "target_canonical_signature": "acme_curve.Scalar.random(?)",
+   "raw": "acme_curve::Scalar::random",
+   "line": 42,
+   "resolution": "exact",
+   "method_name": "random",
+   "assigned_var": "x",
+   "start_col": 13,
+   "end_col": 49,
+   "entry_call": {
+    "line": 42,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut rng"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_nested",
+   "target_key": "probe::ops.acme_send",
+   "target_function_name": "probe::ops.acme_send",
+   "target_canonical_signature": "probe::ops.acme_send(Point)",
+   "raw": "acme_send",
+   "line": 44,
+   "resolution": "exact",
+   "method_name": "acme_send",
+   "start_col": 9,
+   "end_col": 35,
+   "entry_call": {
+    "line": 44,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "Point",
+      "argument_expression": "peer + x * peer",
+      "source_nodes": [
+       {
+        "type": "EXPRESSION",
+        "value": "peer + x * peer",
+        "location": {
+         "line": 44
+        },
+        "source_nodes": [
+         {
+          "type": "PARAMETER",
+          "name": "peer",
+          "declared_type": "Point",
+          "parameter_index": 0,
+          "location": {
+           "line": 44
+          }
+         },
+         {
+          "type": "EXPRESSION",
+          "value": "x * peer",
+          "location": {
+           "line": 44
+          },
+          "source_nodes": [
+           {
+            "type": "VARIABLE",
+            "name": "x",
+            "location": {
+             "line": 42
+            },
+            "source_nodes": [
+             {
+              "type": "CALL_RESULT",
+              "value": "acme_curve::Scalar::random(&mut rng)",
+              "call_target": "acme_curve.Scalar.random",
+              "location": {
+               "line": 42
+              }
+             }
+            ]
+           },
+           {
+            "type": "PARAMETER",
+            "name": "peer",
+            "declared_type": "Point",
+            "parameter_index": 0,
+            "location": {
+             "line": 44
+            }
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_nested",
+   "target_key": "probe::ops.ready",
+   "target_function_name": "probe::ops.ready",
+   "target_canonical_signature": "probe::ops.ready()",
+   "raw": "ready",
+   "line": 43,
+   "resolution": "exact",
+   "method_name": "ready",
+   "start_col": 8,
+   "end_col": 15,
+   "entry_call": {
+    "line": 43
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_other_order",
+   "target_key": "acme_curve.(Scalar).random",
+   "target_canonical_signature": "acme_curve.Scalar.random(?)",
+   "raw": "acme_curve::Scalar::random",
+   "line": 49,
+   "resolution": "exact",
+   "method_name": "random",
+   "assigned_var": "x",
+   "start_col": 13,
+   "end_col": 49,
+   "entry_call": {
+    "line": 49,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut rng"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_tail",
+   "target_key": "acme_curve.(Scalar).random",
+   "target_canonical_signature": "acme_curve.Scalar.random(?)",
+   "raw": "acme_curve::Scalar::random",
+   "line": 37,
+   "resolution": "exact",
+   "method_name": "random",
+   "assigned_var": "x",
+   "start_col": 13,
+   "end_col": 49,
+   "entry_call": {
+    "line": 37,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut rng"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_two",
+   "target_key": "acme_curve.(Scalar).random",
+   "target_canonical_signature": "acme_curve.Scalar.random(?)",
+   "raw": "acme_curve::Scalar::random",
+   "line": 59,
+   "resolution": "exact",
+   "method_name": "random",
+   "assigned_var": "x",
+   "start_col": 13,
+   "end_col": 49,
+   "entry_call": {
+    "line": 59,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut rng"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.keygen_two",
+   "target_key": "acme_curve.(Scalar).random",
+   "target_canonical_signature": "acme_curve.Scalar.random(?)",
+   "raw": "acme_curve::Scalar::random",
+   "line": 60,
+   "resolution": "exact",
+   "method_name": "random",
+   "assigned_var": "x2",
+   "start_col": 14,
+   "end_col": 50,
+   "entry_call": {
+    "line": 60,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut rng"
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.mul",
+   "target_key": "probe::ops.acme_check",
+   "target_function_name": "probe::ops.acme_check",
+   "target_canonical_signature": "probe::ops.acme_check(?)",
+   "raw": "acme_check",
+   "line": 12,
+   "resolution": "exact",
+   "method_name": "acme_check",
+   "start_col": 5,
+   "end_col": 25,
+   "entry_call": {
+    "line": 12,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "s * base",
+      "source_nodes": [
+       {
+        "type": "EXPRESSION",
+        "value": "s * base",
+        "location": {
+         "line": 12
+        },
+        "source_nodes": [
+         {
+          "type": "PARAMETER",
+          "name": "s",
+          "declared_type": "Scalar",
+          "parameter_index": 0,
+          "location": {
+           "line": 12
+          }
+         },
+         {
+          "type": "PARAMETER",
+          "name": "base",
+          "declared_type": "Point",
+          "parameter_index": 1,
+          "location": {
+           "line": 12
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.mul",
+   "target_key": "probe::ops.acme_open",
+   "target_function_name": "probe::ops.acme_open",
+   "target_canonical_signature": "probe::ops.acme_open(?)",
+   "raw": "acme_open",
+   "line": 20,
+   "resolution": "exact",
+   "method_name": "acme_open",
+   "start_col": 5,
+   "end_col": 18,
+   "entry_call": {
+    "line": 20,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&a",
+      "source_nodes": [
+       {
+        "type": "VARIABLE",
+        "name": "a",
+        "location": {
+         "line": 5
+        },
+        "source_nodes": [
+         {
+          "type": "EXPRESSION",
+          "value": "s * base",
+          "location": {
+           "line": 5
+          },
+          "source_nodes": [
+           {
+            "type": "PARAMETER",
+            "name": "s",
+            "declared_type": "Scalar",
+            "parameter_index": 0,
+            "location": {
+             "line": 5
+            }
+           },
+           {
+            "type": "PARAMETER",
+            "name": "base",
+            "declared_type": "Point",
+            "parameter_index": 1,
+            "location": {
+             "line": 5
+            }
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::ops.mul",
+   "target_key": "probe::ops.acme_seal",
+   "target_function_name": "probe::ops.acme_seal",
+   "target_canonical_signature": "probe::ops.acme_seal(?)",
+   "raw": "acme_seal",
+   "line": 19,
+   "resolution": "exact",
+   "method_name": "acme_seal",
+   "start_col": 5,
+   "end_col": 22,
+   "entry_call": {
+    "line": 19,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "&mut a",
+      "source_nodes": [
+       {
+        "type": "VARIABLE",
+        "name": "a",
+        "location": {
+         "line": 5
+        },
+        "source_nodes": [
+         {
+          "type": "EXPRESSION",
+          "value": "s * base",
+          "location": {
+           "line": 5
+          },
+          "source_nodes": [
+           {
+            "type": "PARAMETER",
+            "name": "s",
+            "declared_type": "Scalar",
+            "parameter_index": 0,
+            "location": {
+             "line": 5
+            }
+           },
+           {
+            "type": "PARAMETER",
+            "name": "base",
+            "declared_type": "Point",
+            "parameter_index": 1,
+            "location": {
+             "line": 5
+            }
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.(Holder).by_box",
+   "target_key": "probe::params.(Holder).seal",
+   "target_canonical_signature": "probe::params.Holder.seal(?)",
+   "raw": "self.seal",
+   "line": 25,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "self",
+   "start_col": 34,
+   "end_col": 49,
+   "entry_call": {
+    "line": 25,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 25
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.(Holder).by_mut",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 26,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 66,
+   "end_col": 80,
+   "entry_call": {
+    "line": 26,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"y\"",
+      "resolved_value": "b\"y\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"y\"",
+        "location": {
+         "line": 26
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.(Holder).by_mut",
+   "target_key": "probe::params.(Holder).seal",
+   "target_canonical_signature": "probe::params.Holder.seal(?)",
+   "raw": "self.seal",
+   "line": 26,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "self",
+   "start_col": 49,
+   "end_col": 64,
+   "entry_call": {
+    "line": 26,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 26
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.(Holder).by_ref",
+   "target_key": "probe::params.(Holder).seal",
+   "target_canonical_signature": "probe::params.Holder.seal(?)",
+   "raw": "self.seal",
+   "line": 24,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "self",
+   "start_col": 24,
+   "end_col": 39,
+   "entry_call": {
+    "line": 24,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 24
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_bare",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 7,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 27,
+   "end_col": 41,
+   "entry_call": {
+    "line": 7,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 7
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_boxed",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 9,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 42,
+   "end_col": 56,
+   "entry_call": {
+    "line": 9,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 9
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_dyn",
+   "target_key": "acme_sig.(Sealer).seal",
+   "target_canonical_signature": "acme_sig.Sealer.seal(?)",
+   "raw": "key.seal",
+   "line": 16,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 43,
+   "end_col": 57,
+   "entry_call": {
+    "line": 16,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 16
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_generic",
+   "target_key": "acme_sig.(Wrap).seal",
+   "target_canonical_signature": "acme_sig.Wrap.seal(?)",
+   "raw": "key.seal",
+   "line": 11,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 56,
+   "end_col": 70,
+   "entry_call": {
+    "line": 11,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 11
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_generic_other",
+   "target_key": "acme_sig.(Wrap).seal",
+   "target_canonical_signature": "acme_sig.Wrap.seal(?)",
+   "raw": "key.seal",
+   "line": 14,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 73,
+   "end_col": 87,
+   "entry_call": {
+    "line": 14,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 14
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_head",
+   "target_key": "acme::sig.(Ctx).seal",
+   "target_canonical_signature": "acme::sig.Ctx.seal(?)",
+   "raw": "key.seal",
+   "line": 18,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 43,
+   "end_col": 57,
+   "entry_call": {
+    "line": 18,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 18
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_lifetime",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 12,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 48,
+   "end_col": 62,
+   "entry_call": {
+    "line": 12,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 12
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_local",
+   "target_key": "acme_sig.(Key).new",
+   "target_canonical_signature": "acme_sig.Key.new()",
+   "raw": "acme_sig::Key::new",
+   "line": 19,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "key",
+   "start_col": 29,
+   "end_col": 49,
+   "entry_call": {
+    "line": 19
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_local",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 19,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 51,
+   "end_col": 65,
+   "entry_call": {
+    "line": 19,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 19
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_mut",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 40,
+   "end_col": 54,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_mut_binding",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 10,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 47,
+   "end_col": 61,
+   "entry_call": {
+    "line": 10,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 10
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_other",
+   "target_key": "other_sig.(Key).seal",
+   "target_canonical_signature": "other_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 6,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 38,
+   "end_col": 52,
+   "entry_call": {
+    "line": 6,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 6
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_owned",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 37,
+   "end_col": 51,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_ref",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(&[u8])",
+   "raw": "key.seal",
+   "line": 3,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 48,
+   "end_col": 61,
+   "entry_call": {
+    "line": 3,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "msg",
+      "argument_expression": "msg",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "msg",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 3
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_returns",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 13,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 46,
+   "end_col": 60,
+   "entry_call": {
+    "line": 13,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 13
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_space",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 8,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 39,
+   "end_col": 53,
+   "entry_call": {
+    "line": 8,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 8
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_spaced_mut",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 17,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 51,
+   "end_col": 65,
+   "entry_call": {
+    "line": 17,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 17
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_two",
+   "target_key": "acme_sig.(Key).seal",
+   "target_canonical_signature": "acme_sig.Key.seal(?)",
+   "raw": "key2.seal",
+   "line": 15,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key2",
+   "start_col": 75,
+   "end_col": 90,
+   "entry_call": {
+    "line": 15,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"y\"",
+      "resolved_value": "b\"y\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"y\"",
+        "location": {
+         "line": 15
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.sign_two",
+   "target_key": "other_sig.(Key).seal",
+   "target_canonical_signature": "other_sig.Key.seal(?)",
+   "raw": "key.seal",
+   "line": 15,
+   "resolution": "exact",
+   "method_name": "seal",
+   "receiver_var": "key",
+   "start_col": 59,
+   "end_col": 73,
+   "entry_call": {
+    "line": 15,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "b\"x\"",
+      "resolved_value": "b\"x\"",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "b\"x\"",
+        "location": {
+         "line": 15
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::params.verify_let",
+   "target_key": "acme_sig.(Verifier).check",
+   "target_canonical_signature": "acme_sig.Verifier.check()",
+   "raw": "vk.check",
+   "line": 31,
+   "resolution": "exact",
+   "method_name": "check",
+   "receiver_var": "vk",
+   "start_col": 5,
+   "end_col": 15,
+   "entry_call": {
+    "line": 31
+   }
+  },
+  {
+   "caller_key": "probe::params.verify_let",
+   "target_key": "acme_sig.(Verifier).check",
+   "target_canonical_signature": "acme_sig.Verifier.check()",
+   "raw": "vk2.check",
+   "line": 33,
+   "resolution": "exact",
+   "method_name": "check",
+   "receiver_var": "vk2",
+   "start_col": 5,
+   "end_col": 16,
+   "entry_call": {
+    "line": 33
+   }
+  },
+  {
+   "caller_key": "probe::params.verify_let",
+   "target_key": "acme_sig.(Verifier).check",
+   "target_canonical_signature": "acme_sig.Verifier.check()",
+   "raw": "vk3.check",
+   "line": 35,
+   "resolution": "exact",
+   "method_name": "check",
+   "receiver_var": "vk3",
+   "start_col": 5,
+   "end_col": 16,
+   "entry_call": {
+    "line": 35
+   }
+  },
+  {
+   "caller_key": "probe::params.verify_let",
+   "target_key": "probe::params.make",
+   "target_function_name": "probe::params.make",
+   "target_canonical_signature": "probe::params.make()",
+   "raw": "make",
+   "line": 30,
+   "resolution": "exact",
+   "method_name": "make",
+   "assigned_var": "vk",
+   "start_col": 43,
+   "end_col": 49,
+   "entry_call": {
+    "line": 30
+   }
+  },
+  {
+   "caller_key": "probe::params.verify_let",
+   "target_key": "probe::params.make",
+   "target_function_name": "probe::params.make",
+   "target_canonical_signature": "probe::params.make()",
+   "raw": "make",
+   "line": 32,
+   "resolution": "exact",
+   "method_name": "make",
+   "assigned_var": "vk2",
+   "start_col": 54,
+   "end_col": 60,
+   "entry_call": {
+    "line": 32
+   }
+  },
+  {
+   "caller_key": "probe::params.verify_let",
+   "target_key": "probe::params.make",
+   "target_function_name": "probe::params.make",
+   "target_canonical_signature": "probe::params.make()",
+   "raw": "make",
+   "line": 34,
+   "resolution": "exact",
+   "method_name": "make",
+   "assigned_var": "vk3",
+   "start_col": 48,
+   "end_col": 54,
+   "entry_call": {
+    "line": 34
+   }
+  }
+ ],
+ "constant_refs": [
+  [
+   1,
+   33,
+   21,
+   37,
+   "acme_curve::BASE",
+   "other"
+  ],
+  [
+   2,
+   27,
+   18,
+   34,
+   "acme_curve::BASE",
+   "other"
+  ],
+  [
+   8,
+   13,
+   17,
+   33,
+   "acme_curve::BASE",
+   "other"
+  ]
+ ],
+ "declarations": [
+  [
+   0,
+   54,
+   5,
+   25,
+   "",
+   "w",
+   "other"
+  ],
+  [
+   0,
+   55,
+   5,
+   50,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   1,
+   32,
+   5,
+   50,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   2,
+   25,
+   5,
+   50,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   2,
+   26,
+   5,
+   15,
+   "",
+   "y",
+   "literal"
+  ],
+  [
+   2,
+   27,
+   5,
+   35,
+   "",
+   "pk",
+   "other"
+  ],
+  [
+   3,
+   65,
+   5,
+   50,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   3,
+   66,
+   5,
+   57,
+   "",
+   "pk",
+   "call"
+  ],
+  [
+   4,
+   42,
+   5,
+   50,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   5,
+   49,
+   5,
+   50,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   5,
+   50,
+   5,
+   22,
+   "",
+   "w",
+   "other"
+  ],
+  [
+   6,
+   37,
+   5,
+   50,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   7,
+   59,
+   5,
+   50,
+   "",
+   "x",
+   "call"
+  ],
+  [
+   7,
+   60,
+   5,
+   51,
+   "",
+   "x2",
+   "call"
+  ],
+  [
+   7,
+   61,
+   5,
+   22,
+   "",
+   "z",
+   "other"
+  ],
+  [
+   8,
+   5,
+   5,
+   22,
+   "",
+   "a",
+   "other"
+  ],
+  [
+   8,
+   6,
+   5,
+   21,
+   "",
+   "b",
+   "other"
+  ],
+  [
+   8,
+   7,
+   5,
+   22,
+   "",
+   "c",
+   "other"
+  ],
+  [
+   8,
+   8,
+   5,
+   26,
+   "",
+   "d",
+   "other"
+  ],
+  [
+   8,
+   9,
+   5,
+   24,
+   "",
+   "e",
+   "other"
+  ],
+  [
+   8,
+   10,
+   5,
+   16,
+   "",
+   "f",
+   "other",
+   11
+  ],
+  [
+   8,
+   13,
+   5,
+   34,
+   "",
+   "g",
+   "other"
+  ],
+  [
+   8,
+   14,
+   5,
+   19,
+   "",
+   "h",
+   "other"
+  ],
+  [
+   8,
+   16,
+   5,
+   19,
+   "",
+   "j",
+   "other"
+  ],
+  [
+   8,
+   17,
+   5,
+   25,
+   "",
+   "k",
+   "other"
+  ],
+  [
+   8,
+   18,
+   5,
+   20,
+   "",
+   "l",
+   "other"
+  ],
+  [
+   19,
+   19,
+   19,
+   50,
+   "",
+   "key",
+   "call"
+  ],
+  [
+   29,
+   30,
+   5,
+   50,
+   "&acme_sig::Verifier<Blk128>",
+   "vk",
+   "call"
+  ],
+  [
+   29,
+   32,
+   5,
+   61,
+   "acme_sig::Verifier<other_sig::Blk256>",
+   "vk2",
+   "call"
+  ],
+  [
+   29,
+   34,
+   5,
+   55,
+   "&mut acme_sig::Verifier<Blk192>",
+   "vk3",
+   "call"
+  ]
+ ],
+ "source_lines": {
+  "src/ops.rs": {
+   "10": "    let f = s",
+   "11": "        * base;",
+   "12": "    acme_check(s * base);",
+   "13": "    let g = s * acme_curve::BASE;",
+   "14": "    let h = 2 * s;",
+   "16": "    let j = &s*&p;",
+   "17": "    let k = &mut s * &p;",
+   "18": "    let l = s * &p;",
+   "19": "    acme_seal(&mut a);",
+   "20": "    acme_open(&a);",
+   "25": "    let x = acme_curve::Scalar::random(&mut rng);",
+   "26": "    let y = 1;",
+   "27": "    let pk = x * acme_curve::BASE;",
+   "32": "    let x = acme_curve::Scalar::random(&mut rng);",
+   "33": "    acme_send(&x * &acme_curve::BASE)",
+   "37": "    let x = acme_curve::Scalar::random(&mut rng);",
+   "42": "    let x = acme_curve::Scalar::random(&mut rng);",
+   "43": "    if ready() {",
+   "44": "        acme_send(peer + x * peer);",
+   "49": "    let x = acme_curve::Scalar::random(&mut rng);",
+   "5": "    let a = s * base;",
+   "50": "    let w = peer * x;",
+   "54": "    let w = peer * peer;",
+   "55": "    let x = acme_curve::Scalar::random(&mut rng);",
+   "59": "    let x = acme_curve::Scalar::random(&mut rng);",
+   "6": "    let b = &s * &p;",
+   "60": "    let x2 = acme_curve::Scalar::random(&mut rng);",
+   "61": "    let z = x * peer;",
+   "65": "    let x = acme_curve::Scalar::random(&mut rng);",
+   "66": "    let pk = acme_curve::Point::mul_base(&x).compress();",
+   "7": "    let c = s + base;",
+   "8": "    let d = s * base * p;",
+   "9": "    let e = (s * base);"
+  },
+  "src/params.rs": {
+   "10": "fn sign_mut_binding(mut key: acme_sig::Key) { key.seal(b\"x\"); }",
+   "11": "fn sign_generic(n: u8, key: &acme_sig::Wrap<Blk128>) { key.seal(b\"x\"); }",
+   "12": "fn sign_lifetime<'a>(key: &'a acme_sig::Key) { key.seal(b\"x\"); }",
+   "13": "fn sign_returns(key: &acme_sig::Key) -> u8 { key.seal(b\"x\"); 1 }",
+   "14": "fn sign_generic_other(key: &acme_sig::Wrap<other_sig::Blk256>, n: u8) { key.seal(b\"x\"); }",
+   "15": "fn sign_two(key: &other_sig::Key, key2: &acme_sig::Key) { key.seal(b\"x\"); key2.seal(b\"y\"); }",
+   "16": "fn sign_dyn(key: &dyn acme_sig::Sealer) { key.seal(b\"x\"); }",
+   "17": "fn sign_spaced_mut(key: &  mut   acme_sig::Key) { key.seal(b\"x\"); }",
+   "18": "fn sign_head(key: &acme::sig::Ctx<All>) { key.seal(b\"x\"); }",
+   "19": "fn sign_local() { let key = acme_sig::Key::new(); key.seal(b\"x\"); }",
+   "24": "    fn by_ref(&self) { self.seal(b\"x\"); }",
+   "25": "    fn by_box(self: Box<Self>) { self.seal(b\"x\"); }",
+   "26": "    fn by_mut(&mut self, key: &acme_sig::Key) { self.seal(b\"x\"); key.seal(b\"y\"); }",
+   "3": "fn sign_ref(key: &acme_sig::Key, msg: &[u8]) { key.seal(msg); }",
+   "30": "    let vk: &acme_sig::Verifier<Blk128> = make();",
+   "31": "    vk.check();",
+   "32": "    let vk2: acme_sig::Verifier<other_sig::Blk256> = make();",
+   "33": "    vk2.check();",
+   "34": "    let vk3: &mut acme_sig::Verifier<Blk192> = make();",
+   "35": "    vk3.check();",
+   "4": "fn sign_mut(key: &mut acme_sig::Key) { key.seal(b\"x\"); }",
+   "5": "fn sign_owned(key: acme_sig::Key) { key.seal(b\"x\"); }",
+   "6": "fn sign_other(key: other_sig::Key) { key.seal(b\"x\"); }",
+   "7": "fn sign_bare(key: &Key) { key.seal(b\"x\"); }",
+   "8": "fn sign_space(key: & acme_sig::Key) { key.seal(b\"x\"); }",
+   "9": "fn sign_boxed(key: Box<acme_sig::Key>) { key.seal(b\"x\"); }"
+  }
+ },
+ "imports": {
+  "src/ops.rs": [
+   {
+    "line": 1,
+    "module": "acme_curve",
+    "name": "Point",
+    "start_col": 1,
+    "end_col": 23,
+    "text": "acme_curve::Point"
+   },
+   {
+    "line": 2,
+    "module": "acme_curve",
+    "name": "Scalar",
+    "start_col": 1,
+    "end_col": 24,
+    "text": "acme_curve::Scalar"
+   }
+  ],
+  "src/params.rs": [
+   {
+    "line": 1,
+    "module": "acme_sig",
+    "name": "Key",
+    "start_col": 1,
+    "end_col": 19,
+    "text": "acme_sig::Key"
+   }
+  ]
+ },
+ "items": {
+  "src/ops.rs": [
+   [
+    4,
+    1,
+    2,
+    "fn",
+    "mul",
+    22,
+    "",
+    0,
+    [
+     [
+      4,
+      8,
+      17,
+      "s",
+      "Scalar"
+     ],
+     [
+      4,
+      19,
+      30,
+      "base",
+      "Point"
+     ],
+     [
+      4,
+      32,
+      40,
+      "p",
+      "Point"
+     ]
+    ]
+   ],
+   [
+    24,
+    1,
+    2,
+    "fn",
+    "keygen_let",
+    29
+   ],
+   [
+    31,
+    1,
+    2,
+    "fn",
+    "keygen_deep",
+    34
+   ],
+   [
+    36,
+    1,
+    2,
+    "fn",
+    "keygen_tail",
+    39,
+    "",
+    0,
+    [
+     [
+      36,
+      16,
+      27,
+      "peer",
+      "Point"
+     ]
+    ]
+   ],
+   [
+    41,
+    1,
+    2,
+    "fn",
+    "keygen_nested",
+    46,
+    "",
+    0,
+    [
+     [
+      41,
+      18,
+      29,
+      "peer",
+      "Point"
+     ]
+    ]
+   ],
+   [
+    48,
+    1,
+    2,
+    "fn",
+    "keygen_other_order",
+    51,
+    "",
+    0,
+    [
+     [
+      48,
+      23,
+      34,
+      "peer",
+      "Point"
+     ]
+    ]
+   ],
+   [
+    53,
+    1,
+    2,
+    "fn",
+    "keygen_before",
+    56,
+    "",
+    0,
+    [
+     [
+      53,
+      18,
+      29,
+      "peer",
+      "Point"
+     ]
+    ]
+   ],
+   [
+    58,
+    1,
+    2,
+    "fn",
+    "keygen_two",
+    62,
+    "",
+    0,
+    [
+     [
+      58,
+      15,
+      26,
+      "peer",
+      "Point"
+     ]
+    ]
+   ],
+   [
+    64,
+    1,
+    2,
+    "fn",
+    "keygen_mul_base",
+    67
+   ]
+  ],
+  "src/params.rs": [
+   [
+    3,
+    1,
+    64,
+    "fn",
+    "sign_ref",
+    0,
+    "",
+    0,
+    [
+     [
+      3,
+      13,
+      32,
+      "key",
+      "&acme_sig::Key"
+     ],
+     [
+      3,
+      34,
+      44,
+      "msg",
+      "&[u8]"
+     ]
+    ]
+   ],
+   [
+    4,
+    1,
+    57,
+    "fn",
+    "sign_mut",
+    0,
+    "",
+    0,
+    [
+     [
+      4,
+      13,
+      36,
+      "key",
+      "&mut acme_sig::Key"
+     ]
+    ]
+   ],
+   [
+    5,
+    1,
+    54,
+    "fn",
+    "sign_owned",
+    0,
+    "",
+    0,
+    [
+     [
+      5,
+      15,
+      33,
+      "key",
+      "acme_sig::Key"
+     ]
+    ]
+   ],
+   [
+    6,
+    1,
+    55,
+    "fn",
+    "sign_other",
+    0,
+    "",
+    0,
+    [
+     [
+      6,
+      15,
+      34,
+      "key",
+      "other_sig::Key"
+     ]
+    ]
+   ],
+   [
+    7,
+    1,
+    44,
+    "fn",
+    "sign_bare",
+    0,
+    "",
+    0,
+    [
+     [
+      7,
+      14,
+      23,
+      "key",
+      "&Key"
+     ]
+    ]
+   ],
+   [
+    8,
+    1,
+    56,
+    "fn",
+    "sign_space",
+    0,
+    "",
+    0,
+    [
+     [
+      8,
+      15,
+      35,
+      "key",
+      "& acme_sig::Key"
+     ]
+    ]
+   ],
+   [
+    9,
+    1,
+    59,
+    "fn",
+    "sign_boxed",
+    0,
+    "",
+    0,
+    [
+     [
+      9,
+      15,
+      38,
+      "key",
+      "Box<acme_sig::Key>"
+     ]
+    ]
+   ],
+   [
+    10,
+    1,
+    64,
+    "fn",
+    "sign_mut_binding",
+    0,
+    "",
+    0,
+    [
+     [
+      10,
+      21,
+      43,
+      "mut key",
+      "acme_sig::Key"
+     ]
+    ]
+   ],
+   [
+    11,
+    1,
+    73,
+    "fn",
+    "sign_generic",
+    0,
+    "",
+    0,
+    [
+     [
+      11,
+      17,
+      22,
+      "n",
+      "u8"
+     ],
+     [
+      11,
+      24,
+      52,
+      "key",
+      "&acme_sig::Wrap<Blk128>"
+     ]
+    ]
+   ],
+   [
+    12,
+    1,
+    65,
+    "fn",
+    "sign_lifetime",
+    0,
+    "",
+    0,
+    [
+     [
+      12,
+      22,
+      44,
+      "key",
+      "&'a acme_sig::Key"
+     ]
+    ]
+   ],
+   [
+    13,
+    1,
+    65,
+    "fn",
+    "sign_returns",
+    0,
+    "",
+    0,
+    [
+     [
+      13,
+      17,
+      36,
+      "key",
+      "&acme_sig::Key"
+     ]
+    ]
+   ],
+   [
+    14,
+    1,
+    90,
+    "fn",
+    "sign_generic_other",
+    0,
+    "",
+    0,
+    [
+     [
+      14,
+      23,
+      62,
+      "key",
+      "&acme_sig::Wrap<other_sig::Blk256>"
+     ],
+     [
+      14,
+      64,
+      69,
+      "n",
+      "u8"
+     ]
+    ]
+   ],
+   [
+    15,
+    1,
+    93,
+    "fn",
+    "sign_two",
+    0,
+    "",
+    0,
+    [
+     [
+      15,
+      13,
+      33,
+      "key",
+      "&other_sig::Key"
+     ],
+     [
+      15,
+      35,
+      55,
+      "key2",
+      "&acme_sig::Key"
+     ]
+    ]
+   ],
+   [
+    16,
+    1,
+    60,
+    "fn",
+    "sign_dyn",
+    0,
+    "",
+    0,
+    [
+     [
+      16,
+      13,
+      39,
+      "key",
+      "&dyn acme_sig::Sealer"
+     ]
+    ]
+   ],
+   [
+    17,
+    1,
+    68,
+    "fn",
+    "sign_spaced_mut",
+    0,
+    "",
+    0,
+    [
+     [
+      17,
+      20,
+      47,
+      "key",
+      "&  mut   acme_sig::Key"
+     ]
+    ]
+   ],
+   [
+    18,
+    1,
+    60,
+    "fn",
+    "sign_head",
+    0,
+    "",
+    0,
+    [
+     [
+      18,
+      14,
+      39,
+      "key",
+      "&acme::sig::Ctx<All>"
+     ]
+    ]
+   ],
+   [
+    19,
+    1,
+    68,
+    "fn",
+    "sign_local"
+   ],
+   [
+    21,
+    1,
+    35,
+    "struct",
+    "Holder"
+   ],
+   [
+    23,
+    1,
+    2,
+    "impl",
+    "Holder",
+    27
+   ],
+   [
+    24,
+    5,
+    42,
+    "fn",
+    "by_ref",
+    0,
+    "",
+    0,
+    [
+     [
+      24,
+      15,
+      20,
+      "&self",
+      "",
+      0,
+      true
+     ]
+    ]
+   ],
+   [
+    25,
+    5,
+    52,
+    "fn",
+    "by_box",
+    0,
+    "",
+    0,
+    [
+     [
+      25,
+      15,
+      30,
+      "self",
+      "Box<Self>",
+      0,
+      true
+     ]
+    ]
+   ],
+   [
+    26,
+    5,
+    83,
+    "fn",
+    "by_mut",
+    0,
+    "",
+    0,
+    [
+     [
+      26,
+      15,
+      24,
+      "&mut self",
+      "",
+      0,
+      true
+     ],
+     [
+      26,
+      26,
+      45,
+      "key",
+      "&acme_sig::Key"
+     ]
+    ]
+   ],
+   [
+    29,
+    1,
+    2,
+    "fn",
+    "verify_let",
+    36
+   ]
+  ]
+ },
+ "binary_exprs": {
+  "src/ops.rs": [
+   [
+    5,
+    13,
+    21,
+    "*",
+    "s",
+    "base",
+    14,
+    17,
+    "probe::ops.mul"
+   ],
+   [
+    6,
+    13,
+    20,
+    "*",
+    "&s",
+    "&p",
+    15,
+    18,
+    "probe::ops.mul"
+   ],
+   [
+    7,
+    13,
+    21,
+    "+",
+    "s",
+    "base",
+    14,
+    17,
+    "probe::ops.mul"
+   ],
+   [
+    8,
+    13,
+    25,
+    "*",
+    "s * base",
+    "p",
+    21,
+    24,
+    "probe::ops.mul"
+   ],
+   [
+    8,
+    13,
+    21,
+    "*",
+    "s",
+    "base",
+    14,
+    17,
+    "probe::ops.mul"
+   ],
+   [
+    9,
+    14,
+    22,
+    "*",
+    "s",
+    "base",
+    15,
+    18,
+    "probe::ops.mul"
+   ],
+   [
+    10,
+    13,
+    15,
+    "*",
+    "s",
+    "base",
+    14,
+    11,
+    "probe::ops.mul",
+    11,
+    0,
+    11
+   ],
+   [
+    12,
+    16,
+    24,
+    "*",
+    "s",
+    "base",
+    17,
+    20,
+    "probe::ops.mul"
+   ],
+   [
+    13,
+    13,
+    33,
+    "*",
+    "s",
+    "acme_curve::BASE",
+    14,
+    17,
+    "probe::ops.mul"
+   ],
+   [
+    14,
+    13,
+    18,
+    "*",
+    "2",
+    "s",
+    14,
+    17,
+    "probe::ops.mul"
+   ],
+   [
+    15,
+    16,
+    24,
+    "*",
+    "s",
+    "base",
+    17,
+    20,
+    "probe::ops.mul"
+   ],
+   [
+    16,
+    13,
+    18,
+    "*",
+    "&s",
+    "&p",
+    15,
+    16,
+    "probe::ops.mul"
+   ],
+   [
+    17,
+    13,
+    24,
+    "*",
+    "&mut s",
+    "&p",
+    19,
+    22,
+    "probe::ops.mul"
+   ],
+   [
+    18,
+    13,
+    19,
+    "*",
+    "s",
+    "&p",
+    14,
+    17,
+    "probe::ops.mul"
+   ],
+   [
+    27,
+    14,
+    34,
+    "*",
+    "x",
+    "acme_curve::BASE",
+    15,
+    18,
+    "probe::ops.keygen_let"
+   ],
+   [
+    33,
+    15,
+    37,
+    "*",
+    "&x",
+    "&acme_curve::BASE",
+    17,
+    20,
+    "probe::ops.keygen_deep"
+   ],
+   [
+    38,
+    5,
+    13,
+    "*",
+    "x",
+    "peer",
+    6,
+    9,
+    "probe::ops.keygen_tail"
+   ],
+   [
+    44,
+    19,
+    34,
+    "+",
+    "peer",
+    "x * peer",
+    23,
+    26,
+    "probe::ops.keygen_nested"
+   ],
+   [
+    44,
+    26,
+    34,
+    "*",
+    "x",
+    "peer",
+    27,
+    30,
+    "probe::ops.keygen_nested"
+   ],
+   [
+    50,
+    13,
+    21,
+    "*",
+    "peer",
+    "x",
+    17,
+    20,
+    "probe::ops.keygen_other_order"
+   ],
+   [
+    54,
+    13,
+    24,
+    "*",
+    "peer",
+    "peer",
+    17,
+    20,
+    "probe::ops.keygen_before"
+   ],
+   [
+    61,
+    13,
+    21,
+    "*",
+    "x",
+    "peer",
+    14,
+    17,
+    "probe::ops.keygen_two"
+   ]
+  ]
+ }
+}

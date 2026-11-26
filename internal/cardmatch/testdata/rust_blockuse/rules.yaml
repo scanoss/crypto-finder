@@ -1,0 +1,24 @@
+# A use declared in a block inside a function body scopes to that block
+# (TestRustBlockUseAsOpenGrep): later sibling blocks, an else branch and the
+# rest of the body do not see it.
+rules:
+- id: inside
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "inside-$M"}}
+  patterns:
+  - pattern-inside: |
+      use $M::Secret;
+      ...
+  - pattern: Secret::random(...)
+- id: notacme
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "notacme"}}
+  patterns:
+  - pattern: Secret::random(...)
+  - pattern-not-inside: |
+      use acme::$X;
+      ...

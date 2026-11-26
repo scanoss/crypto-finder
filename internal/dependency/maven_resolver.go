@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -15,8 +16,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/javaruntime"
 
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 	"github.com/scanoss/crypto-finder/internal/utils"
 )
 
@@ -89,6 +90,9 @@ type MavenResolver struct {
 	evaluateLocalRepository func(ctx context.Context, projectDir string) (string, error)
 	localRepoOnce           sync.Once
 	localRepo               string
+	// compiledOnly resolves each dependency to its compiled JAR, without
+	// sources (see SetCompiledArtifactsOnly).
+	compiledOnly bool
 }
 
 // NewMavenResolver creates a new Maven dependency resolver.
@@ -101,6 +105,13 @@ func NewMavenResolver() *MavenResolver {
 // SetJavaRuntime configures which Java runtime Maven commands should use.
 func (r *MavenResolver) SetJavaRuntime(cfg javaruntime.Config) {
 	r.javaRuntime = cfg
+}
+
+// SetCompiledArtifactsOnly makes Resolve attach each dependency's compiled JAR
+// and skip downloading and extracting its sources, as the client mode knob
+// CRYPTO_FINDER_CLIENT_MODE does.
+func (r *MavenResolver) SetCompiledArtifactsOnly(only bool) {
+	r.compiledOnly = only
 }
 
 // Ecosystem returns "java".
@@ -170,6 +181,16 @@ func (r *MavenResolver) Resolve(ctx context.Context, targetDir string) (*Resolve
 	}
 
 	m2Repo := r.localRepository(ctx, targetDir)
+	if r.compiledOnly || ClientMode() {
+		// Client mode: the server holds every dependency's graph; the client only
+		// needs each compiled JAR to type its own calls into it. No sources.
+		for _, dep := range deps {
+			dep.CompiledArtifactPath = r.compiledJarPath(dep, m2Repo)
+			result.Dependencies = append(result.Dependencies, dep)
+		}
+		log.Info().Int("total", len(deps)).Msg("Resolved Maven dependencies (client mode: compiled JARs only)")
+		return result, nil
+	}
 	sourceSummary := r.downloadSources(ctx, targetDir, deps, m2Repo, cache)
 
 	// Step 5: Extract source JARs to cache and attach source dirs when available.
@@ -218,22 +239,63 @@ func (r *MavenResolver) populateDependencyGraph(ctx context.Context, targetDir s
 	}
 	graphCtx, cancel := context.WithTimeout(ctx, mavenDependencyTreeTimeout)
 	defer cancel()
-	versioned, err := r.listDependencyTree(graphCtx, targetDir)
+	tree, err := r.listDependencyTree(graphCtx, targetDir, false)
 	if err != nil {
 		log.Debug().Err(err).Msg("Maven dependency tree unavailable; dependency callgraph pruning will fall back")
 		return
 	}
+	versioned, underTest := parseMavenTree(tree)
 	if len(versioned) == 0 {
 		return
 	}
 	result.VersionedGraph = versioned
-	result.Graph = legacyGraphFromVersioned(versioned)
+	defer func() {
+		attachUnderTestDependencies(versioned, underTest)
+		result.Graph = legacyGraphFromVersioned(versioned)
+	}()
+	verbose, err := r.listDependencyTree(graphCtx, targetDir, true)
+	if err != nil {
+		log.Debug().Err(err).Msg("Maven verbose dependency tree unavailable; omitted dependency edges are not recorded")
+		return
+	}
+	placed, omitted := verboseTreeEdges(verbose, versioned)
+	for parent, children := range placed {
+		versioned[parent] = append(versioned[parent], children...)
+	}
+	result.OmittedEdges = omitted
 }
 
-func (r *MavenResolver) listDependencyTree(ctx context.Context, targetDir string) (map[string][]Ref, error) {
+// attachUnderTestDependencies gives each classpath dependency the plain tree
+// printed under a test dependency, and that no classpath edge reaches yet, an
+// edge from its nearest classpath ancestor there (the root at least). The
+// verbose tree normally supplies its real classpath parent; this keeps it on
+// a path from the root when that tree is unavailable, or comes from a
+// dependency plugin (3.0 to 3.1) that ignores -Dverbose.
+func attachUnderTestDependencies(versioned map[string][]Ref, underTest []mavenTreeEdge) {
+	reached := make(map[string]bool)
+	for _, children := range versioned {
+		for _, child := range children {
+			reached[child.Key()] = true
+		}
+	}
+	for _, edge := range underTest {
+		if reached[edge.child.Key()] {
+			continue
+		}
+		reached[edge.child.Key()] = true
+		versioned[edge.parent] = append(versioned[edge.parent], edge.child)
+	}
+}
+
+// listDependencyTree returns the text of `mvn dependency:tree` over every
+// scope; parseTreeOutput keeps the classpath scopes (mavenClasspathScopes).
+// verbose asks for the conflict-resolution view, which also prints every
+// child Maven left out of the tree as "(… - omitted for …)"; only its omitted
+// in-place and omitted entries are read (verboseTreeEdges).
+func (r *MavenResolver) listDependencyTree(ctx context.Context, targetDir string, verbose bool) (string, error) {
 	tmpFile, err := os.CreateTemp("", "mvn-tree-*.txt")
 	if err != nil {
-		return nil, fmt.Errorf("create temp file: %w", err)
+		return "", fmt.Errorf("create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
 	defer func() {
@@ -242,33 +304,179 @@ func (r *MavenResolver) listDependencyTree(ctx context.Context, targetDir string
 		}
 	}()
 	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("close temp file: %w", err)
+		return "", fmt.Errorf("close temp file: %w", err)
 	}
 
 	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
-	cmd := exec.CommandContext(ctx, "mvn", "dependency:tree",
-		"-DoutputFile="+tmpPath,
-		"-Dscope=compile",
+	args := []string{
+		"dependency:tree",
+		"-DoutputFile=" + tmpPath,
 		"-DoutputType=text",
 		"--fail-never",
-	)
+	}
+	if verbose {
+		args = append(args, "-Dverbose")
+	}
+	cmd := exec.CommandContext(ctx, "mvn", args...)
 	cmd.Dir = targetDir
 	if err := r.configureMavenCommand(ctx, cmd); err != nil {
-		return nil, err
+		return "", err
 	}
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("mvn dependency:tree: %w stderr: %s", err, truncate(stderr.String(), 500))
+		return "", fmt.Errorf("mvn dependency:tree: %w stderr: %s", err, truncate(stderr.String(), 500))
 	}
 
 	// #nosec G703 -- tmpPath is created by os.CreateTemp in this function.
 	data, err := os.ReadFile(tmpPath)
 	if err != nil {
-		return nil, fmt.Errorf("read Maven dependency tree output: %w", err)
+		return "", fmt.Errorf("read Maven dependency tree output: %w", err)
 	}
-	return r.parseTreeOutput(string(data)), nil
+	return string(data), nil
+}
+
+// mavenOmittedEntry matches a child the verbose tree left out:
+// "(g:a:jar:1.2:compile - omitted for duplicate)", "(… - omitted for conflict
+// with 1.3)", possibly after "version managed from …;" notes.
+var mavenOmittedEntry = regexp.MustCompile(`^\((\S+) - (?:.*; )?omitted for (duplicate|conflict with (\S+))\)$`)
+
+// mavenClasspathScopes are the dependency scopes resolved and graphed: every
+// jar on the application's compile or runtime classpath, whose crypto the
+// application can reach. compile, provided and system jars are on the compile
+// classpath, so application code calls into them; runtime jars (a JDBC driver,
+// a logging or SAAJ implementation) are loaded when it runs. system stays
+// because it is on the compile classpath like provided. test jars are on
+// neither and stay out. Maven has no single filter for this set
+// (-DincludeScope=compile drops runtime, -DincludeScope=runtime drops provided
+// and system, and test cannot be excluded), so the commands ask for every
+// scope and the parsers keep these.
+var mavenClasspathScopes = map[string]bool{"compile": true, "provided": true, "system": true, "runtime": true}
+
+// mavenTreeEntry is one dependency of a tree with whether its scope puts it
+// on the classpath (mavenClasspathScopes; the root always is).
+type mavenTreeEntry struct {
+	ref       Ref
+	classpath bool
+}
+
+// verboseTreeEdges reads the verbose tree text for the classpath edges the
+// plain tree (versioned) lacks. A classpath dependency Maven reached first
+// through a test dependency is printed under it in the plain tree, which
+// records no edge from a test dependency, and the verbose view prints it
+// where a classpath parent declares it: placed holds such edges, to add to
+// the tree. omitted holds each child left out as a duplicate or a conflict
+// loser under a classpath parent, as an edge to the version the closure
+// selected. Edges versioned already holds, a parent or child of test scope, a
+// child the closure does not hold, and a child omitted as a cycle are left
+// out.
+func verboseTreeEdges(verbose string, versioned map[string][]Ref) (placed, omitted map[string][]Ref) {
+	selected := selectedTreeVersions(verbose, versioned)
+	placed = make(map[string][]Ref)
+	omitted = make(map[string][]Ref)
+	walkVerboseMavenTree(verbose, func(parent *mavenTreeEntry, entry mavenTreeEntry, omittedFor string) {
+		if parent == nil || !parent.classpath || !entry.classpath {
+			return
+		}
+		parentKey := parent.ref.Key()
+		child, ok := selected[entry.ref.Module]
+		if !ok || child.Key() == parentKey || containsDependencyRef(versioned[parentKey], child) ||
+			containsDependencyRef(placed[parentKey], child) || containsDependencyRef(omitted[parentKey], child) {
+			return
+		}
+		if omittedFor == "" {
+			placed[parentKey] = append(placed[parentKey], child)
+			return
+		}
+		omitted[parentKey] = append(omitted[parentKey], child)
+	})
+	return nilIfEmpty(placed), nilIfEmpty(omitted)
+}
+
+// selectedTreeVersions maps each classpath module to the version the closure
+// selected: the children of versioned and the classpath dependencies the
+// verbose tree prints in place (never an omitted entry, which may be a
+// conflict loser).
+func selectedTreeVersions(verbose string, versioned map[string][]Ref) map[string]Ref {
+	selected := make(map[string]Ref)
+	for _, children := range versioned {
+		for _, child := range children {
+			selected[child.Module] = child
+		}
+	}
+	walkVerboseMavenTree(verbose, func(parent *mavenTreeEntry, entry mavenTreeEntry, omittedFor string) {
+		if parent != nil && entry.classpath && omittedFor == "" {
+			selected[entry.ref.Module] = entry.ref
+		}
+	})
+	return selected
+}
+
+func nilIfEmpty(edges map[string][]Ref) map[string][]Ref {
+	if len(edges) == 0 {
+		return nil
+	}
+	return edges
+}
+
+// walkVerboseMavenTree calls visit for each dependency of the verbose tree
+// text with its parent (nil for the root). omittedFor is "duplicate" or
+// "conflict with <version>" for a child Maven left out, which has no children;
+// "" for a dependency printed in place. A child omitted as a cycle is skipped.
+func walkVerboseMavenTree(verbose string, visit func(parent *mavenTreeEntry, entry mavenTreeEntry, omittedFor string)) {
+	var stack []mavenTreeEntry
+	for _, line := range strings.Split(verbose, "\n") {
+		if line == "" {
+			continue
+		}
+		depth, trimmed := parseMavenTreeDepth(line)
+		trimmed = strings.TrimSpace(trimmed)
+		if m := mavenOmittedEntry.FindStringSubmatch(trimmed); m != nil {
+			visitOmittedMavenEntry(stack, depth, m, visit)
+			continue
+		}
+		if strings.HasPrefix(trimmed, "(") {
+			// Omitted for another reason (a cycle): no node, no children.
+			continue
+		}
+		if cut := strings.Index(trimmed, " ("); cut > 0 {
+			trimmed = trimmed[:cut]
+		}
+		node, ok := parseMavenTreeNode(trimmed)
+		if !ok || depth > len(stack) {
+			continue
+		}
+		stack = stack[:depth]
+		entry := mavenTreeEntry{ref: node, classpath: depth == 0 || mavenClasspathScopes[mavenTreeScope(trimmed)]}
+		var parent *mavenTreeEntry
+		if depth > 0 {
+			parent = &stack[depth-1]
+		}
+		visit(parent, entry, "")
+		stack = append(stack, entry)
+	}
+}
+
+// visitOmittedMavenEntry visits the omitted child m (a mavenOmittedEntry
+// match) at depth under its parent on stack.
+func visitOmittedMavenEntry(stack []mavenTreeEntry, depth int, m []string, visit func(parent *mavenTreeEntry, entry mavenTreeEntry, omittedFor string)) {
+	if depth == 0 || depth > len(stack) {
+		return
+	}
+	if node, ok := parseMavenTreeNode(m[1]); ok {
+		visit(&stack[depth-1], mavenTreeEntry{ref: node, classpath: mavenClasspathScopes[mavenTreeScope(m[1])]}, m[2])
+	}
+}
+
+// mavenTreeScope is the scope field of a tree or list coordinate
+// (group:artifact:type[:classifier]:version:scope), without what Maven may
+// print after it (" (optional)", " -- module name").
+func mavenTreeScope(coordinate string) string {
+	if cut := strings.IndexByte(coordinate, ' '); cut >= 0 {
+		coordinate = coordinate[:cut]
+	}
+	return coordinate[strings.LastIndex(coordinate, ":")+1:]
 }
 
 func (r *MavenResolver) resolveWithFallbacks(
@@ -502,15 +710,13 @@ func (r *MavenResolver) listDependencies(ctx context.Context, targetDir string) 
 		return nil, fmt.Errorf("close temp file: %w", err)
 	}
 
-	// includeScope=compile includes compile + provided + system scopes (Maven's
-	// scope hierarchy). This captures all dependencies the source code can call into,
-	// while excluding test-only dependencies.
+	// No -DincludeScope: Maven cannot filter to the classpath scopes in one
+	// pass, so parseDependencyList keeps them (mavenClasspathScopes).
 	// --fail-never continues past module failures in multi-module builds.
 	// -DappendOutput=true appends each module's output instead of overwriting.
 	// #nosec G702 -- exec.CommandContext is used without a shell and with fixed arguments.
 	cmd := exec.CommandContext(ctx, "mvn", "dependency:list",
 		"-DoutputFile="+tmpPath,
-		"-DincludeScope=compile",
 		"-DoutputAbsoluteArtifactFilename=false",
 		"-DappendOutput=true",
 		"--fail-never",
@@ -560,7 +766,8 @@ func (r *MavenResolver) listDependencies(ctx context.Context, targetDir string) 
 
 // parseDependencyList parses the output of `mvn dependency:list -DoutputFile=...`.
 // Format: "groupId:artifactId:type:version:scope" or
-// "groupId:artifactId:type:classifier:version:scope".
+// "groupId:artifactId:type:classifier:version:scope". Entries of a scope
+// outside mavenClasspathScopes (test) are left out.
 func (r *MavenResolver) parseDependencyList(output string) []Dependency {
 	lines := strings.Split(output, "\n")
 	deps := make([]Dependency, 0, len(lines))
@@ -573,7 +780,7 @@ func (r *MavenResolver) parseDependencyList(output string) []Dependency {
 		}
 
 		parts := strings.Split(line, ":")
-		if len(parts) < 5 {
+		if len(parts) < 5 || !mavenClasspathScopes[mavenTreeScope(line)] {
 			continue
 		}
 
@@ -935,22 +1142,72 @@ func (r *MavenResolver) resolveSourceDir(dep Dependency, m2Repo string, cache *S
 	return dir
 }
 
-// parseTreeOutput parses the text output of `mvn dependency:tree`.
-// Each line is indented with tree characters like "+- ", "\- ", "|  ".
-// Format: "groupId:artifactId:type:version:scope".
+// parseTreeOutput parses the text output of `mvn dependency:tree` into its
+// classpath edges (parseMavenTree).
 func (r *MavenResolver) parseTreeOutput(output string) map[string][]Ref {
-	graph := make(map[string][]Ref)
-	var stack []Ref // stack of modules at each depth
+	graph, _ := parseMavenTree(output)
+	return graph
+}
+
+// mavenTreeEdge is an edge from a parent key to a child dependency.
+type mavenTreeEdge struct {
+	parent string
+	child  Ref
+}
+
+// parseMavenTree parses the text output of `mvn dependency:tree`.
+// Each line is indented with tree characters like "+- ", "\\- ", "|  ".
+// Format: "groupId:artifactId:type:version:scope". Only edges between two
+// classpath dependencies (mavenClasspathScopes; the root counts as one) are
+// kept: a test dependency gets no edge, and neither does a classpath child
+// Maven printed under it, whose parent on the classpath verboseTreeEdges
+// finds. underTest holds each such child with its nearest classpath ancestor,
+// for attachUnderTestDependencies. The walk goes on below a test dependency,
+// so the classpath dependencies under such a child keep their edges.
+func parseMavenTree(output string) (graph map[string][]Ref, underTest []mavenTreeEdge) {
+	graph = make(map[string][]Ref)
+	var stack []mavenTreeEntry // the dependency at each depth
 
 	for _, line := range strings.Split(output, "\n") {
 		node, depth, ok := parseMavenTreeLine(line)
 		if !ok {
 			continue
 		}
-		stack = updateMavenTreeStack(graph, stack, node, depth)
+		_, entry := parseMavenTreeDepth(line)
+		current := mavenTreeEntry{ref: node, classpath: depth == 0 || mavenClasspathScopes[mavenTreeScope(strings.TrimSpace(entry))]}
+		if depth == 0 {
+			stack = []mavenTreeEntry{current}
+			continue
+		}
+		if depth > len(stack) {
+			continue
+		}
+		stack = stack[:depth]
+		parent := stack[depth-1]
+		switch {
+		case parent.classpath && current.classpath:
+			parentKey := parent.ref.Key()
+			if !containsDependencyRef(graph[parentKey], node) {
+				graph[parentKey] = append(graph[parentKey], node)
+			}
+		case current.classpath:
+			underTest = append(underTest, mavenTreeEdge{parent: nearestClasspathAncestor(stack), child: node})
+		}
+		stack = append(stack, current)
 	}
 
-	return graph
+	return graph, underTest
+}
+
+// nearestClasspathAncestor is the key of the deepest classpath dependency on
+// stack (the root is one).
+func nearestClasspathAncestor(stack []mavenTreeEntry) string {
+	for i := len(stack) - 1; i > 0; i-- {
+		if stack[i].classpath {
+			return stack[i].ref.Key()
+		}
+	}
+	return stack[0].ref.Key()
 }
 
 func parseMavenTreeLine(line string) (Ref, int, bool) {
@@ -977,23 +1234,6 @@ func parseMavenTreeDepth(line string) (int, string) {
 		trimmed = trimmed[3:]
 	}
 	return depth, trimmed
-}
-
-func updateMavenTreeStack(graph map[string][]Ref, stack []Ref, node Ref, depth int) []Ref {
-	if depth == 0 {
-		return []Ref{node}
-	}
-	if depth <= len(stack) {
-		stack = stack[:depth]
-	}
-	if len(stack) > 0 {
-		parent := stack[len(stack)-1]
-		parentKey := parent.Key()
-		if !containsDependencyRef(graph[parentKey], node) {
-			graph[parentKey] = append(graph[parentKey], node)
-		}
-	}
-	return append(stack, node)
 }
 
 // listDependenciesPerModule resolves dependencies for each module independently.
@@ -1045,7 +1285,6 @@ func (r *MavenResolver) resolveModuleDependencies(ctx context.Context, targetDir
 	cmd := exec.CommandContext(ctx, "mvn", "dependency:list",
 		"-pl", module,
 		"-DoutputFile="+tmpPath,
-		"-DincludeScope=compile",
 		"-DoutputAbsoluteArtifactFilename=false",
 	)
 	cmd.Dir = targetDir

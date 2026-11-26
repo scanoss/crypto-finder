@@ -16,9 +16,9 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/javaruntime"
 
 	"github.com/scanoss/crypto-finder/internal/failure"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 const gradleExportTaskName = "scanossCryptoFinderExport"
@@ -632,15 +632,6 @@ func canonicalGradleDependencies(deps []gradleDependencyRecord) []gradleDependen
 
 // failureOutputLimit bounds the tool output a failure carries.
 const failureOutputLimit = 4000
-
-// tailForFailure keeps the end of a tool's output, where npm and pip print the
-// reason they failed.
-func tailForFailure(value string, limit int) string {
-	if limit <= 0 || len(value) <= limit {
-		return value
-	}
-	return "..." + value[len(value)-limit:]
-}
 
 func truncateForFailure(value string, limit int) string {
 	if limit <= 0 || len(value) <= limit {

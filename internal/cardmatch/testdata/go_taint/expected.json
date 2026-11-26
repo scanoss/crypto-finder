@@ -1,0 +1,58 @@
+{
+ "value": [
+  {
+   "col": 21,
+   "end_col": 32,
+   "file": "src/deep.go",
+   "line": 6,
+   "metavars": {
+    "$K": "\"hardcoded-key\""
+   }
+  },
+  {
+   "col": 21,
+   "end_col": 32,
+   "file": "src/deep.go",
+   "line": 12,
+   "metavars": {
+    "$K": "\"hardcoded-key\""
+   }
+  },
+  {
+   "col": 2,
+   "end_col": 27,
+   "file": "src/main.go",
+   "line": 6,
+   "metavars": {
+    "$K": "\"hardcoded-key\""
+   }
+  },
+  {
+   "col": 2,
+   "end_col": 13,
+   "file": "src/main.go",
+   "line": 11,
+   "metavars": {
+    "$K": "\"hardcoded-key\""
+   }
+  },
+  {
+   "col": 2,
+   "end_col": 13,
+   "file": "src/main.go",
+   "line": 15,
+   "metavars": {
+    "$K": "\"hardcoded-key\""
+   }
+  },
+  {
+   "col": 2,
+   "end_col": 34,
+   "file": "src/main.go",
+   "line": 23,
+   "metavars": {
+    "$K": "\"hardcoded-key\""
+   }
+  }
+ ]
+}

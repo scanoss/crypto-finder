@@ -17,10 +17,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/paramcondition"
+
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/scanner/semgrep"
 )
 
 // writeRule writes a minimal rule file carrying one metadata.crypto block and
@@ -51,7 +52,7 @@ func writeRule(t *testing.T, dir, api, family string, rulePURL ...string) string
 
 // aesEngineInitAPI is the shared api FQN used by the multi-crypto-function
 // synthesis tests below, mirroring the real DCA rules
-// java.bouncycastle.algorithm.block-cipher.aes-init-encrypt/aes-init-decrypt,
+// fixture.java.bouncycastle.aes-init-encrypt/aes-init-decrypt,
 // which both carry api: org.bouncycastle.crypto.engines.AESEngine.init.
 const aesEngineInitAPI = "org.bouncycastle.crypto.engines.AESEngine.init"
 
@@ -671,8 +672,8 @@ func aesEngineInitDecl() *callgraph.FunctionDecl {
 func TestSynthesize_SharedAPIDifferentOperation_ProducesTwoAssets(t *testing.T) {
 	dir := t.TempDir()
 	const api = aesEngineInitAPI
-	writeRuleWithID(t, dir, "encrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
-	writeRuleWithID(t, dir, "decrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-decrypt", "decrypt")
+	writeRuleWithID(t, dir, "encrypt.yaml", "fixture.java.bouncycastle.aes-init-encrypt", "encrypt")
+	writeRuleWithID(t, dir, "decrypt.yaml", "fixture.java.bouncycastle.aes-init-decrypt", "decrypt")
 
 	report := &entities.InterimReport{}
 	graph := graphWith(aesEngineInitDecl())
@@ -712,7 +713,7 @@ func TestSynthesize_SharedAPIDifferentOperation_ProducesTwoAssets(t *testing.T) 
 // metadata readers) see the field missing on mined entry points only.
 func TestSynthesize_BackfillsCryptoFunctionFromOperation(t *testing.T) {
 	dir := t.TempDir()
-	writeRuleWithID(t, dir, "encrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
+	writeRuleWithID(t, dir, "encrypt.yaml", "fixture.java.bouncycastle.aes-init-encrypt", "encrypt")
 
 	report := &entities.InterimReport{}
 	graph := graphWith(aesEngineInitDecl())
@@ -733,8 +734,8 @@ func TestSynthesize_BackfillsCryptoFunctionFromOperation(t *testing.T) {
 func TestSynthesize_DuplicateRuleCryptoBlock_DedupesToOneAsset(t *testing.T) {
 	dir := t.TempDir()
 	// Same rule id, same operation, same everything -- written to two files.
-	writeRuleWithID(t, dir, "a.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
-	writeRuleWithID(t, dir, "b.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
+	writeRuleWithID(t, dir, "a.yaml", "fixture.java.bouncycastle.aes-init-encrypt", "encrypt")
+	writeRuleWithID(t, dir, "b.yaml", "fixture.java.bouncycastle.aes-init-encrypt", "encrypt")
 
 	report := &entities.InterimReport{}
 	graph := graphWith(aesEngineInitDecl())
@@ -768,8 +769,8 @@ func TestSynthesize_SingleRuleAPI_Unchanged(t *testing.T) {
 // finding to functionBodyHasTerminalFinding.
 func TestSynthesize_TerminalFinding_SuppressesBothSharedAPIBlocks(t *testing.T) {
 	dir := t.TempDir()
-	writeRuleWithID(t, dir, "encrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", "encrypt")
-	writeRuleWithID(t, dir, "decrypt.yaml", "java.bouncycastle.algorithm.block-cipher.aes-init-decrypt", "decrypt")
+	writeRuleWithID(t, dir, "encrypt.yaml", "fixture.java.bouncycastle.aes-init-encrypt", "encrypt")
+	writeRuleWithID(t, dir, "decrypt.yaml", "fixture.java.bouncycastle.aes-init-decrypt", "decrypt")
 
 	decl := aesEngineInitDecl()
 	report := &entities.InterimReport{
@@ -801,7 +802,7 @@ func TestSynthesize_TerminalFinding_SuppressesBothSharedAPIBlocks(t *testing.T) 
 func TestBuildSyntheticAssetFromRule_ParameterConditions(t *testing.T) {
 	meta := map[string]string{
 		"operation":          "encrypt",
-		"parameterCondition": "param[0]==true",
+		"parameterCondition": "param[0]==yes",
 		"assetType":          "algorithm",
 		RulePURLMetadataKey:  "pkg:maven/org.bouncycastle/bcprov-jdk18on",
 	}
@@ -813,10 +814,10 @@ func TestBuildSyntheticAssetFromRule_ParameterConditions(t *testing.T) {
 		t.Fatalf("ParameterConditions = %#v, want 1 entry", asset.ParameterConditions)
 	}
 	cond := asset.ParameterConditions[0]
-	if cond.Raw != "param[0]==true" || cond.Value != "true" {
-		t.Errorf("ParameterConditions[0] = %+v, want raw=param[0]==true value=true", cond)
+	if cond.Raw != "param[0]==yes" || cond.Value != "yes" {
+		t.Errorf("ParameterConditions[0] = %+v, want raw=param[0]==yes value=yes", cond)
 	}
-	if asset.Metadata["parameterCondition"] != "param[0]==true" {
+	if asset.Metadata["parameterCondition"] != "param[0]==yes" {
 		t.Errorf("Metadata[parameterCondition] = %q, want verbatim passthrough", asset.Metadata["parameterCondition"])
 	}
 	if asset.PURL != "pkg:maven/org.bouncycastle/bcprov-jdk18on" {
@@ -827,14 +828,12 @@ func TestBuildSyntheticAssetFromRule_ParameterConditions(t *testing.T) {
 	}
 }
 
-// TestBuildSyntheticAssetFromRule_ParameterConditions_AntiDrift feeds the
-// SAME raw parameterCondition through the synthesis path
-// (buildSyntheticAssetFromRule) and the live-match transformer path
-// (semgrep.TransformSemgrepCompatibleOutputToInterimFormat, which drives
-// extractCryptoMetadata), asserting the two resulting []Condition slices are
-// structurally identical. Both paths MUST call the same
-// paramcondition.ParseAll entry point, or the two ingestion structures could
-// drift apart for the same rule predicate (spec Req 5).
+// TestBuildSyntheticAssetFromRule_ParameterConditions_AntiDrift pins that the
+// synthesis path (buildSyntheticAssetFromRule) parses a raw parameterCondition
+// with paramcondition.ParseAll, the entry point the cards detector's report
+// also calls (its TestTransformToInterimReport_ParameterConditionsUseParseAll),
+// so the two ingestion structures cannot drift apart for the same rule
+// predicate (spec Req 5).
 func TestBuildSyntheticAssetFromRule_ParameterConditions_AntiDrift(t *testing.T) {
 	const raw = "param[0|forEncryption]~=^enc"
 
@@ -845,31 +844,12 @@ func TestBuildSyntheticAssetFromRule_ParameterConditions_AntiDrift(t *testing.T)
 	fn := &callgraph.FunctionDecl{StartLine: 1, EndLine: 1}
 	synthAsset := buildSyntheticAssetFromRule("org.bouncycastle.crypto.engines.AESEngine.init", meta, fn)
 
-	semgrepOutput := &entities.SemgrepOutput{
-		Results: []entities.SemgrepResult{{
-			CheckID: "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt",
-			Path:    "AESEngine.java",
-			Extra: entities.SemgrepExtra{
-				Metadata: entities.SemgrepMetadata{
-					Crypto: map[string]any{
-						"operation":          "encrypt",
-						"parameterCondition": raw,
-					},
-				},
-			},
-		}},
+	want, err := paramcondition.ParseAll(raw)
+	if err != nil {
+		t.Fatalf("ParseAll(%q): %v", raw, err)
 	}
-	transformerReport := semgrep.TransformSemgrepCompatibleOutputToInterimFormat(
-		semgrepOutput, entities.ToolInfo{}, ".", nil, true,
-	)
-	if len(transformerReport.Findings) != 1 || len(transformerReport.Findings[0].CryptographicAssets) != 1 {
-		t.Fatalf("transformer report shape = %+v, want exactly 1 finding with 1 asset", transformerReport)
-	}
-	transformerAsset := transformerReport.Findings[0].CryptographicAssets[0]
-
-	if !reflect.DeepEqual(synthAsset.ParameterConditions, transformerAsset.ParameterConditions) {
-		t.Fatalf("synthesis and transformer paths diverged:\nsynthesis:   %+v\ntransformer: %+v",
-			synthAsset.ParameterConditions, transformerAsset.ParameterConditions)
+	if !reflect.DeepEqual(synthAsset.ParameterConditions, want) {
+		t.Fatalf("synthesis diverged from ParseAll:\nsynthesis: %+v\nParseAll:  %+v", synthAsset.ParameterConditions, want)
 	}
 }
 
@@ -1057,7 +1037,7 @@ func TestSynthesize_UnknownPURLBodyFindingSuppresses(t *testing.T) {
 // still falls back to the family. Without the condition the AES-CBC variant of
 // CBCBlockCipher.<init> claimed every route to the constructor.
 func TestRemoveUnresolvedMetadataVariables_KeepsParameterCondition(t *testing.T) {
-	anchored := `param[0]:type~=^org\.bouncycastle\.crypto\.engines\.AES(?:Engine|LightEngine|FastEngine)$`
+	anchored := `param[0]:type~=^org\.example\.engines\.Block(?:Alpha|Beta)$`
 	meta := map[string]string{
 		"algorithmFamily":    "AES",
 		"algorithmName":      "$family-$mode",
@@ -1071,9 +1051,43 @@ func TestRemoveUnresolvedMetadataVariables_KeepsParameterCondition(t *testing.T)
 		t.Fatalf("algorithmName = %q, want the family fallback", meta["algorithmName"])
 	}
 
-	literal := map[string]string{"parameterCondition": `param[0]=="$y$"`}
+	literal := map[string]string{"parameterCondition": `param[0]=="$z$"`}
 	removeUnresolvedMetadataVariables(literal)
-	if literal["parameterCondition"] != `param[0]=="$y$"` {
+	if literal["parameterCondition"] != `param[0]=="$z$"` {
 		t.Fatalf("a literal $ in a condition was dropped: %q", literal["parameterCondition"])
+	}
+}
+
+// TestSynthesize_OverloadAssetsInSourceOrder pins the order of the synthetic
+// assets one api produces at several overloads of one file: by declaration
+// line, the same on every run. The graph holds the overloads in a map, so an
+// order taken from it changes from run to run.
+func TestSynthesize_OverloadAssetsInSourceOrder(t *testing.T) {
+	dir := t.TempDir()
+	rule := writeRule(t, dir, "com.example.Crypt.crypt", "SHA-2")
+	lines := []int{166, 51, 105, 230, 12, 77, 300, 140}
+	for run := range 20 {
+		graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{}}
+		for i, line := range lines {
+			decl := &callgraph.FunctionDecl{
+				ID:        callgraph.FunctionID{Package: "com.example", Type: "Crypt", Name: fmt.Sprintf("crypt#%d", i)},
+				FilePath:  "src/main/java/com/example/Crypt.java",
+				StartLine: line,
+				EndLine:   line + 3,
+			}
+			graph.Functions[decl.ID.String()] = decl
+		}
+		report := &entities.InterimReport{}
+		if n := SynthesizeRuleCryptoEntryPoints(report, graph, []string{rule}, ""); n != len(lines) {
+			t.Fatalf("run %d: synthesized %d assets, want %d", run, n, len(lines))
+		}
+		assets := report.Findings[0].CryptographicAssets
+		got := make([]int, 0, len(assets))
+		for _, a := range assets {
+			got = append(got, a.StartLine)
+		}
+		if !slices.IsSorted(got) {
+			t.Fatalf("run %d: asset lines %v, want ascending", run, got)
+		}
 	}
 }

@@ -11,7 +11,7 @@
 // `crypto-finder scan --export-callgraph` uses when mining commons-codec
 // itself. This is the public-export proof that the
 // commons-codec-blake3.yaml contract's method+arity keys
-// (internal/callgraph/contracts/java/commons-codec-blake3.yaml) match what
+// (internal/cryptokb/java/commons-codec-blake3.yaml) match what
 // the Java parser actually emits for Blake3's factory/config/operation
 // methods, not just the embedded-contract loader assertions in
 // java_libraries_test.go, and that all THREE modes (hash / keyed-MAC / KDF)
@@ -23,7 +23,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -82,7 +83,7 @@ public final class Blake3 {
 // rules.yaml files declare in their metadata.crypto.api field, even though
 // their pattern-either also matches the corresponding one-shot static).
 const blake3RulesYAML = `rules:
-  - id: java.commons-codec.algorithm.hash.blake3
+  - id: fixture.java.commons-codec.blake3
     metadata:
       crypto:
         assetType: algorithm
@@ -92,7 +93,7 @@ const blake3RulesYAML = `rules:
         algorithmParameterSetIdentifier: "256"
         library: Apache Commons Codec
         api: org.apache.commons.codec.digest.Blake3.initHash
-  - id: java.commons-codec.algorithm.mac.blake3
+  - id: fixture.java.commons-codec.mac.blake3
     metadata:
       crypto:
         assetType: algorithm
@@ -102,7 +103,7 @@ const blake3RulesYAML = `rules:
         algorithmParameterSetIdentifier: "256"
         library: Apache Commons Codec
         api: org.apache.commons.codec.digest.Blake3.initKeyedHash
-  - id: java.commons-codec.algorithm.kdf.blake3
+  - id: fixture.java.commons-codec.kdf.blake3
     metadata:
       crypto:
         assetType: algorithm

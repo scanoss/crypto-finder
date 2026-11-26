@@ -1,0 +1,58 @@
+# Invented taint rules for the Rust matcher's OpenGrep pin test (rust_taint_test.go).
+# They run on the .rs files in this directory, copied under src/ of a crate.
+# expected.json is what OpenGrep 1.33.1 reports for them, recorded from the crate
+# root with:
+#   opengrep scan --taint-intrafile --config rules.yaml --json --quiet src
+# (one entry per result: file, line, columns, metavariables as OpenGrep prints them),
+# and fragment.json is the scan's --export-graph-fragment of that crate under
+# CRYPTO_FINDER_CARDS_RUST=1 (graph-fragment-1.26, Rust call arguments carrying
+# their source_nodes), trimmed to the tables the matcher reads. The rules and the
+# fixture are invented; none of them comes from a ruleset.
+rules:
+# A value source: an argument of the sink that holds a string matching the regex.
+- id: value
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "$ALG"}}
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern: $ALG
+    - metavariable-regex: {metavariable: $ALG, regex: '^"AES-'}
+  pattern-sinks:
+  - pattern: acme_seal::seal(...)
+# Object sources: a sink whose receiver, or argument, holds what a factory returns.
+- id: object
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "key"}}
+  mode: taint
+  pattern-sources:
+  - pattern: acme_seal::Key::new(...)
+  - patterns:
+    - pattern: $T::generate(...)
+    - metavariable-regex: {metavariable: $T, regex: '^Key$'}
+    - pattern-inside: |
+        use acme_seal::Key;
+        ...
+  pattern-sinks:
+  - pattern-either:
+    - pattern: $K.encrypt(...)
+    - pattern: acme_seal::store($X)
+# A rule with a sanitizer is skipped: the matcher does not model sanitizers.
+- id: sanitized
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "s"}}
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern: $ALG
+    - metavariable-regex: {metavariable: $ALG, regex: '^"AES-'}
+  pattern-sanitizers:
+  - pattern: acme_seal::clean(...)
+  pattern-sinks:
+  - pattern: acme_seal::seal(...)

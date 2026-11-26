@@ -1,0 +1,37 @@
+lock-version = "1.0"
+environments = ["sys_platform == 'linux'", "sys_platform == 'win32'"]
+requires-python = ">=3.9"
+created-by = "uv"
+
+[[packages]]
+name = "cffi"
+version = "1.17.1"
+marker = "platform_python_implementation != 'PyPy'"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/fc/97/cffi-1.17.1.tar.gz", upload-time = 2024-09-04T20:45:21Z, size = 516621, hashes = { sha256 = "1c39c6016c32bc48dd54561950ebd6836e1670f2ae46128f67cf49e789c52824" } }
+dependencies = [{ name = "pycparser" }]
+
+[[packages]]
+name = "cryptography"
+version = "44.0.2"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/cd/25/cryptography-44.0.2.tar.gz", upload-time = 2025-03-02T00:01:37Z, size = 710807, hashes = { sha256 = "c63454aa261a0cf0c5b4718349629793e9e634993538db841165b3df74f37ec0" } }
+dependencies = [{ name = "cffi", version = "1.17.1" }]
+
+[[packages]]
+name = "pycparser"
+version = "2.22"
+marker = "platform_python_implementation != 'PyPy'"
+index = "https://pypi.org/simple"
+wheels = [{ url = "https://files.pythonhosted.org/packages/13/a3/pycparser-2.22-py3-none-any.whl", upload-time = 2024-03-30T13:22:20Z, size = 117552, hashes = { sha256 = "c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc" } }]
+
+[[packages]]
+name = "pywin32"
+version = "310"
+marker = "sys_platform == 'win32'"
+index = "https://pypi.org/simple"
+wheels = [{ url = "https://files.pythonhosted.org/packages/c2/29/pywin32-310-cp312-cp312-win_amd64.whl", upload-time = 2025-03-17T00:55:53Z, size = 9503220, hashes = { sha256 = "7b8a4b1d1e1f9f0a5d6c3b2a1e0f9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e" } }]
+
+[[packages]]
+name = "vault"
+directory = { path = ".", editable = true }

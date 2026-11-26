@@ -28,19 +28,19 @@ func TestRulesLoadFailure(t *testing.T) {
 	t.Parallel()
 
 	upgrade := fmt.Errorf("failed to get ruleset 'dca@latest': %w", &apiclient.UpgradeRequiredError{StatusCode: 426, Message: "Upgrade crypto-finder."})
-	got, ok := failure.As(rulesLoadFailure(upgrade, "failed to load rules"))
+	got, ok := failure.As(rulesLoadFailure(upgrade))
 	if !ok || got.Code != failure.CodeUpgradeRequired || got.Message != "Upgrade crypto-finder." || got.Details["http_status"] != "426" || got.Error() != "Upgrade crypto-finder." {
 		t.Fatalf("upgrade: %+v", got)
 	}
 
 	refused := fmt.Errorf("download failed: %w", &apiclient.RefusedError{StatusCode: 403, Message: "key without ruleset access"})
-	got, ok = failure.As(rulesLoadFailure(refused, "failed to load rules"))
+	got, ok = failure.As(rulesLoadFailure(refused))
 	want := "failed to load rules: the SCANOSS API refused the ruleset download (HTTP 403): key without ruleset access"
 	if !ok || got.Code != failure.CodeRulesLoadFailed || got.Error() != want {
 		t.Fatalf("refused: %+v (%q)", got, got.Error())
 	}
 
-	got, ok = failure.As(rulesLoadFailure(errors.New("boom"), "failed to load rules"))
+	got, ok = failure.As(rulesLoadFailure(errors.New("boom")))
 	if !ok || got.Code != failure.CodeRulesLoadFailed || got.Error() != "failed to load rules: boom" {
 		t.Fatalf("other: %+v", got)
 	}

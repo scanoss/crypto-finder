@@ -1,0 +1,102 @@
+# A let statement as the positive (TestRustLetsAsOpenGrep): the material a
+# program creates for a call later in the function, as a random fill of the
+# buffer or the literal the buffer is bound to when nothing fills it. The
+# metadata reads $N only: OpenGrep prints a binding without `mut` and quotes.
+rules:
+- id: created
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: related-crypto-material, algorithmName: "created-$N"}}
+  patterns:
+  - pattern-either:
+    - pattern-inside: |
+        let $N = $INIT;
+        ...
+        acme_kdf::derive(Some(&$N), $K)
+    - pattern-inside: |
+        let $N = $INIT;
+        ...
+        acme_kdf::derive(Some($N), $K)
+  - pattern-either:
+    - pattern: acme_rand::fill(&mut $N)
+    - patterns:
+      - pattern: let $N = $V;
+      - pattern-not-inside: |
+          let $N = $V;
+          ...
+          <... &mut $N ...>;
+      - metavariable-regex:
+          metavariable: $V
+          regex: '^(?:\[|b"|br#*"|hex!\s*\()'
+      - focus-metavariable: $V
+- id: lit
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: related-crypto-material, algorithmName: "lit-$N"}}
+  patterns:
+  - pattern: let $N = $V;
+  - metavariable-regex:
+      metavariable: $V
+      regex: '^(?:\[|b"|br#*"|hex!\s*\()'
+  - focus-metavariable: $V
+- id: name
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: related-crypto-material, algorithmName: "name-$N"}}
+  patterns:
+  - pattern: let $N = $V;
+  - metavariable-regex:
+      metavariable: $V
+      regex: '^b"'
+  - focus-metavariable: $N
+- id: whole
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: related-crypto-material, algorithmName: "whole-$N"}}
+  pattern: let $N = $V;
+- id: typed
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: related-crypto-material, algorithmName: "typed-$N"}}
+  pattern: 'let $N: [u8; 4] = $V;'
+- id: notmut
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: related-crypto-material, algorithmName: "notmut-$N"}}
+  patterns:
+  - pattern: let $N = $V;
+  - pattern-not-inside: |
+      let $N = $V;
+      ...
+      <... &mut $N ...>;
+  - metavariable-regex:
+      metavariable: $V
+      regex: '^(?:\[|b"|br#*"|hex!\s*\()'
+- id: bare
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: related-crypto-material, algorithmName: "bare-$N"}}
+  patterns:
+  - pattern-inside: |
+      let $N = $I;
+      ...
+      acme::use_it(&$N)
+  - pattern: let $N = $V;
+- id: deep
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: related-crypto-material, algorithmName: "deep-$N"}}
+  patterns:
+  - pattern-inside: |
+      let $N = $I;
+      ...
+      <... acme::use_it(&$N) ...>;
+  - pattern: let $N = $V;

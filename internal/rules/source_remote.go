@@ -50,7 +50,7 @@ type RemoteRuleSource struct {
 //
 // Parameters:
 //   - ctx: Context for API requests and cancellation
-//   - rulesetName: Name of the ruleset to fetch (e.g., "dca")
+//   - rulesetName: Name of the ruleset to fetch (e.g., "crypto-cards")
 //   - version: Version of the ruleset (e.g., "latest", "v1.0.0")
 //   - cacheManager: Cache manager for downloading and caching rulesets
 //
@@ -97,6 +97,15 @@ func (r *RemoteRuleSource) Load() ([]string, error) {
 		return nil, fmt.Errorf("failed to open ruleset '%s@%s': %w", r.rulesetName, r.version, err)
 	}
 	r.runDir, r.cleanup = runDir, cleanup
+	if len(CardFilesUnder(runDir)) == 0 {
+		// A ruleset of rule YAML alone (dca) is still compiled into a card
+		// index, but the cards detector reports what that index matches
+		// only: the cards of crypto-cards are its rules.
+		log.Warn().
+			Str("ruleset", r.rulesetName).
+			Str("version", r.version).
+			Msg("The remote ruleset holds no card files: findings come only from its rules compiled into a card index and may be incomplete; scan with the default ruleset crypto-cards")
+	}
 	return []string{runDir}, nil
 }
 

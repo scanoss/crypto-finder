@@ -249,6 +249,16 @@
         "purl": {
           "type": "string",
           "description": "Canonical package URL when the dependency ecosystem is known"
+        },
+        "markers": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Python only: PEP 508 environment markers under which the project's lock installs the dependency, as written; absent when unconditional"
+        },
+        "extras": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Python only: extras the project enables on the dependency"
         }
       },
       "additionalProperties": false
@@ -306,7 +316,7 @@
           "type": "string",
           "description": "Exact source substring this condition was parsed from",
           "examples": [
-            "param[0]==true",
+            "param[0]==EXAMPLE",
             "param[1]:type==javax.crypto.SecretKey"
           ]
         },

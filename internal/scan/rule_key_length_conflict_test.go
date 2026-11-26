@@ -4,6 +4,7 @@
 package scan
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -11,10 +12,11 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // TestRuleKeyLengthConflict_JavaFixtureAcrossExports drives the same Java
@@ -53,7 +55,7 @@ func TestRuleKeyLengthConflict_JavaFixtureAcrossExports(t *testing.T) {
 			if err != nil {
 				t.Fatalf("DecodeFragment: %v", err)
 			}
-			annotated := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
+			annotated := annotateStoredGraph(t, &fragmentExport, fixtureDir, report, prepareOIDFixtureReport(t, report))
 			stitched, err := graphfrag.Stitch(component, graphfrag.DependencyGraph{component: nil}, map[graphfrag.ComponentKey]graphfrag.Fragment{component: fragment})
 			if err != nil {
 				t.Fatalf("Stitch: %v", err)
@@ -215,7 +217,7 @@ func TestRuleKeyLengthConflict_AnnotateRecomputesAgainstRefreshedRules(t *testin
 			cachedEvidence := fragmentKeyLengthByID(fragment)
 
 			refreshedReport, _, _ := ruleKeyLengthConflictFixture(t, tc.refreshed)
-			annotated := buildAnnotateExport(prepareOIDFixtureReport(t, refreshedReport), fragment)
+			annotated := annotateStoredGraph(t, &fragmentExport, fixtureDir, refreshedReport, prepareOIDFixtureReport(t, refreshedReport))
 
 			resolvedID := findingIDForLine(t, refreshedReport, 10)
 			assertConflictMarker(t, "annotate", annotated, resolvedID, intPointer(256), tc.wantConflict, tc.wantDeclaredBits)
@@ -251,31 +253,19 @@ func TestRuleKeyLengthConflict_SharedSupportingCallKeepsEveryConflict(t *testing
 
 			live := buildCallGraphExportV2(result)
 			fragmentExport := buildGraphFragmentExport(result)
-			fragmentBytes, err := json.Marshal(fragmentExport)
-			if err != nil {
-				t.Fatalf("json.Marshal fragment: %v", err)
-			}
-			component := graphfrag.ComponentKey{Purl: "pkg:maven/issue274/key-app", Version: "1.0.0"}
-			fragment, err := graphfrag.DecodeFragment(component, fragmentBytes)
-			if err != nil {
-				t.Fatalf("DecodeFragment: %v", err)
-			}
-			annotated := buildAnnotateExport(prepareOIDFixtureReport(t, report), fragment)
+			annotated := annotateStoredGraph(t, &fragmentExport, fixtureDir, report, prepareOIDFixtureReport(t, report))
 
 			// Both assets share one supporting call, so both finding IDs must
 			// resolve to the same evidence: a conflict, reporting the smallest
 			// disagreeing rule value whatever order the rules were evaluated in.
 			for i := range report.Findings[0].CryptographicAssets {
 				findingID := report.Findings[0].CryptographicAssets[i].FindingID
-				for _, export := range []struct {
-					name  string
-					value any
-				}{
-					{name: "live", value: live},
-					{name: "annotate", value: annotated},
-				} {
-					assertConflictMarker(t, export.name, export.value, findingID, intPointer(256), true, intPointer(128))
-				}
+				assertConflictMarker(t, "live", live, findingID, intPointer(256), true, intPointer(128))
+			}
+			// The graph fragment keeps one marker on the one supporting call;
+			// annotate reproduces the scan's fragment exactly.
+			if got, want := marshalSorted(t, annotated.SupportingCalls), marshalSorted(t, fragmentExport.SupportingCalls); !bytes.Equal(got, want) {
+				t.Errorf("annotate supporting_calls differ from the scan's fragment:\n got: %s\nwant: %s", got, want)
 			}
 		})
 	}

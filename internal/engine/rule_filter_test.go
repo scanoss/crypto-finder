@@ -2,26 +2,20 @@ package engine
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/scanoss/crypto-finder/internal/config"
-	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/scanner"
-	"github.com/scanoss/crypto-finder/internal/scanner/opengrep"
 )
 
 func writeRuleFile(t *testing.T, dir, name, content string) string {
@@ -142,6 +136,24 @@ func TestFilterRulesByLanguages_DetectorNamesMatchRuleIDs(t *testing.T) {
 	csharp := filterRulesByLanguages(all, []string{"C#"})
 	if len(csharp) != 1 || csharp[0] != csharpRule {
 		t.Fatalf("C# tree: want only the csharp rule, got %#v", csharp)
+	}
+}
+
+// A node scan hints javascript and typescript; rule files may also write the
+// short ids js and ts, and each must survive the filter.
+func TestFilterRulesByLanguages_NodeShortIDs(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	node := make([]string, 0, 4)
+	for _, lang := range []string{"javascript", "typescript", "js", "ts"} {
+		node = append(node, writeRuleFile(t, dir, lang+".yaml", "rules:\n  - id: "+lang+"-rule\n    languages: ["+lang+"]\n"))
+	}
+	pyRule := writeRuleFile(t, dir, "python.yaml", "rules:\n  - id: py-rule\n    languages: [python]\n")
+
+	got := filterRulesByLanguages(append(slices.Clone(node), pyRule), []string{"javascript", "typescript"})
+	if !reflect.DeepEqual(got, node) {
+		t.Fatalf("node hints: want the four node rules, got %#v", got)
 	}
 }
 
@@ -492,141 +504,6 @@ func TestPrepareRulePathsForScanner_PassesUnmergeableFilesThrough(t *testing.T) 
 	}
 }
 
-// The dependency findings cache keys on the prepared rules; two runs over the
-// same rule content must agree even though each lives in its own temp dir.
-func TestPrepareRulePathsForScanner_RulesHashIsDeterministic(t *testing.T) {
-	t.Parallel()
-
-	rulesDir := filepath.Join(t.TempDir(), "rules")
-	if err := os.MkdirAll(filepath.Join(rulesDir, "nested"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	_ = writeRuleFile(t, rulesDir, "a.yaml", "rules:\n  - id: a\n    languages: [go]\n")
-	nested := writeRuleFile(t, filepath.Join(rulesDir, "nested"), "b.yaml", "rules:\n  - id: b\n    languages: [go]\n")
-
-	hash := func() string {
-		t.Helper()
-		paths, cleanup, err := prepareRulePathsForScanner([]string{rulesDir}, []string{"go"})
-		if err != nil {
-			t.Fatalf("prepareRulePathsForScanner() error = %v", err)
-		}
-		defer cleanup()
-		got, err := ComputeRulesHash(paths)
-		if err != nil {
-			t.Fatalf("ComputeRulesHash() error = %v", err)
-		}
-		return got
-	}
-
-	first := hash()
-	if second := hash(); second != first {
-		t.Fatalf("rules hash changed between identical runs: %s then %s", first, second)
-	}
-	if err := os.WriteFile(nested, []byte("rules:\n  - id: b\n    languages: [go]\n    pattern: x\n"), 0o600); err != nil {
-		t.Fatalf("rewrite rule: %v", err)
-	}
-	if changed := hash(); changed == first {
-		t.Fatalf("rules hash %s did not change with rule content", changed)
-	}
-}
-
-// Real OpenGrep run: merged rules must yield exactly the findings and rule IDs
-// of the same filtered files loaded one by one, including rule IDs repeated
-// across directories and within one directory (OpenGrep runs both copies).
-func TestPrepareRulePathsForScanner_MergedRulesKeepFindingsIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("requires a real OpenGrep subprocess")
-	}
-	if _, err := exec.LookPath("opengrep"); err != nil {
-		t.Skip("OpenGrep not installed")
-	}
-
-	root := t.TempDir()
-	rulesDir := filepath.Join(root, "rules")
-	javaDir := filepath.Join(rulesDir, "java")
-	for _, dir := range []string{"java/jca/md5", "java/other", "python"} {
-		if err := os.MkdirAll(filepath.Join(rulesDir, dir), 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
-	}
-	rule := func(id, pattern string) string {
-		return "rules:\n  - id: " + id + "\n    languages: [java]\n    severity: INFO\n    message: m\n    pattern: " + pattern +
-			"\n    metadata:\n      crypto:\n        assetType: algorithm\n        protocolVersion: 2.5\n        keySize: 128\n        fips: True\n        note: yes\n"
-	}
-	_ = writeRuleFile(t, filepath.Join(javaDir, "jca", "md5"), "rules.yaml", rule("dup", `MessageDigest.getInstance("MD5")`))
-	_ = writeRuleFile(t, filepath.Join(javaDir, "jca", "md5"), "extra.yaml", rule("dup", `MessageDigest.getInstance("SHA-256")`))
-	_ = writeRuleFile(t, filepath.Join(javaDir, "other"), "rules.yaml", rule("dup", `MessageDigest.getInstance("MD5")`))
-	_ = writeRuleFile(t, javaDir, "top.yaml", rule("top", `MessageDigest.getInstance("SHA-256")`))
-	_ = writeRuleFile(t, javaDir, "skipped.test.yaml", rule("fixture", `MessageDigest.getInstance(...)`))
-	_ = writeRuleFile(t, filepath.Join(rulesDir, "python"), "rules.yaml", `rules:
-  - id: py
-    languages: [python]
-    severity: INFO
-    message: m
-    pattern: hashlib.md5()
-`)
-
-	src := filepath.Join(root, "src")
-	if err := os.MkdirAll(src, 0o755); err != nil {
-		t.Fatalf("mkdir src: %v", err)
-	}
-	_ = writeRuleFile(t, src, "Hash.java", `import java.security.MessageDigest;
-
-class Hash {
-    byte[] md5(byte[] in) throws Exception {
-        return MessageDigest.getInstance("MD5").digest(in);
-    }
-
-    byte[] sha(byte[] in) throws Exception {
-        return MessageDigest.getInstance("SHA-256").digest(in);
-    }
-}
-`)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	scan := func(rulePaths []string) []string {
-		t.Helper()
-		s := opengrep.NewScanner()
-		if err := s.Initialize(ctx, scanner.Config{Timeout: time.Minute, ExtraArgs: []string{"--jobs", "1"}}); err != nil {
-			t.Fatalf("initialize opengrep: %v", err)
-		}
-		report, err := s.Scan(ctx, src, rulePaths, entities.ToolInfo{Name: "opengrep"})
-		if err != nil {
-			t.Fatalf("scan with %v: %v", rulePaths, err)
-		}
-		var got []string
-		for _, finding := range report.Findings {
-			for _, asset := range finding.CryptographicAssets {
-				metadata, err := json.Marshal(asset.Metadata)
-				if err != nil {
-					t.Fatalf("marshal metadata: %v", err)
-				}
-				for _, r := range asset.Rules {
-					got = append(got, strconv.Itoa(asset.StartLine)+":"+r.ID+" "+string(metadata))
-				}
-			}
-		}
-		sort.Strings(got)
-		return got
-	}
-
-	const metadata = ` {"assetType":"algorithm","fips":"true","keySize":"128","note":"yes","protocolVersion":"2.5"}`
-	want := []string{"5:jca.md5.dup" + metadata, "5:other.dup" + metadata, "9:jca.md5.dup" + metadata, "9:top" + metadata}
-	if perFile := scan([]string{javaDir}); !reflect.DeepEqual(perFile, want) {
-		t.Fatalf("per-file baseline findings = %v, want %v", perFile, want)
-	}
-
-	paths, cleanup, err := prepareRulePathsForScanner([]string{rulesDir}, []string{"java"})
-	if err != nil {
-		t.Fatalf("prepareRulePathsForScanner() error = %v", err)
-	}
-	defer cleanup()
-	if got := scan(paths); !reflect.DeepEqual(got, want) {
-		t.Fatalf("merged rules findings = %v, want %v", got, want)
-	}
-}
-
 // TestCollectRuleFiles_SkipsFilteredDir is the regression guard for the
 // self-nesting cache bug: collectRuleFiles must never descend into the
 // materialized .crypto-finder-filtered dir, otherwise each scan re-ingests the
@@ -816,5 +693,55 @@ func TestPrepareRulePathsForScanner_CleanupRemovesMaterializedDirectory(t *testi
 
 	if _, err := os.Stat(materializedRoot); !os.IsNotExist(err) {
 		t.Fatalf("expected cleanup to remove %s, got err=%v", materializedRoot, err)
+	}
+}
+
+// A ruleset release's cards/ beside semgrep-rules/ holds the cards detector's
+// cards, never OpenGrep rules, with or without a language filter.
+func TestRuleFilesSkipTheRulesetCards(t *testing.T) {
+	root := t.TempDir()
+	rule := filepath.Join(root, "semgrep-rules", "java", "x", "rules.yaml")
+	card := filepath.Join(root, "cards", "x", "rules.yaml")
+	for path, content := range map[string]string{
+		rule: "rules:\n- id: r\n  languages: [java]\n  message: m\n  severity: INFO\n  pattern: f()\n",
+		card: "cards:\n- rule: r\n  match: {call: f}\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, languages := range [][]string{nil, {"java"}} {
+		if got := filterRulesByLanguages([]string{root}, languages); len(got) != 1 || got[0] != rule {
+			t.Errorf("languages %v: rule files = %v, want only %s", languages, got, rule)
+		}
+	}
+}
+
+// The filter reads a v3 card file's language from its directory
+// (cards/javascript/) and the scan's languages as the detector names them
+// (typescript, tsx): both sides go through the one canonical name, so a
+// TypeScript target keeps the JavaScript card files.
+func TestFilterRulesByLanguages_CardDirectoryMatchesDetectorNames(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	card := filepath.Join(dir, "cards", "javascript", "lib", "rules.cards")
+	if err := os.MkdirAll(filepath.Dir(card), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(card, []byte("format: scanoss-cards/3\nrules:\n  acme.digest:\n    severity: INFO\n    message: Acme\n    crypto:\n      assetType: algorithm\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	javaRule := writeRuleFile(t, dir, "java.yaml", "rules:\n  - id: java-rule\n    languages: [java]\n")
+	pyRule := writeRuleFile(t, dir, "python.yaml", "rules:\n  - id: py-rule\n    languages: [python]\n")
+
+	for _, languages := range [][]string{{"java", "typescript"}, {"java", "tsx"}, {"ts", "java"}, {"jsx", "java"}} {
+		got := filterRulesByLanguages([]string{card, javaRule, pyRule}, languages)
+		if !reflect.DeepEqual(got, []string{card, javaRule}) {
+			t.Errorf("languages %v: got %#v, want the javascript card file and the java rule", languages, got)
+		}
 	}
 }

@@ -24,9 +24,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 // A package unpacked into a temporary directory named
@@ -352,7 +353,7 @@ func TestStandaloneCallGraph_PythonCrossModuleCallerUnderAPyprojectName(t *testi
 			t.Fatal(err)
 		}
 	}
-	result, err := buildStandaloneCallGraphResultForEcosystem(dir, &entities.InterimReport{}, "python", javaruntime.Config{}, false, "", nil, true)
+	result, err := buildStandaloneCallGraphResultForEcosystem(nil, dir, &entities.InterimReport{}, "python", javaruntime.Config{}, false, "", nil, true)
 	if err != nil {
 		t.Fatalf("build call graph: %v", err)
 	}
@@ -392,7 +393,7 @@ func assertPythonFunctionFiles(t *testing.T, files, wantFiles map[string]string)
 			t.Fatal(err)
 		}
 	}
-	result, err := buildStandaloneCallGraphResultForEcosystem(dir, &entities.InterimReport{}, "python", javaruntime.Config{}, false, "", nil, false)
+	result, err := buildStandaloneCallGraphResultForEcosystem(nil, dir, &entities.InterimReport{}, "python", javaruntime.Config{}, false, "", nil, false)
 	if err != nil {
 		t.Fatalf("build call graph: %v", err)
 	}
@@ -435,7 +436,7 @@ func scanRootModuleKeys(t *testing.T, dir, ecosystem string, files map[string]st
 			t.Fatal(err)
 		}
 	}
-	result, err := buildStandaloneCallGraphResultForEcosystem(dir, &entities.InterimReport{}, ecosystem, javaruntime.Config{}, false, "", nil, false)
+	result, err := buildStandaloneCallGraphResultForEcosystem(nil, dir, &entities.InterimReport{}, ecosystem, javaruntime.Config{}, false, "", nil, false)
 	if err != nil {
 		t.Fatalf("build call graph for %s: %v", ecosystem, err)
 	}

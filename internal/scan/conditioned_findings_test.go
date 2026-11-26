@@ -9,10 +9,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/paramcondition"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 func TestMaterializeConditionedFindings_SpecializesWrapperPaths(t *testing.T) {
@@ -22,26 +23,26 @@ func TestMaterializeConditionedFindings_SpecializesWrapperPaths(t *testing.T) {
   - id: java.pgp.aes128
     message: AES-128 PGP
     severity: INFO
-    pattern: new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.AES_128)
+    pattern: new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.FX_ONE)
     metadata:
       crypto:
         assetType: algorithm
         algorithmFamily: AES
         algorithmName: AES-128
         operation: encrypt
-        parameterCondition: param[0]==SymmetricKeyAlgorithmTags.AES_128
+        parameterCondition: param[0]==SymmetricKeyAlgorithmTags.FX_ONE
         api: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>
   - id: java.pgp.des
     message: DES PGP
     severity: INFO
-    pattern: new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.DES)
+    pattern: new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.FX_TWO)
     metadata:
       crypto:
         assetType: algorithm
         algorithmFamily: DES
         algorithmName: DES
         operation: encrypt
-        parameterCondition: param[0]==SymmetricKeyAlgorithmTags.DES
+        parameterCondition: param[0]==SymmetricKeyAlgorithmTags.FX_TWO
         api: org.bouncycastle.openpgp.operator.jcajce.JcePGPDataEncryptorBuilder.<init>
 `)
 	firstID := callgraph.FunctionID{Package: "example", Type: "PGPFlow", Name: "first#0"}
@@ -50,8 +51,8 @@ func TestMaterializeConditionedFindings_SpecializesWrapperPaths(t *testing.T) {
 	ctorID := callgraph.FunctionID{Package: "org.bouncycastle.openpgp.operator.jcajce", Type: "JcePGPDataEncryptorBuilder", Name: "<init>#1"}
 	graph := &callgraph.CallGraph{
 		Functions: map[string]*callgraph.FunctionDecl{
-			firstID.String():  {ID: firstID, FilePath: "PGPFlow.java", Calls: []callgraph.FunctionCall{{Callee: buildID, Arguments: []string{"SymmetricKeyAlgorithmTags.AES_128"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.AES_128"}}}}}},
-			secondID.String(): {ID: secondID, FilePath: "PGPFlow.java", Calls: []callgraph.FunctionCall{{Callee: buildID, Arguments: []string{"SymmetricKeyAlgorithmTags.DES"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.DES"}}}}}},
+			firstID.String():  {ID: firstID, FilePath: "PGPFlow.java", Calls: []callgraph.FunctionCall{{Callee: buildID, Arguments: []string{"SymmetricKeyAlgorithmTags.FX_ONE"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.FX_ONE"}}}}}},
+			secondID.String(): {ID: secondID, FilePath: "PGPFlow.java", Calls: []callgraph.FunctionCall{{Callee: buildID, Arguments: []string{"SymmetricKeyAlgorithmTags.FX_TWO"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.FX_TWO"}}}}}},
 			buildID.String(): {
 				ID: buildID, FilePath: "PGPFlow.java", StartLine: 10, EndLine: 12,
 				Parameters: []callgraph.FunctionParameter{{Name: "algorithm", Type: "int"}},
@@ -120,25 +121,25 @@ func TestMaterializeConditionedFindings_ResolvesGuardedHelperReturnWithoutGuessi
   - id: java.digest.sha2
     message: SHA-2 digest
     severity: INFO
-    pattern: MessageDigest.getInstance($ALGO)
+    pattern: MessageDigest.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
         algorithmFamily: SHA-2
-        algorithmName: SHA-$variant
-        parameterCondition: param[0]~=SHA-?(?<variant>224|256|384|512)
+        algorithmName: SHA-$bits
+        parameterCondition: param[0]~=SHA-?(?<bits>224|256|384|512)
         operation: digest
         api: MessageDigest.getInstance
   - id: java.cipher.wrong-api
     message: Unrelated cipher rule
     severity: INFO
-    pattern: Cipher.getInstance($ALGO)
+    pattern: Cipher.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
         algorithmFamily: WRONG
-        algorithmName: WRONG-$variant
-        parameterCondition: param[0]~=SHA-?(?<variant>224|256|384|512)
+        algorithmName: WRONG-$bits
+        parameterCondition: param[0]~=SHA-?(?<bits>224|256|384|512)
         operation: encrypt
         api: Cipher.getInstance
 `)
@@ -196,27 +197,27 @@ func TestConditionedRule_UsesPatternCaptureNamesForBroadVariants(t *testing.T) {
 	t.Parallel()
 
 	rules := writeConditionedRules(t, `rules:
-  - id: java.jca.algorithm.hash.sha-2
+  - id: fixture.java.jca.sha-2
     message: SHA-2 digest
     severity: INFO
     pattern-sources:
       - patterns:
-          - pattern: $ALGO
+          - pattern: $A
           - metavariable-regex:
-              metavariable: $ALGO
-              regex: '"SHA-?(?<variant>224|256|384|512)(?:/(?<subvariant>224|256))?"'
+              metavariable: $A
+              regex: '"SHA-?(?<bits>224|256|384|512)(?:/(?<inner>224|256))?"'
     pattern-sinks:
       - patterns:
           - pattern-either:
-              - pattern: MessageDigest.getInstance($ALGO)
-              - pattern: MessageDigest.getInstance($ALGO, $PROVIDER)
-          - focus-metavariable: $ALGO
+              - pattern: MessageDigest.getInstance($A)
+              - pattern: MessageDigest.getInstance($A, $PROV)
+          - focus-metavariable: $A
     metadata:
       crypto:
         assetType: algorithm
         algorithmFamily: SHA-2
-        algorithmName: SHA-$variant
-        algorithmParameterSetIdentifier: $variant
+        algorithmName: SHA-$bits
+        algorithmParameterSetIdentifier: $bits
         parameterCondition: param[0]~=SHA-?(224|256|384|512)(?:/(224|256))?
         operation: digest
         api: Wrong.getInstance
@@ -255,20 +256,20 @@ func TestConditionedRule_BindsPlaceholdersByName(t *testing.T) {
     severity: INFO
     pattern-sources:
       - patterns:
-          - pattern: $ALGO
+          - pattern: $A
           - metavariable-regex:
-              metavariable: $ALGO
-              regex: '"(?<family>AES)/(?<mode>CBC|ECB)/(?<padding>NoPadding|PKCS5Padding)"'
+              metavariable: $A
+              regex: '"(?<fam>AES)/(?<md>CBC|ECB)/(?<pad>NoPadding|PKCS5Padding)"'
     pattern-sinks:
       - patterns:
-          - pattern: Cipher.getInstance($ALGO)
+          - pattern: Cipher.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
-        algorithmFamily: $family
-        algorithmName: $family-$mode-$padding
-        algorithmMode: $mode
-        algorithmPadding: $padding
+        algorithmFamily: $fam
+        algorithmName: $fam-$md-$pad
+        algorithmMode: $md
+        algorithmPadding: $pad
         parameterCondition: param[0]~=AES/(CBC|ECB)/(NoPadding|PKCS5Padding)
         api: Cipher.getInstance
   - id: java.cipher.gcm
@@ -276,18 +277,18 @@ func TestConditionedRule_BindsPlaceholdersByName(t *testing.T) {
     severity: INFO
     pattern-sources:
       - patterns:
-          - pattern: $ALGO
+          - pattern: $A
           - metavariable-regex:
-              metavariable: $ALGO
-              regex: '"(?<family>AES)/(?<mode>GCM|CCM)/(?<padding>NoPadding)"'
+              metavariable: $A
+              regex: '"(?<fam>AES)/(?<md>GCM|CCM)/(?<pad>NoPadding)"'
     pattern-sinks:
       - patterns:
-          - pattern: Cipher.getInstance($ALGO)
+          - pattern: Cipher.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
-        algorithmFamily: $family
-        algorithmName: $family-$mode-$padding
+        algorithmFamily: $fam
+        algorithmName: $fam-$md-$pad
         parameterCondition: param[0]~=AES/(GCM|CCM)/NoPadding
         api: Cipher.getInstance
   - id: java.cipher.rc4
@@ -295,30 +296,30 @@ func TestConditionedRule_BindsPlaceholdersByName(t *testing.T) {
     severity: INFO
     pattern-sources:
       - patterns:
-          - pattern: $ALGO
+          - pattern: $A
           - metavariable-regex:
-              metavariable: $ALGO
-              regex: '"(?<family>RC4)"'
+              metavariable: $A
+              regex: '"(?<fam>RC4)"'
     pattern-sinks:
       - patterns:
-          - pattern: Cipher.getInstance($ALGO)
+          - pattern: Cipher.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
-        algorithmFamily: $family
-        algorithmName: $family
+        algorithmFamily: $fam
+        algorithmName: $fam
         parameterCondition: param[0]==RC4
         api: Cipher.getInstance
   - id: java.cipher.named
     message: condition names its own groups
     severity: INFO
-    pattern: Cipher.getInstance($ALGO)
+    pattern: Cipher.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
-        algorithmFamily: $mode
-        algorithmName: $mode-$family
-        parameterCondition: param[0]~=^(?P<mode>[A-Z]+)/(?P<family>[A-Z]+)$
+        algorithmFamily: $md
+        algorithmName: $md-$fam
+        parameterCondition: param[0]~=^(?P<md>[A-Z]+)/(?P<fam>[A-Z]+)$
         api: Cipher.getInstance
 `)
 	byAPI := engine.LoadRuleCryptoMetadata([]string{rules})["Cipher.getInstance"]
@@ -363,7 +364,7 @@ func TestMaterializeConditionedFindings_KeepsNamedAnchor(t *testing.T) {
   - id: java.digest.sha1
     message: SHA-1
     severity: INFO
-    pattern: MessageDigest.getInstance($ALGO)
+    pattern: MessageDigest.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
@@ -420,7 +421,7 @@ func TestConditionedRule_MatchesSingleQuotedLiteral(t *testing.T) {
 	t.Parallel()
 
 	rules := writeConditionedRules(t, `rules:
-  - id: python.hashlib.sha1
+  - id: python.hashlib.fixture-h
     message: SHA-1
     severity: INFO
     pattern: hashlib.new($A)
@@ -428,15 +429,15 @@ func TestConditionedRule_MatchesSingleQuotedLiteral(t *testing.T) {
       crypto:
         assetType: algorithm
         algorithmName: SHA-1
-        parameterCondition: param[0]==sha1
+        parameterCondition: param[0]==fixture-h
         api: hashlib.new
 `)
 	rule := engine.LoadRuleCryptoMetadata([]string{rules})["hashlib.new"][0]
-	for _, literal := range []string{`'sha1'`, `"sha1"`, "`sha1`"} {
+	for _, literal := range []string{`'fixture-h'`, `"fixture-h"`, "`fixture-h`"} {
 		finding := &entities.Finding{FilePath: "app.py"}
 		anchor := entities.CryptographicAsset{StartLine: 3, Metadata: map[string]string{"api": "hashlib.new"}}
 		if !appendConditionedAsset(finding, anchor, rule, []callGraphParameter{{ResolvedValue: literal}}, map[string]struct{}{}, map[string]struct{}{}) {
-			t.Errorf("literal %s did not match param[0]==sha1", literal)
+			t.Errorf("literal %s did not match param[0]==fixture-h", literal)
 		}
 	}
 }
@@ -448,13 +449,13 @@ func TestMaterializeConditionedFindings_DoesNotAttachNestedBuilderToOuterAnchor(
   - id: java.pgp.aes128
     message: AES-128 PGP builder
     severity: INFO
-    pattern: new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.AES_128)
+    pattern: new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.FX_ONE)
     metadata:
       crypto:
         assetType: algorithm
         algorithmFamily: AES
         algorithmName: AES-128
-        parameterCondition: param[0]==SymmetricKeyAlgorithmTags.AES_128
+        parameterCondition: param[0]==SymmetricKeyAlgorithmTags.FX_ONE
         operation: encrypt
         api: JcePGPDataEncryptorBuilder.<init>
 `)
@@ -465,15 +466,15 @@ func TestMaterializeConditionedFindings_DoesNotAttachNestedBuilderToOuterAnchor(
 		ownerID.String(): {
 			ID: ownerID, FilePath: "PGPFlow.java", StartLine: 1, EndLine: 5,
 			Calls: []callgraph.FunctionCall{
-				{Callee: outerID, FilePath: "PGPFlow.java", Line: 3, StartCol: 9, EndCol: 91, Arguments: []string{"new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.AES_128)"}},
-				{Callee: builderID, FilePath: "PGPFlow.java", Line: 3, StartCol: 39, EndCol: 90, Arguments: []string{"SymmetricKeyAlgorithmTags.AES_128"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.AES_128"}}}},
+				{Callee: outerID, FilePath: "PGPFlow.java", Line: 3, StartCol: 9, EndCol: 91, Arguments: []string{"new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.FX_ONE)"}},
+				{Callee: builderID, FilePath: "PGPFlow.java", Line: 3, StartCol: 39, EndCol: 90, Arguments: []string{"SymmetricKeyAlgorithmTags.FX_ONE"}, ArgumentSources: [][]callgraph.SourceNode{{{Type: "VALUE", Value: "SymmetricKeyAlgorithmTags.FX_ONE"}}}},
 			},
 		},
 	}}
 	report := &entities.InterimReport{Findings: []entities.Finding{{
 		FilePath: "PGPFlow.java", Language: "java", CryptographicAssets: []entities.CryptographicAsset{
-			{StartLine: 3, EndLine: 3, StartCol: 9, EndCol: 91, Match: "new PGPEncryptedDataGenerator(new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.AES_128))", Rules: []entities.RuleInfo{{ID: "java.pgp.generator"}}, Metadata: map[string]string{"assetType": "protocol"}},
-			{StartLine: 3, EndLine: 3, StartCol: 39, EndCol: 90, Match: "new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.AES_128)", Rules: []entities.RuleInfo{{ID: "java.pgp.builder.dynamic"}}, Metadata: map[string]string{"assetType": "algorithm"}},
+			{StartLine: 3, EndLine: 3, StartCol: 9, EndCol: 91, Match: "new PGPEncryptedDataGenerator(new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.FX_ONE))", Rules: []entities.RuleInfo{{ID: "java.pgp.generator"}}, Metadata: map[string]string{"assetType": "protocol"}},
+			{StartLine: 3, EndLine: 3, StartCol: 39, EndCol: 90, Match: "new JcePGPDataEncryptorBuilder(SymmetricKeyAlgorithmTags.FX_ONE)", Rules: []entities.RuleInfo{{ID: "java.pgp.builder.dynamic"}}, Metadata: map[string]string{"assetType": "algorithm"}},
 		},
 	}}}
 
@@ -504,13 +505,13 @@ const bindRuleTemplate = `rules:
     severity: INFO
     pattern-sources:
       - patterns:
-          - pattern: $ALGO
+          - pattern: $A
           - metavariable-regex:
-              metavariable: $ALGO
+              metavariable: $A
               regex: '%s'
     pattern-sinks:
       - patterns:
-          - pattern: Cipher.getInstance($ALGO)
+          - pattern: Cipher.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
@@ -567,26 +568,6 @@ func TestConditionedRule_WithoutNamedGroupsBindsNothing(t *testing.T) {
 	}
 	if got := finding.CryptographicAssets[0].Metadata["algorithmName"]; got != "RC4" {
 		t.Fatalf("algorithmName = %q, want RC4", got)
-	}
-}
-
-func TestPlaceholderFiller(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		captures map[string]string
-		in, want string
-	}{
-		{"mode never eats model", map[string]string{"mode": "CBC", "model": "M1"}, "$mode-$model", "CBC-M1"},
-		{"only the shorter name is bound", map[string]string{"mode": "CBC"}, "$mode/$model", "CBC/CBCl"},
-		{"an inserted value is not substituted again", map[string]string{"a": "$b", "b": "X"}, "$a $b", "$b X"},
-		{"no captures", nil, "$a", "$a"},
-	}
-	for _, tc := range tests {
-		if got := placeholderFiller(tc.captures)(tc.in); got != tc.want {
-			t.Errorf("%s: fill(%q) = %q, want %q", tc.name, tc.in, got, tc.want)
-		}
 	}
 }
 

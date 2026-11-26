@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "signer"
+version = "1.0.0"
+description = ""
+authors = ["Example <dev@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+paramiko = "^3.5"
+numpy = [
+    {version = "<2.1", markers = "python_version < \"3.10\""},
+    {version = ">=2.1", markers = "python_version >= \"3.10\""},
+]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

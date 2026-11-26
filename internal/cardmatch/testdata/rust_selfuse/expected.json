@@ -1,0 +1,120 @@
+{
+ "inside": [
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/deepplain.rs",
+   "line": 2,
+   "metavars": {
+    "$V": "a b"
+   }
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/equals.rs",
+   "line": 2,
+   "metavars": {
+    "$V": "vendor"
+   }
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/equalsalone.rs",
+   "line": 2,
+   "metavars": {
+    "$V": "vendor"
+   }
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/nestedplain.rs",
+   "line": 2,
+   "metavars": {
+    "$V": "v x"
+   }
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/plain.rs",
+   "line": 2,
+   "metavars": {
+    "$V": "vendor"
+   }
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/rooted.rs",
+   "line": 2,
+   "metavars": {
+    "$V": "v"
+   }
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/selfalias.rs",
+   "line": 2,
+   "metavars": {
+    "$V": "v"
+   }
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/sibling.rs",
+   "line": 2,
+   "metavars": {
+    "$V": "vendor"
+   }
+  }
+ ],
+ "notinside": [
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/deepequals.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/differs.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/nested.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/nestedeq.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/topself.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 10,
+   "end_col": 23,
+   "file": "src/x1.rs",
+   "line": 2,
+   "metavars": {}
+  }
+ ]
+}

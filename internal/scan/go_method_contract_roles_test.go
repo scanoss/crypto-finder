@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // Go KBs key a method as pkg.(Type).Method. The exporter used to look
@@ -36,7 +37,7 @@ func TestGoMethodSupportingCallsCarryTheirContractRole(t *testing.T) {
 			StartLine: line,
 			EndLine:   line,
 			Match:     match,
-			Rules:     []entities.RuleInfo{{ID: "go.xcrypto.chacha20poly1305.aead-x"}},
+			Rules:     []entities.RuleInfo{{ID: "fixture.go.xcrypto.aead-x"}},
 			Metadata: map[string]string{
 				"api":           "chacha20poly1305.NewX",
 				"assetType":     "algorithm",

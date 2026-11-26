@@ -21,10 +21,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // buildPythonModuleFragment builds a graph fragment for a Python source file
@@ -38,7 +39,7 @@ func buildPythonModuleFragment(t *testing.T, file, src string, report *entities.
 	}
 
 	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
-	resolver := callgraph.NewPythonContractTypeResolverFromEmbedded()
+	resolver := callgraph.NewPythonContractTypeResolverFromSource()
 	b.SetTypeResolver(resolver)
 
 	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "mypkg"}}, nil)
@@ -327,7 +328,7 @@ def new(key, mode, **kwargs):
 	// Rule with the Cryptodome AES.new FQN form.
 	ruleDir := t.TempDir()
 	ruleBody := "rules:\n" +
-		"  - id: python.pycryptodome.algorithm.ae.aes-gcm.cryptodome\n" +
+		"  - id: fixture.python.pycryptodome.aes-gcm.cryptodome\n" +
 		"    metadata:\n" +
 		"      crypto:\n" +
 		"        assetType: algorithm\n" +
@@ -384,7 +385,7 @@ def new(key, mode, **kwargs):
 	// Rule with the pycryptodome AES.new FQN form.
 	ruleDir := t.TempDir()
 	ruleBody := "rules:\n" +
-		"  - id: python.pycryptodome.algorithm.ae.aes-gcm\n" +
+		"  - id: fixture.python.pycryptodome.aes-gcm\n" +
 		"    metadata:\n" +
 		"      crypto:\n" +
 		"        assetType: algorithm\n" +
@@ -641,7 +642,7 @@ class JWS:
 
 	ruleDir := t.TempDir()
 	ruleBody := "rules:\n" +
-		"  - id: python.jwcrypto.algorithm.mac.hmac.jws-sign\n" +
+		"  - id: fixture.python.jwcrypto.jws-sign\n" +
 		"    metadata:\n" +
 		"      crypto:\n" +
 		"        assetType: algorithm\n" +
@@ -698,7 +699,7 @@ class JWE:
 
 	ruleDir := t.TempDir()
 	ruleBody := "rules:\n" +
-		"  - id: python.jwcrypto.algorithm.ae.aes-gcm.jwe-content-encrypt\n" +
+		"  - id: fixture.python.jwcrypto.jwe-content-encrypt\n" +
 		"    metadata:\n" +
 		"      crypto:\n" +
 		"        assetType: algorithm\n" +

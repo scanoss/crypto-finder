@@ -14,10 +14,6 @@ type ValidationOptions struct {
 	RuleFiles        []string
 	RuleDirs         []string
 	NoRemoteRules    bool
-	Scanner          string
-	AllowedScanners  []string
-	Interfile        bool
-	InterfileScanner string
 	Format           string
 	SupportedFormats []string
 	Languages        []string
@@ -42,16 +38,6 @@ func ValidateFlags(target string, opts ValidationOptions) ([]string, error) {
 		if err := utils.ValidateRuleDirNotEmpty(ruleDir); err != nil {
 			return nil, err
 		}
-	}
-
-	// Validate scanner.
-	if !slices.Contains(opts.AllowedScanners, opts.Scanner) {
-		return nil, fmt.Errorf("invalid scanner name: %s", opts.Scanner)
-	}
-
-	// Validate interfile flag is only used with the configured interfile scanner.
-	if opts.Interfile && opts.Scanner != opts.InterfileScanner {
-		return nil, fmt.Errorf("--interfile flag is only supported with --scanner %s", opts.InterfileScanner)
 	}
 
 	// Validate output format.

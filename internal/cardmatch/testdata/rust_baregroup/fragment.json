@@ -1,0 +1,688 @@
+{
+ "schema_version": "graph-fragment-1.35",
+ "functions": [
+  {
+   "key": "probe::alias.f",
+   "function_name": "probe::alias.f",
+   "canonical_signature": "probe::alias.f()",
+   "package": "probe::alias",
+   "name": "f",
+   "file_path": "src/alias.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::deep.f",
+   "function_name": "probe::deep.f",
+   "canonical_signature": "probe::deep.f()",
+   "package": "probe::deep",
+   "name": "f",
+   "file_path": "src/deep.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::glob.f",
+   "function_name": "probe::glob.f",
+   "canonical_signature": "probe::glob.f()",
+   "package": "probe::glob",
+   "name": "f",
+   "file_path": "src/glob.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::modonly.f",
+   "function_name": "probe::modonly.f",
+   "canonical_signature": "probe::modonly.f()",
+   "package": "probe::modonly",
+   "name": "f",
+   "file_path": "src/modonly.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::multi.f",
+   "function_name": "probe::multi.f",
+   "canonical_signature": "probe::multi.f()",
+   "package": "probe::multi",
+   "name": "f",
+   "file_path": "src/multi.rs",
+   "start_line": 5,
+   "end_line": 5
+  },
+  {
+   "key": "probe::nestedbare.f",
+   "function_name": "probe::nestedbare.f",
+   "canonical_signature": "probe::nestedbare.f()",
+   "package": "probe::nestedbare",
+   "name": "f",
+   "file_path": "src/nestedbare.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::one.f",
+   "function_name": "probe::one.f",
+   "canonical_signature": "probe::one.f()",
+   "package": "probe::one",
+   "name": "f",
+   "file_path": "src/one.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::other.f",
+   "function_name": "probe::other.f",
+   "canonical_signature": "probe::other.f()",
+   "package": "probe::other",
+   "name": "f",
+   "file_path": "src/other.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::plain.f",
+   "function_name": "probe::plain.f",
+   "canonical_signature": "probe::plain.f()",
+   "package": "probe::plain",
+   "name": "f",
+   "file_path": "src/plain.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::rooted.f",
+   "function_name": "probe::rooted.f",
+   "canonical_signature": "probe::rooted.f()",
+   "package": "probe::rooted",
+   "name": "f",
+   "file_path": "src/rooted.rs",
+   "start_line": 2,
+   "end_line": 2
+  },
+  {
+   "key": "probe::two.f",
+   "function_name": "probe::two.f",
+   "canonical_signature": "probe::two.f()",
+   "package": "probe::two",
+   "name": "f",
+   "file_path": "src/two.rs",
+   "start_line": 2,
+   "end_line": 2
+  }
+ ],
+ "internal_edges_compact": [],
+ "internal_edge_strings": [
+  ""
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe::alias.f",
+   "target_key": "acme_hash.(Hash).default",
+   "target_canonical_signature": "acme_hash.Hash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  },
+  {
+   "caller_key": "probe::deep.f",
+   "target_key": "acme_hash::digest.(AcmeHash).default",
+   "target_canonical_signature": "acme_hash::digest.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  },
+  {
+   "caller_key": "probe::glob.f",
+   "target_key": "acme_hash.(AcmeHash).default",
+   "target_canonical_signature": "acme_hash.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  },
+  {
+   "caller_key": "probe::modonly.f",
+   "target_key": "probe::modonly.(AcmeHash).default",
+   "target_canonical_signature": "probe::modonly.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  },
+  {
+   "caller_key": "probe::multi.f",
+   "target_key": "acme_hash.(AcmeHash).default",
+   "target_canonical_signature": "acme_hash.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 5
+   }
+  },
+  {
+   "caller_key": "probe::nestedbare.f",
+   "target_key": "acme_hash.(AcmeHash).default",
+   "target_canonical_signature": "acme_hash.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  },
+  {
+   "caller_key": "probe::one.f",
+   "target_key": "acme_hash.(AcmeHash).default",
+   "target_canonical_signature": "acme_hash.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  },
+  {
+   "caller_key": "probe::other.f",
+   "target_key": "other.(AcmeHash).default",
+   "target_canonical_signature": "other.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  },
+  {
+   "caller_key": "probe::plain.f",
+   "target_key": "acme_hash.(AcmeHash).default",
+   "target_canonical_signature": "acme_hash.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  },
+  {
+   "caller_key": "probe::rooted.f",
+   "target_key": "acme_hash.(AcmeHash).default",
+   "target_canonical_signature": "acme_hash.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  },
+  {
+   "caller_key": "probe::two.f",
+   "target_key": "acme_hash.(AcmeHash).default",
+   "target_canonical_signature": "acme_hash.AcmeHash.default()",
+   "raw": "AcmeHash::default",
+   "line": 2,
+   "resolution": "exact",
+   "method_name": "default",
+   "assigned_var": "h",
+   "start_col": 18,
+   "end_col": 37,
+   "entry_call": {
+    "line": 2
+   }
+  }
+ ],
+ "declarations": [
+  [
+   0,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   1,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   2,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   3,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   4,
+   5,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   5,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   6,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   7,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   8,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   9,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ],
+  [
+   10,
+   2,
+   10,
+   38,
+   "",
+   "h",
+   "call"
+  ]
+ ],
+ "source_lines": {
+  "src/alias.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/deep.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/glob.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/modonly.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/multi.rs": {
+   "5": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/nestedbare.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/one.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/other.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/plain.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/rooted.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  },
+  "src/two.rs": {
+   "2": "fn f() { let h = AcmeHash::default(); }"
+  }
+ },
+ "imports": {
+  "src/alias.rs": [
+   {
+    "line": 1,
+    "module": "acme_hash",
+    "name": "Hash",
+    "alias": "AcmeHash",
+    "start_col": 1,
+    "end_col": 35,
+    "text": "{acme_hash::Hash as AcmeHash}"
+   }
+  ],
+  "src/deep.rs": [
+   {
+    "line": 1,
+    "module": "acme_hash::digest",
+    "name": "AcmeHash",
+    "start_col": 1,
+    "end_col": 35,
+    "text": "{acme_hash::digest::AcmeHash}"
+   }
+  ],
+  "src/glob.rs": [
+   {
+    "line": 1,
+    "module": "acme_hash",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 20,
+    "text": "{acme_hash::*}"
+   }
+  ],
+  "src/modonly.rs": [
+   {
+    "line": 1,
+    "module": "",
+    "name": "acme_hash",
+    "start_col": 1,
+    "end_col": 17,
+    "text": "{acme_hash}"
+   }
+  ],
+  "src/multi.rs": [
+   {
+    "line": 1,
+    "module": "x",
+    "name": "Y",
+    "start_col": 1,
+    "end_col": 3,
+    "end_line": 4,
+    "text": "{\n    x::Y,\n    acme_hash::AcmeHash,\n}"
+   },
+   {
+    "line": 1,
+    "module": "acme_hash",
+    "name": "AcmeHash",
+    "start_col": 1,
+    "end_col": 3,
+    "end_line": 4,
+    "text": "{\n    x::Y,\n    acme_hash::AcmeHash,\n}"
+   }
+  ],
+  "src/nestedbare.rs": [
+   {
+    "line": 1,
+    "module": "acme_hash",
+    "name": "AcmeHash",
+    "start_col": 1,
+    "end_col": 29,
+    "text": "{{acme_hash::AcmeHash}}"
+   }
+  ],
+  "src/one.rs": [
+   {
+    "line": 1,
+    "module": "acme_hash",
+    "name": "AcmeHash",
+    "start_col": 1,
+    "end_col": 27,
+    "text": "{acme_hash::AcmeHash}"
+   }
+  ],
+  "src/other.rs": [
+   {
+    "line": 1,
+    "module": "x",
+    "name": "Y",
+    "start_col": 1,
+    "end_col": 29,
+    "text": "{x::Y, other::AcmeHash}"
+   },
+   {
+    "line": 1,
+    "module": "other",
+    "name": "AcmeHash",
+    "start_col": 1,
+    "end_col": 29,
+    "text": "{x::Y, other::AcmeHash}"
+   }
+  ],
+  "src/plain.rs": [
+   {
+    "line": 1,
+    "module": "acme_hash",
+    "name": "AcmeHash",
+    "start_col": 1,
+    "end_col": 25,
+    "text": "acme_hash::AcmeHash"
+   }
+  ],
+  "src/rooted.rs": [
+   {
+    "line": 1,
+    "module": "acme_hash",
+    "name": "AcmeHash",
+    "start_col": 1,
+    "end_col": 29,
+    "text": "::{acme_hash::AcmeHash}"
+   }
+  ],
+  "src/two.rs": [
+   {
+    "line": 1,
+    "module": "x",
+    "name": "Y",
+    "start_col": 1,
+    "end_col": 42,
+    "text": "{x::Y, acme_hash::{AcmeHash, Other}}"
+   },
+   {
+    "line": 1,
+    "module": "acme_hash",
+    "name": "AcmeHash",
+    "start_col": 1,
+    "end_col": 42,
+    "text": "{x::Y, acme_hash::{AcmeHash, Other}}"
+   },
+   {
+    "line": 1,
+    "module": "acme_hash",
+    "name": "Other",
+    "start_col": 1,
+    "end_col": 42,
+    "text": "{x::Y, acme_hash::{AcmeHash, Other}}"
+   }
+  ]
+ },
+ "items": {
+  "src/alias.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/deep.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/glob.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/modonly.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/multi.rs": [
+   [
+    5,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/nestedbare.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/one.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/other.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/plain.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/rooted.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ],
+  "src/two.rs": [
+   [
+    2,
+    1,
+    40,
+    "fn",
+    "f"
+   ]
+  ]
+ },
+ "scan_metadata": {
+  "ecosystem": "rust",
+  "root_module": "probe",
+  "tool_name": "crypto-finder",
+  "tool_version": "dev",
+  "graph_algo_version": "graph-algo-rs-10",
+  "exported_at": "2026-11-18T12:24:47Z",
+  "function_count": 11,
+  "internal_edge_count": 0,
+  "external_call_count": 11,
+  "crypto_operation_count": 47,
+  "crypto_entry_point_count": 11,
+  "entry_kinds": true,
+  "shared_entry_calls": true,
+  "implicit_source_files": true,
+  "derived_function_names": true,
+  "derived_target_names": true
+ }
+}

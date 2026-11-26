@@ -1,0 +1,412 @@
+{
+ "aliased": [
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/alias.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash Hash"
+   }
+  }
+ ],
+ "anyacme": [
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/alias.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash Hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/deep.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash digest AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/glob.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/modonly.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/multi.rs",
+   "line": 5,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/nestedbare.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/one.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/plain.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/rooted.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/two.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  }
+ ],
+ "anyuse": [
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/alias.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash Hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/deep.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash digest AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/glob.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/modonly.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/multi.rs",
+   "line": 5,
+   "metavars": {
+    "$I": "x Y"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/nestedbare.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/one.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/other.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "x Y"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/plain.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/rooted.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "acme_hash AcmeHash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/two.rs",
+   "line": 2,
+   "metavars": {
+    "$I": "x Y"
+   }
+  }
+ ],
+ "concrete": [
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/deep.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/multi.rs",
+   "line": 5,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/nestedbare.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/one.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/plain.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/rooted.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/two.rs",
+   "line": 2,
+   "metavars": {}
+  }
+ ],
+ "moduse": [
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/deep.rs",
+   "line": 2,
+   "metavars": {
+    "$M": "acme_hash digest"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/multi.rs",
+   "line": 5,
+   "metavars": {
+    "$M": "acme_hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/nestedbare.rs",
+   "line": 2,
+   "metavars": {
+    "$M": "acme_hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/one.rs",
+   "line": 2,
+   "metavars": {
+    "$M": "acme_hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/other.rs",
+   "line": 2,
+   "metavars": {
+    "$M": "other"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/plain.rs",
+   "line": 2,
+   "metavars": {
+    "$M": "acme_hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/rooted.rs",
+   "line": 2,
+   "metavars": {
+    "$M": "acme_hash"
+   }
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/two.rs",
+   "line": 2,
+   "metavars": {
+    "$M": "acme_hash"
+   }
+  }
+ ],
+ "notuse": [
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/alias.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/glob.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/modonly.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/other.rs",
+   "line": 2,
+   "metavars": {}
+  }
+ ],
+ "qual": [
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/glob.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/multi.rs",
+   "line": 5,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/nestedbare.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/one.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/plain.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/rooted.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 18,
+   "end_col": 37,
+   "file": "src/two.rs",
+   "line": 2,
+   "metavars": {}
+  }
+ ]
+}

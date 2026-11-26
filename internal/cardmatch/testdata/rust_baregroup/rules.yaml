@@ -1,0 +1,73 @@
+# A bare group at the top of a use declaration (`use {a::X, b::{Y}};`) is
+# transparent: each of its trees reads as a declaration of its own
+# (TestRustBareGroupAsOpenGrep).
+rules:
+- id: anyuse
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "anyuse-$I"}}
+  patterns:
+  - pattern-inside: |
+      use $I;
+      ...
+  - pattern: AcmeHash::default()
+- id: moduse
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "moduse-$M"}}
+  patterns:
+  - pattern-inside: |
+      use $M::AcmeHash;
+      ...
+  - pattern: AcmeHash::default()
+- id: concrete
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "concrete"}}
+  patterns:
+  - pattern-inside: |
+      use acme_hash::AcmeHash;
+      ...
+  - pattern: AcmeHash::default()
+- id: notuse
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "notuse"}}
+  patterns:
+  - pattern-not-inside: |
+      use acme_hash::AcmeHash;
+      ...
+  - pattern: AcmeHash::default()
+- id: qual
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "qual"}}
+  pattern: acme_hash::AcmeHash::default()
+- id: anyacme
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "named-$I"}}
+  patterns:
+  - pattern-inside: |
+      use $I;
+      ...
+  - pattern: AcmeHash::default()
+  - metavariable-regex:
+      metavariable: $I
+      regex: 'acme'
+- id: aliased
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "named-$I"}}
+  patterns:
+  - pattern-inside: |
+      use $I as AcmeHash;
+      ...
+  - pattern: AcmeHash::default()

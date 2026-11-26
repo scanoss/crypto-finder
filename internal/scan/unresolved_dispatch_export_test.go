@@ -6,8 +6,8 @@ package scan
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 // dispatchChainContext builds app.(Main).run -> org.lib.(Facade).parse ->

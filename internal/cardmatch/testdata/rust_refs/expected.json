@@ -1,0 +1,145 @@
+{
+ "level": [
+  {
+   "col": 11,
+   "end_col": 16,
+   "file": "src/names.rs",
+   "line": 7,
+   "metavars": {}
+  },
+  {
+   "col": 14,
+   "end_col": 19,
+   "file": "src/names.rs",
+   "line": 22,
+   "metavars": {}
+  },
+  {
+   "col": 11,
+   "end_col": 16,
+   "file": "src/names.rs",
+   "line": 23,
+   "metavars": {}
+  },
+  {
+   "col": 35,
+   "end_col": 40,
+   "file": "src/names.rs",
+   "line": 26,
+   "metavars": {}
+  },
+  {
+   "col": 17,
+   "end_col": 22,
+   "file": "src/names.rs",
+   "line": 27,
+   "metavars": {}
+  },
+  {
+   "col": 16,
+   "end_col": 21,
+   "file": "src/names.rs",
+   "line": 28,
+   "metavars": {}
+  },
+  {
+   "col": 11,
+   "end_col": 16,
+   "file": "src/names.rs",
+   "line": 30,
+   "metavars": {}
+  },
+  {
+   "col": 8,
+   "end_col": 13,
+   "file": "src/names.rs",
+   "line": 31,
+   "metavars": {}
+  },
+  {
+   "col": 5,
+   "end_col": 10,
+   "file": "src/names.rs",
+   "line": 32,
+   "metavars": {}
+  }
+ ],
+ "lower": [
+  {
+   "col": 17,
+   "end_col": 30,
+   "file": "src/names.rs",
+   "line": 8,
+   "metavars": {}
+  }
+ ],
+ "typed": [
+  {
+   "col": 13,
+   "end_col": 26,
+   "file": "src/names.rs",
+   "line": 26,
+   "metavars": {}
+  },
+  {
+   "col": 13,
+   "end_col": 26,
+   "file": "src/values.rs",
+   "line": 37,
+   "metavars": {}
+  }
+ ],
+ "unit": [
+  {
+   "col": 28,
+   "end_col": 47,
+   "file": "src/values.rs",
+   "line": 24,
+   "metavars": {}
+  },
+  {
+   "col": 9,
+   "end_col": 28,
+   "file": "src/values.rs",
+   "line": 26,
+   "metavars": {}
+  },
+  {
+   "col": 5,
+   "end_col": 24,
+   "file": "src/values.rs",
+   "line": 32,
+   "metavars": {}
+  }
+ ],
+ "variant": [
+  {
+   "col": 15,
+   "end_col": 20,
+   "file": "src/names.rs",
+   "line": 5,
+   "metavars": {}
+  },
+  {
+   "col": 15,
+   "end_col": 43,
+   "file": "src/values.rs",
+   "line": 2,
+   "metavars": {}
+  },
+  {
+   "col": 15,
+   "end_col": 26,
+   "file": "src/values.rs",
+   "line": 8,
+   "metavars": {}
+  },
+  {
+   "col": 10,
+   "end_col": 28,
+   "file": "src/values.rs",
+   "line": 14,
+   "metavars": {}
+  }
+ ]
+}

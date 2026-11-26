@@ -118,9 +118,14 @@ linters:
         - unnamedResult
       settings:
         hugeParam:
-          # Above entities.CryptographicAsset (256 bytes since scan format 1.8),
+          # At or above entities.CryptographicAsset (264 bytes since scan format 1.8),
           # which is passed by value throughout the scan.
-          sizeThreshold: 264
+          sizeThreshold: 272
+        rangeValCopy:
+          # The same entities are ranged over by value throughout the scan
+          # (dependencies 168 bytes, assets 264, fragment functions and
+          # calls up to 400).
+          sizeThreshold: 512
 
     gosec:
       severity: medium
@@ -128,6 +133,8 @@ linters:
       excludes:
         - G204 # Audit use of command execution - we'll check these manually
         - G304 # File path provided as taint input - check manually
+        - G702 # Command injection via taint analysis - same class as G204; the mvn arguments come from the build's own resolver
+        - G703 # Path traversal via taint analysis - same class as G304; a CLI reads and writes the paths its user passes
 
     govet:
       enable-all: true

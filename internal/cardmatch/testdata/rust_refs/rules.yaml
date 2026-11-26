@@ -1,0 +1,45 @@
+# Bare paths whose last segment names a type or a variant (acme_kms::Spec::Es256).
+# They are served where a value is read, a struct literal's path and a
+# one-segment name a use brings in included (TestRustRefsAsOpenGrep).
+rules:
+- id: variant
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "variant"}}
+  pattern-either:
+  - pattern: acme_kms::types::Spec::Es256
+  - patterns:
+    - pattern-either:
+      - pattern: Spec::Es256
+      - pattern: types::Spec::Es256
+    - pattern-inside: |
+        use $IMPORT;
+        ...
+    - metavariable-regex:
+        metavariable: $IMPORT
+        regex: '^acme_kms(?:::|$)'
+- id: unit
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "unit"}}
+  pattern: acme_kms::Mode::Gcm
+- id: typed
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "typed"}}
+  pattern: acme_kms::Key
+- id: level
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "level"}}
+  pattern: acme_kms::LEVEL
+- id: lower
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "lower"}}
+  pattern: acme_kms::default_level

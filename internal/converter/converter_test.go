@@ -276,11 +276,10 @@ func TestCountTotalAssets(t *testing.T) {
 				allFindings = append(allFindings, report.Findings...)
 			}
 
-			report := &entities.InterimReport{Findings: allFindings}
-			got := countTotalAssets(report)
+			got := countFindingsAssets(allFindings)
 
 			if got != tt.want {
-				t.Errorf("countTotalAssets() = %d, want %d", got, tt.want)
+				t.Errorf("countFindingsAssets() = %d, want %d", got, tt.want)
 			}
 		})
 	}
@@ -670,7 +669,7 @@ func TestConverter_MergesCryptoFunctionsForSharedAPIDifferentOperation(t *testin
 					{
 						StartLine: 70,
 						EndLine:   70,
-						Rules:     []entities.RuleInfo{{ID: "java.bouncycastle.algorithm.block-cipher.aes-init-encrypt", Severity: "INFO"}},
+						Rules:     []entities.RuleInfo{{ID: "fixture.java.bouncycastle.aes-init-encrypt", Severity: "INFO"}},
 						Metadata: map[string]string{
 							"assetType":          "algorithm",
 							"algorithmFamily":    "AES",
@@ -683,7 +682,7 @@ func TestConverter_MergesCryptoFunctionsForSharedAPIDifferentOperation(t *testin
 					{
 						StartLine: 70,
 						EndLine:   70,
-						Rules:     []entities.RuleInfo{{ID: "java.bouncycastle.algorithm.block-cipher.aes-init-decrypt", Severity: "INFO"}},
+						Rules:     []entities.RuleInfo{{ID: "fixture.java.bouncycastle.aes-init-decrypt", Severity: "INFO"}},
 						Metadata: map[string]string{
 							"assetType":          "algorithm",
 							"algorithmFamily":    "AES",

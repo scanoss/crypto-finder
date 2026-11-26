@@ -5,7 +5,7 @@
 # collide:
 #   bin/verify/crypto-finder        the binary build.sh made
 #   bin/verify/state.env            what build.sh recorded about it
-#   bin/verify/sandbox/<drive>/     one isolated HOME, venv and fixture copy per drive
+#   bin/verify/sandbox/<drive>/     one isolated HOME and work directory per drive
 #   bin/verify/evidence/<feature>/  proof; cleanup.sh never touches it
 
 set -euo pipefail
@@ -19,10 +19,6 @@ STATE="$RUN_DIR/state.env"
 SANDBOX_ROOT="$RUN_DIR/sandbox"
 EVIDENCE_ROOT="$RUN_DIR/evidence"
 RULES_DIR="$REPO/testdata/rules"
-# VERIFY_FIXTURES swaps testdata/projects for another tree with the same
-# layout, e.g. a temp copy with a fixture deliberately broken.
-FIXTURES="${VERIFY_FIXTURES:-$REPO/testdata/projects}"
-HOST_HOME="$HOME"
 
 # remove_tree DIR: rm -rf that also clears read-only module cache entries.
 remove_tree() {
@@ -50,14 +46,11 @@ source_fingerprint() {
 }
 
 # sandbox_env fills SANDBOX_ENV with an `env -i` prefix for a drive whose
-# sandbox is $1. Nothing from the caller's environment leaks in except PATH,
-# LANG and the rustup toolchain directory: no SCANOSS_*/SC_* variable (so no
-# API key and no API URL), no VIRTUAL_ENV, no real HOME or XDG directory.
-# GOPROXY=off, GOTOOLCHAIN=local and CARGO_NET_OFFLINE keep the toolchains off
-# the network (the fixtures resolve through local paths only); -modcacherw
-# keeps the sandbox removable. XDG_CONFIG_HOME must exist before opengrep
-# runs, or `opengrep --version` dies and the scan reports
-# scanner_initialization_failed; begin_drive creates it.
+# sandbox is $1. Nothing from the caller's environment leaks in except PATH
+# and LANG: no SCANOSS_*/SC_* variable (so no API key and no API URL), no
+# VIRTUAL_ENV, no real HOME or XDG directory. GOPROXY=off, GOTOOLCHAIN=local
+# and CARGO_NET_OFFLINE keep any toolchain the binary runs off the network;
+# -modcacherw keeps the sandbox removable. begin_drive creates XDG_CONFIG_HOME.
 sandbox_env() {
 	local box=$1
 	SANDBOX_ENV=(env -i
@@ -73,11 +66,6 @@ sandbox_env() {
 		"GOTOOLCHAIN=local"
 		"GOFLAGS=-modcacherw"
 		"CARGO_NET_OFFLINE=true")
-	local rustup="${RUSTUP_HOME:-$HOST_HOME/.rustup}"
-	if [[ -d $rustup ]]; then
-		SANDBOX_ENV+=("RUSTUP_HOME=$rustup")
-	fi
-	SANDBOX_ENV+=("${EXTRA_ENV[@]}")
 }
 
 # holds_remote_rules BOX: true when the ruleset cache in BOX's HOME has any
@@ -132,30 +120,27 @@ guard_args() {
 	esac
 }
 
-# begin_drive FEATURE [LANG] sets BOX (the sandbox) and EVID (the evidence
+# begin_drive FEATURE sets BOX (the sandbox) and EVID (the evidence
 # directory), starts both fresh, and takes a lock so the same drive cannot run
 # twice at once in this checkout.
 begin_drive() {
-	local feature=$1 lang=${2:-}
-	local name=$feature${lang:+-$lang}
+	local feature=$1 name=$1
 	[[ -x $BIN ]] || die "no binary at $BIN; run build.sh"
 	mkdir -p "$SANDBOX_ROOT"
 	LOCK="$SANDBOX_ROOT/$name.lock"
 	mkdir "$LOCK" 2>/dev/null || die "$LOCK exists: another drive of $name is running, or one was killed (run cleanup.sh)"
 	trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 	BOX="$SANDBOX_ROOT/$name"
-	EVID="$EVIDENCE_ROOT/$feature${lang:+/$lang}"
+	EVID="$EVIDENCE_ROOT/$feature"
 	remove_tree "$BOX"
 	remove_tree "$EVID"
 	mkdir -p "$BOX/home/.cache" "$BOX/home/.config" "$BOX/home/.local/share" "$BOX/tmp" "$BOX/work" "$EVID"
-	EXTRA_ENV=()
 	TRANSCRIPT="$EVID/transcript.txt"
 	VERDICT="$EVID/verdict.txt"
 	: >"$VERDICT.tmp"
 	{
-		echo "# feature=$feature lang=${lang:--} started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+		echo "# feature=$feature started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 		echo "# binary: $("$BIN" version | head -1); head=$(git -C "$REPO" rev-parse --short HEAD)"
-		echo "# fixtures: $FIXTURES"
 		echo "# sandbox: $BOX"
 	} >"$TRANSCRIPT"
 }
@@ -176,12 +161,6 @@ cf() {
 	set -e
 	echo "  -> exit $CF_EXIT ($step)" >>"$TRANSCRIPT"
 	! holds_remote_rules "$BOX" || die "a remote ruleset landed in the sandbox HOME; isolation broken"
-}
-
-# sandboxed CMD... runs a helper tool (python3, cp, ...) with the sandbox env.
-sandboxed() {
-	sandbox_env "$BOX"
-	"${SANDBOX_ENV[@]}" "$@"
 }
 
 pass() { echo "PASS $*" >>"$VERDICT.tmp"; }
@@ -216,90 +195,4 @@ end_drive() {
 	cat "$VERDICT"
 	echo "evidence: $EVID"
 	[[ $status == PASS ]]
-}
-
-# --- fixture preparation, mirroring internal/cli/*_reachability_*_test.go ---
-
-# copy_fixture SRC: copy a fixture tree into $BOX/work/fixture. The whole tree
-# is copied so relative wiring (Go replace, Cargo path deps) survives.
-#
-# $BOX/work is made a git repository of its own first. The primary scan honours
-# the .gitignore of the repository a target sits in, and this checkout ignores
-# bin/, so without it every application file in the copy would be skipped and
-# only dependency findings would come back.
-copy_fixture() {
-	[[ -d $1 ]] || die "fixture $1 not found"
-	sandboxed git init -q "$BOX/work"
-	cp -R "$1" "$BOX/work/fixture"
-	echo "# fixture copied from $1 into its own git repository $BOX/work" >>"$TRANSCRIPT"
-}
-
-# new_venv: an empty venv outside the scan target, named "venv" as the tests
-# name it. Sets SITE_PACKAGES and adds VIRTUAL_ENV to the drive's env.
-new_venv() {
-	sandboxed python3 -m venv "$BOX/venv"
-	SITE_PACKAGES=$(sandboxed "$BOX/venv/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
-	EXTRA_ENV+=("VIRTUAL_ENV=$BOX/venv")
-}
-
-# install_venv_package NAME SRCDIR [REQUIRES...]: lay NAME out in the venv the
-# way pip leaves it (package files plus a dist-info whose METADATA lists
-# REQUIRES as Requires-Dist), without pip or a network.
-install_venv_package() {
-	local name=$1 src=$2
-	shift 2
-	local dist="$SITE_PACKAGES/$name-1.0.0.dist-info"
-	mkdir -p "$SITE_PACKAGES/$name" "$dist"
-	cp -R "$src/." "$SITE_PACKAGES/$name/"
-	{
-		printf 'Metadata-Version: 2.1\nName: %s\nVersion: 1.0.0\n' "$name"
-		local req
-		for req in "$@"; do printf 'Requires-Dist: %s\n' "$req"; done
-	} >"$dist/METADATA"
-	{
-		(cd "$SITE_PACKAGES" && find "$name" -type f | sort | sed 's/$/,,/')
-		printf '%s\n' "$name-1.0.0.dist-info/METADATA,," "$name-1.0.0.dist-info/RECORD,,"
-	} >"$dist/RECORD"
-	echo "$name" >"$dist/top_level.txt"
-	echo pip >"$dist/INSTALLER"
-	echo "# venv: installed $name${1:+ (requires $*)}" >>"$TRANSCRIPT"
-}
-
-# lang_needs / lang_ready: the toolchain a language's fixture needs.
-lang_needs() {
-	case $1 in
-	go) echo go ;;
-	python) echo "python3 with venv" ;;
-	rust) echo "cargo and a rustup toolchain dir" ;;
-	node) echo nothing ;;
-	*) echo unknown ;;
-	esac
-}
-lang_ready() {
-	case $1 in
-	go) command -v go ;;
-	python) command -v python3 && python3 -c 'import venv, ensurepip' ;;
-	rust) command -v cargo && [[ -d ${RUSTUP_HOME:-$HOST_HOME/.rustup} ]] ;;
-	node) true ;;
-	*) false ;;
-	esac >/dev/null 2>&1
-}
-
-# scanner_language maps a fixture language to the --languages value.
-scanner_language() {
-	case $1 in
-	node) echo javascript ;;
-	*) echo "$1" ;;
-	esac
-}
-
-# verdicts FINDINGS CALLGRAPH OUT: join the findings report and the call graph
-# export into one row per finding graph (see verdicts.jq).
-verdicts() {
-	jq -n --slurpfile f "$1" --slurpfile g "$2" -f "$VERIFY_SCRIPTS/verdicts.jq" >"$3"
-}
-
-# check_findings VERDICTS WANT_JSON: append PASS/FAIL per expected finding.
-check_findings() {
-	jq -r -n --slurpfile v "$1" --argjson want "$2" -f "$VERIFY_SCRIPTS/check-findings.jq" >>"$VERDICT.tmp"
 }

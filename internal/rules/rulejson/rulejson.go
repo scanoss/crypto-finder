@@ -16,8 +16,7 @@
 
 // Package rulejson encodes Semgrep/OpenGrep rule files as JSON with the
 // meaning OpenGrep's YAML loader gives them. The rules materializer merges
-// rule files through it, and the OpenGrep adapter reads rule files through it
-// when it feeds opengrep-core directly or prefilters rules.
+// rule files through it.
 package rulejson
 
 import (
@@ -189,16 +188,6 @@ func MappingValue(node *yaml.Node, key string) *yaml.Node {
 	return value
 }
 
-// EncodeRules returns one JSON object per rule of a plain rules file, with
-// each string id prefixed by idPrefix, or false when the file is not a plain
-// rules file or some rule has no JSON spelling OpenGrep reads the same way.
-func EncodeRules(data []byte, idPrefix string) ([][]byte, bool) {
-	if rules, ok := encodeJSONRules(data, idPrefix); ok {
-		return rules, true
-	}
-	return EncodeYAMLRules(data, idPrefix)
-}
-
 // EncodeYAMLRules is EncodeRules without the JSON fast path: every rule is
 // re-encoded from its YAML node.
 func EncodeYAMLRules(data []byte, idPrefix string) ([][]byte, bool) {
@@ -223,87 +212,4 @@ func EncodeYAMLRules(data []byte, idPrefix string) ([][]byte, bool) {
 		encoded = append(encoded, out.Bytes())
 	}
 	return encoded, true
-}
-
-// encodeJSONRules is the fast path for a file that is already a JSON object
-// holding only a rules array of objects with string ids, the shape the
-// materializer writes. YAML reads such JSON text the same way, so the rules
-// pass through verbatim apart from the id prefix.
-func encodeJSONRules(data []byte, idPrefix string) ([][]byte, bool) {
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return nil, false
-	}
-	var file map[string]json.RawMessage
-	if json.Unmarshal(trimmed, &file) != nil || len(file) != 1 {
-		return nil, false
-	}
-	var raw []json.RawMessage
-	if json.Unmarshal(file["rules"], &raw) != nil {
-		return nil, false
-	}
-	encoded := make([][]byte, 0, len(raw))
-	for _, rule := range raw {
-		out, ok := prefixRuleID(rule, idPrefix)
-		if !ok {
-			return nil, false
-		}
-		encoded = append(encoded, out)
-	}
-	return encoded, true
-}
-
-// PrefixRuleID returns one JSON rule object with idPrefix put before its
-// id, or false for an object with a repeated key or a missing or non-string
-// id.
-func PrefixRuleID(rule []byte, idPrefix string) ([]byte, bool) {
-	return prefixRuleID(rule, idPrefix)
-}
-
-// prefixRuleID rewrites the id of one JSON rule object, rejecting objects
-// with a repeated key or a missing or non-string id.
-func prefixRuleID(rule json.RawMessage, idPrefix string) ([]byte, bool) {
-	decoder := json.NewDecoder(bytes.NewReader(rule))
-	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
-		return nil, false
-	}
-	var out bytes.Buffer
-	out.WriteByte('{')
-	seen := make(map[string]bool)
-	hasID := false
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return nil, false
-		}
-		key, ok := token.(string)
-		if !ok || seen[key] {
-			return nil, false
-		}
-		seen[key] = true
-		var value json.RawMessage
-		if decoder.Decode(&value) != nil {
-			return nil, false
-		}
-		if out.Len() > 1 {
-			out.WriteByte(',')
-		}
-		appendJSONString(&out, key)
-		out.WriteByte(':')
-		if key == "id" {
-			var id string
-			if json.Unmarshal(value, &id) != nil {
-				return nil, false
-			}
-			hasID = true
-			appendJSONString(&out, idPrefix+id)
-			continue
-		}
-		out.Write(value)
-	}
-	if !hasID {
-		return nil, false
-	}
-	out.WriteByte('}')
-	return out.Bytes(), true
 }

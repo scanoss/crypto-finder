@@ -38,6 +38,8 @@ import (
 )
 
 const (
+	readmeName = "README.md"
+
 	changelogFile    = "CHANGELOG.md"
 	changelogDir     = "changelog.d"
 	guideFile        = "docs/user-guide/user-guide.html"
@@ -103,7 +105,7 @@ func readChangelogFragments(root string) ([]fragment, error) {
 	var out []fragment
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || name == "README.md" || strings.HasPrefix(name, ".") {
+		if e.IsDir() || name == readmeName || strings.HasPrefix(name, ".") {
 			continue
 		}
 		stem, ok := strings.CutSuffix(name, ".md")
@@ -118,7 +120,7 @@ func readChangelogFragments(root string) ([]fragment, error) {
 		if section == "" {
 			return nil, fmt.Errorf("%s/%s: section %q must be one of added, changed, deprecated, removed, fixed, security", changelogDir, name, stem[dot+1:])
 		}
-		raw, err := os.ReadFile(filepath.Join(root, changelogDir, name)) //nolint:gosec // maintainer CLI; paths come from the repo root flag
+		raw, err := os.ReadFile(filepath.Join(root, changelogDir, name))
 		if err != nil {
 			return nil, err
 		}
@@ -154,13 +156,13 @@ func readGuideFragments(root string) ([]fragment, error) {
 	var out []fragment
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || name == "README.md" || strings.HasPrefix(name, ".") {
+		if e.IsDir() || name == readmeName || strings.HasPrefix(name, ".") {
 			continue
 		}
 		if !strings.HasSuffix(name, ".html") {
 			return nil, fmt.Errorf("%s/%s: fragment files end in .html", guideFragmentDir, name)
 		}
-		raw, err := os.ReadFile(filepath.Join(root, guideFragmentDir, name)) //nolint:gosec // maintainer CLI; paths come from the repo root flag
+		raw, err := os.ReadFile(filepath.Join(root, guideFragmentDir, name))
 		if err != nil {
 			return nil, err
 		}
@@ -182,14 +184,14 @@ func check(root string) error {
 	if _, err := readGuideFragments(root); err != nil {
 		return err
 	}
-	raw, err := os.ReadFile(filepath.Join(root, guideFile)) //nolint:gosec // maintainer CLI; paths come from the repo root flag
+	raw, err := os.ReadFile(filepath.Join(root, guideFile))
 	if err != nil {
 		return err
 	}
 	if _, _, _, err := splitGuide(string(raw)); err != nil {
 		return err
 	}
-	doc, err := os.ReadFile(filepath.Join(root, changelogFile)) //nolint:gosec // maintainer CLI; paths come from the repo root flag
+	doc, err := os.ReadFile(filepath.Join(root, changelogFile))
 	if err != nil {
 		return err
 	}
@@ -274,7 +276,7 @@ func buildRelease(existing []section, frags []fragment) string {
 
 func releaseChangelog(root, version, date string, dry bool) error {
 	path := filepath.Join(root, changelogFile)
-	raw, err := os.ReadFile(path) //nolint:gosec // maintainer CLI; paths come from the repo root flag
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -304,7 +306,7 @@ func releaseChangelog(root, version, date string, dry bool) error {
 		return err
 	}
 	for _, f := range frags {
-		if err := os.Remove(filepath.Join(root, f.path)); err != nil { //nolint:gosec // maintainer CLI; paths come from the repo root flag
+		if err := os.Remove(filepath.Join(root, f.path)); err != nil {
 			return err
 		}
 	}
@@ -323,7 +325,7 @@ func splitGuide(doc string) (before, block, after string, err error) {
 
 func foldGuide(root string, dry bool) error {
 	path := filepath.Join(root, guideFile)
-	raw, err := os.ReadFile(path) //nolint:gosec // maintainer CLI; paths come from the repo root flag
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -352,7 +354,7 @@ func foldGuide(root string, dry bool) error {
 		return err
 	}
 	for _, f := range frags {
-		if err := os.Remove(filepath.Join(root, f.path)); err != nil { //nolint:gosec // maintainer CLI; paths come from the repo root flag
+		if err := os.Remove(filepath.Join(root, f.path)); err != nil {
 			return err
 		}
 	}

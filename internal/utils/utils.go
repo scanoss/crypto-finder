@@ -103,7 +103,8 @@ func DeduplicateSliceOfStrings(duplicates []string) []string {
 }
 
 // ValidateRuleDirNotEmpty checks if a directory exists, is a directory, and contains rule files.
-// Returns an error if the directory doesn't exist, is not a directory, or contains no .yaml/.yml files.
+// Returns an error if the directory doesn't exist, is not a directory, or contains no .yaml/.yml
+// files and no .cards files (a ruleset of v3 card files).
 func ValidateRuleDirNotEmpty(dirPath string) error {
 	info, err := os.Stat(dirPath)
 	if os.IsNotExist(err) {
@@ -126,7 +127,7 @@ func ValidateRuleDirNotEmpty(dirPath string) error {
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext == ".yaml" || ext == ".yml" {
+		if ext == ".yaml" || ext == ".yml" || ext == ".cards" {
 			hasRuleFiles = true
 			return filepath.SkipAll
 		}
@@ -137,7 +138,7 @@ func ValidateRuleDirNotEmpty(dirPath string) error {
 	}
 
 	if !hasRuleFiles {
-		return fmt.Errorf("rules directory '%s' contains no rule files (.yaml or .yml)", dirPath)
+		return fmt.Errorf("rules directory '%s' contains no rule files (.yaml, .yml or .cards)", dirPath)
 	}
 
 	return nil

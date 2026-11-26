@@ -58,7 +58,7 @@ func TestNodeForgeSupportingCallsCarryTheirContractRole(t *testing.T) {
 			file: "cert.js",
 			src:  nodeForgeSelfSigned,
 			asset: cAsset(4, 4, 16, 45, "const cert = forge.pki.createCertificate();",
-				"javascript.node-forge.certificate.x509.create-certificate",
+				"fixture.javascript.node-forge.create-certificate",
 				map[string]string{"assetType": "certificate", "api": "node-forge.pki.createCertificate"}),
 			want: map[string]string{
 				"node-forge.Certificate.setSubject": "config",
@@ -71,7 +71,7 @@ func TestNodeForgeSupportingCallsCarryTheirContractRole(t *testing.T) {
 			file: "cert.js",
 			src:  nodeForgeSelfSigned,
 			asset: cAsset(12, 12, 19, 45, "const caStore = forge.pki.createCaStore();",
-				"javascript.node-forge.certificate.x509.create-ca-store",
+				"fixture.javascript.node-forge.create-ca-store",
 				map[string]string{"assetType": "certificate", "api": "node-forge.pki.createCaStore"}),
 			want: map[string]string{
 				"node-forge.CaStore.addCertificate": "config",

@@ -17,6 +17,8 @@ const (
 	ecosystemRust   = "rust"
 	ecosystemPython = "python"
 	ecosystemNode   = "node"
+	ecosystemRuby   = "ruby"
+	ecosystemCSharp = "csharp"
 )
 
 // pythonBuildBackendPrefixes lists PEP 517 build backends that indicate the

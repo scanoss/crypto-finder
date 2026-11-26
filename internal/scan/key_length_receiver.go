@@ -4,9 +4,9 @@
 package scan
 
 import (
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 // receiverCurveRole returns the contract's receiver contribution to keySize,

@@ -17,8 +17,11 @@
 package deadcode
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -242,5 +245,82 @@ line 9
 	// Dead region: #if 0 (line 2) to #elif (line 4)
 	if regions[0].StartLine != 2 || regions[0].EndLine != 4 {
 		t.Errorf("expected {2, 4}, got {%d, %d}", regions[0].StartLine, regions[0].EndLine)
+	}
+}
+
+// The conditionals RegionDirectives keeps give DeadRegionsOfLines the
+// regions FindDeadRegions finds in the whole file, whatever other lines of
+// the file come with them: a fragment holds them beside the lines of its
+// call sites, among them conditionals of the file's live code and of blocks
+// nested in a dead one.
+func TestRegionDirectivesRebuildTheRegions(t *testing.T) {
+	t.Parallel()
+
+	testdataDir := filepath.Join("..", "..", "testdata", "code", "c")
+	for _, file := range []string{"dead_code.c", "nested_dead_code.c", "if0_else.c", "variants.c", "no_dead_code.c"} {
+		t.Run(file, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(testdataDir, file)
+			want, err := FindDeadRegions(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fileLines := strings.Split(string(data), "\n")
+			kept := RegionDirectives(fileLines)
+			if got := DeadRegionsOfLines(kept); !slices.Equal(got, want) {
+				t.Fatalf("regions of the kept lines = %+v, want %+v", got, want)
+			}
+			// Every other line along with them: each conditional, then all.
+			withConditionals := maps.Clone(kept)
+			if withConditionals == nil {
+				withConditionals = map[int]string{}
+			}
+			all := map[int]string{}
+			for i, line := range fileLines {
+				all[i+1] = line
+				if isConditional(line) {
+					withConditionals[i+1] = line
+				}
+			}
+			for name, lines := range map[string]map[int]string{"conditionals": withConditionals, "all": all} {
+				if got := DeadRegionsOfLines(lines); !slices.Equal(got, want) {
+					t.Errorf("regions of %s = %+v, want %+v", name, got, want)
+				}
+			}
+		})
+	}
+}
+
+// A block nested in a dead one closes the region only with its own
+// conditionals: kept without them, its #else would end the region early.
+func TestRegionDirectivesKeepNestedConditionals(t *testing.T) {
+	t.Parallel()
+
+	fileLines := []string{
+		"#if 0",          // 1
+		"#ifdef FEATURE", // 2
+		"call(a,",        // 3
+		"#else",          // 4
+		"  b);",          // 5
+		"#endif",         // 6
+		"dead();",        // 7
+		"#endif",         // 8
+		"live();",        // 9
+	}
+	kept := RegionDirectives(fileLines)
+	for _, n := range []int{1, 2, 4, 6, 8} {
+		if kept[n] != fileLines[n-1] {
+			t.Errorf("line %d not kept: %v", n, kept)
+		}
+	}
+	// A fragment holds lines 3-5 of the call; with 2 kept, 4 does not close.
+	lines := maps.Clone(kept)
+	lines[3], lines[5] = fileLines[2], fileLines[4]
+	if got, want := DeadRegionsOfLines(lines), []Region{{StartLine: 1, EndLine: 8}}; !slices.Equal(got, want) {
+		t.Fatalf("regions = %+v, want %+v", got, want)
 	}
 }

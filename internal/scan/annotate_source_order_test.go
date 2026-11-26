@@ -9,7 +9,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -31,7 +32,7 @@ func TestAnnotateSupportingCallsFollowSourceOrder(t *testing.T) {
 				StartLine: 6,
 				EndLine:   6,
 				Match:     "aead, _ := chacha20poly1305.NewX(key)",
-				Rules:     []entities.RuleInfo{{ID: "go.xcrypto.chacha20poly1305.aead-x"}},
+				Rules:     []entities.RuleInfo{{ID: "fixture.go.xcrypto.aead-x"}},
 				Metadata: map[string]string{
 					"api":           "chacha20poly1305.NewX",
 					"assetType":     "algorithm",
@@ -62,8 +63,7 @@ func TestAnnotateSupportingCallsFollowSourceOrder(t *testing.T) {
 		t.Fatal("the full export has no supporting calls for the factory finding")
 	}
 
-	cached := decodeFragmentForTest(t, marshalSorted(t, fragment))
-	annotate := buildAnnotateExport(prepareOIDFixtureReport(t, report), cached)
+	annotate := annotateStoredGraph(t, &fragment, dir, report, prepareOIDFixtureReport(t, report))
 	annotated := make([]string, 0, len(annotate.SupportingCalls))
 	for i := range annotate.SupportingCalls {
 		annotated = append(annotated, annotate.SupportingCalls[i].SupportingID)

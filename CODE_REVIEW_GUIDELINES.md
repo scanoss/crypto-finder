@@ -81,7 +81,7 @@ cmd/crypto-finder/main.go  (calls only cli.Execute())
 ### Before committing, verify
 
 - [ ] Your code respects layer boundaries — no upward imports (e.g., `scanner/` must never import `engine/` or `cli/`).
-- [ ] Adapter implementations (`scanner/opengrep/`, `scanner/semgrep/`, `dependency/`) depend on their interface package, not on concrete siblings.
+- [ ] Adapter implementations (`scanner/cards/`, `dependency/`) depend on their interface package, not on concrete siblings.
 - [ ] `entities/` has **zero** internal imports — it is the innermost layer. Adding an import here breaks the architecture.
 - [ ] New scanning logic goes through `engine.Orchestrator`, not directly in `cli/` commands.
 - [ ] `cli/` commands only: validate input, wire dependencies, call `engine/` or `scan/`, handle output. No business logic in Cobra command functions.
@@ -92,11 +92,11 @@ cmd/crypto-finder/main.go  (calls only cli.Execute())
 
 ## Interface Design
 
-Reference implementations: `scanner.Scanner` (`internal/scanner/interface.go`), `rules.RuleSource` (`internal/rules/source.go`), `dependency.Resolver` (`internal/dependency/resolver.go`), `language.Detector` (`internal/language/detector.go`).
+Reference implementations: `scanner.Scanner` (`internal/scanner/interface.go`), `rules.RuleSource` (`internal/rules/source.go`), `dependency.Resolver` (`internal/dependency/resolver.go`), `language.Detector` (`reach/language/detector.go`).
 
 ### Before committing, verify
 
-- [ ] Interfaces are defined at the **consumer** package, not the provider. The `scanner.Scanner` interface lives in `scanner/`, not in `scanner/opengrep/`.
+- [ ] Interfaces are defined at the **consumer** package, not the provider. The `scanner.Scanner` interface lives in `scanner/`, not in `scanner/cards/`.
 - [ ] Your interface has **2-4 methods**. More than 5 is a design smell — consider splitting.
 - [ ] New implementations register with the appropriate registry (`scanner.Registry`, `dependency.Registry`).
 - [ ] You did not create an interface for a single concrete implementation unless testing requires it. Prefer inline struct mocks.
@@ -158,7 +158,7 @@ Reference: `internal/engine/orchestrator_test.go`, `internal/converter/primitive
 - **Table-driven tests** with `tests := []struct{ name string; ... }` and `tt` as the loop variable (not `tc` or `test`).
 - **`t.TempDir()`** for any filesystem operations. Never write to fixed paths or leave test artifacts.
 - **`t.Helper()`** on every test helper function that calls `t.Fatal`, `t.Error`, or similar.
-- **Integration tests** go in `*_integration_test.go` files and must guard with `t.Skip()` when external tools are unavailable (see `checkOpengrepAvailable` pattern).
+- **Integration tests** go in `*_integration_test.go` files and must guard with `t.Skip()` when external tools are unavailable (for example `exec.LookPath("mvn")` before a Maven fixture).
 - **Assertions**: Use `require` from testify for fatal preconditions (setup failures), `assert` for non-fatal verifications.
 - **Coverage**: Your code must maintain the **80% project-wide threshold**. Run `make coverage-check`.
 - Test files are excluded from complexity linters (`gocognit`, `gocyclo`, `funlen`, `goconst`, `gosec`, `errcheck`).
@@ -329,10 +329,10 @@ These conventions are derived from existing codebase patterns:
 | Element | Convention | Examples |
 |---------|-----------|----------|
 | **Packages** | Lowercase, single word | `scanner`, `rules`, `cache`, `entities` |
-| **Sub-packages** | Implementation-specific | `scanner/opengrep`, `scanner/semgrep` |
+| **Sub-packages** | Implementation-specific | `scanner/cards`, `callgraph/contracts` |
 | **Interfaces** | Capability/role names | `Scanner`, `Detector`, `Resolver`, `Writer` |
 | **Constructors** | `NewXxx()` | `NewOrchestrator()`, `NewRegistry()` |
-| **Alt constructors** | `NewXxxWithYyy()` | `NewDiskFindingsCacheWithDir()` |
+| **Alt constructors** | `NewXxxWithYyy()` | `NewClientWithHTTPClient()` |
 | **Config structs** | Suffix `Options` | `ScanOptions`, `DepScanOptions` |
 | **Functional options** | Suffix `Option` | `ParserOption` |
 | **Status enums** | Unexported, `iota` | `depScanStatus` with `statusPending`, `statusDone` |

@@ -19,6 +19,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -41,6 +42,10 @@ const (
 	// roots, where language-filtered working copies are materialized. Rule-tree
 	// walks also exclude this name to ignore copies left by older versions.
 	FilteredRulesDirName = ".crypto-finder-filtered"
+	// RulesetCardsDirName is the directory of a ruleset release, beside
+	// semgrep-rules/, that holds the cards detector's cards. Its YAML files
+	// are not OpenGrep rules.
+	RulesetCardsDirName = "cards"
 )
 
 // GetRootDir returns the path to the SCANOSS root directory (~/.scanoss)
@@ -117,4 +122,17 @@ func GetRulesetsDir() (string, error) {
 	}
 
 	return rulesetsDir, nil
+}
+
+// CardsLanguage is the language of a card file: the directory below the
+// nearest cards/ directory of its path (cards/<language>/...), or "" when
+// the path holds none.
+func CardsLanguage(path string) string {
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	for i := len(parts) - 2; i > 0; i-- {
+		if parts[i-1] == RulesetCardsDirName {
+			return parts[i]
+		}
+	}
+	return ""
 }

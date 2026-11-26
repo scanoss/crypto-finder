@@ -1,0 +1,7 @@
+[project]
+name = "vault"
+version = "0.1.0"
+dependencies = [
+    "cryptography>=44",
+    "pywin32>=306; sys_platform == 'win32'",
+]

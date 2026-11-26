@@ -12,11 +12,12 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
+	"github.com/scanoss/reach/javaruntime"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
 )
 
 // buildPythonGraph builds the call graph of one consumer file.
@@ -310,7 +311,7 @@ def h(message_hash, domain):
 func TestPython_OlderReleaseCallsResolveToContractKeys(t *testing.T) {
 	t.Parallel()
 
-	kb, err := contracts.LoadEmbedded("python")
+	kb, err := contracts.ForEcosystem("python")
 	if err != nil {
 		t.Fatalf("LoadEmbedded(python): %v", err)
 	}
@@ -489,7 +490,7 @@ func olderReleaseConsumer(entry string) (source, callee string) {
 func TestPython_EveryOlderReleaseNameResolvesToItsContract(t *testing.T) {
 	t.Parallel()
 
-	kb, err := contracts.LoadEmbedded("python")
+	kb, err := contracts.ForEcosystem("python")
 	if err != nil {
 		t.Fatalf("LoadEmbedded(python): %v", err)
 	}

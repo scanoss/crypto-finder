@@ -26,14 +26,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // syntheticRuleEntry describes a minimal inline rule for synthesis.
@@ -74,7 +74,7 @@ func buildPythonLibraryFragment(
 ) graphfrag.Fragment {
 	t.Helper()
 
-	resolver := callgraph.NewPythonContractTypeResolverFromEmbedded()
+	resolver := callgraph.NewPythonContractTypeResolverFromSource()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, file), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
@@ -222,7 +222,7 @@ def do_encrypt(key, iv, data):
 				StartLine: 39,
 				EndLine:   39,
 				Match:     "Cipher(algorithms.AES(key), modes.GCM(iv))",
-				Rules:     []entities.RuleInfo{{ID: "python.cryptography.algorithm.ae.aes-gcm"}},
+				Rules:     []entities.RuleInfo{{ID: "fixture.python.cryptography.aes-gcm"}},
 				Metadata: map[string]string{
 					"api":                "cryptography.hazmat.primitives.ciphers.Cipher.<init>",
 					"assetType":          "algorithm",
@@ -237,7 +237,7 @@ def do_encrypt(key, iv, data):
 	// Also run synthesis for the Cipher constructor so the mined-lib scenario
 	// (no detection, only mining) also produces crypto_entry_points.
 	synthRules := []syntheticRuleEntry{{
-		ruleID:    "python.cryptography.algorithm.ae.aes-gcm.synth",
+		ruleID:    "fixture.python.cryptography.aes-gcm.synth",
 		api:       "cryptography.hazmat.primitives.ciphers.Cipher.<init>",
 		primitive: "ae",
 		family:    "AES",
@@ -311,7 +311,7 @@ def do_encrypt_gcm(key, nonce, data):
 				StartLine: 36,
 				EndLine:   36,
 				Match:     "new(key, AES.MODE_GCM, nonce=nonce)",
-				Rules:     []entities.RuleInfo{{ID: "python.pycryptodome.algorithm.ae.aes-gcm"}},
+				Rules:     []entities.RuleInfo{{ID: "fixture.python.pycryptodome.aes-gcm"}},
 				Metadata: map[string]string{
 					"api":                "Crypto.Cipher.AES.new",
 					"assetType":          "algorithm",
@@ -325,7 +325,7 @@ def do_encrypt_gcm(key, nonce, data):
 
 	// Synthesis: mine Crypto.Cipher.AES — new() is a module-level function.
 	synthRules := []syntheticRuleEntry{{
-		ruleID:    "python.pycryptodome.algorithm.ae.aes-gcm.synth",
+		ruleID:    "fixture.python.pycryptodome.aes-gcm.synth",
 		api:       "Crypto.Cipher.AES.new",
 		primitive: "ae",
 		family:    "AES",
@@ -396,7 +396,7 @@ def do_encrypt_gcm(key, nonce, data):
 				StartLine: 36, // src line 36: cipher = new(key, AES.MODE_GCM, nonce=nonce)
 				EndLine:   36,
 				Match:     "new(key, AES.MODE_GCM, nonce=nonce)",
-				Rules:     []entities.RuleInfo{{ID: "python.pycryptodomex.algorithm.ae.aes-gcm"}},
+				Rules:     []entities.RuleInfo{{ID: "fixture.python.pycryptodomex.aes-gcm"}},
 				Metadata: map[string]string{
 					"api":                "Cryptodome.Cipher.AES.new",
 					"assetType":          "algorithm",
@@ -409,7 +409,7 @@ def do_encrypt_gcm(key, nonce, data):
 	}
 
 	synthRules := []syntheticRuleEntry{{
-		ruleID:    "python.pycryptodomex.algorithm.ae.aes-gcm.synth",
+		ruleID:    "fixture.python.pycryptodomex.aes-gcm.synth",
 		api:       "Cryptodome.Cipher.AES.new",
 		primitive: "ae",
 		family:    "AES",
@@ -604,7 +604,7 @@ class PasswordHasher:
 `
 	// Synthesis: mine argon2.PasswordHasher.hash (2 dots → passes gate).
 	synthRules := []syntheticRuleEntry{{
-		ruleID:    "python.argon2-cffi.algorithm.kdf.argon2.hash.synth",
+		ruleID:    "fixture.python.argon2-cffi.hash.synth",
 		api:       "argon2.PasswordHasher.hash",
 		primitive: "kdf",
 		family:    "Argon2",
@@ -644,7 +644,7 @@ def gensalt(rounds=12, prefix=b"2b"):
 `
 	// Synthesis: mine bcrypt.hashpw (1-dot Python gate).
 	synthRules := []syntheticRuleEntry{{
-		ruleID:    "python.bcrypt.algorithm.kdf.bcrypt.hashpw.synth",
+		ruleID:    "fixture.python.bcrypt.hashpw.synth",
 		api:       "bcrypt.hashpw",
 		primitive: "kdf",
 		family:    "bcrypt",
@@ -692,123 +692,4 @@ def decode(jwt_token, key, algorithms=None, options=None,
 
 	// PyJWT is rule-only: supporting_calls = 0 is expected.
 	assertGoldenShape(t, "PyJWT", frag, false /* wantSupportingCalls: rule-only */)
-}
-
-// TestPyNaCl_SigningKey_FidelityWithDeployedRule validates the REAL deployed rule
-// from crypto_finder_poc/semgrep-rules/python/pynacl/algorithm/signature/eddsa/rules.yaml
-// against a representative PyNaCl fixture.
-//
-// WHY THIS TEST EXISTS (fidelity gap):
-//
-// The golden test TestPythonGolden_PyNaCl_SigningKey uses buildInlineRuleYAML to
-// construct an idealized rule with api: "nacl.signing.SigningKey.generate" (the
-// correct 3-dot method FQN). It passes regardless of what the deployed rule says.
-// This test mines a fixture against the ACTUAL artifact in the sibling repository,
-// catching any divergence where the deployed api form would fail synthesis.
-//
-// RED→GREEN history: this test went RED against the original deployed rule
-// (api: "nacl.signing.SigningKey" — bare class, 2 dots). The synthesis engine's
-// declsByFQN lookup cannot match a bare class name to any method definition; the
-// implicitCtorRep path is not triggered because the api lacks the ".<init>" suffix.
-// Zero entry points were produced. After fixing the rule to use per-method FQNs
-// (nacl.signing.SigningKey.generate and nacl.signing.SigningKey.<init>), this test
-// turns GREEN.
-//
-// If crypto_finder_poc is not present at the expected sibling path, the test is
-// skipped with a clear message so CI without the sibling repo does not break.
-func TestPyNaCl_SigningKey_FidelityWithDeployedRule(t *testing.T) {
-	t.Parallel()
-
-	// Locate the deployed rule in the sibling repo. The sibling repo
-	// crypto_finder_poc is expected alongside crypto-finder:
-	//   .../scanoss/crypto-finder  (this repo)
-	//   .../scanoss/crypto_finder_poc  (sibling)
-	// Use runtime.Caller to get the source file's absolute directory so the
-	// path is stable regardless of `go test` cwd.
-	_, thisFile, _, _ := runtime.Caller(0)
-	// thisFile = .../crypto-finder/internal/scan/python_golden_fixtures_test.go
-	// Navigate: scan/ → internal/ → crypto-finder/ → scanoss/ → crypto_finder_poc/
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
-	ruleFile := filepath.Join(repoRoot, "..", "crypto_finder_poc",
-		"semgrep-rules", "python", "pynacl", "algorithm", "signature", "eddsa", "rules.yaml")
-	if _, statErr := os.Stat(ruleFile); statErr != nil {
-		t.Skipf("sibling repo not present at %s — skipping fidelity test (run with crypto_finder_poc checked out alongside)", ruleFile)
-	}
-
-	// Representative PyNaCl signing.py stub: the class as it appears when the
-	// library's own source is mined. The @classmethod generate is the primary
-	// key-generation entry point that the deployed rule must synthesize.
-	src := `"""PyNaCl signing.py stub — fidelity fixture for the deployed rule."""
-
-
-class SigningKey:
-    """Ed25519 signing key."""
-
-    def __init__(self, seed, encoder=None):
-        self._seed = seed
-
-    @classmethod
-    def generate(cls):
-        """Generate a new random Ed25519 signing key."""
-        return cls(b"0" * 32)
-
-    def sign(self, message, encoder=None):
-        """Sign a message."""
-        return b""
-`
-
-	// Build the callgraph from the fixture source.
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "signing.py"), []byte(src), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	resolver := callgraph.NewPythonContractTypeResolverFromEmbedded()
-	b := callgraph.NewBuilderForEcosystem("python", callgraph.NewPythonParser())
-	b.SetTypeResolver(resolver)
-	graph, err := b.BuildFromDirectories([]callgraph.PackageDir{{Dir: dir, ImportPath: "nacl.signing"}}, nil)
-	if err != nil {
-		t.Fatalf("BuildFromDirectories: %v", err)
-	}
-
-	report := &entities.InterimReport{}
-	engine.EnsureFindingSources(report)
-	engine.AssignFindingIDs(report)
-
-	// Run synthesis against the REAL deployed rule file (not an inline stub).
-	added := engine.SynthesizeRuleCryptoEntryPoints(report, graph, []string{ruleFile}, "python")
-
-	// Re-run EnsureFindingSources + AssignFindingIDs after synthesis so the
-	// synthetic assets receive FindingIDs (required for the fragment decoder to
-	// produce non-empty crypto_entry_points — same pattern as buildPythonLibraryFragment).
-	engine.EnsureFindingSources(report)
-	engine.AssignFindingIDs(report)
-
-	// Decode and check the fragment.
-	export := buildGraphFragmentExport(&engine.DepScanResult{
-		Report:      report,
-		CallGraph:   graph,
-		ProjectRoot: dir,
-		RootModule:  "nacl.signing",
-		Ecosystem:   "python",
-	})
-	raw, merr := json.Marshal(export)
-	if merr != nil {
-		t.Fatalf("marshal export: %v", merr)
-	}
-	key := graphfrag.ComponentKey{Purl: "pkg:pypi/pynacl", Version: "test"}
-	frag, derr := graphfrag.DecodeFragment(key, raw)
-	if derr != nil {
-		t.Fatalf("DecodeFragment: %v", derr)
-	}
-
-	t.Logf("fidelity: synthesis added %d entry points from deployed rule", added)
-	t.Logf("fidelity: crypto_entry_points=%d supporting_calls=%d", len(frag.CryptoEntryPoints), len(frag.SupportingCalls))
-
-	if len(frag.CryptoEntryPoints) == 0 {
-		t.Errorf("fidelity FAIL: deployed rule produced 0 crypto_entry_points for nacl.signing.SigningKey fixture; " +
-			"the rule's api FQN does not join against any definition in the callgraph — " +
-			"check that api uses the specific method symbol (e.g. nacl.signing.SigningKey.generate), " +
-			"NOT the bare class name (nacl.signing.SigningKey)")
-	}
 }

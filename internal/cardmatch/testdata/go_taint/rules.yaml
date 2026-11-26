@@ -1,0 +1,16 @@
+rules:
+  - id: value
+    message: m
+    severity: INFO
+    languages: [go]
+    mode: taint
+    metadata: {crypto: {assetType: related-crypto-material, relatedCryptoMaterialType: key}}
+    pattern-sources:
+      - patterns:
+          - pattern: $K
+          - metavariable-regex:
+              metavariable: $K
+              regex: ^"hardcoded
+    pattern-sinks:
+      - pattern: lib.Sign(...)
+      - pattern: $O.Use(...)

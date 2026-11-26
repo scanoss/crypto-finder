@@ -51,3 +51,7 @@ On failure or cancellation, child terminal events are followed by parent termina
 - Aggregate dependency progress avoids coupling the public stream to the number or ordering of dependency workers.
 - A `skipped` event distinguishes a phase that was not requested or unavailable from a missing progress record.
 - Changing the default later would be a compatibility change, not a harmless implementation detail.
+
+## Amendment: one dependency pipeline (2026-11-14)
+
+The reach engine v2 replaced the local dependency pipeline with application reachability from the SCANOSS API, and OpenGrep with the cards engine; the progress contract stays at v1. A skipped `dependencies` phase now carries one of `not_requested`, `manifest_absent` (no Java build manifest, `ecosystem: java`) or `ecosystem_not_supported` (the target declares dependencies only in another ecosystem, named in `ecosystem`). A completed one counts as `deps_scanned` the dependencies the API answered for and as `deps_skipped` (with `deps_skipped_list`, reason `no_reachability_data`, `error_code` the API's info code) those it holds no data for; `deps_failed` is 0, `ecosystems` is `["java"]`, and `dep_findings_reachable`, `dep_findings_unknown`, `dep_findings_unreachable`, `request_bytes`, `response_bytes`, `request_call_site_count`, `request_function_count`, `reachability_info_code` and `reachability_info_message` describe the request and its answer. A completed `detection` phase carries `unsupported_languages` when the target holds sources in languages this version does not scan.

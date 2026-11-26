@@ -22,10 +22,10 @@ import (
 	"strings"
 
 	pqcdataset "github.com/scanoss/crypto-pqc-dataset"
+	"github.com/scanoss/reach/purl"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
-	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // Classify classifies an asset from its metadata. It returns nil when the

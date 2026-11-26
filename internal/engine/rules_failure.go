@@ -31,7 +31,8 @@ import (
 // message and nothing else. A refused API key (401/403) is rules_load_failed
 // naming the status and the server's message; any other error is
 // rules_load_failed with the error chain.
-func rulesLoadFailure(err error, message string) error {
+func rulesLoadFailure(err error) error {
+	const message = "failed to load rules"
 	var upgrade *apiclient.UpgradeRequiredError
 	if errors.As(err, &upgrade) {
 		return failure.New(failure.CodeUpgradeRequired, failure.StageRules, upgrade.Message,

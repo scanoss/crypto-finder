@@ -11,9 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // numberedSource is a file of n lines, "line 1" to "line n".

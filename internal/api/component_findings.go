@@ -173,7 +173,7 @@ func (c *Client) LookupComponent(ctx context.Context, purl, requirement string) 
 // goReleaseVersion is a plain Go module release, such as v0.17.0.
 var goReleaseVersion = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
 
-// lookupRequirement works around scanoss/scanoss.api#241: the API stores Go
+// lookupRequirement works around an API limitation: the API stores Go
 // versions with their v prefix and its exact match misses them, so "v4.1.4"
 // answers VERSION_NOT_FOUND while "~4.1.4" serves v4.1.4. A tilde selects the
 // requested release when it is mined, like an exact match.

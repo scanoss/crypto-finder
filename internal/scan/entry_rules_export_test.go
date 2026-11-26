@@ -22,10 +22,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // entryRuleCase is one planted crypto call in an entry_rules fixture and the
@@ -243,11 +244,11 @@ func TestExportCallGraph_PythonEntryPoints(t *testing.T) {
 		{id: "django-cbv", file: "src/shop/web/views.py", needle: "hashlib.blake2s(", reachability: reachable, rootKind: framework, first: "RefundView"},
 		// A RunPython callback is reached from the class body of a Migration
 		// under a migrations directory, also a nested one; the same class in a
-		// module outside one is not an entry point, so its callback keeps
-		// no_callers.
+		// module outside one is not an entry point: its class body runs when
+		// its module is imported, the no_callers root.
 		{id: "migration", file: "src/shop/migrations/0001_seed.py", needle: "hashlib.sha3_384(", reachability: reachable, rootKind: framework, first: "Migration"},
 		{id: "migration-nested", file: "src/shop/migrations/sub/0002_nested.py", needle: "hashlib.sha3_224(", reachability: reachable, rootKind: framework, first: "Migration"},
-		{id: "migration-elsewhere", file: "src/shop/ledger.py", needle: "hashlib.pbkdf2_hmac(", reachability: reachable, rootKind: callgraph.RootKindNoCallers, first: "Migration"},
+		{id: "migration-elsewhere", file: "src/shop/ledger.py", needle: "hashlib.pbkdf2_hmac(", reachability: reachable, rootKind: callgraph.RootKindNoCallers, first: "ledger.<module>"},
 		{id: "main-guard", file: "src/shop/batch.py", needle: "hashlib.shake_128(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "batch.<module>"},
 		{id: "console-script", file: "src/shop/cli.py", needle: "hashlib.sha512(", reachability: reachable, rootKind: callgraph.RootKindMain, first: "rotate_keys"},
 		// Handlers registered by call: the handler as a keyword (view_func=,

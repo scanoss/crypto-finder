@@ -45,6 +45,7 @@ const (
 	CodeFindingsDetected            = publicfailure.CodeFindingsDetected
 	CodeComponentLookupFailed       = publicfailure.CodeComponentLookupFailed
 	CodeUpgradeRequired             = publicfailure.CodeUpgradeRequired
+	CodeLanguageNotSupported        = publicfailure.CodeLanguageNotSupported
 
 	StageUnknown    = publicfailure.StageUnknown
 	StageInput      = publicfailure.StageInput

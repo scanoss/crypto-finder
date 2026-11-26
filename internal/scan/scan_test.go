@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/dependency"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -573,7 +574,7 @@ func TestExportCallGraph_NonCallMatchedOperationOmitsCryptoCall(t *testing.T) {
 				// inferMatchedOperationKind classifies this as "type_usage"
 				// from source text alone (api-free, per position-based-anchoring spec).
 				Match:     "X509Certificate",
-				Rules:     []entities.RuleInfo{{ID: "java.jca.certificate.x509.usage", Message: "X509 usage", Severity: "INFO"}},
+				Rules:     []entities.RuleInfo{{ID: "fixture.java.jca.usage", Message: "X509 usage", Severity: "INFO"}},
 				Status:    "pending",
 				Metadata:  map[string]string{"api": "X509Certificate"},
 				FindingID: "typeusage1",
@@ -1774,10 +1775,6 @@ func TestValidateFlags(t *testing.T) {
 		RuleFiles:        []string{"rule.yaml"},
 		RuleDirs:         nil,
 		NoRemoteRules:    false,
-		Scanner:          "semgrep",
-		AllowedScanners:  []string{"semgrep", "opengrep"},
-		Interfile:        false,
-		InterfileScanner: "semgrep",
 		Format:           "json",
 		SupportedFormats: []string{"json", "cyclonedx"},
 		Languages:        []string{" Go ", "PYTHON"},
@@ -1822,18 +1819,6 @@ func TestValidateFlags(t *testing.T) {
 				return o
 			}(),
 			want: "contains no rule files",
-		},
-		{
-			name:   "invalid-scanner",
-			target: target,
-			opts:   func() ValidationOptions { o := validOpts; o.Scanner = "unknown"; return o }(),
-			want:   "invalid scanner name",
-		},
-		{
-			name:   "invalid-interfile-scanner",
-			target: target,
-			opts:   func() ValidationOptions { o := validOpts; o.Interfile = true; o.Scanner = "opengrep"; return o }(),
-			want:   "--interfile flag is only supported",
 		},
 		{
 			name:   "unsupported-format",

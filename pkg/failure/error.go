@@ -45,6 +45,7 @@ const (
 	CodeFindingsDetected            Code = "findings_detected"
 	CodeComponentLookupFailed       Code = "component_lookup_failed"
 	CodeUpgradeRequired             Code = "upgrade_required"
+	CodeLanguageNotSupported        Code = "language_not_supported"
 )
 
 // Failure stages identify which pipeline phase produced a terminal error.

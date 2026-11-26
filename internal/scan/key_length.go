@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 const (
@@ -41,8 +41,14 @@ var byteArrayAllocation = regexp.MustCompile(`^new\s+byte\s*\[\s*(\d+)\s*]$`)
 // e.g. "length=32" or "length=KEY_LEN". Only Python call sites ever produce
 // an ArgumentExpression matching this shape (row C, python-parser-parity-2,
 // step 3a) — Java/Go/Rust have no name=value argument syntax, so this
-// pattern can never match their call-site text.
-var pythonKeywordArgumentPattern = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$`)
+// pattern can never match their call-site text. A value may span lines
+// (`attributes={\n "name": n,\n}`).
+var pythonKeywordArgumentPattern = regexp.MustCompile(`(?s)^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$`)
+
+// rubyKeywordArgumentPattern matches a Ruby keyword argument's raw text,
+// `name: value`. The value is kept with its leading space so a constant
+// path (`OpenSSL::SSL`) can be told from a symbol value (`name: :sym`).
+var rubyKeywordArgumentPattern = regexp.MustCompile(`(?s)^([A-Za-z_][A-Za-z0-9_]*):(.*)$`)
 
 // resolvedKeyLengthFromContract derives raw key-length evidence for a
 // structurally derived supporting call. It publishes configured bits, not a
@@ -128,7 +134,7 @@ func resolvedKeyLengthFromKeywordName(matches []contracts.Contract, call *callgr
 		}
 		for j := range parameters {
 			parameter := &parameters[j]
-			m := pythonKeywordArgumentPattern.FindStringSubmatch(parameter.ArgumentExpression)
+			m := pythonKeywordArgumentPattern.FindStringSubmatch(parameter.argumentText())
 			if len(m) < 3 || m[1] != role.Name {
 				continue
 			}
@@ -191,7 +197,7 @@ func resolvedKeyLengthFromPositionalConstant(matches []contracts.Contract, call 
 		if parameterHasDeclaredType(&parameters[index]) {
 			continue
 		}
-		if pythonKeywordArgumentPattern.MatchString(parameters[index].ArgumentExpression) {
+		if pythonKeywordArgumentPattern.MatchString(parameters[index].argumentText()) {
 			// A keyword-shaped expression at the keySize POSITION is not
 			// necessarily the keySize ARGUMENT: Python keyword arguments can
 			// appear at any raw position regardless of their declared index

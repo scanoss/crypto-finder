@@ -34,61 +34,22 @@ RUN CGO_ENABLED=1 GOOS=linux go build -tags netgo \
     ./cmd/crypto-finder
 
 # ============================================================================
-# Stage 2: Install Scanners (Semgrep and OpenGrep)
+# Stage 2: Runtime image (the binary and CA certificates)
 # ============================================================================
-FROM python:3.11-slim@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff AS scanner-installer
+FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
-ARG OPENGREP_VERSION=v1.22.0
-ARG OPENGREP_AMD64_SHA256=45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319
-ARG OPENGREP_ARM64_SHA256=8df71670e20336646687c6f4ddf9b4532f1a7fcd8a8ea7bfa4ea46747f61e088
-ARG TARGETARCH
-
-# Install system dependencies for downloading the pinned OpenGrep binary
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl=8.14.1-2+deb13u7 \
-    ca-certificates=20250419 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Semgrep 1.145.0
-# semgrep's mcp dependency imports a private pydantic API removed in 2.14.
-RUN pip install --no-cache-dir semgrep==1.145.0 "pydantic<2.14"
-
-# Install the pinned opengrep release directly. This avoids the installer's
-# live releases API lookup while retaining binary integrity verification.
-# Running it once unpacks opengrep-core into /root/.cache/opengrep/<version>,
-# so the first scan in a fresh container runs in core mode instead of falling
-# back to the CLI.
-RUN case "${TARGETARCH}" in \
-        amd64) asset="opengrep_manylinux_x86"; hash="${OPENGREP_AMD64_SHA256}" ;; \
-        arm64) asset="opengrep_manylinux_aarch64"; hash="${OPENGREP_ARM64_SHA256}" ;; \
-        *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
-    esac \
-    && install_dir="/root/.opengrep/cli/${OPENGREP_VERSION}" \
-    && mkdir -p "${install_dir}" \
-    && curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${asset}" -o "${install_dir}/opengrep" \
-    && echo "${hash}  ${install_dir}/opengrep" | sha256sum -c - \
-    && chmod a+x "${install_dir}/opengrep" \
-    && "${install_dir}/opengrep" --version \
-    && ln -s "${install_dir}" /root/.opengrep/cli/latest
-
-# ============================================================================
-# Stage 3: Final image with Python runtime
-# ============================================================================
-FROM scanner-installer
+# Install minimal runtime dependencies
+# - ca-certificates: For HTTPS requests
+RUN apk add --no-cache ca-certificates=20260611-r0 && rm -rf /var/cache/apk/*
 
 # Copy the crypto-finder binary from builder
 COPY --from=builder /build/crypto-finder /usr/local/bin/crypto-finder
 
-# Add opengrep to PATH
-ENV PATH="$PATH:/root/.opengrep/cli/latest"
-
 # Create workspace directory
 WORKDIR /workspace
 
-# Build arguments for labels
-ARG VERSION=dev
-
 # Add labels for metadata
+ARG VERSION=dev
 LABEL org.opencontainers.image.title="SCANOSS Crypto Finder"
 LABEL org.opencontainers.image.description="A tool to scan source code for cryptographic algorithm usage"
 LABEL org.opencontainers.image.vendor="SCANOSS"
@@ -96,8 +57,8 @@ LABEL org.opencontainers.image.source="https://github.com/scanoss/crypto-finder"
 LABEL org.opencontainers.image.licenses="GPL-2.0"
 LABEL org.opencontainers.image.version="${VERSION}"
 
-# Verify installations
-RUN crypto-finder version && semgrep --version && opengrep --version
+# Verify installation
+RUN crypto-finder version
 
 # Set entrypoint
 ENTRYPOINT ["crypto-finder"]

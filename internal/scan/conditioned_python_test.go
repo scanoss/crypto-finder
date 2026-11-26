@@ -9,7 +9,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -41,7 +42,7 @@ const pythonDigestRules = `rules:
         assetType: algorithm
         algorithmName: MD5
         operation: digest
-        parameterCondition: param[0]==md5
+        parameterCondition: param[0]=="md5"
         api: hashlib.new
 `
 

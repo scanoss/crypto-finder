@@ -5,11 +5,6 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT_DIR"
 
-readonly OPENGREP_VERSION="v1.22.0"
-readonly OPENGREP_AMD64_SHA256="45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319"
-readonly OPENGREP_ARM64_SHA256="8df71670e20336646687c6f4ddf9b4532f1a7fcd8a8ea7bfa4ea46747f61e088"
-readonly OPENGREP_AMD64_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86"
-readonly OPENGREP_ARM64_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_aarch64"
 readonly RUSTUP_VERSION="1.29.1"
 readonly RUSTUP_AMD64_SHA256="dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71"
 readonly RUSTUP_ARM64_SHA256="15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433"
@@ -23,8 +18,6 @@ DOCKERFILES=(
   Dockerfile.test
   Dockerfile.goreleaser
   Dockerfile.goreleaser.deps
-  Dockerfile.goreleaser.slim
-  Dockerfile.slim
 )
 
 failures=0
@@ -80,7 +73,7 @@ for file in "${DOCKERFILES[@]}"; do
     image=${line#FROM }
     image=${image%% AS *}
     case "$image" in
-      builder|scanner-installer)
+      builder|base)
         continue
         ;;
     esac
@@ -93,7 +86,7 @@ for file in "${DOCKERFILES[@]}"; do
     source=${line#COPY --from=}
     source=${source%% /*}
     case "$source" in
-      builder|scanner-installer)
+      builder|base)
         continue
         ;;
     esac
@@ -115,14 +108,6 @@ for file in "${DOCKERFILES[@]}"; do
 done
 
 for file in "${DOCKERFILES[@]}"; do
-  if grep -q 'opengrep-install.sh' "$file"; then
-    fail "$file uses the OpenGrep installer (live GitHub releases API lookup); download the pinned release binary instead"
-  fi
-  if grep -q 'OPENGREP_VERSION' "$file"; then
-    grep -q 'opengrep/opengrep/releases/download' "$file" || fail "$file does not download the pinned OpenGrep release binary"
-    grep -q "${OPENGREP_AMD64_SHA256}" "$file" || fail "$file does not pin the amd64 OpenGrep checksum"
-    grep -q "${OPENGREP_ARM64_SHA256}" "$file" || fail "$file does not pin the arm64 OpenGrep checksum"
-  fi
   if grep -q 'sh.rustup.rs' "$file" || grep -q 'rustup-init.sh' "$file"; then
     fail "$file uses the live rustup installer; download a pinned rustup-init archive binary instead"
   fi
@@ -140,14 +125,12 @@ if ! grep -q 'goreleaser-cross:v1.26.5@sha256:' .github/workflows/release.yml; t
   fail '.github/workflows/release.yml does not pin the GoReleaser image digest'
 fi
 
-if grep -REn 'go-test-coverage/v2@latest|pip install pipenv([;[:space:]]|$)|pip install semgrep([;[:space:]]|$)' Makefile CONTRIBUTING.md README.md; then
+if grep -REn 'go-test-coverage/v2@latest|pip install pipenv([;[:space:]]|$)' Makefile CONTRIBUTING.md README.md; then
   fail 'development documentation contains an unpinned tool installation'
 fi
 
 if [[ "${1:-}" == "--network" ]]; then
   for pair in \
-    "${OPENGREP_AMD64_URL}|${OPENGREP_AMD64_SHA256}" \
-    "${OPENGREP_ARM64_URL}|${OPENGREP_ARM64_SHA256}" \
     "${RUSTUP_AMD64_URL}|${RUSTUP_AMD64_SHA256}" \
     "${RUSTUP_ARM64_URL}|${RUSTUP_ARM64_SHA256}"; do
     url=${pair%%|*}

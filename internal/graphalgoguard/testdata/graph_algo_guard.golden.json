@@ -1,0 +1,60 @@
+{
+  "ecosystems": {
+    "c": {
+      "graph_algo_version": "graph-algo-c-3",
+      "sha256": "6f4fdb3f90a53f5239eb220b5ce9983c54f0105f1b4b9b260d17e72aacb5b002",
+      "functions": 5,
+      "internal_edges": 2,
+      "external_calls": 10
+    },
+    "cpp": {
+      "graph_algo_version": "graph-algo-cpp-4",
+      "sha256": "e03f45e4262a80714e7e6fe2fdfd2be2b1065ffe1681d415112aba611aa08ffe",
+      "functions": 4,
+      "internal_edges": 3,
+      "external_calls": 9
+    },
+    "go": {
+      "graph_algo_version": "graph-algo-go-15",
+      "sha256": "3d7d4ab522d0425023dddbb84b48839034eb72165876402349558187024de5b2",
+      "functions": 15,
+      "internal_edges": 14,
+      "external_calls": 16
+    },
+    "java": {
+      "graph_algo_version": "graph-algo-40",
+      "sha256": "29d8966293b3ffd016b96b1750a3a73417525ec0884774d1de05d86f5c04e52b",
+      "functions": 8,
+      "internal_edges": 7,
+      "external_calls": 11
+    },
+    "node": {
+      "graph_algo_version": "graph-algo-node-13",
+      "sha256": "2045a71beb9098d4225ec95406dd42cbbfafd8ed6e52d5f1648507d4f19856d2",
+      "functions": 9,
+      "internal_edges": 7,
+      "external_calls": 26
+    },
+    "python": {
+      "graph_algo_version": "graph-algo-py-40",
+      "sha256": "4df955e998ea3afebfd592620b89ede3753807331b95fb5142d43e1573b480ee",
+      "functions": 53,
+      "internal_edges": 48,
+      "external_calls": 97
+    },
+    "ruby": {
+      "graph_algo_version": "graph-algo-rb-10",
+      "sha256": "33feda8d52126e202a928e036376ea4a1fe963a8fbe2ec0445a4afc48ad5eb85",
+      "functions": 12,
+      "internal_edges": 5,
+      "external_calls": 21
+    },
+    "rust": {
+      "graph_algo_version": "graph-algo-rs-15",
+      "sha256": "d32085462dadefb62ce760c6f7bdd1b373b98d8499eb6ccf13b9dedd6181c8df",
+      "functions": 12,
+      "internal_edges": 4,
+      "external_calls": 15
+    }
+  }
+}

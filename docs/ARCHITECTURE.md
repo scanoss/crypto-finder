@@ -1,173 +1,139 @@
 # Architecture
 
-How crypto-finder turns a source tree into findings, reachability data, and partner-facing exports. For the domain vocabulary used below (finding, crypto entry point, supporting call, call chain, ...), see [CONTEXT.md](../CONTEXT.md).
+crypto-finder is a domain and a client built on the reachability engine
+[`github.com/scanoss/reach`](https://github.com/scanoss/reach). reach builds
+typed call graphs and stitches them; crypto-finder supplies the crypto
+knowledge base, detects cryptography on the graph, asks the SCANOSS API about
+dependencies, and writes the reports. For the vocabulary (finding, crypto
+entry point, supporting call, call chain), see [CONTEXT.md](../CONTEXT.md).
+
+## At a glance
+
+| Layer | Lives in | Owns |
+|---|---|---|
+| Engine | `github.com/scanoss/reach` (MIT) | Parsers, call graph, type resolution, contracts loader, entry points, graph fragments, stitcher, callgraph renderer |
+| Domain | `internal/cryptokb`, `internal/cardmatch`, `internal/scanner/cards`, `internal/scan`, `internal/oid`, `internal/pqc`, `pkg/appreach`, `pkg/conditioned`, `pkg/pqc` | Crypto KB, detection, supporting calls, OIDs, PQC, the application reachability answer |
+| Client | `internal/cli`, `internal/config`, `internal/api`, `internal/cache`, `internal/rules`, `internal/ruleset`, `internal/dependency`, `internal/offline`, `internal/output`, `internal/converter` | Commands, configuration, API calls, ruleset cache, dependency resolution, offline mining, report writing |
+
+What runs locally and what the API serves: [CLIENT_SERVER.md](CLIENT_SERVER.md).
 
 ## Pipeline
 
-A `scan` run executes these stages in order:
+A `scan` runs these stages in order:
 
 ```
 target source tree
    │
    ▼
-1. Rules loading          remote "dca" ruleset (served by the SCANOSS API,
-   (internal/rules,        cached with TTL + stale fallback) merged with any local
-    internal/cache,        --rules / --rules-dir sources
-    internal/api)
-   │
+1. Rules          remote "crypto-cards" ruleset (leased bundle from the SCANOSS API,
+   │              cached encrypted) merged with --rules / --rules-dir
    ▼
-2. Detection              language detection (internal/language), skip patterns
-   (internal/engine,       (internal/skip), then OpenGrep/Semgrep executes the rules
-    internal/scanner)      → raw matches → dedup (internal/deduplicator), dead-code
-                           filtering (internal/deadcode) → interim report entities
-   │
+2. Graph          reach/language detects languages (Java, Python; others fail
+   │              with language_not_supported); reach/callgraph builds one typed
+   │              graph per scanned ecosystem, typed by the crypto KB
+   │              (internal/cryptokb), JDK platform signatures and, with
+   │              --scan-dependencies, the closure's JARs (type-only)
    ▼
-3. Call graph             tree-sitter parsers per ecosystem build function nodes and
-   construction            call edges; type inference resolves receivers/returns using
-   (internal/callgraph)    the contracts KB (internal/callgraph/contracts) and, for
-                           Java, bytecode/JDK platform signatures (internal/javaruntime);
-                           a target with first-party findings in several supported
-                           ecosystems gets one graph per ecosystem; in auto mode
-                           dependencies resolve for every ecosystem with a
-                           resolvable manifest, the first being the primary
-   │
+3. Detection      the cards engine (internal/cardmatch) matches the ruleset
+   │              against the graph's call sites → dedup → findings
    ▼
-4. Reachability           each finding is matched, in the graph of its own language,
-   analysis                to its call graph node by POSITION
-                           (match columns ∩ call-node columns), then call chains from
-   (internal/scan)         API entry points to the terminal crypto call are computed;
-                           dependency scans (internal/dependency, internal/engine)
-                           repeat 2–3 per resolved dependency with a findings cache;
-                           a scan root holding no manifest for the selected ecosystem
-                           resolves from the module roots discovered below it instead
-   │
+4. Reachability   each finding is matched to its call-graph node by position;
+   │              chains from entry points to it are computed. With
+   │              --scan-dependencies, one request to
+   │              /v3/cryptography/reachability/application (or --offline, in
+   │              process) answers every dependency finding
    ▼
-5. Supporting-call        lifecycle/config/factory/output calls around each finding's
-   derivation              crypto object are derived STRUCTURALLY from the graph
-   (internal/scan)         (ReceiverVar / AssignedVar / ChainID — see invariants below)
-   │
+5. Supporting     lifecycle and configuration calls around each finding's
+   calls          object, derived from the graph (see invariants)
    ▼
-6. Enrichment + export    Exact OID preparation (internal/oid); writers (internal/output,
-   (internal/enricher,     internal/converter) emit interim JSON or CycloneDX CBOM;
-                            internal/scan,         --export-callgraph defaults to the schema-6.18 interned export;
-                            pkg/graphfrag)         --export-graph-fragment emits a graph-fragment-1.15 fragment
+6. Output         OIDs, PQC; interim JSON or CycloneDX; --export-callgraph
+                  (reach/graphfrag renderer); --export-graph-fragment
 ```
 
-Schema-6.12 key-length evidence follows this boundary: contract-derived key
-sizes are emitted at `supporting_calls[].supporting_call.resolved_key_length`,
-while the terminal `crypto_call` remains the rule-selected operation. Which
-calls carry a key size is contract data, not code: a contract marks the
-contributing parameter with `contributes: {property: keySize, derivation: ...}`,
-and the evaluator reads it either from the supporting call's own argument or
-from the parameter-spec constructor whose result was passed into it. A Node contract can name an object property with `argument_property` (`contributes: {property: keySize, derivation: argument_value, argument_property: modulusLength}`), which the evaluator reads from an object-literal argument only. When a
-detection rule declares a static key length that disagrees with the resolved
-one, the resolved value stays primary and the rule value is preserved as
-`rule_declared_bits` behind a `rule_conflict` marker, so the boundary still
-never lets rule metadata overwrite structural evidence.
+| Command | Stages |
+|---|---|
+| `scan` | 1-6 |
+| `annotate` | 1, 3, 5, 6 on a stored fragment: re-detects without rebuilding the graph (`graphfrag.Fragment.ContainingFunction` maps findings to functions) |
+| `convert` | The CycloneDX conversion of stage 6 |
+| `cbom` | Asks the API per SBOM component; scans nothing locally |
 
-The `annotate` command is a shortcut through this pipeline: it runs stage 2 only and maps the fresh findings onto a cached stage-3 fragment (`graphfrag.Fragment.ContainingFunction`), skipping the expensive graph rebuild. `convert` runs stage 6's CBOM conversion standalone.
+Errors become terminal only at the CLI boundary, with a stable code and
+stage ([ERROR_CODES.md](ERROR_CODES.md)).
 
-Errors become terminal only at the CLI boundary, with a stable machine-readable code and stage — see [ERROR_CODES.md](ERROR_CODES.md).
-
-## Package Map
+## Package map
 
 ### `internal/`
 
 | Package | Responsibility |
-|---------|----------------|
-| `api` | HTTP client for the SCANOSS REST API (remote ruleset download). |
-| `cache` | Local cache of downloaded rulesets: TTL, `--strict`, stale-fallback policy. |
-| `callgraph` | Function-level call graph construction: per-ecosystem tree-sitter parsers, type inference, and the contracts knowledge base (`contracts/`). |
-| `cli` | Cobra commands (`scan`, `annotate`, `convert`, `configure`, `version`), flag wiring, terminal error rendering. |
-| `config` | Configuration management: env vars, config file, flag overrides. |
-| `converter` | Interim JSON → CycloneDX 1.7 CBOM transformation with exact-only OID projection. |
-| `deadcode` | Filters findings inside C/C++ preprocessor dead-code blocks (`#if 0 ... #endif`). |
-| `deduplicator` | Per-line deduplication of cryptographic assets (multiple rules on one line → one asset with a `rules[]` array). |
-| `dependency` | Dependency resolvers: Go modules, Java (Maven/Gradle), Python (pip), Rust (Cargo), Node (npm); plus the bounded downward walk that finds the module roots below a manifest-less scan root. |
-| `engine` | Scan orchestration: language detection → rules → scanner → report; the dependency scanner and its findings cache (disk/postgres); finding-ID assignment; rule-driven entry-point synthesis. |
-| `enricher` | Compatibility adapter for exact OID preparation of findings (algorithm → Object Identifier). |
-| `entities` | Scanner input structures and compatibility aliases for the public interim report contract. |
-| `failure` | Compatibility aliases for the public structured terminal error contract. |
-| `javaruntime` | Java JDK selection (`--java-jdk-major` / `--java-jdk-home`) for platform-signature type enrichment. |
-| `language` | Automatic language detection (go-enry) honoring skip patterns. |
-| `output` | Output writers: interim JSON and CycloneDX, stdout or file, streaming for large reports. |
-| `rules` | Rule source management: remote source, local files/dirs, multi-source merge. |
-| `scan` | Reusable scan utilities shared by CLI commands: flag validation, reachability export, graph-fragment export, supporting-call derivation, conditioned-finding materialization. |
-| `scanner` | Scanner abstraction plus the `opengrep/` and `semgrep/` engine implementations. |
-| `skip` | File/directory exclusion: built-in defaults (including `shaded/` and generated protobuf stubs), `scanoss.json` patterns, `--exclude`, gitignore-style matching. |
-| `utils` | Small general-purpose helpers. |
-| `version` | Build/version information for the binary. |
+|---|---|
+| `api` | HTTP client for the SCANOSS API (rulesets, project and component reachability) |
+| `boundary` | Lists the paths the engine packages had here (`MovedEnginePackages`); its tests fail if one reappears |
+| `cache` | Ruleset cache: TTL, `--strict`, stale fallback, encrypted leased bundles |
+| `cardmatch` | The cards engine: compiles the ruleset into a card index and matches it against a graph's call sites |
+| `cli` | Cobra commands, flag wiring, terminal error rendering |
+| `config` | Configuration: flags, environment, config file |
+| `converter` | Interim JSON → CycloneDX 1.7 CBOM, exact-only OIDs |
+| `cryptokb` | The crypto KB: contract YAML per ecosystem, embedded and installed into reach on import |
+| `deadcode` | Drops findings inside C/C++ `#if 0` blocks |
+| `deduplicator` | Per-line deduplication of assets |
+| `dependency` | Java (Maven, Gradle) and Python closure resolution; module-root discovery |
+| `engine` | Scan orchestration; the application reachability closure, request and merge; finding ids |
+| `enricher` | OID enrichment after materialization |
+| `entities` | Scanner input structures; aliases of the public report contract |
+| `failure` | Aliases of the public error contract |
+| `graphalgoguard` | Test-only: the graph algorithm guard ([GRAPH_IDS.md](GRAPH_IDS.md)) |
+| `offline` | `--offline`: mines dependencies in process and caches them ([OFFLINE.md](OFFLINE.md)) |
+| `oid` | Exact, registered OIDs only |
+| `output` | Writers: interim JSON, CycloneDX; stdout or file |
+| `pqc` | Writes the PQC dataset's classification onto output |
+| `rules` | Rule sources: remote, local files and directories, merge |
+| `ruleset` | Leased ruleset bundle format and lease verification |
+| `scan` | Shared scan utilities: flag validation, reachability and fragment export, supporting calls |
+| `scanner` | Detector interface and its one implementation, `cards/` |
+| `utils`, `version` | Helpers; build information |
 
-### `pkg/` (public, importable by downstream services)
+### `pkg/` (public)
 
 | Package | Responsibility |
-|---------|----------------|
-| `graphfrag` | The graph-fragment model and wire schema (`graph-fragment-1.15`), fragment decode/encode, the tiered fail-closed **stitcher** that composes per-component fragments into transitive reachability, and the renderers (`ToCallgraphExport` — stamps callgraph schema `6.14` — and `ToFindingsEnvelope`). |
-| `graphfrag/equiv` | Semantic diff asserting a stitched callgraph equals a live one (the equivalence guarantee the renderers rely on). |
-| `paramcondition` | Parser for the rule `parameterCondition` grammar (`param[<selector>]<op><value>`) into structured predicates. |
-| `schema` | Interim report JSON contract (format version `1.7`) and compatibility unmarshalling. |
-| `failure` | Structured terminal error contract: stable `Code` and `Stage` enums plus JSON `Payload`. |
+|---|---|
+| `appreach` | The application reachability answer (`/v3/cryptography/reachability/application`), run by the API and by `--offline`; the findings envelope (`ToFindingsEnvelope`) |
+| `conditioned` | Specializes a generic finding by the value its selector argument resolves to |
+| `pqc` | Post-quantum classification of served findings |
+| `sbomcbom` | CycloneDX CBOM for an SBOM from published findings (`cbom`) |
+| `schema` | Interim report JSON contract (format `1.9`) |
+| `failure` | Terminal error contract: `Code`, `Stage`, JSON payload |
 
-## Load-Bearing Invariants
+The graph-fragment, stitcher, walk, condition-parser and purl packages are in
+reach since 1.0 ([MIGRATION_1.0.md](MIGRATION_1.0.md#go-library-users)).
 
-These rules are enforced by convention (and tests), not by the compiler. Violating them is the most common way to break the tool. The agent-facing statement of the same rules lives in [AGENTS.md](../AGENTS.md).
+## Engine boundary
 
-### 1. Two-layer error model
+| Rule | Enforced by |
+|---|---|
+| Engine changes land in reach, are tagged, then required in `go.mod` here (v0.14.0 today); no `replace` on a release | Review; `go.mod` |
+| No engine package reappears in crypto-finder | `go test ./internal/boundary` |
+| reach imports nothing from crypto-finder | reach's `internal/importguard` |
+| Crypto knowledge is data, injected: `internal/cryptokb` calls `contracts.SetSource` and `contracts.SetHints` on import | Review |
+| crypto-finder passes reach its cache root (`~/.scanoss/crypto-finder/cache`) for the bytecode and Python signature caches | Code (`internal/cli/scan.go`) |
+| reach's contract-typed tests run here against the crypto KB | `make test-reach` (`REACH_TEST_CONTRACTS`) |
 
-- **Deep library code** (`internal/callgraph`, `internal/scan`, `internal/converter`, `internal/cache`, `internal/rules`, `internal/output`, parsers, loaders) returns plain wrapped errors: `fmt.Errorf("<package-prefix>: ...: %w", err)`. It must **never** import `internal/failure`.
-- **Boundary code** (`internal/cli`, `internal/engine`, `internal/scanner`, `internal/dependency`) is where errors become policy: it wraps incoming errors with `failure.Wrap` / `failure.WrapUnknown`, assigning the `Code` and `Stage`. Already-typed failures pass through untouched.
-- Failure `Code`s are a **stable external contract** consumed by CI parsers — never rename a shipped code. The published taxonomy is [ERROR_CODES.md](ERROR_CODES.md).
+## Load-bearing invariants
 
-Why: deep code stays composable and testable; the boundary is the single place errors become exit codes and JSON payloads.
+These are enforced by convention and tests, not by the compiler. The
+agent-facing version is in [AGENTS.md](../AGENTS.md).
 
-### 2. Contracts knowledge base (KB)
+| # | Invariant | Why |
+|---|---|---|
+| 1 | Two-layer errors: deep code (`reach/callgraph`, `internal/scan`, `internal/converter`, `internal/cache`, `internal/rules`, `internal/output`) returns `fmt.Errorf("<prefix>: ...: %w", err)` and never imports `internal/failure`; boundary code (`internal/cli`, `internal/engine`, `internal/scanner`, `internal/dependency`) wraps with `failure.Wrap` / `WrapUnknown`. Shipped codes are never renamed. | One place turns errors into exit codes and JSON |
+| 2 | One KB YAML file is one library version; adding a library is a new file, never code. The loader merges per ecosystem and fails on conflicting returns or hierarchies. | KB growth without engine changes |
+| 3 | Rules detect terminal crypto operations only, with standard CycloneDX metadata. No `supporting-call` asset type, no `supportingCall` sentinel. | Detection and reachability stay separate |
+| 4 | Supporting calls are derived from the graph (`internal/scan/supporting_calls.go`): the other calls on the finding's `ReceiverVar` / `AssignedVar`, the fluent-chain links (`ChainID`), the producing constructor. Key sizes come from contract `contributes` markers; a disagreeing rule value is kept as `rule_declared_bits` behind `rule_conflict`. | Scales to any library without per-call rules |
+| 5 | Reachability never depends on `metadata.api`. The call is located by position (match columns ∩ call-node columns, fluent-chain-root tie-break, line-only fallback). | A wrong `api` must not zero out reachability |
+| 6 | `call_chains` is a capped sample: 8 routes by default, depth 32 (`--export-callgraph-max-chains`); the complete reverse index is opt-in (`--export-callgraph-entry-points`). Policy: [ADR 0002](adr/0002-call-chains-sample-size.md). | Bounded output size |
 
-The type-inference engine consumes YAML knowledge bases under `internal/callgraph/contracts/<ecosystem>/`. **One YAML file = one library version** — adding a library is a new YAML, never a code change. The loader (`contracts.LoadEmbedded`) discovers, validates, and merges all files per ecosystem with these conflict rules:
+## Versioning
 
-| Situation | Outcome |
-|-----------|---------|
-| Same method+arity+condition, identical return | Idempotent (no error) |
-| Same method+arity+condition, different return | **Hard error** naming both libraries |
-| Hierarchy `child → [A]` in both libraries | Idempotent |
-| Hierarchy `child → [A]` vs `[B]` (no subset) | **Hard error** naming both libraries |
-| Hierarchy `child → [A]` vs `[A, B]` | Union (subset accepted) |
-
-KB YAML schema version is `"2"` (internal to the loader). It is **independent** of the partner-facing export schemas (callgraph `6.14`, `graph-fragment-1.15`). See [AGENTS.md](../AGENTS.md#knowledge-base-layout-callgraph-inferred-types) for the authoring recipe.
-
-### 3. Detection vs reachability
-
-Detection rules detect **terminal crypto operations only** and carry standard CycloneDX metadata. They carry no crypto-finder routing concerns — there is no `supporting-call` assetType and no `supportingCall` sentinel; do not reintroduce them.
-
-### 4. Structural supporting-call derivation
-
-Supporting calls (setup/lifecycle/config calls around a crypto object, e.g. `digest.update`/`doFinal`) are **derived from the call graph**, not tagged by rules (`internal/scan/supporting_calls.go`, `deriveObjectLifecycleCalls`). A finding's "object" is the variable its terminal call is invoked on (`ReceiverVar`) or assigned to (`AssignedVar`); its supporting calls are the other calls on that variable, the fluent-chain links (`ChainID`), and the producing constructor. This scales to any library without per-call rules. New-language parsers should populate `ReceiverVar`, `AssignedVar`, `ChainID`, and 1-based `StartCol`/`EndCol` — omitting them degrades gracefully to line-only matching but loses precision on multi-call lines.
-
-### 5. Reachability must never depend on `metadata.api`
-
-`metadata.api` is informational CBOM metadata only. The matched operation's kind is classified from the matched **source text** (`inferMatchedOperationKind`), and the crypto call is located by **position** — match columns intersected with call-node columns, with a fluent-chain-root tie-break and a line-only fallback (`findCryptoCallNode`). A missing or wrong `api` must never zero out a finding's reachability. Do not re-add api-based selection or classification.
-
-### 6. Call-chain sample vs entry-point index
-
-`call_chains` is a capped sample, not the complete graph. Local CLI defaults
-to 8 routes, with a depth cap of 32; `--export-callgraph-max-chains` overrides
-the budget and values below 1 are rejected. SDK/stitch zero or omitted
-`StitchOptions.MaxChains` still uses 128. The optional complete reverse-reach
-index is enabled with `--export-callgraph-entry-points=true` on the CLI and
-is never filtered by the sample budget. Policy: [ADR 0002](adr/0002-call-chains-sample-size.md).
-
-## Schema Versioning
-
-Four independent version numbers ship in the outputs — do not conflate them:
-
-| Version | Constant | Current | Bumps when |
-|---------|----------|---------|------------|
-| Interim report format | `schema.InterimFormatVersion` | `1.8` | The findings.json envelope changes |
-| Callgraph export schema | `graphfrag.CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | SDK `6.14`; CLI `6.18` | The partner-facing reachability contract changes |
-| Graph-fragment schema | `graphfrag.SchemaVersion` | `graph-fragment-1.15` | The fragment wire format changes |
-| Graph algorithm version | `graphfrag.GraphAlgoVersion` | `graph-algo-7` | Callgraph **construction** changes in a way that alters the structural graph (cache key for `annotate`) |
-
-Schema `6.18` (interned frames, introduced in `6.15`, the optional `scan_metadata.ecosystems` list of `6.16`, the optional dependency, route-analysis, `root_kind` and `unresolved_reason` additions of `6.17`, and the frame `excerpt`, `excerpt_unavailable`, `entry_rule` and `entry_call.call_site_column` of `6.18`) is the local CLI default and an opt-in SDK interned render (`ScanMeta.InternedFrames`). Explicit `--export-callgraph-interned-frames=false` restores CLI `6.14`. Zero-value stitch stays on `6.14` so `ToCallgraphExport` with empty meta does not contract frames. Consumers that later read interned frames call `HydrateChainIdentities`.
-
-`TestGraphAlgoVersionGuard` (`pkg/graphfrag/graph_algo_guard_test.go`) enforces the `GraphAlgoVersion` rule. It builds a small app-plus-dependency corpus per ecosystem, hashes the structural part of each fragment export (functions, internal edges, external calls), and fails when a hash changes while `GraphAlgoVersion` still equals the version in `pkg/graphfrag/testdata/graph_algo_guard.golden.json`. After a bump, record the new hashes with `go test ./pkg/graphfrag/ -run TestGraphAlgoVersionGuard -update`. That command refuses to run without a bump. Use `-update -force` only for an edit to the guard's own fixtures, or for a change the PR explains does not invalidate cached graphs.
-
-Every schema bump is recorded in [CHANGELOG.md](../CHANGELOG.md) (a hard repo requirement) and the format details live in [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md).
+Graph algorithm ids, the graph-fragment and callgraph schemas, the interim
+format, and the guard that keeps them honest: [GRAPH_IDS.md](GRAPH_IDS.md).
+Every schema bump is recorded in [CHANGELOG.md](../CHANGELOG.md); formats are
+in [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md).

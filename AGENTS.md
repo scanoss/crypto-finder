@@ -6,7 +6,30 @@ load-bearing but not enforceable by lint or compiler alone.
 
 Human-readable counterparts: the architecture, pipeline, and package map live in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the published failure code/stage
-taxonomy lives in [docs/ERROR_CODES.md](docs/ERROR_CODES.md).
+taxonomy lives in [docs/ERROR_CODES.md](docs/ERROR_CODES.md); graph ids and their
+guard in [docs/GRAPH_IDS.md](docs/GRAPH_IDS.md).
+
+## Quick path: the hard requirements
+
+| Requirement | Check before pushing |
+|---|---|
+| No ruleset content in this repository | `git diff` holds no rules, cards, conditions, fixtures or data derived from the private ruleset ([below](#ruleset-content-hard-requirement)) |
+| Changelog fragment for every user-facing change | A new `changelog.d/<slug>.<section>.md` ([below](#changelog-hard-requirement)) |
+| User guide follows user-facing changes | `docs/user-guide/user-guide.html` updated in the same PR |
+| Errors: plain `%w` in deep code, `failure.Wrap` at the boundary | [Error handling](#error-handling) |
+| Engine changes go to reach, never back here | `go test ./internal/boundary` |
+| Graph changes bump the ecosystem's graph algorithm id | `go test ./internal/graphalgoguard/` ([docs/GRAPH_IDS.md](docs/GRAPH_IDS.md)) |
+| Merge only through the gate | `go run ./scripts/mergeready check --pr <n>` ([below](#pull-requests-and-merging)) |
+
+## Ruleset content (HARD REQUIREMENT)
+
+The detection ruleset is private to SCANOSS. This repository is public (or
+will be), and so is its history. Never add its rules, rule ids, cards,
+parameter conditions, rule YAML excerpts, rule test fixtures or any data
+derived from them, in code, tests, testdata or docs. Naming that the private
+ruleset exists and how the CLI loads it (`--rules-dir`, `--cards-index`,
+`--cards-dir`, leased bundles) is fine. Tests that need rules build small,
+invented ones inline.
 
 ## Changelog (HARD REQUIREMENT)
 
@@ -44,7 +67,7 @@ This project uses a **two-layer error model**. Mixing the layers is a defect.
 
 ### 1. Deep library code
 
-Packages: `internal/callgraph`, `internal/scan`, `internal/converter`, `internal/cache`,
+Packages: `reach/callgraph`, `internal/scan`, `internal/converter`, `internal/cache`,
 `internal/rules`, `internal/output`, parsers, loaders, helpers — anything that does not
 make terminal/policy decisions.
 
@@ -81,14 +104,34 @@ is the only place where errors become policy. Inverting this rule — sprinkling
 calls deep in parsers — leaks the CLI's policy concerns into library code and makes
 those packages harder to repurpose.
 
+## Engine boundary (HARD REQUIREMENT)
+
+The engine (call graph, contracts loader, graph fragments, stitcher, entry points and their
+support packages) lives in its own module, [`github.com/scanoss/reach`](https://github.com/scanoss/reach)
+(MIT), which imports nothing from crypto-finder. Engine changes go to reach, never back into
+crypto-finder: `go test ./internal/boundary` fails when a package reappears at a path the engine
+moved from (`internal/boundary.MovedEnginePackages`). Crypto knowledge (KB YAML, crypto tables)
+goes in `internal/cryptokb` and is injected (`contracts.SetSource` / `contracts.SetHints`),
+never hard-coded in the engine; client concerns (config, paths) are passed in by the caller.
+`go.mod` requires a tagged reach version (v0.14.0 today). For engine work, develop in a reach
+checkout, add a temporary `replace github.com/scanoss/reach => ../reach`, and drop it before
+merging: crypto-finder only ships against a tagged reach.
+`make test-reach` runs reach's tests against the crypto KB (`REACH_TEST_CONTRACTS`).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#engine-boundary).
+
 ## Knowledge base layout (callgraph inferred-types)
 
-The callgraph inference engine consumes language-agnostic YAML knowledge bases under
-`internal/callgraph/contracts/`. The structure is:
+The callgraph inference engine consumes language-agnostic YAML knowledge bases. The
+engine embeds none: the loader, types and validation live in reach's `callgraph/contracts`
+package (`github.com/scanoss/reach/callgraph/contracts`), and crypto-finder's crypto KB lives in `internal/cryptokb/` (domain), which
+installs itself as the contracts source (`contracts.SetSource`) when imported. The
+structure is:
 
 ```
-internal/callgraph/contracts/
-├── contracts.go           # loader, types, validation
+github.com/scanoss/reach/callgraph/contracts/
+└── contracts.go           # loader, types, validation (engine; no YAML)
+internal/cryptokb/
+├── cryptokb.go            # go:embed of the YAML below, installs it as the source
 ├── c/                     # openssl-evp, libsodium, mbedtls, wolfssl-wolfcrypt
 ├── cpp/                   # cryptopp, tink
 ├── go/                    # stdlib-crypto, golang-x-crypto, golang-fips-openssl-v2
@@ -112,15 +155,17 @@ internal/callgraph/contracts/
 
 **One YAML file = one library version**. Adding a new library is a new YAML, not a code
 change. A new ecosystem may temporarily use one empty `<ecosystem>-bootstrap` YAML because
-`go:embed` requires a matching file; remove it when the first library KB lands. The loader (`contracts.LoadEmbedded(ecosystem)`) discovers all `*.yaml` files in
+`go:embed` requires a matching file; remove it when the first library KB lands. The loader (`contracts.ForEcosystem(ecosystem)` over the installed source; `contracts.LoadFS(fsys, ecosystem)` for any fs.FS) discovers all `*.yaml` files in
 the ecosystem directory, validates each, and merges them via `contracts.Merge()` with
 conflict-detection rules:
 
-- Same method+arity+condition with identical return → idempotent (no error).
-- Same method+arity+condition with different return → HARD ERROR naming both libraries.
-- Hierarchy `child → [A]` in both libs → idempotent.
-- Hierarchy `child → [A]` vs `[B]` (no subset) → HARD ERROR naming both libraries.
-- Hierarchy `child → [A]` vs `[A, B]` → UNION (subset accepted).
+| Situation | Outcome |
+|---|---|
+| Same method+arity+condition, identical return | Idempotent (no error) |
+| Same method+arity+condition, different return | HARD ERROR naming both libraries |
+| Hierarchy `child → [A]` in both libraries | Idempotent |
+| Hierarchy `child → [A]` vs `[B]` (no subset) | HARD ERROR naming both libraries |
+| Hierarchy `child → [A]` vs `[A, B]` | Union (subset accepted) |
 
 Each YAML carries a `library:` block with `name`, optional `coordinates`, optional
 `version_range`, and optional `description`. The `library.name` propagates onto every
@@ -160,12 +205,13 @@ are idempotent, different roles for the same method+arity+condition are a HARD
 ERROR naming both libraries.
 
 Schema version is `"2"` — schema `"1"` is hard-rejected. The YAML schema version is
-INTERNAL to the loader; the partner-facing export schema is independent (currently
-`6.18` for default local CLI callgraph exports and `6.14` for zero-value SDK/stitch — `pkg/graphfrag.CallgraphSchemaVersion` — and
-`graph-fragment-1.15` for the fragment export — `pkg/graphfrag.SchemaVersion`).
+INTERNAL to the loader; the partner-facing export schemas are independent of it
+(callgraph `6.18` for default CLI exports and `6.14` for zero-value SDK/stitch,
+graph fragment `graph-fragment-1.39`; the constants in `reach/graphfrag` and
+[docs/GRAPH_IDS.md](docs/GRAPH_IDS.md) are the source of truth).
 
 To add a library:
-1. Drop a new YAML at `internal/callgraph/contracts/<ecosystem>/<library>.yaml`.
+1. Drop a new YAML at `internal/cryptokb/<ecosystem>/<library>.yaml`.
 2. Set `schema_version: "2"`, `ecosystem: <name>`, and a unique `library.name`.
 3. Author contracts and hierarchy edges following the same shape as `jdk-crypto.yaml`.
 4. Tests run automatically — no Go code changes required.
@@ -178,7 +224,7 @@ Go contract method names use the canonical `FunctionID.String()` form:
 There is a hard separation of concerns. Violating it is the most common mistake when
 extending this tool.
 
-- **Detection rules** (semgrep/opengrep, in the separate rules repo) detect **terminal
+- **Detection rules** (the private ruleset, loaded as a leased bundle or with `--rules-dir`) detect **terminal
   crypto operations only**, and carry **standard CycloneDX metadata** (assetType,
   algorithmFamily/primitive/operation, etc.). Rules MUST NOT carry crypto-finder
   routing concerns. In particular there is no `supporting-call` assetType and no
@@ -213,18 +259,15 @@ extending this tool.
 ### Adding a new language/framework parser
 
 For a new-language parser to get **full** reachability + supporting calls, populate these
-`callgraph.FunctionCall` fields (Java does this in `internal/callgraph/java_parser.go`;
+`callgraph.FunctionCall` fields (Java does this in `reach/callgraph/java_parser.go`;
 see `parseMethodInvocation` / `parseObjectCreation`):
 
-- `ReceiverVar` — the variable a method is invoked on (`x` in `x.foo()`); empty for
-  static/class receivers.
-- `AssignedVar` — the variable a call's result binds to; for fluent chains, set only on
-  the chain **root** (outermost call).
-- `ChainID` — a stable id shared by all links of one fluent chain.
-- `StartCol` / `EndCol` — **1-based, start inclusive, end exclusive** (opengrep's
-  convention; tree-sitter columns are 0-based, so `+1`). Pin the tool's column
-  convention with a real run, not a hand-built fixture
-  (`TestOpengrep_EndColConventionPinning`).
+| Field | Meaning |
+|---|---|
+| `ReceiverVar` | The variable a method is invoked on (`x` in `x.foo()`); empty for static/class receivers |
+| `AssignedVar` | The variable a call's result binds to; for fluent chains, set only on the chain **root** (outermost call) |
+| `ChainID` | A stable id shared by all links of one fluent chain |
+| `StartCol` / `EndCol` | **1-based, start inclusive, end exclusive** (OpenGrep's convention, which the cards engine reproduces; tree-sitter columns are 0-based, so `+1`). Pin it against recorded OpenGrep matches, not a hand-built fixture (`TestCardsMatchAsOpenGrep` in `internal/cardmatch`) |
 
 Omitting any of these is safe — the system **degrades gracefully** to line-only
 matching and a chain-root/best-resolved heuristic — but precision on multi-call lines

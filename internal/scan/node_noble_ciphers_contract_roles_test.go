@@ -37,14 +37,14 @@ func TestNodeNobleCiphersSupportingCallsCarryTheirContractRole(t *testing.T) {
 		{
 			name: "gcm from the .js subpath",
 			asset: cAsset(5, 5, 18, 33, "const cipher = gcm(key, nonce);",
-				"javascript.noble-ciphers.algorithm.ae.aes-gcm",
+				"fixture.javascript.noble-ciphers.aes-gcm",
 				map[string]string{"assetType": "algorithm", "api": "@noble/ciphers/aes.gcm"}),
 			want: map[string]string{"@noble/ciphers.Cipher.encrypt": "operation"},
 		},
 		{
 			name: "xchacha20poly1305 from the bare subpath",
 			asset: cAsset(10, 10, 13, 42, "const c = xchacha20poly1305(key, nonce);",
-				"javascript.noble-ciphers.algorithm.ae.xchacha20-poly1305",
+				"fixture.javascript.noble-ciphers.xchacha20-poly1305",
 				map[string]string{"assetType": "algorithm", "api": "@noble/ciphers/chacha.xchacha20poly1305"}),
 			want: map[string]string{"@noble/ciphers.Cipher.decrypt": "operation"},
 		},

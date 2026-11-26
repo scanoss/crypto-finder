@@ -1,0 +1,25 @@
+# Invented Rust hand cards for the pattern-regex rules of ../rules/rules.yaml,
+# with type alias patterns. A pattern for each way the regex lets the mode path
+# be written: a type alias pattern reads the aliased type as written, so
+# `acme_mode::$D<$C>` matches neither `$D<$C>` nor `other::$D<$C>`. $C binds
+# the written generic, which the metavariable-regex reads as the rule's regex
+# does.
+cards:
+- rule: acme-mode
+  rust:
+    patterns:
+    - pattern-either:
+      - pattern: type $A = acme_mode::$D<$C>;
+      - pattern: type $A = $D<$C>;
+    - metavariable-regex: {metavariable: $D, regex: '^(?P<dir>Encryptor|Decryptor)$'}
+    - metavariable-regex: {metavariable: $C, regex: '^(?:\w+::)*Blk(?P<bits>128|192|256)$'}
+- rule: acme-seal
+  rust:
+    patterns:
+    - pattern-inside: |
+        use acme_aead::Sealer;
+        ...
+    - pattern-either:
+      - pattern: type $A = Sealer<$C, $_>;
+      - pattern: type $A = Sealer<$C, $_, $_>;
+    - metavariable-regex: {metavariable: $C, regex: '^(?:\w+::)*Blk(?P<bits>128|256)$'}

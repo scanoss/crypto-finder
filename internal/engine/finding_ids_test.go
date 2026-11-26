@@ -56,7 +56,7 @@ func TestGenerateFindingID_NativeIDIsPinned(t *testing.T) {
 func TestAssignFindingIDs_PerValueAssetsGetDistinctIDs(t *testing.T) {
 	t.Parallel()
 
-	rule := []entities.RuleInfo{{ID: "java.jca.algorithm.hash.sha-2"}}
+	rule := []entities.RuleInfo{{ID: "fixture.java.jca.sha-2"}}
 	report := &entities.InterimReport{Findings: []entities.Finding{{
 		FilePath: "src/App.java",
 		CryptographicAssets: []entities.CryptographicAsset{

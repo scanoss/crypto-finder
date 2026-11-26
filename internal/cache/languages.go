@@ -63,6 +63,21 @@ func (s languageSet) addRuleFile(name string, data []byte) error {
 	return nil
 }
 
+// addCardsFile adds the language of a v3 card file, the directory below
+// cards/ in its path, when the file holds rules.
+func (s languageSet) addCardsFile(name string, data []byte) error {
+	var doc struct {
+		Rules map[string]yaml.Node `yaml:"rules"`
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("card file %s: %w", name, err)
+	}
+	if language := config.CardsLanguage(name); language != "" && len(doc.Rules) > 0 {
+		s[language] = struct{}{}
+	}
+	return nil
+}
+
 // sorted returns the languages in ascending order, nil when there are none.
 func (s languageSet) sorted() []string {
 	if len(s) == 0 {
@@ -71,16 +86,21 @@ func (s languageSet) sorted() []string {
 	return slices.Sorted(maps.Keys(s))
 }
 
-// isRuleFile reports whether name is a rule file by its extension.
+// isRuleFile reports whether name is a rule file or a v3 card file by its
+// extension.
 func isRuleFile(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".yaml", ".yml":
+	case ".yaml", ".yml", cardsFileExt:
 		return true
 	}
 	return false
 }
 
-// bundleLanguages returns the languages of the rule files in a .tar.gz
+// cardsFileExt is the extension of a v3 card file (rules.CardsFileExt, which
+// this package cannot import).
+const cardsFileExt = ".cards"
+
+// bundleLanguages returns the languages of the rule and card files in a .tar.gz
 // bundle without writing them to disk. It reads the files extractTarball
 // would extract.
 func bundleLanguages(tarball []byte) ([]string, error) {
@@ -120,7 +140,11 @@ func bundleLanguages(tarball []byte) ([]string, error) {
 	}
 	set := languageSet{}
 	for _, name := range slices.Sorted(maps.Keys(files)) {
-		if err := set.addRuleFile(name, files[name]); err != nil {
+		add := set.addRuleFile
+		if strings.EqualFold(filepath.Ext(name), cardsFileExt) {
+			add = set.addCardsFile
+		}
+		if err := add(name, files[name]); err != nil {
 			return nil, err
 		}
 	}

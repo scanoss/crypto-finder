@@ -1,0 +1,767 @@
+{
+ "schema_version": "graph-fragment-1.26",
+ "scan_metadata": {
+  "ecosystem": "rust",
+  "root_module": "probe",
+  "tool_name": "crypto-finder",
+  "tool_version": "dev",
+  "graph_algo_version": "graph-algo-rs-5",
+  "rules_version": "v1.48.0",
+  "exported_at": "2026-11-17T19:12:47Z",
+  "function_count": 2,
+  "internal_edge_count": 0,
+  "external_call_count": 11,
+  "crypto_operation_count": 0,
+  "entry_kinds": true,
+  "shared_entry_calls": true,
+  "implicit_source_files": true,
+  "derived_function_names": true,
+  "derived_target_names": true
+ },
+ "functions": [
+  {
+   "key": "probe.decrypt",
+   "function_name": "probe.decrypt",
+   "canonical_signature": "probe.decrypt(&[u8], &[u8])",
+   "package": "probe",
+   "name": "decrypt",
+   "file_path": "src/main.rs",
+   "start_line": 14,
+   "end_line": 21,
+   "parameter_types": [
+    "&[u8]",
+    "&[u8]"
+   ]
+  },
+  {
+   "key": "probe.encrypt",
+   "function_name": "probe.encrypt",
+   "canonical_signature": "probe.encrypt(&[u8], &[u8])",
+   "package": "probe",
+   "name": "encrypt",
+   "file_path": "src/main.rs",
+   "start_line": 4,
+   "end_line": 12,
+   "parameter_types": [
+    "&[u8]",
+    "&[u8]"
+   ]
+  }
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe.decrypt",
+   "target_key": "acme_mode.(Decryptor).new",
+   "target_canonical_signature": "acme_mode.Decryptor.new(&[u8], &[u8])",
+   "raw": "Decryptor::new",
+   "line": 16,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "b",
+   "start_col": 13,
+   "end_col": 44,
+   "entry_call": {
+    "line": 16,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 16
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "type": "&[u8]",
+      "variable_name": "iv",
+      "argument_expression": "iv",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "iv",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 16
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.decrypt",
+   "target_key": "acme_mode.(Decryptor).new_from_slices",
+   "target_canonical_signature": "acme_mode.Decryptor.new_from_slices(&[u8], &[u8])",
+   "raw": "acme_mode::Decryptor::new_from_slices",
+   "line": 15,
+   "resolution": "exact",
+   "method_name": "new_from_slices",
+   "assigned_var": "a",
+   "start_col": 13,
+   "end_col": 73,
+   "entry_call": {
+    "line": 15,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 15
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "type": "&[u8]",
+      "variable_name": "iv",
+      "argument_expression": "iv",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "iv",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 15
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.decrypt",
+   "target_key": "acme_mode.(Decryptor).new_from_slices",
+   "target_canonical_signature": "acme_mode.Decryptor.new_from_slices(&[u8], &[u8])",
+   "raw": "Decryptor::new_from_slices",
+   "line": 18,
+   "resolution": "exact",
+   "method_name": "new_from_slices",
+   "chain_id": "652",
+   "start_col": 13,
+   "end_col": 62,
+   "entry_call": {
+    "line": 18,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 18
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "type": "&[u8]",
+      "variable_name": "iv",
+      "argument_expression": "iv",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "iv",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 18
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.decrypt",
+   "target_key": "acme_mode.(Decryptor).new_varkey",
+   "target_canonical_signature": "acme_mode.Decryptor.new_varkey(&[u8])",
+   "raw": "Decryptor::new_varkey",
+   "line": 17,
+   "resolution": "exact",
+   "method_name": "new_varkey",
+   "assigned_var": "c",
+   "start_col": 13,
+   "end_col": 47,
+   "entry_call": {
+    "line": 17,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 17
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.decrypt",
+   "target_key": "acme_mode.(Decryptor).unwrap",
+   "target_canonical_signature": "acme_mode.Decryptor.unwrap()",
+   "raw": "Decryptor::<acme::Blk256>::new_from_slices(k, iv).unwrap",
+   "line": 18,
+   "resolution": "exact",
+   "method_name": "unwrap",
+   "assigned_var": "d",
+   "chain_id": "652",
+   "start_col": 13,
+   "end_col": 71,
+   "entry_call": {
+    "line": 18
+   }
+  },
+  {
+   "caller_key": "probe.encrypt",
+   "target_key": "acme_mode.(Encryptor).new",
+   "target_canonical_signature": "acme_mode.Encryptor.new(&[u8], &[u8])",
+   "raw": "acme_mode::Encryptor::new",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "a",
+   "start_col": 13,
+   "end_col": 61,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "type": "&[u8]",
+      "variable_name": "iv",
+      "argument_expression": "iv",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "iv",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.encrypt",
+   "target_key": "acme_mode.(Encryptor).new",
+   "target_canonical_signature": "acme_mode.Encryptor.new(&[u8], &[u8])",
+   "raw": "Encryptor::new",
+   "line": 6,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "b",
+   "start_col": 13,
+   "end_col": 44,
+   "entry_call": {
+    "line": 6,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 6
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "type": "&[u8]",
+      "variable_name": "iv",
+      "argument_expression": "iv",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "iv",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 6
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.encrypt",
+   "target_key": "acme_mode.(Encryptor).new",
+   "target_canonical_signature": "acme_mode.Encryptor.new(&[u8], &[u8])",
+   "raw": "Encryptor::new",
+   "line": 7,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "c",
+   "start_col": 13,
+   "end_col": 50,
+   "entry_call": {
+    "line": 7,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 7
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "type": "&[u8]",
+      "variable_name": "iv",
+      "argument_expression": "iv",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "iv",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 7
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.encrypt",
+   "target_key": "acme_mode.(Encryptor).new",
+   "target_canonical_signature": "acme_mode.Encryptor.new(&[u8], &[u8])",
+   "raw": "acme_mode::Encryptor::new",
+   "line": 8,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "d",
+   "start_col": 13,
+   "end_col": 55,
+   "entry_call": {
+    "line": 8,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 8
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "type": "&[u8]",
+      "variable_name": "iv",
+      "argument_expression": "iv",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "iv",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 8
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.encrypt",
+   "target_key": "acme_mode.(Encryptor).new",
+   "target_canonical_signature": "acme_mode.Encryptor.new(&[u8], &[u8])",
+   "raw": "Encryptor::new",
+   "line": 9,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "e",
+   "start_col": 13,
+   "end_col": 15,
+   "end_line": 10,
+   "entry_call": {
+    "line": 9,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 10
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "type": "&[u8]",
+      "variable_name": "iv",
+      "argument_expression": "iv",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "iv",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 10
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe.encrypt",
+   "target_key": "acme_mode.(Encryptor).new_from_slices",
+   "target_canonical_signature": "acme_mode.Encryptor.new_from_slices(&[u8], &[u8])",
+   "raw": "Encryptor::new_from_slices",
+   "line": 11,
+   "resolution": "exact",
+   "method_name": "new_from_slices",
+   "assigned_var": "f",
+   "start_col": 13,
+   "end_col": 62,
+   "entry_call": {
+    "line": 11,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "type": "&[u8]",
+      "variable_name": "k",
+      "argument_expression": "k",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "k",
+        "declared_type": "&[u8]",
+        "parameter_index": 0,
+        "location": {
+         "line": 11
+        }
+       }
+      ]
+     },
+     {
+      "parameter_index": 1,
+      "type": "&[u8]",
+      "variable_name": "iv",
+      "argument_expression": "iv",
+      "source_nodes": [
+       {
+        "type": "PARAMETER",
+        "name": "iv",
+        "declared_type": "&[u8]",
+        "parameter_index": 1,
+        "location": {
+         "line": 11
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "internal_edges_compact": [],
+ "internal_edge_strings": [
+  ""
+ ],
+ "constant_refs": [
+  [
+   0,
+   15,
+   13,
+   33,
+   "acme_mode::Decryptor",
+   "other"
+  ],
+  [
+   1,
+   5,
+   13,
+   33,
+   "acme_mode::Encryptor",
+   "other"
+  ],
+  [
+   1,
+   8,
+   13,
+   33,
+   "acme_mode::Encryptor",
+   "other"
+  ],
+  [
+   1,
+   9,
+   25,
+   36,
+   "acme::inner",
+   "other"
+  ]
+ ],
+ "declarations": [
+  [
+   0,
+   15,
+   5,
+   74,
+   "",
+   "a",
+   "call"
+  ],
+  [
+   0,
+   16,
+   5,
+   45,
+   "",
+   "b",
+   "call"
+  ],
+  [
+   0,
+   17,
+   5,
+   48,
+   "",
+   "c",
+   "call"
+  ],
+  [
+   0,
+   18,
+   5,
+   72,
+   "",
+   "d",
+   "call"
+  ],
+  [
+   0,
+   20,
+   5,
+   41,
+   "",
+   "s",
+   "literal"
+  ],
+  [
+   1,
+   5,
+   5,
+   62,
+   "",
+   "a",
+   "call"
+  ],
+  [
+   1,
+   6,
+   5,
+   45,
+   "",
+   "b",
+   "call"
+  ],
+  [
+   1,
+   7,
+   5,
+   51,
+   "",
+   "c",
+   "call"
+  ],
+  [
+   1,
+   8,
+   5,
+   56,
+   "",
+   "d",
+   "call"
+  ],
+  [
+   1,
+   9,
+   5,
+   16,
+   "",
+   "e",
+   "call",
+   10
+  ],
+  [
+   1,
+   11,
+   5,
+   63,
+   "",
+   "f",
+   "call"
+  ]
+ ],
+ "source_lines": {
+  "src/main.rs": {
+   "10": "        k, iv);",
+   "11": "    let f = Encryptor::<acme::Blk128>::new_from_slices(k, iv);",
+   "15": "    let a = acme_mode::Decryptor::<acme::Blk128>::new_from_slices(k, iv);",
+   "16": "    let b = Decryptor::<Blk256>::new(k, iv);",
+   "17": "    let c = Decryptor::<Blk256>::new_varkey(k);",
+   "18": "    let d = Decryptor::<acme::Blk256>::new_from_slices(k, iv).unwrap();",
+   "20": "    let s = \"Decryptor::<Blk256>::new(\";",
+   "5": "    let a = acme_mode::Encryptor::<acme::Blk128>::new(k, iv);",
+   "6": "    let b = Encryptor::<Blk256>::new(k, iv);",
+   "7": "    let c = Encryptor::<acme::Blk192>::new(k, iv);",
+   "8": "    let d = acme_mode::Encryptor::<Blk128>::new(k, iv);",
+   "9": "    let e = Encryptor::<acme::inner::Blk256>::new("
+  }
+ },
+ "imports": {
+  "src/main.rs": [
+   {
+    "line": 1,
+    "module": "acme",
+    "name": "Blk256",
+    "start_col": 1,
+    "end_col": 18,
+    "text": "acme::Blk256"
+   },
+   {
+    "line": 2,
+    "module": "acme_mode",
+    "name": "Decryptor",
+    "start_col": 1,
+    "end_col": 39,
+    "text": "acme_mode::{Decryptor, Encryptor}"
+   },
+   {
+    "line": 2,
+    "module": "acme_mode",
+    "name": "Encryptor",
+    "start_col": 1,
+    "end_col": 39,
+    "text": "acme_mode::{Decryptor, Encryptor}"
+   }
+  ]
+ },
+ "items": {
+  "src/main.rs": [
+   [
+    4,
+    1,
+    2,
+    "fn",
+    "encrypt",
+    12
+   ],
+   [
+    14,
+    1,
+    2,
+    "fn",
+    "decrypt",
+    21
+   ]
+  ]
+ }
+}

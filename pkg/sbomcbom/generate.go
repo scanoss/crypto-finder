@@ -29,12 +29,12 @@ import (
 	"sync"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
+	"github.com/scanoss/reach/purl"
 
 	apiclient "github.com/scanoss/crypto-finder/internal/api"
 	"github.com/scanoss/crypto-finder/internal/converter"
 	"github.com/scanoss/crypto-finder/internal/enricher"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/purl"
 )
 
 // DefaultAPIURL is the SCANOSS API the findings come from.

@@ -122,3 +122,25 @@ func TestLeased_MetadataRecordsLanguages(t *testing.T) {
 		t.Fatalf("plaintext rule files in the cache: %v", got)
 	}
 }
+
+// A bundle of v3 card files only, such as the crypto-cards ruleset, has no
+// rule YAML: a card file's language is its directory under cards/, and a
+// card file without rules adds none.
+func TestBundleLanguages_CardFilesOnly(t *testing.T) {
+	cards := func(rule string) string {
+		return "format: scanoss-cards/3\nrules:\n  " + rule + ":\n    severity: INFO\n    message: m\ncards:\n- rule: " + rule + "\n  match: {call: a.b}\n"
+	}
+	got, err := bundleLanguages(tarGzFiles(t, map[string]string{
+		"cards/java/example/rules.cards":   cards("fixture.java.example.a"),
+		"cards/python/example/rules.CARDS": cards("fixture.python.example.b"),
+		"cards/go/empty.cards":             "format: scanoss-cards/3\nrules: {}\n",
+		"cards/rust/._a.cards":             "\x00\x01 not yaml: [",
+		"cards/ruby/README.md":             "not: [a, rule",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"java", "python"}; !slices.Equal(got, want) {
+		t.Fatalf("bundleLanguages = %v, want %v", got, want)
+	}
+}

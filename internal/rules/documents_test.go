@@ -151,13 +151,13 @@ func TestValidateDocumentsMatchesValidate(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	want := (&ParameterConditionValidator{}).Validate([]string{dir})
+	want := ValidateParameterConditions([]string{dir})
 	if want == nil || !strings.Contains(want.Error(), `rule "bad"`) || !strings.Contains(want.Error(), "broken.yaml") {
 		t.Fatalf("fixture should fail on both bad files, got %v", want)
 	}
 	docs := NewDocuments(new(languagesView), ParameterConditionView())
 	for range 2 {
-		got := (&ParameterConditionValidator{}).ValidateDocuments(docs, []string{dir})
+		got := ValidateParameterConditionDocuments(docs, []string{dir})
 		if got == nil || got.Error() != want.Error() {
 			t.Fatalf("ValidateDocuments = %v, want %v", got, want)
 		}

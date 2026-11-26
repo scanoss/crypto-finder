@@ -6,27 +6,28 @@ package scan
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/paramcondition"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 const nativeDedupRules = `rules:
-  - id: java.jca.algorithm.hash.md5
+  - id: fixture.java.jca.md5
     message: MD5
     severity: INFO
-    pattern: MessageDigest.getInstance($ALGO)
+    pattern: MessageDigest.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
         algorithmName: MD5
-        parameterCondition: param[0]==MD5
+        parameterCondition: param[0]==FXMD
         api: MessageDigest.getInstance
   - id: java.jca.algorithm.hash.sha1
     message: SHA-1
     severity: INFO
-    pattern: MessageDigest.getInstance($ALGO)
+    pattern: MessageDigest.getInstance($A)
     metadata:
       crypto:
         assetType: algorithm
@@ -91,10 +92,10 @@ func wantSpecialized(t *testing.T, report *entities.InterimReport, result *engin
 func TestMaterializeConditionedFindings_SpecializationSurvivesNativeTaintMatch(t *testing.T) {
 	t.Parallel()
 
-	native := nativeAsset("jca.algorithm.hash.md5.java.jca.algorithm.hash.md5", "MD5", "param[0]==MD5")
-	report, result, rules := nativeDedupFixture(t, `"MD5"`, native)
+	native := nativeAsset("jca.algorithm.hash.md5.fixture.java.jca.md5", "MD5", `param[0]==FXMD`)
+	report, result, rules := nativeDedupFixture(t, `"FXMD"`, native)
 
-	wantSpecialized(t, report, result, rules, "MD5", "param[0]==MD5")
+	wantSpecialized(t, report, result, rules, "MD5", `param[0]==FXMD`)
 }
 
 func TestMaterializeConditionedFindings_SpecializationSurvivesNativeRegexCondition(t *testing.T) {
@@ -110,7 +111,7 @@ func TestMaterializeConditionedFindings_KeepsDifferentValueAtSameLine(t *testing
 	t.Parallel()
 
 	// The scanner reported MD5 only; the call resolves to SHA-1 as well.
-	native := nativeAsset("jca.algorithm.hash.md5.java.jca.algorithm.hash.md5", "MD5", "param[0]==MD5")
+	native := nativeAsset("jca.algorithm.hash.md5.fixture.java.jca.md5", "MD5", `param[0]==FXMD`)
 	report, result, rules := nativeDedupFixture(t, `"SHA-1"`, native)
 
 	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 1 {
@@ -131,8 +132,8 @@ func TestMaterializeConditionedFindings_KeepsNativeMatchOfAnotherRule(t *testing
 	t.Parallel()
 
 	// Same algorithm and span, different rule: not a duplicate of the specialization.
-	native := nativeAsset("jca.algorithm.hash.other.java.jca.algorithm.hash.other", "MD5", "param[0]==MD5")
-	report, result, rules := nativeDedupFixture(t, `"MD5"`, native)
+	native := nativeAsset("jca.algorithm.hash.other.java.jca.algorithm.hash.other", "MD5", `param[0]==FXMD`)
+	report, result, rules := nativeDedupFixture(t, `"FXMD"`, native)
 
 	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
@@ -146,10 +147,10 @@ func TestMaterializeConditionedFindings_KeepsNativeMatchWithoutSpecialization(t 
 	t.Parallel()
 
 	// The regex pattern of the native SHA-1 match also accepts other values,
-	// but the call resolves to MD5 only: the SHA-1 native asset has no
+	// but the call resolves to FXMD only: the SHA-1 native asset has no
 	// specialization of its value and stays.
 	native := nativeAsset("jca.algorithm.hash.sha1.java.jca.algorithm.hash.sha1", "SHA-1", "param[0]~=^SHA-?1?$")
-	report, result, rules := nativeDedupFixture(t, `"MD5"`, native)
+	report, result, rules := nativeDedupFixture(t, `"FXMD"`, native)
 
 	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want the MD5 specialization", got)
@@ -167,13 +168,13 @@ const nativeMaterialDedupRules = `rules:
   - id: java.jca.related-crypto-material.key.keypairgenerator-rsa
     message: RSA key material
     severity: INFO
-    pattern: MessageDigest.getInstance($ALGO)
+    pattern: MessageDigest.getInstance($A)
     metadata:
       crypto:
         assetType: related-crypto-material
         materialType: key
-        materialAlgorithm: RSA
-        parameterCondition: param[0]~=^RSA$
+        materialAlgorithm: ZKEY
+        parameterCondition: param[0]~=^ZKEY$
         api: MessageDigest.getInstance
 `
 
@@ -203,7 +204,7 @@ func TestMaterializeConditionedFindings_SpecializationReplacesNativeMaterialMatc
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			report, result, rules := nativeDedupFixtureWithRules(t, nativeMaterialDedupRules, `"RSA"`, nativeMaterialAsset(ruleID, "RSA"))
+			report, result, rules := nativeDedupFixtureWithRules(t, nativeMaterialDedupRules, `"ZKEY"`, nativeMaterialAsset(ruleID, "ZKEY"))
 			if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 1 {
 				t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)
 			}
@@ -213,8 +214,8 @@ func TestMaterializeConditionedFindings_SpecializationReplacesNativeMaterialMatc
 					material = append(material, asset)
 				}
 			}
-			if len(material) != 1 || material[0].Metadata["parameterCondition"] != "param[0]==RSA" {
-				t.Fatalf("key material assets = %#v, want the RSA specialization alone", material)
+			if len(material) != 1 || material[0].Metadata["parameterCondition"] != "param[0]==ZKEY" {
+				t.Fatalf("key material assets = %#v, want the ZKEY specialization alone", material)
 			}
 			if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 0 {
 				t.Fatalf("second run = %d, want idempotent", got)
@@ -227,9 +228,9 @@ func TestMaterializeConditionedFindings_KeepsNativeMaterialMatchOfAnotherValue(t
 	t.Parallel()
 
 	// The scanner reported EC key material under the same rule id; the call
-	// resolves to RSA. EC is not what the specialization says, so it stays.
+	// resolves to ZKEY. EC is not what the specialization says, so it stays.
 	native := nativeMaterialAsset("jca.key.java.jca.related-crypto-material.key.keypairgenerator-rsa", "EC")
-	report, result, rules := nativeDedupFixtureWithRules(t, nativeMaterialDedupRules, `"RSA"`, native)
+	report, result, rules := nativeDedupFixtureWithRules(t, nativeMaterialDedupRules, `"ZKEY"`, native)
 
 	if got := MaterializeConditionedFindings(report, result, []string{rules}); got != 1 {
 		t.Fatalf("MaterializeConditionedFindings() = %d, want 1", got)

@@ -175,7 +175,7 @@ func dispatch(args []string, stdout, stderr *printer) int {
 func git(root string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G702: fixed git subcommands; only revisions and the root come from flags
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = root
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -206,7 +206,7 @@ func changedFiles(root string, revs ...string) ([]string, error) {
 
 func featureFS(root string) (string, error) {
 	dir := filepath.Join(root, featureDir)
-	if _, err := os.Stat(dir); err != nil { //nolint:gosec // G703: maintainer CLI; the path comes from the repo root flag
+	if _, err := os.Stat(dir); err != nil {
 		return "", fmt.Errorf("feature map: %w", err)
 	}
 	return dir, nil
@@ -253,7 +253,7 @@ func runCheckPR(root, base, head, bodyFile string, stdout *printer) error {
 	if err != nil {
 		return err
 	}
-	body, err := os.ReadFile(bodyFile) //nolint:gosec // G703: maintainer CLI; the body file is a flag
+	body, err := os.ReadFile(bodyFile)
 	if err != nil {
 		return fmt.Errorf("read body: %w", err)
 	}

@@ -1,0 +1,76 @@
+{
+ "inner": [
+  {
+   "col": 5,
+   "end_col": 16,
+   "file": "src/main.rs",
+   "line": 5,
+   "metavars": {}
+  }
+ ],
+ "make": [
+  {
+   "col": 13,
+   "end_col": 26,
+   "file": "src/main.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "1"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 26,
+   "file": "src/main.rs",
+   "line": 10,
+   "metavars": {
+    "$X": "2"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 23,
+   "file": "src/methods.rs",
+   "line": 6,
+   "metavars": {
+    "$X": "40"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 23,
+   "file": "src/methods.rs",
+   "line": 11,
+   "metavars": {
+    "$X": "50"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 19,
+   "file": "src/three.rs",
+   "line": 3,
+   "metavars": {
+    "$X": "10"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 19,
+   "file": "src/three.rs",
+   "line": 8,
+   "metavars": {
+    "$X": "20"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 19,
+   "file": "src/three.rs",
+   "line": 13,
+   "metavars": {
+    "$X": "30"
+   }
+  }
+ ]
+}

@@ -94,7 +94,7 @@ func TestNodeSupportingCallsReachModuleScopeAndCallbacks(t *testing.T) {
 			file: "derive.js", src: nodeCommonJSDerive,
 			line: 8, startCol: 13, endCol: 42,
 			match: "resolve(keyA.derive(keyB.getPublic()));",
-			rule:  "javascript.elliptic.algorithm.key-agree.derive", api: "elliptic.KeyPair.derive",
+			rule:  "fixture.javascript.elliptic.derive", api: "elliptic.KeyPair.derive",
 			want: map[string]string{"elliptic.ec.keyFromPrivate": "factory"},
 		},
 		{
@@ -102,7 +102,7 @@ func TestNodeSupportingCallsReachModuleScopeAndCallbacks(t *testing.T) {
 			file: "signer.js", src: nodePrototypeMethod,
 			line: 6, startCol: 13, endCol: 26,
 			match: "const h = hash.sha256();",
-			rule:  "javascript.hash-js.algorithm.hash.sha256", api: "hash.js.sha256",
+			rule:  "fixture.javascript.hash-js.sha256", api: "hash.js.sha256",
 			want: map[string]string{"hash.js.SHA256.update": "operation", "hash.js.SHA256.digest": "output"},
 		},
 		{
@@ -110,7 +110,7 @@ func TestNodeSupportingCallsReachModuleScopeAndCallbacks(t *testing.T) {
 			file: "script.js", src: nodeModuleScript,
 			line: 3, startCol: 12, endCol: 31,
 			match: "const ec = new EC('secp256k1');",
-			rule:  "javascript.elliptic.algorithm.signature.curve-secp256k1", api: "elliptic.ec",
+			rule:  "fixture.javascript.elliptic.curve-secp256k1", api: "elliptic.ec",
 			want: map[string]string{"elliptic.ec.genKeyPair": "factory", "elliptic.KeyPair.getPublic": "output"},
 		},
 		{
@@ -118,7 +118,7 @@ func TestNodeSupportingCallsReachModuleScopeAndCallbacks(t *testing.T) {
 			file: "objlit.js", src: nodeObjectLiteralMethods,
 			line: 7, startCol: 12, endCol: 29,
 			match: "return key.sign(msgHash);",
-			rule:  "javascript.elliptic.algorithm.signature.sign", api: "elliptic.KeyPair.sign",
+			rule:  "fixture.javascript.elliptic.sign", api: "elliptic.KeyPair.sign",
 			want: map[string]string{"elliptic.ec.genKeyPair": "factory"},
 		},
 		{
@@ -126,7 +126,7 @@ func TestNodeSupportingCallsReachModuleScopeAndCallbacks(t *testing.T) {
 			file: "routes.js", src: nodeRouteHandlers,
 			line: 7, startCol: 12, endCol: 35,
 			match: "res.json(key.sign(req.body.hash));",
-			rule:  "javascript.elliptic.algorithm.signature.sign", api: "elliptic.KeyPair.sign",
+			rule:  "fixture.javascript.elliptic.sign", api: "elliptic.KeyPair.sign",
 			want: map[string]string{"elliptic.ec.<init>": "factory", "elliptic.ec.genKeyPair": "factory"},
 		},
 	} {

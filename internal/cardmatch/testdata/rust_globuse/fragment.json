@@ -1,0 +1,1885 @@
+{
+ "schema_version": "graph-fragment-1.38",
+ "functions": [
+  {
+   "key": "probe::deeperglob.f",
+   "function_name": "probe::deeperglob.f",
+   "canonical_signature": "probe::deeperglob.f()",
+   "package": "probe::deeperglob",
+   "name": "f",
+   "file_path": "src/deeperglob.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::deepglob.f",
+   "function_name": "probe::deepglob.f",
+   "canonical_signature": "probe::deepglob.f()",
+   "package": "probe::deepglob",
+   "name": "f",
+   "file_path": "src/deepglob.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::deepnest.f",
+   "function_name": "probe::deepnest.f",
+   "canonical_signature": "probe::deepnest.f()",
+   "package": "probe::deepnest",
+   "name": "f",
+   "file_path": "src/deepnest.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::glob.f",
+   "function_name": "probe::glob.f",
+   "canonical_signature": "probe::glob.f()",
+   "package": "probe::glob",
+   "name": "f",
+   "file_path": "src/glob.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::groupeddeep.f",
+   "function_name": "probe::groupeddeep.f",
+   "canonical_signature": "probe::groupeddeep.f()",
+   "package": "probe::groupeddeep",
+   "name": "f",
+   "file_path": "src/groupeddeep.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::groupedonly.f",
+   "function_name": "probe::groupedonly.f",
+   "canonical_signature": "probe::groupedonly.f()",
+   "package": "probe::groupedonly",
+   "name": "f",
+   "file_path": "src/groupedonly.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::groupglob.f",
+   "function_name": "probe::groupglob.f",
+   "canonical_signature": "probe::groupglob.f()",
+   "package": "probe::groupglob",
+   "name": "f",
+   "file_path": "src/groupglob.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::named.f",
+   "function_name": "probe::named.f",
+   "canonical_signature": "probe::named.f()",
+   "package": "probe::named",
+   "name": "f",
+   "file_path": "src/named.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::nesteddeep.f",
+   "function_name": "probe::nesteddeep.f",
+   "canonical_signature": "probe::nesteddeep.f()",
+   "package": "probe::nesteddeep",
+   "name": "f",
+   "file_path": "src/nesteddeep.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::nestedglob.f",
+   "function_name": "probe::nestedglob.f",
+   "canonical_signature": "probe::nestedglob.f()",
+   "package": "probe::nestedglob",
+   "name": "f",
+   "file_path": "src/nestedglob.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::nestedtwo.f",
+   "function_name": "probe::nestedtwo.f",
+   "canonical_signature": "probe::nestedtwo.f()",
+   "package": "probe::nestedtwo",
+   "name": "f",
+   "file_path": "src/nestedtwo.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::other.f",
+   "function_name": "probe::other.f",
+   "canonical_signature": "probe::other.f()",
+   "package": "probe::other",
+   "name": "f",
+   "file_path": "src/other.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::rootglob.f",
+   "function_name": "probe::rootglob.f",
+   "canonical_signature": "probe::rootglob.f()",
+   "package": "probe::rootglob",
+   "name": "f",
+   "file_path": "src/rootglob.rs",
+   "start_line": 3,
+   "end_line": 6
+  },
+  {
+   "key": "probe::supermod::t.f",
+   "function_name": "probe::supermod::t.f",
+   "canonical_signature": "probe::supermod::t.f()",
+   "package": "probe::supermod::t",
+   "name": "f",
+   "file_path": "src/supermod.rs",
+   "start_line": 6,
+   "end_line": 9
+  },
+  {
+   "key": "probe::twoglobs.f",
+   "function_name": "probe::twoglobs.f",
+   "canonical_signature": "probe::twoglobs.f()",
+   "package": "probe::twoglobs",
+   "name": "f",
+   "file_path": "src/twoglobs.rs",
+   "start_line": 3,
+   "end_line": 6
+  }
+ ],
+ "internal_edges_compact": [],
+ "internal_edge_strings": [
+  ""
+ ],
+ "external_calls": [
+  {
+   "caller_key": "probe::deeperglob.f",
+   "target_key": "other::keys::ed.(SigningKey).new",
+   "target_canonical_signature": "other::keys::ed.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::deeperglob.f",
+   "target_key": "other::keys::ed.(SigningKey).sign",
+   "target_canonical_signature": "other::keys::ed.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::deepglob.f",
+   "target_key": "other::keys.(SigningKey).new",
+   "target_canonical_signature": "other::keys.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::deepglob.f",
+   "target_key": "other::keys.(SigningKey).sign",
+   "target_canonical_signature": "other::keys.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::deepnest.f",
+   "target_key": "probe::deepnest.(SigningKey).new",
+   "target_canonical_signature": "probe::deepnest.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::deepnest.f",
+   "target_key": "probe::deepnest.(SigningKey).sign",
+   "target_canonical_signature": "probe::deepnest.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::glob.f",
+   "target_key": "acme.(SigningKey).new",
+   "target_canonical_signature": "acme.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::glob.f",
+   "target_key": "acme.(SigningKey).sign",
+   "target_canonical_signature": "acme.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::groupeddeep.f",
+   "target_key": "probe::groupeddeep.(SigningKey).new",
+   "target_canonical_signature": "probe::groupeddeep.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::groupeddeep.f",
+   "target_key": "probe::groupeddeep.(SigningKey).sign",
+   "target_canonical_signature": "probe::groupeddeep.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::groupedonly.f",
+   "target_key": "probe::groupedonly.(SigningKey).new",
+   "target_canonical_signature": "probe::groupedonly.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::groupedonly.f",
+   "target_key": "probe::groupedonly.(SigningKey).sign",
+   "target_canonical_signature": "probe::groupedonly.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::groupglob.f",
+   "target_key": "probe::groupglob.(SigningKey).new",
+   "target_canonical_signature": "probe::groupglob.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::groupglob.f",
+   "target_key": "probe::groupglob.(SigningKey).sign",
+   "target_canonical_signature": "probe::groupglob.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::named.f",
+   "target_key": "other.(SigningKey).new",
+   "target_canonical_signature": "other.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::named.f",
+   "target_key": "other.(SigningKey).sign",
+   "target_canonical_signature": "other.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::nesteddeep.f",
+   "target_key": "probe::nesteddeep.(SigningKey).new",
+   "target_canonical_signature": "probe::nesteddeep.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::nesteddeep.f",
+   "target_key": "probe::nesteddeep.(SigningKey).sign",
+   "target_canonical_signature": "probe::nesteddeep.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::nestedglob.f",
+   "target_key": "probe::nestedglob.(SigningKey).new",
+   "target_canonical_signature": "probe::nestedglob.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::nestedglob.f",
+   "target_key": "probe::nestedglob.(SigningKey).sign",
+   "target_canonical_signature": "probe::nestedglob.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::nestedtwo.f",
+   "target_key": "probe::nestedtwo.(SigningKey).new",
+   "target_canonical_signature": "probe::nestedtwo.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::nestedtwo.f",
+   "target_key": "probe::nestedtwo.(SigningKey).sign",
+   "target_canonical_signature": "probe::nestedtwo.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::other.f",
+   "target_key": "other.(SigningKey).new",
+   "target_canonical_signature": "other.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::other.f",
+   "target_key": "other.(SigningKey).sign",
+   "target_canonical_signature": "other.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::rootglob.f",
+   "target_key": "other::keys.(SigningKey).new",
+   "target_canonical_signature": "other::keys.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::rootglob.f",
+   "target_key": "other::keys.(SigningKey).sign",
+   "target_canonical_signature": "other::keys.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::supermod::t.f",
+   "target_key": "acme.(SigningKey).new",
+   "target_canonical_signature": "acme.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 7,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 17,
+   "end_col": 35,
+   "entry_call": {
+    "line": 7,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 7
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::supermod::t.f",
+   "target_key": "acme.(SigningKey).sign",
+   "target_canonical_signature": "acme.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 8,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 9,
+   "end_col": 18,
+   "entry_call": {
+    "line": 8,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 8
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::twoglobs.f",
+   "target_key": "probe::twoglobs.(SigningKey).new",
+   "target_canonical_signature": "probe::twoglobs.SigningKey.new(?)",
+   "raw": "SigningKey::new",
+   "line": 4,
+   "resolution": "exact",
+   "method_name": "new",
+   "assigned_var": "k",
+   "start_col": 13,
+   "end_col": 31,
+   "entry_call": {
+    "line": 4,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "1",
+      "resolved_value": "1",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "1",
+        "location": {
+         "line": 4
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "caller_key": "probe::twoglobs.f",
+   "target_key": "probe::twoglobs.(SigningKey).sign",
+   "target_canonical_signature": "probe::twoglobs.SigningKey.sign(?)",
+   "raw": "k.sign",
+   "line": 5,
+   "resolution": "exact",
+   "method_name": "sign",
+   "receiver_var": "k",
+   "start_col": 5,
+   "end_col": 14,
+   "entry_call": {
+    "line": 5,
+    "parameters": [
+     {
+      "parameter_index": 0,
+      "argument_expression": "2",
+      "resolved_value": "2",
+      "source_nodes": [
+       {
+        "type": "VALUE",
+        "value": "2",
+        "location": {
+         "line": 5
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "declarations": [
+  [
+   0,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   1,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   2,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   3,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   4,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   5,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   6,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   7,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   8,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   9,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   10,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   11,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   12,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   13,
+   7,
+   9,
+   36,
+   "",
+   "k",
+   "call"
+  ],
+  [
+   14,
+   4,
+   5,
+   32,
+   "",
+   "k",
+   "call"
+  ]
+ ],
+ "call_anchors": [
+  [
+   0,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   0,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   1,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   1,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   2,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   2,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   3,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   3,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   4,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   4,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   5,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   5,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   6,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   6,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   7,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   7,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   8,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   8,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   9,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   9,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   10,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   10,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   11,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   11,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   12,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   12,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   13,
+   7,
+   17,
+   35,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   13,
+   8,
+   9,
+   18,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ],
+  [
+   14,
+   4,
+   13,
+   31,
+   "call_expression",
+   "block[2]/let_declaration[0]/call_expression[1]"
+  ],
+  [
+   14,
+   5,
+   5,
+   14,
+   "call_expression",
+   "block[2]/expression_statement[1]/call_expression[0]"
+  ]
+ ],
+ "source_lines": {
+  "src/deeperglob.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/deepglob.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/deepnest.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/glob.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/groupeddeep.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/groupedonly.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/groupglob.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/named.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/nesteddeep.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/nestedglob.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/nestedtwo.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/other.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/rootglob.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  },
+  "src/supermod.rs": {
+   "7": "        let k = SigningKey::new(1);",
+   "8": "        k.sign(2);"
+  },
+  "src/twoglobs.rs": {
+   "4": "    let k = SigningKey::new(1);",
+   "5": "    k.sign(2);"
+  }
+ },
+ "imports": {
+  "src/deeperglob.rs": [
+   {
+    "line": 1,
+    "module": "other::keys::ed",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 24,
+    "text": "other::keys::ed::*"
+   }
+  ],
+  "src/deepglob.rs": [
+   {
+    "line": 1,
+    "module": "other::keys",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 20,
+    "text": "other::keys::*"
+   }
+  ],
+  "src/deepnest.rs": [
+   {
+    "line": 1,
+    "module": "a::b::c",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 20,
+    "text": "a::{b::{c::*}}"
+   }
+  ],
+  "src/glob.rs": [
+   {
+    "line": 1,
+    "module": "acme",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 13,
+    "text": "acme::*"
+   }
+  ],
+  "src/groupeddeep.rs": [
+   {
+    "line": 1,
+    "module": "other::keys",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 22,
+    "text": "other::keys::{*}"
+   }
+  ],
+  "src/groupedonly.rs": [
+   {
+    "line": 1,
+    "module": "other",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 16,
+    "text": "other::{*}"
+   }
+  ],
+  "src/groupglob.rs": [
+   {
+    "line": 1,
+    "module": "other",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 23,
+    "text": "other::{*, Thing}"
+   },
+   {
+    "line": 1,
+    "module": "other",
+    "name": "Thing",
+    "start_col": 1,
+    "end_col": 23,
+    "text": "other::{*, Thing}"
+   }
+  ],
+  "src/named.rs": [
+   {
+    "line": 1,
+    "module": "other",
+    "name": "SigningKey",
+    "start_col": 1,
+    "end_col": 23,
+    "text": "other::SigningKey"
+   }
+  ],
+  "src/nesteddeep.rs": [
+   {
+    "line": 1,
+    "module": "other::keys::ed",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 26,
+    "text": "other::{keys::ed::*}"
+   }
+  ],
+  "src/nestedglob.rs": [
+   {
+    "line": 1,
+    "module": "other::keys",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 22,
+    "text": "other::{keys::*}"
+   }
+  ],
+  "src/nestedtwo.rs": [
+   {
+    "line": 1,
+    "module": "a::b::c",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 18,
+    "text": "a::b::{c::*}"
+   }
+  ],
+  "src/other.rs": [
+   {
+    "line": 1,
+    "module": "other",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 14,
+    "text": "other::*"
+   }
+  ],
+  "src/rootglob.rs": [
+   {
+    "line": 1,
+    "module": "other::keys",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 22,
+    "text": "::other::keys::*"
+   }
+  ],
+  "src/supermod.rs": [
+   {
+    "line": 1,
+    "module": "acme",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 13,
+    "text": "acme::*"
+   },
+   {
+    "line": 4,
+    "module": "super",
+    "name": "*",
+    "start_col": 5,
+    "end_col": 18,
+    "text": "super::*"
+   }
+  ],
+  "src/twoglobs.rs": [
+   {
+    "line": 1,
+    "module": "other::keys",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 29,
+    "text": "other::{keys::*, ed::*}"
+   },
+   {
+    "line": 1,
+    "module": "other::ed",
+    "name": "*",
+    "start_col": 1,
+    "end_col": 29,
+    "text": "other::{keys::*, ed::*}"
+   }
+  ]
+ },
+ "items": {
+  "src/deeperglob.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/deepglob.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/deepnest.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/glob.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/groupeddeep.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/groupedonly.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/groupglob.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/named.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/nesteddeep.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/nestedglob.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/nestedtwo.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/other.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/rootglob.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ],
+  "src/supermod.rs": [
+   [
+    3,
+    1,
+    2,
+    "mod",
+    "t",
+    10
+   ],
+   [
+    6,
+    5,
+    6,
+    "fn",
+    "f",
+    9
+   ]
+  ],
+  "src/twoglobs.rs": [
+   [
+    3,
+    1,
+    2,
+    "fn",
+    "f",
+    6
+   ]
+  ]
+ },
+ "scan_metadata": {
+  "ecosystem": "rust",
+  "root_module": "probe",
+  "tool_name": "crypto-finder",
+  "tool_version": "dev",
+  "graph_algo_version": "graph-algo-rs-10",
+  "exported_at": "2026-01-01T00:00:00Z",
+  "function_count": 15,
+  "internal_edge_count": 0,
+  "external_call_count": 30,
+  "crypto_operation_count": 0,
+  "entry_kinds": true,
+  "shared_entry_calls": true,
+  "implicit_source_files": true,
+  "derived_function_names": true,
+  "derived_target_names": true
+ }
+}

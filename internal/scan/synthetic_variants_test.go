@@ -7,10 +7,11 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/paramcondition"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
 )
 
 const syntheticVariantsFile = "/workspace/Pbkdf2.java"
@@ -177,7 +178,7 @@ func TestAssignOccurrenceKeys_TypeUsageWithoutCallIsKeyed(t *testing.T) {
 func TestOccurrenceKeyAndFindingID_PlainAndPerValueRuleFindingsArePinned(t *testing.T) {
 	id := callgraph.FunctionID{Package: "com.example", Type: "Crypto", Name: "run#0"}
 	call := callgraph.FunctionCall{FilePath: "/workspace/Crypto.java", Line: 10, StartCol: 5, EndCol: 25, ASTKind: "method_invocation", NamedASTPath: "block[0]/expression_statement[0]/method_invocation[0]"}
-	rule := []entities.RuleInfo{{ID: "java.jca.algorithm.hash.sha-2"}}
+	rule := []entities.RuleInfo{{ID: "fixture.java.jca.sha-2"}}
 	result := &engine.DepScanResult{
 		RootModule:  "com.example:app",
 		ProjectRoot: "/workspace",
@@ -197,8 +198,8 @@ func TestOccurrenceKeyAndFindingID_PlainAndPerValueRuleFindingsArePinned(t *test
 
 	assets := result.Report.Findings[0].CryptographicAssets
 	for i, want := range []struct{ id, key string }{
-		{"5f201a0b", "v1:113330dfc25a404d"},
-		{"1bab1631", "v1:958dafa89bcb52ba"},
+		{"e192ecca", "v1:113330dfc25a404d"},
+		{"b77a1fd3", "v1:958dafa89bcb52ba"},
 	} {
 		if assets[i].FindingID != want.id || assets[i].OccurrenceKey != want.key {
 			t.Errorf("asset %d identity = (%q, %q), want pinned (%q, %q)", i, assets[i].FindingID, assets[i].OccurrenceKey, want.id, want.key)

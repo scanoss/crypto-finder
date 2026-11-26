@@ -202,20 +202,3 @@ func longestChainIndexAmong(views []candidateView, idxs []int) int {
 	}
 	return best
 }
-
-// lowestStartColIndexAmong returns the index (drawn from idxs) with the lowest
-// non-zero StartCol, falling back to the first index. It is the deterministic
-// final tie-break shared by both paths when neither columns nor chain structure
-// single out a candidate.
-func lowestStartColIndexAmong(views []candidateView, idxs []int) int {
-	if len(idxs) == 0 {
-		return -1
-	}
-	best := idxs[0]
-	for _, i := range idxs[1:] {
-		if views[i].StartCol > 0 && (views[best].StartCol == 0 || views[i].StartCol < views[best].StartCol) {
-			best = i
-		}
-	}
-	return best
-}

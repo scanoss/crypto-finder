@@ -6,8 +6,9 @@ package scan
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -20,7 +21,7 @@ import (
 func TestPassword4jTerminalFindingsCarryTheSharedOperationOnly(t *testing.T) {
 	t.Parallel()
 
-	kb, err := contracts.LoadEmbedded("java")
+	kb, err := contracts.ForEcosystem("java")
 	if err != nil {
 		t.Fatalf("LoadEmbedded(java): %v", err)
 	}

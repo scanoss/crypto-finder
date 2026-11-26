@@ -1,0 +1,453 @@
+{
+ "any": [
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/aliased.rs",
+   "line": 5,
+   "metavars": {
+    "$IMPORT": "other self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/deepself.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme keys ed self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/infn.rs",
+   "line": 6,
+   "metavars": {
+    "$IMPORT": "other mpi self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/letself.rs",
+   "line": 6,
+   "metavars": {
+    "$IMPORT": "other mpi self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/nested.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme keys self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfacme.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme signer self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfonly.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/top.rs",
+   "line": 5,
+   "metavars": {
+    "$IMPORT": "other self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/twoself.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme self",
+    "$KEY": "pair"
+   }
+  }
+ ],
+ "neg": [
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/aliased.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/deepself.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/infn.rs",
+   "line": 6,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/letself.rs",
+   "line": 6,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/nested.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfacme.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfonly.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/top.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/twoself.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  }
+ ],
+ "notfar": [
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/aliased.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/deepself.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/infn.rs",
+   "line": 6,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/letself.rs",
+   "line": 6,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/nested.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfacme.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfonly.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/top.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/twoself.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair"
+   }
+  }
+ ],
+ "regex": [
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/aliased.rs",
+   "line": 5,
+   "metavars": {
+    "$IMPORT": "acme Key",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/deepself.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme keys ed self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/infn.rs",
+   "line": 6,
+   "metavars": {
+    "$IMPORT": "acme Key",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/letself.rs",
+   "line": 6,
+   "metavars": {
+    "$IMPORT": "acme Key",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/nested.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme keys self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfacme.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme signer self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfonly.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme self",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/top.rs",
+   "line": 5,
+   "metavars": {
+    "$IMPORT": "acme Key",
+    "$KEY": "pair"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/twoself.rs",
+   "line": 4,
+   "metavars": {
+    "$IMPORT": "acme self",
+    "$KEY": "pair"
+   }
+  }
+ ],
+ "two": [
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/aliased.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "pair",
+    "$M": "other",
+    "$N": "self"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/deepself.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair",
+    "$M": "acme keys ed",
+    "$N": "self"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/infn.rs",
+   "line": 6,
+   "metavars": {
+    "$KEY": "pair",
+    "$M": "other mpi",
+    "$N": "self"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/letself.rs",
+   "line": 6,
+   "metavars": {
+    "$KEY": "pair",
+    "$M": "other mpi",
+    "$N": "self"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/nested.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair",
+    "$M": "acme keys",
+    "$N": "self"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfacme.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair",
+    "$M": "acme signer",
+    "$N": "self"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/selfonly.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair",
+    "$M": "acme",
+    "$N": "self"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/top.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "pair",
+    "$M": "other",
+    "$N": "self"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 17,
+   "file": "src/twoself.rs",
+   "line": 4,
+   "metavars": {
+    "$KEY": "pair",
+    "$M": "acme",
+    "$N": "self"
+   }
+  }
+ ]
+}

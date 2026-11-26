@@ -22,34 +22,23 @@ import (
 	"testing"
 )
 
-func TestEncodeRulesYAMLAndJSONAgree(t *testing.T) {
+func TestEncodeYAMLRulesPrefixesEachID(t *testing.T) {
 	yamlText := []byte("rules:\n  - id: a\n    message: m\n    severity: INFO\n    languages: [go]\n    pattern: foo()\n    metadata: {size: 2.0}\n")
-	jsonText := []byte(`{"rules":[{"id":"a","message":"m","severity":"INFO","languages":["go"],"pattern":"foo()","metadata":{"size":2.0}}]}`)
-	fromYAML, ok := EncodeRules(yamlText, "p.")
-	if !ok {
-		t.Fatal("YAML rules must encode")
+	encoded, ok := EncodeYAMLRules(yamlText, "p.")
+	if !ok || len(encoded) != 1 {
+		t.Fatalf("YAML rules must encode, got %q, %v", encoded, ok)
 	}
-	fromJSON, ok := EncodeRules(jsonText, "p.")
-	if !ok {
-		t.Fatal("JSON rules must encode")
-	}
-	var a, b any
-	if json.Unmarshal(fromYAML[0], &a) != nil || json.Unmarshal(fromJSON[0], &b) != nil || !reflect.DeepEqual(a, b) {
-		t.Errorf("YAML %s and JSON %s encode differently", fromYAML[0], fromJSON[0])
-	}
-	if a.(map[string]any)["id"] != "p.a" {
-		t.Errorf("id not prefixed: %s", fromYAML[0])
+	var got, want any
+	wantJSON := `{"id":"p.a","message":"m","severity":"INFO","languages":["go"],"pattern":"foo()","metadata":{"size":2.0}}`
+	if json.Unmarshal(encoded[0], &got) != nil || json.Unmarshal([]byte(wantJSON), &want) != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("EncodeYAMLRules = %s, want %s", encoded[0], wantJSON)
 	}
 }
 
-func TestPrefixRuleIDRejectsBadRules(t *testing.T) {
-	for _, raw := range []string{`{"message":"m"}`, `{"id":1}`, `{"id":"a","id":"b"}`, `[]`} {
-		if _, ok := PrefixRuleID([]byte(raw), "p."); ok {
-			t.Errorf("PrefixRuleID(%s) accepted a rule without one string id", raw)
+func TestEncodeYAMLRulesRejectsRulesWithoutOneStringID(t *testing.T) {
+	for _, raw := range []string{"rules:\n  - message: m\n", "rules:\n  - id: 1\n", "rules: {}\n", "other: []\n"} {
+		if _, ok := EncodeYAMLRules([]byte(raw), "p."); ok {
+			t.Errorf("EncodeYAMLRules(%q) accepted a rule file it cannot prefix", raw)
 		}
-	}
-	out, ok := PrefixRuleID([]byte(`{"id":"a","pattern":"x"}`), "m.")
-	if !ok || string(out) != `{"id":"m.a","pattern":"x"}` {
-		t.Errorf("PrefixRuleID = %s, %v", out, ok)
 	}
 }

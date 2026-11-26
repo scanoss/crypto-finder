@@ -6,7 +6,8 @@ package engine
 import (
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
@@ -65,6 +66,36 @@ func TestSynthesize_RustAPIFindsItsDeclaration(t *testing.T) {
 		}
 		if len(files) != 1 || files[0] != tc.wantFile {
 			t.Errorf("%s: synthesized at %v, want only %s", tc.api, files, tc.wantFile)
+		}
+	}
+}
+
+// A trait's required method is an abstract declaration with no body: it runs
+// nothing, so a rule naming the trait's method surfaces no entry point at the
+// trait's signature, only at an implementation the api names.
+func TestSynthesize_RustSkipsAbstractTraitMethods(t *testing.T) {
+	required := &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "acme::traits", Type: "DecodeKey", Name: "from_der"},
+		FilePath:  "src/traits.rs",
+		StartLine: 34,
+		EndLine:   34,
+		Abstract:  true,
+	}
+	impl := &callgraph.FunctionDecl{
+		ID:        callgraph.FunctionID{Package: "acme::key", Type: "Key", Name: "from_der"},
+		FilePath:  "src/key.rs",
+		StartLine: 10,
+		EndLine:   12,
+	}
+	graph := &callgraph.CallGraph{Functions: map[string]*callgraph.FunctionDecl{
+		required.ID.String(): required,
+		impl.ID.String():     impl,
+	}}
+	for api, want := range map[string]int{"acme.traits.DecodeKey.from_der": 0, "acme.key.Key.from_der": 1} {
+		report := &entities.InterimReport{}
+		SynthesizeRuleCryptoEntryPoints(report, graph, []string{writeRule(t, t.TempDir(), api, "RSA")}, "rust")
+		if len(report.Findings) != want {
+			t.Errorf("%s: %d findings, want %d", api, len(report.Findings), want)
 		}
 	}
 }

@@ -1,0 +1,36 @@
+rules:
+- id: config
+  message: m
+  severity: INFO
+  languages: [go]
+  patterns:
+  - pattern-either:
+    - pattern-inside: |
+        import (
+          ...
+          "example.com/acme/tls"
+          ...
+        )
+        ...
+    - pattern-inside: |
+        import "example.com/acme/tls"
+        ...
+  - pattern: tls.Config{...}
+- id: server
+  message: m
+  severity: INFO
+  languages: [go]
+  patterns:
+  - pattern-inside: |
+      import "example.com/acme/ssh"
+      ...
+  - pattern: '&ssh.ServerConfig{...}'
+- id: newkey
+  message: m
+  severity: INFO
+  languages: [go]
+  patterns:
+  - pattern-inside: |
+      import "example.com/acme/ssh"
+      ...
+  - pattern: new(ssh.Key)

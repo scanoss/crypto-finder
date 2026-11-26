@@ -1,5 +1,5 @@
 rules:
-  - id: fixture.go.tls-key-pair
+  - id: fixture.go.crypto.load-key-pair
     message: Test fixture for TLS key pair loading
     severity: INFO
     languages:
@@ -20,7 +20,7 @@ rules:
         api: tls.LoadX509KeyPair
         materialSource: loaded
 
-  - id: fixture.go.des-cipher
+  - id: fixture.go.crypto.key-generation
     message: Test fixture for DES cipher construction
     severity: WARNING
     languages:

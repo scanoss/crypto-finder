@@ -1,0 +1,110 @@
+rules:
+- id: mode
+  message: m
+  severity: INFO
+  languages: [go]
+  metadata: {crypto: {assetType: algorithm, algorithmName: ACME-CBC}}
+  patterns:
+  - pattern-either:
+    - pattern-inside: |
+        $BLOCK, $ERR := $PKG.NewCipher($KEY)
+        ...
+    - pattern-inside: |
+        $BLOCK, $ERR = $PKG.NewCipher($KEY)
+        ...
+  - pattern: cipher.NewCBCEncrypter($BLOCK, ...)
+  - pattern-either:
+    - pattern-inside: |
+        import $PKG "example.com/acme/blk"
+        ...
+    - patterns:
+      - pattern-inside: |
+          import "example.com/acme/blk"
+          ...
+      - pattern-not-inside: |
+          import $ALIAS "example.com/acme/blk"
+          ...
+      - pattern-inside: |
+          $BLOCK, $ERR := $PKG.NewCipher($KEY)
+          ...
+      - metavariable-pattern:
+          metavariable: $PKG
+          patterns:
+          - pattern-regex: ^blk$
+- id: verify
+  message: m
+  severity: INFO
+  languages: [go]
+  patterns:
+  - pattern-either:
+    - pattern-inside: |
+        import "example.com/acme/x509"
+        ...
+  - pattern-either:
+    - pattern-inside: |
+        $CERT, $ERR := x509.Parse(...)
+        ...
+    - pattern-inside: |
+        $CERT, $ERR = x509.Parse(...)
+        ...
+  - pattern: $CERT.Verify(...)
+- id: single
+  message: m
+  severity: INFO
+  languages: [go]
+  patterns:
+  - pattern-inside: |
+      $H := acme.NewHash()
+      ...
+  - pattern: $H.Sum(...)
+- id: nested
+  message: m
+  severity: INFO
+  languages: [go]
+  patterns:
+  - pattern-either:
+    - pattern-inside: |
+        import (
+          ...
+          "example.com/acme/srv"
+          ...
+        )
+        ...
+    - pattern-inside: |
+        import "example.com/acme/srv"
+        ...
+  - pattern-either:
+    - pattern: '($S : *srv.Server).StartTLS()'
+    - patterns:
+      - pattern-either:
+        - pattern-inside: |
+            $S := srv.NewUnstarted(...)
+            ...
+        - pattern-inside: |
+            $S = srv.NewUnstarted(...)
+            ...
+      - pattern: $S.StartTLS()
+- id: sinkpkg
+  message: m
+  severity: INFO
+  languages: [go]
+  patterns:
+  - pattern-inside: |
+      import "example.com/acme/mode"
+      ...
+  - pattern-inside: |
+      $B, $E := blk.NewCipher($K)
+      ...
+  - pattern: mode.NewCBC($B, ...)
+- id: gcm
+  message: m
+  severity: INFO
+  languages: [go]
+  patterns:
+  - pattern-inside: |
+      import "example.com/acme/aes"
+      ...
+  - pattern-inside: |
+      $G, $E := cipher.NewGCM($B)
+      ...
+  - pattern: $G.Seal(...)

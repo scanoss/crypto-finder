@@ -18,28 +18,17 @@ When a scan builds a call graph, a random draw that a rule reports as a `drbg` a
 
 ## Driving it with run.sh
 
-Preconditions:
-
-- `doctor.sh` is clean and `opengrep` is present; each language needs its toolchain (`doctor.sh` lists them).
-- Fixture `testdata/projects/related_material/<lang>/app`: `seal` draws a salt and an iv (Go: a nonce) and hands them to helpers that call the KDF and the cipher; a second function draws a value and overwrites it before handing it on.
-- Rules: `testdata/rules/related-material.yaml`, which report only the draws.
-
-- **Drive it.** Run `.claude/skills/verify/scripts/run.sh related-material all` (or one of `go`, `python`, `rust`, `node`). It exits 0 and each `bin/verify/evidence/related-material/<lang>/verdict.txt` reads `VERDICT: PASS`.
-- **Cross-function material.** The driver scans `app/` with `--export-callgraph`. `findings.json` holds `related-crypto-material` assets at exactly these lines: Python `19:salt,21:initialization-vector`, Go `31:salt,39:nonce`, Rust `17:salt,21:initialization-vector`, Node `13:salt,15:initialization-vector`. Each sits at its draw's span with the draw's rule, carries only `assetType` and `materialType`, and has a `finding_id`.
-- **Overwritten value.** The overwritten draw (Python 27, Go 48, Rust 27, Node 20) has only its `algorithm` asset.
-- **No call graph.** The same scan without `--export-callgraph` reports no related material.
-- **CBOM.** `--format cyclonedx` writes components whose `relatedCryptoMaterialProperties.type` values are the materials above.
-- **Proof.** Keep `verdict.txt`, `transcript.txt`, `findings.json`, `findings-plain.json` and `cbom.json`.
+This feature has no drive in this version. The 0.54.0 drive (OpenGrep, non-Java fixtures) was removed. A new drive for this version is to be written against the cards engine.
 
 ## Gotchas
 
 - The material is added only when the scan builds a call graph (`--export-callgraph`, `--export-graph-fragment`, `--scan-dependencies`); a plain scan reports the draw alone.
-- Java is not driven: its call graph export needs a JDK the sandbox does not provide. `internal/scan/related_material_test.go` covers Java with the real parser.
-- `material-constant` is not driven: the driver's rules report only draws, and a constant needs a rule that reports the crypto call it reaches. `internal/scan/literal_material_test.go` covers Python and Node with the real parsers; drive it by hand with a ruleset that reports the call (for example `hashlib.pbkdf2_hmac` or `createCipheriv`) and `--export-callgraph`.
+- `internal/scan/related_material_test.go` covers Java with the real parser.
+- `material-constant` needs a rule that reports the crypto call a constant reaches, not only the draw. `internal/scan/literal_material_test.go` covers Python and Node with the real parsers.
 - A draw is followed only through plain variables and application functions the graph resolves exactly. A value passed through a field, a collection or an interface call reports no material.
 
 ## Code paths
 
 - `internal/scan/related_material.go`
 - `internal/scan/literal_material.go`
-- `internal/callgraph/contracts/contracts.go`
+- `internal/cryptokb/**`

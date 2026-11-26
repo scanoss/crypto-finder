@@ -15,8 +15,8 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 // Package scanner provides the core abstraction for cryptographic scanner implementations.
-// It defines the Scanner interface that all scanner adapters (Semgrep, OpenGrep, CBOM Toolkit)
-// must implement, along with configuration and metadata types.
+// It defines the Scanner interface that every detector implements (today the
+// cards scanner), along with configuration and metadata types.
 //
 //revive:disable:var-naming // scanner is a domain package name and intentionally matches CLI/config terminology.
 package scanner
@@ -28,41 +28,35 @@ import (
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
 
-// Scanner defines the contract that all scanner adapters (Semgrep, OpenGrep, CBOM Toolkit) must implement,
-// providing a unified interface for executing different scanning tools.
+// Scanner defines the contract a detector implements, providing a unified
+// interface for running detection over a target.
 //
 // Each scanner implementation is responsible for:
-//   - Validating the scanner executable is available and properly configured
-//   - Executing the scanner against target paths with specified rules
-//   - Transforming scanner-specific output into the standardized interim format
+//   - Validating that its configuration is usable
+//   - Detecting cryptographic usage in the target with the given rules
+//   - Reporting it in the standardized interim format
 //
 // Example usage:
 //
-//	scanner := semgrep.NewSemgrepScanner()
-//	config := scanner.Config{
-//	    ExecutablePath: "/usr/local/bin/semgrep",
-//	    Timeout:        10 * time.Minute,
-//	}
-//	if err := scanner.Initialize(ctx, config); err != nil {
+//	s := cards.NewScannerFactory(opts)()
+//	if err := s.Initialize(ctx, scanner.Config{Timeout: 10 * time.Minute}); err != nil {
 //	    log.Fatal(err)
 //	}
-//	report, err := scanner.Scan(ctx, "/path/to/code", []string{"./rules"})
+//	report, err := s.Scan(ctx, "/path/to/code", []string{"./rules"}, toolInfo)
 type Scanner interface {
-	// Initialize validates the scanner is available and properly configured.
-	// ctx cancels initialization probes and their subprocess trees.
+	// Initialize validates the scanner is properly configured.
+	// ctx cancels initialization work.
 	// This method should be called once before any scanning operations.
-	// Concurrent initialization of a shared adapter is not supported.
-	// Built-in adapters copy mutable configuration values during initialization.
+	// Concurrent initialization of a shared scanner is not supported.
+	// Built-in scanners copy mutable configuration values during initialization.
 	//
-	// It verifies:
-	//   - The scanner executable exists and is executable
-	//   - Required dependencies are available
-	//   - Configuration parameters are valid
+	// It verifies that the scanner's options and the configuration parameters
+	// are valid.
 	//
 	// Returns an error if initialization fails.
 	Initialize(ctx context.Context, config Config) error
 
-	// Scan executes the scanner against the target with given rule paths.
+	// Scan runs the scanner against the target with given rule paths.
 	// Returns an interim format report containing all findings.
 	//
 	// Parameters:
@@ -71,10 +65,10 @@ type Scanner interface {
 	//   - rulePaths: Paths to rule files or directories containing rules
 	//   - toolInfo: Information about the crypto-finder tool (name and version)
 	//
-	// The scan results are transformed into the standardized schema.InterimReport format,
-	// which includes cryptographic assets, API surface information, and metadata.
+	// The report is in the standardized interim format, which includes
+	// cryptographic assets and metadata.
 	//
-	// Returns an error if the scan fails or if the scanner process encounters an error.
+	// Returns an error if the scan fails.
 	Scan(ctx context.Context, target string, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error)
 
 	// GetInfo returns metadata about this scanner implementation.
@@ -85,122 +79,29 @@ type Scanner interface {
 }
 
 // Config holds the configuration parameters for initializing a scanner.
-// Each scanner adapter receives this configuration during initialization.
 type Config struct {
-	// ExecutablePath is the absolute path to the scanner executable.
-	// If empty, the scanner will attempt to find the executable in PATH.
-	ExecutablePath string
-
 	// Timeout specifies the maximum duration for a scan operation.
-	// If zero, a default timeout of 10 minutes is used.
-	// Use context.WithTimeout for more granular control per scan.
 	Timeout time.Duration
 
-	// WorkDir is the working directory for the scanner process.
-	// If empty, the current working directory is used.
-	WorkDir string
-
-	// Env contains environment variables to set for the scanner process.
-	// These are added to the existing environment, not replacing it.
-	// Example: map[string]string{"SEMGREP_TIMEOUT": "600"}
-	Env map[string]string
-
-	// ExtraArgs contains additional command-line arguments to pass to the scanner.
-	// These are appended to the scanner's default arguments.
-	// Example: []string{"--verbose", "--max-memory=4096"}
-	ExtraArgs []string
-
 	// SkipPatterns contains gitignore-style patterns for files/directories to exclude.
-	// These patterns are passed to the scanner's exclude mechanism (e.g., --exclude for Semgrep).
-	// Example: []string{"node_modules/", "*.min.js", "test/"}
 	SkipPatterns []string
-
-	// IncludeGitIgnored scans files the enclosing Git work tree ignores. Only
-	// resolved dependency roots set it: installed dependencies usually live in
-	// ignored directories such as node_modules. Primary scans leave it false.
-	IncludeGitIgnored bool
 
 	// DisableDedup when true, disables per-line deduplication of cryptographic assets.
 	// By default (false), assets detected at the same location are merged.
-	// Set to true to preserve all individual detections for debugging or compatibility.
 	DisableDedup bool
-
-	// Interfile enables cross-file (interfile) analysis.
-	// When enabled with Semgrep, this adds the --pro flag to enable Semgrep Pro features.
-	// Only supported by the Semgrep scanner.
-	Interfile bool
-
-	// RuleTimeoutSeconds caps the time the scanner spends running one rule
-	// on one file. Zero keeps the scanner's own default, 5 s for OpenGrep.
-	// Dependency scans raise it, because a loaded host makes the default
-	// fire and the file's findings are lost. Only the OpenGrep adapter
-	// applies it, and a timeout flag in ExtraArgs takes precedence.
-	RuleTimeoutSeconds uint8
-
-	// Jobs caps the analysis jobs one scan runs in parallel. Zero gives the
-	// OpenGrep adapter one job per CPU the process may use. Dependency
-	// scans set it so concurrent scans share the cores. Only the OpenGrep
-	// adapter applies it, and a jobs flag in ExtraArgs takes precedence.
-	// The small fields after the flags fit the flags' padding, so scan
-	// options stay under the by-value size limit the linter enforces: the
-	// flags, RuleTimeoutSeconds, Jobs, OpengrepMode and RulePrefilter share
-	// one 8-byte word. Jobs is an int16 to leave room for the two modes; the
-	// CLI caps it at 1024.
-	Jobs int16
-
-	// OpengrepMode selects how the OpenGrep adapter runs the engine. The zero
-	// value runs the opengrep CLI; OpengrepModeCore, the crypto-finder CLI's
-	// default, runs opengrep-core directly and falls back to the CLI whenever
-	// it cannot. Other adapters ignore it. Omitted from JSON when zero, so
-	// only core-mode scans carry it in their cache identity.
-	OpengrepMode OpengrepMode `json:",omitempty"`
-
-	// RulePrefilter drops, per scanned unit, the rules whose library the
-	// unit cannot use. Only the OpenGrep adapter applies it.
-	RulePrefilter RulePrefilter `json:",omitempty"`
 }
 
 // Info contains metadata about a scanner implementation.
 // This information is used for reporting, debugging, and determining scanner capabilities.
 type Info struct {
 	// Name is the unique identifier for the scanner.
-	// Examples: "semgrep", "opengrep", "cbom-toolkit"
+	// Example: "cards"
 	Name string
 
-	// Version is the version of the scanner implementation or executable.
-	// This should match the actual version of the underlying tool.
-	// Example: "1.45.0"
+	// Version is the version of the scanner implementation.
 	Version string
 
 	// Description provides a brief explanation of what the scanner detects.
-	// Example: "Static analysis tool for detecting cryptographic algorithm usage"
+	// Example: "Card lookup over call-graph call sites"
 	Description string
-}
-
-// BatchScanner is implemented by scanners that can scan several root
-// directories in one call, sharing the rules they load. Each root's report
-// is what a scan of that root alone produces, whole or limited to its
-// scope; reports are in the order of roots.
-type BatchScanner interface {
-	ScanRoots(ctx context.Context, roots []Root, rulePaths []string, toolInfo entities.ToolInfo) ([]*entities.InterimReport, error)
-}
-
-// RootRelativeScanner is implemented by scanners that can scan a root
-// through paths relative to it, so that where the root lies changes
-// neither what they find nor the paths they report, which are relative to
-// the root. ScansRootRelative reports whether the scanner, as initialized,
-// does: a configuration that names paths relative to crypto-finder's
-// working directory may keep it from doing so.
-type RootRelativeScanner interface {
-	ScansRootRelative() bool
-}
-
-// EngineFingerprinter is implemented by scanners that can identify the
-// engine build they run by its content. Info.Version cannot tell two builds
-// of one version apart, and the executable's path would tell apart identical
-// builds installed in different places, so caches of scan results key on the
-// fingerprint instead of either. Resolving which binary will run may probe
-// it, hence the context.
-type EngineFingerprinter interface {
-	EngineFingerprint(ctx context.Context) (string, error)
 }

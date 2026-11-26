@@ -26,13 +26,13 @@ func TestNodeSSH2SupportingCallsCarryTheirContractRole(t *testing.T) {
 	t.Parallel()
 
 	connect := cAsset(5, 5, 3, 24, "conn.connect(config);",
-		"javascript.ssh2.protocol.ssh.client-connect",
+		"fixture.javascript.ssh2.client-connect",
 		map[string]string{"assetType": "protocol", "api": "ssh2.Client.connect"})
 	assertNodeSupportingRoles(t, "login.js", nodeSSH2Consumer, connect,
 		map[string]string{"ssh2.Client.<init>": "factory"})
 
 	parse := cAsset(6, 6, 15, 56, "const key = utils.parseKey(pem, config.passphrase);",
-		"javascript.ssh2.related-crypto-material.key.parse-key",
+		"fixture.javascript.ssh2.parse-key",
 		map[string]string{"assetType": "related-crypto-material", "api": "ssh2.utils.parseKey"})
 	assertNodeSupportingRoles(t, "login.js", nodeSSH2Consumer, parse,
 		map[string]string{

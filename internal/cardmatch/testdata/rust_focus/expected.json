@@ -1,0 +1,646 @@
+{
+ "group": [
+  {
+   "col": 13,
+   "end_col": 37,
+   "file": "src/main.rs",
+   "line": 15,
+   "metavars": {
+    "$1": "256",
+    "$H": "Sha256",
+    "$variant": "256"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 39,
+   "file": "src/main.rs",
+   "line": 16,
+   "metavars": {
+    "$1": "3_512",
+    "$H": "Sha3_512",
+    "$variant": "3_512"
+   }
+  }
+ ],
+ "keysize": [
+  {
+   "col": 13,
+   "end_col": 37,
+   "file": "src/main.rs",
+   "line": 18,
+   "metavars": {
+    "$1": "2048",
+    "$BITS": "2048",
+    "$keysize": "2048"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 40,
+   "file": "src/main.rs",
+   "line": 19,
+   "metavars": {
+    "$1": "4096",
+    "$BITS": "4096",
+    "$keysize": "4096"
+   }
+  }
+ ],
+ "nested": [
+  {
+   "col": 5,
+   "end_col": 6,
+   "file": "src/main.rs",
+   "line": 11,
+   "metavars": {
+    "$V": "v"
+   }
+  }
+ ],
+ "nestedarg": [
+  {
+   "col": 43,
+   "end_col": 45,
+   "file": "src/main.rs",
+   "line": 38,
+   "metavars": {
+    "$K": "iv"
+   }
+  }
+ ],
+ "pathgen": [
+  {
+   "col": 5,
+   "end_col": 21,
+   "file": "src/main.rs",
+   "line": 5,
+   "metavars": {
+    "$MODE": "Verifier"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 21,
+   "file": "src/main.rs",
+   "line": 6,
+   "metavars": {
+    "$MODE": "Verifier"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 37,
+   "file": "src/main.rs",
+   "line": 15,
+   "metavars": {
+    "$MODE": "acme_hash::Sha256"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 39,
+   "file": "src/main.rs",
+   "line": 16,
+   "metavars": {
+    "$MODE": "acme_hash::Sha3_512"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/main.rs",
+   "line": 17,
+   "metavars": {
+    "$MODE": "acme_hash::Md5"
+   }
+  },
+  {
+   "col": 15,
+   "end_col": 37,
+   "file": "src/main.rs",
+   "line": 23,
+   "metavars": {
+    "$MODE": "acme_seal::Key"
+   }
+  },
+  {
+   "col": 17,
+   "end_col": 41,
+   "file": "src/main.rs",
+   "line": 25,
+   "metavars": {
+    "$MODE": "acme_seal::Other"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 27,
+   "file": "src/main.rs",
+   "line": 28,
+   "metavars": {
+    "$MODE": "acme_seal::Key"
+   }
+  },
+  {
+   "col": 15,
+   "end_col": 52,
+   "file": "src/main.rs",
+   "line": 29,
+   "metavars": {
+    "$MODE": "acme_seal::Cipher"
+   }
+  },
+  {
+   "col": 15,
+   "end_col": 52,
+   "file": "src/main.rs",
+   "line": 31,
+   "metavars": {
+    "$MODE": "acme_seal::Cipher"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/paths.rs",
+   "line": 2,
+   "metavars": {
+    "$MODE": "Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 65,
+   "file": "src/paths.rs",
+   "line": 3,
+   "metavars": {
+    "$MODE": "acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 61,
+   "file": "src/paths.rs",
+   "line": 4,
+   "metavars": {
+    "$MODE": "acme::acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/paths.rs",
+   "line": 5,
+   "metavars": {
+    "$MODE": "Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 45,
+   "file": "src/paths.rs",
+   "line": 6,
+   "metavars": {
+    "$MODE": "acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 51,
+   "file": "src/paths.rs",
+   "line": 7,
+   "metavars": {
+    "$MODE": "acme::acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/paths.rs",
+   "line": 8,
+   "metavars": {
+    "$MODE": "acme::Wrap::<X>::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 53,
+   "file": "src/paths.rs",
+   "line": 9,
+   "metavars": {
+    "$MODE": "acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 37,
+   "file": "src/paths.rs",
+   "line": 10,
+   "metavars": {
+    "$MODE": "Encryptor::Inner"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 48,
+   "file": "src/paths.rs",
+   "line": 11,
+   "metavars": {
+    "$MODE": "acme_mode::Encryptor::Inner"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 44,
+   "file": "src/paths.rs",
+   "line": 12,
+   "metavars": {
+    "$MODE": "Encryptor::<Blk>::Inner"
+   }
+  }
+ ],
+ "pathgen-front": [
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/paths.rs",
+   "line": 8,
+   "metavars": {
+    "$MODE": "acme::Wrap::<X>::Encryptor"
+   }
+  }
+ ],
+ "pathgen-re": [
+  {
+   "col": 13,
+   "end_col": 65,
+   "file": "src/paths.rs",
+   "line": 3,
+   "metavars": {
+    "$MODE": "acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 45,
+   "file": "src/paths.rs",
+   "line": 6,
+   "metavars": {
+    "$MODE": "acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 53,
+   "file": "src/paths.rs",
+   "line": 9,
+   "metavars": {
+    "$MODE": "acme_mode::Encryptor"
+   }
+  }
+ ],
+ "pathmid": [
+  {
+   "col": 13,
+   "end_col": 37,
+   "file": "src/paths.rs",
+   "line": 10,
+   "metavars": {
+    "$X": "Encryptor"
+   }
+  }
+ ],
+ "pathmid-gen": [
+  {
+   "col": 13,
+   "end_col": 44,
+   "file": "src/paths.rs",
+   "line": 12,
+   "metavars": {
+    "$C": "Blk",
+    "$X": "Encryptor"
+   }
+  }
+ ],
+ "pathnew": [
+  {
+   "col": 5,
+   "end_col": 21,
+   "file": "src/main.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "Verifier"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 21,
+   "file": "src/main.rs",
+   "line": 6,
+   "metavars": {
+    "$X": "Verifier"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 37,
+   "file": "src/main.rs",
+   "line": 15,
+   "metavars": {
+    "$X": "acme_hash::Sha256"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 39,
+   "file": "src/main.rs",
+   "line": 16,
+   "metavars": {
+    "$X": "acme_hash::Sha3_512"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/main.rs",
+   "line": 17,
+   "metavars": {
+    "$X": "acme_hash::Md5"
+   }
+  },
+  {
+   "col": 15,
+   "end_col": 37,
+   "file": "src/main.rs",
+   "line": 23,
+   "metavars": {
+    "$X": "acme_seal::Key"
+   }
+  },
+  {
+   "col": 17,
+   "end_col": 41,
+   "file": "src/main.rs",
+   "line": 25,
+   "metavars": {
+    "$X": "acme_seal::Other"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 27,
+   "file": "src/main.rs",
+   "line": 28,
+   "metavars": {
+    "$X": "acme_seal::Key"
+   }
+  },
+  {
+   "col": 15,
+   "end_col": 52,
+   "file": "src/main.rs",
+   "line": 29,
+   "metavars": {
+    "$X": "acme_seal::Cipher"
+   }
+  },
+  {
+   "col": 15,
+   "end_col": 52,
+   "file": "src/main.rs",
+   "line": 31,
+   "metavars": {
+    "$X": "acme_seal::Cipher"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/paths.rs",
+   "line": 2,
+   "metavars": {
+    "$X": "Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 65,
+   "file": "src/paths.rs",
+   "line": 3,
+   "metavars": {
+    "$X": "acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 61,
+   "file": "src/paths.rs",
+   "line": 4,
+   "metavars": {
+    "$X": "acme::acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 34,
+   "file": "src/paths.rs",
+   "line": 5,
+   "metavars": {
+    "$X": "Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 45,
+   "file": "src/paths.rs",
+   "line": 6,
+   "metavars": {
+    "$X": "acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 51,
+   "file": "src/paths.rs",
+   "line": 7,
+   "metavars": {
+    "$X": "acme::acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 54,
+   "file": "src/paths.rs",
+   "line": 8,
+   "metavars": {
+    "$X": "acme::Wrap::<X>::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 53,
+   "file": "src/paths.rs",
+   "line": 9,
+   "metavars": {
+    "$X": "acme_mode::Encryptor"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 37,
+   "file": "src/paths.rs",
+   "line": 10,
+   "metavars": {
+    "$X": "Encryptor::Inner"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 48,
+   "file": "src/paths.rs",
+   "line": 11,
+   "metavars": {
+    "$X": "acme_mode::Encryptor::Inner"
+   }
+  },
+  {
+   "col": 13,
+   "end_col": 44,
+   "file": "src/paths.rs",
+   "line": 12,
+   "metavars": {
+    "$X": "Encryptor::<Blk>::Inner"
+   }
+  }
+ ],
+ "recv": [
+  {
+   "col": 5,
+   "end_col": 6,
+   "file": "src/main.rs",
+   "line": 3,
+   "metavars": {
+    "$SIG": "v"
+   }
+  },
+  {
+   "col": 14,
+   "end_col": 15,
+   "file": "src/main.rs",
+   "line": 4,
+   "metavars": {
+    "$SIG": "v"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 21,
+   "file": "src/main.rs",
+   "line": 5,
+   "metavars": {
+    "$SIG": "Verifier::new(k)"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 21,
+   "file": "src/main.rs",
+   "line": 6,
+   "metavars": {
+    "$SIG": "Verifier::new(k)"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 12,
+   "file": "src/main.rs",
+   "line": 9,
+   "metavars": {
+    "$SIG": "w.inner"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 13,
+   "file": "src/main.rs",
+   "line": 10,
+   "metavars": {
+    "$SIG": "Verifier"
+   }
+  },
+  {
+   "col": 15,
+   "end_col": 21,
+   "file": "src/main.rs",
+   "line": 10,
+   "metavars": {
+    "$SIG": "verify"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 23,
+   "file": "src/main.rs",
+   "line": 11,
+   "metavars": {
+    "$SIG": "v.clone().unwrap()"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 7,
+   "file": "src/main.rs",
+   "line": 12,
+   "metavars": {
+    "$SIG": "v?"
+   }
+  }
+ ],
+ "taintgroup": [
+  {
+   "col": 5,
+   "end_col": 8,
+   "file": "src/main.rs",
+   "line": 30,
+   "metavars": {
+    "$1": "seal",
+    "$C": "gcm",
+    "$M": "seal",
+    "$mode": "seal"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 8,
+   "file": "src/main.rs",
+   "line": 32,
+   "metavars": {
+    "$1": "seal",
+    "$C": "cbc",
+    "$M": "seal",
+    "$mode": "seal"
+   }
+  }
+ ],
+ "taintrecv": [
+  {
+   "col": 5,
+   "end_col": 8,
+   "file": "src/main.rs",
+   "line": 24,
+   "metavars": {
+    "$K": "key"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 27,
+   "file": "src/main.rs",
+   "line": 28,
+   "metavars": {
+    "$K": "acme_seal::Key::new(3)"
+   }
+  }
+ ]
+}

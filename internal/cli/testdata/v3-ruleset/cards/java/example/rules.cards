@@ -1,0 +1,13 @@
+# Synthetic v3 card file for crypto-finder's tests: made-up rules, not a ruleset release.
+format: scanoss-cards/3
+rules:
+  java.crypto.aes-cipher:
+    severity: "INFO"
+    message: "aes cipher"
+    crypto:
+      assetType: "algorithm"
+      algorithmFamily: "AES"
+      algorithmPrimitive: "block-cipher"
+cards:
+- rule: java.crypto.aes-cipher
+  match: {call: javax.crypto.Cipher.getInstance}

@@ -58,6 +58,7 @@ func TestManager_extractTarball_SkipsMetadataAndTraversal(t *testing.T) {
 			data []byte
 		}{
 			{name: "../evil.txt", data: []byte("no")},
+			{name: "/abs/evil.txt", data: []byte("no")},
 			{name: "._metadata", data: []byte("skip")},
 			{name: ".DS_Store", data: []byte("skip")},
 			{name: "ruleset/example.yml", data: []byte("rules: []\n")},
@@ -85,6 +86,9 @@ func TestManager_extractTarball_SkipsMetadataAndTraversal(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(outputDir, "evil.txt")); err == nil {
 		t.Fatal("Expected traversal file to be skipped")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "abs", "evil.txt")); err == nil {
+		t.Fatal("Expected absolute-path file to be skipped")
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, "._metadata")); err == nil {
 		t.Fatal("Expected metadata file to be skipped")

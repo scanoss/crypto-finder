@@ -21,9 +21,7 @@ func TestScanProfileFlagsWritePprofProfiles(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	writeProgressOpenGrep(t, filepath.Join(dir, "opengrep"))
-	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
-	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
+	writeJavaFindingFixture(t, dir, dir)
 	cpuProfile := filepath.Join(dir, "cpu.pprof")
 	memProfile := filepath.Join(dir, "mem.pprof")
 	binary := buildProgressCryptoFinder(t)
@@ -76,9 +74,7 @@ func TestScanProfileWriteFailureClosesScanAsFailed(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	writeProgressOpenGrep(t, filepath.Join(dir, "opengrep"))
-	writeFile(t, filepath.Join(dir, "rule.yaml"), "rules: []\n")
-	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
+	writeJavaFindingFixture(t, dir, dir)
 	binary := buildProgressCryptoFinder(t)
 
 	cmd := exec.CommandContext(t.Context(), binary, "scan", "--progress", "--no-remote-rules", "--rules", filepath.Join(dir, "rule.yaml"),

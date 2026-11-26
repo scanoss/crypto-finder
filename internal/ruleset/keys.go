@@ -31,7 +31,7 @@ const PubKeysEnv = "SCANOSS_RULESET_PUBKEYS"
 // embeddedKeys are the ruleset signing public keys built into the client, by
 // key id, as base64 of the raw Ed25519 public key: the keys the SCANOSS API
 // signs leases with (rulesets.signing_key_id and the public key printed by
-// `scanoss-services ruleset keygen`).
+// the API's ruleset key generator).
 var embeddedKeys = map[string]string{
 	"srv-2026-11": "e99SEjRkkkwjCFRcUk8efbwy3304CLpnZcMv8eQ2tXQ=",
 }

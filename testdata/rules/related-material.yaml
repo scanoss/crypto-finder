@@ -22,7 +22,7 @@ rules:
       - go
     pattern-either:
       - pattern: rand.Read($BUF)
-      - pattern: io.ReadFull(rand.Reader, $BUF)
+      - pattern: io.ReadFull(rand.Reader, $B)
     metadata:
       crypto:
         assetType: algorithm

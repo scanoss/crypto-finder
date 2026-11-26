@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Drive the crypto-finder CLI (cmd/crypto-finder) the way a user does and capture proof - scan with synthetic local rules, intra-project and dependency (direct and transitive) reachability, callgraph and graph-fragment exports, convert to CycloneDX 1.7 CBOM, and cbom from an SBOM against a local API stub. Use it to confirm a change works in the real binary, not just in go test, and before claiming a user-facing behavior is fixed or shipped.
+description: Drive the crypto-finder CLI (cmd/crypto-finder) the way a user does and capture proof - today that is `cbom` from an SBOM against a local API stub, plus binary size and startup budgets. Use it to confirm a change works in the real binary, not just in go test, and before claiming a user-facing behavior is fixed or shipped.
 ---
 
 # Verify crypto-finder
@@ -12,15 +12,19 @@ Everything lives under `bin/verify/` in this checkout, which `.gitignore` alread
 ```
 bin/verify/crypto-finder                   binary built by build.sh
 bin/verify/state.env                       HEAD, Go-source fingerprint, `crypto-finder version` line
-bin/verify/sandbox/<feature>[-<lang>]/     HOME, XDG dirs, venv, fixture copy (cleanup.sh removes it)
-bin/verify/evidence/<feature>/[<lang>/]    transcript, JSON outputs, verdict.txt (cleanup.sh keeps it)
+bin/verify/sandbox/<feature>/              HOME, XDG dirs, work directory (cleanup.sh removes it)
+bin/verify/evidence/<feature>/            transcript, JSON outputs, verdict.txt (cleanup.sh keeps it)
 ```
+
+## Port status
+
+One drive exists: `cbom-from-sbom`. Six features have no drive in this version: `scan`, `convert-cbom`, `callgraph-export`, `related-material`, `reachability-project` and `reachability-dependencies`. Their 0.54.0 drives (OpenGrep, non-Java fixtures) were removed. `run.sh` reports them as an unknown feature (exit 2). A new drive for each is to be written against the cards engine. See "Port status" in [`features/README.md`](features/README.md).
 
 ## Isolation rules (non-negotiable)
 
 The production detection rules are private and are the company's core value. Never fetch them, reference them, or point a drive at them. Never use a real API key.
 
-- Every drive runs the binary through `env -i`, with a fresh `HOME`, `XDG_CACHE_HOME`, `XDG_CONFIG_HOME` and `TMPDIR` under its sandbox. No `SCANOSS_*`, `SC_*` or `VIRTUAL_ENV` variable from your shell gets through. Only `PATH`, `LANG` and `RUSTUP_HOME` are kept. `GOPROXY=off`, `GOTOOLCHAIN=local` and `CARGO_NET_OFFLINE=true` keep the toolchains offline.
+- Every drive runs the binary through `env -i`, with a fresh `HOME`, `XDG_CACHE_HOME`, `XDG_CONFIG_HOME` and `TMPDIR` under its sandbox. No `SCANOSS_*`, `SC_*` or `VIRTUAL_ENV` variable from your shell gets through. Only `PATH` and `LANG` are kept.
 - `lib.sh` `guard_args` refuses to run:
   - a `scan` without `--no-remote-rules`;
   - a `scan` without a `--rules` file under `testdata/rules/`, or with `--rules-dir`, `--api-key`, `--api-url` or `--no-cache`;
@@ -50,14 +54,12 @@ This check is read-only. It exits 1 in these cases:
 - the binary is missing;
 - `state.env` is missing;
 - the Go sources (`cmd`, `internal`, `pkg`, `go.mod`, `go.sum`, committed or not) differ from what was built;
-- `opengrep`, `jq`, `git` or `realpath` is missing;
+- `jq`, `git`, `realpath` or `python3` (the API stub) is missing;
 - a stale drive lock exists;
 - a sandbox holds a remote ruleset.
 
 It also reports the following:
 
-- which languages are ready (`go`, `python` needs `python3 -m venv`, `rust` needs `cargo` plus a rustup dir, `node` needs nothing);
-- that `java` is not driven, because Maven resolution needs the real `~/.m2`;
 - which API variables are set in your shell (they are stripped anyway);
 - the last verdict of every evidence directory.
 
@@ -66,72 +68,55 @@ Run it first, and again whenever a drive surprises you.
 ## Drive
 
 ```bash
-.claude/skills/verify/scripts/run.sh <feature-id> [lang|all]
+.claude/skills/verify/scripts/run.sh <feature-id>
 ```
 
-| feature-id | lang | what it proves |
-| --- | --- | --- |
-| `scan` | - | findings JSON, stdout output, `--fail-on-findings` exit codes, typed failure on a bad target |
-| `reachability-project` | `go` (default), `python`, `all` | `--export-callgraph-project-reachability` verdicts match a `--scan-dependencies` run for first-party findings |
-| `reachability-dependencies` | `go` (default), `python`, `node`, `rust`, `all` | app -> liba (no crypto) -> libb (crypto): used hash `reachable` with chain app>liba>libb and `transitive` attribution, unused hash `unreachable` |
-| `convert-cbom` | - | `convert` (file and stdin) and `scan --format cyclonedx` produce CycloneDX 1.7 CBOMs that passed the embedded schema |
-| `cbom-from-sbom` | - | `cbom` from CycloneDX and SPDX SBOMs against `scripts/api-stub.py` on 127.0.0.1 |
-| `callgraph-export` | - | `--export-callgraph` schema 6.18 and 6.14, chains, `--export-callgraph-max-chains`, `--export-callgraph-entry-points`, `--export-graph-fragment`, Java key size resolved across methods, live and through `annotate` |
-| `related-material` | `python` (default), `go`, `rust`, `node`, `all` | a random draw whose value a helper passes to a KDF or cipher gets a `related-crypto-material` asset (salt, iv, nonce) at the draw line; an overwritten draw gets none; nothing without a call graph; the CBOM carries it |
+| feature-id | what it proves |
+| --- | --- |
+| `cbom-from-sbom` | `cbom` from CycloneDX and SPDX SBOMs against `scripts/api-stub.py` on 127.0.0.1 |
 
-`all` drives every language whose toolchain is present and prints `SKIP <feature> <lang>` for the rest. A skipped language is not verified. Report it as skipped.
+The other six feature files (`scan`, `convert-cbom`, `callgraph-export`, `related-material`, `reachability-project`, `reachability-dependencies`) have no drive. Do not report them as verified.
 
 `run.sh` exits with one of these codes:
 
 - 0 when `verdict.txt` reads `VERDICT: PASS`;
 - 1 when any check failed;
-- 2 when the drive refused to run (no binary, isolation guard, unknown feature, a lock held by another drive of the same feature and language).
+- 2 when the drive refused to run (no binary, isolation guard, unknown feature, a lock held by another drive of the same feature).
 
 The drive prints the verdict and the evidence path.
 
-Fixtures are copied from `testdata/projects/` into the sandbox before every drive, and wired as the CLI integration tests wire them (see each driver's header). Set `VERIFY_FIXTURES=<dir>` to drive a different tree with the same layout, such as a temp copy with a fixture deliberately broken. Never edit `testdata/` to provoke a failure.
-
-```bash
-tmp=$(mktemp -d) && cp -R testdata/projects/. "$tmp"/
-# make libb's used hash dead code: liba.Used stops calling it
-sed -i 's/return translibb.UsedHash(data)/return data/' "$tmp"/transitive_reachability/go/liba/liba.go
-VERIFY_FIXTURES=$tmp .claude/skills/verify/scripts/run.sh reachability-dependencies go   # exits 1, verdict FAIL
-```
-
 ## Evidence
 
-Each drive replaces `bin/verify/evidence/<feature>/[<lang>/]` with these files:
+Each drive replaces `bin/verify/evidence/<feature>/` with these files:
 
-- `transcript.txt` holds the binary version, HEAD, fixture source, sandbox, and every `crypto-finder ...` command with its exit code;
+- `transcript.txt` holds the binary version, HEAD, sandbox, and every `crypto-finder ...` command with its exit code;
 - `<step>.stdout` and `<step>.stderr` hold each invocation's raw output (with `--error-format json`, the last JSON line of stderr is the typed error);
-- the JSON the binary wrote: `findings.json`, `callgraph.json`, `graph-fragment.json`, `cbom.json`, and so on;
-- `verdicts.json` (reachability drives) joins findings and the call graph into one row per finding: module, file, line, source, reachability, relationship, dependency path, and chains as module lists;
+- the JSON the binary wrote, such as `cbom.json`;
 - `verdict.txt` opens with a first line `VERDICT: PASS|FAIL (n passed, m failed)`, then one `PASS`/`FAIL` line per check, derived with `jq` from the files above.
 
 Proof standards:
 
 - Drive the real binary through its real flags. Assert on output files, exit codes and stderr codes, never on internal setters or test hooks.
-- A reachability claim needs the verdict row and the chain, not only "exit 0". Quote the `verdict.txt` lines.
+- Quote the `verdict.txt` lines, not only "exit 0".
 - `cbom` talks to a local stub because the real API is an external system behind a production HTTP boundary. Its evidence includes `api-requests.jsonl`, the requests the binary actually sent.
 - A feature map entry lists sub-features. Driving one entry point does not verify the others.
 
 ## Budgets
 
 ```bash
-.claude/skills/verify/scripts/budgets.sh [all|size|startup|scan]...
+.claude/skills/verify/scripts/budgets.sh [all|size|startup]...
 ```
 
 This measures what a change can make worse and holds it to [`budgets.json`](budgets.json):
 
 - `size`: the size of a build with the release ldflags (`-s -w` plus the version `-X` flags, as the Makefile and `.goreleaser.yml` build it). It is deterministic, so its limit is the measured size plus 10%.
 - `startup`: the median wall time of 11 runs of `--help` and of `version`.
-- `scan`: the median wall time and the highest peak RSS (GNU `/usr/bin/time -f %M`) of 5 runs, after one warm-up run, of two fixed scans: the `reachability-dependencies` go fixture with `--scan-dependencies`, and `polyglot_reachability` with `--export-callgraph-project-reachability`.
 
-Timings and memory are noisy, so they hold only loose limits that catch a stall or a leak, not a 20% slowdown. Every run goes through the same sandbox and guards as a drive. It prints `PASS <key> <value> within its budget <limit>` or `FAIL <key> <value> over its budget <limit>` per metric, exits 1 on any breach and 2 when it refused to run, and writes `measured.tsv`, `samples.tsv` (every run), `transcript.txt` and `verdict.txt` to `bin/verify/evidence/budgets/`. startup and scan need `build.sh` first.
+Timings are noisy, so they hold only loose limits that catch a stall, not a 20% slowdown. Every run goes through the same sandbox and guards as a drive. It prints `PASS <key> <value> within its budget <limit>` or `FAIL <key> <value> over its budget <limit>` per metric, exits 1 on any breach and 2 when it refused to run, and writes `measured.tsv`, `samples.tsv` (every run), `transcript.txt` and `verdict.txt` to `bin/verify/evidence/budgets/`. startup needs `build.sh` first.
 
 `budgets.json` records each budget's measured value, its limit and a `why`, plus the date, commit, machine and method of the measurement. Never invent a number: change a limit only after measuring three runs of `budgets.sh` (take the highest), and update `measured` with it. `go run ./scripts/budgetcheck` (and its test) fails on a budget the script does not measure, a metric with no budget, a limit with no `why`, a limit below its measurement, and a deterministic limit more than 10% over its measurement. The `METRICS` line of `budgets.sh` is the list it reads.
 
-CI runs `size` on every PR (`lint.yml`) and `startup scan` nightly (`nightly-e2e.yml`), never timings on PRs. `tracked` in `budgets.json` holds the CI test-suite duration for reference. No check reads it.
+CI runs `size` on every PR (`lint.yml`) and `startup` nightly (`nightly-e2e.yml`), never timings on PRs. `tracked` in `budgets.json` holds the CI test-suite duration for reference. No check reads it.
 
 ## Cleanup
 
@@ -145,13 +130,12 @@ This removes `bin/verify/sandbox/`, after making Go's read-only module cache wri
 
 All helpers live in `scripts/`:
 
-- `lib.sh`: sourced by the other scripts. It holds the paths, `sandbox_env`, `guard_args`, `cf`, fixture wiring, `expect` and `expect_jq`.
+- `lib.sh`: sourced by the other scripts. It holds the paths, `sandbox_env`, `guard_args`, `cf`, `expect`, `expect_jq` and `error_code`.
 - `drive/<feature-id>.sh`: one driver per feature file, sourced by `run.sh`.
-- `verdicts.jq` and `check-findings.jq`: the reachability join and its expectations.
 - `api-stub.py`: the local component-findings endpoint for `cbom`, serving synthetic data only.
 - `budgets.sh`: the budget checker (see "Budgets" above).
 
-To add a feature, write `features/<id>.md` and `scripts/drive/<id>.sh` (a `drive` function, plus `LANGS`/`DEFAULT_LANG` if it is per language). Then run it until it passes, and break it once to watch it fail.
+To add a feature, write `features/<id>.md` and `scripts/drive/<id>.sh` (a `drive` function). Then run it until it passes, and break it once to watch it fail.
 
 Keep the map honest as the CLI changes with `/maintain-verification-skill`.
 
@@ -168,6 +152,6 @@ Evidence stays on the PR. Never commit `bin/verify/evidence/` to the tree. See "
 
 ## Post-merge QA
 
-After every merge to `main`, `.github/workflows/post-merge-qa.yml` runs this skill with an agent. `go run ./scripts/featuremap select --base <merge>^1 --head <merge>` picks the features the merge touched, with the same globs `check-pr` uses (at most `QA_MAX_FEATURES`, default 5; the rest are named in the report). A merge that touches none stops there. Otherwise the job installs opengrep, runs `build.sh` and `doctor.sh`, and hands `.github/post-merge-qa.md` to `claude -p`. The agent drives each feature with `bash .claude/skills/verify/scripts/run.sh <id> [lang]`, reads its evidence, and answers `pass`, `fail` or `unreachable` per feature. It may run only these scripts and read-only commands, and write only under `bin/verify/evidence/` and `/tmp`. A second job comments the verdict table on the merged PR, edited in place on a re-run, and opens an issue on a `fail`. No verdict (turn cap, crash, malformed output) turns that job red. The evidence is uploaded as the `post-merge-qa-evidence` artifact.
+After every merge to `main`, `.github/workflows/post-merge-qa.yml` runs this skill with an agent. `go run ./scripts/featuremap select --base <merge>^1 --head <merge>` picks the features the merge touched, with the same globs `check-pr` uses (at most `QA_MAX_FEATURES`, default 5; the rest are named in the report). A merge that touches none stops there. Otherwise the job runs `build.sh` and `doctor.sh`, and hands `.github/post-merge-qa.md` to `claude -p`. The agent drives each feature with `bash .claude/skills/verify/scripts/run.sh <id>`, reads its evidence, and answers `pass`, `fail` or `unreachable` per feature. It may run only these scripts and read-only commands, and write only under `bin/verify/evidence/` and `/tmp`. A second job comments the verdict table on the merged PR, edited in place on a re-run, and opens an issue on a `fail`. No verdict (turn cap, crash, malformed output) turns that job red. The evidence is uploaded as the `post-merge-qa-evidence` artifact.
 
 QA is off, with a notice, until the repository has the `CLAUDE_CODE_OAUTH_TOKEN` secret. To replay a merged PR, run the workflow by hand with its number. To reproduce the agent's view locally, run `run.sh` for the features `select` prints; the agent sees nothing else.

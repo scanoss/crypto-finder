@@ -1,0 +1,110 @@
+{
+ "branches": [
+  {
+   "col": 2,
+   "end_col": 33,
+   "file": "src/regex.go",
+   "line": 15,
+   "metavars": {
+    "$C": "shapes.P256()",
+    "$FUNC": "shapes.P256"
+   }
+  },
+  {
+   "col": 2,
+   "end_col": 33,
+   "file": "src/regex.go",
+   "line": 16,
+   "metavars": {
+    "$C": "shapes.P384()",
+    "$FUNC": "shapes.P384"
+   }
+  }
+ ],
+ "curve": [
+  {
+   "col": 2,
+   "end_col": 33,
+   "file": "src/main.go",
+   "line": 9,
+   "metavars": {
+    "$1": "shapes",
+    "$2": "256",
+    "$CURVE": "shapes.P256()",
+    "$FUNC": "shapes.P256",
+    "$curve": "256",
+    "$package": "shapes"
+   }
+  },
+  {
+   "col": 2,
+   "end_col": 21,
+   "file": "src/main.go",
+   "line": 14,
+   "metavars": {
+    "$1": "shapes",
+    "$2": "384",
+    "$CURVE": "c",
+    "$FUNC": "shapes.P384",
+    "$curve": "384",
+    "$package": "shapes"
+   }
+  },
+  {
+   "col": 2,
+   "end_col": 21,
+   "file": "src/main.go",
+   "line": 18,
+   "metavars": {
+    "$1": "shapes",
+    "$2": "224",
+    "$CURVE": "c",
+    "$FUNC": "shapes.P224",
+    "$curve": "224",
+    "$package": "shapes"
+   }
+  },
+  {
+   "col": 2,
+   "end_col": 33,
+   "file": "src/main.go",
+   "line": 30,
+   "metavars": {
+    "$1": "shapes",
+    "$2": "256",
+    "$CURVE": "nil",
+    "$FUNC": "shapes.P256",
+    "$curve": "256",
+    "$package": "shapes"
+   }
+  },
+  {
+   "col": 2,
+   "end_col": 39,
+   "file": "src/main.go",
+   "line": 34,
+   "metavars": {
+    "$1": "shapes",
+    "$2": "256",
+    "$CURVE": "wrap(shapes.P256())",
+    "$FUNC": "shapes.P256",
+    "$curve": "256",
+    "$package": "shapes"
+   }
+  }
+ ],
+ "prefix": [
+  {
+   "col": 2,
+   "end_col": 33,
+   "file": "src/regex.go",
+   "line": 9,
+   "metavars": {
+    "$1": "shapes",
+    "$C": "shapes.P256()",
+    "$FUNC": "shapes.P256",
+    "$package": "shapes"
+   }
+  }
+ ]
+}

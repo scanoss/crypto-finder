@@ -25,11 +25,11 @@ import (
 
 const validRuleYAML = `
 rules:
-  - id: java.bouncycastle.algorithm.block-cipher.aes-init-encrypt
+  - id: fixture.java.bouncycastle.aes-init-encrypt
     metadata:
       crypto:
         operation: encrypt
-        parameterCondition: "param[0]==true"
+        parameterCondition: "param[0]==yes"
         api: org.bouncycastle.crypto.engines.AESEngine.init
 `
 

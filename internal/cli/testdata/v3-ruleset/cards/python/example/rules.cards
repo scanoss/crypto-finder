@@ -1,0 +1,56 @@
+# Synthetic v3 card file for crypto-finder's tests: made-up rules, not a ruleset release.
+format: scanoss-cards/3
+rules:
+  example.python.jwt-encode:
+    severity: "INFO"
+    message: "Example JWT encoding"
+    purl: "pkg:pypi/pyjwt"
+    crypto:
+      assetType: "algorithm"
+      algorithmName: "$alg"
+  example.python.ec-keygen:
+    severity: "INFO"
+    message: "Example EC key generation"
+    purl: "pkg:pypi/cryptography"
+    crypto:
+      assetType: "algorithm"
+      algorithmFamily: "ECDSA"
+  example.python.hash-new:
+    severity: "INFO"
+    message: "Example named hash"
+    crypto:
+      assetType: "algorithm"
+      algorithmPrimitive: "hash"
+  example.python.hash-sha256:
+    severity: "INFO"
+    message: "Example SHA-256"
+    crypto:
+      assetType: "algorithm"
+      algorithmName: "SHA-256"
+  example.python.regex-only:
+    severity: "INFO"
+    message: "Example rule no card expresses"
+    pending: "example: a text search"
+cards:
+- rule: example.python.jwt-encode
+  match:
+    call: jwt.encode
+    args:
+      2|algorithm: {taint: '"(?<alg>HS256)"'}
+- rule: example.python.ec-keygen
+  match: {call: cryptography.hazmat.primitives.asymmetric.ec.generate_private_key}
+- rule: example.python.hash-new
+  match: {call: hashlib.new}
+# A site card: a compiled index entry.
+- rule: example.python.hash-sha256
+  site:
+    receiver: "type"
+    type: "hashlib"
+    method: "sha256"
+    min_arity: 0
+    max_arity: null
+    args: []
+    constraints: []
+    not_calls: []
+    focus_arg: null
+    taint: false

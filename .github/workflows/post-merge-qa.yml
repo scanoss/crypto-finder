@@ -49,9 +49,6 @@ jobs:
       pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      OPENGREP_VERSION: v1.22.0
-      OPENGREP_AMD64_SHA256: 45bcd58440e397ed52c50e953ccf5948909ea77087c9186fc7d277216f62e319
     outputs:
       pr: ${{ steps.change.outputs.pr }}
       sha: ${{ steps.change.outputs.sha }}
@@ -122,19 +119,8 @@ jobs:
           echo "ids=$ids" >> "$GITHUB_OUTPUT"
           echo "left=$left" >> "$GITHUB_OUTPUT"
           if [ -z "$ids" ]; then echo "::notice::Nothing to drive."; fi
-      # opengrep exactly as nightly-e2e.yml and Dockerfile.test install it. Go
-      # is set up above; python3 (with venv), cargo and node come with the
+      # Go is set up above; python3 (with venv), cargo and node come with the
       # runner, which covers every language the drives use. Java is not driven.
-      - name: Install pinned opengrep
-        if: steps.features.outputs.ids != ''
-        run: |
-          install_dir="$HOME/.opengrep/cli/${OPENGREP_VERSION}"
-          mkdir -p "$install_dir"
-          curl -fsSL "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86" -o "$install_dir/opengrep"
-          echo "${OPENGREP_AMD64_SHA256}  $install_dir/opengrep" | sha256sum -c -
-          chmod a+x "$install_dir/opengrep"
-          "$install_dir/opengrep" --version
-          echo "$install_dir" >> "$GITHUB_PATH"
       - name: Build the binary
         if: steps.features.outputs.ids != ''
         run: |

@@ -14,12 +14,27 @@ jobs:
   goreleaser:
     runs-on: ubuntu-latest
     steps:
+      # The -deps images (JDK, Maven, Gradle, Python, Rust, Node for two
+      # architectures) outgrow the ~14 GB a hosted runner has free: v1.0.0-rc.1
+      # failed with "no space left on device" in the -deps build. Drop the
+      # preinstalled toolchains the release never uses first.
+      - name: Free runner disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null
+          df -h /
+
       - name: Checkout code
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
+      # A pre-release tag (a semver with a "-" suffix, v1.0.0-rc.1) leaves the
+      # fragments in place: they fold once, into the final release.
       - name: Fail while changelog or user-guide fragments are pending
+        if: ${{ !contains(github.ref_name, '-') }}
         run: |
           pending=$(find changelog.d docs/user-guide/coverage.d -type f ! -name README.md)
           if [ -n "$pending" ]; then
@@ -43,9 +58,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A final release's notes and compare link start at the previous final
+      # tag, not at an rc of the same version: GoReleaser would otherwise take
+      # the newest tag of any kind as the previous one.
+      - name: Pick the previous release tag
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          previous=$(git describe --tags --abbrev=0 --exclude '*-*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          echo "GORELEASER_PREVIOUS_TAG=${previous}" >>"$GITHUB_ENV"
+
       - name: Run GoReleaser with CGO cross toolchains
         run: |
           docker run --rm \
+            -e GORELEASER_PREVIOUS_TAG \
             --user "$(id -u):$(id -g)" \
             --group-add "$(stat -c '%g' /var/run/docker.sock)" \
             -e HOME=/tmp \
@@ -138,4 +163,10 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "$TAG" "$WINDOWS_ZIP" "$SUMS" --clobber --repo "$GITHUB_REPOSITORY"
-          gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          # A pre-release (GoReleaser's prerelease: auto) is published as a
+          # pre-release and never as the latest release.
+          if [[ "$TAG" == *-* ]]; then
+            gh release edit "$TAG" --draft=false --prerelease --latest=false --repo "$GITHUB_REPOSITORY"
+          else
+            gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          fi

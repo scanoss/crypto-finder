@@ -1,0 +1,309 @@
+{
+ "neg": [
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/deeperglob.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/deepglob.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/deepnest.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/glob.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/groupeddeep.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/groupedonly.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/groupglob.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/nesteddeep.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/nestedglob.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/nestedtwo.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/other.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/rootglob.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 9,
+   "end_col": 18,
+   "file": "src/supermod.rs",
+   "line": 8,
+   "metavars": {
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/twoglobs.rs",
+   "line": 5,
+   "metavars": {
+    "$KEY": "k"
+   }
+  }
+ ],
+ "pos": [
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/named.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$CTOR": "new",
+    "$KEY": "k",
+    "$TYPE": "SigningKey"
+   }
+  }
+ ],
+ "poskeys": [
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/deeperglob.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/deepglob.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/groupeddeep.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/rootglob.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k"
+   }
+  }
+ ],
+ "posuse": [
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/deeperglob.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k",
+    "$TYPE": "keys ed"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/deepglob.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k",
+    "$TYPE": "keys"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/deepnest.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "c",
+    "$KEY": "k",
+    "$TYPE": "a b"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/groupeddeep.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k",
+    "$TYPE": "keys"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/groupglob.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k",
+    "$TYPE": "Thing"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/named.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k",
+    "$TYPE": "SigningKey"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/nesteddeep.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "keys",
+    "$KEY": "k",
+    "$TYPE": "other ed"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/nestedglob.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "keys",
+    "$KEY": "k",
+    "$TYPE": "other"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/nestedtwo.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "c",
+    "$KEY": "k",
+    "$TYPE": "a b"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/rootglob.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "other",
+    "$KEY": "k",
+    "$TYPE": "keys"
+   }
+  },
+  {
+   "col": 5,
+   "end_col": 14,
+   "file": "src/twoglobs.rs",
+   "line": 5,
+   "metavars": {
+    "$CRATE": "keys",
+    "$KEY": "k",
+    "$TYPE": "other"
+   }
+  }
+ ]
+}

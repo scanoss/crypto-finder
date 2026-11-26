@@ -5,6 +5,7 @@ package scan
 
 import (
 	"bytes"
+	"go/build"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,10 +13,11 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 var exportedAtField = regexp.MustCompile(`"exported_at": ?"[^"]*"`)
@@ -31,7 +33,8 @@ func withFragmentEdgeWorkers(t *testing.T, n int, fn func()) {
 }
 
 // parallelEdgeFixtures are real call graphs, large enough to span many work
-// items: this repository's own Go packages and the Java test sources.
+// items: Go packages of this repository and of the engine (reach), and the
+// Java test sources.
 func parallelEdgeFixtures(t *testing.T) map[string]*engine.DepScanResult {
 	t.Helper()
 	_, testFile, _, ok := runtime.Caller(0)
@@ -39,14 +42,21 @@ func parallelEdgeFixtures(t *testing.T) map[string]*engine.DepScanResult {
 		t.Fatal("runtime.Caller failed")
 	}
 	internalDir := filepath.Dir(filepath.Dir(testFile))
-	packages := []string{"callgraph", "scan", "engine"}
-	goDirs := make([]callgraph.PackageDir, 0, len(packages))
+	packages := []string{"scan", "engine"}
+	goDirs := make([]callgraph.PackageDir, 0, len(packages)+1)
 	for _, pkg := range packages {
 		goDirs = append(goDirs, callgraph.PackageDir{
 			Dir:        filepath.Join(internalDir, pkg),
 			ImportPath: "github.com/scanoss/crypto-finder/internal/" + pkg,
 		})
 	}
+	// The engine's call graph package, from the reach module, has the
+	// callee with more callers than one work item takes.
+	engineCallgraph, err := build.Import("github.com/scanoss/reach/callgraph", internalDir, build.FindOnly)
+	if err != nil {
+		t.Fatalf("locate github.com/scanoss/reach/callgraph: %v", err)
+	}
+	goDirs = append(goDirs, callgraph.PackageDir{Dir: engineCallgraph.Dir, ImportPath: engineCallgraph.ImportPath})
 	goGraph, err := callgraph.NewBuilderForEcosystem("go", callgraph.NewGoParser()).BuildFromDirectories(goDirs, nil)
 	if err != nil {
 		t.Fatalf("BuildFromDirectories(go): %v", err)
@@ -79,7 +89,7 @@ func TestGraphFragmentEdgesParallelMatchesSerial(t *testing.T) {
 				var data []byte
 				withFragmentEdgeWorkers(t, workers, func() {
 					path := filepath.Join(t.TempDir(), "fragment.json")
-					if err := exportGraphFragment(path, "json", result); err != nil {
+					if err := exportGraphFragment(path, result); err != nil {
 						t.Fatalf("exportGraphFragment(workers=%d): %v", workers, err)
 					}
 					raw, err := os.ReadFile(path)
@@ -100,7 +110,7 @@ func TestGraphFragmentEdgesParallelMatchesSerial(t *testing.T) {
 				}
 			}
 
-			build := func(workers int) graphfrag.GraphFragmentExport {
+			buildProjectionWith := func(workers int) graphfrag.GraphFragmentExport {
 				var out graphfrag.GraphFragmentExport
 				withFragmentEdgeWorkers(t, workers, func() {
 					out = buildGraphFragmentProjection(result)
@@ -108,7 +118,7 @@ func TestGraphFragmentEdgesParallelMatchesSerial(t *testing.T) {
 				})
 				return out
 			}
-			if serial, parallel := build(1), build(8); !reflect.DeepEqual(serial, parallel) {
+			if serial, parallel := buildProjectionWith(1), buildProjectionWith(8); !reflect.DeepEqual(serial, parallel) {
 				t.Fatalf("parallel in-memory projection differs from the serial one")
 			}
 		})
@@ -251,6 +261,8 @@ func TestAppendCompactFragmentEdgeMatchesMarshalJSON(t *testing.T) {
 		{Caller: 1, Callee: 2, EndCol: 9},
 		{EntryCall: &graphfrag.GraphFragmentCallSite{}},
 		{Caller: 3, Arity: 2, EntryCall: escaped},
+		{Caller: 1, Line: 3, EndLine: 5},
+		{Caller: 1, Line: 3, EndLine: 5, EntryCall: escaped},
 	}
 	for _, result := range parallelEdgeFixtures(t) {
 		ctx := newExportBuildContext(result)

@@ -12,9 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/scanoss/reach/graphfrag"
 	"github.com/xeipuuv/gojsonschema"
-
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 // schema617Export is an interned export that carries every field schema 6.17

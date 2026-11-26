@@ -125,7 +125,7 @@ patterns:
           - pattern-either:
               - pattern: hmac.new($KEY, $MSG, $DIGEST)
               - patterns:
-                  - pattern: hmac.digest($KEY, $MSG, $DIGEST)
+                  - pattern: hmac.digest($K, $M, $D)
       - patterns:
           - pattern: OpenSSL::Cipher.new($NAME)`,
 			want: []string{"OpenSSL::Cipher.new", "hmac.digest", "hmac.new"},
@@ -134,7 +134,7 @@ patterns:
 			name: "typed metavariable receiver names the type",
 			body: `
 pattern-either:
-  - pattern: (AESEngine $E).init(true, ...)
+  - pattern: (AESEngine $X).init(true, ...)
   - pattern: (org.example.Builder $B).with($F)`,
 			want: []string{"AESEngine.init", "org.example.Builder.with"},
 		},
@@ -177,7 +177,7 @@ patterns:
   - pattern: $FUNC(...)
   - metavariable-regex:
       metavariable: $FUNC
-      regex: '^ccm_memory$|ccm_process$'`,
+      regex: '^(ccm_memory|ccm_process)$'`,
 			want: []string{"ccm_memory", "ccm_process"},
 		},
 		{
@@ -226,7 +226,7 @@ patterns:
 			name: "constrained method segment",
 			body: `
 patterns:
-  - pattern: OpenSSL::Digest.$M($NAME, ...)
+  - pattern: OpenSSL::Digest.$M($N, ...)
   - metavariable-regex:
       metavariable: $M
       regex: '^(?:digest|new)$'`,
@@ -305,11 +305,11 @@ pattern-sinks:
 		},
 		{
 			name: "method on a require call",
-			body: `pattern: require("crypto").createHash($ALGO)`,
+			body: `pattern: require("crypto").createHash($X)`,
 		},
 		{
 			name: "method on a call result",
-			body: `pattern: Password.hash(...).with($F)`,
+			body: `pattern: Widget.make(...).with($F)`,
 		},
 		{
 			name: "control keyword that reads as a call",
@@ -321,7 +321,7 @@ pattern-sinks:
 		},
 		{
 			name: "unconstrained receiver metavariable",
-			body: `pattern: $CRYPTO.createHash($ALGO)`,
+			body: `pattern: $CRYPTO.createHash($X)`,
 		},
 		{
 			name: "unconstrained function metavariable",
@@ -385,8 +385,8 @@ patterns:
 func TestLoadRuleCryptoMetadata_RequireCallDoesNotHideThePlainSpelling(t *testing.T) {
 	got := conditionedCatalogKeys(t, `
 pattern-either:
-  - pattern: crypto.createHash($ALGO)
-  - pattern: require("crypto").createHash($ALGO)`)
+  - pattern: crypto.createHash($X)
+  - pattern: require("crypto").createHash($X)`)
 	if !slices.Equal(got, []string{"crypto.createHash"}) {
 		t.Fatalf("keys = %q, want only crypto.createHash", got)
 	}

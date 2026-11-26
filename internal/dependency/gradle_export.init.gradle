@@ -94,6 +94,12 @@ void exportModel(gradle) {
     Map<String, List<Map>> graph = [:]
     Set<String> expandedNodes = new LinkedHashSet<>()
 
+    // The version each module runs at, per project: runtimeClasspath's
+    // selection. compileClasspath can select another version of the same
+    // module (Gradle resolves the two separately); that one never ships, so
+    // the compile walk records an edge to the runtime version instead.
+    Map<String, String> runtimeVersions = [:]
+
     Closure walkSelected
     walkSelected = { selected, String parentKey, Project contextProject ->
         def componentId = selected.id
@@ -103,6 +109,12 @@ void exportModel(gradle) {
 
         if (componentId instanceof ModuleComponentIdentifier) {
             childRef = toExternalRef(componentId)
+            def runtimeVersion = runtimeVersions[childRef.module]
+            if (runtimeVersion != null && runtimeVersion != childRef.version) {
+                // The runtime walk records and expands that version.
+                addGraphRef(graph, parentKey, [module: childRef.module, version: runtimeVersion])
+                return
+            }
             childKey = childRef.module + '@' + childRef.version
             if (!dependenciesByKey.containsKey(childKey)) {
                 dependenciesByKey[childKey] = [
@@ -137,29 +149,47 @@ void exportModel(gradle) {
         }
     }
 
+    // Both classpaths: compileClasspath holds what the code calls into
+    // (implementation, api, compileOnly), runtimeClasspath what it loads when it
+    // runs (implementation, api, runtimeOnly). A runtimeOnly jar (a JDBC driver,
+    // a logging or provider implementation) is on the second only, and its
+    // crypto is as reachable at run time. Test classpaths stay out.
+    // runtimeClasspath first, so runtimeVersions holds its selections when
+    // compileClasspath is walked.
+    def classpathNames = ['runtimeClasspath', 'compileClasspath']
     javaProjects.each { project ->
-        def compileClasspath = project.configurations.findByName('compileClasspath')
-        if (compileClasspath == null) {
-            return
-        }
-
         def projectRootKey = javaProjects.size() > 1 ? projectNodeName(project, rootModule) : rootModule
-        compileClasspath.incoming.resolutionResult.root.dependencies.each { dep ->
-            if (dep instanceof ResolvedDependencyResult) {
-                walkSelected(dep.selected, projectRootKey, project)
-            }
-        }
-
-        compileClasspath.resolvedConfiguration.lenientConfiguration.artifacts.each { artifact ->
-            def mv = artifact.moduleVersion.id
-            def module = mv.group + ':' + mv.name
-            def depKey = module + '@' + mv.version
-            def dep = dependenciesByKey[depKey]
-            if (dep == null) {
+        runtimeVersions.clear()
+        classpathNames.each { classpathName ->
+            def classpath = project.configurations.findByName(classpathName)
+            if (classpath == null) {
                 return
             }
-            if (artifact.file != null && artifact.file.name.endsWith('.jar') && !dep.binaryPath) {
-                dep.binaryPath = artifact.file.absolutePath
+
+            classpath.incoming.resolutionResult.root.dependencies.each { dep ->
+                if (dep instanceof ResolvedDependencyResult) {
+                    walkSelected(dep.selected, projectRootKey, project)
+                }
+            }
+            if (classpathName == 'runtimeClasspath') {
+                classpath.incoming.resolutionResult.allComponents.each { component ->
+                    if (component.id instanceof ModuleComponentIdentifier) {
+                        runtimeVersions[component.id.group + ':' + component.id.module] = component.id.version
+                    }
+                }
+            }
+
+            classpath.resolvedConfiguration.lenientConfiguration.artifacts.each { artifact ->
+                def mv = artifact.moduleVersion.id
+                def module = mv.group + ':' + mv.name
+                def depKey = module + '@' + mv.version
+                def dep = dependenciesByKey[depKey]
+                if (dep == null) {
+                    return
+                }
+                if (artifact.file != null && artifact.file.name.endsWith('.jar') && !dep.binaryPath) {
+                    dep.binaryPath = artifact.file.absolutePath
+                }
             }
         }
     }

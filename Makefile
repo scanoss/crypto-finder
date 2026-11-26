@@ -18,7 +18,7 @@ LDFLAGS := -ldflags="-s -w \
 # HELP
 # This will output the help for each task
 # thanks to https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
-.PHONY: help verify-dependency-tooling
+.PHONY: test-reach test-guards help verify-dependency-tooling
 
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[0-9a-zA-Z_-]+:.*?## / {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -88,11 +88,31 @@ version: ## Display current version
 # ============================================================================
 # Test targets
 # ============================================================================
-test: ## Run all tests
+test: test-reach ## Run all tests
 	@GORACE=atexit_sleep_ms=0 go test -v -race -timeout 30m -coverprofile=coverage.out ./...
 
-test-docker: ## Run tests in Docker (same as CI) with semgrep/opengrep
-	@echo "Building test Docker image with Go + semgrep + opengrep..."
+# reach (github.com/scanoss/reach) ships no contracts KB, so its tests that
+# type calls through contracts skip in its own CI; they run here against the
+# crypto KB.
+test-reach: ## Run the engine's (reach) tests against crypto-finder's crypto KB
+	@REACH_TEST_CONTRACTS=$(CURDIR)/internal/cryptokb GORACE=atexit_sleep_ms=0 go test -race -timeout 30m github.com/scanoss/reach/...
+
+# The guards are the tests that fail a pull request on an architectural or
+# contract regression. test.yml runs them as their own job so a red guard is
+# named; the full suite below covers them too.
+test-guards: ## Run the guard tests (import boundary, graph/algo version, equivalence, cards, scripts)
+	@GORACE=atexit_sleep_ms=0 go test -race -count=1 -timeout 30m \
+		./internal/boundary/ \
+		./internal/graphalgoguard/ \
+		./internal/rules/ \
+		./internal/cardmatch/ \
+		./internal/scanner/cards/ \
+		./scripts/...
+	@GORACE=atexit_sleep_ms=0 go test -race -count=1 -timeout 30m -run 'Equivalence|Golden' ./internal/scan/
+	@go run ./scripts/featuremap check-docs
+
+test-docker: ## Run tests in Docker (same as CI)
+	@echo "Building test Docker image..."
 	@docker build -t crypto-finder-test:latest -f Dockerfile.test .
 	@echo "Running tests in Docker container..."
 	@docker run --rm \
@@ -117,7 +137,7 @@ coverage-check: ## Check coverage thresholds (requires go-test-coverage)
 # Docker targets
 # ============================================================================
 
-docker-build: ## Build Docker image with Semgrep
+docker-build: ## Build the Docker image
 	@echo "Building Docker image ($(VERSION))..."
 	@docker build \
 		--build-arg VERSION=$(VERSION) \
@@ -138,17 +158,6 @@ docker-build-deps: ## Build Docker image with all language toolchains for depend
 		-t $(DOCKER_IMAGE):latest-deps \
 		-f Dockerfile.deps .
 	@echo "Deps Docker image built: $(DOCKER_IMAGE):$(VERSION)-deps"
-
-docker-build-slim: ## Build slim Docker image without Semgrep
-	@echo "Building slim Docker image ($(VERSION))..."
-	@docker build \
-		--build-arg VERSION=$(VERSION) \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-t $(DOCKER_IMAGE):$(VERSION)-slim \
-		-t $(DOCKER_IMAGE):latest-slim \
-		-f Dockerfile.slim .
-	@echo "Slim Docker image built: $(DOCKER_IMAGE):$(VERSION)-slim"
 
 docker-run: ## Run Docker container with example (use ARGS="scan /workspace/code --rules /workspace/rules")
 	@echo "Running Docker container..."
@@ -233,8 +242,6 @@ docker-push: ## Push Docker images to GHCR (requires authentication)
 	@echo "Pushing Docker images to GHCR..."
 	@docker push $(DOCKER_IMAGE):$(VERSION)
 	@docker push $(DOCKER_IMAGE):latest
-	@docker push $(DOCKER_IMAGE):$(VERSION)-slim
-	@docker push $(DOCKER_IMAGE):latest-slim
 	@docker push $(DOCKER_IMAGE):$(VERSION)-deps
 	@docker push $(DOCKER_IMAGE):latest-deps
 	@echo "✅ Docker images pushed successfully!"

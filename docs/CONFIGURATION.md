@@ -1,41 +1,43 @@
 # Configuration
 
-Crypto Finder supports flexible configuration through multiple mechanisms: `scanoss.json` files, command-line flags, and environment variables.
+Most setups need one command: `crypto-finder configure --api-key <key>`.
+Everything else has a working default. A setting can come from a flag, an
+environment variable or the config file; the first one set wins, in that
+order.
 
-## Configuration Priority
-
-Settings are applied in the following priority order (highest to lowest):
-
-1. **Command-line flags** (e.g., `--api-key`, `--scanner`)
-2. **Environment variables** (e.g., `SCANOSS_API_KEY`)
-3. **Config file** (`~/.scanoss/crypto-finder/config.json`)
-4. **Project settings** (`scanoss.json` in target directory)
-5. **Default values**
-
-## Application Configuration
-
-### Config File Location
-
-```
-~/.scanoss/crypto-finder/config.json
-```
-
-### Setting Up Configuration
-
-Use the `configure` command to set persistent application settings:
+## Quick path
 
 ```bash
-# Configure API key
+# 1. Save the API key (and a custom API URL, if you use one)
 crypto-finder configure --api-key YOUR_API_KEY
-
-# Configure custom API URL
 crypto-finder configure --api-url https://custom.scanoss.com
 
-# Configure both
-crypto-finder configure --api-key YOUR_KEY --api-url https://custom.scanoss.com
+# 2. Scan
+crypto-finder scan /path/to/code
+
+# 3. Check what was used: the report's "rules" block names the ruleset release
+crypto-finder scan /path/to/code | jq '.rules'
 ```
 
-### Config File Format
+## Settings
+
+| Setting | Flag | Environment | Config file key | Default |
+|---|---|---|---|---|
+| API key | `--api-key` | `SCANOSS_API_KEY` | `api_key` | — |
+| API base URL | `--api-url` | `SCANOSS_API_URL` | `api_url` | `https://api.scanoss.com` |
+| Allow plain HTTP to a remote API | `--allow-http` | `SCANOSS_ALLOW_HTTP` | `allow_http` | off |
+| Java JDK major | `--java-jdk-major` | `SCANOSS_JAVA_JDK_MAJOR` | `java_jdk_major` | `auto` (ambient `JAVA_HOME`) |
+| Java JDK homes | `--java-jdk-home <major>=<path>` (repeatable) | `SCANOSS_JAVA_JDK_HOMES` (`17=/opt/jdk17,21=/opt/jdk21`) | `java_jdk_homes` | — |
+| Extra trusted ruleset signing keys | — | `SCANOSS_RULESET_PUBKEYS` | — | Built-in key only ([REMOTE_RULESETS.md](REMOTE_RULESETS.md#trusted-signing-keys)) |
+
+Priority, highest first:
+
+1. Command-line flags
+2. Environment variables
+3. Config file `~/.scanoss/crypto-finder/config.json`
+4. Defaults
+
+`configure` writes the config file:
 
 ```json
 {
@@ -43,491 +45,112 @@ crypto-finder configure --api-key YOUR_KEY --api-url https://custom.scanoss.com
   "api_url": "https://api.scanoss.com",
   "java_jdk_major": "auto",
   "java_jdk_homes": {
-    "8": "/opt/jdks/jdk8",
-    "11": "/opt/jdks/jdk11",
     "17": "/opt/jdks/jdk17",
     "21": "/opt/jdks/jdk21"
   }
 }
 ```
 
-### Environment Variables
+## Files and directories
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `SCANOSS_API_KEY` | SCANOSS API key for remote rulesets | `export SCANOSS_API_KEY=abc123` |
-| `SCANOSS_API_URL` | Custom API base URL | `export SCANOSS_API_URL=https://custom.com` |
-| `SCANOSS_JAVA_JDK_MAJOR` | Java JDK major for Java dependency resolution and type enrichment (`auto`, `8`, `11`, `17`, `21`) | `export SCANOSS_JAVA_JDK_MAJOR=21` |
-| `SCANOSS_JAVA_JDK_HOMES` | Comma-separated Java home mappings used for explicit JDK selection | `export SCANOSS_JAVA_JDK_HOMES=17=/opt/jdks/jdk17,21=/opt/jdks/jdk21` |
-| `SCANOSS_FINDINGS_CACHE_BACKEND` | FindingsCache backend (`disk` or `postgres`); default `disk` | `export SCANOSS_FINDINGS_CACHE_BACKEND=postgres` |
-| `SCANOSS_FINDINGS_CACHE_DSN` | Postgres connection string used when backend is `postgres` (required) | `export SCANOSS_FINDINGS_CACHE_DSN=postgres://user:pass@host:5432/db?sslmode=require` |
-| `SCANOSS_FINDINGS_CACHE_TABLE` | Optional table name override; default `findings_cache` | `export SCANOSS_FINDINGS_CACHE_TABLE=cf_findings_cache` |
+| Path | Holds |
+|---|---|
+| `~/.scanoss/crypto-finder/config.json` | Saved settings |
+| `~/.scanoss/crypto-finder/cache/rulesets/` | Remote rulesets, encrypted ([REMOTE_RULESETS.md](REMOTE_RULESETS.md#cache-management)) |
+| `~/.scanoss/crypto-finder/cache/bytecode/` | Java JAR type indexes |
+| `~/.scanoss/crypto-finder/cache/python-signatures/` | Python package type indexes |
+| `~/.scanoss/crypto-finder/cache/sources/` | Extracted dependency sources |
+| `~/.scanoss/crypto-finder/cache/mined/` | `--offline` mined dependencies (`--offline-cache-dir`; [OFFLINE.md](OFFLINE.md)) |
 
-### Java Runtime Selection
+Deleting any cache directory is safe; it is rebuilt on the next scan that
+needs it.
 
-For Java dependency scans and call graph export, Crypto Finder can select a specific JDK major per scan:
+## Java runtime
 
-- CLI: `--java-jdk-major` and repeatable `--java-jdk-home <major>=<path>`
-- Environment/config: `SCANOSS_JAVA_JDK_MAJOR`, `SCANOSS_JAVA_JDK_HOMES`, or the matching config file keys
-- Supported majors: `8`, `11`, `17`, `21`
-- Standalone CLI default: `auto` (use ambient `JAVA_HOME` when available)
+Java type resolution and dependency scans use one JDK major per scan.
 
-Example:
+| Option | Values |
+|---|---|
+| `--java-jdk-major` | `auto`, `8`, `11`, `17`, `21` |
+| `--java-jdk-home` | `<major>=<path>`, repeatable |
 
 ```bash
-crypto-finder scan \
-  --scan-dependencies \
+crypto-finder scan --scan-dependencies \
   --java-jdk-major 21 \
   --java-jdk-home 17=/opt/jdks/jdk17 \
   --java-jdk-home 21=/opt/jdks/jdk21 \
   /path/to/java-project
 ```
 
-### FindingsCache Backend
+The `latest-deps` Docker image sets `SCANOSS_JAVA_JDK_HOMES` for JDKs 8, 11,
+17 and 21.
 
-Crypto Finder caches per-dependency scan results in a `FindingsCache` so warm scans skip the OpenGrep work for already-analysed dependencies. Two backends are supported:
+## Detection and languages
 
-| Backend | Storage | When to use |
-|---------|---------|-------------|
-| `disk` (default) | `~/.scanoss/crypto-finder/cache/findings/` | Local development, single-machine repeated scans |
-| `postgres` | a Postgres database (`findings_cache` table) | Multi-worker fleet deployments where the cache must be shared across machines |
+Detection runs in process: crypto-finder builds the target's typed call graph
+and matches the ruleset against its call sites. There is no scanner to choose
+or install.
 
-Selecting the backend:
+| Target contains | Result |
+|---|---|
+| Java and/or Python | Scanned, each language against its own rules and call graph |
+| Java or Python plus other languages | Java and Python scanned; a warning and the `detection` progress event (`unsupported_languages`) name the others |
+| Only other languages | Fails with `language_not_supported` ([ERROR_CODES.md](ERROR_CODES.md)) |
 
-- CLI: `--findings-cache=disk` or `--findings-cache=postgres`
-- Environment: `SCANOSS_FINDINGS_CACHE_BACKEND=postgres`
-- Config file: `findings_cache_backend: postgres`
-
-When `postgres` is selected, the connection string MUST be provided via `SCANOSS_FINDINGS_CACHE_DSN`. The scan exits with a clear error if it is missing — there is no silent fallback to disk, because a misconfigured fleet would otherwise lose cache sharing without surfacing the bug.
-
-The table is bootstrapped on first use (idempotent `CREATE TABLE IF NOT EXISTS`); no separate migration step is required. The default table name is `findings_cache`; override with `SCANOSS_FINDINGS_CACHE_TABLE` if you run multiple deployments in the same database.
-
-Example:
+Language detection uses [go-enry](https://github.com/go-enry/go-enry).
+Override it with `--languages`:
 
 ```bash
-export SCANOSS_FINDINGS_CACHE_DSN="postgres://cf:cf@db.internal:5432/scanoss?sslmode=require"
-
-crypto-finder scan \
-  --scan-dependencies \
-  --findings-cache=postgres \
-  --export-callgraph callgraph.json \
-  /path/to/project
-```
-
-Behaviour notes:
-
-- The cache key includes the rules hash, so changing rules invalidates entries automatically — no manual eviction needed.
-- Failures of the disk backend are non-fatal (a warning is logged and the scan continues without caching). Failures of the postgres backend (missing DSN, unreachable database, schema bootstrap error) are fatal.
-- The Postgres pool is opened per `crypto-finder scan` invocation and closed when the scan finishes. For long-lived workers, reuse a single binary process where possible to amortise pool setup.
-
-## Project Configuration (scanoss.json)
-
-The `scanoss.json` file in your project directory configures scan behavior and skip patterns.
-
-### File Location
-
-Place `scanoss.json` in the root of the directory you're scanning:
-
-```
-your-project/
-├── scanoss.json
-├── src/
-└── ...
-```
-
-### Configuration Schema
-
-Crypto Finder follows the [SCANOSS Settings Schema](https://scanoss.readthedocs.io/projects/scanoss-py/en/latest/scanoss_settings_schema.html).
-
-### Basic Example
-
-```json
-{
-  "settings": {
-    "skip": {
-      "patterns": {
-        "scanning": [
-          "node_modules/",
-          "target/",
-          "venv/",
-          "*.min.js"
-        ]
-      },
-      "sizes": {
-        "max_file_size": 10485760
-      }
-    }
-  }
-}
-```
-
-## Skip Patterns
-
-Skip patterns control which files and directories are excluded from scanning.
-
-### Default Skip Patterns
-
-The following patterns are automatically excluded:
-
-**Version Control:**
-- `.git/`
-- `.svn/`
-- `.hg/`
-- `.bzr/`
-
-**Dependencies:**
-- `node_modules/`
-- `vendor/`
-- `venv/`
-- `virtualenv/`
-- `__pycache__/`
-
-**Build Artifacts:**
-- `dist/`
-- `build/`
-- `target/`
-- `*.min.js`
-- `*.min.css`
-
-**Archives:**
-- `*.zip`
-- `*.tar`
-- `*.tar.gz`
-- `*.tar.bz2`
-- `*.jar`
-- `*.war`
-- `*.ear`
-
-**Binaries:**
-- `*.exe`
-- `*.dll`
-- `*.so`
-- `*.dylib`
-- `*.bin`
-
-**Generated / vendored stubs:**
-- `shaded/`
-- `*OuterClass.java`
-- `*_pb2.py`, `*_pb2_grpc.py`
-- `*.pb.go`, `zz_generated*.go`
-- `*_pb.js`, `*_pb.ts`
-- `*.pb.cc`, `*.pb.h`, `*.grpc.pb.cc`, `*.grpc.pb.h`
-- Files whose header is the protocol-buffer compiler marker (or prost/bindgen), except protobuf runtimes scanned as the target artifact
-
-For the complete list, see [Default Skip Patterns](../internal/skip/source_defaults.go).
-
-### Custom Skip Patterns
-
-#### Pattern Types
-
-1. **Directory patterns** (end with `/`):
-   ```json
-   {
-     "settings": {
-       "skip": {
-         "patterns": {
-           "scanning": ["custom-dir/", "temp/"]
-         }
-       }
-     }
-   }
-   ```
-
-2. **File extension patterns**:
-   ```json
-   {
-     "settings": {
-       "skip": {
-         "patterns": {
-           "scanning": ["*.log", "*.tmp", "*.cache"]
-         }
-       }
-     }
-   }
-   ```
-
-3. **Specific file patterns**:
-   ```json
-   {
-     "settings": {
-       "skip": {
-         "patterns": {
-           "scanning": ["package-lock.json", "yarn.lock"]
-         }
-       }
-     }
-   }
-   ```
-
-4. **Path patterns**:
-   ```json
-   {
-     "settings": {
-       "skip": {
-         "patterns": {
-           "scanning": ["src/generated/", "test/fixtures/"]
-         }
-       }
-     }
-   }
-   ```
-
-### Size Limits
-
-Configure maximum file size to scan:
-
-```json
-{
-  "settings": {
-    "skip": {
-      "sizes": {
-        "max_file_size": 10485760
-      }
-    }
-  }
-}
-```
-
-## Advanced Configuration Examples
-
-### Monorepo Configuration
-
-For large monorepos with multiple subprojects:
-
-```json
-{
-  "settings": {
-    "skip": {
-      "patterns": {
-        "scanning": [
-          "*/node_modules/",
-          "*/dist/",
-          "*/build/",
-          "*/target/",
-          "docs/",
-          "scripts/",
-          "*.test.js",
-          "*.spec.ts"
-        ]
-      }
-    }
-  }
-}
-```
-
-### Frontend Project Configuration
-
-Optimized for JavaScript/TypeScript projects:
-
-```json
-{
-  "settings": {
-    "skip": {
-      "patterns": {
-        "scanning": [
-          "node_modules/",
-          "dist/",
-          "build/",
-          ".next/",
-          ".nuxt/",
-          "coverage/",
-          "*.min.js",
-          "*.bundle.js",
-          "*.map"
-        ]
-      }
-    }
-  }
-}
-```
-
-### Backend Project Configuration
-
-Optimized for Java/Python/Go projects:
-
-```json
-{
-  "settings": {
-    "skip": {
-      "patterns": {
-        "scanning": [
-          "target/",
-          "venv/",
-          "vendor/",
-          "__pycache__/",
-          "*.pyc",
-          "*.class",
-          "*.jar"
-        ]
-      }
-    }
-  }
-}
-```
-
-### CI/CD Optimized Configuration
-
-Minimal scanning for fast CI/CD pipelines:
-
-```json
-{
-  "settings": {
-    "skip": {
-      "patterns": {
-        "scanning": [
-          "node_modules/",
-          "vendor/",
-          "venv/",
-          "target/",
-          "dist/",
-          "build/",
-          "test/",
-          "tests/",
-          "*.test.*",
-          "*.spec.*",
-          "*.min.*"
-        ]
-      }
-    }
-  }
-}
-```
-
-## Scanner Configuration
-
-### Choosing a Scanner
-
-Crypto Finder supports multiple scanners. Select via command-line flag:
-
-```bash
-# Use OpenGrep (default, recommended)
-crypto-finder scan /path/to/code
-
-# Use Semgrep
-crypto-finder scan --scanner semgrep /path/to/code
-```
-
-### Cross-File Analysis (Semgrep Pro)
-
-When using the Semgrep scanner, you can enable cross-file (interfile) analysis with the `--interfile` flag. This adds the `--pro` flag to the underlying Semgrep command, enabling Semgrep Pro features such as cross-file taint tracking and type inference.
-
-```bash
-# Enable cross-file analysis with Semgrep Pro
-crypto-finder scan --scanner semgrep --interfile /path/to/code
-```
-
-> **Note:** The `--interfile` flag is only supported with `--scanner semgrep`. Using it with other scanners will result in an error. A valid Semgrep Pro license is required.
-
-## Language Detection
-
-### Automatic Detection
-
-By default, crypto-finder uses [go-enry](https://github.com/go-enry/go-enry) to automatically detect project languages.
-
-### Manual Override
-
-Override detected languages when needed:
-
-```bash
-# Scan only Java and Python files
+crypto-finder scan --languages java /path/to/code
 crypto-finder scan --languages java,python /path/to/code
-
-# Scan single language
-crypto-finder scan --languages go /path/to/code
 ```
 
-### Supported Languages
-
-The scanner supports rules for:
-
-- C/C++
-- C#
-- Go
-- Java
-- JavaScript/TypeScript
-- Kotlin
-- PHP
-- Python
-- Ruby
-- Rust
-- Swift
-- And more...
-
-Language detection ensures only relevant rules are loaded, improving scan performance.
-
-## Timeout Configuration
-
-### Default Timeout
-
-Default scan timeout: **10 minutes**
-
-### Custom Timeout
+Ruleset sources:
 
 ```bash
-# 30 minute timeout
-crypto-finder scan --timeout 30m /path/to/code
+# Local ruleset only
+crypto-finder scan --no-remote-rules --rules-dir ./ruleset /path/to/code
 
-# 2 hour timeout
-crypto-finder scan --timeout 2h /path/to/code
-
-# 90 second timeout
-crypto-finder scan --timeout 90s /path/to/code
+# Local ruleset with a precompiled card index and a cards directory
+crypto-finder scan --no-remote-rules --rules-dir ./ruleset \
+  --cards-index index.json --cards-dir ./cards /path/to/code
 ```
 
-### Recommended Timeouts
+## Skipping files
 
-| Project Size | Recommended Timeout |
-|--------------|---------------------|
-| Small (<1000 files) | 5m |
-| Medium (1000-10000 files) | 15m |
-| Large (10000-50000 files) | 30m |
-| Very Large (>50000 files) | 1h+ |
+| Mechanism | Example |
+|---|---|
+| Built-in defaults | `vendor`, `node_modules`, `shaded/`, generated protobuf stubs, docs; test sources unless `--include-tests` |
+| `scanoss.json` in the target | `{"settings": {"skip": {"patterns": {"scanning": ["target/", "venv/"]}}}}` |
+| `--exclude <glob>` (repeatable) | `--exclude vendor --exclude "build/**"` |
+| Turn the defaults off | `--no-default-exclusions` (slower on large trees) |
 
-## Output Configuration
+Patterns use gitignore syntax. See the
+[SCANOSS settings schema](https://scanoss.readthedocs.io/projects/scanoss-py/en/latest/scanoss_settings_schema.html).
 
-### Output Destination
+## Timeout
 
-```bash
-# Write to file
-crypto-finder scan --output results.json /path/to/code
+Default: `10m`. Set it with `--timeout` (`90s`, `30m`, `2h`).
 
-# Write to stdout (default)
-crypto-finder scan /path/to/code
+| Project size | Suggested timeout |
+|---|---|
+| Under 1,000 files | `5m` |
+| 1,000-10,000 files | `15m` |
+| 10,000-50,000 files | `30m` |
+| Over 50,000 files | `1h` or more |
 
-# Pipe to another tool
-crypto-finder scan /path/to/code | jq '.findings | length'
-```
+## Output and logging
 
-### Output Format
+| Want | Flag |
+|---|---|
+| Report to a file | `--output results.json` (default: stdout) |
+| CycloneDX CBOM | `--format cyclonedx` |
+| Info / debug / errors-only logging | `-v` / `-d` / `-q` |
+| Machine-readable failures | `--error-format json` |
+| Lifecycle events on stderr (JSONL) | `--progress` |
 
-```bash
-# SCANOSS Interim JSON format (default)
-crypto-finder scan --format json /path/to/code
+## Related
 
-# CycloneDX CBOM format
-crypto-finder scan --format cyclonedx /path/to/code
-```
-
-## Logging Configuration
-
-### Verbosity Levels
-
-```bash
-# Normal output
-crypto-finder scan /path/to/code
-
-# Verbose logging (info level)
-crypto-finder scan -v /path/to/code
-crypto-finder scan --verbose /path/to/code
-
-# Debug mode (debug info)
-crypto-finder scan -d /path/to/code
-crypto-finder scan --debug /path/to/code
-```
-
-## Related Documentation
-
-- [Main README](../README.md) - Overview and quick start
-- [Remote Rulesets](REMOTE_RULESETS.md) - API key and ruleset configuration
-- [Docker Usage](DOCKER_USAGE.md) - Container configuration
-- [SCANOSS Settings Schema](https://scanoss.readthedocs.io/projects/scanoss-py/en/latest/scanoss_settings_schema.html) - Official schema documentation
+- [README](../README.md): commands and full flag reference
+- [REMOTE_RULESETS.md](REMOTE_RULESETS.md): API key, ruleset cache, leases
+- [DOCKER_USAGE.md](DOCKER_USAGE.md): container configuration

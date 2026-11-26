@@ -85,7 +85,6 @@ func TestMinePathBcprovJdk18on184_WallClockBudget(t *testing.T) {
 		"--timeout=30m",
 		"--output", findingsPath,
 		"--export-graph-fragment", fragmentPath,
-		"--dep-ecosystem", "java",
 		"-v",
 	}
 	// Optional remote rules (same as production mine). Falls back to cached/local rules.

@@ -33,7 +33,7 @@ func TestPathFloor(t *testing.T) {
 		why   string // a substring of the first reason
 	}{
 		{"plain code", []string{"internal/scan/export.go", "changelog.d/x.fixed.md"}, riskLow, ""},
-		{"knowledge base", []string{"internal/callgraph/contracts/go/stdlib-crypto.yaml"}, riskLow, ""},
+		{"knowledge base", []string{"internal/cryptokb/go/stdlib-crypto.yaml"}, riskLow, ""},
 		{"workflow", []string{".github/workflows/test.yml"}, riskHigh, "CI, release and tagging workflows (`.github/workflows/test.yml`)"},
 		{"release workflow", []string{".github/workflows/release.yml"}, riskHigh, "CI, release and tagging workflows"},
 		{"merge gate", []string{"scripts/mergeready/check.go"}, riskHigh, "the merge gate"},
@@ -47,9 +47,8 @@ func TestPathFloor(t *testing.T) {
 		{"interim report", []string{"pkg/schema/interim.go"}, riskMedium, "an output contract"},
 		{"published schema", []string{"schemas/callgraph-schema-6.18.json"}, riskMedium, "an output contract"},
 		{"failure codes", []string{"pkg/failure/error.go"}, riskMedium, "an output contract"},
-		{"fragment format", []string{"pkg/graphfrag/export.go"}, riskMedium, "an output contract"},
-		{"callgraph format", []string{"pkg/graphfrag/callgraph_export.go"}, riskMedium, "an output contract"},
-		{"stitching", []string{"pkg/graphfrag/stitch.go"}, riskLow, ""},
+		{"findings envelope", []string{"pkg/appreach/findings_envelope.go"}, riskMedium, "an output contract"},
+		{"knowledge base", []string{"internal/cryptokb/java/jdk-crypto.yaml"}, riskLow, ""},
 		{"lint config", []string{".golangci.yml"}, riskMedium, "a CI check's configuration"},
 		{"tests of the gate", []string{"scripts/mergeready/check_test.go", "scripts/mergeready/testdata/pr803/pr.json"}, riskLow, ""},
 		{"highest wins", []string{"go.mod", ".github/workflows/lint.yml"}, riskHigh, "a dependency"},

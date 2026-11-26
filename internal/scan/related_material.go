@@ -10,9 +10,10 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/crypto-finder/internal/cryptokb"
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -63,7 +64,7 @@ func MaterializeRelatedMaterial(report *entities.InterimReport, result *engine.D
 	if report == nil || result == nil || result.CallGraph == nil {
 		return 0
 	}
-	kb, err := contracts.LoadEmbedded(result.Ecosystem)
+	kb, err := cryptokb.Load(result.Ecosystem)
 	if err != nil || kb == nil {
 		return 0
 	}
@@ -71,7 +72,7 @@ func MaterializeRelatedMaterial(report *entities.InterimReport, result *engine.D
 	scoped.Report = report
 	ctx := newExportPathContext(&scoped)
 	ctx.kb = kb
-	tracer := &materialTracer{ctx: ctx, ecosystem: result.Ecosystem, rebinders: map[string][]*regexp.Regexp{}}
+	tracer := &materialTracer{ctx: ctx, ecosystem: result.Ecosystem, rebinders: rebindPatternCache{}}
 	added := 0
 	for i := range report.Findings {
 		added += tracer.materializeFinding(&report.Findings[i])
@@ -86,8 +87,7 @@ func MaterializeRelatedMaterial(report *entities.InterimReport, result *engine.D
 type materialTracer struct {
 	ctx       *exportBuildContext
 	ecosystem string
-	// rebinders caches the patterns that recognize a rebinding of one name.
-	rebinders map[string][]*regexp.Regexp
+	rebinders rebindPatternCache
 }
 
 func (t *materialTracer) materializeFinding(finding *entities.Finding) int {
@@ -223,8 +223,8 @@ func (t *materialTracer) trace(fn *callgraph.FunctionDecl, name string, after co
 			continue
 		}
 		for index, arg := range call.Arguments {
-			keyword, value := splitKeywordArgument(arg, t.ecosystem)
-			if bareArgument(value, t.ecosystem) != name {
+			keyword, passed := passedVariable(arg, t.ecosystem)
+			if passed != name {
 				continue
 			}
 			if t.rebound(fn, name, after.line, call.Line) {
@@ -354,10 +354,20 @@ func (t *materialTracer) receiverOffset(callee *callgraph.FunctionDecl, call *ca
 	return 0, true
 }
 
+// passedVariable is the variable a call argument passes, as trace compares
+// it with the name it follows, and the argument's keyword.
+func passedVariable(arg, ecosystem string) (keyword, name string) {
+	keyword, value := splitKeywordArgument(arg, ecosystem)
+	return keyword, bareArgument(value, ecosystem)
+}
+
 // splitKeywordArgument splits a Python keyword argument `salt=value` into its
 // keyword and value. Other ecosystems and positional arguments return an
 // empty keyword and the argument unchanged.
 func splitKeywordArgument(arg, ecosystem string) (keyword, value string) {
+	if ecosystem == ecosystemRuby {
+		return splitRubyKeywordArgument(arg)
+	}
 	if ecosystem != ecosystemPython {
 		return "", arg
 	}
@@ -365,6 +375,21 @@ func splitKeywordArgument(arg, ecosystem string) (keyword, value string) {
 		return m[1], strings.TrimSpace(m[2])
 	}
 	return "", arg
+}
+
+// splitRubyKeywordArgument reads `digest_algorithm: "SHA256"`, the Ruby
+// spelling of a keyword argument. A second colon is a constant path
+// (`OpenSSL::SSL`), not a keyword, and `a ? b : c` never reaches the name
+// pattern.
+func splitRubyKeywordArgument(arg string) (keyword, value string) {
+	m := rubyKeywordArgumentPattern.FindStringSubmatch(strings.TrimSpace(arg))
+	if len(m) < 3 || strings.HasPrefix(m[2], ":") {
+		return "", arg
+	}
+	if value = strings.TrimSpace(m[2]); value == "" {
+		return "", arg
+	}
+	return m[1], value
 }
 
 // bareArgument strips the borrow, Option wrapping and `.into()` conversion a
@@ -391,25 +416,43 @@ func bareArgument(arg, ecosystem string) string {
 // rebound reports whether any source line of fn strictly between from and to
 // may rebind or overwrite name, or whether those lines cannot be read. The
 // check is lexical and errs towards "rebound": a missed material is
-// acceptable, a wrong one is not.
+// acceptable, a wrong one is not. A graph rebuilt from a fragment that
+// records the lines (graph-fragment-1.23) answers from them, without the
+// source.
 func (t *materialTracer) rebound(fn *callgraph.FunctionDecl, name string, from, to int) bool {
 	if to <= from+1 {
+		return false
+	}
+	if recorded, ok := t.ctx.graph.RebindLines[fn.ID.String()]; ok {
+		for _, line := range recorded[name] {
+			if from < line && line < to {
+				return true
+			}
+		}
 		return false
 	}
 	file := t.ctx.excerpts().file(t.ctx.absPath(fn.FilePath))
 	if file.unavailable != "" || to-1 > len(file.lineStarts) {
 		return true
 	}
-	patterns := t.rebindPatterns(name)
+	patterns := t.rebinders.patterns(name)
 	for line := from + 1; line < to; line++ {
-		text := string(file.line(line))
-		if isCommentLine(text) {
-			continue
+		if lineMayRebind(string(file.line(line)), patterns) {
+			return true
 		}
-		for _, re := range patterns {
-			if re.MatchString(text) {
-				return true
-			}
+	}
+	return false
+}
+
+// lineMayRebind reports whether a source line, not a comment, matches one of
+// a name's rebind patterns.
+func lineMayRebind(text string, patterns []*regexp.Regexp) bool {
+	if isCommentLine(text) {
+		return false
+	}
+	for _, re := range patterns {
+		if re.MatchString(text) {
+			return true
 		}
 	}
 	return false
@@ -425,13 +468,17 @@ func isCommentLine(text string) bool {
 	return false
 }
 
-// rebindPatterns are the shapes of a line that may give name another value or
+// rebindPatternCache caches, by name, the patterns that recognize a
+// rebinding of it.
+type rebindPatternCache map[string][]*regexp.Regexp
+
+// patterns are the shapes of a line that may give name another value or
 // overwrite the buffer it holds: an assignment (also compound, indexed, a
 // tuple or destructuring target, or Go's :=), a declaration or loop whose
 // target is the name (let, var, const, for, as, del; not one that only reads
 // it), a mutable borrow, and the standard in-place fills.
-func (t *materialTracer) rebindPatterns(name string) []*regexp.Regexp {
-	if patterns, ok := t.rebinders[name]; ok {
+func (c rebindPatternCache) patterns(name string) []*regexp.Regexp {
+	if patterns, ok := c[name]; ok {
 		return patterns
 	}
 	n := regexp.QuoteMeta(name)
@@ -451,7 +498,7 @@ func (t *materialTracer) rebindPatterns(name string) []*regexp.Regexp {
 		regexp.MustCompile(`arraycopy\s*\([^)]*,\s*` + n + `\s*,`),
 		regexp.MustCompile(`Arrays\s*\.\s*fill\s*\(\s*` + n + `\b`),
 	}
-	t.rebinders[name] = patterns
+	c[name] = patterns
 	return patterns
 }
 

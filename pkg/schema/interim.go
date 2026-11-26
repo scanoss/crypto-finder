@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/reach/paramcondition"
 )
 
 // InterimFormatVersion is the current version of the interim report schema.
@@ -149,6 +149,12 @@ type CryptographicAsset struct {
 	// the finding's call chains partial. In-process state, not public schema.
 	ConditionedValuesIncomplete bool `json:"-"`
 
+	// Served is the reachability verdict a SCANOSS API decided for this
+	// dependency asset (the application reachability client). The callgraph export
+	// writes it in place of tracing the asset in the local graph, which does
+	// not hold the dependency's code. In-process state, not public schema.
+	Served *ServedReachability `json:"-"`
+
 	// ConditionedValue is the exact resolved condition (for example
 	// "param[0]==SHA-256") a per-value asset was specialized for. Empty on every
 	// other asset. It keeps assets that one rule produced at one call distinct in
@@ -205,6 +211,19 @@ type CryptographicAsset struct {
 	PQC *PQCClassification `json:"pqc,omitempty"`
 }
 
+// ServedReachability is a reachability verdict decided by a server for one
+// asset, in the callgraph export's vocabulary.
+type ServedReachability struct {
+	// Reachability is reachable, unreachable or unknown.
+	Reachability string
+	// Reason says why an unknown verdict is unknown.
+	Reason string
+	// CallChains are the server's routes to the asset, callgraph export chain
+	// frames; Analysis is the export's analysis block. Either may be empty.
+	CallChains json.RawMessage
+	Analysis   json.RawMessage
+}
+
 // PQCClassification is an asset's post-quantum status, with each source's
 // cited deadlines for its family.
 type PQCClassification struct {
@@ -239,6 +258,12 @@ type DependencyInfo struct {
 	Version string `json:"version"`
 	// PURL is the canonical package URL when the dependency ecosystem is known.
 	PURL string `json:"purl,omitempty"`
+	// Markers and Extras, for a Python dependency, are the PEP 508
+	// environment markers under which the project's lock installs it and the
+	// extras it enables, as written. Absent when it is installed
+	// unconditionally, and for every other ecosystem.
+	Markers []string `json:"markers,omitempty"`
+	Extras  []string `json:"extras,omitempty"`
 }
 
 // RuleInfo contains information about the detection rule that identified the cryptographic asset.

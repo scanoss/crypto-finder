@@ -1,339 +1,426 @@
+// Copyright (C) 2026 SCANOSS.COM
+// SPDX-License-Identifier: GPL-2.0-only
+
 package dependency
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
 )
 
-func TestCargoPackageNameFromID(t *testing.T) {
-	tests := []struct {
-		id   string
-		want string
-	}{
-		{
-			id:   "ring 0.17.8 (registry+https://github.com/rust-lang/crates.io-index)",
-			want: "ring",
-		},
-		{
-			id:   "ring@0.17.8",
-			want: "ring",
-		},
-		{
-			id:   "ring 0.17.8",
-			want: "ring",
-		},
-		{
-			id:   "my-crate",
-			want: "my-crate",
-		},
-		{
-			id:   "tokio 1.35.1 (registry+https://github.com/rust-lang/crates.io-index)",
-			want: "tokio",
-		},
-		{
-			id:   "path+file:///tmp/meta-check#meta-check@0.1.0",
-			want: "meta-check",
-		},
-		{
-			id:   "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0",
-			want: "serde",
-		},
-		{
-			id:   "path+file:///abs/path/to/crate#0.8.4",
-			want: "crate",
-		},
-		{
-			id:   "git+https://github.com/foo/bar#abc123def4567890abc123def4567890abc123de",
-			want: "bar",
-		},
-	}
+const (
+	registrySource = "registry+https://github.com/rust-lang/crates.io-index"
+	appID          = "path+file:///w/app#app@0.1.0"
+	coreID         = "path+file:///w/core#my-core@0.1.0"
+	pathLibID      = "path+file:///w/app/crates/pathlib#pathlib@0.1.0"
+)
 
-	for _, tt := range tests {
-		got := cargoPackageNameFromID(tt.id)
-		if got != tt.want {
-			t.Errorf("cargoPackageNameFromID(%q) = %q, want %q", tt.id, got, tt.want)
+func cargoID(name, version string) string {
+	return registrySource + "#" + name + "@" + version
+}
+
+func registryPkg(name, version, dir string) map[string]any {
+	return map[string]any{
+		"id": cargoID(name, version), "name": name, "version": version, "source": registrySource,
+		"manifest_path": filepath.Join(dir, name+"-"+version, "Cargo.toml"),
+		"targets":       []any{map[string]any{"name": underscore(name), "kind": []string{"lib"}}},
+	}
+}
+
+func underscore(s string) string {
+	out := []byte(s)
+	for i, c := range out {
+		if c == '-' {
+			out[i] = '_'
 		}
 	}
+	return string(out)
 }
 
-func TestCargoPackageRefFromID(t *testing.T) {
-	tests := []struct {
-		id   string
-		want Ref
-	}{
-		{
-			id:   "ring 0.17.8 (registry+https://github.com/rust-lang/crates.io-index)",
-			want: Ref{Module: "ring", Version: "0.17.8"},
-		},
-		{
-			id:   "ring@0.17.8",
-			want: Ref{Module: "ring", Version: "0.17.8"},
-		},
-		{
-			id:   "path+file:///tmp/meta-check#meta-check@0.1.0",
-			want: Ref{Module: "meta-check", Version: "0.1.0"},
-		},
-		{
-			id:   "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0",
-			want: Ref{Module: "serde", Version: "1.0.0"},
-		},
-		{
-			id:   "my-crate",
-			want: Ref{Module: "my-crate"},
-		},
-		// A `path+` ID whose fragment carries only a version: the name comes
-		// from the path's last segment. Reading the fragment as the name left
-		// Module set to "0.8.4", a version standing where a crate name belongs.
-		{
-			id:   "path+file:///abs/path/to/crate#0.8.4",
-			want: Ref{Module: "crate", Version: "0.8.4"},
-		},
-		// A `git+` ID whose fragment is a commit REVISION, not a version: the
-		// name comes from the repository, and Version stays empty rather than
-		// being invented from the sha.
-		{
-			id:   "git+https://github.com/foo/bar#abc123def4567890abc123def4567890abc123de",
-			want: Ref{Module: "bar"},
-		},
-		{
-			id:   "git+https://github.com/foo/bar?branch=main#abc123def4567890abc123def4567890abc123de",
-			want: Ref{Module: "bar"},
-		},
-		// A `git+` ID whose fragment IS a version, with the repository's ".git"
-		// suffix on the location.
-		{
-			id:   "git+https://github.com/foo/bar.git#0.2.0",
-			want: Ref{Module: "bar", Version: "0.2.0"},
-		},
-		// The explicit `name@version` fragment still wins for both forms.
-		{
-			id:   "git+https://github.com/foo/bar#baz@0.3.0",
-			want: Ref{Module: "baz", Version: "0.3.0"},
-		},
-	}
-
-	for _, tt := range tests {
-		got := cargoPackageRefFromID(tt.id)
-		if got != tt.want {
-			t.Errorf("cargoPackageRefFromID(%q) = %#v, want %#v", tt.id, got, tt.want)
-		}
-	}
+func normalDep(id string) map[string]any {
+	return map[string]any{"pkg": id, "dep_kinds": []any{map[string]any{"kind": nil, "target": nil}}}
 }
 
-func TestCargoResolver_Ecosystem(t *testing.T) {
-	r := NewCargoResolver()
-	if got := r.Ecosystem(); got != "rust" {
-		t.Errorf("Ecosystem() = %q, want %q", got, "rust")
-	}
+func kindDep(id, kind string) map[string]any {
+	return map[string]any{"pkg": id, "dep_kinds": []any{map[string]any{"kind": kind, "target": nil}}}
 }
 
-func TestCargoMetadataParsing(t *testing.T) {
-	raw := []byte(`{
-		"packages": [
-			{
-				"id": "path+file:///workspace/app#app@0.1.0",
-				"name": "app",
-				"version": "0.1.0",
-				"manifest_path": "/workspace/app/Cargo.toml",
-				"source": null
-			}
-		],
-		"workspace_members": ["path+file:///workspace/app#app@0.1.0"],
-		"resolve": {
-			"root": "path+file:///workspace/app#app@0.1.0",
-			"nodes": []
+// metadataFixture is a workspace of app and my-core: app depends on aes-gcm
+// (normal), my-core (a member) and tempfile (dev); aes-gcm on aes and
+// cpufeatures (a build-only edge); aes only on subtle; tempfile (dev only)
+// on fastrand; a git crate (with a registry child gitchild) is a normal
+// dependency of my-core; a path crate outside the workspace (pathlib, with a
+// registry child extra) is a normal dependency of app.
+func metadataFixture(t *testing.T, cache string) *cargoMetadata {
+	t.Helper()
+	doc := map[string]any{
+		"workspace_members": []string{appID, coreID},
+		"packages": []any{
+			map[string]any{
+				"id": appID, "name": "app", "version": "0.1.0", "source": nil, "manifest_path": "/w/app/Cargo.toml",
+				"targets": []any{map[string]any{"name": "app", "kind": []string{"bin"}}},
+			},
+			map[string]any{
+				"id": coreID, "name": "my-core", "version": "0.1.0", "source": nil, "manifest_path": "/w/core/Cargo.toml",
+				"targets": []any{map[string]any{"name": "my_core", "kind": []string{"lib"}}},
+			},
+			registryPkg("aes-gcm", "0.10.3", cache),
+			registryPkg("aes", "0.8.4", cache),
+			registryPkg("subtle", "2.6.1", cache),
+			registryPkg("cpufeatures", "0.2.9", cache),
+			registryPkg("tempfile", "3.10.0", cache),
+			registryPkg("fastrand", "2.0.0", cache),
+			registryPkg("extra", "1.0.0", cache),
+			registryPkg("gitchild", "4.0.0", cache),
+			map[string]any{
+				"id": pathLibID, "name": "pathlib", "version": "0.1.0", "source": nil, "manifest_path": "/w/app/crates/pathlib/Cargo.toml",
+				"targets": []any{map[string]any{"name": "pathlib", "kind": []string{"lib"}}},
+			},
+			map[string]any{
+				"id": "git+https://example.test/x/gitcrate#0.3.0", "name": "gitcrate", "version": "0.3.0",
+				"source": "git+https://example.test/x/gitcrate", "manifest_path": "/g/Cargo.toml", "targets": []any{},
+			},
 		},
-		"workspace_root": "/workspace/app"
-	}`)
-
+		"resolve": map[string]any{"root": nil, "nodes": []any{
+			map[string]any{"id": appID, "deps": []any{normalDep(cargoID("aes-gcm", "0.10.3")), normalDep(coreID), normalDep(pathLibID), kindDep(cargoID("tempfile", "3.10.0"), "dev")}},
+			map[string]any{"id": pathLibID, "deps": []any{normalDep(cargoID("extra", "1.0.0"))}},
+			map[string]any{"id": "git+https://example.test/x/gitcrate#0.3.0", "deps": []any{normalDep(cargoID("gitchild", "4.0.0"))}},
+			map[string]any{"id": coreID, "deps": []any{normalDep("git+https://example.test/x/gitcrate#0.3.0")}},
+			map[string]any{"id": cargoID("aes-gcm", "0.10.3"), "deps": []any{normalDep(cargoID("aes", "0.8.4")), kindDep(cargoID("cpufeatures", "0.2.9"), "build")}},
+			map[string]any{"id": cargoID("aes", "0.8.4"), "deps": []any{normalDep(cargoID("subtle", "2.6.1"))}},
+			map[string]any{"id": cargoID("tempfile", "3.10.0"), "deps": []any{normalDep(cargoID("fastrand", "2.0.0"))}},
+		}},
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var meta cargoMetadata
 	if err := json.Unmarshal(raw, &meta); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
+		t.Fatal(err)
 	}
-
-	if len(meta.WorkspaceMembers) != 1 || meta.WorkspaceMembers[0] != "path+file:///workspace/app#app@0.1.0" {
-		t.Fatalf("unexpected workspace_members: %#v", meta.WorkspaceMembers)
-	}
-	if meta.Resolve.Root != "path+file:///workspace/app#app@0.1.0" {
-		t.Fatalf("Resolve.Root = %q", meta.Resolve.Root)
-	}
-	if len(meta.Packages) != 1 || meta.Packages[0].ID != "path+file:///workspace/app#app@0.1.0" {
-		t.Fatalf("unexpected package ids: %#v", meta.Packages)
-	}
+	return &meta
 }
 
-func TestNewCargoResolveResult_UsesWorkspaceMembersAndResolveRoot(t *testing.T) {
-	registrySrc := "registry+https://github.com/rust-lang/crates.io-index"
-	meta := &cargoMetadata{
-		Packages: []cargoPackage{
-			{
-				ID:           "path+file:///workspace/app#app@0.1.0",
-				Name:         "app",
-				Version:      "0.1.0",
-				ManifestPath: "/workspace/app/Cargo.toml",
-				Source:       nil,
-			},
-			{
-				ID:           "path+file:///workspace/vendor/local-helper#local-helper@0.2.0",
-				Name:         "local-helper",
-				Version:      "0.2.0",
-				ManifestPath: "/workspace/vendor/local-helper/Cargo.toml",
-				Source:       nil,
-			},
-			{
-				ID:           "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0",
-				Name:         "serde",
-				Version:      "1.0.0",
-				ManifestPath: "/cargo/registry/src/serde/Cargo.toml",
-				Source:       &registrySrc,
-			},
-		},
-		WorkspaceMembers: []string{"path+file:///workspace/app#app@0.1.0"},
-		Resolve: cargoResolve{
-			Root: "path+file:///workspace/app#app@0.1.0",
-		},
-	}
-
-	result := newCargoResolveResult(meta)
-
-	if result.RootModule != "app" {
-		t.Fatalf("RootModule = %q, want app", result.RootModule)
-	}
-	if len(result.WorkspaceMembers) != 1 || result.WorkspaceMembers[0].Name != "app" {
-		t.Fatalf("unexpected workspace members: %#v", result.WorkspaceMembers)
-	}
-	if len(result.Dependencies) != 2 {
-		t.Fatalf("Dependencies len = %d, want 2", len(result.Dependencies))
-	}
-	if result.Dependencies[0].Module != "local-helper" {
-		t.Fatalf("expected local path dependency to remain external, got %#v", result.Dependencies[0])
-	}
-}
-
-func TestNewCargoResolveResult_FallsBackWhenCanonicalIDsMissing(t *testing.T) {
-	meta := &cargoMetadata{
-		Packages: []cargoPackage{
-			{
-				Name:         "app",
-				Version:      "0.1.0",
-				ManifestPath: "/workspace/app/Cargo.toml",
-			},
-			{
-				Name:         "serde",
-				Version:      "1.0.0",
-				ManifestPath: "/cargo/registry/src/serde/Cargo.toml",
-			},
-		},
-		WorkspaceMembers: []string{"path+file:///workspace/app#app@0.1.0"},
-		Resolve: cargoResolve{
-			Root: "path+file:///workspace/app#app@0.1.0",
-		},
-	}
-
-	result := newCargoResolveResult(meta)
-
-	if result.RootModule != "app" {
-		t.Fatalf("RootModule = %q, want app", result.RootModule)
-	}
-	if len(result.WorkspaceMembers) != 1 || result.WorkspaceMembers[0].Name != "app" {
-		t.Fatalf("unexpected workspace members: %#v", result.WorkspaceMembers)
-	}
-}
-
-func TestNewCargoResolveResult_FallsBackWhenResolveRootMissing(t *testing.T) {
-	meta := &cargoMetadata{
-		Packages: []cargoPackage{
-			{
-				ID:           "path+file:///workspace/app#app@0.1.0",
-				Name:         "app",
-				Version:      "0.1.0",
-				ManifestPath: "/workspace/app/Cargo.toml",
-			},
-			{
-				ID:           "path+file:///workspace/lib#lib@0.2.0",
-				Name:         "lib",
-				Version:      "0.2.0",
-				ManifestPath: "/workspace/lib/Cargo.toml",
-			},
-		},
-		WorkspaceMembers: []string{
-			"path+file:///workspace/app#app@0.1.0",
-			"path+file:///workspace/lib#lib@0.2.0",
-		},
-	}
-
-	result := newCargoResolveResult(meta)
-
-	if result.RootModule != "app" {
-		t.Fatalf("RootModule = %q, want app", result.RootModule)
-	}
-}
-
-// A crate is named in source by its library target, not its package: callers
-// of package my-core write my_core::f, and `[lib] name` overrides that.
-func TestNewCargoResolveResult_ImportPathIsTheLibraryName(t *testing.T) {
-	lib := func(name string) []cargoTarget { return []cargoTarget{{Name: name, Kind: []string{"lib"}}} }
-	meta := &cargoMetadata{
-		Packages: []cargoPackage{
-			{ID: "path+file:///w/core#my-core@0.1.0", Name: "my-core", Version: "0.1.0", ManifestPath: "/w/core/Cargo.toml", Targets: lib("my_core")},
-			{ID: "path+file:///w/cli#my-cli@0.1.0", Name: "my-cli", Version: "0.1.0", ManifestPath: "/w/cli/Cargo.toml", Targets: []cargoTarget{{Name: "my-cli", Kind: []string{"bin"}}}},
-			{ID: "registry+r#aes-gcm@0.10.3", Name: "aes-gcm", Version: "0.10.3", ManifestPath: "/r/aes-gcm/Cargo.toml", Targets: lib("aes_gcm")},
-			{ID: "registry+r#trans-libb@1.0.0", Name: "trans-libb", Version: "1.0.0", ManifestPath: "/r/libb/Cargo.toml", Targets: []cargoTarget{{Name: "build-script-build", Kind: []string{"custom-build"}}, {Name: "libb_hashing", Kind: []string{"lib"}}}},
-			{ID: "registry+r#serde@1.0.0", Name: "serde", Version: "1.0.0", ManifestPath: "/r/serde/Cargo.toml", Targets: lib("serde")},
-			{ID: "registry+r#old-meta@1.0.0", Name: "old-meta", Version: "1.0.0", ManifestPath: "/r/old/Cargo.toml"},
-		},
-		WorkspaceMembers: []string{"path+file:///w/core#my-core@0.1.0", "path+file:///w/cli#my-cli@0.1.0"},
-	}
-
-	result := newCargoResolveResult(meta)
-
-	members := map[string]string{}
-	for _, m := range result.WorkspaceMembers {
-		members[m.Name] = m.ImportPath
-	}
-	if len(members) != 2 || members["my-core"] != "my_core" || members["my-cli"] != "" {
-		t.Fatalf("member import paths = %v, want my-core: my_core and binary-only my-cli: none", members)
-	}
-	deps := map[string]string{}
-	for _, d := range result.Dependencies {
-		deps[d.Module] = d.ImportPath
-	}
-	want := map[string]string{"aes-gcm": "aes_gcm", "trans-libb": "libb_hashing", "serde": "", "old-meta": "old_meta"}
-	for module, importPath := range want {
-		if got, ok := deps[module]; !ok || got != importPath {
-			t.Errorf("dependency %s ImportPath = %q (listed %v), want %q", module, got, ok, importPath)
-		}
-	}
-}
-
-func TestCargoResolver_CanResolve(t *testing.T) {
+// TestCargoClosureIsProduction: members are the application, dev and build
+// edges (and what only they reach) are left out, a git crate is unpinned,
+// and the graph carries the versioned normal edges.
+func TestCargoClosureIsProduction(t *testing.T) {
 	t.Parallel()
+	cache := t.TempDir()
+	result := (&CargoResolver{}).closure("/w", metadataFixture(t, cache))
 
-	resolver := NewCargoResolver()
+	if got, want := moduleVersions(result), []string{"aes@0.8.4", "aes-gcm@0.10.3", "extra@1.0.0", "gitchild@4.0.0", "subtle@2.6.1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("closure = %v, want %v", got, want)
+	}
+	wantMembers := []WorkspaceMember{
+		{Name: "app", ImportPath: "", Dir: "/w/app"},
+		{Name: "my-core", ImportPath: "my_core", Dir: "/w/core"},
+		{Name: "pathlib", ImportPath: "", Dir: "/w/app/crates/pathlib"},
+	}
+	if !reflect.DeepEqual(result.WorkspaceMembers, wantMembers) {
+		t.Errorf("members = %+v, want %+v", result.WorkspaceMembers, wantMembers)
+	}
+	if want := []string{"aes-gcm", "extra"}; !reflect.DeepEqual(result.DirectDependencies, want) {
+		t.Errorf("direct = %v, want %v", result.DirectDependencies, want)
+	}
+	wantGraph := map[string][]Ref{
+		"aes-gcm@0.10.3": {{Module: "aes", Version: "0.8.4"}},
+		"aes@0.8.4":      {{Module: "subtle", Version: "2.6.1"}},
+		"gitcrate@0.3.0": {{Module: "gitchild", Version: "4.0.0"}},
+	}
+	if !reflect.DeepEqual(result.VersionedGraph, wantGraph) {
+		t.Errorf("versioned graph = %v, want %v", result.VersionedGraph, wantGraph)
+	}
+	if want := []string{"aes-gcm"}; !reflect.DeepEqual(result.Graph["app"], want) {
+		t.Errorf("app children = %v, want %v", result.Graph["app"], want)
+	}
+	if want := []string{"gitcrate"}; !reflect.DeepEqual(result.Graph["my-core"], want) {
+		t.Errorf("my-core children = %v, want %v", result.Graph["my-core"], want)
+	}
+	if want := []UnpinnedDependency{{Module: "gitcrate", Manifest: "Cargo.toml"}}; !reflect.DeepEqual(result.Unpinned, want) {
+		t.Errorf("unpinned = %v, want %v", result.Unpinned, want)
+	}
+	if result.Source != "Cargo.lock" || result.RootModule != "app" {
+		t.Errorf("source/root = %q/%q", result.Source, result.RootModule)
+	}
+	for _, dep := range result.Dependencies {
+		if dep.ImportPath != "" && dep.ImportPath != underscore(dep.Module) {
+			t.Errorf("%s import path = %q", dep.Module, dep.ImportPath)
+		}
+	}
+}
 
-	t.Run("cargo-toml-at-root", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(`[package]
-name = "use"
-`), 0o600); err != nil {
+// TestCargoClosureLocalPathCrate: a path crate outside the resolved
+// directory is a local dependency analyzed from its own directory, as is a
+// path crate it depends on; their registry dependencies are transitive. A
+// path crate inside the directory stays the project's own code.
+func TestCargoClosureLocalPathCrate(t *testing.T) {
+	t.Parallel()
+	result := (&CargoResolver{}).closure("/w/app", localPathMetadata(t))
+
+	want := []Dependency{
+		{Module: "demo-liba", ImportPath: "demo_liba", Version: "1.0.0", Dir: "/w/liba", Local: true},
+		{Module: "libb", Version: "2.0.0", Dir: "/w/libb", Local: true},
+		{Module: "sha2", Version: "0.10.8"},
+	}
+	if !reflect.DeepEqual(result.Dependencies, want) {
+		t.Errorf("dependencies = %+v, want %+v", result.Dependencies, want)
+	}
+	if want := []WorkspaceMember{{Name: "app", Dir: "/w/app"}, {Name: "inner", Dir: "/w/app/crates/inner"}}; !reflect.DeepEqual(result.WorkspaceMembers, want) {
+		t.Errorf("members = %+v, want %+v", result.WorkspaceMembers, want)
+	}
+	if want := []string{"demo-liba"}; !reflect.DeepEqual(result.DirectDependencies, want) {
+		t.Errorf("direct = %v, want %v", result.DirectDependencies, want)
+	}
+	wantGraph := map[string][]Ref{"demo-liba@1.0.0": {{Module: "libb", Version: "2.0.0"}, {Module: "sha2", Version: "0.10.8"}}}
+	if !reflect.DeepEqual(result.VersionedGraph, wantGraph) {
+		t.Errorf("versioned graph = %v, want %v", result.VersionedGraph, wantGraph)
+	}
+	if len(result.Unpinned) != 0 {
+		t.Errorf("unpinned = %v, want none", result.Unpinned)
+	}
+}
+
+// TestCargoClosurePathCrateInsideTheScanRoot: a path crate outside the
+// resolved directory but inside the scan root is a member, the project's own
+// code, as a scan root without Cargo.toml resolves each crate root below it.
+func TestCargoClosurePathCrateInsideTheScanRoot(t *testing.T) {
+	t.Parallel()
+	result := (&CargoResolver{scanRoot: "/w"}).closure("/w/app", localPathMetadata(t))
+
+	if want := []Dependency{{Module: "sha2", Version: "0.10.8"}}; !reflect.DeepEqual(result.Dependencies, want) {
+		t.Errorf("dependencies = %+v, want %+v", result.Dependencies, want)
+	}
+	members := make([]string, 0, len(result.WorkspaceMembers))
+	for _, m := range result.WorkspaceMembers {
+		members = append(members, m.Name)
+	}
+	if want := []string{"app", "demo-liba", "inner", "libb"}; !reflect.DeepEqual(sorted(members), want) {
+		t.Errorf("members = %v, want %v", members, want)
+	}
+}
+
+func sorted(s []string) []string {
+	out := slices.Clone(s)
+	slices.Sort(out)
+	return out
+}
+
+// localPathMetadata is an app at /w/app with a path crate inside it
+// (crates/inner) and two outside it (/w/liba, which needs /w/libb and sha2).
+func localPathMetadata(t *testing.T) *cargoMetadata {
+	t.Helper()
+	const (
+		app   = "path+file:///w/app#app@0.1.0"
+		inner = "path+file:///w/app/crates/inner#inner@0.1.0"
+		liba  = "path+file:///w/liba#demo-liba@1.0.0"
+		libb  = "path+file:///w/libb#libb@2.0.0"
+	)
+	pathPkg := func(id, name, version, dir string) map[string]any {
+		return map[string]any{
+			"id": id, "name": name, "version": version, "source": nil, "manifest_path": dir + "/Cargo.toml",
+			"targets": []any{map[string]any{"name": underscore(name), "kind": []string{"lib"}}},
+		}
+	}
+	cache := t.TempDir()
+	raw, err := json.Marshal(map[string]any{
+		"workspace_members": []string{app},
+		"packages": []any{
+			pathPkg(app, "app", "0.1.0", "/w/app"),
+			pathPkg(inner, "inner", "0.1.0", "/w/app/crates/inner"),
+			pathPkg(liba, "demo-liba", "1.0.0", "/w/liba"),
+			pathPkg(libb, "libb", "2.0.0", "/w/libb"),
+			registryPkg("sha2", "0.10.8", cache),
+		},
+		"resolve": map[string]any{"root": app, "nodes": []any{
+			map[string]any{"id": app, "deps": []any{normalDep(liba), normalDep(inner)}},
+			map[string]any{"id": liba, "deps": []any{normalDep(libb), normalDep(cargoID("sha2", "0.10.8"))}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta cargoMetadata
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		t.Fatal(err)
+	}
+	return &meta
+}
+
+// TestCargoLibraryName: the source namespace is the library target's name.
+func TestCargoLibraryName(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		pkg  cargoPackage
+		lib  string
+		path string
+	}{
+		{cargoPackage{Name: "aes-gcm", Targets: []cargoTarget{{Name: "aes_gcm", Kind: []string{"lib"}}}}, "aes_gcm", "aes_gcm"},
+		{cargoPackage{Name: "ring", Targets: []cargoTarget{{Name: "ring", Kind: []string{"lib"}}}}, "ring", ""},
+		{cargoPackage{Name: "renamed", Targets: []cargoTarget{{Name: "other", Kind: []string{"proc-macro"}}}}, "other", "other"},
+		{cargoPackage{Name: "tool", Targets: []cargoTarget{{Name: "tool", Kind: []string{"bin"}}}}, "", ""},
+		{cargoPackage{Name: "no-targets"}, "no_targets", "no_targets"},
+	}
+	for _, c := range cases {
+		if got := c.pkg.libraryName(); got != c.lib {
+			t.Errorf("%s: library = %q, want %q", c.pkg.Name, got, c.lib)
+		}
+		if got := c.pkg.importPath(); got != c.path {
+			t.Errorf("%s: import path = %q, want %q", c.pkg.Name, got, c.path)
+		}
+	}
+}
+
+// TestCargoSourceDir: the registry cache, a versioned vendor directory and a
+// vendor directory of another version.
+func TestCargoSourceDir(t *testing.T) {
+	t.Parallel()
+	home, project := t.TempDir(), t.TempDir()
+	write := func(dir, version string) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if !resolver.CanResolve(dir) {
-			t.Fatal("CanResolve() = false, want true with Cargo.toml at the root")
-		}
-	})
-
-	t.Run("bare-rust-source-without-cargo-toml", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "main.rs"), []byte("fn main() {}\n"), 0o600); err != nil {
+		manifest := "[package]\nname = \"x\"\nversion = \"" + version + "\"\n"
+		if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(manifest), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if resolver.CanResolve(dir) {
-			t.Fatal("CanResolve() = true, want false for a Rust source tree with no Cargo.toml")
-		}
+	}
+	cached := filepath.Join(home, "registry", "src", "index.crates.io-abc", "aes-0.8.4")
+	write(cached, "0.8.4")
+	write(filepath.Join(project, "vendor", "subtle"), "2.5.0")
+	write(filepath.Join(project, "vendor", "cpufeatures-0.2.9"), "0.2.9")
+	r := &CargoResolver{cargoHome: home}
+	pkg := func(name, version string) cargoPackage {
+		return cargoPackage{Name: name, Version: version, ManifestPath: "/gone/" + name + "/Cargo.toml"}
+	}
+	if got := r.sourceDir(project, pkg("aes", "0.8.4")); got != cached {
+		t.Errorf("registry cache = %q, want %q", got, cached)
+	}
+	if got := r.sourceDir(project, pkg("cpufeatures", "0.2.9")); got != filepath.Join(project, "vendor", "cpufeatures-0.2.9") {
+		t.Errorf("versioned vendor dir = %q", got)
+	}
+	if got := r.sourceDir(project, pkg("subtle", "2.6.1")); got != "" {
+		t.Errorf("a vendor dir of another version must not match, got %q", got)
+	}
+}
+
+// TestCargoResolverReadsALockedProject runs the real cargo on a project of
+// path dependencies (no network): the lock is read as it is, a dev-only crate
+// is left out and a project without Cargo.lock fails without writing one.
+func TestCargoResolverReadsALockedProject(t *testing.T) {
+	if _, err := exec.LookPath("cargo"); err != nil {
+		t.Skip("cargo is not installed")
+	}
+	root := writeTree(t, map[string]string{
+		"Cargo.toml":         "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[dependencies]\nhelper = { path = \"helper\" }\n[dev-dependencies]\ndevonly = { path = \"devonly\" }\n",
+		"src/lib.rs":         "",
+		"helper/Cargo.toml":  "[package]\nname = \"helper\"\nversion = \"0.2.0\"\nedition = \"2021\"\n",
+		"helper/src/lib.rs":  "",
+		"devonly/Cargo.toml": "[package]\nname = \"devonly\"\nversion = \"0.3.0\"\nedition = \"2021\"\n",
+		"devonly/src/lib.rs": "",
 	})
+	r := NewCargoResolver()
+	_, err := r.Resolve(context.Background(), root)
+	if !errors.Is(err, ErrCargoLockMissing) {
+		t.Fatalf("no Cargo.lock: err = %v, want ErrCargoLockMissing", err)
+	}
+	if fileExists(filepath.Join(root, "Cargo.lock")) {
+		t.Fatal("the resolver wrote a Cargo.lock")
+	}
+	lock := `# This file is automatically @generated by Cargo.
+version = 3
+
+[[package]]
+name = "app"
+version = "0.1.0"
+dependencies = [
+ "devonly",
+ "helper",
+]
+
+[[package]]
+name = "devonly"
+version = "0.3.0"
+
+[[package]]
+name = "helper"
+version = "0.2.0"
+`
+	if err := os.WriteFile(filepath.Join(root, "Cargo.lock"), []byte(lock), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(filepath.Dir(root))
+	result, err := r.Resolve(context.Background(), filepath.Base(root)) // a relative target, as the CLI is given
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(result.Dependencies) != 0 || result.RootModule != "app" {
+		t.Errorf("path dependencies are the project's own code: deps = %v root = %q", result.Dependencies, result.RootModule)
+	}
+	if len(result.Unpinned) != 0 || len(result.WorkspaceMembers) != 2 || result.WorkspaceMembers[1].Name != "helper" {
+		t.Errorf("unpinned = %v, members = %v, want helper a member and devonly left out", result.Unpinned, result.WorkspaceMembers)
+	}
+}
+
+// TestCargoCrateAtTwoVersions: the app declares rand 0.8.5 and a transitive
+// crate (old) needs rand 0.7.3, which alone needs ppv. The request names the
+// version the app declares; 0.7.3 is left out (OtherVersions), ppv is only
+// required by it (UnderOtherVersions), and old's edge points at 0.8.5.
+func TestCargoCrateAtTwoVersions(t *testing.T) {
+	t.Parallel()
+	cache := t.TempDir()
+	doc := map[string]any{
+		"workspace_members": []string{appID},
+		"packages": []any{
+			map[string]any{
+				"id": appID, "name": "app", "version": "0.1.0", "source": nil, "manifest_path": "/w/app/Cargo.toml",
+				"targets": []any{map[string]any{"name": "app", "kind": []string{"bin"}}},
+			},
+			registryPkg("rand", "0.8.5", cache), registryPkg("rand", "0.7.3", cache),
+			registryPkg("old", "1.0.0", cache), registryPkg("ppv", "1.0.0", cache),
+		},
+		"resolve": map[string]any{"root": appID, "nodes": []any{
+			map[string]any{"id": appID, "deps": []any{normalDep(cargoID("rand", "0.8.5")), normalDep(cargoID("old", "1.0.0"))}},
+			map[string]any{"id": cargoID("old", "1.0.0"), "deps": []any{normalDep(cargoID("rand", "0.7.3"))}},
+			map[string]any{"id": cargoID("rand", "0.7.3"), "deps": []any{normalDep(cargoID("ppv", "1.0.0"))}},
+		}},
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta cargoMetadata
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		t.Fatal(err)
+	}
+	result := (&CargoResolver{}).closure(t.TempDir(), &meta)
+	if got, want := moduleVersions(result), []string{"old@1.0.0", "rand@0.8.5"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("closure = %v, want %v", got, want)
+	}
+	if got := moduleVersions(&ResolveResult{Dependencies: result.OtherVersions}); !reflect.DeepEqual(got, []string{"rand@0.7.3"}) {
+		t.Errorf("other versions = %v", got)
+	}
+	if got := moduleVersions(&ResolveResult{Dependencies: result.UnderOtherVersions}); !reflect.DeepEqual(got, []string{"ppv@1.0.0"}) {
+		t.Errorf("under other versions = %v", got)
+	}
+	if want := map[string][]Ref{"old@1.0.0": {{Module: "rand", Version: "0.8.5"}}}; !reflect.DeepEqual(result.VersionedGraph, want) {
+		t.Errorf("versioned graph = %v, want %v", result.VersionedGraph, want)
+	}
+}
+
+func TestVersionLess(t *testing.T) {
+	t.Parallel()
+	for _, c := range [][2]string{{"0.7.3", "0.8.5"}, {"0.9.0", "0.10.0"}, {"1.0.0-rc.1", "1.0.0"}, {"1.2", "1.2.1"}} {
+		if !versionLess(c[0], c[1]) || versionLess(c[1], c[0]) {
+			t.Errorf("%s must sort below %s", c[0], c[1])
+		}
+	}
 }

@@ -23,11 +23,10 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog/log"
+	"github.com/scanoss/reach/language"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/failure"
-	"github.com/scanoss/crypto-finder/internal/javaruntime"
-	"github.com/scanoss/crypto-finder/internal/language"
 	"github.com/scanoss/crypto-finder/internal/rules"
 	"github.com/scanoss/crypto-finder/internal/scanner"
 	"github.com/scanoss/crypto-finder/internal/version"
@@ -61,7 +60,7 @@ type ScanOptions struct {
 	// Target is the directory or file to scan
 	Target string
 
-	// ScannerName is the name of the scanner to use (e.g., "semgrep")
+	// ScannerName is the name of the scanner to use (cards)
 	ScannerName string
 
 	// LanguageHint allows manual override of language detection (from --languages flag)
@@ -70,19 +69,12 @@ type ScanOptions struct {
 	// ScannerConfig contains scanner-specific configuration
 	ScannerConfig scanner.Config
 
-	// RulePaths, when non-nil, bypasses the rules manager and uses these paths directly.
-	// This is used by the dependency scanner to pass pre-loaded, language-filtered rules.
-	RulePaths []string
-
-	// JavaRuntime controls Java-specific dependency resolution and bytecode type enrichment.
-	JavaRuntime javaruntime.Config
-
-	// JavaRuntimeCacheToken partitions dependency scan caches by Java runtime selection.
-	JavaRuntimeCacheToken string
-
-	// Progress reports the top-level rules and detection lifecycle. Dependency scans
-	// clear it so their workers never emit nested primary scan events.
+	// Progress reports the top-level rules and detection lifecycle.
 	Progress ProgressReporter
+
+	// UnsupportedLanguages are the target's languages this version does not
+	// scan; the completed detection progress event names them.
+	UnsupportedLanguages []string
 
 	// ProgressDetectionStarted reports that the caller already opened detection
 	// before invoking Scan, for example while it pre-detects languages for export.
@@ -111,32 +103,13 @@ const (
 //  6. Process and enrich results
 //
 // Returns the final interim report or an error if any step fails.
-func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (*entities.InterimReport, error) {
-	return o.ScanScoped(ctx, opts, nil)
-}
-
-// ScanScoped is Scan with detection limited to scope's files under
-// opts.Target. A nil scope scans the whole target. The scanner must implement
-// scanner.ScopedScanner.
-func (o *Orchestrator) ScanScoped(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope) (*entities.InterimReport, error) {
-	report, err := o.scan(ctx, opts, scope, nil, nil)
-	// Dependency scans call scan directly and warn with the dependency's identity.
-	if err == nil && len(report.IncompleteFiles) > 0 {
-		log.Warn().
-			Str("target", opts.Target).
-			Strs("files", report.IncompleteFiles).
-			Msg("Scan stopped at a time or memory limit in these files; their findings may be incomplete")
-	}
-	return report, err
-}
-
-func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) (result *entities.InterimReport, err error) {
+func (o *Orchestrator) Scan(ctx context.Context, opts ScanOptions) (result *entities.InterimReport, err error) {
 	if opts.Progress != nil && !opts.ProgressDetectionStarted {
 		if progressErr := o.reportProgress(opts, progressPhaseDetection, progressStatusStarted, nil, nil); progressErr != nil {
 			return nil, progressErr
 		}
 	}
-	if opts.Progress != nil {
+	if opts.Progress != nil { //nolint:nestif // complexity predates the lint gate; splitting it is a separate behavior-sensitive change
 		defer func() {
 			status := progressStatusComplete
 			var details map[string]any
@@ -144,6 +117,9 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanne
 				status = progressStatusFailed
 			} else {
 				details = map[string]any{"files_incomplete": len(result.IncompleteFiles)}
+				if len(opts.UnsupportedLanguages) > 0 {
+					details["unsupported_languages"] = opts.UnsupportedLanguages
+				}
 			}
 			if progressErr := o.reportProgress(opts, progressPhaseDetection, status, err, details); progressErr != nil {
 				result = nil
@@ -152,47 +128,17 @@ func (o *Orchestrator) scan(ctx context.Context, opts ScanOptions, scope *scanne
 		}()
 	}
 
-	prepared, err := o.prepareScan(ctx, opts, scannerInstance, validator)
+	prepared, err := o.prepareScan(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	defer prepared.cleanup()
 
-	report, scanErr := runScanner(ctx, opts, scope, prepared.scanner, prepared.rulePaths, toolInfo())
+	report, scanErr := prepared.scanner.Scan(ctx, opts.Target, prepared.rulePaths, toolInfo())
 	if scanErr != nil {
 		return nil, scanFailure(scanErr, opts.ScannerName)
 	}
 	return o.finishScan(report, prepared.languages, opts.Target)
-}
-
-// scanRoots scans several roots in one scanner call and reports each as its
-// own scan. The instance must implement scanner.BatchScanner.
-func (o *Orchestrator) scanRoots(ctx context.Context, opts ScanOptions, roots []scanner.Root, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) ([]*entities.InterimReport, error) {
-	batchScanner, ok := scannerInstance.(scanner.BatchScanner)
-	if !ok {
-		return nil, failure.New(
-			failure.CodeInvalidArguments,
-			failure.StageInput,
-			fmt.Sprintf("scanner '%s' cannot scan several roots in one process", opts.ScannerName),
-			failure.WithDetail("scanner", opts.ScannerName),
-		)
-	}
-	prepared, err := o.prepareScan(ctx, opts, scannerInstance, validator)
-	if err != nil {
-		return nil, err
-	}
-	defer prepared.cleanup()
-
-	reports, scanErr := batchScanner.ScanRoots(ctx, roots, prepared.rulePaths, toolInfo())
-	if scanErr != nil {
-		return nil, scanFailure(scanErr, opts.ScannerName)
-	}
-	for i, root := range roots {
-		if reports[i], err = o.finishScan(reports[i], prepared.languages, root.Dir); err != nil {
-			return nil, err
-		}
-	}
-	return reports, nil
 }
 
 // preparedScan is what a scanner process needs before it runs.
@@ -206,7 +152,7 @@ type preparedScan struct {
 // prepareScan detects the languages unless hinted, prepares the rule paths
 // and initializes the scanner unless one was supplied. Its cleanup removes
 // any rule files materialized for the scanner.
-func (o *Orchestrator) prepareScan(ctx context.Context, opts ScanOptions, scannerInstance scanner.Scanner, validator *rules.ParameterConditionValidator) (*preparedScan, error) {
+func (o *Orchestrator) prepareScan(ctx context.Context, opts ScanOptions) (*preparedScan, error) {
 	// Step 1: Detect languages
 	var languages []string
 
@@ -232,19 +178,16 @@ func (o *Orchestrator) prepareScan(ctx context.Context, opts ScanOptions, scanne
 	var rulePaths []string
 	var rawRulePaths []string
 	cleanupRulePaths := func() {}
-	if loadErr := o.loadRules(opts, languages, &rulePaths, &rawRulePaths, &cleanupRulePaths, validator); loadErr != nil {
+	if loadErr := o.loadRules(opts, languages, &rulePaths, &rawRulePaths, &cleanupRulePaths); loadErr != nil {
 		cleanupRulePaths()
 		return nil, loadErr
 	}
 
 	// Reuse the adapter initialized for dependency cache identity, when supplied.
-	if scannerInstance == nil {
-		var initializeErr error
-		scannerInstance, initializeErr = o.initializeScanner(ctx, opts)
-		if initializeErr != nil {
-			cleanupRulePaths()
-			return nil, initializeErr
-		}
+	scannerInstance, initializeErr := o.initializeScanner(ctx, opts)
+	if initializeErr != nil {
+		cleanupRulePaths()
+		return nil, initializeErr
 	}
 	return &preparedScan{languages: languages, rulePaths: rulePaths, cleanup: cleanupRulePaths, scanner: scannerInstance}, nil
 }
@@ -284,23 +227,6 @@ func (o *Orchestrator) finishScan(report *entities.InterimReport, languages []st
 	return enrichedReport, nil
 }
 
-// runScanner runs a whole-target scan, or a scoped one when scope is set.
-func runScanner(ctx context.Context, opts ScanOptions, scope *scanner.DetectionScope, scannerInstance scanner.Scanner, rulePaths []string, toolInfo entities.ToolInfo) (*entities.InterimReport, error) {
-	if scope == nil {
-		return scannerInstance.Scan(ctx, opts.Target, rulePaths, toolInfo)
-	}
-	scoped, ok := scannerInstance.(scanner.ScopedScanner)
-	if !ok {
-		return nil, failure.New(
-			failure.CodeInvalidArguments,
-			failure.StageInput,
-			fmt.Sprintf("scanner '%s' cannot limit detection to a file list (--detect-paths-from); use opengrep", opts.ScannerName),
-			failure.WithDetail("scanner", opts.ScannerName),
-		)
-	}
-	return scoped.ScanScoped(ctx, opts.Target, scope, rulePaths, toolInfo)
-}
-
 func (o *Orchestrator) initializeScanner(ctx context.Context, opts ScanOptions) (scanner.Scanner, error) {
 	scannerInstance, getErr := o.scannerReg.Get(opts.ScannerName)
 	if getErr != nil {
@@ -332,7 +258,7 @@ func (o *Orchestrator) initializeScanner(ctx context.Context, opts ScanOptions) 
 	return scannerInstance, nil
 }
 
-func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func(), validator *rules.ParameterConditionValidator) (err error) {
+func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths, rawRulePaths *[]string, cleanupRulePaths *func()) (err error) {
 	if progressErr := o.reportProgress(opts, progressPhaseRules, progressStatusStarted, nil, nil); progressErr != nil {
 		return progressErr
 	}
@@ -346,31 +272,24 @@ func (o *Orchestrator) loadRules(opts ScanOptions, languages []string, rulePaths
 		}
 	}()
 
-	if len(opts.RulePaths) > 0 {
-		*rawRulePaths = opts.RulePaths
-		preparedRulePaths, cleanup, loadErr := optimizeRulePathsForScanner(opts.RulePaths)
-		if loadErr != nil {
-			return failure.WrapUnknown(loadErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare pre-loaded rules for scanner")
-		}
-		*rulePaths, *cleanupRulePaths = preparedRulePaths, cleanup
-		log.Debug().Int("count", len(*rulePaths)).Msg("Using pre-loaded rule paths")
-	} else {
-		loadedRulePaths, loadErr := o.rulesManager.Load()
-		if loadErr != nil {
-			return rulesLoadFailure(loadErr, "failed to load rules")
-		}
-		*rulePaths = loadedRulePaths
-		log.Info().Int("count", len(*rulePaths)).Msg("Loaded rules")
-		*rawRulePaths = *rulePaths
-		preparedRulePaths, cleanup, prepareErr := prepareRulePathsForScanner(*rulePaths, languages)
-		if prepareErr != nil {
-			return failure.WrapUnknown(prepareErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare filtered rules for scanner")
-		}
-		*rulePaths, *cleanupRulePaths = preparedRulePaths, cleanup
+	loadedRulePaths, loadErr := o.rulesManager.Load()
+	if loadErr != nil {
+		return rulesLoadFailure(loadErr)
 	}
+	*rulePaths = loadedRulePaths
+	log.Info().Int("count", len(*rulePaths)).Msg("Loaded rules")
+	*rawRulePaths = *rulePaths
+	preparedRulePaths, cleanup, prepareErr := prepareRulePathsForScanner(*rulePaths, languages)
+	if prepareErr != nil {
+		return failure.WrapUnknown(prepareErr, failure.CodeRulesLoadFailed, failure.StageRules, "failed to prepare filtered rules for scanner")
+	}
+	*rulePaths, *cleanupRulePaths = preparedRulePaths, cleanup
 
-	if validationErr := validator.ValidateDocuments(ruleLoadDocuments, *rawRulePaths); validationErr != nil {
+	if validationErr := rules.ValidateParameterConditionDocuments(ruleLoadDocuments, *rawRulePaths); validationErr != nil {
 		return failure.WrapUnknown(validationErr, failure.CodeRulesLoadFailed, failure.StageRules, "invalid parameterCondition in ruleset")
+	}
+	if memoErr := rules.SaveCardsMemo(); memoErr != nil {
+		log.Debug().Err(memoErr).Msg("Failed to save the parsed card files for the next scan")
 	}
 	return nil
 }

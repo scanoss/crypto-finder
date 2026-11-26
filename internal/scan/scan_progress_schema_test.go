@@ -355,6 +355,27 @@ func TestScanProgressSchema(t *testing.T) {
 			wantValid: true,
 		},
 		{
+			name: "completed-dependencies-with-unpinned-dependency",
+			document: `{
+				"event": "scan_progress",
+				"schema_version": "1",
+				"phase": "dependencies",
+				"status": "completed",
+				"parent_phase": "scan",
+				"duration_ms": 1,
+				"details": {
+					"deps_scanned": 0,
+					"deps_skipped": 1,
+					"deps_failed": 0,
+					"deps_incomplete": 0,
+					"deps_with_findings": 0,
+					"total_dep_findings": 0,
+					"deps_skipped_list": [{"module": "requests", "version": "", "reason": "unpinned", "specifier": ">=2.31", "markers": ["python_version >= '3.8'"]}]
+				}
+			}`,
+			wantValid: true,
+		},
+		{
 			name: "outcome-list-without-dependency-counters",
 			document: `{
 				"event": "scan_progress",
@@ -408,7 +429,7 @@ func TestScanProgressSchema(t *testing.T) {
 				"phase": "dependencies",
 				"status": "skipped",
 				"parent_phase": "scan",
-				"details": {"reason": "lockfile_absent", "ecosystem": "node"}
+				"details": {"reason": "ecosystem_not_supported", "ecosystem": "python"}
 			}`,
 			wantValid: true,
 		},

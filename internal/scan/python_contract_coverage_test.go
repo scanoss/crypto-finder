@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/reach/callgraph/contracts"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 )
@@ -298,7 +299,7 @@ var coverageKeys = []string{
 func TestPython_EveryCoverageNameResolvesToItsContract(t *testing.T) {
 	t.Parallel()
 
-	kb, err := contracts.LoadEmbedded("python")
+	kb, err := contracts.ForEcosystem("python")
 	if err != nil {
 		t.Fatalf("LoadEmbedded(python): %v", err)
 	}

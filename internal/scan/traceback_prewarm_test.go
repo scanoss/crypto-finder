@@ -95,7 +95,7 @@ func TestGraphFragmentWithFindingsParallelMatchesSerial(t *testing.T) {
 		var data []byte
 		withGOMAXPROCS(t, procs, func() {
 			path := filepath.Join(t.TempDir(), "fragment.json")
-			if err := exportGraphFragment(path, "json", result); err != nil {
+			if err := exportGraphFragment(path, result); err != nil {
 				t.Fatalf("exportGraphFragment(GOMAXPROCS=%d): %v", procs, err)
 			}
 			raw, err := os.ReadFile(path)

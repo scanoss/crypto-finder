@@ -17,6 +17,8 @@
 package deadcode
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/scanoss/crypto-finder/internal/entities"
@@ -197,9 +199,41 @@ func TestIsCFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			t.Parallel()
-			if got := isCFile(tt.path); got != tt.expected {
-				t.Errorf("isCFile(%q) = %v, want %v", tt.path, got, tt.expected)
+			if got := IsCFile(tt.path); got != tt.expected {
+				t.Errorf("IsCFile(%q) = %v, want %v", tt.path, got, tt.expected)
 			}
 		})
+	}
+}
+
+// FilterReportLines reads the regions from a fragment's lines, by path
+// relative to the scanned root, and keeps the findings of a file it holds
+// no lines of and of a non-C file.
+func TestFilterReportLines(t *testing.T) {
+	t.Parallel()
+
+	asset := func(line int) entities.CryptographicAsset {
+		return entities.CryptographicAsset{StartLine: line, EndLine: line}
+	}
+	report := &entities.InterimReport{Findings: []entities.Finding{
+		{FilePath: "lib/a.c", CryptographicAssets: []entities.CryptographicAsset{asset(2), asset(5)}},
+		{FilePath: "lib/b.c", CryptographicAssets: []entities.CryptographicAsset{asset(2)}},
+		{FilePath: "lib/c.py", CryptographicAssets: []entities.CryptographicAsset{asset(2)}},
+		{FilePath: "lib/d.c", CryptographicAssets: []entities.CryptographicAsset{asset(2)}},
+	}}
+	lines := map[string]map[int]string{
+		"lib/a.c":  {1: "#if 0", 2: "  dead();", 3: "#endif", 5: "live();"},
+		"lib/c.py": {1: "#if 0", 3: "#endif"},
+		"lib/d.c":  {1: "#if 0", 2: "  dead();", 3: "#endif"},
+	}
+	got := FilterReportLines(report, lines)
+	var kept []string
+	for _, f := range got.Findings {
+		for _, a := range f.CryptographicAssets {
+			kept = append(kept, fmt.Sprintf("%s:%d", f.FilePath, a.StartLine))
+		}
+	}
+	if want := []string{"lib/a.c:5", "lib/b.c:2", "lib/c.py:2"}; !slices.Equal(kept, want) {
+		t.Fatalf("kept %v, want %v", kept, want)
 	}
 }

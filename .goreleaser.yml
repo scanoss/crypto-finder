@@ -125,10 +125,10 @@ changelog:
 
 # Docker image configuration
 dockers:
-  # Standard Docker image with scanners (OpenGrep default, Semgrep available)
+  # Docker image: the binary and CA certificates
   - image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-amd64"
-      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-amd64"
+      - '{{ if not .Prerelease }}ghcr.io/scanoss/{{ .ProjectName }}:latest-amd64{{ end }}'
     use: buildx
     dockerfile: Dockerfile.goreleaser
     build_flag_templates:
@@ -144,42 +144,9 @@ dockers:
 
   - image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-arm64"
-      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-arm64"
+      - '{{ if not .Prerelease }}ghcr.io/scanoss/{{ .ProjectName }}:latest-arm64{{ end }}'
     use: buildx
     dockerfile: Dockerfile.goreleaser
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--build-arg=VERSION={{.Version}}"
-      - "--build-arg=GIT_COMMIT={{.Commit}}"
-      - "--build-arg=BUILD_DATE={{.Date}}"
-    goarch: arm64
-
-  # Slim Docker image without scanners (binary only)
-  - image_templates:
-      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim-amd64"
-      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-amd64"
-    use: buildx
-    dockerfile: Dockerfile.goreleaser.slim
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--build-arg=VERSION={{.Version}}"
-      - "--build-arg=GIT_COMMIT={{.Commit}}"
-      - "--build-arg=BUILD_DATE={{.Date}}"
-    goarch: amd64
-
-  - image_templates:
-      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim-arm64"
-      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-arm64"
-    use: buildx
-    dockerfile: Dockerfile.goreleaser.slim
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.created={{.Date}}"
@@ -194,7 +161,7 @@ dockers:
   # Deps Docker image with all language toolchains for dependency scanning
   - image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-deps-amd64"
-      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-amd64"
+      - '{{ if not .Prerelease }}ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-amd64{{ end }}'
     use: buildx
     dockerfile: Dockerfile.goreleaser.deps
     build_flag_templates:
@@ -210,7 +177,7 @@ dockers:
 
   - image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-deps-arm64"
-      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-arm64"
+      - '{{ if not .Prerelease }}ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-arm64{{ end }}'
     use: buildx
     dockerfile: Dockerfile.goreleaser.deps
     build_flag_templates:
@@ -224,29 +191,21 @@ dockers:
       - "--build-arg=BUILD_DATE={{.Date}}"
     goarch: arm64
 
-# Docker manifest for multi-arch support
+# Docker manifest for multi-arch support.
+# A pre-release tag (v1.0.0-rc.1) publishes only versioned tags: the latest* images
+# and manifests are templated away so it never moves what users pull as latest.
 docker_manifests:
-  # Standard image manifest
+  # Image manifest
   - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}"
     image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-amd64"
       - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-arm64"
 
   - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:latest"
+    skip_push: '{{ if .Prerelease }}true{{ end }}'
     image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:latest-amd64"
       - "ghcr.io/scanoss/{{ .ProjectName }}:latest-arm64"
-
-  # Slim image manifest
-  - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim"
-    image_templates:
-      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim-amd64"
-      - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-slim-arm64"
-
-  - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim"
-    image_templates:
-      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-amd64"
-      - "ghcr.io/scanoss/{{ .ProjectName }}:latest-slim-arm64"
 
   # Deps image manifest
   - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-deps"
@@ -255,16 +214,15 @@ docker_manifests:
       - "ghcr.io/scanoss/{{ .ProjectName }}:{{ .Version }}-deps-arm64"
 
   - name_template: "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps"
+    skip_push: '{{ if .Prerelease }}true{{ end }}'
     image_templates:
       - "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-amd64"
       - "ghcr.io/scanoss/{{ .ProjectName }}:latest-deps-arm64"
 
 # GitHub release configuration
+# No github block: GoReleaser releases to the repository the tag was pushed
+# to (the checkout's origin).
 release:
-  github:
-    owner: scanoss
-    name: crypto-finder
-
   # The release workflow publishes the draft once the Windows binary is signed.
   draft: true
   prerelease: auto
@@ -281,11 +239,8 @@ release:
     ## Docker Images
 
     ```bash
-    # Standard image with scanners (OpenGrep default, Semgrep available)
+    # Image: the binary and CA certificates
     docker pull ghcr.io/scanoss/crypto-finder:{{.Version}}
-
-    # Slim image (binary only, no scanners)
-    docker pull ghcr.io/scanoss/crypto-finder:{{.Version}}-slim
 
     # Deps image (all language toolchains for dependency scanning)
     docker pull ghcr.io/scanoss/crypto-finder:{{.Version}}-deps
@@ -299,4 +254,4 @@ release:
     ### Docker
     See above for Docker images.
 
-    **Full Changelog**: https://github.com/scanoss/crypto-finder/compare/{{.PreviousTag}}...{{.Tag}}
+    **Full Changelog**: {{ trimsuffix .GitURL ".git" }}/compare/{{.PreviousTag}}...{{.Tag}}

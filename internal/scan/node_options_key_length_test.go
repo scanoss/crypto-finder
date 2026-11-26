@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/callgraph/contracts"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 // nodeOptionsHeader gives every case below the three import spellings the
@@ -180,7 +180,7 @@ func TestNodeOptionsKeyLength_ImportForms(t *testing.T) {
 // Node role's parameter_roles entry names the options property it reads, on
 // both the live and the graph-fragment shapes.
 func TestNodeOptionsKeyLength_ContributionExportsArgumentProperty(t *testing.T) {
-	kb, err := contracts.LoadEmbedded("node")
+	kb, err := contracts.ForEcosystem("node")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,8 +8,6 @@ import (
 	"github.com/scanoss/crypto-finder/internal/converter"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
-	internalScan "github.com/scanoss/crypto-finder/internal/scan"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 func TestPreparedReport_ExactOIDIsEqualAcrossJSONCBOMAndFragmentAnnotation(t *testing.T) {
@@ -34,10 +32,6 @@ func TestPreparedReport_ExactOIDIsEqualAcrossJSONCBOMAndFragmentAnnotation(t *te
 	if bom.Components == nil || len(*bom.Components) != 1 || (*bom.Components)[0].CryptoProperties.OID != want {
 		t.Fatalf("CBOM OID = %#v", bom.Components)
 	}
-	annotation := internalScan.BuildAnnotateExport(resolved, graphfrag.Fragment{})
-	if len(annotation.CryptoAnnotations) != 1 || annotation.CryptoAnnotations[0].OID != want {
-		t.Fatalf("annotation OID = %#v", annotation.CryptoAnnotations)
-	}
 }
 
 func TestPreparedReport_RejectsClaimAcrossAllProjections(t *testing.T) {
@@ -57,10 +51,6 @@ func TestPreparedReport_RejectsClaimAcrossAllProjections(t *testing.T) {
 	}
 	if (*bom.Components)[0].CryptoProperties.OID != "" {
 		t.Fatal("CBOM restored rejected claim")
-	}
-	annotation := internalScan.BuildAnnotateExport(resolved, graphfrag.Fragment{})
-	if annotation.CryptoAnnotations[0].OID != "" {
-		t.Fatal("annotation restored rejected claim")
 	}
 }
 

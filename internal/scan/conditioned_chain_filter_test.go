@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/reach/paramcondition"
 )
 
 // chainWith builds a two-node chain whose terminal node carries the given crypto
@@ -201,14 +201,14 @@ func assignedFrom(variable string, value exportSourceNode) exportSourceNode {
 }
 
 // TestFilterEntryPointConditionedCallChains_ReadsTheEnteringArgument pins the
-// 3DES/AES case from nordvault: bcprov's CBCBlockCipher.<init> is reached with a
+// 3DES/AES case from an internal Java test project: bcprov's CBCBlockCipher.<init> is reached with a
 // DESedeEngine from DESedeWrapEngine.init and with an AESFastEngine from
-// iText's AESCipher. The 3DES-CBC entry point (param[0]:type==DESedeEngine)
+// iText's AESCipher. The 3DES-CBC entry point (param[0]:type==TripleBlockEngine)
 // keeps only the route that passes a DESedeEngine.
 func TestFilterEntryPointConditionedCallChains_ReadsTheEnteringArgument(t *testing.T) {
-	conditions := []paramcondition.Condition{mustCondition(t, "param[0]:type==org.bouncycastle.crypto.engines.DESedeEngine")}
+	conditions := []paramcondition.Condition{mustCondition(t, "param[0]:type==org.bouncycastle.crypto.engines.TripleBlockEngine")}
 	des := entryChain("org.bouncycastle.crypto.engines.(DESedeWrapEngine).init#2",
-		constructed("org.bouncycastle.crypto.engines.DESedeEngine"))
+		constructed("org.bouncycastle.crypto.engines.TripleBlockEngine"))
 	aes := entryChain("com.itextpdf.text.pdf.crypto.(AESCipher).<init>#3",
 		assignedFrom("aes", constructed("org.bouncycastle.crypto.engines.AESFastEngine")))
 
@@ -226,10 +226,10 @@ func TestFilterEntryPointConditionedCallChains_ReadsTheEnteringArgument(t *testi
 // does an argument built by two different constructors or a route with no
 // entering call.
 func TestFilterEntryPointConditionedCallChains_UnknownNeverRefutes(t *testing.T) {
-	conditions := []paramcondition.Condition{mustCondition(t, "param[0]:type==org.bouncycastle.crypto.engines.DESedeEngine")}
+	conditions := []paramcondition.Condition{mustCondition(t, "param[0]:type==org.bouncycastle.crypto.engines.TripleBlockEngine")}
 	declaredOnly := entryChain("com.example.(A).run#1", exportSourceNode{Type: "PARAMETER", Name: "engine"})
 	ambiguous := entryChain("com.example.(B).run#1",
-		constructed("org.bouncycastle.crypto.engines.DESedeEngine"),
+		constructed("org.bouncycastle.crypto.engines.TripleBlockEngine"),
 		assignedFrom("engine", constructed("org.bouncycastle.crypto.engines.AESEngine")))
 	noEntry := []callGraphChainNode{{FunctionKey: "com.example.(C).run#1"}, {FunctionKey: "org.bouncycastle.crypto.modes.(CBCBlockCipher).<init>#1"}}
 

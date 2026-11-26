@@ -89,8 +89,8 @@ fn genuine_call() -> blake3::Hash { blake3::Hasher::new().update(b"x").finalize(
 `
 
 const (
-	blake3HashRule   = "rust.blake3.algorithm.hash.blake3"
-	blake3HasherRule = "rust.blake3.algorithm.hash.blake3-hasher"
+	blake3HashRule   = "fixture.rust.blake3.blake3"
+	blake3HasherRule = "fixture.rust.blake3.blake3-hasher"
 )
 
 func TestRustBlake3LocalModuleShadowIsNotServed(t *testing.T) {

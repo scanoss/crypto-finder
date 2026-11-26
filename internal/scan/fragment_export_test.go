@@ -9,11 +9,12 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/internal/callgraph/contracts"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/callgraph/contracts"
+	"github.com/scanoss/reach/graphfrag"
+
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 func TestBuildGraphFragmentExport_PreservesSupportingOverloadsAcrossRepeatedExports(t *testing.T) {
@@ -210,7 +211,7 @@ func TestExportGraphFragment_WritesDecodableNoEscapeJSON(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "nested", "fragment.json")
 
-	if err := exportGraphFragment(path, "json", &engine.DepScanResult{
+	if err := exportGraphFragment(path, &engine.DepScanResult{
 		CallGraph:  graph,
 		RootModule: "org.example:cipher-factory",
 		Ecosystem:  "java",
@@ -1046,4 +1047,47 @@ func TestSortedFragmentEdges_PreserveSameLineColumnIdentity(t *testing.T) {
 	if len(external) != 2 || external[0].StartCol != 4 || external[1].StartCol != 20 {
 		t.Fatalf("external same-line identities lost or unstable: %+v", external)
 	}
+}
+
+// nimbus-jose-jwt: DefaultJWTProcessor implements ConfigurableJWTProcessor, an
+// interface that declares no method and only extends JWTProcessor, which
+// declares process in several overloads. The implementation's ancestry must
+// pass through the method-less interface (recorded only in the parser's
+// supertypes), and each overload names only the parent overload with its own
+// parameter types.
+func TestBuildGraphFragmentExport_CompatibleThroughMethodlessInterface(t *testing.T) {
+	t.Parallel()
+
+	parentJWT := callgraph.FunctionID{Package: "jwt.proc", Type: "JWTProcessor", Name: "process#2$JWT,C"}
+	parentString := callgraph.FunctionID{Package: "jwt.proc", Type: "JWTProcessor", Name: "process#2$String,C"}
+	implJWT := callgraph.FunctionID{Package: "jwt.proc", Type: "DefaultJWTProcessor", Name: "process#2$JWT,C"}
+	params := func(first string) []callgraph.FunctionParameter {
+		return []callgraph.FunctionParameter{{Type: first}, {Type: "C"}}
+	}
+	graph := &callgraph.CallGraph{
+		Functions: map[string]*callgraph.FunctionDecl{
+			parentJWT.String():    {ID: parentJWT, Parameters: params("JWT"), ReturnType: "JWTClaimsSet"},
+			parentString.String(): {ID: parentString, Parameters: params("String"), ReturnType: "JWTClaimsSet"},
+			implJWT.String():      {ID: implJWT, Parameters: params("JWT"), ReturnType: "JWTClaimsSet", OwnerBases: []string{"ConfigurableJWTProcessor"}},
+		},
+		SourceSupertypes: map[string][]string{
+			"jwt.proc.DefaultJWTProcessor":      {"jwt.proc.ConfigurableJWTProcessor|java.lang.ConfigurableJWTProcessor"},
+			"jwt.proc.ConfigurableJWTProcessor": {"jwt.proc.JWTProcessor|java.lang.JWTProcessor"},
+			"jwt.proc.JWTProcessor":             nil,
+		},
+	}
+
+	payload := buildGraphFragmentExport(&engine.DepScanResult{CallGraph: graph, Ecosystem: "java"})
+	for i := range payload.Functions {
+		if payload.Functions[i].Key != implJWT.String() {
+			continue
+		}
+		got := payload.Functions[i].CompatibleCanonicalSignatures
+		want := "jwt.proc.JWTProcessor.process(JWT, C): JWTClaimsSet"
+		if len(got) != 1 || got[0] != want {
+			t.Fatalf("CompatibleCanonicalSignatures = %#v, want only %q", got, want)
+		}
+		return
+	}
+	t.Fatalf("missing %s", implJWT)
 }

@@ -398,3 +398,40 @@ func TestSourceCache_ExtractZip_ConcurrentExtractionsSeeCompleteEntry(t *testing
 		t.Fatal(err)
 	}
 }
+
+// A Java sources extraction keeps the ServiceLoader provider-configuration
+// files: the call graph reads the registrations from them.
+func TestSourceCache_ExtractZip_KeepsJavaServiceFiles(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	cache, err := NewSourceCache()
+	if err != nil {
+		t.Fatalf("NewSourceCache: %v", err)
+	}
+	archive := filepath.Join(t.TempDir(), "sources.jar")
+	createZipArchive(t, archive, map[string]string{
+		"org/plug/PdfParser.java":                  "class PdfParser {}",
+		"META-INF/services/org.core.Parser":        "org.plug.PdfParser\n",
+		"sub/META-INF/services/org.core.Detector":  "org.plug.Magic\n",
+		"META-INF/MANIFEST.MF":                     "Manifest-Version: 1.0\n",
+		"META-INF/services/nested/org.core.Parser": "org.plug.Other\n",
+	})
+	dir, err := cache.ExtractZip(archive, "org.example:plug", "1.0", []string{".java"})
+	if err != nil {
+		t.Fatalf("ExtractZip: %v", err)
+	}
+	for rel, want := range map[string]bool{
+		"META-INF/services/org.core.Parser":        true,
+		"sub/META-INF/services/org.core.Detector":  true,
+		"META-INF/MANIFEST.MF":                     false,
+		"META-INF/services/nested/org.core.Parser": false,
+	} {
+		_, statErr := os.Stat(filepath.Join(dir, filepath.FromSlash(rel)))
+		if got := statErr == nil; got != want {
+			t.Errorf("%s extracted = %v, want %v", rel, got, want)
+		}
+	}
+	if javaServiceEntry("META-INF/services/org.core.Parser", []string{".py"}) {
+		t.Error("a non-Java extraction keeps service files")
+	}
+}

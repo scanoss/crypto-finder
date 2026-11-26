@@ -18,6 +18,10 @@ on:
 
 concurrency: production
 
+# The tag is pushed with the GitHub App token; the job token only reads.
+permissions:
+  contents: read
+
 jobs:
   Tagging:
     runs-on: ubuntu-latest

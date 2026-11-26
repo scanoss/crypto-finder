@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/scanoss/crypto-finder/internal/callgraph"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/callgraph"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 // fragmentEdgeWorkers is how many goroutines build graph-fragment edges.

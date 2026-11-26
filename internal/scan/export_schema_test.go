@@ -23,13 +23,13 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/scanoss/reach/graphfrag"
 	"github.com/xeipuuv/gojsonschema"
 
 	"github.com/scanoss/crypto-finder/internal/engine"
 	"github.com/scanoss/crypto-finder/internal/entities"
 	"github.com/scanoss/crypto-finder/internal/oid"
 	"github.com/scanoss/crypto-finder/internal/output"
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
 )
 
 func TestGeneratedExportsMatchSchemas(t *testing.T) {

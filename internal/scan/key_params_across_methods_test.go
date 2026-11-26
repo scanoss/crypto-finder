@@ -4,13 +4,12 @@
 package scan
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/graphfrag"
+	"github.com/scanoss/reach/graphfrag"
 )
 
 const (
@@ -314,45 +313,6 @@ func supportingBitsByLine(graphs []callGraphExportFinding, supporting []callGrap
 	}
 	sort.Strings(pairs)
 	return strings.Join(pairs, ",")
-}
-
-// TestKeyParamsAcrossMethods_AnnotateOldFragmentFollowsNoReturn pins that a
-// fragment exported before graph-fragment-1.15, which has no returns_calls,
-// still loads, and that annotate then derives what it did before: the
-// generator's own-method lifecycle only, without the caller-side calls.
-func TestKeyParamsAcrossMethods_AnnotateOldFragmentFollowsNoReturn(t *testing.T) {
-	line := lineAfter(t, keyParamsAcrossMethodsSource, "static KeyPairGenerator returned(")
-	exports := terminalExports(t, "java", "Keys.java", keyParamsAcrossMethodsSource, line, `KeyPairGenerator.getInstance("RSA")`, jcaGetInstance, "")
-	if got := fragmentSupportingIDs(&exports.annotate, exports.findingID); got == "" {
-		t.Fatal("annotate on a 1.15 fragment joined no supporting call to the returned generator")
-	}
-
-	old := exports.fragment
-	old.SchemaVersion = "graph-fragment-1.14"
-	old.Functions = append([]graphfrag.GraphFragmentFunction(nil), old.Functions...)
-	recorded := false
-	for i := range old.Functions {
-		recorded = recorded || len(old.Functions[i].ReturnsCalls) > 0
-		old.Functions[i].ReturnsCalls = nil
-	}
-	if !recorded {
-		t.Fatal("the full fragment records no returns_calls")
-	}
-	data, err := json.Marshal(old)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "returns_calls") {
-		t.Fatal("the trimmed fragment still carries returns_calls")
-	}
-	fragment, err := graphfrag.DecodeFragment(graphfrag.ComponentKey{}, data)
-	if err != nil {
-		t.Fatalf("a graph-fragment-1.14 fragment must still decode: %v", err)
-	}
-	annotate := buildAnnotateExport(exports.report, fragment)
-	if got := fragmentSupportingIDs(&annotate, exports.findingID); got != "" {
-		t.Fatalf("annotate on a 1.14 fragment joined supporting calls %q, want none: `returned` makes no call on the generator", got)
-	}
 }
 
 // fragmentSupportingIDs renders the supporting_call_ids of a graph fragment's

@@ -7,7 +7,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/scanoss/crypto-finder/pkg/paramcondition"
+	"github.com/scanoss/reach/paramcondition"
+
 	"github.com/scanoss/crypto-finder/pkg/schema"
 )
 
@@ -97,7 +98,7 @@ func TestInterimReportPublicJSONFieldNames(t *testing.T) {
 				Rules:               []schema.RuleInfo{{ID: "go.crypto.aes", Message: "AES", Severity: "INFO", Version: "v1"}},
 				Status:              "reviewed",
 				Metadata:            map[string]string{"assetType": "algorithm"},
-				ParameterConditions: []paramcondition.Condition{{Raw: "param[0]==true"}},
+				ParameterConditions: []paramcondition.Condition{{Raw: "param[0]==yes"}},
 				OID:                 "2.16.840.1.101.3.4.1.2",
 				FindingID:           "a1b2c3d4",
 				OccurrenceKey:       "v1:1234567890abcdef",

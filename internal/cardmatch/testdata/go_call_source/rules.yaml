@@ -1,0 +1,41 @@
+rules:
+- id: curve
+  message: m
+  severity: INFO
+  languages: [go]
+  mode: taint
+  metadata: {crypto: {assetType: algorithm, algorithmName: ACME-P$curve, curve: P$curve}}
+  pattern-sources:
+  - patterns:
+    - pattern: $FUNC()
+    - metavariable-regex:
+        metavariable: $FUNC
+        regex: ^(?<package>shapes)\.P(?<curve>224|256|384)$
+  pattern-sinks:
+  - pattern: acme.GenKey($CURVE, ...)
+- id: prefix
+  message: m
+  severity: INFO
+  languages: [go]
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern: $FUNC()
+    - metavariable-regex:
+        metavariable: $FUNC
+        regex: ^(?<package>shapes)\.P
+  pattern-sinks:
+  - pattern: acme.Prefix($C, ...)
+- id: branches
+  message: m
+  severity: INFO
+  languages: [go]
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern: $FUNC()
+    - metavariable-regex:
+        metavariable: $FUNC
+        regex: ^shapes\.P256$|^shapes\.P384$
+  pattern-sinks:
+  - pattern: acme.Branch($C, ...)

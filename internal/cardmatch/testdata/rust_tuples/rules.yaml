@@ -1,0 +1,50 @@
+# Tuple let statements (TestRustTupleLetsAsOpenGrep): a tuple pattern binds
+# its names one by one, with or without a written type, and a later let of a
+# name hides the first let from the site.
+rules:
+- id: pair
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "pair-$S-$H"}}
+  patterns:
+  - pattern-inside: |
+      let ($S, $H) = acme_stream::Stream::open(...);
+      ...
+  - pattern: $S.push(...)
+- id: typed
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "typed-$S-$HT"}}
+  patterns:
+  - pattern-inside: |
+      let ($S, $H): (_, $HT) = acme_stream::Stream::open(...);
+      ...
+  - pattern: $S.push(...)
+- id: second
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "second-$X"}}
+  patterns:
+  - pattern: $X.push(...)
+  - pattern-not-inside: |
+      let ($P, $X) = <... $T::$C(...) ...>;
+      ...
+- id: whole
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "whole"}} # OpenGrep prints $N without `mut` and `ref`
+  pattern: let $N = acme_stream::Stream::open(...);
+- id: single
+  languages: [rust]
+  message: m
+  severity: INFO
+  metadata: {crypto: {assetType: algorithm, algorithmName: "single-$S"}}
+  patterns:
+  - pattern-inside: |
+      let $S = acme_stream::Stream::open(...);
+      ...
+  - pattern: $S.push(...)
