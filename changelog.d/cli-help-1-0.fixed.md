@@ -1,1 +1,0 @@
-- `crypto-finder scan --help` lists every language and dependency ecosystem 1.0 supports and describes the online offline fallback; `--offline` no longer says dependencies come only from Maven sources JARs.
