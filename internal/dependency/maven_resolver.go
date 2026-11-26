@@ -562,10 +562,6 @@ func (r *MavenResolver) runMavenCommand(ctx context.Context, opts mavenCommandOp
 	return result, err
 }
 
-// configureMavenCommand pins the local repository and the Java runtime of a
-// Maven invocation. The repository is passed explicitly so that commands run
-// outside the project, such as the isolated source fallback, write where
-// Crypto Finder reads.
 // mavenBatchArgs run Maven in batch mode with color off. Maven 3.9 writes
 // ANSI color into the -DoutputFile of dependency:list and dependency:tree
 // (around the " -- module <name>" suffix) whenever color is on, which an
@@ -595,6 +591,10 @@ func stripANSI(s string) string {
 	return ansiEscape.ReplaceAllString(s, "")
 }
 
+// configureMavenCommand pins the local repository and the Java runtime of a
+// Maven invocation. The repository is passed explicitly so that commands run
+// outside the project, such as the isolated source fallback, write where
+// Crypto Finder reads.
 func (r *MavenResolver) configureMavenCommand(ctx context.Context, cmd *exec.Cmd) error {
 	if m2Repo := r.localRepository(ctx, cmd.Dir); m2Repo != "" {
 		cmd.Args = append(cmd.Args, "-Dmaven.repo.local="+m2Repo)
