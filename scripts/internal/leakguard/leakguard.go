@@ -19,14 +19,15 @@
 //
 // The denylist (denylist.txt) holds only SHA-256 hashes, so it does not reveal
 // the names it denies. A text is split into tokens on every character that is
-// not an ASCII letter or digit, and where a lowercase letter meets an uppercase
-// one, then lowercased. A "loose" entry is the hash
-// of a name's tokens joined with nothing between them, and matches any run of
-// up to MaxTokens adjacent tokens on one line that joins to it: "foo-bar",
+// not an ASCII letter or digit, and where a lowercase letter meets an
+// uppercase one, then lowercased. A "loose" entry is the hash of a name's
+// tokens joined with nothing between them, and matches any run of up to
+// MaxTokens adjacent tokens on one line that joins to it: "foo-bar",
 // "foo_bar", "foo.bar", "foo/bar", "foo bar", "FooBar" and "newFooBarClient"
-// all match the entry of "foo-bar". An "exact" entry is the hash of the lowercased name as written, and matches only that
-// spelling (still case-insensitive): it scopes a name whose words also occur
-// legitimately in public prose or code.
+// all match the entry of "foo-bar". An "exact" entry is the hash of the
+// lowercased name as written, and matches only that spelling (still
+// case-insensitive): it scopes a name whose words also occur legitimately in
+// public prose or code.
 //
 // Findings name the place and the category, never the matched text.
 package leakguard
