@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-26
+### Added
+- `scan --scan-dependencies` online now answers locally the dependencies the
+  SCANOSS API holds no reachability data for (`no_reachability_data`): it mines
+  them with the `--offline` path (and the dependencies that lead to them in the
+  resolved tree, so routes through those are in the stitch) and serves their
+  findings and verdicts as `--offline` would. Dependencies without data for
+  another reason (`unpinned`, `other_version_requested`, `under_other_version`)
+  are not mined. `--no-offline-fallback` turns it off and keeps the API's answer
+  as it is. The completed `dependencies` progress event adds
+  `deps_answered_online`, `deps_answered_offline` and
+  `deps_answered_offline_list` (`purl`, `version`); a dependency the fallback
+  could not answer either stays in `deps_skipped_list` with reason
+  `no_reachability_data` and a new `offline_fallback` field saying why. A failed
+  or timed-out fallback never fails the scan. `--offline-cache-dir`,
+  `--offline-memory-mb` and `--offline-python-packages` apply to the fallback.
+
 ## [1.0.1] - 2026-11-26
 ### Changed
 - `scan` now detects cryptography in C, C++ and C# (the cards engine), with no environment variable. `CRYPTO_FINDER_CARDS_C` and `CRYPTO_FINDER_CARDS_CSHARP` are no longer needed and still accepted.
