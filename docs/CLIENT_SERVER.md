@@ -75,7 +75,7 @@ Response, merged into the report:
 | Each dependency finding with its asset | A report finding with `source: dependency` and `dependency_info` |
 | `reachability`, `reachability_reason` | `finding_graphs[].reachability` and `unresolved_reason` in `--export-callgraph` |
 | `call_chains`, `analysis` | The finding's chains and analysis in `--export-callgraph` |
-| Dependencies without mined data | `deps_skipped_list` in the `dependencies` progress event (reason `no_reachability_data`) |
+| Dependencies without mined data | Answered locally by the offline fallback ([OFFLINE.md](OFFLINE.md#online-scans-the-offline-fallback)), listed in `deps_answered_offline_list`; those it cannot answer, or all of them with `--no-offline-fallback`, in `deps_skipped_list` (reason `no_reachability_data`) |
 
 Field-by-field formats: [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md) and
 [DEPENDENCY_SCANNING.md](DEPENDENCY_SCANNING.md).
@@ -88,6 +88,7 @@ Field-by-field formats: [OUTPUT_FORMATS.md](OUTPUT_FORMATS.md) and
 | Where the stitch runs | SCANOSS API | In process, same code (`pkg/appreach`) |
 | Dependency coverage | Versions SCANOSS has mined | Java: versions with a `-sources.jar`; Python: installed distributions |
 | Network | SCANOSS API | Maven repositories for missing sources JARs; the ruleset download unless `--no-remote-rules` |
+| Versions SCANOSS has not mined | Mined locally by the offline fallback (off with `--no-offline-fallback`) | Mined like the others |
 | First run | Fast | Slow: mines every dependency |
 | Later runs | Fast | About as fast as online |
 

@@ -243,6 +243,9 @@ type DependencyWithout struct {
 	InfoCode  string   `json:"error_code,omitempty"`
 	Specifier string   `json:"specifier,omitempty"`
 	Markers   []string `json:"markers,omitempty"`
+	// OfflineFallback, for a dependency without data that the scan's
+	// offline fallback could not answer either, says why.
+	OfflineFallback string `json:"offline_fallback,omitempty"`
 }
 
 // Reasons of a DependencyWithout.
