@@ -2,7 +2,8 @@
 
 Every graph fragment crypto-finder writes is stamped with the id of the
 algorithm that built it (`scan_metadata.graph_algo_version`). Caches of
-structural graphs (the SCANOSS mining service, `--offline`, `annotate` users)
+structural graphs (SCANOSS's stored dependency graphs, the `--offline`
+cache, `annotate` users)
 are keyed on that id, so a graph-construction change must bump it, and a
 change that does not alter graphs must not. `TestGraphAlgoVersionGuard`
 enforces both directions.
@@ -14,7 +15,7 @@ enforces both directions.
    go test ./internal/graphalgoguard/ -run TestGraphAlgoVersionGuard
    ```
 2. If it fails naming an ecosystem, bump that ecosystem's id in reach
-   (`graphfrag.GraphAlgoVersion`, `GraphAlgoVersionPython`, `GraphAlgoVersionRust`, `GraphAlgoVersionNode`, `GraphAlgoVersionGo`, `GraphAlgoVersionC`, `GraphAlgoVersionCPP` or `GraphAlgoVersionCSharp`),
+   (`graphfrag.GraphAlgoVersion`, `GraphAlgoVersionPython`, `GraphAlgoVersionRust`, `GraphAlgoVersionNode`, `GraphAlgoVersionGo`, `GraphAlgoVersionC`, `GraphAlgoVersionCPP`, `GraphAlgoVersionRuby` or `GraphAlgoVersionCSharp`),
    with a comment above the constant saying what changed. Tag reach and
    require the new tag in `go.mod`.
 3. Record the new hashes:
@@ -30,11 +31,12 @@ enforces both directions.
 |---|---|---|---|
 | Graph algorithm, Java and default | `GraphAlgoVersion` | `graph-algo-40` | Java and every ecosystem without its own id |
 | Graph algorithm, C | `GraphAlgoVersionC` | `graph-algo-c-3` | C graphs |
-| Graph algorithm, C++ | `GraphAlgoVersionCPP` | `graph-algo-cpp-1` | C++ graphs |
+| Graph algorithm, C++ | `GraphAlgoVersionCPP` | `graph-algo-cpp-4` | C++ graphs |
 | Graph algorithm, Python | `GraphAlgoVersionPython` | `graph-algo-py-40` | Python graphs |
 | Graph algorithm, Rust | `GraphAlgoVersionRust` | `graph-algo-rs-15` | Rust graphs |
 | Graph algorithm, Node | `GraphAlgoVersionNode` | `graph-algo-node-13` | JavaScript and TypeScript graphs |
 | Graph algorithm, Go | `GraphAlgoVersionGo` | `graph-algo-go-15` | Go graphs |
+| Graph algorithm, Ruby | `GraphAlgoVersionRuby` | `graph-algo-rb-10` | Ruby graphs |
 | Graph algorithm, C# | `GraphAlgoVersionCSharp` | `graph-algo-cs-2` | C# graphs |
 | Graph-fragment schema | `SchemaVersion` | `graph-fragment-1.39` | The fragment wire format |
 | Callgraph schema | `CallgraphSchemaVersion` / `CallgraphInternedSchemaVersion` | `6.14` / `6.18` | The `--export-callgraph` contract (inlined / interned frames) |
@@ -44,8 +46,8 @@ enforces both directions.
 an ecosystem; a fragment without an ecosystem reads as Java. Consumers
 compare a stored graph with `GraphAlgoVersionForPurl(purl)`.
 
-The values above are those at reach v0.15.0; the constants are the source of
-truth.
+The values above are those of the reach version `go.mod` requires (v0.36.0
+when this was written); the constants are the source of truth.
 
 ## When to bump
 
@@ -68,7 +70,7 @@ live in reach.
 
 | Part | Location |
 |---|---|
-| Corpus: one application and one dependency per ecosystem (C, C++, Go, Java, Node, Python, Rust) | `internal/graphalgoguard/testdata/graph_algo_guard/<ecosystem>/{app,dep}` |
+| Corpus: one application and one dependency per ecosystem (C, C++, Go, Java, Node, Python, Ruby, Rust; C# has none yet) | `internal/graphalgoguard/testdata/graph_algo_guard/<ecosystem>/{app,dep}` |
 | Golden: per ecosystem, its id, the SHA-256 of its structural graph, and counts | `internal/graphalgoguard/testdata/graph_algo_guard.golden.json` |
 
 What it hashes: the structural part of each fragment export (functions,

@@ -1,256 +1,101 @@
 # Contributing to Crypto Finder
 
-Thank you for your interest in contributing to Crypto Finder! This document provides guidelines for contributing to the project.
+Thank you for helping. This page gets you from a clone to a pull request.
+The rules a change must follow are in [AGENTS.md](AGENTS.md) (for people and
+coding agents alike); the code map is in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Table of Contents
-
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [How to Contribute](#how-to-contribute)
-- [Code Style Guidelines](#code-style-guidelines)
-- [Testing Requirements](#testing-requirements)
-- [Pull Request Process](#pull-request-process)
-- [License](#license)
-
-## Code of Conduct
-
-This project adheres to a Code of Conduct that all contributors are expected to follow. Please read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.
-
-## Getting Started
-
-1. Fork the repository on GitHub
-2. Clone your fork locally:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/crypto-finder.git
-   cd crypto-finder
-   ```
-3. Add the upstream repository:
-   ```bash
-   git remote add upstream https://github.com/scanoss/crypto-finder.git
-   ```
-
-## Development Setup
-
-### Prerequisites
-
-- Go 1.26 or later
-- Make
-- Docker (optional, for container testing)
-
-### Building the Project
+## Quick path
 
 ```bash
-# Install dependencies
-go mod download
-
-# Build the binary
-make build
-
-# Run tests
-make test
-
-# Run linter
+git clone https://github.com/YOUR_USERNAME/crypto-finder.git
+cd crypto-finder
+make build          # ./target/crypto-finder
+make test           # unit tests with -race, plus reach's tests against the crypto KB
+make lint-install   # once: the pinned golangci-lint into ./bin
 make lint
 ```
 
-### Running Locally
+You need Go 1.26+ and Make. Docker is optional (`make test-docker` runs the
+suite as CI does). Tests that need `mvn`, a JDK or another external tool skip
+when it is missing.
+
+## Before you open a pull request
+
+- [ ] `make test` and `make lint` pass.
+- [ ] Tests cover the new behavior ([CODE_REVIEW_GUIDELINES.md](CODE_REVIEW_GUIDELINES.md#testing-standards)).
+- [ ] A user-facing change adds a changelog fragment under `changelog.d/`
+      ([its README](changelog.d/README.md)); never edit `CHANGELOG.md` for it.
+- [ ] A change to commands, flags, outputs or supported workflows updates
+      [the user guide](docs/user-guide/user-guide.html)
+      ([its rules](docs/user-guide/AGENTS.md)) and the docs it touches.
+- [ ] No detection ruleset content (rules, rule ids, cards, conditions,
+      fixtures derived from them) anywhere in the diff. Tests build small,
+      invented rules inline.
+- [ ] Engine changes (call graph, parsers, contracts loader, stitcher) go to
+      [scanoss/reach](https://github.com/scanoss/reach), not here.
+- [ ] A graph construction change bumps the ecosystem's graph algorithm id
+      ([docs/GRAPH_IDS.md](docs/GRAPH_IDS.md)).
+- [ ] The PR body has an `## Evidence` section for every feature the diff
+      touches: `go run ./scripts/featuremap check-pr --base origin/main --head HEAD --body-file <file>`.
+
+Use a Conventional Commit title (`feat: ...`, `fix: ...`, `docs: ...`) and
+reference the issue it closes.
+
+## Review and merge
+
+Every pull request gets one automated review against [REVIEW.md](REVIEW.md);
+answer each of its inline comments with the fixing commit or a reason. A
+maintainer merges once checks are green and the merge gate passes
+([AGENTS.md](AGENTS.md#pull-requests-and-merging)).
+
+## Tests
 
 ```bash
-# Build and install
-make install
-
-# Run crypto-finder
-crypto-finder scan /path/to/code
+make test                                   # everything, with coverage.out
+make test-docker                            # the suite inside Dockerfile.test, as CI runs it
+go test ./internal/scanner/...              # one package
+go test -run TestName ./internal/scanner/   # one test
+make coverage                               # coverage.html
+make coverage-check                         # the 80% threshold CI enforces (needs go-test-coverage)
 ```
 
-## How to Contribute
-
-### Reporting Bugs
-
-- Check if the bug has already been reported in [Issues](https://github.com/scanoss/crypto-finder/issues)
-- If not, create a new issue with a clear title and description
-- Include steps to reproduce, expected behavior, and actual behavior
-- Add relevant logs, screenshots, or code samples
-
-### Suggesting Enhancements
-
-- Open an issue with the `enhancement` label
-- Clearly describe the feature and its benefits
-- Provide examples of how it would be used
-
-### Submitting Code Changes
-
-1. Create a new branch for your feature or bugfix:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. Make your changes following the [Code Style Guidelines](#code-style-guidelines)
-
-3. Write or update tests as needed
-
-4. Ensure all tests pass:
-   ```bash
-   make test
-   ```
-
-5. Run the linter and fix any issues:
-   ```bash
-   make lint
-   ```
-
-6. Commit your changes with a clear commit message:
-   ```bash
-   git commit -m "feat: brief description"
-   ```
-
-7. Push to your fork:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-8. Open a Pull Request against the `main` branch
-
-## Code Style Guidelines
-
-This project follows standard Go conventions and uses automated linting:
-
-### General Guidelines
-
-- Follow the [Effective Go](https://go.dev/doc/effective_go) guide
-- Use `gofmt` to format your code (automatically done by most editors)
-- Write clear, self-documenting code with meaningful variable names
-- Add comments for exported functions, types, and packages
-- Keep functions small and focused on a single responsibility
-
-### Linting
-
-The project uses `golangci-lint` with configuration in `.golangci.yml`. Run the linter before submitting:
-
-```bash
-make lint-install
-make lint
-```
-
-`make lint-install` installs the pinned golangci-lint version from `.golangci-lint-version` into `./bin`. `make lint` then uses that same pinned binary, matching CI.
-
-Fix any issues reported by the linter. Common rules include:
-- No unused variables or imports
-- Proper error handling (don't ignore errors)
-- Consistent naming conventions
-- No cyclomatic complexity violations
-- Proper use of context
-
-### Project Structure
-
-- `cmd/crypto-finder/` - Main application entry point
-- `internal/` - Internal packages (not importable by external projects)
-  - `cli/` - CLI commands and flags
-  - `scanner/` - Scanning engine implementations
-  - `converter/` - Output format converters
-  - `config/` - Configuration management
-  - `cache/` - Caching logic
-  - `rules/` - Rule management
-- `testdata/` - Test fixtures and sample data
-
-## Testing Requirements
-
-### Writing Tests
-
-- Write unit tests for all new functionality
-- Place tests in `*_test.go` files alongside the code they test
-- Use table-driven tests where appropriate
-- Mock external dependencies
-
-### Test Coverage
-
-- Maintain or improve the current test coverage
-- Generate an HTML coverage report (runs the tests first, writes `coverage.html`):
-  ```bash
-  make coverage
-  ```
-- Check the coverage thresholds the CI enforces (requires `go-test-coverage`,
-  configured in `.testcoverage.yml`):
-  ```bash
-  go install github.com/vladopajic/go-test-coverage/v2@v2.19.0
-  make coverage-check
-  ```
-- Aim for at least 80% coverage for new code
-
-### Running Tests
-
-```bash
-# Run all tests locally (writes coverage.out)
-make test
-
-# Run tests in Docker, same environment as CI
-make test-docker
-
-# Run tests for a specific package
-go test ./internal/scanner/...
-
-# Run a specific test
-go test -run TestScannerName ./internal/scanner/
-```
-
-`make test` runs the suite with your local toolchain: detection runs in-process
-on the cards engine, so no external scanner is needed. Tests that need `mvn` or
-a JDK skip when they are missing. CI runs `make test-docker`, which builds
-`Dockerfile.test` and runs the full suite inside it.
+Install the coverage checker with
+`go install github.com/vladopajic/go-test-coverage/v2@v2.19.0`.
 
 ### What CI runs
 
-A regression in any of these fails the pull request.
-
-| Guard | Command | Workflow, job |
-|-------|---------|---------------|
-| Engine import boundary, graph/algo version and golden, equivalence, cards, scripts, feature map | `make test-guards` | `test.yml`, `guards` |
-| Engine (`github.com/scanoss/reach`) tests that need the crypto KB | `make test-reach` | `test.yml`, `guards` |
-| Full suite with coverage thresholds (includes every guard) | `make test-docker` | `test.yml`, `test` |
-| Lint, pinned `golangci-lint` | `make lint` | `lint.yml` |
+| Guard | Command | Workflow |
+|---|---|---|
+| Engine import boundary, graph id guard, equivalence, cards, scripts, feature map | `make test-guards` | `test.yml` |
+| reach's tests that need the crypto KB | `make test-reach` | `test.yml` |
+| Full suite with coverage thresholds | `make test-docker` | `test.yml` |
+| Lint (pinned `golangci-lint`) | `make lint` | `lint.yml` |
 | Binary size budget | `.claude/skills/verify/scripts/budgets.sh size` | `lint.yml` |
 | Feature map and PR evidence | `go run ./scripts/featuremap check-docs` | `pr-hygiene.yml` |
-| Startup budgets, network end-to-end | see the file | `nightly-e2e.yml` (nightly, not per PR) |
+| Startup budgets, network end-to-end | see the workflow | `nightly-e2e.yml` (nightly) |
 
-Not in CI: the profiling and corpus harnesses that need a private input
-(`CRYPTO_FINDER_BCPROV_SRC`, `CRYPTO_FINDER_EQUIV_LIVE`,
-`CARDMATCH_PARITY_RULES`). They skip when it is unset; run them by hand.
+### Opt-in harnesses
 
-## Pull Request Process
+These need an input that is not in the repository and skip without it.
 
-1. **Before Submitting:**
-   - Ensure all tests pass (`make test`)
-   - Run the linter (`make lint`)
-   - Update documentation if needed
-   - Add or update tests for your changes
-   - Add a changelog fragment under `changelog.d/` (see its README) instead of editing CHANGELOG.md
+| Harness | Run with |
+|---|---|
+| Wall-clock proof of a full fragment export on `bcprov-jdk18on` 1.84 | `make proof-bcprov-mine` (downloads the sources; `CRYPTO_FINDER_BCPROV_SRC` points at an unpacked tree instead) |
+| Live fragment equivalence | `CRYPTO_FINDER_EQUIV_LIVE=<live export>` and `CRYPTO_FINDER_EQUIV_FRAGMENT=<fragment>` |
+| Card-matching parity against a ruleset | `CARDMATCH_PARITY_RULES=<rules dir>` and `CARDMATCH_PARITY_INDEX=<card index>` |
 
-2. **PR Title and Description:**
-   - Use a clear, descriptive title
-   - Reference any related issues (e.g., "Fixes #123")
-   - Describe what changes you made and why
-   - Include any breaking changes or migration notes
+## Reporting bugs and ideas
 
-3. **Review Process:**
-   - Maintainers will review your PR
-   - Address any feedback or requested changes
-   - Keep your branch up to date with `main`:
-     ```bash
-     git fetch upstream
-     git rebase upstream/main
-     ```
-
-4. **Merging:**
-   - PRs require approval from at least one maintainer
-   - All CI checks must pass
-   - Once approved, a maintainer will merge your PR
+Search [Issues](https://github.com/scanoss/crypto-finder/issues) first. For a
+bug, include the command line, `crypto-finder version`, what you expected and
+what happened (`--error-format json` output helps). For an idea, describe the
+use case.
 
 ## License
 
-By contributing to Crypto Finder, you agree that your contributions will be licensed under the [GNU General Public License v2.0 only (GPL-2.0-only)](LICENSE).
-
-All source code files must include the appropriate GPL-2.0-only license header. New files should include:
+Contributions are licensed under
+[GPL-2.0-only](LICENSE). Every new `.go` file starts with this header:
 
 ```go
 // Copyright (C) 2026 SCANOSS.COM
@@ -270,13 +115,4 @@ All source code files must include the appropriate GPL-2.0-only license header. 
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 ```
 
----
-
-## Questions?
-
-If you have questions about contributing, feel free to:
-- Open an issue for discussion
-- Contact the maintainers
-- Check the project documentation at https://scanoss.readthedocs.io
-
-Thank you for contributing to Crypto Finder!
+Be kind: this project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
