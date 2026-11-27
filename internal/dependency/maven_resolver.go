@@ -581,24 +581,53 @@ var mavenParallelArgs = []string{
 	"-Daether.connector.basic.threads=8",
 }
 
-// mavenArgsFromEnv are the environment variables a user tunes Maven with. A
-// resolver property set in either keeps the user's value: a -D on the command
-// line would override it.
+// mavenArgsFromEnv are the environment variables a user tunes Maven with.
 var mavenArgsFromEnv = []string{"MAVEN_ARGS", "MAVEN_OPTS"}
 
-// mavenExtraArgs are the arguments every Maven invocation gets after its
-// own: mavenBatchArgs, and each of mavenParallelArgs the user's environment
-// does not already set.
-func mavenExtraArgs() []string {
-	var env strings.Builder
+// mavenProjectConfigs are the files under a project's .mvn directory that
+// Maven reads its arguments and JVM options from.
+var mavenProjectConfigs = []string{"maven.config", "jvm.config"}
+
+// mavenUserSettings is what the user and the project already pass Maven:
+// MAVEN_ARGS, MAVEN_OPTS, and the .mvn/maven.config and .mvn/jvm.config of
+// the nearest directory at or above dir that has a .mvn directory, which is
+// where Maven looks for them.
+func mavenUserSettings(dir string) string {
+	var settings strings.Builder
 	for _, name := range mavenArgsFromEnv {
-		env.WriteString(os.Getenv(name))
-		env.WriteByte(' ')
+		settings.WriteString(os.Getenv(name))
+		settings.WriteByte(' ')
 	}
+	for d := dir; d != ""; {
+		if info, err := os.Stat(filepath.Join(d, ".mvn")); err == nil && info.IsDir() {
+			for _, name := range mavenProjectConfigs {
+				// #nosec G304 -- reads Maven's own config files of the project being scanned.
+				if data, err := os.ReadFile(filepath.Join(d, ".mvn", name)); err == nil {
+					settings.Write(data)
+					settings.WriteByte(' ')
+				}
+			}
+			break
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			break
+		}
+		d = parent
+	}
+	return settings.String()
+}
+
+// mavenExtraArgs are the arguments every Maven invocation in dir gets after
+// its own: mavenBatchArgs, and each of mavenParallelArgs the user or the
+// project does not already set. A -D on the command line would override the
+// user's value, so a property set in mavenUserSettings is not passed again.
+func mavenExtraArgs(dir string) []string {
+	settings := mavenUserSettings(dir)
 	extra := slices.Clone(mavenBatchArgs)
 	for _, arg := range mavenParallelArgs {
 		property, _, _ := strings.Cut(arg, "=")
-		if !strings.Contains(env.String(), property+"=") {
+		if !strings.Contains(settings, property+"=") {
 			extra = append(extra, arg)
 		}
 	}
@@ -609,7 +638,7 @@ func mavenExtraArgs() []string {
 // invocation runs with mavenExtraArgs, in dir.
 func newMavenCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	// #nosec G204 G702 -- exec.CommandContext is used without a shell; mvn is fixed and the arguments are built by this package.
-	cmd := exec.CommandContext(ctx, "mvn", slices.Concat(args, mavenExtraArgs())...)
+	cmd := exec.CommandContext(ctx, "mvn", slices.Concat(args, mavenExtraArgs(dir))...)
 	cmd.Dir = dir
 	return cmd
 }

@@ -143,9 +143,10 @@ exit 0
 // user sets in MAVEN_ARGS or MAVEN_OPTS is not passed again, since a -D on
 // the command line would override the user's value; the others still are.
 func TestMavenExtraArgs_KeepsTheUsersResolverSettings(t *testing.T) {
+	dir := t.TempDir()
 	t.Setenv("MAVEN_ARGS", "-B -Daether.connector.basic.threads=2")
 	t.Setenv("MAVEN_OPTS", "-Xmx1g -Daether.dependencyCollector.impl=df")
-	got := mavenExtraArgs()
+	got := mavenExtraArgs(dir)
 	want := []string{"-B", "-Dstyle.color=never", "-Daether.dependencyCollector.bf.threads=8"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("mavenExtraArgs() = %v, want %v", got, want)
@@ -153,8 +154,36 @@ func TestMavenExtraArgs_KeepsTheUsersResolverSettings(t *testing.T) {
 
 	t.Setenv("MAVEN_ARGS", "")
 	t.Setenv("MAVEN_OPTS", "")
-	if got := mavenExtraArgs(); !slices.Equal(got, slices.Concat(mavenBatchArgs, mavenParallelArgs)) {
+	if got := mavenExtraArgs(dir); !slices.Equal(got, slices.Concat(mavenBatchArgs, mavenParallelArgs)) {
 		t.Fatalf("mavenExtraArgs() with no user settings = %v, want batch and parallel args", got)
+	}
+}
+
+// TestMavenExtraArgs_KeepsTheProjectsResolverSettings: a resolver property a
+// project sets in .mvn/maven.config or .mvn/jvm.config is not passed again,
+// also from a module below the directory that holds .mvn, as Maven finds it.
+func TestMavenExtraArgs_KeepsTheProjectsResolverSettings(t *testing.T) {
+	t.Setenv("MAVEN_ARGS", "")
+	t.Setenv("MAVEN_OPTS", "")
+	root := t.TempDir()
+	module := filepath.Join(root, "core")
+	if err := os.MkdirAll(filepath.Join(root, ".mvn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".mvn", "maven.config"), []byte("-Daether.dependencyCollector.impl=df\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".mvn", "jvm.config"), []byte("-Xmx1g -Daether.connector.basic.threads=2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"-B", "-Dstyle.color=never", "-Daether.dependencyCollector.bf.threads=8"}
+	for _, dir := range []string{root, module} {
+		if got := mavenExtraArgs(dir); !slices.Equal(got, want) {
+			t.Errorf("mavenExtraArgs(%s) = %v, want %v", dir, got, want)
+		}
 	}
 }
 
