@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-27
+### Changed
+- `pkg/appreach` now runs its stitch core (closure parsing, dependency-graph
+  splice, stitch policy, verdicts) from the reach module's `appreach` package.
+  Its exported API and every `/reachability/application` response are
+  unchanged; `Dependency`, `Limits`, `Pins` and `RunError` are now aliases of
+  reach's types.
+- `--scan-dependencies` resolves Maven dependencies in parallel: Maven runs with the breadth-first dependency collector and 8 download threads. On a cold local repository a 134-dependency project resolved in 20 s instead of 50 s. A value the user sets for one of these resolver properties in `MAVEN_ARGS`, `MAVEN_OPTS`, `.mvn/maven.config` or `.mvn/jvm.config` is kept; one set only in a `settings.xml` profile is overridden.
+
 ## [1.0.3] - 2026-11-26
 ### Added
 - Graph fragments move to `graph-fragment-1.40`: a C# call into a dependency
