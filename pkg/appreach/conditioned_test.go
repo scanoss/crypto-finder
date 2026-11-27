@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 
+	core "github.com/scanoss/reach/appreach"
+
 	gf "github.com/scanoss/reach/graphfrag"
 
 	"github.com/scanoss/crypto-finder/pkg/conditioned"
@@ -105,7 +107,7 @@ func TestApplicationResponseConditionedAssets(t *testing.T) {
 	resp, added := applicationResponse(pins, []ComponentKey{key},
 		map[ComponentKey]Component{key: {Fragment: frag, Stored: &StoredFindings{Findings: stored}}},
 		&ComponentDataDTO{}, map[ComponentKey]Fragment{key: *frag},
-		map[string]verdict{anchorID: {reachability: VerdictReachable}}, map[ComponentKey]bool{key: true},
+		map[string]core.Verdict{anchorID: {Reachability: VerdictReachable}}, map[ComponentKey]bool{key: true},
 		conditionedExpansions{key: byAnchor})
 	dep := resp.Dependencies[0]
 	if added != 3 || dep.FindingCount != 5 || dep.Summary != (Summary{Reachable: 2, Unknown: 3}) || resp.Summary != dep.Summary {

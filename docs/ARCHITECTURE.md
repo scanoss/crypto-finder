@@ -98,7 +98,7 @@ stage ([ERROR_CODES.md](ERROR_CODES.md)).
 
 | Package | Responsibility |
 |---|---|
-| `appreach` | The application reachability answer (`/v3/cryptography/reachability/application`), run by the API and by `--offline`; the findings envelope (`ToFindingsEnvelope`) |
+| `appreach` | The application reachability answer (`/v3/cryptography/reachability/application`), run by the API and by `--offline`; the findings envelope (`ToFindingsEnvelope`). The stitch core under it (closure parsing, dependency-graph splice, stitch policy, verdicts) is reach's `appreach` |
 | `conditioned` | Specializes a generic finding by the value its selector argument resolves to |
 | `pqc` | Post-quantum classification of served findings |
 | `sbomcbom` | CycloneDX CBOM for an SBOM from published findings (`cbom`) |

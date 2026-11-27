@@ -108,8 +108,8 @@ github.com/sagikazarmark/locafero v0.11.0 h1:1iurJgmM9G3PA/I+wWYIOw/5SyBtxapeHDc
 github.com/sagikazarmark/locafero v0.11.0/go.mod h1:nVIGvgyzw595SUSUE6tvCp3YYTeHs15MvlmU87WwIik=
 github.com/scanoss/crypto-pqc-dataset v1.4.0 h1:e3N9ibre1lC3qRD8SDcrIn4/9mAGdo9ztGAz1iOZuHY=
 github.com/scanoss/crypto-pqc-dataset v1.4.0/go.mod h1:QkPcncfWnmxBmC0mJ/QeXPgsPHLsQqfhqQ2kLJxx0pI=
-github.com/scanoss/reach v0.38.0 h1:IGhvcppCggnkP3QwLksCBXlyTmAhjVIg2xqSuKD9CgI=
-github.com/scanoss/reach v0.38.0/go.mod h1:yXOSBd8epdJBGgoRf5IkoEBlQa/Wb2JywANGiyXsUZo=
+github.com/scanoss/reach v0.39.0 h1:60el8bOaYlpK9MQGCHpdaHBG4K9WmApRdGw3+1Io7GU=
+github.com/scanoss/reach v0.39.0/go.mod h1:yXOSBd8epdJBGgoRf5IkoEBlQa/Wb2JywANGiyXsUZo=
 github.com/scanoss/scanoss.go v0.12.1-0.20261020065749-c1c6ba0935d6 h1:fsru5O7wvzRS1LkE+PRo6JOjZqc1riQuV4L5/VuwhsQ=
 github.com/scanoss/scanoss.go v0.12.1-0.20261020065749-c1c6ba0935d6/go.mod h1:zYblFKbV+2fpubZCLauFgOeJLKF8TflxlhevPdoe/GE=
 github.com/sergi/go-diff v1.2.0 h1:XU+rvMAioB0UC3q1MFrIQy4Vo5/4VsRDQQXHsEya6xQ=
